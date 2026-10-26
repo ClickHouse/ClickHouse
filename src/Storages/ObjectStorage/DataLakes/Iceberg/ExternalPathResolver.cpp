@@ -313,15 +313,6 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
         });
 }
 
-bool isAbsolutePath(const std::string & path)
-{
-    if (path.empty())
-        return false;
-
-    SchemeAuthorityKey decomposed{path};
-    return !decomposed.scheme.empty() || decomposed.key.starts_with('/');
-}
-
 #endif // USE_AVRO
 
 /// Validate RFC 3986 schemes: object keys can contain colons without being URIs.
@@ -399,9 +390,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     ExternalStorageCache & external_storages,
     const DB::ContextPtr & context,
     DB::AccessType access_type,
-    PathAccessCheck * access_check)
+    PathAccessCheck * access_check,
+    const Iceberg::IcebergPathResolver * path_resolver)
 {
-    if (!isAbsolutePath(path))
+    if (path.empty())
         return std::nullopt;
 
     auto check_local_path_inside_user_files = [&](const std::string & local_path)
@@ -433,15 +425,98 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         return (user_files_path / std::filesystem::relative(local_path, user_files_path)).lexically_normal().string();
     };
 
+    /// A background operation has no user whose grants could allow the path. Returns whether the grant is to be checked.
+    auto check_not_background = [&]
+    {
+        if (!context->isBackgroundContext())
+            return true;
+        if (access_check)
+        {
+            access_check->granted = false;
+            return false;
+        }
+        throw DB::Exception(
+            DB::ErrorCodes::ACCESS_DENIED,
+            "Iceberg path '{}' outside the table location is not read by background operations",
+            maskCredentialsInURI(path));
+    };
+
+    auto check_grant = [&](AccessTypeObjects::Source source, const std::string & uri_to_check)
+    {
+        if (access_check)
+            access_check->granted = context->getAccess()->isGrantedWithFilter(
+                access_type, AccessTypeObjects::toStringSource(source), uri_to_check);
+        else
+            context->getAccess()->checkAccessWithFilter(access_type, AccessTypeObjects::toStringSource(source), uri_to_check);
+    };
+
+    /// Object keys are used verbatim, while the grant check percent-decodes URIs, so escape `%` to keep the checked key exact.
+    /// The grant check also drops empty, `.` and `..` segments, so keys with them can only match an unfiltered grant.
+    auto object_uri_for_grant_check = [](const std::string & uri, const std::string & key) -> std::string
+    {
+        if (keyHasDotOrEmptySegments(key))
+            return "";
+        return boost::replace_all_copy(uri, "%", "%25");
+    };
+
+    /// The base storage resolves a scheme-less path, which may name a key outside the table directory.
+    auto check_base_storage_access = [&]
+    {
+        if (!path_resolver)
+            return;
+
+        const auto key = path_resolver->resolve(Iceberg::IcebergPathFromMetadata::deserialize(path));
+        if (isObjectInTableDirectory(base_storage, key, base_storage, path_resolver->getTableRoot()) || !check_not_background())
+            return;
+
+        switch (base_storage->getType())
+        {
+            case ObjectStorageType::S3:
+                check_grant(
+                    AccessTypeObjects::Source::S3,
+                    object_uri_for_grant_check("s3://" + base_storage->getObjectsNamespace() + "/" + key, key));
+                return;
+            case ObjectStorageType::Local:
+                check_grant(AccessTypeObjects::Source::FILE, local_path_for_grant_check(key));
+                return;
+            /// These keys have no URI spelling that grants are written for, so only an unfiltered grant allows them.
+            case ObjectStorageType::Azure:
+                check_grant(AccessTypeObjects::Source::AZURE, "");
+                return;
+            case ObjectStorageType::HDFS:
+                check_grant(AccessTypeObjects::Source::HDFS, "");
+                return;
+            case ObjectStorageType::None:
+            case ObjectStorageType::Web:
+            case ObjectStorageType::Max:
+                break;
+        }
+
+        if (access_check)
+        {
+            access_check->granted = false;
+            return;
+        }
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg path '{}' outside the table directory is not supported for storage '{}'",
+            maskCredentialsInURI(path),
+            base_storage->getName());
+    };
+
     SchemeAuthorityKey table_location_decomposed{table_location};
     SchemeAuthorityKey target_decomposed{path};
 
-    if (target_decomposed.scheme.empty() && target_decomposed.key.starts_with('/'))
+    if (target_decomposed.scheme.empty())
     {
         const bool base_is_local = base_storage->getType() == ObjectStorageType::Local;
 
-        if (!base_is_local || keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
+        if (!target_decomposed.key.starts_with('/') || !base_is_local
+            || keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
+        {
+            check_base_storage_access();
             return std::nullopt;
+        }
 
         target_decomposed.scheme = "file";
     }
@@ -452,19 +527,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     /// Runs before any diagnostic that names the external path, host or object version.
     auto check_access = [&]
     {
-        /// A background operation has no user whose grants could allow the path.
-        if (context->isBackgroundContext())
-        {
-            if (access_check)
-            {
-                access_check->granted = false;
-                return;
-            }
-            throw DB::Exception(
-                DB::ErrorCodes::ACCESS_DENIED,
-                "Iceberg path '{}' outside the table location is not read by background operations",
-                maskCredentialsInURI(path));
-        }
+        if (!check_not_background())
+            return;
 
         const auto source = sourceForScheme(target_scheme_normalized);
         if (!source)
@@ -475,19 +539,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
         }
 
-        /// Object keys are used verbatim, while the grant check percent-decodes URIs, so escape `%` to keep the checked key exact.
-        /// The grant check also drops empty, `.` and `..` segments, so keys with them can only match an unfiltered grant.
-        std::string uri_to_check;
         if (target_scheme_normalized == "file")
-            uri_to_check = local_path_for_grant_check(target_decomposed.key);
-        else if (!keyHasDotOrEmptySegments(target_decomposed.key))
-            uri_to_check = boost::replace_all_copy(path, "%", "%25");
-        if (access_check)
-            access_check->granted = context->getAccess()->isGrantedWithFilter(
-                access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
+            check_grant(*source, local_path_for_grant_check(target_decomposed.key));
         else
-            context->getAccess()->checkAccessWithFilter(
-                access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
+            check_grant(*source, object_uri_for_grant_check(path, target_decomposed.key));
     };
 
     if (target_scheme_normalized == "file")
@@ -1026,10 +1081,11 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
     ExternalStorageCache & external_storages,
-    const DB::ContextPtr & context)
+    const DB::ContextPtr & context,
+    const Iceberg::IcebergPathResolver * path_resolver)
 {
     return tryResolveObjectStorageForPathImpl(
-        table_location, path, base_storage, external_storages, context, DB::AccessType::READ, /*access_check*/ nullptr);
+        table_location, path, base_storage, external_storages, context, DB::AccessType::READ, /*access_check*/ nullptr, path_resolver);
 }
 
 static PathAccessCheck checkPathAccess(
@@ -1037,11 +1093,13 @@ static PathAccessCheck checkPathAccess(
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
     const DB::ContextPtr & context,
-    DB::AccessType access_type)
+    DB::AccessType access_type,
+    const Iceberg::IcebergPathResolver & path_resolver)
 {
     ExternalStorageCache unused_storages;
     PathAccessCheck access_check;
-    tryResolveObjectStorageForPathImpl(table_location, path, base_storage, unused_storages, context, access_type, &access_check);
+    tryResolveObjectStorageForPathImpl(
+        table_location, path, base_storage, unused_storages, context, access_type, &access_check, &path_resolver);
     return access_check;
 }
 
@@ -1049,18 +1107,20 @@ bool isPathReadGranted(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
-    const DB::ContextPtr & context)
+    const DB::ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver)
 {
-    return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::READ).granted;
+    return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::READ, path_resolver).granted;
 }
 
 bool isPathWriteGranted(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
-    const DB::ContextPtr & context)
+    const DB::ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver)
 {
-    return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::WRITE).granted;
+    return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::WRITE, path_resolver).granted;
 }
 
 void checkPathReadable(
@@ -1068,9 +1128,10 @@ void checkPathReadable(
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
     ExternalStorageCache & external_storages,
-    const DB::ContextPtr & context)
+    const DB::ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver)
 {
-    tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context);
+    tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context, &path_resolver);
 }
 
 std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
@@ -1081,7 +1142,7 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const DB::ContextPtr & context,
     const Iceberg::IcebergPathResolver & path_resolver)
 {
-    if (auto resolved = tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context))
+    if (auto resolved = tryResolveObjectStorageForPath(table_location, path, base_storage, external_storages, context, &path_resolver))
         return *resolved;
     return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
 }
@@ -1095,7 +1156,8 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForWrite(
     const Iceberg::IcebergPathResolver & path_resolver)
 {
     if (auto resolved = tryResolveObjectStorageForPathImpl(
-            table_location, path, base_storage, external_storages, context, DB::AccessType::WRITE, /*access_check*/ nullptr))
+            table_location, path, base_storage, external_storages, context, DB::AccessType::WRITE, /*access_check*/ nullptr,
+            &path_resolver))
         return *resolved;
     return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
 }
@@ -1127,8 +1189,9 @@ void resolveObjectStorageFromDataLakeMetadata(
     if (!metadata_path)
         return;
 
-    /// Base-storage tasks already carry the key resolved by the coordinator.
-    if (auto resolved = tryResolveObjectStorageForPath(table_location, *metadata_path, base_storage, external_storages, context);
+    /// Base-storage tasks already carry the key resolved, and its grant checked, by the coordinator.
+    if (auto resolved = tryResolveObjectStorageForPath(
+            table_location, *metadata_path, base_storage, external_storages, context, /*path_resolver*/ nullptr);
         resolved && resolved->first != base_storage)
     {
         iceberg_info->setResolvedStorage(resolved->first);

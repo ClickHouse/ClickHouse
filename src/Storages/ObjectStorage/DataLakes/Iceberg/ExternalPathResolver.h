@@ -41,14 +41,16 @@ bool isPathReadGranted(
     const std::string & table_location,
     const std::string & path,
     const ObjectStoragePtr & base_storage,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver);
 
 /// Checks the `WRITE` grant the same way, for deleting a file referenced by the table.
 bool isPathWriteGranted(
     const std::string & table_location,
     const std::string & path,
     const ObjectStoragePtr & base_storage,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver);
 
 /// Resolves the storage of `path` as a scan does, so a metadata-only answer fails where the scan would:
 /// on a missing grant, a rejected path, or the credential restrictions of a new `S3` client.
@@ -57,7 +59,8 @@ void checkPathReadable(
     const std::string & path,
     const ObjectStoragePtr & base_storage,
     ExternalStorageCache & external_storages,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const Iceberg::IcebergPathResolver & path_resolver);
 
 std::pair<ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const std::string & table_location,

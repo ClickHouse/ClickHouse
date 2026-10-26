@@ -399,7 +399,9 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
             for (const auto & entry : actual_data_snapshot->manifest_list_entries)
             {
                 /// Manifests outside the table location need a user grant, so only queries read them.
-                if (!isPathReadGranted(persistent_components.table_location, entry.manifest_file_path.serialize(), object_storage, ctx))
+                if (!isPathReadGranted(
+                        persistent_components.table_location, entry.manifest_file_path.serialize(), object_storage, ctx,
+                        persistent_components.path_resolver))
                     continue;
 
                 /// second, we fetch, parse and cache each manifest file
@@ -1569,7 +1571,8 @@ IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
                     persistent_components.table_location,
                     processed->parsed_entry->file_path_key.serialize(),
                     object_storage,
-                    local_context))
+                    local_context,
+                    persistent_components.path_resolver))
                 continue;
 
             result.push_back(buildIcebergFileRecord(processed, manifest_list_entry.added_snapshot_id));
@@ -1715,7 +1718,8 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
                 data_file->parsed_entry->file_path_key.serialize(),
                 object_storage,
                 *external_storages,
-                context);
+                context,
+                persistent_components.path_resolver);
 
             if (pruning_filter)
             {
@@ -1796,7 +1800,8 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
                 processed->parsed_entry->file_path_key.serialize(),
                 object_storage,
                 *external_storages,
-                local_context);
+                local_context,
+                persistent_components.path_resolver);
 
         if (summary_total_rows.has_value())
             continue;
@@ -1839,7 +1844,8 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
                 processed->parsed_entry->file_path_key.serialize(),
                 object_storage,
                 *external_storages,
-                local_context);
+                local_context,
+                persistent_components.path_resolver);
 
         auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
@@ -2197,7 +2203,8 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_p
     for (const auto & file : external_files)
     {
         auto path = file.path.serialize();
-        if (!isPathWriteGranted(persistent_components.table_location, path, object_storage, query_context))
+        if (!isPathWriteGranted(
+                persistent_components.table_location, path, object_storage, query_context, persistent_components.path_resolver))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Not enough privileges to drop the Iceberg table: `iceberg_delete_data_on_drop` deletes the file '{}' "

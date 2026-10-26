@@ -17,6 +17,7 @@ from .external_paths_utils import (
     _download_table_for_relocation,
     _external_data_files_in_another_bucket,
     _external_data_files_in_the_same_bucket,
+    _move_files_to_bucket,
     _rewrite_manifests_and_reupload,
     _rewrite_paths_to_local_uri,
     find_files,
@@ -243,6 +244,48 @@ def test_delete_data_on_drop_write_grant_does_not_normalize_dot_segments(started
 
     error = instance.query_and_get_error(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
     assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"DROP USER {user}")
+
+
+def test_delete_data_on_drop_requires_write_grant_on_scheme_less_paths(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_drop_scheme_less_grant_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+    bucket = started_cluster.minio_bucket
+    external_prefix = f"external_data/{TABLE_NAME}"
+    external_uri_regex = f"s3://{bucket}/{external_prefix}/.*"
+
+    create_and_upload_table(started_cluster, TABLE_NAME)
+    # A rooted path without a scheme names a key of the table's bucket, here outside the table directory.
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster, host_path, base_path, lambda p: f"/{external_prefix}/{os.path.basename(p)}")
+    _move_files_to_bucket(
+        started_cluster, find_files(os.path.join(host_path, "data"), ".parquet"), bucket, host_path, base_path,
+        external_prefix)
+    shutil.rmtree(temp_dir)
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+
+    def count_objects(prefix):
+        return sum(1 for _ in started_cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True))
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT DROP TABLE ON {TABLE_NAME} TO {user}")
+
+    error = instance.query_and_get_error(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+    assert "ACCESS_DENIED" in error, error
+    assert count_objects(f"{external_prefix}/") > 0
+
+    instance.query(f"GRANT WRITE ON S3('{external_uri_regex}') TO {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+
+    assert count_objects(f"{base_path}/") == 0
+    assert count_objects(f"{external_prefix}/") == 0
 
     instance.query(f"DROP USER {user}")
 
