@@ -1,4 +1,6 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel: the test counts the misses of the process-wide statistics cache, but concurrent queries load the statistics
+-- of all tables (`system.parts_columns`) and evict the entries of reattached parts (destroyed late, they share the key).
 -- Tag no-parallel-replicas: the statistics are loaded on the initiator only, and the test counts the loads.
 
 -- The statistics of many parts are loaded in parallel (up to `max_threads` threads) by the part pruning,
@@ -73,6 +75,14 @@ SELECT count(), sum(a) FROM t_stats_parallel_load WHERE b = 3 AND c < 10 AND a %
 SETTINGS use_statistics = 1, use_statistics_for_part_pruning = 0, max_threads = 1, log_comment = 'stats_parallel_load_prewhere_cold_sequential';
 SELECT count(), sum(a) FROM t_stats_parallel_load WHERE b = 3 AND c < 10 AND a % 3 = 0
 SETTINGS use_statistics = 1, use_statistics_for_part_pruning = 0, max_threads = 8, log_comment = 'stats_parallel_load_prewhere_warm_parallel';
+
+-- Mixed: the statistics of a few parts in the middle are in memory, the other parts are loaded from disk around them.
+DETACH TABLE t_stats_parallel_load;
+ATTACH TABLE t_stats_parallel_load;
+SELECT count(), sum(a) FROM t_stats_parallel_load WHERE b = 3 AND c < 10 AND a % 3 = 0 AND _part IN ('all_11_11_0', 'all_22_22_0', 'all_33_33_0')
+SETTINGS use_statistics = 1, use_statistics_for_part_pruning = 0, max_threads = 8, log_comment = 'stats_parallel_load_prewhere_mixed_warmup';
+SELECT count(), sum(a) FROM t_stats_parallel_load WHERE b = 3 AND c < 10 AND a % 3 = 0
+SETTINGS use_statistics = 1, use_statistics_for_part_pruning = 0, max_threads = 2, log_comment = 'stats_parallel_load_prewhere_mixed_parallel';
 
 -- Both: the statistics of the parts left after pruning are loaded for the PREWHERE.
 DETACH TABLE t_stats_parallel_load;
