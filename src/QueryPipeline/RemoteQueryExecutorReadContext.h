@@ -19,17 +19,16 @@ class Socket;
 namespace DB
 {
 
-template <typename TMutex>
-class RemoteQueryExecutorImpl;
+class MultiplexedConnections;
+class RemoteQueryExecutor;
 
-template <typename TMutex>
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
     /// fragment_trace_context_: the tracing context of the executor's fragment span, which the fiber
     /// runs inside (the executor owns and finishes that span; empty when the query is not traced).
     explicit RemoteQueryExecutorReadContext(
-        RemoteQueryExecutorImpl<TMutex> & executor_,
+        RemoteQueryExecutor & executor_,
         bool suspend_when_query_sent_,
         bool read_packet_type_separately_,
         OpenTelemetry::TracingContextOnThread fragment_trace_context_);
@@ -99,7 +98,7 @@ private:
     std::atomic<PacketPart> has_read_packet_part = PacketPart::None;
     Packet packet;
 
-    RemoteQueryExecutorImpl<TMutex> & executor;
+    RemoteQueryExecutor & executor;
 
     /// Here we have three descriptors we are going to wait:
     /// * connection_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
@@ -128,7 +127,6 @@ private:
 
 namespace DB
 {
-template <typename TMutex>
 class RemoteQueryExecutorReadContext
 {
 public:

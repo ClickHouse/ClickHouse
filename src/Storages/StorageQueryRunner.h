@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class IQueryRunnerDispatcher;
+class QueryRunnerDispatcher;
 enum class QueryRunnerMode : uint8_t;
 struct QueryRunnerSettings;
 class QueryStatus;
@@ -39,7 +39,7 @@ public:
 
 private:
     QueryRunnerMode mode;
-    std::unique_ptr<IQueryRunnerDispatcher> dispatcher;
+    std::unique_ptr<QueryRunnerDispatcher> dispatcher;
     LoggerPtr log;
 };
 

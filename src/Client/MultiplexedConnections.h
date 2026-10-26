@@ -16,7 +16,6 @@ namespace DB
   *
   * The interface is almost the same as Connection.
   */
-template <typename TMutex>
 class MultiplexedConnections final : public IConnections
 {
 public:
@@ -116,7 +115,7 @@ private:
     size_t distributed_fanout = 0;
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
-    mutable TMutex cancel_mutex;
+    mutable std::mutex cancel_mutex;
 
     friend struct RemoteQueryExecutorRoutine;
 };

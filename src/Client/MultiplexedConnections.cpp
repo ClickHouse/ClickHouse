@@ -1,6 +1,5 @@
 #include <Client/MultiplexedConnections.h>
 
-#include <Common/SilkFiberMutex.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
 #include <Client/SecondaryQuerySettings.h>
 #include <Core/Protocol.h>
@@ -38,8 +37,7 @@ namespace ErrorCodes
 }
 
 
-template <typename TMutex>
-MultiplexedConnections<TMutex>::MultiplexedConnections(Connection & connection, ContextPtr context_, const ThrottlerPtr & throttler)
+MultiplexedConnections::MultiplexedConnections(Connection & connection, ContextPtr context_, const ThrottlerPtr & throttler)
     : context(std::move(context_)), settings(context->getSettingsRef())
 {
     connection.setThrottler(throttler);
@@ -52,8 +50,7 @@ MultiplexedConnections<TMutex>::MultiplexedConnections(Connection & connection, 
 }
 
 
-template <typename TMutex>
-MultiplexedConnections<TMutex>::MultiplexedConnections(
+MultiplexedConnections::MultiplexedConnections(
     std::shared_ptr<Connection> connection_ptr_, ContextPtr context_, const ThrottlerPtr & throttler)
     : context(std::move(context_)), settings(context->getSettingsRef()), connection_ptr(connection_ptr_)
 {
@@ -66,8 +63,7 @@ MultiplexedConnections<TMutex>::MultiplexedConnections(
     active_connection_count = 1;
 }
 
-template <typename TMutex>
-MultiplexedConnections<TMutex>::MultiplexedConnections(
+MultiplexedConnections::MultiplexedConnections(
     std::vector<IConnectionPool::Entry> && connections, ContextPtr context_, const ThrottlerPtr & throttler)
     : context(std::move(context_)), settings(context->getSettingsRef())
 {
@@ -91,8 +87,7 @@ MultiplexedConnections<TMutex>::MultiplexedConnections(
     active_connection_count = connections.size();
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendScalarsData(Scalars & data)
+void MultiplexedConnections::sendScalarsData(Scalars & data)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -107,8 +102,7 @@ void MultiplexedConnections<TMutex>::sendScalarsData(Scalars & data)
     }
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendQueryPlan(const QueryPlan & query_plan)
+void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -123,8 +117,7 @@ void MultiplexedConnections<TMutex>::sendQueryPlan(const QueryPlan & query_plan)
     }
 }
 
-template <typename TMutex>
-bool MultiplexedConnections<TMutex>::supportsQueryPlanSerializationVersion(UInt64 version) const
+bool MultiplexedConnections::supportsQueryPlanSerializationVersion(UInt64 version) const
 {
     for (const ReplicaState & state : replica_states)
     {
@@ -135,8 +128,7 @@ bool MultiplexedConnections<TMutex>::supportsQueryPlanSerializationVersion(UInt6
     return true;
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendExternalTablesData(std::vector<ExternalTablesData> & data)
+void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -158,8 +150,7 @@ void MultiplexedConnections<TMutex>::sendExternalTablesData(std::vector<External
     }
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendQuery(
+void MultiplexedConnections::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
     const String & query_id,
@@ -246,8 +237,7 @@ void MultiplexedConnections<TMutex>::sendQuery(
 }
 
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
+void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
@@ -256,8 +246,7 @@ void MultiplexedConnections<TMutex>::sendClusterFunctionReadTaskResponse(const C
 }
 
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
+void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
@@ -266,8 +255,7 @@ void MultiplexedConnections<TMutex>::sendMergeTreeReadTaskResponse(const Paralle
 }
 
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
@@ -276,16 +264,14 @@ void MultiplexedConnections<TMutex>::sendMergeTreeAllRangesAnnouncementResponse(
 }
 
 
-template <typename TMutex>
-Packet MultiplexedConnections<TMutex>::receivePacket()
+Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
     Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::disconnect()
+void MultiplexedConnections::disconnect()
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -300,8 +286,7 @@ void MultiplexedConnections<TMutex>::disconnect()
     }
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::sendCancel()
+void MultiplexedConnections::sendCancel()
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -318,8 +303,7 @@ void MultiplexedConnections<TMutex>::sendCancel()
     cancelled = true;
 }
 
-template <typename TMutex>
-Packet MultiplexedConnections<TMutex>::drain()
+Packet MultiplexedConnections::drain()
 {
     std::lock_guard lock(cancel_mutex);
 
@@ -359,15 +343,13 @@ Packet MultiplexedConnections<TMutex>::drain()
     return res;
 }
 
-template <typename TMutex>
-std::string MultiplexedConnections<TMutex>::dumpAddresses() const
+std::string MultiplexedConnections::dumpAddresses() const
 {
     std::lock_guard lock(cancel_mutex);
     return dumpAddressesUnlocked();
 }
 
-template <typename TMutex>
-std::string MultiplexedConnections<TMutex>::dumpAddressesUnlocked() const
+std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
     WriteBufferFromOwnString buf;
@@ -384,8 +366,7 @@ std::string MultiplexedConnections<TMutex>::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-template <typename TMutex>
-UInt64 MultiplexedConnections<TMutex>::receivePacketTypeUnlocked(AsyncCallback async_callback)
+UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
@@ -415,8 +396,7 @@ UInt64 MultiplexedConnections<TMutex>::receivePacketTypeUnlocked(AsyncCallback a
     }
 }
 
-template <typename TMutex>
-Packet MultiplexedConnections<TMutex>::receivePacketUnlocked(AsyncCallback async_callback)
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
@@ -487,8 +467,7 @@ Packet MultiplexedConnections<TMutex>::receivePacketUnlocked(AsyncCallback async
     return packet;
 }
 
-template <typename TMutex>
-typename MultiplexedConnections<TMutex>::ReplicaState & MultiplexedConnections<TMutex>::getReplicaForReading()
+MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading()
 {
     if (replica_states.size() == 1)
         return replica_states[0];
@@ -568,16 +547,14 @@ typename MultiplexedConnections<TMutex>::ReplicaState & MultiplexedConnections<T
     return replica_states[fd_to_replica_state_idx.at(socket.impl()->sockfd())];
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::invalidateReplica(ReplicaState & state)
+void MultiplexedConnections::invalidateReplica(ReplicaState & state)
 {
     state.connection = nullptr;
     state.pool_entry = IConnectionPool::Entry();
     --active_connection_count;
 }
 
-template <typename TMutex>
-void MultiplexedConnections<TMutex>::setAsyncCallback(AsyncCallback async_callback)
+void MultiplexedConnections::setAsyncCallback(AsyncCallback async_callback)
 {
     for (ReplicaState & state : replica_states)
     {
@@ -587,10 +564,5 @@ void MultiplexedConnections<TMutex>::setAsyncCallback(AsyncCallback async_callba
 }
 
 // NOLINTEND(bugprone-undefined-memory-manipulation)
-
-template class MultiplexedConnections<std::mutex>;
-#if USE_SILK
-template class MultiplexedConnections<Silk::FiberMutex>;
-#endif
 
 }

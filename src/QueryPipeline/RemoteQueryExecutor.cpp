@@ -9,7 +9,6 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/SilkFiberMutex.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -107,8 +106,7 @@ ThrottlerPtr getThrottler(const ContextPtr & context)
 }
 
 
-template <typename TMutex>
-RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
+RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_,
     SharedHeader header_,
     ContextPtr context_,
@@ -135,8 +133,7 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan is not passed for QueryPlan processing stage");
 }
 
-template <typename TMutex>
-RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
+RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolPtr pool,
     const String & query_,
     SharedHeader header_,
@@ -148,7 +145,7 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
     std::optional<Extension> extension_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
     std::shared_ptr<const QueryPlan> query_plan_)
-    : RemoteQueryExecutorImpl(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, query_plan_, extension_)
 {
     create_connections = [this, pool, throttler, extension_, connection_pool_with_failover_](AsyncCallback)
     {
@@ -228,7 +225,7 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
                 LOG_DEBUG(log, "Replica is not usable for remote query execution: {}. {}", pool->getAddress(), fail_message);
         }
 
-        auto res = std::make_unique<MultiplexedConnections<TMutex>>(std::move(connection_entries), context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
 
@@ -236,8 +233,7 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
     };
 }
 
-template <typename TMutex>
-RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
+RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_,
     SharedHeader header_,
@@ -247,19 +243,18 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::optional<Extension> extension_)
-    : RemoteQueryExecutorImpl(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, nullptr, extension_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
     {
-        auto res = std::make_unique<MultiplexedConnections<TMutex>>(connection, context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(connection, context, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
     };
 }
 
-template <typename TMutex>
-RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
+RemoteQueryExecutor::RemoteQueryExecutor(
     ConnectionPoolEntries && connections_,
     const String & query_,
     SharedHeader header_,
@@ -271,7 +266,7 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     ConnectionPoolWithFailoverPtr pool)
-    : RemoteQueryExecutorImpl(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
     /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
     /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
@@ -279,15 +274,14 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
     /// outlive all Entry objects.
     create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
     {
-        auto res = std::make_unique<MultiplexedConnections<TMutex>>(std::move(connections_), context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
         return res;
     };
 }
 
-template <typename TMutex>
-RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
+RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
     const String & query_,
     SharedHeader header_,
@@ -299,7 +293,7 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
     std::shared_ptr<const QueryPlan> query_plan_,
     std::optional<Extension> extension_,
     GetPriorityForLoadBalancing::Func priority_func_)
-    : RemoteQueryExecutorImpl(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_, priority_func_)
 {
     create_connections = [this, pool, throttler](AsyncCallback async_callback)->std::unique_ptr<IConnections>
     {
@@ -346,15 +340,14 @@ RemoteQueryExecutorImpl<TMutex>::RemoteQueryExecutorImpl(
                 timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
         }
 
-        auto res = std::make_unique<MultiplexedConnections<TMutex>>(std::move(connection_entries), context, throttler);
+        auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), context, throttler);
         if (extension && extension->replica_info)
             res->setReplicaInfo(*extension->replica_info);
         return res;
     };
 }
 
-template <typename TMutex>
-RemoteQueryExecutorImpl<TMutex>::~RemoteQueryExecutorImpl()
+RemoteQueryExecutor::~RemoteQueryExecutor()
 {
     /// We should finish establishing connections to disconnect it later,
     /// so these connections won't be in the out-of-sync state.
@@ -470,8 +463,7 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
     return res;
 }
 
-template <typename TMutex>
-OpenTelemetry::SpanAttributes RemoteQueryExecutorImpl<TMutex>::getFragmentSpanAttributes() const
+OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() const
 {
     /// Keys follow the conventions of the spans of `DistributedSink`.
     OpenTelemetry::SpanAttributes attributes;
@@ -491,8 +483,7 @@ OpenTelemetry::SpanAttributes RemoteQueryExecutorImpl<TMutex>::getFragmentSpanAt
     return attributes;
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::openFragmentSpan()
+void RemoteQueryExecutor::openFragmentSpan()
 {
     const auto & trace_context = OpenTelemetry::CurrentContext();
     if (fragment_span || !trace_context.isTraceEnabled())
@@ -509,22 +500,19 @@ void RemoteQueryExecutorImpl<TMutex>::openFragmentSpan()
     fragment_trace_context.span_id = fragment_span->getSpanId();
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
+void RemoteQueryExecutor::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
 {
     if (fragment_span)
         fragment_span->addAttribute(std::move(attribute));
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
+void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
 {
     if (fragment_span)
         fragment_span->finish(status, std::move(status_message));
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::finishFragmentSpanCancelled(std::string_view reason) noexcept
+void RemoteQueryExecutor::finishFragmentSpanCancelled(std::string_view reason) noexcept
 {
     /// Neither a success nor a failure: the status stays UNSET and the attributes say why.
     addFragmentSpanAttribute({"clickhouse.cancelled", 1});
@@ -532,31 +520,27 @@ void RemoteQueryExecutorImpl<TMutex>::finishFragmentSpanCancelled(std::string_vi
     finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::finishFragmentSpanForSkippedShard(String status_message) noexcept
+void RemoteQueryExecutor::finishFragmentSpanForSkippedShard(String status_message) noexcept
 {
     /// `skip_unavailable_shards` lets the query tolerate this failure, but the fragment itself failed: record it as ERROR.
     addFragmentSpanAttribute({"clickhouse.shard_skipped", 1});
     finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, std::move(status_message));
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::finishFragmentSpanForUnavailableReplica() noexcept
+void RemoteQueryExecutor::finishFragmentSpanForUnavailableReplica() noexcept
 {
     /// Nothing was delivered and nothing failed: the coordinator reassigns this replica's work.
     addFragmentSpanAttribute({"clickhouse.replica_unavailable", 1});
     finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::failFragmentSpan() noexcept
+void RemoteQueryExecutor::failFragmentSpan() noexcept
 {
     LockAndBlocker lock(was_cancelled_mutex);
     finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
+void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
     /// Query cannot be canceled in the middle of the send query,
     /// since there are multiple packets:
@@ -573,8 +557,7 @@ void RemoteQueryExecutorImpl<TMutex>::sendQuery(ClientInfo::QueryKind query_kind
     sendQueryUnlocked(query_kind, async_callback);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
+void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
     /// Emulate a concurrent cancel() landing right before the query is sent.
     fiu_do_on(FailPoints::remote_query_executor_cancel_before_send, { was_cancelled = true; });
@@ -723,8 +706,7 @@ void RemoteQueryExecutorImpl<TMutex>::sendQueryUnlocked(ClientInfo::QueryKind qu
     sendExternalTables();
 }
 
-template <typename TMutex>
-int RemoteQueryExecutorImpl<TMutex>::sendQueryAsync()
+int RemoteQueryExecutor::sendQueryAsync()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Failing to build the read context, or a failure inside the fiber while establishing the
@@ -760,8 +742,7 @@ int RemoteQueryExecutorImpl<TMutex>::sendQueryAsync()
 #endif
 }
 
-template <typename TMutex>
-Block RemoteQueryExecutorImpl<TMutex>::readBlock()
+Block RemoteQueryExecutor::readBlock()
 {
     while (true)
     {
@@ -773,8 +754,7 @@ Block RemoteQueryExecutorImpl<TMutex>::readBlock()
 }
 
 
-template <typename TMutex>
-typename RemoteQueryExecutorImpl<TMutex>::ReadResult RemoteQueryExecutorImpl<TMutex>::read()
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 {
     /// A local failure while reading the fragment's data (e.g. a network error in `receivePacket`, or an unknown packet)
     /// is this fragment's failure: record it on the span instead of letting a later backstop mark it cancelled.
@@ -822,8 +802,7 @@ typename RemoteQueryExecutorImpl<TMutex>::ReadResult RemoteQueryExecutorImpl<TMu
     }
 }
 
-template <typename TMutex>
-typename RemoteQueryExecutorImpl<TMutex>::ReadResult RemoteQueryExecutorImpl<TMutex>::readAsync()
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Failing to build the read context, or a local failure while processing this fragment's packets
@@ -907,8 +886,7 @@ typename RemoteQueryExecutorImpl<TMutex>::ReadResult RemoteQueryExecutorImpl<TMu
 #endif
 }
 
-template <typename TMutex>
-typename RemoteQueryExecutorImpl<TMutex>::ReadResult RemoteQueryExecutorImpl<TMutex>::processPacket(Packet packet)
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
@@ -1033,8 +1011,7 @@ typename RemoteQueryExecutorImpl<TMutex>::ReadResult RemoteQueryExecutorImpl<TMu
     return ReadResult(ReadResult::Type::Nothing);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::processReadTaskRequest()
+void RemoteQueryExecutor::processReadTaskRequest()
 {
     /// A ReadTaskRequest arrives only from a worker running a cluster table function or object storage
     /// source with distributed reads. Serving it needs a task iterator, which only the legitimate
@@ -1068,8 +1045,7 @@ void RemoteQueryExecutorImpl<TMutex>::processReadTaskRequest()
     connections->sendClusterFunctionReadTaskResponse(*response);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::processMergeTreeReadTaskRequest(ParallelReadRequest request)
+void RemoteQueryExecutor::processMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
@@ -1079,8 +1055,7 @@ void RemoteQueryExecutorImpl<TMutex>::processMergeTreeReadTaskRequest(ParallelRe
     connections->sendMergeTreeReadTaskResponse(response);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement)
+void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
@@ -1097,8 +1072,7 @@ void RemoteQueryExecutorImpl<TMutex>::processMergeTreeInitialReadAnnouncement(In
         connections->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::finish()
+void RemoteQueryExecutor::finish()
 {
     {
         std::lock_guard gate(finish_gate_mutex);
@@ -1120,8 +1094,7 @@ void RemoteQueryExecutorImpl<TMutex>::finish()
     finishFragmentSpanCancelled("limit");
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::finishUnlocked()
+void RemoteQueryExecutor::finishUnlocked()
 {
     /** If one of:
       * - nothing started to do;
@@ -1268,8 +1241,7 @@ void RemoteQueryExecutorImpl<TMutex>::finishUnlocked()
     }
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::cancel()
+void RemoteQueryExecutor::cancel()
 {
     /// `finish` can hold `was_cancelled_mutex` across an unbounded blocking read, and this runs from a
     /// sweep that must not stall, so it must not wait for that mutex. Taking it while still holding the
@@ -1288,8 +1260,7 @@ void RemoteQueryExecutorImpl<TMutex>::cancel()
     cancelUnlocked();
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::cancelUnlocked()
+void RemoteQueryExecutor::cancelUnlocked()
 {
     {
         LockAndBlocker lock(external_tables_mutex);
@@ -1307,14 +1278,12 @@ void RemoteQueryExecutorImpl<TMutex>::cancelUnlocked()
     finishFragmentSpanCancelled("initiator");
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::sendScalars()
+void RemoteQueryExecutor::sendScalars()
 {
     connections->sendScalarsData(scalars);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::sendExternalTables()
+void RemoteQueryExecutor::sendExternalTables()
 {
     size_t count = connections->size();
 
@@ -1387,8 +1356,7 @@ void RemoteQueryExecutorImpl<TMutex>::sendExternalTables()
     connections->sendExternalTablesData(external_tables_data);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::tryCancel(const char * reason)
+void RemoteQueryExecutor::tryCancel(const char * reason)
 {
     if (was_cancelled)
         return;
@@ -1431,20 +1399,17 @@ void RemoteQueryExecutorImpl<TMutex>::tryCancel(const char * reason)
         drain_was_skipped = true;
 }
 
-template <typename TMutex>
-bool RemoteQueryExecutorImpl<TMutex>::isQueryPending() const
+bool RemoteQueryExecutor::isQueryPending() const
 {
     return (sent_query || read_context) && !finished;
 }
 
-template <typename TMutex>
-bool RemoteQueryExecutorImpl<TMutex>::hasThrownException() const
+bool RemoteQueryExecutor::hasThrownException() const
 {
     return got_exception_from_replica || got_unknown_packet_from_replica;
 }
 
-template <typename TMutex>
-bool RemoteQueryExecutorImpl<TMutex>::shouldIgnoreShardException(int exception_code) const
+bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
 {
     if (!skip_unavailable_shards)
         return false;
@@ -1469,8 +1434,7 @@ bool RemoteQueryExecutorImpl<TMutex>::shouldIgnoreShardException(int exception_c
     }
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::setProgressCallback(ProgressCallback callback)
+void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     progress_callback = std::move(callback);
@@ -1479,21 +1443,18 @@ void RemoteQueryExecutorImpl<TMutex>::setProgressCallback(ProgressCallback callb
         extension->parallel_reading_coordinator->setProgressCallback(progress_callback);
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::setProfileInfoCallback(ProfileInfoCallback callback)
+void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
 {
     LockAndBlocker guard(was_cancelled_mutex);
     profile_info_callback = std::move(callback);
 }
 
-template <typename TMutex>
-bool RemoteQueryExecutorImpl<TMutex>::shouldSkipUnavailableShard() const
+bool RemoteQueryExecutor::shouldSkipUnavailableShard() const
 {
     return context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size());
 }
 
-template <typename TMutex>
-bool RemoteQueryExecutorImpl<TMutex>::needToSkipUnavailableShard()
+bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
     if (!shouldSkipUnavailableShard())
         return false;
@@ -1502,8 +1463,7 @@ bool RemoteQueryExecutorImpl<TMutex>::needToSkipUnavailableShard()
     return true;
 }
 
-template <typename TMutex>
-void RemoteQueryExecutorImpl<TMutex>::reportShardSkipped()
+void RemoteQueryExecutor::reportShardSkipped()
 {
     if (shard_skip_reported)
         return;
@@ -1518,8 +1478,7 @@ void RemoteQueryExecutorImpl<TMutex>::reportShardSkipped()
         unavailable_shard_tracker->onShardSkipped(got_data_from_replica);
 }
 
-template <typename TMutex>
-bool RemoteQueryExecutorImpl<TMutex>::processParallelReplicaPacketIfAny()
+bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
@@ -1557,9 +1516,4 @@ bool RemoteQueryExecutorImpl<TMutex>::processParallelReplicaPacketIfAny()
 
     return false;
 }
-
-template class RemoteQueryExecutorImpl<std::mutex>;
-#if USE_SILK
-template class RemoteQueryExecutorImpl<Silk::FiberMutex>;
-#endif
 }

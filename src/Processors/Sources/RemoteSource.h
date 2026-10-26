@@ -9,14 +9,10 @@
 
 #include <Common/EventFD.h>
 
-#include <mutex>
-
 namespace DB
 {
 
-template <typename TMutex>
-class RemoteQueryExecutorImpl;
-using RemoteQueryExecutor = RemoteQueryExecutorImpl<std::mutex>;
+class RemoteQueryExecutor;
 using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 
 /// Source from RemoteQueryExecutor. Executes remote query and returns query result chunks.

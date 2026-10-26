@@ -102,6 +102,12 @@ Because the engine discards query results, it always runs the dispatched queries
 `discard_query_data = 1`, so the result data of SELECT queries is not transferred over the network
 (this overrides any `discard_query_data` value set in the `settings` column).
 
+The `skip_unavailable_shards` and `skip_unavailable_shards_mode` settings of the `INSERT` query apply to
+the dispatch of its queries: with `skip_unavailable_shards = 1`, a query whose shard has no reachable
+replica, or that fails on the remote server with an exception covered by `skip_unavailable_shards_mode`, is
+skipped: it is still recorded as failed in `system.query_log` on the initiating server, but the engine only
+logs a warning and counts it in the `DistributedShardsSkipped` profile event.
+
 ### Fibers {#fibers}
 
 In the cluster mode, dispatching a query mostly means waiting for the remote server, so occupying an

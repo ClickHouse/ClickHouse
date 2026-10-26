@@ -53,7 +53,6 @@ class NativeWriter;
   */
 class Connection : public IServerConnection
 {
-    template <typename TMutex>
     friend class MultiplexedConnections;
 
 public:

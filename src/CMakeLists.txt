@@ -597,7 +597,7 @@ if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
 if (TARGET ch_contrib::silk_fibers)
-    target_link_libraries (dbms PUBLIC ch_contrib::silk_fibers)
+    target_link_libraries (dbms PRIVATE ch_contrib::silk_fibers)
 endif()
 
 target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")

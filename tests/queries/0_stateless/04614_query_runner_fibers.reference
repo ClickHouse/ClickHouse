@@ -1,2 +1,7 @@
 42
 1
+runner_fail	ExceptionWhileProcessing	60
+runner_skip_exception_before_processing	ExceptionWhileProcessing	60
+runner_skip_table_missing	ExceptionWhileProcessing	60
+runner_skip_unavailable_only	ExceptionWhileProcessing	60
+1
