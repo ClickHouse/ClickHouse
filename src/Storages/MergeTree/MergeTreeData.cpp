@@ -6532,6 +6532,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     "disagree with the partition they are placed in",
                     backQuote(column_name));
 
+            /// The sign, version and `is_deleted` columns decide which rows survive a merge. Rewriting them in place
+            /// would change that for rows that have not been merged yet, while rows already merged away could not
+            /// be restored. `validateUpdateColumns` protects them from `UPDATE` for the same reason.
+            for (const auto * merging_column : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
+            {
+                if (!merging_column->empty() && *merging_column == column_name)
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The ALTER changes the effective expression of the MATERIALIZED column {}, which the {}MergeTree engine uses "
+                        "to merge rows. Existing parts would have to be rematerialized, and that would change which rows "
+                        "survive merges",
+                        backQuote(column_name), merging_params.getModeName());
+            }
+
             MutationCommand materialize_column;
             materialize_column.type = MutationCommand::MATERIALIZE_COLUMN;
             materialize_column.column_name = column_name;
