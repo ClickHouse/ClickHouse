@@ -18,7 +18,9 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
@@ -45,6 +47,37 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+bool isRefreshableMaterializedViewSwapTarget(const TableNode & table_node, const ContextPtr & context)
+{
+    const auto & refresh_set = context->getRefreshSet();
+    if (refresh_set.tryGetTaskForInnerTable(table_node.getStorageID()))
+        return true;
+
+    /// An `Alias` or a materialized view forwards the read to the table it names, which each replica resolves by name as well.
+    StoragePtr storage = unwrapStorageProxy(table_node.getStorage());
+    for (size_t i = 0; storage && i < 16; ++i)
+    {
+        StorageID target_id = StorageID::createEmpty();
+        if (const auto * alias = typeid_cast<const StorageAlias *>(storage.get()))
+        {
+            target_id = alias->getTargetTableId();
+            storage = alias->tryGetTargetTable();
+        }
+        else if (const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get()))
+        {
+            target_id = mv->getTargetTableId();
+            storage = mv->tryGetTargetTable();
+        }
+        else
+            break;
+
+        if (refresh_set.tryGetTaskForInnerTable(target_id))
+            return true;
+        storage = unwrapStorageProxy(storage);
+    }
+    return false;
+}
+
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -57,6 +90,11 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
         return false;
 
     if (!storage->supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+        return false;
+
+    /// Replicas resolve the table by name, so a refresh can make them read another table or none. Not checked on a follower,
+    /// which would then read the whole table outside of the coordination.
+    if (!context->getClientInfo().collaborate_with_initiator && isRefreshableMaterializedViewSwapTarget(table_node, context))
         return false;
 
     /// Parallel replicas not supported with FINAL.

@@ -52,6 +52,7 @@ public:
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
+    StorageID getTargetTableId() const { return StorageID(target_database, target_table); }
 
     /// Returns whether the current user has the specified access to every table this alias resolves
     /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.

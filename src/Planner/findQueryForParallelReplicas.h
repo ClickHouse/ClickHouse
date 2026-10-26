@@ -29,6 +29,10 @@ using ContextPtr = std::shared_ptr<const Context>;
 /// Check whether a resolved storage is eligible for parallel replicas (MergeTree, replication, no FINAL).
 bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context);
 
+/// A table that a non-APPEND refreshable materialized view replaces on every refresh, named directly (by the name the query
+/// used, since the refresh renames the replaced table) or behind an `Alias` or a materialized view.
+bool isRefreshableMaterializedViewSwapTarget(const TableNode & table_node, const ContextPtr & context);
+
 /// Same, resolving a View / MaterializedView storage to the table that would actually be read.
 bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context);
 
