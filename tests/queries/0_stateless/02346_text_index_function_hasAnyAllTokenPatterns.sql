@@ -360,3 +360,28 @@ SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS text_i
 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^a[^b]+$') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
+
+SELECT '-- pattern lists with the same concatenation are different queries';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = '10Mi';
+
+-- ['a_b%', '%c_d'] matches rows 1, 2, 4, and ['a_bc%', '%_d'] matches rows 2, 3, 4.
+-- Their regexps `^a.b`, `c.d$` and `^a.bc`, `.d$` concatenate to the same string.
+INSERT INTO tab VALUES (1, 'axb'), (2, 'axbc'), (3, 'zzd'), (4, 'cxd'), (5, 'other');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenLike(msg, ['a_b%', '%c_d']) OR hasAnyTokenLike(msg, ['a_bc%', '%_d']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenLike(msg, ['a_b%', '%c_d']) OR hasAnyTokenLike(msg, ['a_bc%', '%_d']) SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenLike(msg, ['a_b%', '%c_d']) OR hasAnyTokenLike(msg, ['a_bc%', '%_d']) SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenLike(msg, ['a_b%', '%c_d']) AND hasAnyTokenLike(msg, ['a_bc%', '%_d']);
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenLike(msg, ['a_b%', '%c_d']) AND hasAnyTokenLike(msg, ['a_bc%', '%_d']) SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenLike(msg, ['a_b%', '%c_d']) AND hasAnyTokenLike(msg, ['a_bc%', '%_d']) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;

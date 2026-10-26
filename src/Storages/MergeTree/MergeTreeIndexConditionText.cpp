@@ -104,8 +104,11 @@ void TextSearchQuery::initializeHash()
         hash_state.update(patterns.size());
         for (const auto & pattern : patterns)
         {
-            /// Sizes keep `['a.c', 'd.f']` and `['a.cd', '.f']` apart.
-            if (const auto & re2 = pattern.getRE2())
+            /// Each pattern is hashed with its size and whether it has a re2 pattern, otherwise a list of patterns
+            /// would hash the same as another list with the same concatenation, e.g. `^a.b`, `c.d$` and `^a.bc`, `.d$`.
+            const auto & re2 = pattern.getRE2();
+            hash_state.update(re2 != nullptr);
+            if (re2)
             {
                 hash_state.update(re2->pattern().size());
                 hash_state.update(re2->pattern());
