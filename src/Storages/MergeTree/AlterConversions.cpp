@@ -234,6 +234,9 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             dropped_column_name = it->rename_from;
             rename_map.erase(it);
         }
+        /// After a rename of A, the name A belongs to a column added again, which the part does not store.
+        else if (!command.clear && std::ranges::find(rename_map, command.column_name, &RenamePair::rename_from) != rename_map.end())
+            return;
 
         dropped_columns.emplace(std::move(dropped_column_name));
     }

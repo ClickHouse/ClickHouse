@@ -165,6 +165,21 @@ ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, ADD COLUMN q 
 SELECT * FROM t_alter_previous_commands_single;
 DROP TABLE t_alter_previous_commands_single;
 
+CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, ADD COLUMN q UInt32 DEFAULT 7, DROP COLUMN q SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_single;
+DROP TABLE t_alter_previous_commands_single;
+
+-- The same while the mutation is pending.
+CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+SYSTEM STOP MERGES t_alter_previous_commands_single;
+ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, ADD COLUMN q UInt32 DEFAULT 7, DROP COLUMN q SETTINGS alter_sync = 0;
+SELECT * FROM t_alter_previous_commands_single;
+SELECT uniqExact(mutation_id) FROM system.mutations WHERE database = currentDatabase() AND table = 't_alter_previous_commands_single' AND NOT is_done;
+DROP TABLE t_alter_previous_commands_single;
+
 -- DROP COLUMN IF EXISTS of the name the statement renamed away removes no stored column.
 CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_alter_previous_commands_single VALUES (42);
