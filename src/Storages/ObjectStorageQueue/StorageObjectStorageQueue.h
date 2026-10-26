@@ -207,6 +207,7 @@ private:
         ContextPtr local_context,
         bool commit_once_processed,
         bool is_direct_select,
+        bool add_deduplication_info,
         bool replay_after_abort_is_safe,
         size_t max_processed_files_override = 0);
 

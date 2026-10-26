@@ -88,6 +88,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsDeduplicateInsertMode deduplicate_insert;
+    extern const SettingsBool async_insert_deduplicate;
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
@@ -785,6 +786,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             context,
             commit_once_processed,
             /*is_direct_select=*/true,
+            /*add_deduplication_info=*/false,
             storage->replayAfterAbortIsSafe(context)));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -847,6 +849,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
+    bool add_deduplication_info,
     bool replay_after_abort_is_safe,
     size_t max_processed_files_override)
 {
@@ -859,17 +862,11 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     }
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
-    /// The same answer `streamToViews` computed for this cycle (modulo a view created or dropped in
-    /// between, the window every capture of this flag already has).
-    const bool is_deduplication_v2 = dependentViewsDeduplicateBlocks(local_context);
     /// The per-chunk deduplication token is only ever consumed by the insert into the dependent
-    /// materialized views. A direct `SELECT` inserts nowhere (`is_direct_select`); `streamToViews`
-    /// enables deduplication for the insert by setting `async_insert_deduplicate` on the context it
-    /// passes here, so ask the same question the insert itself will ask. Attaching a token to a
-    /// pipeline that never deduplicates would only make the token's own requirements - a strong
-    /// `ETag` - fail reads that are perfectly safe.
-    const bool add_deduplication_info = is_deduplication_v2 && !is_direct_select
-        && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, local_context->getSettingsRef());
+    /// materialized views, so the caller attaches it only when that insert deduplicates. Attaching a
+    /// token to a pipeline that never deduplicates would only make the token's own requirements - a
+    /// strong `ETag` - fail reads that are perfectly safe.
+    chassert(!add_deduplication_info || !is_direct_select);
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -1062,13 +1059,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
         min_insert_block_size_bytes = min_insert_block_size_bytes_for_materialized_views;
     }
-    const bool is_deduplication_v2 = dependentViewsDeduplicateBlocks(queue_context);
     if (min_insert_block_size_rows)
         queue_context->setSetting("min_insert_block_size_rows_for_materialized_views", min_insert_block_size_rows);
     if (min_insert_block_size_bytes)
         queue_context->setSetting("min_insert_block_size_bytes_for_materialized_views", min_insert_block_size_bytes);
-    if (is_deduplication_v2)
-        queue_context->setSetting("async_insert_deduplicate", 1);
+    /// The deduplicating insert mode is decided for each batch (see the loop below); this is the
+    /// value to restore for a batch that does not deduplicate.
+    const bool configured_async_insert_deduplicate = queue_context->getSettingsRef()[Setting::async_insert_deduplicate];
 
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator;
     {
@@ -1086,14 +1083,25 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     const bool parallel_inserts = table_metadata.parallel_inserts;
     const size_t threads = parallel_inserts ? 1 : processing_threads_num;
 
-    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
-        threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
+    LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {})",
+        threads, processing_threads_num, parallel_inserts);
 
     while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
         auto effective_max_files = max_files_override.load();
+
+        /// Every iteration builds a new insert pipeline from the current graph of dependent views, so
+        /// the insert mode, the deduplication token and whether this batch may be aborted and replayed
+        /// are all decided together for this pipeline, not once per cycle: a dependent target may have
+        /// started or stopped deduplicating between batches (a view added or dropped, a changed
+        /// `non_replicated_deduplication_window`).
+        const bool is_deduplication_v2 = dependentViewsDeduplicateBlocks(queue_context);
+        queue_context->setSetting("async_insert_deduplicate", static_cast<UInt64>(is_deduplication_v2 || configured_async_insert_deduplicate));
+        /// Whether the insert below actually deduplicates, asked the same way the insert itself asks.
+        const bool insert_deduplicates = is_deduplication_v2
+            && isDeduplicationEnabledForInsert(/*is_async_insert=*/true, queue_context->getSettingsRef());
 
         /// FIXME:
         /// it is possible that MV is dropped just before we start the insert,
@@ -1106,13 +1114,11 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             /*no_squash_=*/ false,
             /*no_destination=*/ true,
             /*async_insert*/ is_deduplication_v2);
-        /// Every iteration builds a new insert pipeline from the current graph of dependent views, so
-        /// whether this batch may be aborted and replayed is decided for this pipeline, not once per
-        /// cycle: a view added between batches may feed a target that does not deduplicate. The graph
-        /// is probed both before and after the pipeline is built, so that a view created or dropped
-        /// meanwhile still counts if it may be in the pipeline. The sources and the cancel callback
-        /// below share this one answer.
-        const bool replay_safe_before_pipeline = replayAfterAbortIsSafe(queue_context);
+        /// Replaying is safe only if this very insert deduplicates and every dependent target drops
+        /// the replayed rows. The graph is probed both before and after the pipeline is built, so that
+        /// a view created or dropped meanwhile still counts if it may be in the pipeline. The sources
+        /// and the cancel callback below share this one answer.
+        const bool replay_safe_before_pipeline = insert_deduplicates && replayAfterAbortIsSafe(queue_context);
         auto block_io = interpreter.execute();
         const bool replay_after_abort_is_safe = replay_safe_before_pipeline && replayAfterAbortIsSafe(queue_context);
         auto read_from_format_info = prepareReadingFromFormat(
@@ -1149,6 +1155,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
+                /*add_deduplication_info=*/insert_deduplicates,
                 replay_after_abort_is_safe,
                 effective_max_files);
 

@@ -2,6 +2,7 @@
 insert deduplicates and every dependent target drops the rows that were already inserted.
 """
 
+import concurrent.futures
 import logging
 import time
 import uuid
@@ -31,6 +32,18 @@ def started_cluster():
                 "configs/users.xml",
                 "configs/small_insert_blocks.xml",
                 "configs/deduplicate_insert_disable.xml",
+            ],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=["configs/zookeeper.xml", "configs/s3queue_log.xml"],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_deduplicate_insert_legacy",
+            user_configs=[
+                "configs/users.xml",
+                "configs/small_insert_blocks.xml",
+                "configs/deduplicate_insert_legacy.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -193,6 +206,158 @@ def test_shutdown_dedup_on_target_without_dedup_no_duplicates(
     ), f"Only {processed}/{files_to_generate} files reached Processed state"
 
     # No duplicates: the rows committed before the restart must not be inserted again.
+    actual_rows = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    assert actual_rows == expected_rows, (
+        f"Expected {expected_rows} rows in destination, got {actual_rows} "
+        f"(diff: {actual_rows - expected_rows}, {rows_before_restart} rows were "
+        f"already there before the restart)"
+    )
+
+    node.query(f"DROP TABLE {mv_table_name} SYNC")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    node.query(f"DROP TABLE {dst_table_name} SYNC")
+
+
+PAUSE_AFTER_COMMIT_FAILPOINT = "object_storage_queue_pause_after_commit"
+
+
+def wait_failpoint_paused(node, failpoint, timeout=60):
+    """Block until a background thread parks at `failpoint`, failing instead of hanging."""
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    done, _ = concurrent.futures.wait([future], timeout=timeout)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
+    pool.shutdown(wait=False)
+    future.result()
+
+
+def test_shutdown_after_target_starts_deduplicating_between_batches(started_cluster):
+    """
+    `deduplication_v2 = 1` with the legacy settings `deduplicate_insert = backward_compatible_choice`
+    and `insert_deduplicate = async_insert_deduplicate = 0`: the queue's insert deduplicates only
+    when the queue enables `async_insert_deduplicate` for it, which it does only when a dependent
+    target consults block ids.
+
+    The destination starts without a deduplication window and gets one between two batches of the
+    same streaming cycle (the `object_storage_queue_pause_after_commit` failpoint holds the cycle
+    at the batch boundary). The second batch may then be aborted on shutdown and replayed, so its
+    insert must deduplicate too: the insert mode, the deduplication token and the replay decision
+    are taken together for each batch. If the insert mode were still the one taken for the first
+    batch, the rows of the second batch inserted before the restart would be inserted again.
+    """
+    node = started_cluster.instances["instance_deduplicate_insert_legacy"]
+    table_name = f"test_shutdown_replay_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    mv_table_name = f"{table_name}_mv"
+    files_path = f"{table_name}_data"
+
+    format = "column1 Int32, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={
+            "keeper_path": f"/clickhouse/test_{table_name}",
+            "s3queue_processing_threads_num": 2,
+            # One file per batch, so the two files are two batches of one cycle.
+            "max_processed_files_before_commit": 1,
+            "polling_max_timeout_ms": 100,
+            "polling_min_timeout_ms": 100,
+            "deduplication_v2": 1,
+        },
+    )
+
+    files_to_generate = 2
+    rows_per_file = 300000
+    for i in range(files_to_generate):
+        file_name = f"file_{table_name}_{uuid.uuid4()}_{i}.csv"
+        s3_function = (
+            f"s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+            f"{started_cluster.minio_bucket}/{files_path}/{file_name}',"
+            f" 'minio', '{minio_secret_key}')"
+        )
+        node.query(
+            f"INSERT INTO FUNCTION {s3_function} "
+            f"SELECT number, randomString(100) FROM numbers({rows_per_file})"
+        )
+    expected_rows = files_to_generate * rows_per_file
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_COMMIT_FAILPOINT}")
+    try:
+        node.query(
+            f"CREATE TABLE {dst_table_name} ({format}, _path String) "
+            f"ENGINE = MergeTree ORDER BY column1"
+        )
+        create_mv(
+            node,
+            table_name,
+            dst_table_name,
+            mv_name=mv_table_name,
+            format=format,
+            dst_table_exists=True,
+        )
+
+        # The first batch is committed, the second one has not started yet.
+        wait_failpoint_paused(node, PAUSE_AFTER_COMMIT_FAILPOINT)
+        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == rows_per_file
+
+        node.query(
+            f"ALTER TABLE {dst_table_name} MODIFY SETTING non_replicated_deduplication_window = 100"
+        )
+        node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_COMMIT_FAILPOINT}")
+
+    try:
+        # Restart while the second file is in flight with some of its rows already downstream.
+        deadline = time.time() + 30
+        parked = False
+        rows_before_restart = 0
+        while time.time() < deadline:
+            in_progress = int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_metadata_cache "
+                    f"WHERE zookeeper_path ilike '%{table_name}%' "
+                    f"AND status = 'Processing' AND rows_processed > 0"
+                )
+            )
+            rows_before_restart = int(
+                node.query(f"SELECT count() FROM {dst_table_name}")
+            )
+            if in_progress >= 1 and rows_before_restart > rows_per_file:
+                parked = True
+                break
+            time.sleep(0.1)
+        assert parked, (
+            "object_storage_queue_sleep_in_generate failpoint did not park a source of the second "
+            "batch with rows already in the destination within 30s."
+        )
+        assert rows_before_restart < expected_rows, "the batch must still be in flight"
+        node.restart_clickhouse()
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_sleep_in_generate")
+
+    processed = 0
+    for _ in range(120):
+        node.query("SYSTEM FLUSH LOGS system.s3queue_log")
+        processed = int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log "
+                f"WHERE table = '{table_name}' AND status = 'Processed'"
+            )
+        )
+        if processed >= files_to_generate:
+            break
+        time.sleep(1)
+    assert (
+        processed >= files_to_generate
+    ), f"Only {processed}/{files_to_generate} files reached Processed state"
+
     actual_rows = int(node.query(f"SELECT count() FROM {dst_table_name}"))
     assert actual_rows == expected_rows, (
         f"Expected {expected_rows} rows in destination, got {actual_rows} "
