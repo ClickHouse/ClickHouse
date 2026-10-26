@@ -75,6 +75,36 @@ def run_disks_query(query):
     )
 
 
+def test_cancelled_database_rename_restores_metadata(started_cluster):
+    db = "cancelled_rename"
+    renamed_db = "cancelled_rename_target"
+    failpoint = "rename_database_cancel_before_catalog_update"
+    try:
+        node_pr.query(f"CREATE DATABASE {db} ENGINE = Atomic")
+        node_pr.query(f"CREATE TABLE {db}.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node_pr.query(f"INSERT INTO {db}.t VALUES (42)")
+        node_pr.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+        # Cancel after the metadata move, before the catalog can adopt the new name.
+        error = node_pr.query_and_get_error(f"RENAME DATABASE {db} TO {renamed_db}")
+        assert "QUERY_WAS_CANCELLED" in error
+        node_pr.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        metadata_files = run_disks_query("ls metadata").splitlines()
+        assert f"{db}.sql" in metadata_files
+        assert f"{renamed_db}.sql" not in metadata_files
+        assert node_pr.query(f"SELECT * FROM {db}.t") == "42\n"
+        assert node_pr.query(f"EXISTS DATABASE {renamed_db}") == "0\n"
+
+        node_pr.restart_clickhouse()
+        assert node_pr.query(f"SELECT * FROM {db}.t") == "42\n"
+        assert node_pr.query(f"EXISTS DATABASE {renamed_db}") == "0\n"
+    finally:
+        node_pr.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        node_pr.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        node_pr.query(f"DROP DATABASE IF EXISTS {renamed_db} SYNC")
+
+
 def kill_before_publishing_rename(db, table="t", replace_existing=False):
     """Kills the server inside `CREATE OR REPLACE TABLE {db}.{table}`, after the temporary table is created
     and filled and before it replaces `{table}`. Returns the temporary table's name, UUID and metadata path.

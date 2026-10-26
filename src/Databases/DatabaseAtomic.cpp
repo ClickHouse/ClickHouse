@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 
@@ -38,6 +39,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char rename_database_after_dependency_check[];
+    extern const char rename_database_cancel_before_catalog_update[];
 }
 
 namespace ErrorCodes
@@ -817,10 +819,17 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         /// check above. If it refuses the rename, the catalog is untouched; put the metadata file back.
         try
         {
+            fiu_do_on(FailPoints::rename_database_cancel_before_catalog_update,
+            {
+                query_context->killCurrentQuery();
+                CurrentThread::checkIfNotCancelled();
+            });
             DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
         }
         catch (...)
         {
+            /// The catalog still has the old name. Cancellation must not prevent restoring its metadata file.
+            ThreadStatus::QueryCancellationBlocker cleanup;
             default_db_disk->moveFile(new_metadata_file_path, old_metadata_file_path);
             tryCreateMetadataSymlink();
             throw;
