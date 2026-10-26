@@ -32,10 +32,14 @@ ch_cc_library(
         "c++/src/capnp/dynamic.c++",
         "c++/src/capnp/stringify.c++",
     ],
-    hdrs = glob(
+    hdrs = ["c++/src/capnp/compat/std-iterator.h"] + glob(
         ["c++/src/capnp/*.h"],
         exclude = [
             "c++/src/capnp/arena.h",
+            "c++/src/capnp/ez-rpc.h",
+            "c++/src/capnp/reconnect.h",
+            "c++/src/capnp/rpc.*h",
+            "c++/src/capnp/rpc-twoparty*.h",
             "c++/src/capnp/test-util.h",
             "c++/src/capnp/schema-parser.h",
             "c++/src/capnp/serialize-text.h",
@@ -110,13 +114,15 @@ ch_cc_library(
         "c++/src/kj/filesystem-disk-win32.c++",
         "c++/src/kj/parse/char.c++",
     ],
-    hdrs = glob(
-        ["c++/src/kj/**/*.h"],
+    hdrs = ["c++/src/kj/compat/gtest.h"] + glob(
+        [
+            "c++/src/kj/*.h",
+            "c++/src/kj/parse/*.h",
+            "c++/src/kj/std/*.h",
+        ],
         exclude = [
             "c++/src/kj/async-inl.h",
             "c++/src/kj/async-win32.h",
-            "c++/src/kj/compat/brotli.h",
-            "c++/src/kj/compat/gzip.h",
         ],
     ),
     copts = _CAPNPROTO_COPTS,

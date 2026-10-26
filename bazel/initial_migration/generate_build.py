@@ -1524,6 +1524,7 @@ def main():
     # gRPC declares the public and private headers for grpc and grpc_unsecure.
     # PostgreSQL and Vectorscan own the headers installed by _CONFIGURED_FILES.
     read_only = {abseil, arrow, msgpack, google_cloud, zxc,
+                 ROOT / 'bazel/dependencies/clickhouse_capnproto.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_grpc.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_postgres.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_vectorscan.BUILD.bazel'}
