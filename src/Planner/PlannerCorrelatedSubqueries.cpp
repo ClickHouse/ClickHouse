@@ -1226,6 +1226,7 @@ QueryPlan decorrelateQueryPlan(
             limit_step->getLimit(),
             limit_step->getOffset(),
             std::move(limit_by_columns),
+            LimitByStep::ExternalSettings(context.planner_context->getQueryContext()->getSettingsRef()),
             /// Keep draining the input after the limit is reached when the original `LIMIT` did so
             /// (for `exact_rows_before_limit` and `WITH TOTALS`).
             limit_step->alwaysReadTillEnd());
@@ -1251,7 +1252,8 @@ QueryPlan decorrelateQueryPlan(
             input_header,
             std::numeric_limits<UInt64>::max(),
             offset_step->getOffset(),
-            std::move(limit_by_columns));
+            std::move(limit_by_columns),
+            LimitByStep::ExternalSettings(context.planner_context->getQueryContext()->getSettingsRef()));
         result_step->setStepDescription("OFFSET BY for decorrelated correlated subquery");
 
         decorrelated_query_plan.addStep(std::move(result_step));

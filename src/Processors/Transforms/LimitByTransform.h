@@ -3,10 +3,10 @@
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Transforms/ChunkRowRange.h>
+#include <Processors/Transforms/LimitByGroupMapping.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
 
@@ -50,42 +50,25 @@ protected:
 private:
     /// Once a group has filled its window every later run for it is a no-op, so keep that test at the
     /// call site: the call costs more than the work.
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+    void processRun(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run)
     {
-        chassert(group_idx < group_counts.size());
-        const UInt64 group_rows_seen_before_run = group_counts[group_idx];
         if (group_rows_seen_before_run < group_limit_end)
-            processRunInsideWindow(run_start_row, run_row_count, group_idx, group_rows_seen_before_run);
+            processRunInsideWindow(run_start_row, run_row_count, group_rows_seen_before_run);
     }
 
-    NO_INLINE void
-    processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
-
-    template <typename Method>
-    requires MapAggregationMethod<Method>
-    void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
-
-    /// LimitBy keeps a group index in the cell's mapped slot, so it cannot use a set method. This overload
-    /// exists only because the dispatch macro is generated over every `AggregatedDataVariants::Type`,
-    /// including the set ones that `GROUP BY` without aggregate functions uses.
-    template <typename Method>
-    requires SetAggregationMethod<Method>
-    void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
-
-    /// Positions of the non-constant grouping key columns in the chunk header.
-    std::vector<size_t> grouping_key_positions;
+    NO_INLINE void processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run);
 
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
     const UInt64 group_limit_end;
     const bool always_read_till_end;
 
-    AggregatedDataVariants data;
-    ColumnsHashing::HashMethodContextPtr hash_method_context;
+    /// The grouping hash table and the per-group counter of input rows seen so far.
+    LimitByGroupMapping mapping;
 
-    /// The total number of input rows already seen for that group. This is useful to
-    /// determine if the next row for that group should be outputted or not.
-    std::vector<UInt64> group_counts;
+    /// The counter of the single group of a `LIMIT BY` whose every grouping key is constant, which
+    /// builds no hash table.
+    UInt64 trivial_group_rows_seen = 0;
 
     /// Slices from the current chunk that will be emitted to output.
     PODArray<ChunkRowRange> output_slices;

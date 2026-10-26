@@ -1,6 +1,7 @@
 -- In order version of LIMIT BY works only if analyzer enabled
 SET explain_query_plan_default = 'legacy';
 SET query_plan_push_limit_by_into_sort = 1;
+SET max_bytes_ratio_before_external_limit_by = 0;
 
 DROP TABLE IF EXISTS 03701_unsorted, 03701_sorted;
 
