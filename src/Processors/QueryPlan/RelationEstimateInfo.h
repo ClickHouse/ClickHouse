@@ -142,6 +142,8 @@ struct RelationEstimateInfo
     std::optional<UInt64> max_rows = {};
     RowEstimateSource source = RowEstimateSource::NoSource;
     bool imprecise_estimate = false;
+    /// `estimated_rows` rests on a default selectivity, so it is a guess.
+    bool estimate_from_defaults = false;
     /// A relation composed of sub-joins is rendered as the chain only, without its own estimate.
     bool composite = false;
 

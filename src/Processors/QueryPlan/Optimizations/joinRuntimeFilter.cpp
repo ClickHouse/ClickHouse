@@ -360,8 +360,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
-        auto probe_size = join_step->getChosenInputRowsEstimation(JoinTableSide::Left);
-        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
+        /// A probe size that rests on a default selectivity is a guess, too weak to give up the filter for.
+        const auto probe = join_step->getChosenInputEstimate(JoinTableSide::Left);
+        if (probe.rows && !probe.from_defaults && *probe.rows <= optimization_settings.join_runtime_filter_min_probe_rows)
         {
             join_step->setRuntimeFilterDeclinedForSmallProbe();
             return false;

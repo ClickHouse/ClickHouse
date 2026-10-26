@@ -206,14 +206,17 @@ public:
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
-    /// The input rows of the plan an optimizer chose for this join (Cascades), which can differ from the estimates
-    /// the join order optimizer stored in the relations; unknown stays unknown. Not serialized.
-    void setChosenInputRowsEstimation(std::optional<UInt64> left_rows, std::optional<UInt64> right_rows)
+    /// The rows of an input, and whether they rest on a default selectivity, which makes them a guess.
+    struct InputEstimate
     {
-        chosen_input_rows = {left_rows, right_rows};
-    }
-    /// The input rows of the chosen plan if they were set, otherwise the stored estimate of the relation.
-    std::optional<UInt64> getChosenInputRowsEstimation(JoinTableSide side) const;
+        std::optional<UInt64> rows;
+        bool from_defaults = false;
+    };
+    /// The input estimates of the plan an optimizer chose for this join (Cascades), which can differ from the
+    /// estimates the join order optimizer stored in the relations; unknown stays unknown. Not serialized.
+    void setChosenInputEstimates(InputEstimate left, InputEstimate right) { chosen_inputs = {left, right}; }
+    /// The input estimate of the chosen plan if it was set, otherwise the stored estimate of the relation.
+    InputEstimate getChosenInputEstimate(JoinTableSide side) const;
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
@@ -373,7 +376,7 @@ protected:
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
-    std::optional<std::pair<std::optional<UInt64>, std::optional<UInt64>>> chosen_input_rows;
+    std::optional<std::pair<InputEstimate, InputEstimate>> chosen_inputs;
 
     static void setRelationEstimate(RelationEstimateInfo & relation, const RelationEstimateInfo & estimate)
     {
@@ -381,6 +384,7 @@ protected:
         relation.max_rows = estimate.max_rows;
         relation.source = estimate.source;
         relation.imprecise_estimate = estimate.imprecise_estimate;
+        relation.estimate_from_defaults = estimate.estimate_from_defaults;
     }
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.

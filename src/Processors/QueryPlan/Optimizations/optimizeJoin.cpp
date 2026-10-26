@@ -500,6 +500,7 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
         estimate.max_rows = stats.max_rows;
         estimate.source = stats.source;
         estimate.imprecise_estimate = stats.imprecise_estimate;
+        estimate.estimate_from_defaults = stats.estimate_from_defaults;
         return estimate;
     };
     join_step.setInPlaceEstimation(
@@ -1615,6 +1616,7 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
                 .estimated_rows = entry->estimated_rows,
                 .max_rows = entry->max_rows,
                 .imprecise_estimate = imprecise_estimate,
+                .estimate_from_defaults = entry->estimate_from_defaults,
                 .composite = true};
 
             join_step->setJoinOrderEstimation(
@@ -1696,6 +1698,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .max_rows = rel.max_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate,
+            .estimate_from_defaults = rel.estimate_from_defaults,
             .composite = rel.composite};
 
         if (isMissingStatisticsSource(rel.source))

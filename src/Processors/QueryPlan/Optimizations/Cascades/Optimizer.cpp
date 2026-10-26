@@ -634,14 +634,14 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             {
                 /// The rows the selected input implementation emits, as its plan reports them: unknown when its physical
                 /// output is unknown, such as a partial aggregation's states.
-                auto input_rows = [&](size_t input) -> std::optional<UInt64>
+                auto input_estimate = [&](size_t input) -> JoinStepLogical::InputEstimate
                 {
                     const auto & estimate = frame.child_plans.at(input)->getRootNode()->cost_estimation;
                     if (!estimate || !estimate->rows)
-                        return std::nullopt;
-                    return roundToRowCount(*estimate->rows);
+                        return {};
+                    return {.rows = roundToRowCount(*estimate->rows), .from_defaults = estimate->estimate_from_defaults};
                 };
-                join_step->setChosenInputRowsEstimation(input_rows(0), input_rows(1));
+                join_step->setChosenInputEstimates(input_estimate(0), input_estimate(1));
             }
             for (size_t i = 0; i < frame.child_plans.size(); ++i)
                 addConvertingExpression(*frame.child_plans[i], step->getInputHeaders().at(i));
