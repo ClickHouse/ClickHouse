@@ -6,8 +6,6 @@
 -- even though another operand is a comparison over a directly-Nullable expression. That operand then
 -- reached the pruning path and hit `chassert(!raw_type->isNullable())`.
 
-SET enable_analyzer = 1;
-
 -- 1) No logical error. These queries are otherwise invalid (a `Nothing`-typed value cannot be
 --    materialized), so they must fail with a normal handled exception, never a logical error.
 --    optimize_and_compare_chain path (chassert reached via the seed loop of tryOptimizeAndCompareChain):

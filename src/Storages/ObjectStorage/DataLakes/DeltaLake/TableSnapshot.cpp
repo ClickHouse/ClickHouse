@@ -33,6 +33,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
@@ -415,7 +416,8 @@ public:
             }
 
             parseDVHandle(*scan_item, object);
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
+            object->setObjectMetadata(
+                DB::getObjectMetadataForRead(*object_storage, DB::RelativePathWithMetadata(object->getPath()), /*with_tags=*/ false));
 
             if (callback)
             {
@@ -1011,7 +1013,8 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
+        auto [table_schema, physical_names_map, timestamp_ntz_paths]
+            = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
@@ -1038,6 +1041,7 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
             .read_schema = std::move(read_schema),
             .physical_names_map = std::move(physical_names_map),
             .partition_columns = std::move(partition_columns),
+            .timestamp_ntz_paths = std::move(timestamp_ntz_paths),
         });
     }
 }
@@ -1075,6 +1079,13 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->physical_names_map;
+}
+
+const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
+{
+    std::lock_guard lock(mutex);
+    initOrUpdateSchemaIfChanged();
+    return schema->timestamp_ntz_paths;
 }
 
 }
