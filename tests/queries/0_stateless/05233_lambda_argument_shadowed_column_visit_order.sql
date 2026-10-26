@@ -106,6 +106,18 @@ SELECT a FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) LEFT SE
 SELECT a FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) LEFT ANTI JOIN t_05233_using_semi USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS anti_join_include_columns_from_both_sides = 0;
 SELECT a FROM t_05233_using_semi RIGHT SEMI JOIN t_05233_using_left USING (a) PREWHERE arrayMap(z -> tuple(*), [1])[1].1 = 9 ORDER BY a SETTINGS semi_join_include_columns_from_both_sides = 0;
 
+-- A matcher directly in `PREWHERE`, not in a lambda, keeps working as before.
+DROP TABLE IF EXISTS t_05233_top_left;
+DROP TABLE IF EXISTS t_05233_top_right;
+CREATE TABLE t_05233_top_left (a UInt8) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_05233_top_right (a UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_05233_top_left VALUES (9);
+INSERT INTO t_05233_top_right VALUES (1);
+SELECT a FROM t_05233_top_left FULL JOIN t_05233_top_right USING (a) PREWHERE tuple(*).1 = 9 ORDER BY a;
+SELECT a FROM t_05233_top_left FULL JOIN t_05233_top_right USING (a) PREWHERE tuple(COLUMNS('^a$')).1 = 9 ORDER BY a;
+DROP TABLE t_05233_top_left;
+DROP TABLE t_05233_top_right;
+
 DROP TABLE t_05233_using_left;
 DROP TABLE t_05233_using_right;
 DROP TABLE t_05233_using_wide;

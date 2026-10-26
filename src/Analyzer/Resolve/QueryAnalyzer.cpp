@@ -2925,8 +2925,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        /// In `PREWHERE` the columns of a table keep their storage types, see the handling of the `USING` columns above.
-        if (!scope.in_prewhere)
+        /// In a lambda in `PREWHERE` the columns of a table keep their storage types, see the handling of the `USING`
+        /// columns above. A matcher directly in `PREWHERE` is resolved with `allow_resolve_from_using` disabled, so it
+        /// keeps the columns of both tables, and their types are widened here and rolled back after `PREWHERE` is resolved.
+        if (!scope.in_prewhere || !scope.allow_resolve_from_using)
             updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
