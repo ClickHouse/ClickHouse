@@ -6,7 +6,6 @@ SET materialize_statistics_on_insert = 1;
 -- The assertions match plan text, so pin the settings that reshape it. Both projection settings must
 -- stay 1 (the effective value is their conjunction): at 0 the first query prunes nothing even
 -- without the fix.
-SET enable_analyzer = 1;
 -- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements to prune by.
 SET max_bytes_before_external_set = 0;
 SET parallel_replicas_local_plan = 1;

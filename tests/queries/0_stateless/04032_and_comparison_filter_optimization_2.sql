@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
 SET optimize_empty_string_comparisons = 1;
 -- The EXPLAIN assertions expect the transitive-predicate rewrites to fire, which requires a work

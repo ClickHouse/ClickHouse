@@ -7,7 +7,6 @@ SET explain_query_plan_default = 'legacy';
 -- the same commit order. The cost-based choice the index-lookup EXPLAIN relies on is unaffected.
 SET prefer_optimize_projection = 0;
 
-set enable_analyzer = 1;
 
 drop table if exists mt_with_commit_order sync;
 

@@ -1,7 +1,6 @@
 -- Lower an `arrayJoin` function into a real ARRAY JOIN step. Must never change results, so each case
 -- compares query_plan_lower_array_join_function on vs off and expects equality (1).
 
-SET enable_analyzer = 1;
 -- two cases below check that the element filter fuses into the lowered step, so the fusion cannot be
 -- randomized off
 SET query_plan_fuse_filter_into_array_join = 1;

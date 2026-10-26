@@ -5,7 +5,6 @@
 -- the regular `StorageView` path, which wraps the body in `SELECT <subcolumn> FROM (<body>)`.
 
 -- The fix is in the analyzer's `PlannerJoinTree`; the old analyzer path is not covered here.
-SET enable_analyzer = 1;
 -- The pushdown under test, which CI randomizes off
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 

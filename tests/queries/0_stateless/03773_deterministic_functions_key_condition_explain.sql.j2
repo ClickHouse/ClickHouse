@@ -14,9 +14,6 @@ SET use_partition_minmax_for_primary_key_pruning = 1;
 
 -- { echoOn }
 
-{% for analyzer in [1] -%}
-SET enable_analyzer = {{ analyzer }};
-
 DROP TABLE IF EXISTS events;
 
 CREATE TABLE events
@@ -204,5 +201,3 @@ SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-
 
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE NOT has(['017adbc0-98b5-0000-3f74-619a368fe65d'], p);
-
-{% endfor -%}

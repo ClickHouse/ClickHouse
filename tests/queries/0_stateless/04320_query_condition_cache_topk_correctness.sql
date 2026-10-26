@@ -17,7 +17,6 @@
 -- must not reuse a row set computed under a different (tighter) threshold — the
 -- TopK salt on the cache key keeps the plans separate.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- The TopK gate defaults to 1 in 26.8, but it is randomized in CI, and these
 -- assertions are about the TopK path of the cache specifically.

@@ -4,7 +4,6 @@
 -- be collected by getApplicableExpressions and passed to the cost model.
 -- count() = 3 (all three rows satisfy both predicates simultaneously).
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;

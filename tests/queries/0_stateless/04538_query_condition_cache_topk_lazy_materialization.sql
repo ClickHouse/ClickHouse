@@ -16,7 +16,6 @@
 -- entry count still reads `1` and the count-based check stays green even when the fix is
 -- reverted.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- The TopK gate defaults to 1 in 26.8, but it is randomized in CI, and these
 -- assertions are about the TopK path of the cache specifically.

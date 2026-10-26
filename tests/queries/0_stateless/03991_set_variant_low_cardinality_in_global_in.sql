@@ -8,7 +8,6 @@
 -- and key lookups by the set that this test checks do not happen.
 SET max_bytes_before_external_set = 0;
 
-SET enable_analyzer=1;
 DROP TABLE IF EXISTS t_variant_lc;
 CREATE TABLE t_variant_lc (`id` Decimal(76, 70), `value` Int128) ENGINE = MergeTree ORDER BY (id, value);
 INSERT INTO t_variant_lc SELECT number, number FROM numbers(10);

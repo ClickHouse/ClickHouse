@@ -33,7 +33,6 @@ INSERT INTO t2 VALUES (0, 'Join_2_Value_0'), (1, 'Join_2_Value_1'), (3, 'Join_2_
 INSERT INTO t3 VALUES (0, 'Join_3_Value_0'), (1, 'Join_3_Value_1'), (4, 'Join_3_Value_4');
 INSERT INTO t4 VALUES (0, 'Join_4_Value_0'), (1, 'Join_4_Value_1'), (5, 'Join_4_Value_5');
 
-SET enable_analyzer = 1;
 -- Pin (randomized in CI): the arms below force bare 'dpsize' on three- and four-relation joins, and
 -- a small budget makes that search give up with EXPERIMENTAL_FEATURE_ERROR before the greedy and
 -- dpsize result sets are ever compared, so the placement under test stops being exercised.

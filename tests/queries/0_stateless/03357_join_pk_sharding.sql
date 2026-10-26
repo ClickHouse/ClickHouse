@@ -26,7 +26,6 @@ insert into tab_r select number, number, number, number from numbers(1e6);
 --select explain e from (explain actions = 1 )
 --where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 
-set enable_analyzer=1;
 set query_plan_join_swap_table=0;
 set query_plan_join_shard_by_pk_ranges=1;
 set allow_experimental_parallel_reading_from_replicas=0;

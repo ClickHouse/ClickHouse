@@ -3,7 +3,6 @@ SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test ass
 SET query_plan_optimize_join_order_algorithm = 'dpsub,greedy';  -- CI also randomizes these three
 SET query_plan_optimize_join_order_max_searched_plans = 100000; -- join-order settings, which change
 SET query_plan_optimize_join_order_limit = 10;                  -- the chosen order; pin to defaults
-SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 0;

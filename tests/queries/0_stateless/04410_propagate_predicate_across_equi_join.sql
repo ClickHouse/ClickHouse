@@ -1,5 +1,4 @@
 -- Tags: long
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
 -- The pass under test is randomized in CI; the arms below turn it off per query to get their
 -- reference, so the session value has to be on.

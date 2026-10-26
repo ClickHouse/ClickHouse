@@ -7,8 +7,6 @@
 
 -- { echo }
 
--- The in-order LIMIT BY transform is produced only by the new planner, so pin the analyzer.
-SET enable_analyzer = 1;
 -- The positive EXPLAIN PIPELINE assertions expect LimitBySortedStreamTransform on non-collated
 -- inputs, so the optimization must stay enabled against the runner's randomization.
 SET optimize_limit_by_in_order = 1;

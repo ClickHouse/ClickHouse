@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --use_text_index_like_evaluation_by_dictionary_scan 1"
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_text_index_like_evaluation_by_dictionary_scan 1"
 
 # The whole test is accumulated into SCRIPT and runs as a single client invocation:
 # on sanitizer builds dozens of client start-ups dominate the runtime and push the

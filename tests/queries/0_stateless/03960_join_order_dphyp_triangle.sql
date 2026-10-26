@@ -13,7 +13,6 @@
 --        \______________________________________/
 --                    (arm1 -- arm2 edge)
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 -- Keep uniq auto-stats un-materialized on insert so dphyp's join order stays
 -- deterministic under settings randomization (materialize_statistics_on_insert).

@@ -39,7 +39,6 @@ INSERT INTO rf_probe SELECT number FROM numbers(60000);
 INSERT INTO rf_build SELECT number + {{ p * 25000 }} FROM numbers(25000);
 {% endfor %}
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 -- Pin (randomized in CI): seal-gated reading asserts that the filter is ready, which this test's
 -- early build-side break violates (a server abort in debug builds).

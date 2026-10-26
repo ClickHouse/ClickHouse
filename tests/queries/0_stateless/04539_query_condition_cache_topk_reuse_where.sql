@@ -14,7 +14,6 @@
 -- genuine read-side reuse from a query that simply fails to write a new entry, so it stays
 -- green even if the `topk_reuse_predicate_only_hash` lookup is removed.
 
-SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
 -- The TopK gate defaults to 1 in 26.8, but it is randomized in CI, and these
 -- assertions are about the TopK path of the cache specifically.

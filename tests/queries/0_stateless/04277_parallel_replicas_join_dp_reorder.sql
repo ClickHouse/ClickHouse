@@ -4,7 +4,6 @@
 -- silently skipped join reordering for any PR query.
 
 -- For runs with old analyzer
-SET enable_analyzer=1;
 
 SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 DROP TABLE IF EXISTS pr_dp_a;

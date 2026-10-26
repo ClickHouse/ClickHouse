@@ -24,7 +24,6 @@ SET enable_hash_join_row_store = 1;
 -- Right-table reranging and the row store are mutually exclusive: `initRowStore` disables the
 -- row store whenever reranging is merely enabled, without consulting its row thresholds.
 SET allow_join_right_table_sorting = 0;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET collect_hash_table_stats_during_joins = 0;

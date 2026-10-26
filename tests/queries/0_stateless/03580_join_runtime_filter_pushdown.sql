@@ -11,7 +11,6 @@ SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_merge_expression_into_join = 1;
 -- Pinned like the join order: pinning the sides keeps whichever the join order search reached first
 SET query_plan_join_swap_table = 'auto';
-SET enable_analyzer=1;
 
 SELECT explain
 FROM (
