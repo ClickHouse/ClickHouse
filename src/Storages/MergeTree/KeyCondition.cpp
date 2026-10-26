@@ -1938,9 +1938,13 @@ bool KeyCondition::hasOnlyConjunctions() const
 bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
 {
     /// Walk the postfix RPN keeping, per pending subexpression, whether it contains a leaf
-    /// owned by this condition. An owned leaf is any atom other than `FUNCTION_UNKNOWN` and the
-    /// `ALWAYS_TRUE` / `ALWAYS_FALSE` constants (those represent neither a per-granule predicate
-    /// this index evaluates nor a position it writes into the partial-disjunction bitset).
+    /// owned by this condition. An owned leaf is any leaf that the scalar evaluator may report
+    /// as `false` into the partial-disjunction bitset, which the bulk path would leave at its
+    /// all-true default. `FUNCTION_UNKNOWN` is reported as unknown and `ALWAYS_TRUE` reports
+    /// the default, so neither is owned. `ALWAYS_FALSE` is owned: an atom of the filter folded
+    /// to a constant for this index (e.g. `a = 0.5` with `a UInt8`) is still `FUNCTION_UNKNOWN`
+    /// in the template RPN, so its reported `false` is what lets the final merge prune the
+    /// disjunction.
     std::vector<bool> owns_leaf;
     owns_leaf.reserve(rpn.size());
 
@@ -1950,7 +1954,6 @@ bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const
         {
             case RPNElement::FUNCTION_UNKNOWN:
             case RPNElement::ALWAYS_TRUE:
-            case RPNElement::ALWAYS_FALSE:
                 owns_leaf.push_back(false);
                 break;
 
