@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- An `IN (subquery)` in a join's `ON` lives in `JoinStepLogical`'s own `ActionsDAG`, which
 -- `JoinStepLogical::serialize` ships with the fragment. A conjunct reading the preserved side of an outer
 -- join stays there instead of being pushed down to that side (`canPushDownFromOn`), so it is not covered by
@@ -17,7 +18,6 @@ INSERT INTO t_join_on_fact SELECT number, if(number = 0, '', toString(number)) F
 -- `v` is offset so a matched row is distinguishable from the default an unmatched one gets.
 INSERT INTO t_join_on_dim SELECT number, number + 1000 FROM numbers(50);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

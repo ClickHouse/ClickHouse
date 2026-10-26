@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- `distributed_plan_workers_num` sets the node count Cascades plans for under
 -- `distributed_plan_execute_locally`: one worker stays single-node, four distribute
@@ -8,7 +6,6 @@
 -- still build a multi-node plan.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_worker_count;
@@ -34,7 +31,7 @@ SELECT '-- sixteen workers: shuffled aggregation is correct';
 SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
-    distributed_plan_workers_num = 16;
+    distributed_plan_workers_num = 16, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- sixteen workers: still a distributed plan';
 EXPLAIN PLAN SELECT g, count() FROM t_worker_count GROUP BY g
@@ -53,7 +50,7 @@ SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
     distributed_plan_force_shuffle_aggregation = 1,
-    use_concurrency_control = 1, max_threads = 1,
+    use_concurrency_control = 1, max_threads = 1, distributed_plan_fallback_to_local_execution = 0,
     log_comment = '04515_worker_fragment_cpu_slots'
 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;

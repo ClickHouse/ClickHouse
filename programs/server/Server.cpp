@@ -13,6 +13,8 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Util/MapConfiguration.h>
+#include <Poco/Util/SystemConfiguration.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
@@ -70,6 +72,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
 #include <Server/socketBindListen.h>
@@ -103,6 +106,8 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ColumnsCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -111,12 +116,13 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
-#include <Parsers/registerStatements.h>
+#include <Parsers/registerParsers.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
@@ -236,6 +242,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsString columns_cache_policy;
+    extern const ServerSettingsUInt64 columns_cache_size;
+    extern const ServerSettingsDouble columns_cache_size_ratio;
+    extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsDouble columns_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 columns_cache_history_window_ms;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
@@ -266,6 +278,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
     extern const ServerSettingsBool enable_silk_runtime;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -420,6 +433,7 @@ namespace ServerSetting
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
+    extern const ServerSettingsBool cpu_slot_parking;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -428,6 +442,9 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsString statistics_cache_policy;
+    extern const ServerSettingsUInt64 statistics_cache_size;
+    extern const ServerSettingsDouble statistics_cache_size_ratio;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
@@ -437,9 +454,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
-    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
-    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -452,6 +469,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsBool collect_connection_metrics;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
@@ -860,6 +878,13 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
+    Poco::AutoPtr<Poco::Util::MapConfiguration> properties(new Poco::Util::MapConfiguration);
+    Poco::Util::AbstractConfiguration::Keys property_keys;
+    config().keys("application", property_keys);
+    for (const auto & key : property_keys)
+        properties->setString("application." + key, config().getRawString("application." + key));
+    application_properties = properties;
+
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
@@ -948,7 +973,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                LOG_DEBUG(log, "Checking startup query condition `{}`", formatQueryForLogging(condition, startup_context->getSettingsRef()));
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 startup_context->setCurrentQueryId("");
 
@@ -982,7 +1007,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
-            LOG_DEBUG(log, "Executing query `{}`", query);
+            LOG_DEBUG(log, "Executing query `{}`", formatQueryForLogging(query, startup_context->getSettingsRef()));
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
@@ -1346,13 +1371,14 @@ try
 #endif
 
     registerInterpreters();
-    registerStatements();
+    registerParsers();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1535,13 +1561,16 @@ try
         metrics.reserve(servers_to_start_before_tables.size() + servers.size() + introspection_servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{
+                server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{
+                server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : introspection_servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            metrics.emplace_back(ProtocolServerMetrics{
+                server.getPortName(), server.getProtocolType(), server.currentThreads(), server.refusedConnections()});
         return metrics;
     };
     const unsigned async_metrics_update_period_s = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
@@ -1615,6 +1644,10 @@ try
           *  table engines could use Context on destroy.
           */
         LOG_INFO(log, "Shutting down storages.");
+
+        /// The columns cache goes away with the context; stop resizing it.
+        setMemoryReleasableCache(nullptr);
+        memory_worker.setReleasableCache(nullptr);
 
         global_context->shutdown();
 
@@ -1791,10 +1824,10 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    getIcebergManifestDecodeThreadPool().initialize(
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
@@ -1854,7 +1887,6 @@ try
     JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
     addMergeTreeArenaPoolWarnings(global_context);
 
-#if defined(OS_LINUX)
     /// Restrict the server to the system calls it is known to use, as early in the startup as the
     /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
     /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
@@ -1871,13 +1903,22 @@ try
             seccomp_status.allowed_syscalls,
             SettingFieldSeccompMode(seccomp_mode).toString());
     else if (seccomp_mode != SeccompMode::Disabled)
+#if defined(OS_LINUX)
         LOG_WARNING(
             log,
             "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
             "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
             SettingFieldSeccompMode(seccomp_mode).toString(),
             seccomp_status.not_installed_reason);
+#else
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
+#endif
 
+#if defined(OS_LINUX)
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");
@@ -2258,6 +2299,15 @@ try
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
+
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -2298,6 +2348,38 @@ try
         LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
+
+    String statistics_cache_policy = server_settings[ServerSetting::statistics_cache_policy];
+    size_t statistics_cache_size = server_settings[ServerSetting::statistics_cache_size];
+    double statistics_cache_size_ratio = server_settings[ServerSetting::statistics_cache_size_ratio];
+    if (statistics_cache_size > max_cache_size)
+    {
+        statistics_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(statistics_cache_size));
+    }
+    global_context->setStatisticsCache(statistics_cache_policy, statistics_cache_size, statistics_cache_size_ratio);
+    String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
+    /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
+    size_t columns_cache_size = config().getUInt64("columns_cache_size",
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
+    double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
+    if (columns_cache_size > max_cache_size)
+    {
+        columns_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
+    }
+    global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
+    /// The columns cache gives its memory back to the queries when the server is short of it, see
+    /// `ColumnsCache::autoResize`: on every tick of the memory worker, and when an allocation is
+    /// about to exceed the memory limit.
+    if (auto columns_cache = global_context->getColumnsCache())
+    {
+        columns_cache->setAutoResizeSettings(
+            server_settings[ServerSetting::columns_cache_free_memory_ratio],
+            server_settings[ServerSetting::columns_cache_history_window_ms]);
+        setMemoryReleasableCache(columns_cache.get());
+        memory_worker.setReleasableCache(columns_cache);
+    }
 
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
@@ -2591,6 +2673,15 @@ try
                     incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
+            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it must have
+            /// the command line on top of the file and, like `config()`, resolve `${application.*}` and `${system.*}` references.
+            Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
+            file_and_command_line->add(loaded_config, PRIO_DEFAULT);
+            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            file_and_command_line->add(application_properties, PRIO_APPLICATION, /* shared */ true);
+            file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
+            const ConfigurationPtr reload_config = file_and_command_line;
+
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
             /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
             /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
@@ -2600,7 +2691,7 @@ try
             /// so validating afterwards would leave a rejected reload publishing the new form while the
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
-                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
+                *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -2617,14 +2708,16 @@ try
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
+            ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
+
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
-            if (const auto installed_seccomp_mode = getInstalledSeccompMode();
-                installed_seccomp_mode && *installed_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
+            if (const auto requested_seccomp_mode = getRequestedSeccompMode();
+                requested_seccomp_mode && *requested_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
                 LOG_WARNING(
                     log,
                     "The `seccomp` server setting was changed from `{}` to `{}` in the configuration, but it takes effect only "
                     "after a restart: the seccomp policy of a running process cannot be changed",
-                    SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
+                    SettingFieldSeccompMode(*requested_seccomp_mode).toString(),
                     new_server_settings[ServerSetting::seccomp].toString());
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
@@ -2715,6 +2808,8 @@ try
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(config(), logger());
+            /// File-only, so `remote_servers` ignores the command line: `Cluster` takes the server's own `tcp_port` from this configuration
+            /// to find its local replicas, and with `-- --tcp_port` the replicas on the file's port would become remote.
             global_context->setClustersConfig(loaded_config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
@@ -2889,10 +2984,10 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-            getIcebergManifestDecodeThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
-                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
-                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+            getAIRequestThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_size],
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+                new_server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
@@ -2901,6 +2996,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+            global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,
@@ -2925,11 +3021,11 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(config()))
-                    global_context->reloadZooKeeperIfChanged(loaded_config);
+                if (zkutil::hasZooKeeperConfig(*reload_config))
+                    global_context->reloadZooKeeperIfChanged(reload_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
-                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(reload_config);
+                global_context->reloadQueryMaskingRulesIfChanged(reload_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
@@ -2946,10 +3042,19 @@ try
                     static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateColumnsCacheConfiguration(
+                    config(),
+                    getDefaultColumnsCacheSize(current_physical_server_memory, new_server_settings[ServerSetting::columns_cache_size_to_ram_ratio]),
+                    max_cache_size_in_bytes);
+                if (auto columns_cache = global_context->getColumnsCache())
+                    columns_cache->setAutoResizeSettings(
+                        new_server_settings[ServerSetting::columns_cache_free_memory_ratio],
+                        new_server_settings[ServerSetting::columns_cache_history_window_ms]);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateStatisticsCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -2976,6 +3081,7 @@ try
             CertificateReloader::instance().tryReloadAll(config());
 #endif
             CompressionCodecEncrypted::Configuration::instance().tryLoad(config(), "encryption_codecs");
+            global_context->reloadStatelessWorkersConfig(config());
             NamedCollectionFactory::instance().reloadFromConfig(config());
             FileCacheFactory::instance().updateSettingsFromConfig(config());
 
@@ -3032,7 +3138,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = loaded_config;
+            latest_config = reload_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
@@ -3084,6 +3190,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::END,
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
@@ -3110,6 +3217,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         secure_port_name,
+                        ServerType::Type::END,
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
@@ -3149,6 +3257,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::END,
                         "HTTP Control: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             std::move(http_context),
@@ -3185,6 +3294,7 @@ try
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::END,
                         "HTTPS Control: https://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             std::move(http_context),
@@ -3541,6 +3651,9 @@ try
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
+        /// The tables (including the ones in the `system` database) can depend on the dictionaries from the configuration files,
+        /// so register them before loading the databases. They start loading later, in `loadOrReloadDictionaries`.
+        global_context->registerDictionariesBeforeLoadingMetadata(config());
         load_system_metadata_tasks = loadMetadataSystem(global_context, server_settings[ServerSetting::async_load_system_database]);
         maybeConvertSystemDatabase(global_context, load_system_metadata_tasks);
 
@@ -3818,8 +3931,11 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
+            /// In wait mode the DDL worker's parts of ON CLUSTER backups and restores are spared, and waited for below.
+            /// Any other backup or restore that missed the wait above is cancelled: an initiator's own part needs this host's DDL worker.
+            const bool wait_backups_and_restores = server_settings[ServerSetting::shutdown_wait_backups_and_restores];
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
-                global_context->getProcessList().killAllQueries();
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ wait_backups_and_restores);
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
@@ -3861,6 +3977,14 @@ try
                 /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            /// Before the AsyncLoader stops, because a restore can create a database, and after the forced exit, because stopping
+            /// the DDL worker waits for the task it runs, which the kill cancels unless it is such a part.
+            if (wait_backups_and_restores)
+            {
+                global_context->getProcessList().killAllQueries(/* except_ddl_backups_and_restores= */ true);
+                global_context->stopDDLWorkerAndWaitAllBackupsAndRestores();
             }
         });
 
@@ -3954,6 +4078,30 @@ catch (...)
 
 namespace
 {
+
+/// Maps a `<protocols>` stack onto the ServerType of its innermost layer, so that a composable
+/// protocol is reported under the same metrics as the equivalent built-in port.
+ServerType::Type protocolStackType(const std::string & leaf_type, bool is_secure, bool has_proxy)
+{
+    if (leaf_type == "tcp")
+    {
+        if (is_secure)
+            return ServerType::Type::TCP_SECURE;
+        return has_proxy ? ServerType::Type::TCP_WITH_PROXY : ServerType::Type::TCP;
+    }
+    if (leaf_type == "http")
+        return is_secure ? ServerType::Type::HTTPS : ServerType::Type::HTTP;
+    if (leaf_type == "interserver")
+        return is_secure ? ServerType::Type::INTERSERVER_HTTPS : ServerType::Type::INTERSERVER_HTTP;
+    if (leaf_type == "mysql")
+        return ServerType::Type::MYSQL;
+    if (leaf_type == "postgres")
+        return ServerType::Type::POSTGRESQL;
+    if (leaf_type == "prometheus")
+        return ServerType::Type::PROMETHEUS;
+
+    return ServerType::Type::END;
+}
 
 /// Walk a composable protocol's `impl` chain and return the effective `default_session_user`:
 /// the value closest to the endpoint wins. Used both when the protocol stack is built and when it is
@@ -4105,7 +4253,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const std::string & protocol,
     Poco::Net::HTTPServerParams::Ptr http_params,
     AsynchronousMetrics & async_metrics,
-    bool & is_secure)
+    bool & is_secure,
+    ServerType::Type & protocol_type)
 {
     /// The default session user for the endpoint: the `default_session_user` key looked up
     /// from the endpoint's protocol module towards the referenced (`impl`) modules; the value
@@ -4175,6 +4324,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
 
     bool has_interserver = false;
 
+    /// `tls` and `proxy1` only wrap another protocol; the innermost layer of the chain is
+    /// what the server actually speaks, and it determines which metrics are reported for it.
+    std::string leaf_type;
+    bool has_proxy = false;
+
     while (true)
     {
         // if there is no "type" - it's a reference to another protocol and this is just an endpoint
@@ -4187,8 +4341,32 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' contains more than one TLS layer", protocol);
                 is_secure = true;
             }
+            else if (type == "proxy1")
+                has_proxy = true;
+            else
+                leaf_type = type;
+
             if (type == "interserver")
                 has_interserver = true;
+
+            if ((type == "tls" || type == "postgres") && !Poco::trim(config.getString(prefix + "cipherSuites", "")).empty())
+            {
+                const auto private_key_file = config.getString(prefix + "privateKeyFile", "");
+                if (private_key_file.empty() || config.getString(prefix + "certificateFile", private_key_file).empty())
+                {
+                    ///  builds a context of its own for an ACME certificate too, but it reads the
+                    /// layer-local TLS options only together with a key pair, so the value would be dropped.
+                    if (type == "tls" && config.has("acme"))
+                        throw Exception(
+                            ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Protocol '{}': 'cipherSuites' in '{}' is not applied to a layer served with an ACME certificate; "
+                            "set it in the 'openSSL.server' section or give the layer its own 'privateKeyFile'", protocol, conf_name);
+                    throw Exception(
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Protocol '{}': 'cipherSuites' in '{}' requires a 'privateKeyFile' (and 'certificateFile', if separate) "
+                        "in the same section, without them it cannot be applied", protocol, conf_name);
+                }
+            }
 
             if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
                 throw Exception(
@@ -4220,6 +4398,8 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         throw Exception(
             ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
+
+    protocol_type = protocolStackType(leaf_type, is_secure, has_proxy);
 
     return stack;
 }
@@ -4290,7 +4470,9 @@ void Server::createServers(
         for (const auto & host : hosts)
         {
             bool is_secure = false;
-            auto stack = buildProtocolStackFromConfig(config, server_settings, protocol, http_params, async_metrics, is_secure);
+            auto protocol_type = ServerType::Type::END;
+            auto stack = buildProtocolStackFromConfig(
+                config, server_settings, protocol, http_params, async_metrics, is_secure, protocol_type);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -4305,6 +4487,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     host,
                     port_name.c_str(),
+                    protocol_type,
                     description + ": " + address.toString(),
                     std::make_unique<TCPServer>(
                         stack.release(),
@@ -4344,6 +4527,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::HTTP,
                         "http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
@@ -4370,6 +4554,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::HTTPS,
                         "https://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
@@ -4394,6 +4579,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::TCP,
                     "native protocol (tcp): " + address.toString(),
                     std::make_unique<TCPServer>(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
@@ -4417,6 +4603,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::TCP_WITH_PROXY,
                     "native protocol (tcp) with PROXY: " + address.toString(),
                     std::make_unique<TCPServer>(
                         new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
@@ -4442,6 +4629,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::ARROW_FLIGHT,
                     "Arrow Flight compatibility protocol: " + address.toString(),
                     std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, address)),
                     true);
@@ -4463,6 +4651,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::TCP_SECURE,
                     "secure native protocol (tcp_secure): " + address.toString(),
                     std::make_unique<TCPServer>(
                         new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
@@ -4495,6 +4684,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::TCP_SSH,
                         "SSH PTY: " + address.toString(),
                         std::make_unique<TCPServer>(
                             new SSHPtyHandlerFactory(*this, config),
@@ -4522,6 +4712,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::MYSQL,
                     "MySQL compatibility protocol: " + address.toString(),
                     std::make_unique<TCPServer>(
                          new MySQLHandlerFactory(*this, secure_required, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes),
@@ -4545,6 +4736,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::POSTGRESQL,
                     "PostgreSQL compatibility protocol: " + address.toString(),
 #if USE_SSL
                     std::make_unique<TCPServer>(
@@ -4571,12 +4763,13 @@ void Server::createServers(
             port_name = "grpc_port";
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                Poco::Net::SocketAddress server_address(listen_host, port);
+                auto server_address = makeSocketAddress(listen_host, port, &logger());
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::GRPC,
                     "gRPC protocol: " + server_address.toString(),
-                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
+                    std::make_unique<GRPCServer>(*this, server_address));
             });
         }
 #endif
@@ -4599,6 +4792,7 @@ void Server::createServers(
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::PROMETHEUS,
                         "Prometheus: http://" + address.toString(),
                         std::make_unique<HTTPServer>(
                             httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
@@ -4606,29 +4800,80 @@ void Server::createServers(
             }
         }
 
-        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
+        bool has_catalog_port = !config.getString("iceberg_rest_catalog.port", "").empty();
+        bool has_catalog_secure_port = !config.getString("iceberg_rest_catalog.secure_port", "").empty();
+        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG)
+            && (has_catalog_port || has_catalog_secure_port))
         {
-            port_name = "iceberg_rest_catalog.port";
-            auto warehouse = config.getString("iceberg_rest_catalog.warehouse", "");
-            if (warehouse.empty())
+            auto is_listening = [&](const char * name)
             {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: 'iceberg_rest_catalog.warehouse' is not set");
-            }
-            else
-            {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                return std::any_of(servers.begin(), servers.end(), [&](const auto & server)
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port);
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "Iceberg REST catalog: http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            httpContext(), createIcebergRESTCatalogHandlerFactory(*this, warehouse), server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                    return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == name;
                 });
+            };
+
+            /// Both listeners share one handler factory. Create it only if some configured port is not listening yet.
+            const bool already_listening = (!has_catalog_port || is_listening("iceberg_rest_catalog.port"))
+                && (!has_catalog_secure_port || is_listening("iceberg_rest_catalog.secure_port"));
+
+            HTTPRequestHandlerFactoryPtr handler_factory;
+            if (!already_listening)
+            {
+                try
+                {
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                }
+            }
+
+            if (handler_factory)
+            {
+                if (has_catalog_port)
+                {
+                    port_name = "iceberg_rest_catalog.port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                    });
+                }
+
+                /// The TLS listener uses the certificate from the <openSSL><server> section.
+                if (has_catalog_secure_port)
+                {
+                    port_name = "iceberg_rest_catalog.secure_port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&]([[maybe_unused]] UInt16 port) -> ProtocolServerAdapter
+                    {
+#if USE_SSL
+                        Poco::Net::SecureServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: https://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS for the Iceberg REST catalog is disabled because Poco library was built without NetSSL support.");
+#endif
+                    });
+                }
             }
         }
     }
@@ -4670,6 +4915,7 @@ void Server::createInterserverServers(
                 return ProtocolServerAdapter(
                     interserver_listen_host,
                     port_name,
+                    ServerType::Type::INTERSERVER_HTTP,
                     "replica communication (interserver): http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         httpContext(),
@@ -4696,6 +4942,7 @@ void Server::createInterserverServers(
                 return ProtocolServerAdapter(
                     interserver_listen_host,
                     port_name,
+                    ServerType::Type::INTERSERVER_HTTPS,
                     "secure replica communication (interserver): https://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         httpContext(),
@@ -4921,7 +5168,8 @@ void Server::updateServers(
             }
             /// The warehouse name is baked into the Iceberg REST catalog handler factory, so if
             /// the section changes, the listener must be restarted.
-            if (port_name == "iceberg_rest_catalog.port" && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
+            if ((port_name == "iceberg_rest_catalog.port" || port_name == "iceberg_rest_catalog.secure_port")
+                && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
             {
                 force_restart = true;
                 LOG_TRACE(log, "<iceberg_rest_catalog> had been changed, will reload {}", server->getDescription());

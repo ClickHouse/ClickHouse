@@ -11,11 +11,9 @@ La copia de seguridad de instantáneas es un modo de copia de seguridad ligero p
 
 El modo ligero se aplica a las tablas [SharedMergeTree](/es/products/cloud/features/infrastructure/shared-merge-tree), SharedSet y SharedJoin. Para todos los demás tipos de motor, como Log o Memory, la copia de seguridad recurre automáticamente a una copia de seguridad estándar basada en copias.
 
-<div id="create-a-snapshot">
-  ## Crear una instantánea
-</div>
+## Crear una instantánea {#create-a-snapshot}
 
-La copia de seguridad mediante instantánea utiliza el comando estándar [`BACKUP`](/es/concepts/features/backup-restore/overview#syntax) con `experimental_lightweight_snapshot = true`. La configuración `id` es obligatoria: asigna un nombre a la instantánea y se usa para hacer referencia a ella en los comandos de desbloqueo y observabilidad:
+La copia de seguridad de instantáneas utiliza el comando estándar [`BACKUP`](/es/concepts/features/backup-restore/overview#syntax) con `experimental_lightweight_snapshot = true`. La configuración `id` es obligatoria: asigna un nombre a la instantánea y se usa para hacer referencia a ella en los comandos de desbloqueo y observabilidad:
 
 ```sql
 BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
@@ -50,6 +48,15 @@ TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KE
 SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
 ```
 
+Haga una copia de seguridad solo del DDL de la tabla, sin los datos (al restaurarla, se obtiene una tabla vacía con el esquema correcto):
+
+```sql
+BACKUP TABLE mydb.events
+EXCEPT DATA FROM TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events_schema/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_schema_snapshot'
+```
+
 Los mismos comandos funcionan con Azure Blob Storage:
 
 ```sql
@@ -58,9 +65,7 @@ TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;Accoun
 SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
 ```
 
-<div id="restore-to-same-service">
-  ## Restaurar en el mismo servicio
-</div>
+## Restaurar en el mismo servicio {#restore-to-same-service}
 
 Como una instantánea almacena referencias a archivos del almacenamiento de objetos en lugar de copias de los datos, restaurarla en un servicio de ClickHouse nuevo o distinto requiere acceso al almacenamiento de objetos original. Por ese motivo, la restauración entre servicios no se admite mediante SQL; solo está disponible a través de la UI. Con SQL, puede restaurar una instantánea en el mismo servicio desde un bucket de copia de seguridad externo con `snapshot_from_current_service = 1`. Esto lee los objetos directamente a través del disco de destino en lugar de pasar por un lector remoto de instantáneas:
 
@@ -80,9 +85,7 @@ FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCES
 SETTINGS snapshot_from_current_service = 1
 ```
 
-<div id="unlock-snapshot">
-  ## Desbloquear una instantánea
-</div>
+## Desbloquear una instantánea {#unlock-snapshot}
 
 Cada instantánea mantiene bloqueos en ClickHouse Keeper que impiden que los archivos referenciados del almacenamiento de objetos sean eliminados por el recolector de basura. Una vez completada una restauración — o cuando una instantánea ya no sea necesaria — desbloquéela para liberar esos bloqueos.
 
@@ -113,13 +116,9 @@ ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
 
 Tras desbloquear, la fila correspondiente desaparece de `system.snapshot_locks` y las partes a las que ya no hacen referencia otros snapshots dejan de aparecer en `system.snapshot_parts`.
 
-<div id="observability">
-  ## Observabilidad
-</div>
+## Observabilidad {#observability}
 
-<div id="system-backups">
-  ### system.backups
-</div>
+### system.backups {#system-backups}
 
 Todas las operaciones de instantánea aparecen en [`system.backups`](/es/reference/system-tables/backups), junto con las operaciones habituales de copia de seguridad y restauración. Consúltela con el `id` que estableció (o el UUID devuelto por el comando):
 
@@ -144,9 +143,7 @@ uncompressed_size: 1073741824
 compressed_size:   0
 ```
 
-<div id="system-snapshot-locks">
-  ### system.snapshot_locks
-</div>
+### system.snapshot_locks {#system-snapshot-locks}
 
 `system.snapshot_locks` muestra las instantáneas confirmadas que están registradas actualmente en Keeper. Cuando se confirma una instantánea, se crea un nodo de Keeper en `/clickhouse/snapshot/committed/{snapshot_id}`. Antes de eliminar cualquier parte de datos, el servidor comprueba si alguna instantánea confirmada mantiene un bloqueo sobre esa parte. En ese caso, se omite su eliminación. El bloqueo persiste hasta que desbloquee explícitamente la instantánea.
 
@@ -172,9 +169,7 @@ FROM system.snapshot_locks
 WHERE id = 'events_snapshot_1'
 ```
 
-<div id="system-snapshot-parts">
-  ### system.snapshot_parts
-</div>
+### system.snapshot_parts {#system-snapshot-parts}
 
 `system.snapshot_parts` muestra las partes de datos actualmente retenidas por al menos un bloqueo de instantánea. Para cada parte bloqueada, existe un nodo de Keeper en `/clickhouse/snapshot/{table_uuid}/{part_name}` que contiene el tamaño comprimido y sin comprimir de la parte. Esta tabla lee esos nodos para mostrar qué partes están actualmente protegidas frente a su eliminación.
 
@@ -229,9 +224,7 @@ WHERE (name, table_id) NOT IN (
 
 Esto es útil para comprender la sobrecarga de almacenamiento que implica conservar instantáneas después de que los datos originales hayan cambiado o se hayan eliminado.
 
-<div id="server-settings">
-  ## Configuración del servidor
-</div>
+## Configuración del servidor {#server-settings}
 
 Los siguientes parámetros de configuración del servidor controlan el comportamiento de las instantáneas. Se establecen en el archivo de configuración del servidor, no en SQL.
 

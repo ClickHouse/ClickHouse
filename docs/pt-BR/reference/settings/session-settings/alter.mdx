@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## alter_move_to_space_execute_async
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Executa ALTER TABLE MOVE ... TO [DISK|VOLUME] de forma assíncrona
 
-## alter_partition_verbose_result
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,13 +54,13 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-## alter_sync
+## alter_sync {#alter_sync}
 
 **Aliases**: `replication_alter_partitions_sync`
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
-Permite especificar o comportamento de espera para ações que devem ser executadas em réplicas por consultas [`ALTER`](/pt-BR/reference/statements/alter/index), [`OPTIMIZE`](/pt-BR/reference/statements/optimize) ou [`TRUNCATE`](/pt-BR/reference/statements/truncate).
+Permite especificar como as consultas [`ALTER`](/pt-BR/reference/statements/alter/index), [`OPTIMIZE`](/pt-BR/reference/statements/optimize) ou [`TRUNCATE`](/pt-BR/reference/statements/truncate) aguardam a conclusão de suas operações.
 
 Valores possíveis:
 
@@ -72,10 +72,10 @@ Valores possíveis:
 Valor padrão no Cloud: `0`.
 
 <Note>
-  `alter_sync` se aplica apenas a tabelas `Replicated` e `SharedMergeTree`; não tem efeito ao alterar tabelas que não sejam `Replicated` ou `Shared`.
+  `alter_sync` se aplica a consultas `ALTER` em tabelas da família `MergeTree`. Os valores `2` e `3` aguardam réplicas apenas em tabelas `ReplicatedMergeTree` e `SharedMergeTree`.
 </Note>
 
-## alter_update_mode
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

@@ -1,0 +1,39 @@
+keys and empty set	0	0
+keys and empty set	0	1
+keys and empty set	1	0
+keys and empty set	2	0
+keys and empty set, use_nulls	0	0
+keys and empty set, use_nulls	1	0
+keys and empty set, use_nulls	2	0
+keys and empty set, use_nulls	\N	1
+issue	0	0	3
+issue	1	0	1
+issue	1	1	0
+issue	1	2	0
+only empty set	1
+only empty set, use_nulls	1
+aggregate, only empty set	3
+aggregate, only empty set, flattened	0
+three empty sets	1
+three empty sets	1
+three empty sets	1
+only empty set, totals	1
+
+only empty set, totals	1
+pruned aggregate	4
+pruned aggregate, two empty sets	2
+pruned aggregate, one empty set	1
+empty input	\N
+empty input, only empty set	1
+empty input, suppressed	0
+empty input, suppressed, keys	0
+several streams	1001	1
+distributed	0
+distributed	1
+distributed	2
+distributed	\N
+distributed, only empty set	1
+correlated subquery	true
+correlated subquery	\N
+correlated subquery, no substitution	true
+correlated subquery, no substitution	\N

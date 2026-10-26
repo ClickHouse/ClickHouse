@@ -1,6 +1,12 @@
 comment column	changed
 modify column	changed again
+modify query	changed again
 after rejected alter	changed again
+cleared comment	1
+two columns	a	a1
+two columns	b	b0
+two columns after modify query	a	a1
+two columns after modify query	b	b0
 plain view	changed
 view with TO	changed
 TO target	target

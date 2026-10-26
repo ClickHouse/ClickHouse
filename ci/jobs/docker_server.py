@@ -9,7 +9,12 @@ from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
-from ci.jobs.scripts.docker_server.docker_library import test_docker_library
+from ci.jobs.scripts.docker_server.docker_library import (
+    changed_tests,
+    test_docker_library,
+    validate_bugfix_tests,
+)
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -187,7 +192,7 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
 # fast on the first attempt. The count is bounded by the job budget below.
-BUILDX_RETRIES = 2
+BUILDX_RETRIES = 5
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
@@ -393,8 +398,8 @@ BUILDX_TIMEOUT_MESSAGE = "ERROR: docker buildx timed out"
 # is ambiguous (OOM, external kill), so only this proves the expiry. Same discrimination
 # as clickhouse_proc.py's _TIMEOUT_KILL_DIAG.
 BUILDX_TIMEOUT_KILL_DIAG = "sending signal KILL to command"
-# Both sentinels must go to stderr: Shell.run matches retry_errors against stderr only.
-BUILDX_RETRY_ERRORS += [BUILDX_TIMEOUT_MESSAGE, BUILDX_TIMEOUT_KILL_DIAG]
+# Neither sentinel is in `BUILDX_RETRY_ERRORS`: an expiry is retried only if its output
+# matches another entry, else a build is rebuilt against the next apt mirror, if any.
 BUILDX_TIMEOUT_KILL_AFTER = 120
 # A per-invocation bound does not bound the job: main() loops over os variants and tags,
 # so the invocation count is not fixed. Keep back this much of the cap for recording a
@@ -783,14 +788,31 @@ def main():
                 )
             )
 
+    # The server image job validates the tests of both images. Only on a PR to master: a backported fix is in master's `head`.
+    bugfix_tests = []
+    if not push and info.workflow_name == "PR" and "server image" in info.job_name:
+        bugfix_tests = changed_tests(info.get_changed_files())
     if not push:
         # The image is built locally only when we don't push it
         # See `--output=type=docker`
         test_docker_library(test_results)
+        if bugfix_tests and any(
+            label in info.pr_labels
+            for label in (Labels.PR_BUGFIX, Labels.PR_CRITICAL_BUGFIX)
+        ):
+            master_images = [
+                f"{repo}:head{suffix}"
+                for repo in ("clickhouse/clickhouse-server", "clickhouse/clickhouse-keeper")
+                for suffix in ("", "-alpine", "-distroless")
+            ]
+            validate_bugfix_tests(test_results, master_images, bugfix_tests)
 
     test_results.append(check_server_readme(image.path))
 
-    Result.create_from(results=test_results, stopwatch=sw).complete_job()
+    # Not cached with changed tests: the PR can become a bug fix later, and the `head` images move with master.
+    Result.create_from(results=test_results, stopwatch=sw).complete_job(
+        do_not_cache=bool(bugfix_tests)
+    )
 
 
 if __name__ == "__main__":
