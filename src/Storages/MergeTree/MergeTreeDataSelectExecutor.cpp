@@ -960,6 +960,25 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
 /// read in full with mutations and patches applied on read, while the optimization stays active for
 /// parts whose top-k index is up to date.
+bool MergeTreeDataSelectExecutor::partChangesColumnIdentity(
+    const MergeTreeData::DataPartPtr & part,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    if (!mutations_snapshot || !mutations_snapshot->hasMetadataMutations())
+        return false;
+
+    if (part->isProjectionPart())
+        return true;
+
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+        , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+    );
+    return alter_conversions->changesColumnIdentity();
+}
+
 static bool partHasStaleTopKIndex(
     const MergeTreeData::DataPartPtr & part,
     const MergeTreeIndexPtr & top_k_index,
@@ -1864,6 +1883,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     const UInt64 settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
 
+    /// A pending `RENAME COLUMN` or `DROP COLUMN` (possibly followed by adding a column with the same
+    /// name) changes which data a queried name refers to, but neither the part name nor the condition
+    /// hash changes, so an entry written before the `ALTER` would describe other data. Do not consult
+    /// the cache for such a part; the write sides skip it too (see `appliesMutationsBeforePrewhere`
+    /// and `ReadFromMergeTree::selectRangesToRead`).
+    std::unordered_set<size_t> parts_with_changed_column_identity;
+    if (mutations_snapshot->hasMetadataMutations())
+    {
+        for (const auto & part_with_ranges : parts_with_ranges)
+        {
+            if (partChangesColumnIdentity(part_with_ranges.data_part, mutations_snapshot, context))
+                parts_with_changed_column_identity.insert(part_with_ranges.part_index_in_query);
+        }
+    }
+
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt, bool prewhere_top_k_salt)
     {
         /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
@@ -1963,6 +1997,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             auto & part_with_ranges = *it;
             stats.total_granules += part_with_ranges.getMarksCount();
+
+            if (parts_with_changed_column_identity.contains(part_with_ranges.part_index_in_query))
+            {
+                ++it;
+                continue;
+            }
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();

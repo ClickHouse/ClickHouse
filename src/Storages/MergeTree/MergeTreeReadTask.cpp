@@ -631,8 +631,19 @@ bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
     if (info->has_on_fly_mutation_steps)
         return true;
 
+    if (!info->alter_conversions)
+        return false;
+
+    /// A pending `RENAME COLUMN` or `DROP COLUMN` (possibly followed by adding a column with the same
+    /// name) makes a queried name refer to other data than before, while the part name stays the same
+    /// until the mutation is materialized. Marks attributed to the predicate now would be wrong for a
+    /// read after `KILL MUTATION`, and the read path does not consult the cache for such a part either
+    /// (see `filterPartsByQueryConditionCache`).
+    if (info->alter_conversions->changesColumnIdentity())
+        return true;
+
     /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time.
-    return info->alter_conversions && info->alter_conversions->hasLightweightDelete();
+    return info->alter_conversions->hasLightweightDelete();
 }
 
 }

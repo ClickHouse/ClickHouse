@@ -344,6 +344,13 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
 
+    /// Whether a pending `RENAME COLUMN` or `DROP COLUMN` changes which data a column name refers to
+    /// in the part (see `AlterConversions::changesColumnIdentity`). The query condition cache is neither
+    /// consulted nor written for such a part. A projection part is always considered affected.
+    static bool partChangesColumnIdentity(
+        const MergeTreeData::DataPartPtr & part,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context);
 
 };
 

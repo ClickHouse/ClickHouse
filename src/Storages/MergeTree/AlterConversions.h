@@ -48,6 +48,10 @@ public:
 
     const NameSet & getDroppedColumns() const { return dropped_columns; }
 
+    /// Whether a pending `RENAME COLUMN` or `DROP COLUMN` changes which on-disk column a name refers to
+    /// (a dropped column may be added again, and then its reads return the default instead of the data).
+    bool changesColumnIdentity() const { return !rename_map.empty() || !dropped_columns.empty(); }
+
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);

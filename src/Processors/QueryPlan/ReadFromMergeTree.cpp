@@ -4165,6 +4165,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
+                /// The exclusions of a part whose pending `RENAME COLUMN` or `DROP COLUMN` changes which
+                /// data a queried name refers to would be wrong for a read after `KILL MUTATION`, and are
+                /// not consulted (see `filterPartsByQueryConditionCache`).
+                if (MergeTreeDataSelectExecutor::partChangesColumnIdentity(data_part, mutations_snapshot, context_))
+                    continue;
                 String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                                                                  : data_part->name;
                 query_condition_cache->write(
