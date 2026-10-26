@@ -717,6 +717,9 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    checkStackSize();
+
     /// Serialize NULL as Nothing type with no value.
     if (field.isNull())
     {
@@ -754,6 +757,9 @@ void SerializationDynamic::serializeBinary(const IColumn & column, size_t row_nu
 
 void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    /// See the comment in deserializeBinary: the nesting depth comes from the data.
+    checkStackSize();
+
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);
