@@ -9061,7 +9061,8 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
                 /// Load committing blocks before pulling fresh logs, matching ReplicatedMergeTreeZooKeeperMergePredicate.
                 committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, hint, /*with_data=*/ false);
                 /// Flush the local queue so it includes any commits whose block locks were removed before or during getCommittingBlocks.
-                queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
+                /// The queue is not `mutable`, but pulling logs does not change the table: it only brings the queue up to date.
+                const_cast<StorageReplicatedMergeTree *>(this)->queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
                 committing_blocks_loaded = true;
                 /// Refresh statuses so newly pulled log entries are reflected in parts_to_do.
                 statuses = queue.getMutationsStatus();
