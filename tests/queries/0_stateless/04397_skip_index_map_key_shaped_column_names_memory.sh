@@ -30,7 +30,7 @@ peak_memory_usage()
     local log
     log=$($CLICKHOUSE_CLIENT --max_untracked_memory 1 --print-profile-events --profile-events-delay-ms=-1 \
         -q "SELECT count() FROM $1 WHERE $predicate SETTINGS use_skip_indexes = 1, enable_parallel_replicas = 0 FORMAT Null" 2>&1)
-    grep -vE '\[ [0-9]+ \] [A-Za-z]+: -?[0-9]+ \((increment|gauge)\)$' <<< "$log" >&2
+    grep -vE '\[ [0-9]+ \] [[:alnum:]_]+: -?[0-9]+ \((increment|gauge)\)$' <<< "$log" >&2
     sed -nE 's/.*\[ 0 \] MemoryTrackerPeakUsage: ([0-9]+).*/\1/p' <<< "$log"
 }
 
