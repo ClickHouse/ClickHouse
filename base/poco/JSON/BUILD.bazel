@@ -24,11 +24,7 @@ poco_cc_library(
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
     deps = ["//base/poco/Foundation:_poco_foundation"],
 )
 

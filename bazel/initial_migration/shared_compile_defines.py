@@ -3,7 +3,7 @@
 import ast
 import copy
 
-from initial_migration.compact_build import Source
+from initial_migration.compact_build import Source, render_list
 from initial_migration.factor_build_selections import StrictConfigured, call_name, no_match
 from initial_migration.normalize_cpp_builds import compile_defaults, drop_unused_loads, remove_keyword
 
@@ -152,6 +152,28 @@ def replacement(value, names, families):
     return None
 
 
+def runtime_list_edits(source, runtime, symbol):
+    """Share a literal prefix or suffix of local_defines, including named lists and select branches."""
+    assignments = {s.targets[0].id: s.value for s in source.module.body
+                   if isinstance(s, ast.Assign) and isinstance(s.targets[0], ast.Name)}
+    values = [kw.value for kw in ast.walk(source.module) if isinstance(kw, ast.keyword) and kw.arg == "local_defines"]
+    while values:
+        for node in ast.walk(values.pop()):
+            if isinstance(node, ast.Name) and node.id in assignments:
+                values.append(assignments.pop(node.id))
+            if not isinstance(node, ast.List) or not all(isinstance(x, ast.Constant) for x in node.elts):
+                continue
+            flags = tuple(ast.literal_eval(node))
+            if flags[-len(runtime):] == runtime:
+                extra = node.elts[:-len(runtime)]
+                expr = (render_list(source, extra, node.col_offset) + " + " if extra else "") + symbol
+            elif flags[:len(runtime)] == runtime:
+                expr = symbol + " + " + render_list(source, node.elts[len(runtime):], node.col_offset)
+            else:
+                continue
+            yield (*source.span(node), expr)
+
+
 def share_local_defines(root, paths):
     modules, names, families = {}, {}, {}
     for path, exports in MODULES.items():
@@ -167,6 +189,8 @@ def share_local_defines(root, paths):
                 raise ValueError(f"{label}: expected distinct ordered definitions for {symbol}")
             names[key] = (label, symbol)
 
+    runtime, runtime_owner = next((rows[0], owner) for rows, owner in names.items() if owner[1] == "CXX_RUNTIME_DEFINES")
+    runtime_label, runtime_symbol = runtime_owner
     for path in sorted(paths):
         source = Source(path.read_text())
         visitors = configured(source, modules)
@@ -181,8 +205,6 @@ def share_local_defines(root, paths):
                 for local, remote in loaded_names(call).items():
                     bindings[local] = (call.args[0].value, remote)
         for _, rule in source.rules():
-            if call_name(rule) not in {"ch_cc_library", "poco_cc_library"}:
-                continue
             for attr in rule.keywords:
                 if attr.arg != "local_defines":
                     continue
@@ -190,6 +212,8 @@ def share_local_defines(root, paths):
                 if not owner:
                     continue
                 label, symbol, expr = owner
+                if symbol != runtime_symbol and call_name(rule) not in {"ch_cc_library", "poco_cc_library"}:
+                    continue
                 attrs = {kw.arg: kw.value for kw in rule.keywords}
                 if (symbol == "DBMS_LOCAL_DEFINES" and path == root / "src/BUILD.bazel"
                         and attrs["name"].value == "dbms__compile_0"):
@@ -226,6 +250,12 @@ def share_local_defines(root, paths):
                         continue
                     edits.append((*source.span(statement.value), expr))
                     imports.setdefault(label, set()).add(symbol)
+        if runtime_symbol not in defined and bindings.get(runtime_symbol, runtime_owner) == runtime_owner:
+            for start, end, expr in runtime_list_edits(source, runtime, runtime_symbol):
+                # An existing named family can replace the enclosing expression.
+                if not any(a <= start and end <= b for a, b, _ in edits):
+                    edits.append((start, end, expr))
+                    imports.setdefault(runtime_label, set()).add(runtime_symbol)
         if not edits:
             continue
         for statement in source.module.body:

@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/dependencies:parquet_tools.bzl", "parquet_cc_binary")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:codegen_actions.bzl", "declare_codegen")
 load("@clickhouse//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
@@ -658,11 +658,7 @@ _PARQUET_DEFINES = [
     "BOOST_TIMER_ENABLE_DEPRECATED=1",
     "PARQUET_THRIFT_VERSION_MAJOR=0",
     "PARQUET_THRIFT_VERSION_MINOR=16",
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
+] + CXX_RUNTIME_DEFINES
 
 ch_cc_library(
     name = "_parquet",

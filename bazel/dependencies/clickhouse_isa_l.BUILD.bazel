@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:nasm.bzl", "nasm_objects")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -7,13 +7,6 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "LICENSE",
 ])
-
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
 
 _GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
     "@platforms//cpu:x86_64": [],
@@ -69,7 +62,7 @@ ch_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "include",
         "igzip",
@@ -178,7 +171,7 @@ nasm_objects(
         "OS_LINUX",
         "-Werror",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "include",
         "igzip",

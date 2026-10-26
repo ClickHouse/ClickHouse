@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,11 +11,7 @@ _VECTORSCAN_LOCAL_DEFINES = [
     "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
     "BOOST_ASIO_STANDALONE=1",
     "BOOST_TIMER_ENABLE_DEPRECATED=1",
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
+] + CXX_RUNTIME_DEFINES
 
 _VECTORSCAN_API_HEADERS = [
     "src/hs.h",

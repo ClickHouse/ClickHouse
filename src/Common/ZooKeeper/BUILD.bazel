@@ -92,11 +92,6 @@ ch_cc_library(
         "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
     }) + [
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
-        "@clickhouse_llvm_project//:LLVMBitReader",
-        "@clickhouse_llvm_project//:LLVMBitWriter",
-        "@clickhouse_llvm_project//:LLVMInstCombine",
-        "@clickhouse_llvm_project//:LLVMMCDisassembler",
-        "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSupport",
     ] + select({
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:LLVMX86CodeGen"],
@@ -132,29 +127,7 @@ ch_cc_library(
     name = "clickhouse_common_zookeeper_no_log",
     srcs = ["ZooKeeperImpl.cpp"],
     clickhouse_code = True,
-    implementation_deps = [
-        ":clickhouse_common_zookeeper_base",
-        ":headers",
-        "//base:common",
-        "//base/poco/Net:_poco_net",
-        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
-        "//base/poco/Util:_poco_util",
-        "//bazel:clickhouse_config_headers",
-        "//src/Common",
-        "//src/Compression:clickhouse_compression",
-        "//src/Common:exception_api",
-        "//src/Common:stopwatch",
-        "//src:io_string_buffers",
-        "//src/Common:parser_support_api",
-        "//src:headers",
-    ],
-    link_runtime = True,
-    local_defines = common_io_defines([
-        "ENABLE_MULTITARGET_CODE=1",
-        "USE_CLICKHOUSE_THREADS=1",
-    ]),
-    source_headers = True,
-    deps = select({
+    implementation_deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
     }) + [
@@ -179,7 +152,27 @@ ch_cc_library(
         "@clickhouse_openldap//:_ldap",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
+        ":clickhouse_common_zookeeper_base",
+        ":headers",
+        "//base:common",
+        "//base/poco/Net:_poco_net",
+        "//base/poco/NetSSL_OpenSSL:_poco_net_ssl__compile_0",
+        "//base/poco/Util:_poco_util",
+        "//bazel:clickhouse_config_headers",
+        "//src/Common",
+        "//src/Compression:clickhouse_compression",
+        "//src/Common:exception_api",
+        "//src/Common:stopwatch",
+        "//src:io_string_buffers",
+        "//src/Common:parser_support_api",
+        "//src:headers",
     ],
+    link_runtime = True,
+    local_defines = common_io_defines([
+        "ENABLE_MULTITARGET_CODE=1",
+        "USE_CLICKHOUSE_THREADS=1",
+    ]),
+    source_headers = True,
 )
 
 ch_cc_library(

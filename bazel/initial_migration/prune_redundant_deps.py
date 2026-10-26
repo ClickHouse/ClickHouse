@@ -151,12 +151,21 @@ def prune_llvm_link_deps(graph):
     from initial_migration.measured_deps import editable_dependency_lists
     from initial_migration.native_include_deps import explicit_list, rejects_cpu
 
-    components = set()
-    for label in _LLVM_SOURCE_ONLY_COMPONENTS:
-        _, kind, attrs = graph.rules.get(label, (None, None, {}))
-        if kind not in {'llvm_cc_library', 'ch_cc_library'} or not {'name', 'srcs'} <= attrs.keys():
+    source_only, private_headers = set(), set()
+    for label, (_, kind, attrs) in graph.rules.items():
+        if not label.startswith('@clickhouse_llvm_project//:LLVM') or kind not in NATIVE | {'llvm_cc_library'}:
+            continue
+        if not {'name', 'srcs'} <= attrs.keys():
             continue
         if attrs.keys() - {'name', 'srcs', 'copts', 'local_defines', 'implementation_deps'}:
+            continue
+        if label not in _LLVM_SOURCE_ONLY_COMPONENTS:
+            paths = [node.value for node in ast.walk(attrs['srcs']) if isinstance(node, ast.Constant)
+                     and isinstance(node.value, str) and node.value.startswith('llvm/lib/')]
+            if any(p.endswith('.cpp') for p in paths) and any(p.endswith('.h') for p in paths):
+                private_headers.add(label)
+            continue
+        if kind == 'cc_library':
             continue
         # No public headers, defines, includes, or dependencies; no private
         # headers in srcs. Only accept literal .cpp files and .cpp globs.
@@ -166,14 +175,14 @@ def prune_llvm_link_deps(graph):
         if isinstance(srcs, ast.List) and srcs.elts and all(
                 isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.endswith('.cpp')
                 and not n.value.startswith((':', '/', '@')) for n in srcs.elts):
-            components.add(label)
+            source_only.add(label)
 
-    if components != _LLVM_SOURCE_ONLY_COMPONENTS:
-        return {}
+    if source_only != _LLVM_SOURCE_ONLY_COMPONENTS:
+        source_only.clear()
 
-    def dominated(removed):
+    def dominated(components, removed, public_only):
         @cache
-        def linked(target, cpu):
+        def reachable(target, cpu):
             pending, seen = [target], set()
             while pending:
                 dep = pending.pop()
@@ -185,13 +194,16 @@ def prune_llvm_link_deps(graph):
                     pending.extend(doc.labels(attrs.get('actual'), cpu))
                 elif kind in FORWARD | {'llvm_cc_library'}:
                     pending.extend(doc.labels(attrs.get('deps'), cpu) - removed.get(dep, set()))
-                    pending.extend(doc.labels(attrs.get('implementation_deps'), cpu))
+                    if not public_only:
+                        pending.extend(doc.labels(attrs.get('implementation_deps'), cpu))
             return seen & components
 
         result = {}
         for target, (doc, kind, attrs) in graph.rules.items():
             deps = attrs.get('deps')
-            if doc.repo != '@clickhouse' or kind not in NATIVE | {'ch_cc_test'} or not explicit_list(deps, doc):
+            if doc.repo != '@clickhouse' or kind not in NATIVE | ({'ch_cc_test'} if not public_only else set()):
+                continue
+            if not explicit_list(deps, doc):
                 continue
             candidates = set(components)
             has_group = False
@@ -199,36 +211,47 @@ def prune_llvm_link_deps(graph):
                 if rejects_cpu(deps, doc, cpu):
                     continue
                 direct = [doc.reference(v) for v in doc.values(deps, cpu)]
-                if components <= set(direct):
+                if public_only:
+                    candidates.intersection_update(direct)
+                if public_only or components <= set(direct):
                     has_group = True
                 # rules_cc also supplies quote includes for the external repo.
                 # Keep the first LLVM library that contributes those include roots.
                 earlier_llvm = False
                 for dep in direct:
-                    if dep in components:
-                        if not earlier_llvm:
-                            candidates.discard(dep)
-                    elif (dep.startswith('@clickhouse_llvm_project//:') and
-                          graph.rules.get(dep, (None, None))[1] in NATIVE | {'llvm_cc_library'}):
+                    if dep in components and not earlier_llvm:
+                        candidates.discard(dep)
+                    if ((dep not in components or public_only) and dep not in removed.get(target, ())
+                            and dep.startswith('@clickhouse_llvm_project//:')
+                            and graph.rules.get(dep, (None, None))[1] in NATIVE | {'llvm_cc_library'}):
                         earlier_llvm = True
                 # rules_cc visits deps + implementation_deps in reverse for the
                 # link. Removing an already-visited archive preserves its position.
-                later = set().union(*(linked(v, cpu) for v in doc.labels(attrs.get('implementation_deps'), cpu)))
+                # A header in srcs is still a C++ compilation input of dependents.
+                # Require its component through a later *public* dependency as well.
+                later = set() if public_only else set().union(*(
+                    reachable(v, cpu) for v in doc.labels(attrs.get('implementation_deps'), cpu)))
                 for dep in reversed(direct):
                     if dep in components:
                         if dep not in later:
                             candidates.discard(dep)
                     else:
-                        later.update(linked(dep, cpu))
+                        later.update(reachable(dep, cpu))
             if has_group and candidates:
                 result[target] = candidates
         return result
 
     # Recheck the witnesses after all proposed direct edges are excluded.
     # Edges skipped by editable_dependency_lists remain available to the linker.
-    proposed = dominated({})
+    def removals(removed):
+        result = dominated(source_only, removed, False)
+        for target, deps in dominated(private_headers, removed, True).items():
+            result.setdefault(target, set()).update(deps)
+        return result
+
+    proposed = removals({})
     edits = {}
-    for target, drop in dominated(proposed).items():
+    for target, drop in removals(proposed).items():
         doc, _, attrs = graph.rules[target]
         if changes := editable_dependency_lists(doc, attrs['deps'], drop, doc.reference):
             edits.setdefault(doc, []).extend(changes)

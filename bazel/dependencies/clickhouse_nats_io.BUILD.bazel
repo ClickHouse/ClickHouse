@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -84,11 +84,7 @@ ch_cc_library(
     language = "C",
     local_defines = [
         "NATS_HAS_TLS",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
     local_includes = [
         "src/unix",
     ],

@@ -65,11 +65,7 @@ ch_cc_library(
     implementation_deps = [":boost_headers_no_openssl"],
     local_defines = [
         "BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(

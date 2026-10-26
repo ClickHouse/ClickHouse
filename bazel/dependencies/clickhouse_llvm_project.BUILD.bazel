@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:llvm_cc_library.bzl", "LLVM_DEFINES", "llvm_cc_library")
 load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")
 load("@clickhouse//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
@@ -5161,12 +5161,7 @@ llvm_runtime_objects(
             "LIBC_TARGET_CPU_HAS_FULLFP16=1",
             "LIBC_TARGET_CPU_HAS_NEAREST_INT=1",
         ],
-    }) + [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    }) + CXX_RUNTIME_DEFINES,
     local_includes = ["gen/libcxx/include/c++/v1"],
     system_includes = [
         "libc",

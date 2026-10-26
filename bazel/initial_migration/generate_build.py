@@ -515,8 +515,33 @@ def declare_group_header_deps(root, package, paired_headers, providers, public_o
         path.write_text(source.rewrite(edits))
 
 
-def declare_first_party_header_deps(root):
+def privatize_headerless_deps(root, targets, *, alwayslink=False):
+    """Keep the link order of deps + implementation_deps for libraries without public headers."""
+    from initial_migration.compact_build import Source
     from initial_migration.factor_build_selections import canonical_list
+
+    for package, target in targets:
+        path = root / package / "BUILD.bazel"
+        source = Source(path.read_text())
+        rule, = [call for _, call in source.rules()
+                 if any(kw.arg == "name" and getattr(kw.value, "value", None) == target for kw in call.keywords)]
+        fields = {kw.arg: kw for kw in rule.keywords}
+        if rule.func.id != "ch_cc_library":
+            raise ValueError(f"//{package}:{target} is no longer a ch_cc_library")
+        if {"hdrs", "textual_hdrs"} & fields.keys():
+            raise ValueError(f"//{package}:{target} publishes headers; review its public dependencies")
+        if alwayslink and ("alwayslink" not in fields or ast.literal_eval(fields["alwayslink"].value) is not True):
+            raise ValueError(f"//{package}:{target} no longer links all its registration objects")
+        if public := fields.get("deps"):
+            value, edits = public.value, []
+            if private := fields.get("implementation_deps"):
+                value = canonical_list(ast.BinOp(value, ast.Add(), private.value))
+                edits.append((source.starts[private.lineno - 1], source.starts[private.end_lineno], ""))
+            edits.append((*source.span(public), "implementation_deps = " + ast.unparse(value)))
+            path.write_text(source.rewrite(edits))
+
+
+def declare_first_party_header_deps(root):
     from initial_migration.measured_deps import editable_dependency_lists
     from initial_migration.prune_inherited_headers import ARCHES, Document
 
@@ -583,20 +608,9 @@ def declare_first_party_header_deps(root):
             if predecessor is not None:
                 after[dep] = predecessor
         path = root / package / "BUILD.bazel"
-        doc = Document(path, package=package)
         if (package, target) == ("src/Functions/TimeSeries", "clickhouse_functions_time_series"):
-            # The executable and unit tests link the registration objects; TimeSeries publishes no headers.
-            fields = {kw.arg: kw for kw in rules(doc)[target].keywords}
-            if {"hdrs", "textual_hdrs"} & fields.keys() or ast.literal_eval(fields["alwayslink"].value) is not True:
-                raise ValueError(f"//{package}:{target} is no longer a headerless registration library")
-            if public := fields.get("deps"):
-                source, value, edits = doc.source, public.value, []
-                if private := fields.get("implementation_deps"):
-                    value = canonical_list(ast.BinOp(value, ast.Add(), private.value))
-                    edits.append((source.starts[private.lineno - 1], source.starts[private.end_lineno], ""))
-                edits.append((*source.span(public), "implementation_deps = " + ast.unparse(value)))
-                path.write_text(source.rewrite(edits))
-                doc = Document(path, package=package)
+            privatize_headerless_deps(root, [(package, target)], alwayslink=True)
+        doc = Document(path, package=package)
         attrs = {kw.arg: kw.value for kw in rules(doc)[target].keywords}
         if field == "deps" and (package, target) in {
             ("src/Parsers", "clickhouse_parsers"),
@@ -1824,7 +1838,6 @@ def main():
     declare_object_storage_headers(ROOT)
     declare_external_compiler_headers(ROOT)
     from initial_migration.shared_compile_defines import omit_compile_defaults, share_local_defines
-    share_local_defines(ROOT, selection_builds)
     # Fold remaining CPU choices only when target_compatible_with fixes the CPU.
     # Rule transfers can also leave adjacent literal lists or empty attributes.
     from initial_migration.compact_build import Source, intern_attributes, remove_unused_constants, simplify_list_expressions
@@ -1837,7 +1850,13 @@ def main():
             if updated == after:
                 break
             after = updated
-        after = omit_compile_defaults(Source(drop_defaults(Source(after))))
+        if after != before:
+            path.write_text(after)
+    # Fold CPU selections before replacing their literal lists with named definitions.
+    share_local_defines(ROOT, selection_builds)
+    for path in sorted(selection_builds):
+        before = path.read_text()
+        after = omit_compile_defaults(Source(drop_defaults(Source(before))))
         after = remove_parens(remove_unused_constants(Source(after)), key=source_list_key)
         if path.name == "clickhouse_grpc.BUILD.bazel":
             after = intern_attributes(Source(after), names={"local_includes": "_GRPC_LOCAL_INCLUDES"})
@@ -1849,6 +1868,13 @@ def main():
     shared_native_compile_options(ROOT, selection_builds)
     from initial_migration.prune_redundant_deps import prune_aggregate_deps
     prune_aggregate_deps(ROOT, build_paths | selection_builds | read_only)
+    privatize_headerless_deps(ROOT, [
+        ("programs", "clickhouse__compile_0"),
+        ("programs/format", "clickhouse-format-lib"),
+        ("src/Common", "clickhouse_new_delete"),
+        ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_no_log"),
+        ("src/Functions/URL", "clickhouse_functions_url__compile_0"),
+    ])
     from initial_migration.first_party_packages import group_package_sources
     group_package_sources(ROOT)
     from initial_migration.package_source_groups import group_owned_sources

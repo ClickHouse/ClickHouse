@@ -8,6 +8,7 @@ ch_cc_library(
     srcs = ["Format.cpp"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "@clickhouse_cctz//:tzdata",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
@@ -33,8 +34,5 @@ ch_cc_library(
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
-    ],
-    deps = [
-        "//src/AggregateFunctions:clickhouse_aggregate_functions",
     ],
 )

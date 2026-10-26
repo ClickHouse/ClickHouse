@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_binary", "ch_cc_library")
 load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_TOOL_LINKOPTS", "native_cxx_tool_copts")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -401,11 +401,7 @@ _GENERATED_LOCAL_DEFINES_1 = [
     "GOOGLE_PROTOBUF_CMAKE_BUILD",
     "HAVE_PTHREAD",
     "HAVE_ZLIB",
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
+] + CXX_RUNTIME_DEFINES
 
 ch_cc_library(
     name = "_libprotobuf-lite",

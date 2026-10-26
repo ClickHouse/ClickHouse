@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,11 +41,7 @@ ch_cc_library(
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
         "CPPHTTPLIB_OPENSSL_SUPPORT=1",
         "CPPHTTPLIB_THREAD_POOL_COUNT=8",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [":_ai-sdk-cpp-core"],
 )
@@ -89,11 +85,7 @@ ch_cc_library(
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
         "CPPHTTPLIB_OPENSSL_SUPPORT=1",
         "CPPHTTPLIB_THREAD_POOL_COUNT=8",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = ["@clickhouse_nlohmann_json//:nlohmann_json"],
 )
@@ -121,11 +113,7 @@ ch_cc_library(
         "CPPHTTPLIB_BROTLI_SUPPORT=1",
         "CPPHTTPLIB_OPENSSL_SUPPORT=1",
         "CPPHTTPLIB_THREAD_POOL_COUNT=8",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
     local_includes = _AI_SDK_CPP_LOCAL_INCLUDES,
     deps = [":_ai-sdk-cpp-core"],
 )

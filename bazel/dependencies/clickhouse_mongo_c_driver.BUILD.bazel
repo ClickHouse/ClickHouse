@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 
 package(default_visibility = ["//visibility:public"])
@@ -216,11 +216,7 @@ ch_cc_library(
     language = "C",
     local_defines = [
         "MONGOC_COMPILATION",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    ] + CXX_RUNTIME_DEFINES,
     private_hdrs = ["src/libmongoc/src/mongoc/mongoc-counters.defs"],
     private_textual_srcs = ["src/utf8proc-2.11.3/utf8proc_data.c"],
     deps = [
