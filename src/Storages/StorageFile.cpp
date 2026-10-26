@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -37,12 +38,17 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/ArchiveEntryPositions.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/getIOUringReader.h>
 
 #include <Formats/FormatFactory.h>
+#include "config.h"
+#if USE_PARQUET
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -132,6 +138,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
@@ -674,6 +681,19 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
         file_stat.st_size);
 }
 
+/// Whether the version token of the file proves a rewrite: the last modification is far enough in
+/// the past that any further write changes the token, see the settle-window comment at the call site.
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+#endif
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
 /// local-file read (once right after opening, once right before trusting the read for the Query
 /// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
@@ -1005,17 +1025,23 @@ namespace
                         continue;
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
+                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, std::nullopt);
                     is_first = false;
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                         return {nullptr, cached_schema, format};
                 }
                 else
                 {
                     if (last_read_buffer)
+                    {
                         file_enumerator = archive_reader->nextFile(std::move(last_read_buffer));
+                    }
                     else
+                    {
                         file_enumerator = archive_reader->firstFile();
+                        entry_positions.reset();
+                    }
 
                     if (!file_enumerator)
                     {
@@ -1024,6 +1050,7 @@ namespace
                     }
 
                     const auto * filename = &file_enumerator->getFileName();
+                    auto entry_position = entry_positions.onEntry(*filename);
                     while (!archive_info.filter(*filename))
                     {
                         if (!file_enumerator->nextFile())
@@ -1033,6 +1060,7 @@ namespace
                         }
 
                         filename = &file_enumerator->getFileName();
+                        entry_position = entry_positions.onEntry(*filename);
                     }
 
                     if (!archive_reader)
@@ -1042,6 +1070,7 @@ namespace
                     }
 
                     last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
+                    last_read_file_cache_key = getArchiveEntryKey(last_read_file_path, entry_position);
                     is_first = false;
 
                     /// If format is unknown we can try to determine it by the file name.
@@ -1053,7 +1082,7 @@ namespace
                             format = format_from_file;
                     }
 
-                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_path))
+                    if (auto cached_schema = tryGetSchemaFromCache(archive, last_read_file_cache_key))
                     {
                         /// For union mode next() will be called again even if we found cached columns,
                         /// so we need to remember last_read_buffer to continue iterating through files in archive.
@@ -1082,7 +1111,7 @@ namespace
             if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
                 return;
 
-            auto key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
+            auto key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
@@ -1094,7 +1123,7 @@ namespace
             /// For union mode, schema can be different for different files in archive, so we need to
             /// cache last inferred schema only for last processed file.
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
+            auto cache_key = getKeyForSchemaCache(last_read_file_cache_key, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
         }
 
@@ -1178,8 +1207,10 @@ namespace
         bool is_first = true;
 
         std::string last_read_file_path;
+        std::string last_read_file_cache_key;
 
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+        ArchiveEntryPositions entry_positions;
         std::unique_ptr<ReadBuffer> last_read_buffer;
 
         std::optional<String> format;
@@ -1681,7 +1712,8 @@ StorageFileSource::StorageFileSource(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     LazyFileRegistryPtr lazy_row_index_registry_,
-    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_)
+    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
+    const UUID & query_condition_cache_table_id_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1689,6 +1721,7 @@ StorageFileSource::StorageFileSource(
     , read_buf(std::move(read_buf_))
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
+    , query_condition_cache_table_id(query_condition_cache_table_id_)
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
@@ -1771,6 +1804,39 @@ StorageFileSource::~StorageFileSource()
     }
 }
 
+bool StorageFileSource::canSkipFileByCachedStatistics()
+{
+#if USE_PARQUET
+    /// Only a settled version token proves that the file was not rewritten since its statistics were kept.
+    if (storage->use_table_fd || storage->archive_info || !current_file_version_settled || !current_file_cache_version
+        || !format_filter_info || !format_filter_info->filter_actions_dag || format_filter_info->column_mapper
+        || !boost::iequals(storage->format_name, "Parquet") || !getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        return false;
+
+    if (!cached_statistics_filter_prepared)
+    {
+        cached_statistics_filter_prepared = true;
+        cached_statistics_filter = ParquetCachedStatisticsFilter::create(
+            format_filter_info, block_for_format, storage->format_settings ? *storage->format_settings : getFormatSettings(getContext()));
+    }
+    if (!cached_statistics_filter)
+        return false;
+
+    auto metadata_cache = getContext()->tryGetParquetMetadataCache();
+    if (!metadata_cache)
+        return false;
+    auto num_row_groups = cached_statistics_filter->canSkipFile(*metadata_cache, current_path, *current_file_cache_version);
+    /// The file may have been rewritten since it was stat-ed; then it is opened, and the read fails close.
+    if (!num_row_groups || !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        return false;
+
+    ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    return true;
+#else
+    return false;
+#endif
+}
+
 void StorageFileSource::writePendingTopKQueryConditionCacheEntries()
 {
     /// A file changed during the query: the files read are not the ones the key describes.
@@ -1790,7 +1856,7 @@ void StorageFileSource::writePendingTopKQueryConditionCacheEntries()
                     matched_row_groups.erase(row_group);
 
         writeQueryConditionCacheEntry(
-            storage->getStorageID().uuid,
+            query_condition_cache_table_id,
             entry.cache_file_key,
             top_k_query_condition_cache_key->condition_hash,
             top_k_query_condition_cache_key->condition,
@@ -1806,7 +1872,7 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
         return false;
 
-    auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
+    auto num_rows_from_cache = tryGetNumRowsFromCache(current_archive_entry_cache_key.value_or(current_path), file_stat.st_mtime);
     if (!num_rows_from_cache)
         return false;
 
@@ -1863,6 +1929,7 @@ Chunk StorageFileSource::generate()
                         filename_override = files_iterator->getFileNameInArchive();
 
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, std::nullopt);
                         if (need_only_count && tryGetCountFromCache(file_stat))
                             continue;
 
@@ -1886,6 +1953,7 @@ Chunk StorageFileSource::generate()
                     }
                     else
                     {
+                        std::optional<size_t> entry_position;
                         while (true)
                         {
                             if (file_enumerator == nullptr)
@@ -1908,10 +1976,12 @@ Chunk StorageFileSource::generate()
 
                                 archive_reader = createArchiveReader(archive);
                                 file_enumerator = archive_reader->firstFile();
+                                entry_positions.reset();
                                 continue;
                             }
 
                             bool file_found = true;
+                            entry_position = entry_positions.onEntry(file_enumerator->getFileName());
                             while (!files_iterator->validFileInArchive(file_enumerator->getFileName()))
                             {
                                 if (!file_enumerator->nextFile())
@@ -1919,6 +1989,7 @@ Chunk StorageFileSource::generate()
                                     file_found = false;
                                     break;
                                 }
+                                entry_position = entry_positions.onEntry(file_enumerator->getFileName());
                             }
 
                             if (file_found)
@@ -1932,6 +2003,7 @@ Chunk StorageFileSource::generate()
 
                         chassert(file_enumerator);
                         current_path = fmt::format("{}::{}", archive_reader->getPath(), *filename_override);
+                        current_archive_entry_cache_key = getArchiveEntryKey(current_path, entry_position);
                         current_file_size = file_enumerator->getFileInfo().uncompressed_size;
                         current_file_last_modified = file_enumerator->getFileInfo().last_modified;
                         if (need_only_count && tryGetCountFromCache(current_archive_stat))
@@ -1953,6 +2025,7 @@ Chunk StorageFileSource::generate()
                 else
                 {
                     current_path = files_iterator->next();
+                    current_archive_entry_cache_key.reset();
                     if (current_path.empty())
                         return {};
 
@@ -2002,14 +2075,7 @@ Chunk StorageFileSource::generate()
                 /// recently - or with an mtime in the future, e.g. due to clock skew on a
                 /// network mount - it fails close and stays bypassed (see the gates below)
                 /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-                static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                 {
@@ -2020,6 +2086,13 @@ Chunk StorageFileSource::generate()
 
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
+
+                if (canSkipFileByCachedStatistics())
+                {
+                    /// As if the reader had skipped every row group of the file by its statistics.
+                    checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
+                    continue;
+                }
 
                 if (is_one_format)
                 {
@@ -2070,7 +2143,18 @@ Chunk StorageFileSource::generate()
                 md.size_bytes = *current_file_size;
                 md.last_modified = *current_file_last_modified;
                 md.etag = *current_file_cache_version;
+                /// The token identifies the content only once it has settled. The format metadata
+                /// cache uses it regardless (see above), but the content caches, such as the columns
+                /// cache, check `isEtagUsableAsCacheKey`.
+                md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
+                /// The path of a local file is absolute, so it identifies the file on the server.
+                if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                {
+                    object_with_metadata->path_for_content_cache = current_path;
+                    object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                    object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                }
             }
 
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
@@ -2099,16 +2183,13 @@ Chunk StorageFileSource::generate()
             std::optional<UInt64> top_k_condition_hash = getTopKConditionHashForCurrentFile();
 
             QueryConditionCachePtr query_condition_cache;
-            /// A table without a UUID (e.g. the one behind the `file` table function) has no cache entries.
             if (object_with_metadata.has_value() && current_file_version_settled && (plain_condition_hash || top_k_condition_hash)
-                && storage->getStorageID().uuid != UUIDHelpers::Nil)
+                && query_condition_cache_table_id != UUIDHelpers::Nil)
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                const auto table_uuid = storage->getStorageID().uuid;
-
                 /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
                 /// however many keys are probed.
                 std::optional<QueryConditionCache::MatchingMarks> matching_marks;
@@ -2124,11 +2205,11 @@ Chunk StorageFileSource::generate()
                 };
                 if (plain_condition_hash)
                     merge_matching_marks(query_condition_cache->read(
-                        table_uuid, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
+                        query_condition_cache_table_id, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
                 if (top_k_condition_hash)
                 {
                     auto marks = query_condition_cache->read(
-                        table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
+                        query_condition_cache_table_id, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false);
                     /// An entry that skips no row group beyond the plain verdict changes nothing, so it is not
                     /// used at all: a later change of a file then only invalidates the key, rather than failing
                     /// the query for an entry that did not matter.
@@ -2365,8 +2446,8 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
-            addNumRowsToCache(current_path, total_rows_in_file);
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
+            addNumRowsToCache(current_archive_entry_cache_key.value_or(current_path), total_rows_in_file);
 
         total_rows_in_file = 0;
 
@@ -2417,7 +2498,7 @@ Chunk StorageFileSource::generate()
                 else if (buckets_opt.has_value() && format_filter_info->condition_hash)
                 {
                     writeQueryConditionCacheEntry(
-                        storage->getStorageID().uuid,
+                        query_condition_cache_table_id,
                         cache_file_key,
                         *format_filter_info->condition_hash,
                         format_filter_info->filter_actions_dag->dumpNames(),
@@ -2425,6 +2506,9 @@ Chunk StorageFileSource::generate()
                         std::unordered_set<size_t>(buckets_opt->first.begin(), buckets_opt->first.end()),
                         getContext());
                 }
+
+                if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+                    input_format->cacheFilterColumnStatistics();
             }
             catch (...)
             {
@@ -2552,6 +2636,25 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     /// rows that belong to the top-K. A column with no default expression is never rewritten above
     /// the reader, so for it the two values always agree.
     return !info.columns_description.hasDefault(sort_column.name);
+}
+
+bool ReadFromFile::supportsMinMaxFromStatistics() const
+{
+    if (!boost::iequals(storage->format_name, "Parquet") || storage->archive_info || need_only_count)
+        return false;
+
+    if (info.formatReadsHivePartitionColumns() || filter_actions_dag || query_info.prewhere_info || query_info.row_level_filter)
+        return false;
+
+    /// Every output column must come from the format unchanged: virtual columns are appended after the read, and a
+    /// `DEFAULT` column is recomputed for the values the format reports as missing.
+    for (const auto & column : *getOutputHeader())
+    {
+        const auto * format_column = info.format_header.findByName(column.name);
+        if (!format_column || !format_column->type->equals(*column.type) || info.columns_description.hasDefault(column.name))
+            return false;
+    }
+    return true;
 }
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2744,10 +2847,11 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
-    /// Only plain local files have version tokens, and only a table with a UUID has cache entries.
+    /// Only plain local files have version tokens. A table without a UUID (the `file` table function, or a
+    /// `File` table in a database without UUIDs) keeps its entries under a synthetic `table_id`
+    /// (see `QueryConditionCache::getTableIdForFileEntries`), which partitions the TopK entries as well.
     /// With distributed processing the files arrive from the initiator at run time.
-    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing
-        || storage->getStorageID().uuid == UUIDHelpers::Nil)
+    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing)
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
@@ -2769,7 +2873,7 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         key->condition = filter_actions_dag->dumpNames() + ", ";
     }
     else if (!query_info.prewhere_info)
-        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
+        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
     else
         return {};
 
@@ -2795,8 +2899,17 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         key->file_version_tokens.emplace(path, std::move(token));
     }
 
+    /// The filter can depend on `_table`, which is not covered by the `table_id`: tables without a UUID share
+    /// the synthetic `table_id` of their files, and a table with a UUID keeps it on `RENAME`. So the key
+    /// covers the name the reader materializes as `_table`.
+    const String table_name = storage->getStorageID().getTableName();
+    SipHash table_name_hash;
+    table_name_hash.update(table_name.size());
+    table_name_hash.update(table_name);
+
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
     boost::hash_combine(condition_hash, files_hash.get64());
+    boost::hash_combine(condition_hash, table_name_hash.get64());
     key->condition_hash = condition_hash;
     return key;
 }
@@ -2831,6 +2944,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
+    format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
+        && !query_info.prewhere_info && !query_info.row_level_filter;
+    format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
+        && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
@@ -2840,6 +2957,19 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
+
+    /// Derived from the snapshot the query is planned against, not from the live metadata, so a concurrent
+    /// `ALTER` cannot make this query write entries under the identity of the altered table.
+    /// The format settings of the storage are fixed at `CREATE`.
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
+    if (format_filter_info->condition_hash || top_k_query_condition_cache_key)
+        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
+            storage->getStorageID().uuid,
+            storage->format_name,
+            storage->compression_method,
+            storage_snapshot->metadata->getColumns(),
+            format_filter_info->column_mapper.get(),
+            storage->format_settings ? &*storage->format_settings : nullptr);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2862,7 +2992,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             parser_shared_resources,
             format_filter_info,
             lazy_row_index_registry,
-            top_k_query_condition_cache_key);
+            top_k_query_condition_cache_key,
+            query_condition_cache_table_id);
 
         pipes.emplace_back(std::move(source));
     }
@@ -2958,7 +3089,14 @@ public:
                     md.size_bytes = file_stat.st_size;
                     md.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
                     md.etag = file.file.version_token;
+                    md.etag_is_strong = isFileCacheVersionTokenSettled(file_stat);
                     object_with_metadata.emplace(path, std::move(md));
+                    if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                    {
+                        object_with_metadata->path_for_content_cache = path;
+                        object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                        object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                    }
                 }
 
                 /// The rows of a file must be returned in ascending order, otherwise
@@ -3447,6 +3585,28 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+bool StorageFile::hasUnreplicatedTableDataOnDisk() const
+{
+    /// A table over a file descriptor owns nothing.
+    if (use_table_fd)
+        return false;
+
+    /// Read-only variants over an explicit path are deliberately not recognized here, even though `write` rejects
+    /// them, because whether a path denotes such a variant is not decided by the `CREATE TABLE` query alone, so
+    /// the same query could be accepted on one replica and rejected on another:
+    /// - an archive: the `::` path syntax is interpreted only when `allow_archive_path_syntax` is enabled, and a
+    ///   `Replicated` database applies on other replicas only the settings changed by the initiating query, not
+    ///   each replica's own profile, so the path can denote an archive on one replica and a plain file on another;
+    /// - a glob: `is_path_with_globs` follows the number of files the pattern matches on the local filesystem
+    ///   right now, so a table accepted as read-only could also later become writable.
+    /// Rejecting such a read-only table is a false rejection, which this gate tolerates; accepting a table that
+    /// turns out to own local unreplicated data is not.
+
+    /// A table over an explicit path keeps its own data in a local file just like a table inside the database
+    /// directory does, and that data is not replicated.
+    return true;
+}
+
 Strings StorageFile::getPathsSnapshot() const
 {
     std::lock_guard lock{paths_mutex};
@@ -3550,6 +3710,21 @@ void registerStorageFile(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Storage File requires from 1 to 3 arguments: "
                                 "name of used format, source and compression_method.");
+
+            /// Only a table over a file descriptor does not own its data, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
+            /// Checked before the storage is constructed, because the construction resolves the path and may infer the schema
+            /// from the file, which would turn a deterministic rejection into a file or schema error. This also covers
+            /// `ENGINE = URL('file://...')`, which creates its delegate with this creator.
+            bool is_table_over_fd = false;
+            if (engine_args_ast.size() >= 2)
+            {
+                if (tryGetIdentifierName(engine_args_ast[1]))
+                    is_table_over_fd = true;
+                else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
+                    is_table_over_fd = literal->value.getType() == Field::Types::Int64 || literal->value.getType() == Field::Types::UInt64;
+            }
+            if (!is_table_over_fd)
+                throwIfUnreplicatedTableDataNotAllowed(factory_args);
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");

@@ -14,9 +14,9 @@ La lista de tablas y su estructura se obtienen del servidor remoto bajo demanda 
 
 Esto resulta útil para federar varios clústeres de ClickHouse o para conectar un clúster de ClickHouse más grande con `clickhouse-local` o con un clúster más pequeño.
 
-<div id="creating-a-database">
-  ## Creación de una base de datos
-</div>
+Para acceder por su nombre a un clúster definido en la configuración del servidor, en lugar de indicar sus direcciones explícitamente, utilice el motor de base de datos [`Cluster`](/es/reference/engines/database-engines/cluster).
+
+## Creación de una base de datos {#creating-a-database}
 
 <Tabs>
   <Tab title="Remote" id="remote">
@@ -56,20 +56,16 @@ CREATE DATABASE remote_db
 ENGINE = Remote(my_named_collection, database = 'default');
 ```
 
-<div id="notes">
-  ## Notas
-</div>
+## Notas {#notes}
 
 * El motor es una vista de lectura directa del servidor remoto: las sentencias DDL `CREATE TABLE`, `DROP TABLE`, `ALTER` y similares aplicadas a la base de datos `Remote` no son compatibles. Administre el esquema directamente en el servidor remoto.
 * Los derechos de acceso se aplican en el servidor remoto al usuario remoto configurado y, localmente, mediante los privilegios habituales sobre la base de datos y sus tablas.
 * Una tabla de un segmento local que el usuario no tiene permitido ver se informa como inexistente en lugar de como prohibida, por lo que una base de datos `Remote` no puede utilizarse para sondear los nombres de las tablas de una base de datos local sobre la que el usuario no tiene privilegios. Esto se aplica tanto a la enumeración (`SHOW TABLES`, `EXISTS TABLE`) como a la resolución (`DESCRIBE TABLE`, `SHOW CREATE TABLE`, `SELECT`), y dicha tabla tampoco se proporciona a través de las réplicas remotas de su segmento: la alternativa descrita anteriormente solo se activa cuando la réplica local realmente no tiene la tabla.
 * La enumeración de las tablas de una base de datos que existe en la réplica local de un segmento también incluye las tablas que solo existen en las réplicas remotas de ese segmento, de modo que `SHOW TABLES` y `system.tables` coincidan con `EXISTS TABLE`, `DESCRIBE TABLE` y `SELECT`, que recurren a esas réplicas. Cuando ninguna de las réplicas remotas responde, se devuelve la lista de la réplica local tal cual, porque ya es la respuesta de una réplica disponible.
 * Si el servidor remoto no está disponible, la enumeración de sus tablas (`SHOW TABLES`, `system.tables`) informa del error de conexión en lugar de devolver una lista vacía de tablas, igual que `EXISTS TABLE` y `SELECT` en la misma base de datos. Tenga en cuenta que un `SELECT` de `system.tables` que abarque todas las bases de datos también falla mientras una de esas bases de datos no sea accesible.
-* Una base de datos `Remote` puede apuntar a otra base de datos `Remote` en el mismo servidor. Enumerar y describir las tablas de dicha cadena no requiere privilegios sobre la base de datos intermedia: no contiene datos ni metadatos propios, y cada salto ya comprueba los derechos del solicitante sobre los objetos que representa. En cambio, leer y escribir datos requiere `SELECT` / `INSERT` en cada salto de la cadena, porque la consulta se ejecuta realmente sobre la tabla de la base de datos intermedia, exactamente igual que para una tabla `Distributed` sobre otra tabla `Distributed`. La regla de visibilidad descrita anteriormente se mantiene a lo largo de la cadena: una tabla que la base de datos intermedia oculta al solicitante tampoco se proporciona a través de las réplicas remotas de la base de datos externa. Si la base de datos intermedia de la réplica local no puede acceder a su propio destino, la réplica local del segmento externo no puede responder en absoluto —exactamente como si la propia réplica estuviera inactiva—, y la base de datos externa recurre a las réplicas remotas del segmento.
+* Una base de datos `Remote` puede apuntar a otra base de datos `Remote` en el mismo servidor. Enumerar y describir las tablas de dicha cadena no requiere privilegios sobre la base de datos intermedia: no contiene datos ni metadatos propios, y cada salto ya comprueba los derechos del solicitante sobre los objetos que representa. En cambio, leer y escribir datos requiere `SELECT` / `INSERT` en cada salto de la cadena, porque la consulta se ejecuta realmente sobre la tabla de la base de datos intermedia, exactamente igual que para una tabla `Distributed` sobre otra tabla `Distributed`. La regla de visibilidad descrita anteriormente se mantiene a lo largo de la cadena: una tabla que la base de datos intermedia oculta al solicitante tampoco se proporciona a través de las réplicas remotas de la base de datos externa. Si la base de datos intermedia de la réplica local no puede acceder a su propio destino, la réplica local del segmento externo no puede responder en absoluto —exactamente como si la propia réplica estuviera inactiva—, y la base de datos externa recurre a las réplicas remotas del segmento. Una cadena en el mismo servidor que vuelve a hacer referencia a sí misma (incluida una base de datos que apunta a sí misma) se rechaza con el error `INFINITE_LOOP` cuando se crea la base de datos que completa la cadena; un ciclo que, pese a ello, se forme más adelante (por ejemplo, si al recargar la configuración un segmento de una base de datos [`Cluster`](/es/reference/engines/database-engines/cluster) pasa a ser local) no afecta a otras bases de datos: las enumeraciones de todo el servidor, como `system.tables`, omiten la cadena cíclica, que no enumera ninguna tabla, y al resolver una tabla en ella se informa de `INFINITE_LOOP`.
 
-<div id="example">
-  ## Ejemplo
-</div>
+## Ejemplo {#example}
 
 Cree una base de datos `Remote` que apunte a la base de datos `system` de un servidor remoto y lea datos de ella:
 

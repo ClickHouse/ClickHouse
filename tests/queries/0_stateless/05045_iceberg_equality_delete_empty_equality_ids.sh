@@ -16,7 +16,7 @@ trap '${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE} SYNC"; rm -rf 
 
 # The count is the control: the table reads correctly before the manifest is touched.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 -m --query "
-    CREATE TABLE ${TABLE} (id UInt64) ENGINE = IcebergLocal('${TABLE_PATH}') ORDER BY id;
+    CREATE TABLE ${TABLE} (id Int64) ENGINE = IcebergLocal('${TABLE_PATH}') ORDER BY id;
     INSERT INTO ${TABLE} SELECT number FROM numbers(10);
     DELETE FROM ${TABLE} WHERE id < 5;
     SELECT count() FROM icebergLocal('${TABLE_PATH}') SETTINGS use_iceberg_metadata_files_cache = 0;
