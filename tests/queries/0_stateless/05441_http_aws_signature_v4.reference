@@ -9,6 +9,8 @@ GET presigned with a query: 200 42
 wrong secret: 403 Code: 516
 unknown user: 403 Code: 516
 password stored as a hash: 403 Code: 516
+restricting method storing a hash: 403 Code: 516
+expired method storing a hash: 403 Code: 516
 presigned with wrong secret: 403 Code: 516
 presigned and expired: 403 Code: 516
 request too old: 403 Code: 516
@@ -28,6 +30,14 @@ path filter: 200 1	Hello
 encoded slash instead of a separator: 403 Code: 516
 signed query with a plus: 200 a+b
 plus instead of an encoded plus: 403 Code: 516
+signed query_id with an encoded hash: 200 1	Hello
+hash instead of an encoded hash: 403 Code: 516
+repeated query parameter: 403 Code: 516
+repeated query parameter in a different case: 403 Code: 516
+profile before a setting: 200 1	Hello
+2	World
+profile after a setting: 200 1	Hello
+2	World
 header with sequential spaces: 403 Code: 516
 range from the beginning: 200 1	Hello
 2	World

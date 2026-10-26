@@ -10,17 +10,29 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 USER_NAME="u_sigv4_${CLICKHOUSE_DATABASE}"
 HASHED_USER_NAME="u_sigv4_hashed_${CLICKHOUSE_DATABASE}"
+MIXED_GRANTS_USER_NAME="u_sigv4_mixed_grants_${CLICKHOUSE_DATABASE}"
+MIXED_EXPIRED_USER_NAME="u_sigv4_mixed_expired_${CLICKHOUSE_DATABASE}"
+PROFILE_NAME="p_sigv4_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "
-    DROP USER IF EXISTS ${USER_NAME}, ${HASHED_USER_NAME};
+    DROP USER IF EXISTS ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
+    DROP SETTINGS PROFILE IF EXISTS ${PROFILE_NAME};
     CREATE USER ${USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret';
     CREATE USER ${HASHED_USER_NAME} IDENTIFIED WITH sha256_password BY 'secret';
+    -- The same password is accepted by a method storing its hash, which limits the grants or the lifetime of the login.
+    -- An AWS signature can be checked only against the plaintext password, so it must not bypass these limits.
+    CREATE USER ${MIXED_GRANTS_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret',
+        sha256_password BY 'secret' GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.nonexistent);
+    CREATE USER ${MIXED_EXPIRED_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret',
+        sha256_password BY 'secret' VALID UNTIL '2020-01-01 00:00:00 UTC';
+    CREATE SETTINGS PROFILE ${PROFILE_NAME} SETTINGS limit = 1;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t (x UInt32, s String) ENGINE = MergeTree ORDER BY x;
     INSERT INTO ${CLICKHOUSE_DATABASE}.t VALUES (1, 'Hello'), (2, 'World');
-    GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t TO ${USER_NAME}, ${HASHED_USER_NAME};
+    GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t TO ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
 "
 
-python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${CLICKHOUSE_DATABASE}" "${USER_NAME}" "${HASHED_USER_NAME}" <<'EOF'
+python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${CLICKHOUSE_DATABASE}" "${USER_NAME}" "${HASHED_USER_NAME}" \
+    "${MIXED_GRANTS_USER_NAME}" "${MIXED_EXPIRED_USER_NAME}" "${PROFILE_NAME}" <<'EOF'
 import datetime
 import hashlib
 import hmac
@@ -30,6 +42,7 @@ import sys
 import urllib.parse
 
 host, port, database, user, hashed_user = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+mixed_grants_user, mixed_expired_user, profile = sys.argv[6], sys.argv[7], sys.argv[8]
 host_header = f"{host}:{port}"
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
@@ -146,6 +159,8 @@ show("GET presigned with a query", send("GET", "/", presigned_params("GET", "/",
 show("wrong secret", signed_request("GET", table_path, secret="wrong"))
 show("unknown user", signed_request("GET", table_path, access_key="nonexistent_sigv4_user"))
 show("password stored as a hash", signed_request("GET", table_path, access_key=hashed_user))
+show("restricting method storing a hash", signed_request("GET", table_path, access_key=mixed_grants_user))
+show("expired method storing a hash", signed_request("GET", table_path, access_key=mixed_expired_user))
 show("presigned with wrong secret", send("GET", table_path, presigned_params("GET", table_path, secret="wrong")))
 show("presigned and expired", send("GET", table_path, presigned_params("GET", table_path, expires=60, amz_date="20200101T000000Z")))
 show("request too old", signed_request("GET", table_path, amz_date="20200101T000000Z"))
@@ -175,6 +190,17 @@ show("encoded slash instead of a separator", send("GET", filtered_path, presigne
 show("signed query with a plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")])))
 show("plus instead of an encoded plus", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 'a+b'")]),
      tamper_url=lambda url: url.replace("%2B", "+")))
+show("signed query_id with an encoded hash", send("GET", table_path, presigned_params("GET", table_path,
+     [("query_id", f"{database}_a#b"), ("filter", "x=1")])))
+show("hash instead of an encoded hash", send("GET", table_path, presigned_params("GET", table_path,
+     [("query_id", f"{database}_a#b"), ("filter", "x=1")]), tamper_url=lambda url: url.replace("%23", "#")))
+show("repeated query parameter", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 1"), ("query", "SELECT 2")])))
+show("repeated query parameter in a different case", send("GET", "/", presigned_params("GET", "/", [("query", "SELECT 1"), ("Query", "SELECT 2")])))
+# A profile is applied before the other settings, regardless of the order of the parameters, which is not signed.
+show("profile before a setting", send("GET", table_path, presigned_params("GET", table_path,
+     [("order", "x"), ("profile", profile), ("limit", "2")])))
+show("profile after a setting", send("GET", table_path, presigned_params("GET", table_path,
+     [("order", "x"), ("limit", "2"), ("profile", profile)])))
 show("header with sequential spaces", signed_request("GET", table_path, headers={"X-ClickHouse-Database": "a b"},
      tamper_headers={"x-clickhouse-database": "a  b"}))
 
@@ -195,4 +221,7 @@ show("PUT with signed streaming payload", signed_request("PUT", csv_path, body=b
 show("GET after PUT", signed_request("GET", table_path, params=[("order", "x")]))
 EOF
 
-${CLICKHOUSE_CLIENT} --query "DROP USER ${USER_NAME}, ${HASHED_USER_NAME}"
+${CLICKHOUSE_CLIENT} --query "
+    DROP USER ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
+    DROP SETTINGS PROFILE ${PROFILE_NAME};
+"
