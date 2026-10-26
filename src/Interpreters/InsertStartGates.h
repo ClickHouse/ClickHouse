@@ -52,6 +52,10 @@ public:
         std::function<void()> check;
         /// Set for the check of a write that is hidden behind a forwarding sink, see `DeferredOutcome`.
         std::shared_ptr<DeferredOutcome> deferred;
+        /// For a deferred check: the forwarding storage whose sink enforces it. The sinks of a nested INSERT
+        /// register the deferred checks of a forwarding storage behind them (a `Buffer` behind an `Alias`)
+        /// once more, but possibly after the decision has been made, see `addCheck`.
+        std::weak_ptr<const void> enforced_by;
     };
 
     /// `InsertStartGates::get` moves the checks of a merged gate without allocating, so it cannot fail half way.
@@ -67,7 +71,11 @@ public:
     ///
     /// A check registered after the decision has been made - by a sink created during the execution, in
     /// a nested `INSERT` - is not run: the query may already have written into the table, and running the
-    /// check now would count those parts. The sink observes the decision that has been made.
+    /// check now would count those parts. The sink observes the decision that has been made. A deferred
+    /// check observes the outcome of the deferred checks of the same forwarding storage that took part in
+    /// the decision: the outer sink registers them on behalf of a `Buffer` behind it while the pipeline is
+    /// being built, but leaves their enforcement to the `BufferSink` of the nested INSERT, which writes
+    /// into the destination only when the buffer is flushed (see `registerHiddenPreWriteChecks`).
     void addCheck(Check check)
     {
         std::unique_lock lock(mutex);
@@ -81,7 +89,20 @@ public:
         }
 
         if (done)
+        {
+            if (check.deferred && !check.enforced_by.expired())
+            {
+                for (const auto & [enforced_by, outcome] : failed_deferred)
+                {
+                    if (!enforced_by.owner_before(check.enforced_by) && !check.enforced_by.owner_before(enforced_by))
+                    {
+                        check.deferred->exception = outcome->exception;
+                        break;
+                    }
+                }
+            }
             return;
+        }
 
         /// A deferred check is never deduplicated: its forwarding sink waits for its own outcome.
         if (!check.deferred)
@@ -109,6 +130,12 @@ public:
 
         if (!done)
         {
+            /// Reserved before the checks run, so that recording a failure below cannot throw.
+            size_t num_deferred = 0;
+            for (const auto & check : checks)
+                num_deferred += check.deferred != nullptr;
+            failed_deferred.reserve(num_deferred);
+
             try
             {
                 for (const auto & check : checks)
@@ -126,6 +153,7 @@ public:
                     catch (...)
                     {
                         check.deferred->exception = std::current_exception();
+                        failed_deferred.emplace_back(check.enforced_by, check.deferred);
                     }
                 }
             }
@@ -150,6 +178,10 @@ private:
 
     /// Registered while the gate is not `done`.
     std::vector<Check> checks;
+
+    /// The deferred checks that failed when the decision was made, with the forwarding storages enforcing
+    /// them. Consulted by a deferred check registered after the decision, see `addCheck`.
+    std::vector<std::pair<std::weak_ptr<const void>, std::shared_ptr<DeferredOutcome>>> failed_deferred;
 
     /// Set only while the gate is not `done`: from then on every sink holding this gate observes the
     /// decision of `forward_to` instead. Never changes once set.

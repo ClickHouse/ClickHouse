@@ -35,6 +35,9 @@ void SinkToStorage::runHiddenPreWriteChecks(const StorageID * forwarded_to) cons
 {
     for (const auto & hidden : hidden_pre_write_checks)
     {
+        if (!hidden.enforced_here)
+            continue;
+
         if (forwarded_to
             && (hidden.forwarded_to.getDatabaseName() != forwarded_to->getDatabaseName()
                 || hidden.forwarded_to.getTableName() != forwarded_to->getTableName()))

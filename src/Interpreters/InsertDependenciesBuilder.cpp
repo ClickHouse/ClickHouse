@@ -768,11 +768,23 @@ StoragePtr tryGetDistributedLocalTarget(const StorageDistributed & distributed, 
     return DatabaseCatalog::instance().tryGetTable(StorageID(local_database, distributed.getRemoteTableName()), context);
 }
 
+/// Where a deferred pre-write check registered by `registerHiddenPreWriteChecks` comes from.
+struct HiddenCheckOrigin
+{
+    /// The table the nested INSERT of the forwarding sink writes into, see `SinkToStorage::HiddenPreWriteCheck`.
+    StorageID forwarded_to;
+    /// The forwarding storage whose sink enforces the check: the storage of the outer forwarding sink, or the
+    /// last `Buffer` on the way to the table of the check.
+    StoragePtr enforced_by;
+    /// Whether the outer forwarding sink enforces the check, i.e. there is no `Buffer` on the way.
+    bool enforced_here = true;
+};
+
 void registerHiddenPreWriteChecks(
     const StoragePtr & storage,
     const ContextPtr & context,
     const InsertStartGatesPtr & gates,
-    const StorageID & forwarded_to,
+    const HiddenCheckOrigin & origin,
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
     bool follow_dependent_views = true);
@@ -784,7 +796,7 @@ void registerHiddenDependentViewsPreWriteChecks(
     const StoragePtr & storage,
     const ContextPtr & context,
     const InsertStartGatesPtr & gates,
-    const StorageID & forwarded_to,
+    const HiddenCheckOrigin & origin,
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
 {
@@ -810,7 +822,7 @@ void registerHiddenDependentViewsPreWriteChecks(
             materialized_view->tryGetTargetTable(),
             view_metadata->getSQLSecurityOverriddenContext(context),
             gates,
-            forwarded_to,
+            origin,
             depth + 1,
             result);
     }
@@ -824,7 +836,7 @@ void registerHiddenPreWriteChecks(
     const StoragePtr & storage,
     const ContextPtr & context,
     const InsertStartGatesPtr & gates,
-    const StorageID & forwarded_to,
+    const HiddenCheckOrigin & origin,
     size_t depth,
     std::vector<SinkToStorage::HiddenPreWriteCheck> & result,
     bool follow_dependent_views)
@@ -833,24 +845,33 @@ void registerHiddenPreWriteChecks(
         return;
 
     if (follow_dependent_views)
-        registerHiddenDependentViewsPreWriteChecks(storage, context, gates, forwarded_to, depth, result);
+        registerHiddenDependentViewsPreWriteChecks(storage, context, gates, origin, depth, result);
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
-        registerHiddenPreWriteChecks(alias->tryGetTargetTable(), context, gates, forwarded_to, depth + 1, result);
+        registerHiddenPreWriteChecks(alias->tryGetTargetTable(), context, gates, origin, depth + 1, result);
         return;
     }
     if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
     {
+        /// The buffer may only keep the rows in memory, so the checks behind it are enforced by the `BufferSink`
+        /// of the nested INSERT into the buffer, when it writes into the destination, and not by the outer
+        /// sink. It registers the same checks once more, and observes their outcome if the decision has been
+        /// made by then, see `InsertStartGate::addCheck`.
         registerHiddenPreWriteChecks(
-            buffer->getDestinationTable(), buffer->getDestinationWriteContext(), gates, forwarded_to, depth + 1, result);
+            buffer->getDestinationTable(),
+            buffer->getDestinationWriteContext(),
+            gates,
+            HiddenCheckOrigin{origin.forwarded_to, storage, /* enforced_here= */ false},
+            depth + 1,
+            result);
         return;
     }
     if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
             if (time_series->hasTarget(kind))
-                registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, forwarded_to, depth + 1, result);
+                registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, origin, depth + 1, result);
         return;
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -858,18 +879,18 @@ void registerHiddenPreWriteChecks(
         /// `StorageMaterializedView::write` writes into the target table with the `SQL SECURITY` context of the view.
         auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
         auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
-        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), view_context, gates, forwarded_to, depth + 1, result);
+        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), view_context, gates, origin, depth + 1, result);
         return;
     }
     if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
     {
-        registerHiddenPreWriteChecks(tryGetDistributedLocalTarget(*distributed, context), context, gates, forwarded_to, depth + 1, result);
+        registerHiddenPreWriteChecks(tryGetDistributedLocalTarget(*distributed, context), context, gates, origin, depth + 1, result);
         return;
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
     {
         registerHiddenPreWriteChecks(
-            proxy->getNested(), context, gates, forwarded_to, depth + 1, result, /* follow_dependent_views= */ false);
+            proxy->getNested(), context, gates, origin, depth + 1, result, /* follow_dependent_views= */ false);
         return;
     }
 
@@ -878,8 +899,8 @@ void registerHiddenPreWriteChecks(
         auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
-        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome});
-        result.push_back({forwarded_to, std::move(gate), std::move(outcome), context});
+        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by});
+        result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), context, origin.enforced_here});
     }
 }
 
@@ -900,7 +921,7 @@ std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
     auto add_forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context)
     {
         if (target)
-            registerHiddenPreWriteChecks(target, target_context, gates, target->getStorageID(), 1, result);
+            registerHiddenPreWriteChecks(target, target_context, gates, HiddenCheckOrigin{target->getStorageID(), storage}, 1, result);
     };
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))

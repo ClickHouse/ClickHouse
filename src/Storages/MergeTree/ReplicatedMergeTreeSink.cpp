@@ -1254,7 +1254,7 @@ InsertStartGate::Check ReplicatedMergeTreeSink::getPreWriteCheck() const
 {
     /// The limits come from the context of this sink: the sinks of different materialized views writing
     /// into the same table may run with different settings, and all of their checks take part.
-    return {context, storage.makeTooManyPartsCheck(context), /*deferred=*/ nullptr};
+    return {context, storage.makeTooManyPartsCheck(context), /*deferred=*/ nullptr, /*enforced_by=*/ {}};
 }
 
 void ReplicatedMergeTreeSink::onStart()

@@ -46,6 +46,10 @@ public:
         /// and it may be created only for the check, e.g. the `SQL SECURITY` context of a view behind the
         /// forwarding sink, so the forwarding sink keeps it alive.
         ContextPtr context;
+        /// False for a check behind a `Buffer` further down the forwarding chain: the buffer may only keep the
+        /// rows in memory, so its destination's limits are enforced by the `BufferSink` of the nested INSERT,
+        /// when it actually writes, and not by this sink.
+        bool enforced_here = true;
     };
 
     /// Set by `InsertDependenciesBuilder` for a forwarding sink, which consults them before it writes, see

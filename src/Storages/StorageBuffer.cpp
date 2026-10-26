@@ -979,7 +979,18 @@ private:
 
             LOG_DEBUG(storage.log, "Flush buffer by threshold");
             /// The flush writes out what is in the buffer now, which is not this block; the gates it
-            /// shares are decided in `flushBuffer` from the origin of the buffered rows.
+            /// shares are decided in `flushBuffer` from the origin of the buffered rows. When the rows of
+            /// this query are among them, the flush observes the decision of this query's gate for the
+            /// destination, which a sibling sink with looser limits may have made already, so the sinks of
+            /// the flush do not take part in it: enforce the checks registered with the limits of the
+            /// buffer's context, as for a direct write. A flush of the rows of other queries only decides
+            /// on its own, and must not make the decision of this query before it has written anything.
+            /// The search is linear, but so is the flush in the number of the blocks appended since the
+            /// previous one.
+            if (insert_start_gates
+                && std::find(buffer.contributing_gates.begin(), buffer.contributing_gates.end(), insert_start_gates)
+                    != buffer.contributing_gates.end())
+                runHiddenPreWriteChecks();
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
