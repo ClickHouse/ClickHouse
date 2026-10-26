@@ -3,8 +3,7 @@
 -- and so is the local day `2106-02-07` of the last instant in every time zone, including UTC.
 -- `obfuscate` keeps the source date of `DateTime` values on these days, instead of wrapping the obfuscated
 -- time of day around into another century. The rows on these days alternate with rows on an ordinary day,
--- which makes the obfuscated time of day fall anywhere in the day: with this seed, 368, 798, 742, 342 and 945
--- of the 1000 rows on these days get an obfuscated time of day outside of the representable part.
+-- which makes the obfuscated time of day fall anywhere in the day.
 
 SET obfuscate_seed = 'seed';
 SET max_threads = 1;
