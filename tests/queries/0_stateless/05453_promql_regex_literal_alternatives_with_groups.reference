@@ -1,0 +1,13 @@
+-- a group is expanded with the literals around it
+[2,3]
+[2,4]
+[1,2,4]
+[3]
+[4,5]
+-- a quantifier after a group keeps the regex
+[1,2]
+-- a metric name regex with groups reads the tags table by its primary key
+6
+7
+-- too many combinations of groups keep the regex
+7

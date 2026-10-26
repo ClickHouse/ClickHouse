@@ -4,40 +4,75 @@
 namespace DB
 {
 
-std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
+namespace
+{
+
+/// The most strings a group may be expanded to together with what precedes it, so that `(a|b)(c|d)...` cannot blow up.
+constexpr size_t MAX_EXPANDED_TERMS = 100;
+
+std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos);
+
+/// Parses literals and groups up to the next `|`, the `)` closing the current group, or the end of the regex.
+std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos)
 {
     Strings terms(1);
-    size_t depth = 0;
-    bool term_ended = false;
-    for (size_t pos = 0; pos < regex.size(); ++pos)
+    while (pos < regex.size() && regex[pos] != '|' && regex[pos] != ')')
     {
         char c = regex[pos];
-        if (c == '|')
+        if (c == '(')
         {
-            terms.emplace_back();
-            term_ended = false;
-        }
-        else if (c == '(')
-        {
-            if (term_ended || !terms.back().empty())
-                return {};
-            if (regex.substr(pos + 1).starts_with("?:"))
+            ++pos;
+            if (regex.substr(pos).starts_with("?:"))
                 pos += 2;
-            ++depth;
-        }
-        else if (c == ')')
-        {
-            if (depth == 0)
+            auto group = parseAlternation(regex, pos);
+            if (!group || pos == regex.size())
                 return {};
-            --depth;
-            term_ended = true;
+            ++pos;
+
+            if (terms.size() > 1 && group->size() > 1 && terms.size() * group->size() > MAX_EXPANDED_TERMS)
+                return {};
+            Strings expanded;
+            expanded.reserve(terms.size() * group->size());
+            for (const auto & prefix : terms)
+                for (const auto & suffix : *group)
+                    expanded.push_back(prefix + suffix);
+            terms = std::move(expanded);
         }
-        else if (term_ended || std::string_view("\\.^$?*+[]{}").contains(c))
+        else if (std::string_view("\\.^$?*+[]{}").contains(c))
             return {};
         else
-            terms.back() += c;
+        {
+            for (auto & term : terms)
+                term += c;
+            ++pos;
+        }
     }
-    if (depth != 0)
+    return terms;
+}
+
+/// Parses terms separated by `|` up to the `)` closing the current group or the end of the regex.
+std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos)
+{
+    auto terms = parseConcatenation(regex, pos);
+    while (terms && pos < regex.size() && regex[pos] == '|')
+    {
+        ++pos;
+        auto next_terms = parseConcatenation(regex, pos);
+        if (!next_terms)
+            return {};
+        terms->insert(terms->end(), std::make_move_iterator(next_terms->begin()), std::make_move_iterator(next_terms->end()));
+    }
+    return terms;
+}
+
+}
+
+std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
+{
+    size_t pos = 0;
+    auto terms = parseAlternation(regex, pos);
+    /// The parsing stops before the end at a `)` without a matching `(`.
+    if (!terms || pos != regex.size())
         return {};
     return terms;
 }
