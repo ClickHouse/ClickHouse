@@ -23,6 +23,7 @@ ch_cc_library(
         "@clickhouse_fmtlib//:_fmt",
         "//src/Common",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Dictionaries:clickhouse_dictionaries",

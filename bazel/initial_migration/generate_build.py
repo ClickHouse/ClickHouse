@@ -53,9 +53,14 @@ LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
 # Public headers use deps so consumers receive the same CcInfo.
 SYSTEM_TABLE_REGISTRATION = "//src/Storages/System:clickhouse_storages_system__compile_1"
 CLIENT_PARSER_HEADER_DEPS = ["//src/Common:string_utils", "@clickhouse_boost//:boost_headers_no_openssl"]
-BENCHMARK_PARSER_DEPS = ["//src:dbms", "@clickhouse_boost//:_boost_program_options"]
+# A (dependency, predecessor) pair keeps C++ include directories and linker inputs in order.
+AGGREGATE_HEADERS = ("//src/AggregateFunctions:headers", "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0")
 FIRST_PARTY_HEADER_DEPS = {
-    ("src", "dbms", "deps"): CLIENT_PARSER_HEADER_DEPS,
+    ("src", "dbms", "deps"): [(dep, ":dbms__compile_0") for dep in CLIENT_PARSER_HEADER_DEPS],
+    ("src", "dbms__compile_2", "implementation_deps"): [
+        ("//src/AggregateFunctions:aggregate_api", "//src/AggregateFunctions:headers"),
+        ("//src/Common:cache_policy", "//src/Common"),
+    ],
     ("src", "clickhouse_common_io__compile_0", "implementation_deps"): [
         "//src/Parsers:parser_api", "//src/Parsers:clickhouse_parsers",
     ],
@@ -72,22 +77,27 @@ FIRST_PARTY_HEADER_DEPS = {
         "@clickhouse_aws//:_aws__compile_0", "@lz4//:lz4",
     ],
     ("programs/benchmark", "clickhouse-benchmark-lib", "implementation_deps"): [
-        "//src/Parsers:parser_api", *BENCHMARK_PARSER_DEPS,
+        "//src/Parsers:parser_api", AGGREGATE_HEADERS,
+        ("//src:dbms", "//programs/client:clickhouse-client-lib"),
+        ("@clickhouse_boost//:_boost_program_options", "//programs/client:clickhouse-client-lib"),
     ],
-    ("programs/client", "clickhouse-client-lib", "implementation_deps"): ["//src/Parsers:headers", FUNCTION_REGISTRATION],
+    ("programs/client", "clickhouse-client-lib", "implementation_deps"): [
+        "//src/Parsers:headers", FUNCTION_REGISTRATION, AGGREGATE_HEADERS,
+    ],
     ("programs/format", "clickhouse-format-lib", "implementation_deps"): [
-        "//src/Parsers:parser_api", "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION,
+        "//src/Parsers:parser_api", "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION, AGGREGATE_HEADERS,
     ],
     ("programs/install", "clickhouse-install-lib", "implementation_deps"): ["//src/Access/Common:headers"],
+    ("programs/keeper-bench", "clickhouse-keeper-bench-lib", "implementation_deps"): [AGGREGATE_HEADERS],
     ("programs/keeper-client", "clickhouse-keeper-client-lib", "implementation_deps"): ["//src:dbms__compile_0"],
     **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): ["//src:headers"]
         for name in ("keeper-converter", "keeper-utils", "packed-io")},
     ("programs/local", "clickhouse-local-lib", "implementation_deps"): [
-        "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION,
+        "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION, AGGREGATE_HEADERS,
     ],
     ("programs/server", "clickhouse-server-lib", "implementation_deps"): [
         "//src/Functions:headers", "//src/Access/Common:headers", "//src/Parsers:headers",
-        FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION,
+        FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION, AGGREGATE_HEADERS,
     ],
     ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_base", "implementation_deps"): ["//src/Parsers:headers"],
     ("src/Common/ZooKeeper", "headers", "deps"): ["//src:column_types"],
@@ -102,7 +112,7 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src/Functions/GatherUtils", "clickhouse_functions_gatherutils", "implementation_deps"): ["//src:headers"],
     ("src/Functions/TimeSeries", "clickhouse_functions_time_series", "implementation_deps"): ["//src:headers"],
     ("src/Functions/UniqTheta", "clickhouse_functions_uniqtheta", "implementation_deps"): [
-        "//src/Functions:headers", "//src:headers",
+        "//src/Functions:headers", "//src:headers", AGGREGATE_HEADERS,
     ],
     ("src/Functions/URL", "clickhouse_functions_url__compile_0", "implementation_deps"): ["//src/Functions:headers"],
     ("src/Functions/array", "array_distance_transposed", "implementation_deps"): ["//src/Functions:headers"],
@@ -113,6 +123,9 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src/Loggers", "loggers", "deps"): ["//src/Common:parser_support_api"],
     ("src/Parsers", "clickhouse_parsers", "deps"): [
         "//bazel:clickhouse_config_headers", "//src/Common:parser_support_api", "//src/Common:memory_tracking_api",
+    ],
+    ("src/Storages/benchmarks", "benchmark_statistics_objects", "implementation_deps"): [
+        ("//src/AggregateFunctions:headers", "//src:dbms"),
     ],
     ("src/Storages/System", "clickhouse_storages_system__compile_1", "implementation_deps"): ["//src/Access/Common:headers"],
     ("src/Storages/System", "clickhouse_storages_system__compile_1", "deps"): [
@@ -436,7 +449,7 @@ ch_cc_library(
 
 def declare_group_header_deps(root, package, paired_headers, providers, public_owner, public_target=None):
     """Declare each source's private header and the direct dependencies used to compile both."""
-    from initial_migration.factor_build_selections import canonical_list
+    from initial_migration.factor_build_selections import canonical_list, list_nodes
     from initial_migration.prune_inherited_headers import ARCHES, Document
 
     path = root / package / "BUILD.bazel"
@@ -468,7 +481,7 @@ def declare_group_header_deps(root, package, paired_headers, providers, public_o
         if srcs is None or not any(isinstance(n, ast.Constant) and n.value in providers for n in ast.walk(srcs)):
             continue
         deps = fields["implementation_deps"]
-        for items in (n for n in ast.walk(srcs) if isinstance(n, ast.List)):
+        for items in (n for n in list_nodes(srcs) if isinstance(n, ast.List)):
             files = [item.value for item in items.elts if isinstance(item, ast.Constant)]
             missing = [h for cpp, h in paired_headers.items() if cpp in files and h not in files]
             if missing:
@@ -558,7 +571,14 @@ def declare_first_party_header_deps(root):
     parser = "Client/ClientApplicationBaseParser.cpp"
     declare_group_header_deps(root, "src", {parser: parser.removesuffix(".cpp") + ".h"},
                               {parser: CLIENT_PARSER_HEADER_DEPS}, public_owner, public_target="dbms")
-    for (package, target, field), deps in (*FIRST_PARTY_HEADER_DEPS.items(), *declare_common_header_owners(root, rules).items()):
+    for (package, target, field), requirements in (*FIRST_PARTY_HEADER_DEPS.items(), *declare_common_header_owners(root, rules).items()):
+        deps, after = [], {}
+        for requirement in requirements:
+            label, predecessor = requirement if isinstance(requirement, tuple) else (requirement, None)
+            dep = public_owner(label)
+            deps.append(dep)
+            if predecessor is not None:
+                after[dep] = predecessor
         path = root / package / "BUILD.bazel"
         doc = Document(path, package=package)
         if (package, target) == ("src/Functions/TimeSeries", "clickhouse_functions_time_series"):
@@ -584,7 +604,7 @@ def declare_first_party_header_deps(root):
             # Remove only this compiler's private references, including shared dict attributes.
             private = attrs.get("implementation_deps")
             if private is not None:
-                public = {doc.reference(public_owner(dep)) for dep in deps}
+                public = {doc.reference(dep) for dep in deps}
                 edits = editable_dependency_lists(doc, private, public, doc.reference)
                 if edits is None:
                     raise ValueError(f"cannot promote the private dependencies of //{package}:{target}")
@@ -595,7 +615,7 @@ def declare_first_party_header_deps(root):
         node = attrs.get(field)
         other = attrs.get("deps" if field == "implementation_deps" else "implementation_deps")
         missing = []
-        for label in map(public_owner, deps):
+        for label in deps:
             owner = doc.reference(label)
             if any(owner in doc.labels(other, cpu) for cpu in ARCHES):
                 if field == "implementation_deps" and all(owner in doc.labels(other, cpu) for cpu in ARCHES):
@@ -628,17 +648,14 @@ def declare_first_party_header_deps(root):
                 start = doc.source.span(dbms)[0]
                 path.write_text(doc.source.rewrite([(start, start, json.dumps(missing[0]) + ", ")]))
                 continue
-        # Keep the direct parser dependencies beside the dependency that already supplies their CcInfo.
-        insert_after = {
-            ("src", "dbms"): (":dbms__compile_0", CLIENT_PARSER_HEADER_DEPS),
-            ("programs/benchmark", "clickhouse-benchmark-lib"): ("//programs/client:clickhouse-client-lib", BENCHMARK_PARSER_DEPS),
-        }.get((package, target))
-        if insert_after is not None and literal is not None:
-            anchor, ordered = insert_after
+        if after.keys() & set(missing):
+            if literal is None:
+                raise ValueError(f"//{package}:{target} has no common list for the ordered {field}")
             values = ast.literal_eval(literal)
-            pos = values.index(anchor) + 1
-            values[pos:pos] = [d for d in ordered if d in missing]
-            values.extend(d for d in missing if d not in ordered)
+            for dep in reversed(missing):
+                if dep in after:
+                    values.insert(values.index(after[dep]) + 1, dep)
+            values.extend(dep for dep in missing if dep not in after)
             edit = (*doc.source.span(literal), json.dumps(values))
         elif literal is not None:
             start, end = doc.source.span(literal)

@@ -15,6 +15,7 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//base:common",
         "//src:dbms",
+        "//src/AggregateFunctions:headers",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src:io_string_buffers",
         "//src:column_types",

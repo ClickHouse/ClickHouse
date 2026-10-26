@@ -13,6 +13,7 @@ ch_cc_library(
     implementation_deps = [
         "//bazel:clickhouse_config_headers",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src/AggregateFunctions:headers",
         "//src:dbms",
         "//src/Common",
         "//src/Functions:clickhouse_functions_obj__compile_0",

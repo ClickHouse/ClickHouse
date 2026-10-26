@@ -59,6 +59,7 @@ ch_cc_library(
         "//src/Common",
         "//src/Compression:clickhouse_compression",
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
+        "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Daemon:headers",
         "//src/Dictionaries:clickhouse_dictionaries__compile_0",

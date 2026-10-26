@@ -65,6 +65,7 @@ def shared_native_compile_options(root, paths):
     patterns = []
     for symbol, standards in (("native_cxx_tool_copts", ("-std=c++17", "-std=c++23")),
                               ("NATIVE_CODEGEN_COPTS", (None,)),
+                              ("NATIVE_TOOL_LINKOPTS", (None,)),
                               ("DBMS_TEST_DRIVER_COPTS", (None,)),
                               ("native_release_copts", ("-std=c++23", None))):
         for standard in standards:
@@ -79,7 +80,7 @@ def shared_native_compile_options(root, paths):
             kind = call_name(rule)
             if kind not in {"cc_binary", "ch_cc_binary", "ch_cc_test", "llvm_runtime_objects"}:
                 continue
-            attributes = ("copts", "linkopts") if kind == "ch_cc_test" else ("copts",)
+            attributes = ("copts",) if kind == "llvm_runtime_objects" else ("copts", "linkopts")
             for attr in rule.keywords:
                 if attr.arg not in attributes or not isinstance(attr.value, ast.BinOp):
                     continue
@@ -88,6 +89,8 @@ def shared_native_compile_options(root, paths):
                 for name, match, replacement in patterns:
                     if kind == "ch_cc_test":
                         start = 0 if name == "DBMS_TEST_DRIVER_COPTS" and original[:len(match)] == match else None
+                    elif attr.arg == "linkopts":
+                        start = 0 if name == "NATIVE_TOOL_LINKOPTS" and original[:len(match)] == match else None
                     elif kind == "llvm_runtime_objects" and name in {"NATIVE_CODEGEN_COPTS", "native_release_copts"}:
                         start = next((i for i in range(len(atoms) - len(match) + 1)
                                       if [ast_key(a) for a in atoms[i:i + len(match)]] == match), None)

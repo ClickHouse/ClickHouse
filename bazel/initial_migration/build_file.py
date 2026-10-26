@@ -625,7 +625,11 @@ class BuildFile:
                         and directory == 'contrib/icu/icu4c/source/common'):
                     # ICU installs unicode/*.h. Its genbrk tool also includes rbbidata.h.
                     common = 'icu4c/source/common/'
-                    private = [common + '*_data.h', common + 'rbbi*.h']
+                    private = [common + header for header in (
+                        '*_data.h', 'bmpset.h', 'charstrmap.h', 'localsvc.h', 'locdistance.h',
+                        'loclikelysubtags.h', 'lsr.h', 'norm2allmodes.h', 'rbbi*.h', 'ruleiter.h',
+                        'ubidiimp.h', 'ucptrie_impl.h', 'uniquecharstr.h', 'unisetspan.h', 'utrie2_impl.h',
+                    )]
                     shared = common + 'rbbidata.h'
                     fields['srcs'].append(Glob(private, [shared]))
                     fields['hdrs'].extend([Glob([common + '**/*.h'], private), shared])
