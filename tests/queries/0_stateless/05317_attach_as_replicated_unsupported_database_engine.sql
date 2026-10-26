@@ -10,7 +10,7 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt AS REPLICATED; -- { serverErr
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt AS NOT REPLICATED; -- { serverError NOT_IMPLEMENTED }
 
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt;
-SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'mt' ORDER BY engine;
+SELECT engine FROM system.tables WHERE database = currentDatabase() || '_1' AND name = 'mt';
 SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.mt ORDER BY x;
 
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.mt;
