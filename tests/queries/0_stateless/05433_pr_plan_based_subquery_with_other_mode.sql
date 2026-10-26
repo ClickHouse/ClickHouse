@@ -37,6 +37,13 @@ SETTINGS parallel_replicas_plan_based = 0; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS parallel_replicas_plan_based = 1; -- { serverError INCORRECT_QUERY }
 
+-- So does an arm of a `UNION` at the root of the query, which is planned by its own planner.
+SET parallel_replicas_plan_based = 0;
+(SELECT sum(x) FROM t_05433 SETTINGS parallel_replicas_plan_based = 1) UNION ALL SELECT sum(x) FROM t_05433; -- { serverError INCORRECT_QUERY }
+SET parallel_replicas_plan_based = 1;
+(SELECT sum(x) FROM t_05433 SETTINGS parallel_replicas_plan_based = 0) UNION ALL SELECT sum(x) FROM t_05433; -- { serverError INCORRECT_QUERY }
+SET parallel_replicas_plan_based = DEFAULT;
+
 -- So does the automatic mode, which decides on parallel replicas only while optimizing the plan.
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 1, parallel_replicas_plan_based = 1; -- { serverError INCORRECT_QUERY }

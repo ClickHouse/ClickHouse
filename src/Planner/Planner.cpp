@@ -2772,6 +2772,10 @@ void Planner::buildPlanForUnionNode()
             return;
     }
 
+    /// Each arm is planned by its own planner, from its own context, so the arm checks only its own
+    /// subtree against itself. An arm naming the other implementation in its `SETTINGS` has to be caught here.
+    checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
+
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
     size_t queries_size = union_queries_nodes.size();
 
