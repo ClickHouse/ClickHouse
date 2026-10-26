@@ -1459,11 +1459,12 @@ Chunk `i` expands to bytes `[i × 65536, min((i + 1) × 65536, uncompressed_size
 [1 byte:  W]        ← element width in bytes (1, 2, 4 or 8)
 [B bytes]           ← the leading partial value, stored verbatim,
                       B = uncompressed_size mod W
-[W bytes: R]        ← frame of reference, little-endian
+[W bytes: R]        ← frame of reference, little-endian; omitted when
+                      uncompressed_size < W, i.e. when there is no complete value
 [groups]            ← ceil((uncompressed_size − B) / W / 4) groups
 ```
 
-Every group starts with a 2-byte little-endian control word that holds the byte width (0 to 8) of each of the group's four values in a 4-bit nibble, least significant nibble first, followed by the values themselves in the same order, low bytes first. A value is stored as `key − R` modulo 2^(8W), where `key` is the raw value with its sign bit flipped; width 0 means the value equals `R`, and a difference can never be wider than `W` bytes. The reference `R` is chosen per block by the writer — the smallest key or zero, whichever encodes in fewer bytes — so it is not derivable by the reader and must be read from the body. `VarInt` is a data preparation codec and is normally followed by `ZSTD`.
+Every group starts with a 2-byte little-endian control word that holds the byte width (0 to 8) of each of the group's four values in a 4-bit nibble, least significant nibble first, followed by the values themselves in the same order, low bytes first. A value is stored as `key − R` modulo 2^(8W), where `key` is the raw value with its sign bit flipped; width 0 means the value equals `R`, and a difference can never be wider than `W` bytes. The reference `R` is chosen per block by the writer — the smallest key or zero, whichever encodes in fewer bytes — so it is not derivable by the reader and must be read from the body. A block that holds no complete value, i.e. fewer bytes than `W`, has no reference and no groups: it is only the width byte followed by the raw bytes. `VarInt` is a data preparation codec and is normally followed by `ZSTD`.
 
 The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 

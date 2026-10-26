@@ -1308,6 +1308,33 @@ INSTANTIATE_TEST_SUITE_P(DoubleDelta,
     )
 );
 
+/// Fixed blocks, independent of the current encoder: zero-width groups, a partial final group,
+/// and both frame-of-reference choices (the minimum and zero).
+INSTANTIATE_TEST_SUITE_P(VarInt,
+    CodecTestCompatibility,
+    ::testing::Combine(
+        ::testing::Values(Codec("VarInt")),
+        ::testing::ValuesIn(std::initializer_list<std::tuple<CodecTestSequence, std::string>>{
+            {
+                makeSeq<UInt8>(7, 7, 7, 7),
+                BIN_STR("\xa2\x0d\x00\x00\x00\x04\x00\x00\x00\x01\x87\x00\x00")
+            },
+            {
+                makeSeq<UInt8>(10, 20, 30, 40, 50),
+                BIN_STR("\xa2\x13\x00\x00\x00\x05\x00\x00\x00\x01\x8a\x10\x11\x0a\x14\x1e\x01\x00\x28")
+            },
+            {
+                makeSeq<Int8>(-1, 0, 1),
+                BIN_STR("\xa2\x0f\x00\x00\x00\x03\x00\x00\x00\x01\x7f\x10\x01\x01\x02")
+            },
+            {
+                makeSeq<UInt64>(1ULL << 63, 1, 1, 1),
+                BIN_STR("\xa2\x1f\x00\x00\x00\x20\x00\x00\x00\x08\x00\x00\x00\x00\x00\x00\x00\x80\x18\x11\x00\x00\x00\x00\x00\x00\x00\x80\x01\x01\x01")
+            },
+        })
+    )
+);
+
 template <typename ValueType>
 auto DDperformanceTestSequence()
 {
