@@ -1508,8 +1508,10 @@ def main():
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
     google_cloud = ROOT / 'bazel/dependencies/clickhouse_google_cloud_cpp.BUILD.bazel'
     zxc = ROOT / 'bazel/dependencies/clickhouse_zxc.BUILD.bazel'
+    # gRPC declares the public and private headers for grpc and grpc_unsecure.
     # PostgreSQL and Vectorscan own the headers installed by _CONFIGURED_FILES.
     read_only = {abseil, arrow, msgpack, google_cloud, zxc,
+                 ROOT / 'bazel/dependencies/clickhouse_grpc.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_postgres.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_vectorscan.BUILD.bazel'}
     maintained = {path: path.read_bytes() for path in read_only}
@@ -1745,7 +1747,7 @@ def main():
     NativeCodegen(ROOT).run(write=True, read_only=read_only)
     prune_published(ROOT, repository_files, write=True, read_only=read_only, consumers={'@clickhouse'} | {
         '@clickhouse_' + name for name in
-        ('nuraft', 'grpc', 'librdkafka', 'croaring', 'google_cloud_cpp')
+        ('nuraft', 'librdkafka', 'croaring', 'google_cloud_cpp')
     })
     for path in native_builds:
         before = path.read_text()
@@ -1842,7 +1844,7 @@ def main():
     from initial_migration.shared_compile_defines import omit_compile_defaults, share_local_defines
     # Fold remaining CPU choices only when target_compatible_with fixes the CPU.
     # Rule transfers can also leave adjacent literal lists or empty attributes.
-    from initial_migration.compact_build import Source, intern_attributes, remove_unused_constants, simplify_list_expressions
+    from initial_migration.compact_build import Source, remove_unused_constants, simplify_list_expressions
     for path in sorted(selection_builds):
         before = path.read_text()
         after = before
@@ -1860,8 +1862,6 @@ def main():
         before = path.read_text()
         after = omit_compile_defaults(Source(drop_defaults(Source(before))))
         after = remove_parens(remove_unused_constants(Source(after)), key=source_list_key)
-        if path.name == "clickhouse_grpc.BUILD.bazel":
-            after = intern_attributes(Source(after), names={"local_includes": "_GRPC_LOCAL_INCLUDES"})
         if after != before:
             path.write_text(after)
     publish_redis_sdk(ROOT)
