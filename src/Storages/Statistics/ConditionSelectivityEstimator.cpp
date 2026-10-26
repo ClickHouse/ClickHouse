@@ -326,11 +326,19 @@ static const ActionsDAG::Node * skipDAGAliases(const ActionsDAG::Node * node)
 
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node)
 {
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.function_base->getName() != "equals"
-        || node.children.size() != 2 || node.children[0] != node.children[1])
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 2)
         return false;
 
-    WhichDataType which(removeLowCardinality(node.children[0]->result_type));
+    const auto & function_name = node.function_base->getName();
+    const bool null_safe = function_name == "isNotDistinctFrom";
+    if ((function_name != "equals" && !null_safe) || skipDAGAliases(node.children[0]) != skipDAGAliases(node.children[1]))
+        return false;
+
+    /// `isNotDistinctFrom` treats NULL as equal to NULL, `equals` gives NULL for it.
+    DataTypePtr argument_type = removeLowCardinality(skipDAGAliases(node.children[0])->result_type);
+    if (null_safe)
+        argument_type = removeNullable(argument_type);
+    WhichDataType which(argument_type);
     return which.isInteger() || which.isDecimal() || which.isEnum() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
         || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
 }
@@ -363,23 +371,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         String func_name = func.getFunctionName();
 
         /// `x = x` (left behind by the decorrelation of a subquery) is true on every row, not an
-        /// unknown predicate. Not for a floating point value, where NaN is not equal to itself, nor
-        /// for `equals` on a Nullable value, where a NULL row gives NULL; those stay unknown.
-        if (num_args == 2 && (func_name == "equals" || func_name == "isNotDistinctFrom"))
+        /// unknown predicate.
+        if (node_dag && isAlwaysTrueEquality(*node_dag))
         {
-            const auto * first = func.getArgumentAt(0).getDAGNode();
-            const auto * second = func.getArgumentAt(1).getDAGNode();
-            if (first && second && skipDAGAliases(first) == skipDAGAliases(second))
-            {
-                const auto & argument_type = skipDAGAliases(first)->result_type;
-                const bool is_float = WhichDataType(removeNullable(removeLowCardinality(argument_type))).isFloat();
-                const bool nullable_equals = func_name == "equals" && argument_type->isNullable();
-                if (!is_float && !nullable_equals)
-                {
-                    out.function = RPNElement::ALWAYS_TRUE;
-                    return true;
-                }
-            }
+            out.function = RPNElement::ALWAYS_TRUE;
+            return true;
         }
 
         auto atom_it = atom_map.find(func_name);
@@ -422,12 +418,6 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
         if (num_args == 2)
         {
-            if (isAlwaysTrueEquality(*func.getDAGNode()))
-            {
-                out.function = RPNElement::ALWAYS_TRUE;
-                return true;
-            }
-
             const bool is_in_operator = functionIsInOperator(func_name);
 
             /// The right-hand side of IN is a `Set` column: read the elements out of the set. Every other

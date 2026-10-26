@@ -226,7 +226,8 @@ private:
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
-/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
+/// `equals(x, x)` or `isNotDistinctFrom(x, x)` of one node (aliases are looked through) whose type makes it
+/// true on every row: no NaN or composite values, and no NULL for `equals`.
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 
 /// Builds an estimator for a set of data parts by merging their statistics column by column.
