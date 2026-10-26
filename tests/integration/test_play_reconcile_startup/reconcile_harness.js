@@ -1717,6 +1717,25 @@ async function main() {
             default_address === 'https://proxy.example/clickhouse/?cluster=a', default_address);
     }
 
+    /// Contract: a page mounted at a configured alias (an `http_handlers` rule serving `play` at
+    /// `/console`) has no route name in its path to cut at. The path then says nothing about where the
+    /// server is exposed, so the default endpoint is the origin root, as it always was - not the alias
+    /// itself, where every query would be POSTed back to the handler serving this page.
+    {
+        const r = await runScenario(js, {
+            href: 'https://server.example/console?cluster=a',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+        });
+        const configured = vm.runInContext('url_elem.value', r.sandbox);
+        check('aliased-endpoint', 'the default connection of an aliased page is the origin root',
+            configured === 'https://server.example/?cluster=a', configured);
+        const docs_href = vm.runInContext('docsURL().href', r.sandbox);
+        check('aliased-endpoint', 'the Documentation link of an aliased page is at the origin root',
+            docs_href === 'https://server.example/docs?cluster=a', docs_href);
+    }
+
     /// Contract: the inline Web Terminal panel is offered only when the embedded terminal will accept
     /// the credentials `/play` posts to it. `webterminal.html` takes `webterminal-credentials` only
     /// from a parent at its own origin or on its exact allowlist, and applies that rule to the origin of

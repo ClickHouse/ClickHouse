@@ -8682,16 +8682,6 @@ let restoring_connection_from_history = false;
 const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
-/// The address of the server that served this page: the default connection when neither the query
-/// string, nor the history entry, nor a `postMessage` handover names one.
-///
-/// The path of that address belongs to the endpoint rather than being decoration: `postImpl` sends it
-/// verbatim, and a reverse proxy can expose the server as `https://proxy.example/clickhouse/`, in which
-/// case this page is served as `https://proxy.example/clickhouse/play` while `https://proxy.example/`
-/// is an unrelated site. Defaulting to `location.origin` would aim every query at that unrelated root.
-/// The built-in pages are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`),
-/// so the served URL may carry a suffix - `/play/`, `/play?user=x` - and the prefix is therefore taken
-/// as everything up to and including the last `/` before the route name.
 /// Remove a `user:password@` userinfo from a URL that is about to be exposed - as a link `href`, an
 /// iframe `src`, or a query parameter naming another page. The configured server address may carry
 /// one (the browser strips it from the address bar, but the field accepts it), and every place that
@@ -8754,13 +8744,25 @@ function routingParameters()
     return params.toString();
 }
 
+/// The address of the server that served this page: the default connection when neither the query
+/// string, nor the history entry, nor a `postMessage` handover names one.
+///
+/// The path of that address belongs to the endpoint rather than being decoration: `postImpl` sends it
+/// verbatim, and a reverse proxy can expose the server as `https://proxy.example/clickhouse/`, in which
+/// case this page is served as `https://proxy.example/clickhouse/play` while `https://proxy.example/`
+/// is an unrelated site. Defaulting to `location.origin` would aim every query at that unrelated root.
+/// The built-in pages are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`),
+/// so the served URL may carry a suffix - `/play/`, `/play?user=x` - and the prefix is therefore taken
+/// as everything up to and including the last `/` before the route name. A page mounted at a configured
+/// alias (`http_handlers`) has no route name in its path, which then says nothing about where the server is
+/// exposed, so the default is the origin root, as it always was.
 function defaultServerAddress() {
     if (opened_locally) return 'http://localhost:8123/';
     const url = new URL(location.href);
     url.search = routingParameters();
     url.hash = '';
     const route = url.pathname.lastIndexOf('/play');
-    if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+    url.pathname = route != -1 ? url.pathname.slice(0, route + 1) : '/';
     return url.href;
 }
 
