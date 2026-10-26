@@ -131,6 +131,12 @@ protected:
     /// remains the authoritative decision point.
     std::atomic<bool> holds_admission_slot = false;
 
+    /// Set when an operation keeps running after its query returns (asynchronous `BACKUP` / `RESTORE`)
+    /// and holds the `ProcessListEntry` for that time: the admission slot must then stay with the entry
+    /// until it is destroyed, so `releaseAdmissionSlot` becomes a no-op. Read on the same lock-free fast
+    /// path as `holds_admission_slot`, hence `std::atomic`.
+    std::atomic<bool> admission_slot_pinned = false;
+
     /// Whether the admission slot was released early (before `ProcessListEntry` destruction);
     /// used to maintain `ProcessList::admission_pending_teardowns`. Protected by ProcessList::mutex.
     bool admission_slot_released_early = false;
@@ -338,7 +344,14 @@ public:
     void releaseMemoryReservation();
 
     /// Manually release admission slot (if any). Acquires ProcessList::mutex.
+    /// Does nothing if the slot is pinned by `pinAdmissionSlotUntilTeardown`.
     void releaseAdmissionSlot();
+
+    /// Keep the admission slot (if any) until the `ProcessListEntry` is destroyed, instead of releasing
+    /// it when the query's `BlockIO` finishes. Used by operations that hold the `ProcessListEntry` to keep
+    /// working in the background after the query returns, so that they keep counting towards
+    /// `max_concurrent_queries` and are not treated as an imminent teardown by the secondary limits.
+    void pinAdmissionSlotUntilTeardown() { admission_slot_pinned = true; }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

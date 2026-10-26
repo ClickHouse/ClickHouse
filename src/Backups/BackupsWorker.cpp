@@ -490,7 +490,12 @@ struct BackupsWorker::BackupStarter
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
         if (process_list_element)
+        {
             process_list_element_holder = process_list_element->getProcessListEntry();
+            /// The admission slot must stay occupied while the operation is working, not only until the
+            /// query returns (which for `ASYNC` is right after the operation is started).
+            process_list_element->pinAdmissionSlotUntilTeardown();
+        }
     }
 
     std::pair<bool, BackupStatus> addInfo()
@@ -1017,7 +1022,12 @@ struct BackupsWorker::RestoreStarter
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = restore_context->getProcessListElement();
         if (process_list_element)
+        {
             process_list_element_holder = process_list_element->getProcessListEntry();
+            /// The admission slot must stay occupied while the operation is working, not only until the
+            /// query returns (which for `ASYNC` is right after the operation is started).
+            process_list_element->pinAdmissionSlotUntilTeardown();
+        }
     }
 
     std::pair<bool, BackupStatus> addInfo()

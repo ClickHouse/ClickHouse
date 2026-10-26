@@ -1803,7 +1803,7 @@ void ProcessList::setMaxSize(size_t max_size_)
 
 void QueryStatus::releaseAdmissionSlot()
 {
-    if (!holds_admission_slot)
+    if (!holds_admission_slot || admission_slot_pinned)
         return;
 
     /// We need ProcessList::mutex because all admission fields are guarded by it.
@@ -1816,7 +1816,7 @@ void QueryStatus::releaseAdmissionSlot()
         LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> locker(process_list.getMutex());
         auto & lock = locker.getUnderlyingLock();
 
-        if (!holds_admission_slot)
+        if (!holds_admission_slot || admission_slot_pinned)
             return; /// Double-check under lock.
 
         /// This whole sequence is allocation-free and cannot throw: `increaseAdmissionPendingTeardowns`
