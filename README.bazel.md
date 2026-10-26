@@ -56,18 +56,18 @@ changed code in ClickHouse, Boost.Asio, and ICU. The final ClickHouse link uses 
 
 ## Binary comparison
 
-At [01c19369d](https://github.com/dzbarsky/clickhouse/commit/01c19369db768600825b9fa3cc0077000626b595), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/31e40b4ec9efff68a482785621496cea42a4c30d).
+At [2079d5db5](https://github.com/dzbarsky/clickhouse/commit/2079d5db5f55b2ccdfe640331b2fb97ef2d50e1f), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/01c19369db768600825b9fa3cc0077000626b595).
 
 | Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
 | --- | --- | --- | ---: | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
-| [x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
-| [x86-64](https://app.buildbuddy.io/invocation/eb39e5f8-de60-4fd0-9a85-b0205966b993) | `//src:unit_tests_dbms` | `cbddafbc30eb8e8e271682053d21a4cf09713ecdf8ed5c3e4c6f1814b02cd242` | 811964120 | Differs from previous Bazel |
-| [ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
-| [ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
-| [ARM64](https://app.buildbuddy.io/invocation/60fa6a36-af4c-46c7-a738-e400d86288cd) | `//src:unit_tests_dbms` | `572fa9d4284c05fe573e2ea592d5c596a2373f821a0c7995e20a068d1e22cddf` | 795059408 | Differs from previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Differs from previous Bazel |
 
-[Validation details](bazel/initial_migration/validation-history.md#01c19369d).
+[Validation details](bazel/initial_migration/validation-history.md#2079d5db5).
 
 To check a change against these references without downloading either ELF, run:
 
@@ -186,4 +186,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-[01c19369d](https://github.com/dzbarsky/clickhouse/commit/01c19369db768600825b9fa3cc0077000626b595): See the per-CPU DWYU results in the validation history. [Validation details](bazel/initial_migration/validation-history.md#01c19369d).
+[2079d5db5](https://github.com/dzbarsky/clickhouse/commit/2079d5db5f55b2ccdfe640331b2fb97ef2d50e1f): See the per-CPU DWYU results in the validation history. [Validation details](bazel/initial_migration/validation-history.md#2079d5db5).

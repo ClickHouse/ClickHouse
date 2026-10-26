@@ -2562,3 +2562,36 @@ ARM64 DWYU as of 2026-10-26T11:14:59Z: not collected. Clean: none. Findings: non
 On both CPUs, `ZooKeeperTest.ListRequestWireRoundTrip` passed. The lower- and uppercase `SHOW TABLES FROM information_schema` queries each returned the 20 rows in [01161_information_schema.reference](../../tests/queries/0_stateless/01161_information_schema.reference). Both ClickHouse local invocations from [05316_local_sync_logger_without_channels](../../tests/queries/0_stateless/05316_local_sync_logger_without_channels.sh) passed with `--logger.async=0`; the trace run logged `SELECT 1`.
 
 On x86-64 and ARM64, the DWYU query succeeded. The report planner could not identify the action that creates `bazel/rules/dwyu_analyze_includes.runfiles`, so it selected none of the four targets. No report build ran.
+
+## 2079d5db5
+
+At [2079d5db5](https://github.com/dzbarsky/clickhouse/commit/2079d5db5f55b2ccdfe640331b2fb97ef2d50e1f), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/01c19369db768600825b9fa3cc0077000626b595).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Differs from previous Bazel |
+
+[x86-64](https://app.buildbuddy.io/invocation/56b59935-3689-4ff3-a87a-a8cf58df3ba7): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,788 operands; its response file was `c3f9fbefae3856f97e6f88c648ce153b46c0464aba58fc3de1ee119cbe42e333`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+x86-64 DWYU as of 2026-10-26T11:49:15Z: no product. Clean: none. Findings: none. Ungraded: `//base/readpassphrase:readpassphrase`, `//base/glibc-rseq:glibc-rseq`. The metadata query charged 0 actions, including 0 preprocessors. These counts do not measure executions.
+
+[ARM64](https://app.buildbuddy.io/invocation/5272f94b-3e0e-4a65-9269-b3c75a7f80de): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,701 operands; its response file was `04b4d7bdbf78104c6728b33fcde7805f9c4e145d08002bbda999da883802d365`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+ARM64 DWYU as of 2026-10-26T11:49:15Z: no product. Clean: none. Findings: none. Ungraded: `//base/readpassphrase:readpassphrase`, `//base/glibc-rseq:glibc-rseq`. The metadata query charged 0 actions, including 0 preprocessors. These counts do not measure executions.
+
+On both CPUs, `ZooKeeperTest.ListRequestWireRoundTrip` passed. The lower- and uppercase `SHOW TABLES FROM information_schema` queries each returned the 20 rows in [01161_information_schema.reference](../../tests/queries/0_stateless/01161_information_schema.reference). Both ClickHouse local invocations from [05316_local_sync_logger_without_channels](../../tests/queries/0_stateless/05316_local_sync_logger_without_channels.sh) passed with `--logger.async=0`; the trace run logged `SELECT 1`.
+
+On both CPUs, the ClickHouse executable passed its five command checks: `benchmark --help`, `disks --help`, `client --version`, `server --version` and a `local` query that returned `local` and `6`.
+
+x86-64 embedded HTTP handlers: all seven GET requests across the five ClickHouse and Keeper handlers returned HTTP 200 with the expected content and headers.
+
+ARM64 embedded HTTP handlers: all seven GET requests across the five ClickHouse and Keeper handlers returned HTTP 200 with the expected content and headers.
+
+x86-64 DWYU: the planner counted 12,085 actions and 2 preprocessors for either target. The 4,000-action limit stopped the report build. Neither target received a grade.
+
+ARM64 DWYU: the planner counted 12,547 actions and 2 preprocessors for either target. The 4,000-action limit stopped the report build. Neither target received a grade.
