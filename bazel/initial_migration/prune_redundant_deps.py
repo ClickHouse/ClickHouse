@@ -1,51 +1,23 @@
-#!/usr/bin/env python3
-"""Reduce external native cc_library deps through already-public dependencies.
+"""Remove redundant dependencies from generated ClickHouse and LLVM libraries."""
 
-A removed label must still be reachable, unchanged, from a remaining direct
-dep through cc_library, ch_cc_library, cc_import, or alias public deps, on
-both supported CPUs. Public-header witnesses never traverse implementation_deps, source rules, or
-unknown macros. External endpoints absent from the overlay graph may be
-matched by exact label: the existing native cc_library deps require CcInfo,
-but no property of an absent target's own dependencies is assumed.
-
-The default audit writes no BUILD files. --patch writes a proposed diff;
---write replaces files only after the full public graph matches and a second
-in-memory pass is unchanged. Non-deps ASTs, root BUILD, and cmake_link inputs
-are never edited.
-"""
-
-import argparse
 import ast
-from collections import Counter
-import copy
-import difflib
 from functools import cache
-import hashlib
-import json
-from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from initial_migration.compact_build import ast_key
-from initial_migration.prune_inherited_headers import (
-    ARCHES, CC_PROVIDERS, Document, Graph, label,
-)
+from initial_migration.prune_inherited_headers import ARCHES, CC_PROVIDERS, Document, Graph
 
 NATIVE = frozenset({'cc_library', 'ch_cc_library'})
 FORWARD = CC_PROVIDERS | {'alias'}
-CPU_KEYS = frozenset('@platforms//cpu:' + cpu for cpu in ARCHES)
 
 
 class PublicDeps:
-    def __init__(self, docs, arches=ARCHES):
+    def __init__(self, docs):
         self.graph = Graph(docs)
         # Store only public deps (and alias actual), never implementation_deps.
         self.edges = {
-            target: {cpu: {self.explicit(dep) for dep in self.graph.dependencies(target, cpu)} for cpu in arches}
+            target: {cpu: {self.explicit(dep) for dep in self.graph.dependencies(target, cpu)} for cpu in (*ARCHES, 'default')}
             for target, (_, kind, _) in self.graph.rules.items() if kind in FORWARD
         }
-        self.order, self.cycles = self.dependencies_first()
+        self.cycles = self.find_cycles()
 
     def explicit(self, target):
         # Resolve //pkg/sub only when //pkg/sub:sub is a known rule.
@@ -55,10 +27,10 @@ class PublicDeps:
                 return full
         return target
 
-    def dependencies_first(self):
+    def find_cycles(self):
         # Tarjan SCCs on the union of both supported configurations. Even a
         # cycle that cannot occur on a single CPU is left alone conservatively.
-        index, low, stack, active, order, cycles = {}, {}, [], set(), [], set()
+        index, low, stack, active, cycles = {}, {}, [], set(), set()
 
         def visit(target):
             index[target] = low[target] = len(index)
@@ -79,14 +51,13 @@ class PublicDeps:
                     component.append(dep)
                     if dep == target:
                         break
-                order.extend(component)
                 if len(component) > 1 or target in adjacent:
                     cycles.update(component)
 
         for target in self.edges:
             if target not in index:
                 visit(target)
-        return order, cycles
+        return cycles
 
     @cache
     def cc_endpoint(self, target, cpu):
@@ -112,13 +83,13 @@ class PublicDeps:
         return True
 
     @cache
-    def reachable(self, target, cpu, proof, *, linking=False):
+    def reachable(self, target, cpu, *, linking=False):
         result, pending = set(), [target]
         while pending:
             current = self.explicit(pending.pop())
             if current in result:
                 continue
-            if proof and not self.cc_endpoint(current, cpu):
+            if not self.cc_endpoint(current, cpu):
                 # Known filegroups, generators, custom rules and cycles never
                 # prove that a native CcInfo dependency is redundant.
                 continue
@@ -132,21 +103,6 @@ class PublicDeps:
                             and (cpu == 'default' or 'arches' not in attrs or cpu in doc.values(attrs['arches'], cpu))):
                         pending.append('@clickhouse_llvm_project//:cxx')
         return frozenset(result)
-
-    def public(self, target, cpu):
-        # Exclude the starting rule unless a real public cycle reaches it.
-        return frozenset().union(*(self.reachable(dep, cpu, False) for dep in self.edges[target][cpu]))
-
-    def alternative(self, target, dep, arches):
-        if not arches or target in self.cycles or dep in self.cycles:
-            return None
-        if any(not self.cc_endpoint(dep, cpu) for cpu in arches):
-            return None
-        witnesses = {}
-        for cpu in arches:
-            witnesses[cpu] = next((other for other in sorted(self.edges[target][cpu] - {dep})
-                                   if dep in self.reachable(other, cpu, True)), None)
-        return witnesses if all(witnesses.values()) else None
 
 
 _LLVM_SOURCE_ONLY_COMPONENTS = {
@@ -314,7 +270,7 @@ def prune_aggregate_deps(root, paths):
 
     docs = [Document(p, package=p.parent.relative_to(root).as_posix().removeprefix('.'))
             if p.name == 'BUILD.bazel' else Document(p) for p in sorted(paths)]
-    public = PublicDeps(docs, (*ARCHES, 'default'))
+    public = PublicDeps(docs)
 
     def repeated(deps, cpu, linking=False, skip=()):
         seen, result = set(), set()
@@ -322,7 +278,7 @@ def prune_aggregate_deps(root, paths):
             if dep in seen:
                 result.add(dep)
             if dep not in skip:
-                seen.update(public.reachable(dep, cpu, True, linking=linking))
+                seen.update(public.reachable(dep, cpu, linking=linking))
         return result
 
     edits = {}
@@ -384,215 +340,3 @@ def prune_aggregate_deps(root, paths):
             doc.path.write_text(doc.source.rewrite(llvm_edits[doc]))
             doc = Document(doc.path, package=doc.package)
         private_compile_groups(doc)
-
-
-class Reduction:
-    def __init__(self, docs, consumers=()):
-        self.docs = docs
-        self.public = PublicDeps(docs)
-        self.consumers = set(consumers)
-        self.edits = {doc.path: [] for doc in docs}
-        self.counts = Counter()
-        self.skipped = Counter()
-        self.details = []
-
-    def expression(self, node, doc, target, arches, constants=()):
-        source = doc.source
-        original = source.text(node)
-        if not arches:
-            return original
-        if isinstance(node, ast.List):
-            if '#' in original:
-                self.skipped['commented_lists'] += 1
-                return original
-            retained = []
-            for item in node.elts:
-                if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
-                    retained.append(source.text(item))
-                    continue
-                dep = self.public.explicit(label(item.value, doc.repo))
-                witnesses = self.public.alternative(target, dep, arches)
-                if witnesses is None:
-                    retained.append(source.text(item))
-                    continue
-                for cpu in arches:
-                    self.public.edges[target][cpu].discard(dep)
-                self.counts['direct_deps'] += 1
-                self.details.append({'target': target, 'dep': dep, 'arches': list(arches),
-                                     'via': witnesses, 'line': item.lineno,
-                                     'constant': constants[-1] if constants else None})
-            if len(retained) < len(node.elts):
-                return '[' + ', '.join(retained) + ']'
-            return original
-        if isinstance(node, ast.Name):
-            definition = doc.constants.get(node.id)
-            if definition is None or node.id in constants:
-                self.skipped['unknown_constants'] += 1
-                return original
-            value = self.expression(definition, doc, target, arches, (*constants, node.id))
-            # Change just this use of a constant. Never edit the constant's
-            # other uses in srcs, generator inputs, flags, or unrelated deps.
-            if value != source.text(definition):
-                return '(' + value + ')'
-            return original
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left = self.expression(node.left, doc, target, arches, constants)
-            right = self.expression(node.right, doc, target, arches, constants)
-            if (left, right) == (source.text(node.left), source.text(node.right)):
-                return original
-            if left in {'[]', '([])'}:
-                return right
-            if right in {'[]', '([])'}:
-                return left
-            return '(' + left + ') + (' + right + ')'
-        if (isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'select'
-                and len(node.args) == 1 and not node.keywords and isinstance(node.args[0], ast.Dict)):
-            choices = node.args[0]
-            if not all(isinstance(key, ast.Constant) and isinstance(key.value, str)
-                       for key in choices.keys):
-                self.skipped['unknown_selects'] += 1
-                return original
-            keys = {key.value for key in choices.keys}
-            cpu_only = keys <= CPU_KEYS | {'//conditions:default'}
-            edits = []
-            for key, value in zip(choices.keys, choices.values):
-                selected = arches
-                if cpu_only:
-                    selected = tuple(cpu for cpu in arches
-                                     if key.value == '@platforms//cpu:' + cpu
-                                     or key.value == '//conditions:default'
-                                     and '@platforms//cpu:' + cpu not in keys)
-                updated = self.expression(value, doc, target, selected, constants)
-                if updated != source.text(value):
-                    edits.append((*source.span(value), updated))
-            if not edits:
-                return original
-            start, end = source.span(node)
-            added = sum(len(value.encode()) - (last - first) for first, last, value in edits)
-            return source.rewrite(edits).encode()[start:end + added].decode()
-        # Glob, formatting, macro calls and every unknown expression remain
-        # literal; they cannot be used to assume another dep exists.
-        self.skipped['unknown_expressions'] += 1
-        return original
-
-    def run(self):
-        for target in self.public.order:
-            doc, kind, attrs = self.public.graph.rules[target]
-            if (doc.repo == '@clickhouse' or kind not in NATIVE or 'deps' not in attrs
-                    or self.consumers and doc.repo not in self.consumers):
-                continue
-            if target in self.public.cycles:
-                self.skipped['cyclic_targets'] += 1
-                continue
-            node = attrs['deps']
-            updated = self.expression(node, doc, target, ARCHES)
-            if updated != doc.source.text(node):
-                self.edits[doc.path].append((*doc.source.span(node), updated))
-                self.counts['native_rules'] += 1
-                # A later target may already have seen this target in its
-                # public dependency closure. Recompute after settling it.
-                self.public.reachable.cache_clear()
-        result = []
-        for doc in self.docs:
-            if not self.edits[doc.path]:
-                result.append(doc)
-                continue
-            changed = Document(doc.path, text=doc.source.rewrite(self.edits[doc.path]))
-            if non_deps_statements(doc) != non_deps_statements(changed):
-                raise ValueError('Changed a non-deps BUILD statement: ' + str(doc.path))
-            result.append(changed)
-        return result
-
-
-def non_deps_statements(doc):
-    module = copy.deepcopy(doc.source.module)
-    for statement in module.body:
-        if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
-            continue
-        call = statement.value
-        if getattr(call.func, 'id', '') not in NATIVE:
-            continue
-        for kw in call.keywords:
-            if kw.arg == 'deps':
-                kw.value = ast.Constant(value='verified deps')
-    return ast_key(module)
-
-
-def prune(root, *, consumers=(), write=False, patch=None, report=None):
-    paths = [root / 'BUILD.bazel', *sorted((root / 'bazel/dependencies').glob('*.BUILD.bazel'))]
-    docs = [Document(path) for path in paths]
-    reduction = Reduction(docs, consumers)
-    after = reduction.run()
-    baseline, final = PublicDeps(docs), PublicDeps(after)
-    if baseline.graph.rules.keys() != final.graph.rules.keys() or baseline.edges.keys() != final.edges.keys():
-        raise ValueError('Rules or CcInfo providers changed')
-    verified, digest = Counter(), hashlib.sha256()
-    for target in baseline.edges:
-        for cpu in ARCHES:
-            before, current = baseline.public(target, cpu), final.public(target, cpu)
-            if before != current:
-                raise ValueError(f'{target} ({cpu}) public dependency closure changed: '
-                                 f'lost={sorted(before - current)[:30]}, gained={sorted(current - before)[:30]}')
-            digest.update((target + '\0' + cpu + '\0').encode())
-            for dep in sorted(before):
-                digest.update((dep + '\0').encode())
-            verified['rule_cpu_pairs'] += 1
-            verified['reachable_target_pairs'] += len(before)
-    # A witness selected early in a list may itself become redundant. Record
-    # and verify a witness among the final remaining direct deps for every
-    # removed literal, including literals in individual select branches.
-    for detail in reduction.details:
-        target, dep = detail['target'], detail['dep']
-        detail['via'] = {
-            cpu: next((other for other in sorted(final.edges[target][cpu] - {dep})
-                       if dep in final.reachable(other, cpu, True)), None)
-            for cpu in detail['arches']
-        }
-        if not all(detail['via'].values()):
-            raise ValueError('Removed dependency has no final public witness: ' + str(detail))
-    rerun = Reduction(after, consumers)
-    rerun_docs = rerun.run()
-    if any(a.source.bytes != b.source.bytes for a, b in zip(after, rerun_docs)):
-        raise ValueError('Dependency reduction is not idempotent: ' + str(rerun.counts))
-    updates, diff, by_repo = {}, [], Counter()
-    for old, new in zip(docs, after):
-        if old.source.bytes != new.source.bytes:
-            before, result = old.source.bytes.decode(), new.source.bytes.decode()
-            updates[old.path] = (before, result)
-            rel = str(old.path.relative_to(root))
-            diff.extend(difflib.unified_diff(before.splitlines(keepends=True), result.splitlines(keepends=True),
-                                             fromfile='a/' + rel, tofile='b/' + rel))
-    for detail in reduction.details:
-        by_repo[detail['target'].partition('//')[0]] += 1
-    data = {'changed_files': len(updates), 'counts': dict(reduction.counts), 'by_repo': dict(by_repo),
-            'verified': dict(verified), 'skipped': dict(reduction.skipped),
-            'public_closure_sha256': digest.hexdigest(), 'cycles': sorted(baseline.cycles),
-            'second_pass_changes': 0, 'details': reduction.details, 'written': write}
-    if patch:
-        patch.write_text(''.join(diff))
-    if report:
-        report.write_text(json.dumps(data, sort_keys=True, indent=2) + '\n')
-    if write:
-        for path, (before, _) in updates.items():
-            if path.read_text() != before:
-                raise ValueError('BUILD changed during audit: ' + str(path))
-        for path, (_, result) in updates.items():
-            path.write_text(result)
-    return {key: value for key, value in data.items() if key != 'details'}
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
-    parser.add_argument('--consumer', action='append', default=[],
-                        help='Restrict to this apparent repository, e.g. @clickhouse_thrift')
-    parser.add_argument('--patch', type=Path, help='Proposed BUILD-only diff; default writes none')
-    parser.add_argument('--report', type=Path, help='Full before/after proof and removed-dep witnesses')
-    parser.add_argument('--write', action='store_true')
-    args = parser.parse_args()
-    print(json.dumps(prune(args.root, consumers=args.consumer, write=args.write,
-                           patch=args.patch, report=args.report), indent=2, sort_keys=True))
-
-
-if __name__ == '__main__':
-    main()
