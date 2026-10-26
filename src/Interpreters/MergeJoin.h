@@ -20,6 +20,11 @@ struct MergeJoinEqualRange;
 class RowBitmaps;
 enum class JoinTableSide : uint8_t;
 
+namespace JoinStuff
+{
+class JoinUsedFlags;
+}
+
 class MergeJoin : public IJoin
 {
 public:
@@ -181,6 +186,17 @@ private:
     Blocks min_max_right_blocks;
     std::shared_ptr<SortedBlocksBuffer> left_blocks_buffer;
     std::shared_ptr<RowBitmaps> used_rows_bitmap;
+    /// INNER ANY must emit one row per KEY, not one row per matching left row - the semantics
+    /// `HashJoin` implements with a claim-once flag per hash-table entry. Here the claim target
+    /// is the key's globally first right row (every probe scans the sorted right blocks in order,
+    /// so all probes resolve one key to the same block and row): per-row atomic flags over the
+    /// final sorted right blocks, shared by all probe streams, one byte per right row. Allocated
+    /// by `runPostBuildPhase` only for INNER ANY; null otherwise.
+    std::shared_ptr<JoinStuff::JoinUsedFlags> inner_any_used_flags;
+    /// Row counts of the final sorted right blocks, recorded while they stream through the merge
+    /// (only for INNER ANY): the spilled blocks are not loaded again before the probe, so this is
+    /// the only place their sizes are visible for sizing `inner_any_used_flags`.
+    std::vector<size_t> right_blocks_row_counts;
     mutable std::unique_ptr<Cache> cached_right_blocks;
     /// Byte cap of the per-left-block gather buffer of the order-preserving probe, set by
     /// `mergeFlushedRightBlocks` to half of the probe memory limit (whose full value sizes

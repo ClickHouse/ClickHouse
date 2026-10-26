@@ -68,7 +68,7 @@ SELECT count(), countIf(v = ''), arraySort(groupArray(materialize(k))) = groupAr
     SETTINGS max_threads = 1
 );
 
-SELECT '-- INNER ANY: one output row per matched left row, in the left order';
+SELECT '-- INNER ANY: one output row per matched key (hash join parity), in the left order';
 
 SELECT count(), uniqExact(k), arraySort(groupArray(materialize(k))) = groupArray(materialize(k)) FROM (
     SELECT l.k AS k FROM l INNER ANY JOIN r ON l.j = r.j

@@ -9,6 +9,7 @@
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
@@ -751,6 +752,15 @@ void MergeJoin::runPostBuildPhase()
 
     if (is_right || is_full || (is_all_join && table_join->collectExactMatches()))
         used_rows_bitmap = std::make_shared<RowBitmaps>(getRightBlocksCount());
+
+    /// INNER ANY: the claim-once flags over the final sorted right blocks (see the member doc).
+    if (is_inner && is_any_join)
+    {
+        inner_any_used_flags = std::make_shared<JoinStuff::JoinUsedFlags>();
+        inner_any_used_flags->reinitPerRowFlags(right_blocks_row_counts);
+        right_blocks_row_counts.clear();
+        right_blocks_row_counts.shrink_to_fit();
+    }
 }
 
 void MergeJoin::mergeRightBlocks()
@@ -802,6 +812,8 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
         min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
         right_blocks.countBlockSize(block);
+        if (is_inner && is_any_join)
+            right_blocks_row_counts.push_back(block.rows());
         loaded_right_blocks.emplace_back(std::make_shared<Block>(std::move(block)));
     }
 }
@@ -814,6 +826,8 @@ void MergeJoin::mergeFlushedRightBlocks()
     {
         min_max_right_blocks.emplace_back(extractMinMax(block, right_table_keys));
         right_blocks.countBlockSize(block);
+        if (is_inner && is_any_join)
+            right_blocks_row_counts.push_back(block.rows());
     };
 
     {
@@ -1122,6 +1136,10 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
     if (gather_matched_rows)
         gathered_columns = makeMutableColumns(right_columns_to_add);
 
+    /// The matched-left-rows statistic of INNER ANY counts every left row whose key has a match,
+    /// like the other probes do - the runs cannot provide it, they keep only the claimed keys.
+    size_t any_inner_matched = 0;
+
     for (size_t i = 0; i < right_blocks_count; ++i)
     {
         if (left_cursor.atEnd())
@@ -1156,9 +1174,19 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
                     break;
                 left_cursor.nextN(range.left_length);
             }
+            else if (inner_any_used_flags)
+            {
+                /// INNER ANY: one output row per key
+                any_inner_matched += range.left_length;
+                if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
+                        static_cast<UInt32>(i), range.right_start, /*offset=*/0))
+                    runs.push_back({range.left_start, /*left_length=*/1, i, range.right_start, /*right_length=*/1});
+                right_cursor.nextN(range.right_length);
+                left_cursor.nextN(range.left_length);
+            }
             else
             {
-                /// ANY: the first match wins, one right row per left row.
+                /// LEFT ANY: the first match wins, one right row per left row.
                 runs.push_back({range.left_start, range.left_length, i, range.right_start, /*right_length=*/1});
                 right_cursor.nextN(range.right_length);
                 left_cursor.nextN(range.left_length);
@@ -1235,7 +1263,7 @@ std::shared_ptr<MergeJoin::OrderedProbeState> MergeJoin::matchInOrder(const Bloc
         state->ranges.push_back({run.right_block, run.right_start, run.right_length});
     }
     state->group_offsets.push_back(state->ranges.size());
-    matched_left_rows.fetch_add(matched, std::memory_order_relaxed);
+    matched_left_rows.fetch_add(inner_any_used_flags ? any_inner_matched : matched, std::memory_order_relaxed);
 
     return state;
 }
@@ -1659,8 +1687,23 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
+        /// The whole range MATCHED for the statistics, whatever gets emitted below.
         matched_rows += range.left_length;
-        joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
+
+        if (inner_any_used_flags)
+        {
+            /// INNER ANY: one output row per key.
+            if (inner_any_used_flags->setUsedOnce</*use_flags=*/true, /*flag_per_row=*/true>(
+                    static_cast<UInt32>(right_block_info.block_number), range.right_start, /*offset=*/0))
+            {
+                MergeJoinEqualRange one_row_range{range.left_start, range.right_start, /*left_length=*/1, /*right_length=*/1};
+                joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, one_row_range, 0);
+            }
+        }
+        else
+        {
+            joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
+        }
 
         right_cursor.nextN(range.right_length);
         left_cursor.nextN(range.left_length);

@@ -7,8 +7,8 @@
 1832	168	1
 -- LEFT ANY: exactly one output row per left row, in the left order
 1000	168	1
--- INNER ANY: one output row per matched left row, in the left order
-832	832	1
+-- INNER ANY: one output row per matched key (hash join parity), in the left order
+125	125	1
 -- The results match the hash join
 1
 1
