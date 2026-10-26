@@ -162,37 +162,63 @@ MergeTreeReadTask::MergeTreeReadTask(
         const auto part_codec = info->data_part_info->getDefaultCompressionCodec();
         const auto default_codec = part_codec ? part_codec : CompressionCodecFactory::instance().getDefaultCodec();
         const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
+        /// Everything below is keyed by the names the readers give the columns they read, which are the names in the
+        /// part: a column renamed by a mutation not yet applied to the part keeps its old one there.
         ColumnCodecByName resolved_codecs;
-        /// The part's column sizes are keyed by storage column, so a subcolumn (e.g. `s.size` read for `length(s)`)
-        /// is looked up by the streams read for it. Once per task rather than per block: `getSubcolumnSize` takes a
-        /// lock. A subcolumn whose streams have no size is left out, so that its read is reported as unsupported.
-        RuntimeDataflowStatisticsCacheUpdater::CompressedBytesPerRowByName resolved_subcolumn_sizes;
+        /// The part's column sizes are keyed by storage column, so what is read for a subcolumn - `s.size` for
+        /// `length(s)`, or the offsets `n.size0` that the arrays of a `Nested` share - is looked up by the streams the
+        /// readers open for it.
+        RuntimeDataflowStatisticsCacheUpdater::StreamsBytesPerRowByName resolved_streams_bytes;
         const size_t part_rows = info->data_part_info->getIndexGranularity().getTotalRows();
-        for (const auto & name : info->task_columns.getAllColumnNames())
+        const bool resolve_streams = info->data_part_info->isWidePart() && part_rows;
+        auto resolve_for_reader = [&](IMergeTreeReader & reader)
         {
-            const auto column_in_part = info->data_part_info->tryGetColumn(name);
-            /// A subcolumn is written with the `CODEC` of its column.
-            const auto * description = metadata_columns.tryGet(column_in_part ? column_in_part->getNameInStorage() : name);
-            if (description && description->codec)
-                resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
-            if (column_in_part && column_in_part->isSubcolumn() && info->data_part_info->isWidePart() && part_rows)
+            const auto & requested_columns = reader.getColumns();
+            const auto & columns_in_part = reader.getColumnsToRead();
+            chassert(requested_columns.size() == columns_in_part.size());
+            auto column_to_streams = resolve_streams ? reader.getCompressedBytesOfColumnsToRead() : decltype(reader.getCompressedBytesOfColumnsToRead()){};
+            auto requested_it = requested_columns.begin();
+            for (const auto & column : columns_in_part)
             {
-                if (const auto size = info->data_part_info->getSubcolumnSize(name); size.data_compressed)
-                    resolved_subcolumn_sizes.emplace(
-                        name, static_cast<double>(size.data_compressed) / static_cast<double>(part_rows));
+                /// The metadata knows the column by its requested name. A subcolumn is written with the `CODEC` of its column.
+                const auto * description = metadata_columns.tryGet((requested_it++)->getNameInStorage());
+                if (description && description->codec)
+                    resolved_codecs.emplace(column.name, resolveCodecsForWholeColumn(*description, default_codec));
+
+                if (!resolve_streams)
+                    continue;
+
+                RuntimeDataflowStatisticsCacheUpdater::StreamsBytesPerRow streams;
+                if (auto it = column_to_streams.find(column.name); it != column_to_streams.end())
+                {
+                    for (const auto & [stream_name, bytes] : it->second)
+                        streams.emplace_back(stream_name, static_cast<double>(bytes) / static_cast<double>(part_rows));
+                }
+                /// The streams of a dynamic structure are known only from its prefixes, which the part reads for this.
+                else if (column.isSubcolumn() && info->data_part_info->tryGetColumn(column.name))
+                {
+                    if (const auto bytes = info->data_part_info->getSubcolumnSize(column.name).data_compressed)
+                        streams.emplace_back(column.name, static_cast<double>(bytes) / static_cast<double>(part_rows));
+                }
+                /// A column with no streams is left out, so that its read is reported as unsupported.
+                if (!streams.empty())
+                    resolved_streams_bytes.emplace(column.name, std::move(streams));
             }
-        }
+        };
+        resolve_for_reader(*readers.main);
+        for (const auto & reader : readers.prewhere)
+            resolve_for_reader(*reader);
 
         dataflow_cache_update_cb = [this,
                                     default_codec,
                                     column_codecs = std::move(resolved_codecs),
-                                    subcolumn_sizes = std::move(resolved_subcolumn_sizes)](const ColumnsWithTypeAndName & columns,
+                                    streams_bytes = std::move(resolved_streams_bytes)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
                                                            size_t read_bytes,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
-            const auto & part_columns = info->data_part_info->getColumnsDescription();
+            const auto & part_columns = info->data_part_info->getColumnsDescriptionWithCollectedNested();
             /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
             static const std::unordered_map<String, ColumnSize> no_column_sizes;
             auto column_sizes = info->data_part_info->getColumnSizes();
@@ -201,7 +227,7 @@ MergeTreeReadTask::MergeTreeReadTask(
                 partially_read_columns,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
-                subcolumn_sizes,
+                streams_bytes,
                 column_codecs,
                 default_codec,
                 read_bytes,

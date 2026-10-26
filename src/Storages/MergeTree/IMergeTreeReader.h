@@ -100,6 +100,12 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// The streams read for the columns of `getColumnsToRead`, keyed by their names there, with the compressed bytes
+    /// of each on disk. Columns may share a stream, e.g. the offsets of the arrays of a `Nested`. Only for the columns
+    /// whose streams are known without deserializing prefixes and are all in the part.
+    using StreamsBytes = std::vector<std::pair<String, size_t>>;
+    virtual std::unordered_map<String, StreamsBytes> getCompressedBytesOfColumnsToRead() { return {}; }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;

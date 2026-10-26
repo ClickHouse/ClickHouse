@@ -182,7 +182,9 @@ class RuntimeDataflowStatisticsCacheUpdater
     using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;
 
 public:
-    using CompressedBytesPerRowByName = std::unordered_map<std::string, double>;
+    /// The streams read for a column, with the compressed bytes per row of each.
+    using StreamsBytesPerRow = std::vector<std::pair<std::string, double>>;
+    using StreamsBytesPerRowByName = std::unordered_map<std::string, StreamsBytesPerRow>;
 
     /// `duplicated` is set on the updater given to the reads parallel replicas would not split: each replica
     /// performs them in full, so their bytes go to `duplicated_bytes` rather than to `input_bytes`.
@@ -233,16 +235,18 @@ public:
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
-    /// `column_sizes` is keyed by storage column, so the subcolumns being read (e.g. `s.size` for `length(s)`)
-    /// come separately, as the compressed bytes per row of the streams read for them. They are priced per row
-    /// rather than by a compression ratio because their in-memory bytes need not match those streams: a
-    /// `single_stream` `String` keeps its sizes inside its only stream, so reading `s.size` reads all of `s`.
+    /// `column_sizes` is keyed by storage column, so a column it has no entry for - a subcolumn such as `s.size` read
+    /// for `length(s)`, or the offsets `n.size0` shared by the arrays of a `Nested` - comes in `streams_bytes_per_row`,
+    /// with the compressed bytes per row of the streams read for it. Priced per row rather than by a compression ratio
+    /// because its in-memory bytes need not match those streams: a `single_stream` `String` keeps its sizes inside its
+    /// only stream, so reading `s.size` reads all of `s`. A stream several columns of the block read is charged once.
+    /// `part_columns` must know the collected `Nested` columns.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,
         const ColumnsDescription & part_columns,
         const ColumnSizeByName & column_sizes,
-        const CompressedBytesPerRowByName & subcolumn_compressed_bytes_per_row,
+        const StreamsBytesPerRowByName & streams_bytes_per_row,
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,

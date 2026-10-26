@@ -1564,6 +1564,47 @@ void MergeTreeReaderWide::readData(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
 }
 
+std::unordered_map<String, IMergeTreeReader::StreamsBytes> MergeTreeReaderWide::getCompressedBytesOfColumnsToRead()
+{
+    const auto & checksums = data_part_info_for_read->getChecksums();
+    std::unordered_map<String, StreamsBytes> column_to_streams;
+    for (size_t i = 0; i < columns_to_read.size(); ++i)
+    {
+        const auto & name_and_type = columns_to_read[i];
+        /// Without the prefixes, a dynamic structure lists only its structure stream and a bucketed `Map` only its
+        /// buckets info, not the streams that hold the data.
+        if (name_and_type.getTypeInStorage()->hasDynamicStructure())
+            continue;
+
+        StreamsBytes column_streams;
+        bool has_all_streams = true;
+        serializations[i]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+
+            if (!substream_path.empty() && substream_path.back().type == ISerialization::Substream::MapBucketsInfo)
+            {
+                has_all_streams = false;
+                return;
+            }
+
+            /// The same name the read opens the stream by, e.g. the shared `n.size0` for `n.a.size0`.
+            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            const auto it = stream_name ? checksums.files.find(*stream_name + DATA_FILE_EXTENSION) : checksums.files.end();
+            if (it == checksums.files.end())
+                has_all_streams = false;
+            else
+                column_streams.emplace_back(*stream_name, it->second.file_size);
+        });
+
+        if (has_all_streams && !column_streams.empty())
+            column_to_streams.emplace(name_and_type.name, std::move(column_streams));
+    }
+
+    return column_to_streams;
+}
+
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()
 {
     /// Prefixes of other columns are not needed to list the streams and can be large, e.g. `LowCardinality` dictionaries.

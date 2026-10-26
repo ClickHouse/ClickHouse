@@ -60,6 +60,8 @@ public:
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
 
+    std::unordered_map<String, StreamsBytes> getCompressedBytesOfColumnsToRead() override;
+
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
     /// these containers are mutated concurrently and all of the reader's synchronization lives here.
