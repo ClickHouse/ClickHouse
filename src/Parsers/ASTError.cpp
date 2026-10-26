@@ -1,4 +1,4 @@
-#include <ASTError.h>
+#include <Parsers/ASTError.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>

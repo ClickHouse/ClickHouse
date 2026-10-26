@@ -27,6 +27,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/PartialASTCapture.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
@@ -3088,6 +3089,7 @@ public:
             ASTPtr query;
             auto select_pos = pos;
             auto select_expected = expected;
+            PartialASTSavepoint partial_ast_savepoint(expected);
 
             if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
                 && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
@@ -3098,6 +3100,7 @@ public:
                 finished = true;
                 return true;
             }
+            partial_ast_savepoint.rollback();
         }
 
         if (ParserToken(TokenType::Comma).ignore(pos, expected))

@@ -87,7 +87,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Insertion data
     const char * data = nullptr;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// The parts stay in the locals above until the whole query has parsed, so the tree a failure
     /// captures is assembled from them; see `Parsers/PartialASTCapture.h`. Never the inline data.
     auto tree_so_far = [&]() -> ASTPtr
@@ -119,7 +118,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 partial->children.push_back(child);
         return partial;
     };
-#endif
 
     if (s_with.ignore(pos, expected))
     {
@@ -281,9 +279,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Note that FROM INFILE was already parsed before, so FROM at this position starts a SELECT query.
         pos = before_values;
         ParserSelectWithUnionQuery select_p;
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const PartialASTOuterWith partial_ast_outer_with(expected, with_expression_list);
-#endif
         select_p.parse(pos, select, expected);
 
         if (with_expression_list && select)

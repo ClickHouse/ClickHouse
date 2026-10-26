@@ -186,7 +186,6 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_range;
     ASTPtr ast_settings;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// The parts stay in the locals above until the whole definition has parsed, so the fragment a
     /// failure captures is assembled from them; see `Parsers/PartialASTCapture.h`.
     auto dictionary_so_far = [&]() -> ASTPtr
@@ -206,7 +205,6 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             partial->set(partial->dict_settings, ast_settings);
         return partial;
     };
-#endif
 
     /// Primary is required to be the first in dictionary definition
     if (primary_key_keyword.ignore(pos, expected))

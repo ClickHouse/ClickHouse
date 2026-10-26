@@ -1,6 +1,6 @@
 #include <Parsers/PartialASTCapture.h>
 
-#include <ASTError.h>
+#include <Parsers/ASTError.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -29,12 +29,12 @@ namespace
 /// and `IAST::checkSize` count. Iterative, and it stops at the first node past a limit, so measuring
 /// a tree of any shape is cheap and cannot throw - unlike cloning it, which is recursive and, for the
 /// left-deep tree of a long operator chain, runs out of the engine's stack, which `checkStackSize`
-/// cannot see. `child`, if any, is measured as one more child of `root`.
-bool fitsPartialASTLimits(const IAST & root, const IAST * child)
+/// cannot see. `extra`, if any, is measured as one more child of `root`.
+bool fitsPartialASTLimits(const IAST & root, const IAST * extra)
 {
     std::vector<std::pair<const IAST *, size_t>> nodes{{&root, 0}};
-    if (child)
-        nodes.emplace_back(child, 1);
+    if (extra)
+        nodes.emplace_back(extra, 1);
     size_t size = 0;
     while (!nodes.empty())
     {
@@ -50,35 +50,35 @@ bool fitsPartialASTLimits(const IAST & root, const IAST * child)
 
 /// A tree that could never be an `ast` is not reported. Nothing captured before it is: that was a
 /// shallower failure, and the parse got further. Nor anything around it at this position.
-void blockCaptures(Expected & expected)
+void blockCaptures(PartialASTState & state, const Expected & expected)
 {
-    expected.partial_ast = nullptr;
-    expected.partial_ast_pos = expected.max_parsed_pos;
+    state.tree = nullptr;
+    state.pos = expected.max_parsed_pos;
 }
 
 /// The checks every capture makes before it clones anything; false if it should not be taken.
 /// `extra` is a tree that the capture adds to `node` as one more child.
-bool startCapture(Expected & expected, const ASTPtr & node, bool is_select, const IAST * extra = nullptr)
+bool startCapture(PartialASTState & state, const Expected & expected, const ASTPtr & node, bool is_select, const IAST * extra = nullptr)
 {
-    if (!expected.enable_partial_ast_capture || !node)
+    if (!node)
         return false;
 
     /// A capture that did not get as far as the one already taken is a backtracked alternative.
-    if (expected.partial_ast_pos && expected.max_parsed_pos < expected.partial_ast_pos)
+    if (state.pos && expected.max_parsed_pos < state.pos)
         return false;
 
     /// At the same position, the statement that captured first is the innermost one, and it is kept:
     /// for `SELECT * FROM (SELECT a FROM`, the subquery, not the query around it. The one exception
     /// is a `SELECT` over a capture of another statement at that position - the column list of an
-    /// `INSERT`, which then retries the `(` as a subquery. A position with `partial_ast_pos` and no
-    /// `partial_ast` is one whose innermost statement was too big, and nothing around it is taken.
-    if (expected.partial_ast_pos && expected.max_parsed_pos == expected.partial_ast_pos
-        && (!expected.partial_ast || !is_select || expected.partial_ast->as<ASTSelectQuery>()))
+    /// `INSERT`, which then retries the `(` as a subquery. A position with `pos` and no
+    /// `tree` is one whose innermost statement was too big, and nothing around it is taken.
+    if (state.pos && expected.max_parsed_pos == state.pos
+        && (!state.tree || !is_select || state.tree->as<ASTSelectQuery>()))
         return false;
 
     if (!fitsPartialASTLimits(*node, extra))
     {
-        blockCaptures(expected);
+        blockCaptures(state, expected);
         return false;
     }
 
@@ -105,10 +105,10 @@ boost::intrusive_ptr<ASTError> makeError(const Expected & expected, IParser::Pos
     return error;
 }
 
-void storeCapture(Expected & expected, ASTPtr partial)
+void storeCapture(PartialASTState & state, const Expected & expected, ASTPtr partial)
 {
-    expected.partial_ast = std::move(partial);
-    expected.partial_ast_pos = expected.max_parsed_pos;
+    state.tree = std::move(partial);
+    state.pos = expected.max_parsed_pos;
 }
 
 /// The node a fragment is a part of: the node of an `ASTPartialStatement`, or the list itself.
@@ -244,11 +244,11 @@ void resetSlot(IAST & node, std::string_view key)
 
 /// What goes into the slot that failed: the fragment captured inside it at this position, if any, and
 /// otherwise a new `Error`. A fragment is taken once.
-ASTPtr takeFragment(Expected & expected, const IAST & parent, const char * key)
+ASTPtr takeFragment(PartialASTState & state, const Expected & expected, const IAST & parent, const char * key)
 {
-    if (expected.partial_ast_fragment && expected.partial_ast_fragment_pos == expected.max_parsed_pos
-        && fillsSlot(parent, key, *expected.partial_ast_fragment))
-        return std::exchange(expected.partial_ast_fragment, nullptr);
+    if (state.fragment && state.fragment_pos == expected.max_parsed_pos
+        && fillsSlot(parent, key, *state.fragment))
+        return std::exchange(state.fragment, nullptr);
     return nullptr;
 }
 
@@ -332,14 +332,17 @@ void movePrimaryKeyToStorage(ASTCreateQuery & create, const IAST & inner, std::s
 
 void snapshotPartialAST(Expected & expected, const ASTPtr & node, IParser::Pos pos, ASTSelectQuery::Expression slot)
 {
+    chassert(expected.partial_ast);
+    PartialASTState & state = *expected.partial_ast;
+
     /// A `SELECT` of the union of an `INSERT` - not nested in another `SELECT` of it - gets the `WITH`
     /// written before the `INSERT`, where `ast` has it, unless it has a `WITH` of its own.
     const IAST * outer_with = nullptr;
-    if (node && expected.partial_ast_outer_with && expected.partial_ast_selects == expected.partial_ast_outer_with_selects + 1
+    if (node && state.outer_with && state.selects == state.outer_with_selects + 1
         && !node->as<ASTSelectQuery &>().with())
-        outer_with = expected.partial_ast_outer_with.get();
+        outer_with = state.outer_with.get();
 
-    if (!startCapture(expected, node, /*is_select=*/ true, outer_with))
+    if (!startCapture(state, expected, node, /*is_select=*/ true, outer_with))
         return;
 
     auto error = makeError(expected, pos);
@@ -351,16 +354,19 @@ void snapshotPartialAST(Expected & expected, const ASTPtr & node, IParser::Pos p
         select.setExpression(ASTSelectQuery::Expression::WITH, outer_with->clone());
         select.normalizeChildrenOrder();
     }
-    storeCapture(expected, std::move(partial));
+    storeCapture(state, expected, std::move(partial));
 }
 
 void snapshotPartialAST(Expected & expected, const ASTPtr & node, IParser::Pos pos, const char * expected_what)
 {
+    chassert(expected.partial_ast);
+    PartialASTState & state = *expected.partial_ast;
+
     if (!node)
         return;
 
-    ASTPtr fragment = takeFragment(expected, *node, expected_what);
-    if (!startCapture(expected, node, /*is_select=*/ false, fragment.get()))
+    ASTPtr fragment = takeFragment(state, expected, *node, expected_what);
+    if (!startCapture(state, expected, node, /*is_select=*/ false, fragment.get()))
         return;
 
     const std::string_view what = expected_what;
@@ -370,7 +376,7 @@ void snapshotPartialAST(Expected & expected, const ASTPtr & node, IParser::Pos p
     std::optional<size_t> column_list_kind;
     if (const auto * create = node->as<ASTCreateQuery>(); create && what == "columns_list" && create->columns_list)
     {
-        const IAST * last = expected.partial_ast_last_column_element.get();
+        const IAST * last = state.last_column_element.get();
         const auto & list = *create->columns_list;
         const ASTExpressionList * kinds[] = {list.columns, list.indices, list.constraints, list.projections};
         for (size_t kind = 0; kind < std::size(kinds); ++kind)
@@ -438,23 +444,26 @@ void snapshotPartialAST(Expected & expected, const ASTPtr & node, IParser::Pos p
 
     if (placed)
     {
-        storeCapture(expected, std::move(partial));
+        storeCapture(state, expected, std::move(partial));
         return;
     }
     resetSlot(*partial, what);
-    storeCapture(expected, wrap(std::move(partial), std::move(inner), expected_what));
+    storeCapture(state, expected, wrap(std::move(partial), std::move(inner), expected_what));
 }
 
 void snapshotPartialFragment(Expected & expected, const ASTPtr & node, IParser::Pos pos, const char * expected_what)
 {
-    if (!expected.enable_partial_ast_capture || !node)
+    chassert(expected.partial_ast);
+    PartialASTState & state = *expected.partial_ast;
+
+    if (!node)
         return;
 
     /// Nothing around a statement captured at this position or further is taken, so no part of it is.
-    if (expected.partial_ast_pos && expected.max_parsed_pos <= expected.partial_ast_pos)
+    if (state.pos && expected.max_parsed_pos <= state.pos)
         return;
 
-    ASTPtr inner = takeFragment(expected, *node, expected_what);
+    ASTPtr inner = takeFragment(state, expected, *node, expected_what);
 
     /// An empty list with nothing in it that captured is not a part: the slot of the list is what failed.
     if (!expected_what && !inner && node->children.empty())
@@ -462,7 +471,7 @@ void snapshotPartialFragment(Expected & expected, const ASTPtr & node, IParser::
 
     if (!fitsPartialASTLimits(*node, inner.get()))
     {
-        blockCaptures(expected);
+        blockCaptures(state, expected);
         return;
     }
 
@@ -485,8 +494,8 @@ void snapshotPartialFragment(Expected & expected, const ASTPtr & node, IParser::
         partial = wrap(std::move(partial), std::move(inner), expected_what);
     }
 
-    expected.partial_ast_fragment = std::move(partial);
-    expected.partial_ast_fragment_pos = expected.max_parsed_pos;
+    state.fragment = std::move(partial);
+    state.fragment_pos = expected.max_parsed_pos;
 }
 
 }

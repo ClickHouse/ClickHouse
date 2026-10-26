@@ -9,15 +9,10 @@
 namespace DB
 {
 
-/// The limits `ch_parse` holds an `ast` to, as `MAX_PARSER_DEPTH` and `MAX_AST_ELEMENTS` in
-/// `wasm_parser.cpp`, which checks that they agree. A partial tree past them is not captured.
-constexpr size_t PARTIAL_AST_MAX_DEPTH = 1000;
-constexpr size_t PARTIAL_AST_MAX_ELEMENTS = 50000;
-
 /** The slot of a `partial_ast` (see `Parsers/PartialASTCapture.h`) that the parser failed in.
   *
-  * Serialize-only: it has no SQL formatting, and `IAST::createFromJSON` does not know its type, so
-  * `ch_format_json` rejects a document that contains one.
+  * Serialize-only: it has no SQL formatting, and it is deliberately not registered with
+  * `IAST::createFromJSON`, so `ch_format_json` rejects a document that contains one.
   */
 class ASTError : public IAST
 {

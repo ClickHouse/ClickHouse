@@ -326,9 +326,7 @@ bool parseLimitRange(IParser::Pos & pos, Expected & expected, ASTPtr & limit_aft
 
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     const PartialASTSelectScope partial_ast_select_scope(expected);
-#endif
 
     auto select_query = make_intrusive<ASTSelectQuery>();
     node = select_query;
@@ -398,7 +396,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr top_length;
     ASTPtr settings;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// The clauses stay in the locals above until the whole query has parsed, so the tree a failure
     /// captures is assembled from them. The locals themselves are left as they are.
     auto tree_so_far = [&]() -> ASTPtr
@@ -439,7 +436,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         set(ASTSelectQuery::Expression::INTERPOLATE, interpolate_expression_list);
         return partial;
     };
-#endif
 
     /// WITH expr_list
     {

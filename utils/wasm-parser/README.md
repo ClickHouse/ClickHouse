@@ -266,15 +266,19 @@ a shim in a browser.
 
 ## What it costs
 
-Stripped, 359 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
+Stripped, 367 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`, built
 with wasi-sdk 33:
 
 | build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| everything | 2052426 | 632776 | 467840 | 496186 |
-| `-DENABLE_DCL=OFF` | 1850746 | 565398 | 418495 | 443946 |
-| `-DENABLE_FORMATTING=OFF` | 985486 | 318608 | 244854 | 261874 |
-| both off | 809522 | 259966 | 201885 | 216148 |
+| everything | 2165295 | 662555 | 487368 | 518518 |
+| `-DENABLE_DCL=OFF` | 1956209 | 594869 | 437894 | 466120 |
+| `-DENABLE_FORMATTING=OFF` | 1110884 | 364433 | 279158 | 299371 |
+| both off | 892194 | 285446 | 219447 | 235417 |
+
+The builds without formatting do not report `partial_ast`, but still carry the capture code of
+the parsers, about 49 KB raw and 9 KB brotli: capture is switched on at run time, by
+`Expected::partial_ast`, so LTO cannot drop it.
 
 Formatting builds carry the AST JSON machinery, which is most of their weight: `writeJSON` and
 `readJSON` for every node, `Poco::JSON` and `Poco::Dynamic::Var` cost about 715 KB raw and
@@ -283,7 +287,8 @@ the latter is in every build and the former goes with `-DENABLE_FORMATTING=OFF`.
 
 Brotli is what a browser will actually get, and it is 25% better than gzip here.
 
-`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling about 8% above each of these, which the
+`MAX_SIZE_*` in `CMakeLists.txt` holds a ceiling above each of these, set about 8% over when last
+raised, which the
 `parser-size` test asserts. Raise the ceiling and update this table in the same change as any
 growth that is meant to happen.
 

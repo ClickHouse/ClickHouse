@@ -2,6 +2,7 @@
 
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/PartialASTCapture.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -443,24 +444,16 @@ ASTPtr tryParseQuery(
     ParserDiagnostics * diagnostics)
 {
     /// The caller owns `diagnostics` and may reuse it across queries, so start from a clean slate:
-    /// everything the parse fills in is an output, and only the knobs the caller set - highlighting
-    /// and the literal token map - are kept.
+    /// everything the parse fills in is an output, and only the knobs the caller set - highlighting,
+    /// the literal token map and the partial AST state, whose contents are cleared - are kept.
     if (diagnostics)
     {
         diagnostics->expected.variants.clear();
         diagnostics->expected.max_parsed_pos = nullptr;
         diagnostics->expected.highlights.clear();
         diagnostics->error_token = Token{};
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
-        diagnostics->expected.partial_ast = nullptr;
-        diagnostics->expected.partial_ast_pos = nullptr;
-        diagnostics->expected.partial_ast_selects = 0;
-        diagnostics->expected.partial_ast_outer_with = nullptr;
-        diagnostics->expected.partial_ast_outer_with_selects = 0;
-        diagnostics->expected.partial_ast_fragment = nullptr;
-        diagnostics->expected.partial_ast_fragment_pos = nullptr;
-        diagnostics->expected.partial_ast_last_column_element = nullptr;
-#endif
+        if (diagnostics->expected.partial_ast)
+            *diagnostics->expected.partial_ast = {};
     }
 
     const char * query_begin = _out_query_end;

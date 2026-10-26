@@ -30,9 +30,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Core/UUID.h>
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
 #include <algorithm>
-#endif
 
 
 namespace DB
@@ -561,10 +559,8 @@ bool ParserTablePropertiesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, E
     if (primary_key_from_columns)
         res->set(res->primary_key_from_columns, primary_key_from_columns);
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
-    if (expected.enable_partial_ast_capture)
-        expected.partial_ast_last_column_element = list->children.back();
-#endif
+    if (unlikely(expected.partial_ast))
+        expected.partial_ast->last_column_element = list->children.back();
 
     node = res;
 
@@ -663,7 +659,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr unique_key;
     ASTPtr settings;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// The clauses stay in the locals above until the whole definition has parsed, so the fragment a
     /// failure captures is assembled from them, the way the success path assembles it; see
     /// `Parsers/PartialASTCapture.h`.
@@ -688,7 +683,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         partial->set(partial->settings, settings);
         return partial;
     };
-#endif
 
     bool storage_like = false;
     bool parsed_engine_keyword = s_engine.ignore(pos, expected);
@@ -879,7 +873,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     bool is_create_empty = false;
     bool is_clone_as = false;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// Declared further down, after the first capture site; they point there once declared.
     const std::optional<bool> * attach_as_replicated_so_far = nullptr;
     const ASTPtr * comment_so_far = nullptr;
@@ -946,7 +939,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
         return partial;
     };
-#endif
 
     if (s_create.ignore(pos, expected))
     {
@@ -985,9 +977,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     std::optional<bool> attach_as_replicated = std::nullopt;
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     attach_as_replicated_so_far = &attach_as_replicated;
-#endif
     if (attach)
     {
         if (s_from.ignore(pos, expected))
@@ -1067,9 +1057,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         chassert(!storage);
         ASTPtr ast;
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before = expected.max_parsed_pos;
-#endif
         if (!storage_p.parse(pos, ast, expected))
         {
             /// Storage is optional, so the parse goes on. Captured only if the storage parser itself
@@ -1104,9 +1092,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     };
 
     ASTPtr comment;
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     comment_so_far = &comment;
-#endif
 
     /// List of columns.
     if (s_lparen.ignore(pos, expected))
@@ -1132,18 +1118,14 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
         try_parse_empty_or_clone();
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before_sql_security = expected.max_parsed_pos;
-#endif
         sql_security_p.parse(pos, sql_security, expected);
         /// Optional, so the parse goes on; captured only if its parser got further than both the parse
         /// before it and its first token. Likewise the comment.
         PARTIAL_AST_SNAPSHOT(
             expected, !sql_security && expected.max_parsed_pos > std::max(max_before_sql_security, pos->begin) ? tree_so_far() : nullptr,
             pos, "sql_security");
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before_comment = expected.max_parsed_pos;
-#endif
         comment = parseComment(pos, expected);
         PARTIAL_AST_SNAPSHOT(
             expected, !comment && expected.max_parsed_pos > std::max(max_before_comment, pos->begin) ? tree_so_far() : nullptr, pos,
@@ -1193,9 +1175,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         parse_storage();
 
         try_parse_empty_or_clone();
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before_sql_security = expected.max_parsed_pos;
-#endif
         sql_security_p.parse(pos, sql_security, expected);
         /// Optional, so the parse goes on; captured only if its parser got further than both the parse
         /// before it and its first token. Likewise the comment.
@@ -1204,9 +1184,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             pos, "sql_security");
         if (!comment)
         {
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
             const char * max_before_comment = expected.max_parsed_pos;
-#endif
             comment = parseComment(pos, expected);
             PARTIAL_AST_SNAPSHOT(
                 expected, !comment && expected.max_parsed_pos > std::max(max_before_comment, pos->begin) ? tree_so_far() : nullptr, pos,
@@ -1233,9 +1211,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         {
             if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
                 const char * max_before_function = expected.max_parsed_pos;
-#endif
                 /// ENGINE can not be specified for table functions.
                 if (storage || !table_function_p.parse(pos, as_table_function, expected))
                 {
@@ -1273,9 +1249,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (select || as_table || as_table_function)
     {
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before_comment = expected.max_parsed_pos;
-#endif
         auto select_comment = parseComment(pos, expected);
         /// Likewise optional; not where a comment before `AS` parsed, which the success path rejects.
         PARTIAL_AST_SNAPSHOT(
@@ -1291,9 +1265,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
     else if (!comment)
     {
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before_comment = expected.max_parsed_pos;
-#endif
         comment = parseComment(pos, expected);
         PARTIAL_AST_SNAPSHOT(
             expected, !comment && expected.max_parsed_pos > std::max(max_before_comment, pos->begin) ? tree_so_far() : nullptr, pos,
@@ -1688,7 +1660,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool replace_view = false;
     bool is_temporary = false;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// Declared further down, after the first capture site; it points there once declared.
     const ASTPtr * comment_so_far = nullptr;
 
@@ -1746,7 +1717,6 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         partial->set(partial->select, select);
         return partial;
     };
-#endif
 
     if (!s_create.ignore(pos, expected))
     {
@@ -1877,9 +1847,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             /// Internal ENGINE for MATERIALIZED VIEW must be specified.
             /// Actually check it in Interpreter as default_table_engine can be set
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
             const char * max_before = expected.max_parsed_pos;
-#endif
             storage_p.parse(pos, storage, expected);
             /// Optional, so the parse goes on; captured only if the storage parser got further than both
             /// the parse before it and its first token.
@@ -1917,9 +1885,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (!sql_security)
     {
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
         const char * max_before = expected.max_parsed_pos;
-#endif
         sql_security_p.parse(pos, sql_security, expected);
         /// Likewise optional.
         PARTIAL_AST_SNAPSHOT(
@@ -1955,13 +1921,9 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     };
 
     try_parse_populate_or_empty();
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     const char * max_before_comment = expected.max_parsed_pos;
-#endif
     auto comment = parseComment(pos, expected);
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     comment_so_far = &comment;
-#endif
     /// Likewise optional.
     PARTIAL_AST_SNAPSHOT(
         expected, !comment && expected.max_parsed_pos > std::max(max_before_comment, pos->begin) ? tree_so_far() : nullptr, pos, "comment");
@@ -1988,9 +1950,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     }
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     const char * max_before_select_comment = expected.max_parsed_pos;
-#endif
     auto select_comment = parseComment(pos, expected);
     /// Optional; not where a comment before `AS SELECT` parsed, which the success path rejects.
     PARTIAL_AST_SNAPSHOT(
@@ -2220,7 +2180,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
     bool attach = false;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// Declared further down, after the first capture site; it points there once declared.
     const ASTPtr * comment_so_far = nullptr;
 
@@ -2255,7 +2214,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             partial->set(partial->comment, *comment_so_far);
         return partial;
     };
-#endif
 
     if (s_create.ignore(pos, expected))
     {
@@ -2324,13 +2282,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
         }
     }
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     const char * max_before_comment = expected.max_parsed_pos;
-#endif
     auto comment = parseComment(pos, expected);
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     comment_so_far = &comment;
-#endif
     /// Optional, so the parse goes on; captured only if the comment parser got further than both the
     /// parse before it and its first token.
     PARTIAL_AST_SNAPSHOT(

@@ -61,9 +61,10 @@
 #include <Parsers/ASTToJSON.h>
 #endif
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
-#include <ASTError.h>
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+#include <Parsers/ASTError.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/PartialASTCapture.h>
 #include <vector>
 #endif
 
@@ -335,7 +336,6 @@ extern "C" int serializeBody(void * argument)
     return 1;
 }
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
 static_assert(DB::PARTIAL_AST_MAX_DEPTH == MAX_PARSER_DEPTH && DB::PARTIAL_AST_MAX_ELEMENTS == MAX_AST_ELEMENTS,
     "A partial tree is captured within the node limits of an `ast`");
 
@@ -355,7 +355,6 @@ extern "C" int serializePartialBody(void * argument)
     checkASTJSONDocument(request.json->data(), request.json->size());
     return 1;
 }
-#endif
 
 /// Turns the boundary's `CH_PARSER_THREW` into the same answer a parse error gets, with the
 /// message of the exception that ended the call.
@@ -425,10 +424,13 @@ int ch_format_json(const char * json, uint32_t size, int one_line)
 
 int ch_parse(const char * query, uint32_t size)
 {
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    DB::PartialASTState partial_ast_state;
+#endif
     DB::ParserDiagnostics diagnostics;
     diagnostics.expected.enable_highlighting = true;
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
-    diagnostics.expected.enable_partial_ast_capture = true;
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    diagnostics.expected.partial_ast = &partial_ast_state;
 #endif
 
     std::string error;
@@ -492,17 +494,16 @@ int ch_parse(const char * query, uint32_t size)
 
         out << "},";
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
         /// The tree built before the failure. Not for a throw, which did not return through the
         /// parser: what was captured before it is not the failure the message names. Nor for an
         /// `INSERT`, `CREATE` or `ALTER` captured where the parser recovered and went on, if the
         /// parse then got further. A `SELECT` is reported as it was captured either way: an
         /// `INSERT ... SELECT 1 +` that recovers past it still failed in it.
-        const DB::ASTPtr & captured = diagnostics.expected.partial_ast;
-        if (parsed == 0 && captured
-            && (captured->as<DB::ASTSelectQuery>() || diagnostics.expected.partial_ast_pos == diagnostics.expected.max_parsed_pos))
+        const DB::ASTPtr & partial_ast = partial_ast_state.tree;
+        if (parsed == 0 && partial_ast
+            && (partial_ast->as<DB::ASTSelectQuery>() || partial_ast_state.pos == diagnostics.expected.max_parsed_pos))
         {
-            const DB::ASTPtr & partial_ast = diagnostics.expected.partial_ast;
 
             /// The `Error` is a child of the root, or the last element of a list that it ends.
             std::vector<DB::IAST *> nodes{partial_ast.get()};

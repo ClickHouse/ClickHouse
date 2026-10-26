@@ -188,7 +188,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_snapshot_desc;
     ASTPtr command_refresh;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// The members stay in the locals above until the whole command has parsed, and a branch sets the
     /// type, and some flags, only at its end, so the fragment a failure captures is assembled from the
     /// locals with the type and flags of its branch; see `Parsers/PartialASTCapture.h`.
@@ -239,7 +238,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     const auto set_clear_projection = [](ASTAlterCommand & partial) { partial.clear_projection = true; };
     const auto set_no_replace = [](ASTAlterCommand & partial) { partial.replace = false; };
     const auto set_move_to_table = [](ASTAlterCommand & partial) { partial.move_destination_type = DataDestinationType::TABLE; };
-#endif
 
     if (with_round_bracket)
     {
@@ -1629,7 +1627,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
     /// The database, the table and the cluster go into `query` as they parse; the object type is set
     /// only at the end. See `Parsers/PartialASTCapture.h`.
     auto tree_so_far = [&]() -> ASTPtr
@@ -1638,7 +1635,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         partial->as<ASTAlterQuery &>().alter_object = alter_object_type;
         return partial;
     };
-#endif
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
