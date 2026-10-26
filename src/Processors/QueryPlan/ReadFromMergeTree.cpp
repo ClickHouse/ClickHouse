@@ -4349,6 +4349,13 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset, const SortDescription
 
     /// Need a safe, ascending primary key to reason about granule ordering.
     const auto & metadata = storage_snapshot->metadata;
+
+    /// `UNIQUE KEY` reads drop overwritten rows through a delete bitmap that is attached per read task,
+    /// independently of the mutations snapshot. Only wholly dead granules are pruned from the ranges, so a
+    /// partially dead granule would overstate what the offset consumes.
+    if (metadata->hasUniqueKey())
+        return 0;
+
     if (!isSafePrimaryKey(metadata->getPrimaryKey()) || !metadata->getSortingKeyReverseFlags().empty())
         return 0;
 
