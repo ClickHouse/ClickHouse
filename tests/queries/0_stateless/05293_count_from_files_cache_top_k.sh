@@ -10,13 +10,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+DATA_FILE="${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/05293_count_from_files_cache_top_k.parquet"
+mkdir -p "${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}"
+
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t_05293;
-CREATE TABLE ${CLICKHOUSE_DATABASE}.t_05293 (k UInt64) ENGINE = File(Parquet);
+CREATE TABLE ${CLICKHOUSE_DATABASE}.t_05293 (k UInt64)
+ENGINE = File(Parquet, '${CLICKHOUSE_DATABASE}/05293_count_from_files_cache_top_k.parquet');
 INSERT INTO ${CLICKHOUSE_DATABASE}.t_05293
 SELECT number FROM numbers(100000)
 SETTINGS output_format_parquet_row_group_size = 10000;
 "
+
+# `SchemaCache` drops a count when `st_mtime >= registration_time`, and both are second resolution.
+# An insert and a top-K read in the same second would discard a reduced count, so `count()` would
+# reread the file and pass even with the `top_k_filter` guard removed. Backdate the file first.
+touch -d '2020-01-01 00:00:00' "$DATA_FILE"
 
 $CLICKHOUSE_CLIENT --format JSON -q "
 SELECT k FROM ${CLICKHOUSE_DATABASE}.t_05293 ORDER BY k LIMIT 1
