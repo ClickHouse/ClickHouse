@@ -32,6 +32,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
@@ -1049,7 +1050,7 @@ bool resolvedSubcolumnMatchesPath(
 
 /// Whether the column `column_name` (or the column it is a subcolumn of) is required by the sorting
 /// key (including its part beyond the primary key), the partition key, a secondary index, an
-/// aggregate projection or the sorting key of a normal projection of the storage.
+/// aggregate projection or the sorting key or the `WHERE` of a normal projection of the storage.
 bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
 {
     auto get_name_in_storage = [&](const String & name)
@@ -1081,7 +1082,16 @@ bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const St
         {
             if (projection.type == ProjectionDescription::Type::Aggregate)
                 return is_used(projection.getRequiredColumns());
-            return projection.metadata && is_used(projection.metadata->getColumnsRequiredForSortingKey());
+            if (projection.metadata && is_used(projection.metadata->getColumnsRequiredForSortingKey()))
+                return true;
+            /// The filter of the query must imply the `WHERE` of a filtered projection (`length(s) > 98`).
+            if (projection.where_clause_ast)
+            {
+                IdentifierNameSet where_columns;
+                projection.where_clause_ast->collectIdentifierNames(where_columns);
+                return is_used(Names(where_columns.begin(), where_columns.end()));
+            }
+            return false;
         });
 }
 
