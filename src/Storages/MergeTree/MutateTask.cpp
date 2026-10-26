@@ -776,6 +776,19 @@ static void splitAndModifyMutationCommands(
 
         num_for_file_renames_from_commands = for_file_renames.size();
 
+        /// A rename of a name that an earlier drop of the batch removed moves the column added again, which the part does not store.
+        NameSet renamed_after_drop;
+        {
+            NameSet dropped_earlier;
+            for (const auto & command : commands)
+            {
+                if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+                    dropped_earlier.insert(command.column_name);
+                else if (command.type == MutationCommand::Type::RENAME_COLUMN && dropped_earlier.contains(command.column_name))
+                    renamed_after_drop.insert(command.column_name);
+            }
+        }
+
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
         /// but also on part's metadata version. Why we have such logic only for renames? Because all other types of alter
@@ -783,7 +796,7 @@ static void splitAndModifyMutationCommands(
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
             /// A drop of the whole Nested group removes its columns whatever they were renamed to.
-            if (dropped_group_members.contains(rename_from))
+            if (dropped_group_members.contains(rename_from) || renamed_after_drop.contains(rename_from))
                 continue;
 
             if (part_columns.has(rename_from))

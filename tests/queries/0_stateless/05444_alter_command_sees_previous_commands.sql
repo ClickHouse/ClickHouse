@@ -98,6 +98,12 @@ ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a
 SELECT id, `n.c` FROM t_alter_previous_commands_readd;
 DROP TABLE t_alter_previous_commands_readd;
 
+CREATE TABLE t_alter_previous_commands_readd (id UInt64, n Nested(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+INSERT INTO t_alter_previous_commands_readd VALUES (1, [42]);
+ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`;
+SELECT id, `n.c` FROM t_alter_previous_commands_readd;
+DROP TABLE t_alter_previous_commands_readd;
+
 CREATE TABLE t_alter_previous_commands_readd (id UInt64, q UInt32) ENGINE = Memory;
 ALTER TABLE t_alter_previous_commands_readd DROP COLUMN q, ADD COLUMN q UInt32, RENAME COLUMN q TO r;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_readd' ORDER BY position;
