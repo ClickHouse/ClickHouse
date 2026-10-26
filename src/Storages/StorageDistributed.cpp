@@ -2327,8 +2327,18 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
             {
                 const auto & name_and_value = setting.safeGet<Tuple>();
                 const auto & name = name_and_value.at(0).safeGet<String>();
+                const auto & setting_value = name_and_value.at(1).safeGet<String>();
+                /// A filter injected on the shard can read other tables of the shard (`x IN (SELECT x FROM
+                /// db.helper)`), and a change of those tables is invisible both in the hash of the table and in
+                /// the text of the filter. They cannot be validated from here, so fail closed.
+                if ((name == "additional_table_filters" && setting_value != "{}")
+                    || (name == "additional_result_filter" && !setting_value.empty()))
+                {
+                    executor.finish();
+                    return {};
+                }
                 if (settingCanAffectQueryRows(name))
-                    reader_settings.emplace_back(name, name_and_value.at(1).safeGet<String>());
+                    reader_settings.emplace_back(name, setting_value);
             }
             std::sort(reader_settings.begin(), reader_settings.end());
             with_identity.update(reader_settings.size());
