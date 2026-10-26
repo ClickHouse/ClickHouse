@@ -1,0 +1,68 @@
+---
+description: 'サーバー設定で定義されたクラスター上のデータベースのテーブルへのリアルタイムアクセスを提供し、`SELECT` および `INSERT` クエリをそのクラスターへ転送します。'
+sidebarTitle: 'Cluster'
+slug: /engines/database-engines/cluster
+title: 'Cluster'
+doc_type: 'reference'
+---
+
+`Cluster` データベースエンジンは、サーバー設定で定義されたクラスター上のデータベースのテーブルへのリアルタイムアクセスを提供します。これは [`Remote`](/ja/reference/engines/database-engines/remote) データベースエンジンの名前付きクラスター版であり、両者の関係は [`cluster`](/ja/reference/functions/table-functions/cluster) テーブル関数と [`remote`](/ja/reference/functions/table-functions/remote) テーブル関数の関係とまったく同じです。
+
+テーブルの一覧とその構造は必要に応じてクラスターからフェッチされるため、データベースには常にクラスターの現在の状態が反映されます。各テーブルは名前付きクラスター上の [`Distributed`](/ja/reference/engines/table-engines/special/distributed) ストレージとして公開され、`SELECT` および `INSERT` クエリはそのクラスターへ転送されます。
+
+このエンジンは、複数の ClickHouse クラスターを連携させる場合や、アドレスを個別に指定することなくクラスター全体を `clickhouse-local` や別のクラスターに組み込む場合に便利です。クラスターは設定内で一度定義するだけでよく、その際にレプリカごとの認証情報、セキュアな接続、サーバー間通信用のシークレットもまとめて定義できます。
+
+## データベースの作成 {#creating-a-database}
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('cluster_name', 'database');
+```
+
+**エンジンパラメータ**
+
+* `cluster_name` — サーバー設定で定義されたクラスターの名前 ([クラスター](/ja/reference/engines/table-engines/special/distributed#distributed-clusters)を参照) 。`Distributed` テーブルエンジンと同様に、`{cluster}` などの[マクロ](/ja/reference/settings/server-settings/settings/other#macros)を使用でき、アクセスのたびに展開されます。
+* `database` — クラスター上のデータベース名。
+
+`Remote` データベースエンジンとは異なり、`Cluster` エンジンは認証情報を引数に取らず、シークレットも保存しません。接続には、クラスター設定で定義されたレプリカごとの設定 (ユーザー、パスワード、セキュアな接続、圧縮、サーバー間通信用のシークレット) が使用されます。アクセスのたびに設定を参照してクラスターを再解決するため、データベースは `Distributed` テーブルと同様に、設定の再読み込みや[クラスターの自動検出](/ja/guides/oss/deployment-and-scaling/cluster-discovery)に追従します。データベースの作成時にはクラスターが存在している必要があります。作成後にクラスターが設定からなくなってもサーバーは起動しますが、設定にクラスターが復元されるまで、データベースはクラスターが見つからないことを報告します。
+
+現在のサーバーを指すレプリカはローカルの分片として扱われ、`SELECT` と `INSERT` は現在のユーザーの権限で直接実行されます。そのため、そのユーザーには基になるデータベースとそのテーブルに対する権限が必要です。設定されたクラスターの認証情報は、実際にリモートにあるレプリカに対してのみ使用されます。分片のローカルレプリカにデータベースまたはテーブルがない場合は、[`Distributed`](/ja/reference/engines/table-engines/special/distributed) テーブルと同様に、その分片のリモートレプリカにフォールバックして検索します。
+
+クラスターに複数の分片がある場合、各プロキシテーブルはすべての分片から読み取ります。一方、メタデータ (テーブルの一覧とその構造) は、[`cluster`](/ja/reference/functions/table-functions/cluster) テーブル関数と同様に、いずれか1つの分片 (ローカルの分片を優先) から取得します。これにより、一覧の取得に必要なクエリは分片ごとに1つではなく、全体で1つになります。したがって、クラスターの各分片には同じテーブル群が存在することが想定されます。一部の分片にしかないテーブルもプロキシテーブルを介して参照できますが、そのテーブルがない分片ではクエリが失敗します。複数分片のデータベースにあるテーブルに `INSERT` すると、各行がランダムな分片に送られます (プロキシの `Distributed` テーブルには暗黙的な `rand()` シャーディングキーがあり、設定された分片の重みが反映されます) 。クエリの送信先となる分片を指定するには、[`insert_shard_id`](/ja/reference/settings/session-settings/insert#insert_shard_id) を設定します。暗黙的なキーは挿入行の分散にのみ使用されます。読み取り時には、テーブルはシャーディングキーのない `Distributed` テーブルとして動作します (特に、[`optimize_skip_unused_shards`](/ja/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards) と [`force_optimize_skip_unused_shards`](/ja/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) は、このキーを不要な分片の除外に使うキーとして扱いません) 。
+
+特に、名前解決に使用される分片にはなく、ほかの分片にしか存在しないテーブルは、`SHOW TABLES` や `EXISTS TABLE` では見つからず、名前で解決しようとすると `UNKNOWN_TABLE` が報告されます。クエリ対象となるプロキシテーブルが存在しないためです。名前解決に使用される分片には存在するものの、別の分片には存在しないテーブルは表示されますが、その別の分片ではプロキシ経由のクエリが失敗する可能性があります。
+
+`Cluster` のプロキシテーブルには、再実行して同等の動作を再現できる定義がないため、`SHOW CREATE TABLE` は `THERE_IS_NO_QUERY` エラーを報告します。これには次の場合が含まれます。
+
+* テーブルが現在、前述のリモートレプリカへのフォールバックによって提供されている場合 (分片のローカルレプリカにデータベースまたはテーブルがない場合) 。クラスター全体を対象とする `Distributed` テーブルではこのフォールバックは行われず、フォールバック先となるクラスターの一部には固有の名前がありません。
+* データベースのクラスター名にマクロが含まれる場合。`Cluster` はアクセスのたびにマクロを展開しますが、`Distributed` はテーブルの作成時にのみ展開します。そのため、マクロ式と現在の展開結果のどちらを使って再作成しても、設定変更後には元とは異なる動作になります。
+* 設定の再読み込みによって、1つの分片からなるクラスターが複数の分片からなるクラスターに変わる場合。稼働中のプロキシには `INSERT` 行を分散するための暗黙的な `rand()` キーが追加されますが、再読み込み前にシリアライズされたテーブルにはキーがありません。キーを常にシリアライズしても同等にはなりません。独立した `Distributed` テーブルでは、そのキーが読み取り時の不要な分片の除外にも使用されるためです。`CREATE TABLE` には、挿入専用のシャーディングキーを表現する方法がありません。
+
+## 補足事項 {#notes}
+
+* このエンジンは、クラスターの状態を読み取り専用で参照するためのビューです。`Cluster` データベースに対する `CREATE TABLE`、`DROP TABLE`、`ALTER` などの DDL ステートメントはサポートされていません。スキーマは、[`ON CLUSTER`](/ja/reference/statements/distributed-ddl) を使用した DDL クエリなどで、クラスター上で直接管理してください。
+* アクセス権は、クラスター定義に設定されたユーザー (クラスターがサーバー間通信用のシークレットを使用する場合は現在のユーザー) に対して、リモートサーバー側で適用されます。ローカル側では、データベースとそのテーブルに対する通常の権限が適用されます。
+* `Remote` データベースエンジンの動作に関する詳細 (ローカルの分片にあるテーブルの可視性に関する規則、一覧表示の網羅性、使用不可のクラスターに関するエラーの報告、プロキシデータベースのチェーン) は、`Cluster` エンジンにも当てはまります。詳しくは、`Remote` データベースエンジンの[補足事項](/ja/reference/engines/database-engines/remote#notes)を参照してください。
+
+## 例 {#example}
+
+サーバー設定で定義されたクラスター `test_shard_localhost` の `default` データベースを参照する `Cluster` データベースを作成し、使用します。
+
+```sql
+CREATE DATABASE cluster_db
+ENGINE = Cluster('test_shard_localhost', 'default');
+```
+
+```sql
+SHOW TABLES FROM cluster_db;
+```
+
+```text
+┌─name─┐
+│ t    │
+└──────┘
+```
+
+```sql
+SELECT * FROM cluster_db.t;
+```

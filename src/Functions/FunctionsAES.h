@@ -11,10 +11,13 @@
 
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 
 #include <fmt/format.h>
 
@@ -99,6 +102,46 @@ private:
     std::array<char, EVP_MAX_KEY_LENGTH> key{};
 };
 
+/// Reads the rows of a `String` or `FixedString` argument column without a virtual call per row.
+class StringArgumentReader
+{
+public:
+    explicit StringArgumentReader(const IColumn * column_)
+        : column(column_)
+    {
+        if (!column)
+            return;
+
+        if (isColumnConst(*column))
+        {
+            const_value = column->getDataAt(0);
+            is_const = true;
+        }
+        else if (const auto * string = typeid_cast<const ColumnString *>(column))
+            string_column = string;
+        else
+            fixed_string_column = typeid_cast<const ColumnFixedString *>(column);
+    }
+
+    std::string_view operator[](size_t row) const
+    {
+        if (string_column)
+            return string_column->getDataAt(row);
+        if (is_const)
+            return const_value;
+        if (fixed_string_column)
+            return fixed_string_column->getDataAt(row);
+        return column->getDataAt(row);
+    }
+
+private:
+    const IColumn * column;
+    const ColumnString * string_column = nullptr;
+    const ColumnFixedString * fixed_string_column = nullptr;
+    std::string_view const_value;
+    bool is_const = false;
+};
+
 enum class CompatibilityMode : uint8_t
 {
     MySQL,
@@ -136,7 +179,7 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
         // MySQL does something fancy with the keys that are too long,
         // ruining compatibility with OpenSSL and not improving security.
         // But we have to do the same to be compatitable with MySQL.
-        // see https://github.com/mysql/mysql-server/blob/8.0/router/src/harness/src/my_aes_openssl.cc#L71
+        // see https://github.com/mysql/mysql-server/blob/mysql-8.0.20/router/src/harness/src/my_aes_openssl.cc#L71
         // (my_aes_create_key function)
         return foldEncryptionKeyInMySQLCompatitableMode(cipher_key_size, key, folded_key);
     }
@@ -209,31 +252,14 @@ private:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors
-            {
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors
-            {
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "encryption key binary string"},
-            },
-            optional_args
-        );
-
-        return std::make_shared<DataTypeString>();
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString], [AAD StringOrFixedString]) -> String";
+        else
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -344,7 +370,9 @@ private:
     /// padding and, for CBC, the chaining XOR. For longer CBC rows the per-block
     /// EVP_EncryptUpdate calls lose to OpenSSL's stitched AES-NI CBC implementation,
     /// so those rows go through a CBC context that is re-initialized with only the IV
-    /// (keeping the expanded key schedule) between rows.
+    /// (keeping the expanded key schedule) between rows. A row shorter than a block is a
+    /// single block with no chaining, so runs of such rows are encrypted in place with one
+    /// `EVP_EncryptUpdate`.
     /// See https://github.com/ClickHouse/ClickHouse/issues/65116
     template <CipherMode mode>
     static ColumnPtr doEncryptBlockCipher(
@@ -365,6 +393,8 @@ private:
         /// stitched CBC implementation re-initialized per row (the measured crossover
         /// is between 64 and 96 bytes).
         constexpr size_t stitched_cbc_threshold = 64;
+        /// Upper bound on the bytes of deferred single-block rows encrypted by one call.
+        constexpr size_t max_pending_size = 4096;
 
         const bool is_cbc = EVP_CIPHER_mode(evp_cipher) == EVP_CIPH_CBC_MODE;
         const auto key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
@@ -382,10 +412,14 @@ private:
         auto & encrypted_result_column_data = encrypted_result_column->getChars();
         auto & encrypted_result_column_offsets = encrypted_result_column->getOffsets();
 
+        const StringArgumentReader input_reader(input_column.get());
+        const StringArgumentReader key_reader(key_column.get());
+        const StringArgumentReader iv_reader(iv_column.get());
+
         {
             size_t resulting_size = 0;
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
-                resulting_size += (input_column->getDataAt(row_idx).size() / block_size + 1) * block_size;
+                resulting_size += (input_reader[row_idx].size() / block_size + 1) * block_size;
             encrypted_result_column_data.resize(resulting_size);
         }
 
@@ -396,22 +430,40 @@ private:
         CachedKeyState cbc_key_state;
         static constexpr unsigned char zero_iv[EVP_MAX_IV_LENGTH]{};
 
+        /// `[pending, encrypted)` holds padded blocks of deferred rows, not yet encrypted with the key in `ecb_ctx`.
+        auto * pending = encrypted;
+        auto encrypt_pending = [&]
+        {
+            if (pending == encrypted)
+                return;
+            auto * blocks = reinterpret_cast<unsigned char *>(pending);
+            int len = 0;
+            if (EVP_EncryptUpdate(ecb_ctx, blocks, &len, blocks, static_cast<int>(encrypted - pending)) != 1)
+                onError("EVP_EncryptUpdate");
+            __msan_unpoison(pending, encrypted - pending);
+            pending = encrypted;
+        };
+
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
+            const auto key_value = key_holder.setKey(key_size, key_reader[row_idx]);
             auto iv_value = std::string_view{};
             if (iv_column)
-                iv_value = iv_column->getDataAt(row_idx);
+                iv_value = iv_reader[row_idx];
 
             validateIV<mode>(iv_value, iv_size);
             /// A fresh cipher context starts from a zero IV when no IV is given, so an
             /// absent IV is passed as an explicit zero IV here.
             const auto * iv_ptr = iv_value.empty() ? zero_iv : reinterpret_cast<const unsigned char *>(iv_value.data());
 
-            const std::string_view input_value = input_column->getDataAt(row_idx);
+            const std::string_view input_value = input_reader[row_idx];
             const auto * input = reinterpret_cast<const unsigned char *>(input_value.data());
             const size_t input_size = input_value.size();
             [[maybe_unused]] const auto * row_begin = encrypted;
+
+            const bool deferred = input_size < block_size;
+            if (!deferred)
+                encrypt_pending();
 
             int output_len = 0;
             if (is_cbc && input_size >= stitched_cbc_threshold)
@@ -442,6 +494,7 @@ private:
             {
                 if (!ecb_key_state.matches(key_value))
                 {
+                    encrypt_pending();
                     const bool first_init = !ecb_key_state.hasContext();
                     if (EVP_EncryptInit_ex(ecb_ctx, first_init ? ecb_cipher : nullptr, nullptr,
                             reinterpret_cast<const unsigned char *>(key_value.data()), nullptr) != 1)
@@ -482,7 +535,8 @@ private:
 
                 /// The last block: remaining input bytes plus PKCS#7 padding.
                 const size_t remaining = input_size - full_blocks * block_size;
-                unsigned char last[block_size];
+                unsigned char last_buf[block_size];
+                auto * last = deferred ? reinterpret_cast<unsigned char *>(encrypted) : last_buf;
                 if (remaining > 0)
                     memcpy(last, input + full_blocks * block_size, remaining);
                 memset(last + remaining, static_cast<int>(block_size - remaining), block_size - remaining);
@@ -491,14 +545,20 @@ private:
                     for (size_t i = 0; i < block_size; ++i)
                         last[i] ^= chain[i];
                 }
-                if (EVP_EncryptUpdate(ecb_ctx, reinterpret_cast<unsigned char *>(encrypted), &output_len, last, block_size) != 1)
+                if (!deferred && EVP_EncryptUpdate(ecb_ctx, reinterpret_cast<unsigned char *>(encrypted), &output_len, last, block_size) != 1)
                     onError("EVP_EncryptUpdate");
                 encrypted += block_size;
+                if (deferred && static_cast<size_t>(encrypted - pending) >= max_pending_size)
+                    encrypt_pending();
             }
+
+            if (!deferred)
+                pending = encrypted;
 
             __msan_unpoison(row_begin, encrypted - row_begin); /// OpenSSL uses assembly which evades msan's analysis
             encrypted_result_column_offsets.push_back(encrypted - encrypted_result_column_data.data());
         }
+        encrypt_pending();
 
         encrypted_result_column->validate();
         return encrypted_result_column;
@@ -529,6 +589,11 @@ private:
         auto & encrypted_result_column_data = encrypted_result_column->getChars();
         auto & encrypted_result_column_offsets = encrypted_result_column->getOffsets();
 
+        const StringArgumentReader input_reader(input_column.get());
+        const StringArgumentReader key_reader(key_column.get());
+        const StringArgumentReader iv_reader(iv_column.get());
+        [[maybe_unused]] const StringArgumentReader aad_reader(aad_column.get());
+
         {
             size_t resulting_size = 0;
             // for modes with block_size > 1, plaintext is padded up to a block_size,
@@ -538,7 +603,7 @@ private:
             const auto pad_to_next_block = block_size == 1 ? 0 : 1;
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
-                resulting_size += (input_column->getDataAt(row_idx).size() / block_size + pad_to_next_block) * block_size;
+                resulting_size += (input_reader[row_idx].size() / block_size + pad_to_next_block) * block_size;
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                     resulting_size += tag_size;
             }
@@ -552,18 +617,18 @@ private:
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
+            const auto key_value = key_holder.setKey(key_size, key_reader[row_idx]);
             auto iv_value = std::string_view{};
             if (iv_column)
             {
-                iv_value = iv_column->getDataAt(row_idx);
+                iv_value = iv_reader[row_idx];
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
                 if (iv_value.empty())
                     iv_value = std::string_view{};
             }
 
-            const std::string_view input_value = input_column->getDataAt(row_idx);
+            const std::string_view input_value = input_reader[row_idx];
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
@@ -600,7 +665,7 @@ private:
                     // 1.a.2 Set AAD
                     if (aad_column)
                     {
-                        const auto aad_data = aad_column->getDataAt(row_idx);
+                        const auto aad_data = aad_reader[row_idx];
                         int tmp_len = 0;
                         if (!aad_data.empty() && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data()), safe_cast<int>(aad_data.size())) != 1)
@@ -696,32 +761,15 @@ private:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        auto optional_args = FunctionArgumentDescriptors{
-            {"IV", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Initialization vector binary string"},
-        };
-
+        const String ret = use_null_when_decrypt_fail ? "Nullable(String)" : "String";
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
-        {
-            optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "Additional authenticated data binary string for GCM mode"
-            });
-        }
-
-        validateFunctionArguments(*this, arguments,
-            FunctionArgumentDescriptors{
-                {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
-                {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
-                {"key", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "decryption key binary string"},
-            },
-            optional_args
-        );
-
-        if constexpr (use_null_when_decrypt_fail)
-            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
-
-        return std::make_shared<DataTypeString>();
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString], [AAD StringOrFixedString]) -> " + ret;
+        else
+            return "(const mode StringOrFixedString, input StringOrFixedString, key StringOrFixedString,"
+                   " [IV StringOrFixedString]) -> " + ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -861,10 +909,14 @@ private:
         auto & decrypted_result_column_data = decrypted_result_column->getChars();
         auto & decrypted_result_column_offsets = decrypted_result_column->getOffsets();
 
+        const StringArgumentReader input_reader(input_column.get());
+        const StringArgumentReader key_reader(key_column.get());
+        const StringArgumentReader iv_reader(iv_column.get());
+
         {
             size_t resulting_size = 0;
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
-                resulting_size += input_column->getDataAt(row_idx).size();
+                resulting_size += input_reader[row_idx].size();
             decrypted_result_column_data.resize(resulting_size);
         }
 
@@ -876,12 +928,12 @@ private:
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
+            const auto key_value = key_holder.setKey(key_size, key_reader[row_idx]);
             auto iv_value = std::string_view{};
             if (iv_column)
-                iv_value = iv_column->getDataAt(row_idx);
+                iv_value = iv_reader[row_idx];
 
-            const std::string_view input_value = input_column->getDataAt(row_idx);
+            const std::string_view input_value = input_reader[row_idx];
             const auto * input = reinterpret_cast<const unsigned char *>(input_value.data());
             const size_t input_size = input_value.size();
 
@@ -1000,11 +1052,16 @@ private:
         auto & decrypted_result_column_data = decrypted_result_column->getChars();
         auto & decrypted_result_column_offsets = decrypted_result_column->getOffsets();
 
+        const StringArgumentReader input_reader(input_column.get());
+        const StringArgumentReader key_reader(key_column.get());
+        const StringArgumentReader iv_reader(iv_column.get());
+        [[maybe_unused]] const StringArgumentReader aad_reader(aad_column.get());
+
         {
             size_t resulting_size = 0;
             for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
             {
-                size_t string_size = input_column->getDataAt(row_idx).size();
+                size_t string_size = input_reader[row_idx].size();
                 resulting_size += string_size;
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -1030,18 +1087,18 @@ private:
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             // 0: prepare key if required
-            auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
+            auto key_value = key_holder.setKey(key_size, key_reader[row_idx]);
             auto iv_value = std::string_view{};
             if (iv_column)
             {
-                iv_value = iv_column->getDataAt(row_idx);
+                iv_value = iv_reader[row_idx];
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
                 if (iv_value.empty())
                     iv_value = std::string_view{};
             }
 
-            auto input_value = input_column->getDataAt(row_idx);
+            auto input_value = input_reader[row_idx];
 
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
@@ -1094,7 +1151,7 @@ private:
                     // 1.a.2: Set AAD if present
                     if (aad_column)
                     {
-                        std::string_view aad_data = aad_column->getDataAt(row_idx);
+                        std::string_view aad_data = aad_reader[row_idx];
                         int tmp_len = 0;
                         if (!aad_data.empty() && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data()), safe_cast<int>(aad_data.size())) != 1)
@@ -1196,6 +1253,23 @@ private:
             return decrypted_result_column;
     }
 };
+
+/// The `SecretArgumentsSpec` of `encrypt`, `decrypt`, `aes_encrypt_mysql`, `aes_decrypt_mysql` and `tryDecrypt`.
+/// Their arguments are expressions, where `=` is a comparison rather than a named argument.
+inline SecretArgumentsSpec encryptionFunctionSecretArguments()
+{
+    /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
+    return {.custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        if (finder.function->arguments->size() == 0)
+            return;
+
+        /// We replace all arguments after 'mode' with '[HIDDEN]':
+        /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
+        finder.result.start = 1;
+        finder.result.count = finder.function->arguments->size() - 1;
+    }};
+}
 
 }
 

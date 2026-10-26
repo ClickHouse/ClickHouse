@@ -15,7 +15,7 @@ doc_type: 'guide'
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-## Descripción
+## Descripción {#description}
 
 El formato `Protobuf` es el formato de [Protocol Buffers](https://protobuf.dev/).
 
@@ -109,9 +109,9 @@ El SETTING [`input_format_protobuf_oneof_presence`](/es/reference/settings/forma
 ClickHouse recibe y envía mensajes protobuf en formato `length-delimited`.
 Esto significa que, antes de cada mensaje, su longitud debe escribirse como un [entero de longitud variable (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 
-## Ejemplo de uso
+## Ejemplo de uso {#example-usage}
 
-### Lectura y escritura de datos
+### Lectura y escritura de datos {#basic-examples}
 
 <Note title="Archivos de ejemplo">
   Los archivos usados en este ejemplo están disponibles en el [repositorio de ejemplos](https://github.com/ClickHouse/formats/ProtoBuf)
@@ -274,13 +274,13 @@ SELECT * FROM test.protobuf_messages INTO OUTFILE 'protobuf_message_from_clickho
 
 Con el esquema Protobuf, ahora puede deserializar los datos que se escribieron desde ClickHouse en el archivo `protobuf_message_from_clickhouse.bin`.
 
-### Lectura y escritura de datos con ClickHouse Cloud
+### Lectura y escritura de datos con ClickHouse Cloud {#basic-examples-cloud}
 
-Con ClickHouse Cloud no es posible cargar un archivo de esquema Protobuf. Sin embargo, puede usar la configuración `format_protobuf_schema`
+Con ClickHouse Cloud no es posible cargar un archivo de esquema Protobuf. Sin embargo, puede usar la configuración `format_schema_source`
 para especificar el esquema en la consulta. En este ejemplo, le mostramos cómo leer datos serializados desde su máquina local
-e insertarlos en una tabla de ClickHouse Cloud.
+e insertarlos en una table de ClickHouse Cloud.
 
-Como en el ejemplo anterior, cree la tabla según el esquema de su archivo Protobuf en ClickHouse Cloud:
+Como en el ejemplo anterior, cree la table según el esquema de su archivo Protobuf en ClickHouse Cloud:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS test;
@@ -302,18 +302,18 @@ Valores posibles:
 * &#39;string&#39;: `format_schema` es el contenido literal del esquema.
 * &#39;query&#39;: `format_schema` es una consulta para obtener el esquema.
 
-### `format_schema_source='string'`
+### `format_schema_source='string'` {#format-schema-source-string}
 
 Inserte los datos en ClickHouse Cloud, especificando el esquema como una cadena; ejecute:
 
 ```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema='schemafile:MessageType' FORMAT Protobuf"
+cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO test.protobuf_messages SETTINGS format_schema_source='string', format_schema='syntax = \"proto3\";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};', format_schema_message_name='MessageType' FORMAT Protobuf"
 ```
 
-Seleccione los datos insertados en la tabla:
+Seleccione los datos insertados en la table:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -322,14 +322,14 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### `format_schema_source='query'`
+### `format_schema_source='query'` {#format-schema-source-query}
 
-También puede almacenar su esquema Protobuf en una tabla.
+También puede almacenar su esquema Protobuf en una table.
 
-Cree una tabla en ClickHouse Cloud para insertar datos:
+Cree en ClickHouse Cloud una table en la que insertar los datos:
 
 ```sql
-CREATE TABLE testing.protobuf_schema (
+CREATE TABLE test.protobuf_schema (
   schema String
 )
 ENGINE = MergeTree()
@@ -337,19 +337,32 @@ ORDER BY tuple();
 ```
 
 ```sql
-INSERT INTO testing.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
+INSERT INTO test.protobuf_schema VALUES ('syntax = "proto3";message MessageType {  string name = 1;  string surname = 2;  uint32 birthDate = 3;  repeated string phoneNumbers = 4;};');
 ```
 
-Inserta los datos en ClickHouse Cloud especificando el esquema en la consulta que se va a ejecutar:
+Si ejecutó el ejemplo anterior, vacíe primero la table para que el resultado que se muestra a continuación coincida:
 
-```bash
-cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --password <password> --query "INSERT INTO testing.protobuf_messages SETTINGS format_schema_source='SELECT schema FROM testing.protobuf_schema', format_schema='schemafile:MessageType' FORMAT Protobuf"
+```sql
+TRUNCATE TABLE test.protobuf_messages;
 ```
 
-Seleccione los datos insertados en la tabla:
+Inserte los datos en ClickHouse Cloud y especifique el esquema como una consulta que se ejecutará.
+Envíe esta inserción a través de la [interfaz HTTP](/es/concepts/features/interfaces/http#insert-protobuf), donde el servidor analiza los datos y ejecuta la consulta del esquema: `clickhouse client` analiza los datos de entrada en el lado del cliente, donde la consulta del esquema falla.
+La opción `--url-query` de curl (curl 7.87 y versiones posteriores) codifica cada parámetro para URL, por lo que la consulta y la consulta del esquema pueden escribirse tal cual:
 
 ```bash
-clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
+curl 'https://<hostname>:8443/' --user 'default:<password>' \
+    --url-query 'query=INSERT INTO test.protobuf_messages FORMAT Protobuf' \
+    --url-query 'format_schema_source=query' \
+    --url-query 'format_schema=SELECT schema FROM test.protobuf_schema' \
+    --url-query 'format_schema_message_name=MessageType' \
+    --data-binary @protobuf_messages.bin
+```
+
+Seleccione los datos insertados en la table:
+
+```bash
+clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM test.protobuf_messages"
 ```
 
 ```response
@@ -358,7 +371,7 @@ Javier Rodriguez 20001015 ['(555) 891-2046','(555) 738-5129']
 Mei Ling 19980616 ['(555) 956-1834','(555) 403-7682']
 ```
 
-### Uso de un esquema autogenerado
+### Uso de un esquema autogenerado {#using-autogenerated-protobuf-schema}
 
 Si no dispone de un esquema Protobuf externo para sus datos, aún puede exportar/importar datos en formato Protobuf
 mediante un esquema autogenerado. Para ello, utilice la configuración `format_protobuf_use_autogenerated_schema`.
@@ -388,7 +401,7 @@ SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerat
 
 En este caso, el esquema de Protobuf autogenerado se guardará en el archivo `path/to/schema/schema.capnp`.
 
-### Eliminar la caché de Protobuf
+### Eliminar la caché de Protobuf {#drop-protobuf-cache}
 
 Para recargar el esquema Protobuf cargado desde [`format_schema_path`](/es/reference/settings/server-settings/settings/format#format_schema_path), use la sentencia [`SYSTEM DROP ... FORMAT CACHE`](/es/reference/statements/system#system-drop-schema-format).
 

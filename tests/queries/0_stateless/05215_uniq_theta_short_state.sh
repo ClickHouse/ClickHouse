@@ -7,8 +7,8 @@
 # size again. A state shorter than that, which any `CAST` from a string can produce, was therefore read
 # past its end (an ASan heap-buffer-overflow), and the out-of-bounds value decided the size the parser
 # reported as missing: the same query answered `at least 86160 bytes expected` on one run and something
-# else on the next. Every size below is now the one the parser really needs before it can validate
-# anything, and the same on every run.
+# else on the next. The parser now checks that the buffer holds the whole preamble before it reads a field
+# from it, so every size below is the one it really needs, and the same on every run.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,11 +26,10 @@ outcome()
 # The leading byte of each `char` is the length of the state that follows it. All of these states are
 # eight bytes long - the most the parser checks for before it reads further out.
 #
-# The four states the fuzzer produced come first, and their seed hash is zero. Serial versions 2 and 4
-# compare that against the one they compute and stop at `check_seed_hash`; serial version 1 computes
-# the seed hash itself instead of comparing it, and serial version 3 reads `num_entries` before it
-# compares, so those two are refused for their size. Serial version 5 does not exist and is refused
-# outright.
+# The four states the fuzzer produced come first, and their seed hash is zero. Serial versions 2, 3
+# and 4 compare that against the one they compute and stop at `check_seed_hash`; serial version 1
+# computes the seed hash itself instead of comparing it, so it is refused for its size. Serial version 5
+# does not exist and is refused outright.
 for STATE in \
     "char(8, 0, 1, 3, 0, 0, 0, 0, 0)" \
     "char(8, 0, 2, 3, 0, 0, 0, 0, 0)" \
@@ -42,7 +41,7 @@ do
 done
 
 # `204, 147` at offset 6 is the seed hash of the default seed, so these states get past
-# `check_seed_hash` and reach every one of the reads that happen before the size is validated:
+# `check_seed_hash` and reach every one of the reads that used to happen before the size was validated:
 # `num_entries` alone for two preamble longs, `num_entries` and `theta` for three. In particular a
 # serial version 2 state with two preamble longs is refused rather than taken for an empty sketch on
 # the strength of bytes it does not have.
@@ -64,7 +63,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # A short state cannot be refused for its length alone: a single-entry sketch is sixteen bytes long,
-# below the twenty-four the parser reads for other headers before it validates anything. The length of
+# below the twenty-four bytes of a header with three preamble longs. The length of
 # each state is printed next to the value it reads back as - it counts the one-byte length prefix, so
 # the sketch itself is one byte smaller.
 ${CLICKHOUSE_CLIENT} --query "

@@ -35,7 +35,7 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Fill out connection details" size="lg" border/>
 
-5. Select the Kinesis stream, **Data format**, and starting offset. For `Protobuf`, upload a `.proto` file or serialized `FileDescriptorSet` (maximum 768 KiB). No schema registry is required.
+5. Select the Kinesis stream, **Data format**, and starting offset. Kinesis ClickPipes support JSON, Avro, and Protobuf. For `Protobuf`, upload a `.proto` file or serialized `FileDescriptorSet` (maximum 768 KiB), or configure an AWS Glue Schema Registry. For Avro, configure an AWS Glue Schema Registry. Do not combine an uploaded Protobuf schema with a schema registry.
 
    The UI displays sample data from the selected stream. **Use Kinesis Enhanced Fan-Out** is enabled by default. See the [Amazon Kinesis documentation](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) for details.
 
@@ -81,7 +81,14 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 The supported formats are:
 - [JSON](/reference/formats/JSON/JSON)
+- [Avro](/reference/formats/Avro/AvroConfluent) (with AWS Glue Schema Registry)
 - [Protobuf](/reference/formats/Protobuf/Protobuf)
+
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+Kinesis ClickPipes can resolve Avro and Protobuf schemas from AWS Glue Schema Registry. Select **AWS Glue** in the ClickPipe creation flow, then provide the registry's AWS region and name. Optionally provide an IAM role for registry access; otherwise, ClickPipes uses the Kinesis source's IAM identity. That identity needs `glue:GetSchemaVersion` permission.
+
+You can configure the same fields through [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) or [Terraform](/integrations/clickpipes/programmatic-access/terraform). The [schema registry guide](/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry) includes the required IAM policy and configuration details.
 
 ## Compression {#compression}
 
