@@ -32,7 +32,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/stripQuerySettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
@@ -93,11 +92,40 @@ public:
 
 using RemoveQueryOutputVisitor = InDepthNodeVisitor<RemoveQueryOutputMatcher, true>;
 
+/// The `SELECT` whose `SETTINGS` clause `InterpreterSetQuery::applySettingsFromQuery` applies to the
+/// query context: the top-level `SELECT`, or the last `SELECT` of a top-level `UNION`.
+ASTSelectQuery * getSelectWithQueryContextSettings(const IAST & ast)
+{
+    if (const auto * select = ast.as<ASTSelectQuery>())
+        return const_cast<ASTSelectQuery *>(select);
+    if (const auto * select_with_union = ast.as<ASTSelectWithUnionQuery>();
+        select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
+        return select_with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
+    return nullptr;
+}
+
 ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
 {
     ASTPtr normalized_ast = ast->clone();
 
-    removeSettingsFromQuery(normalized_ast, isSettingIgnoredInQueryPlanCache);
+    /// Strip the ignored settings only from the `SETTINGS` clause that is applied to the query context.
+    /// Any other `SETTINGS` clause (of a subquery, of another `SELECT` of a `UNION`) is scoped to its
+    /// part of the query, which a cached plan cannot reproduce, so `ASTDependencyCollector` makes such
+    /// a query uncacheable. It must stay in the key as is: otherwise a query with an inner clause of
+    /// only ignored settings would get the same key as the query without it and hit its cached plan.
+    if (auto * select = getSelectWithQueryContextSettings(*normalized_ast))
+    {
+        if (auto settings = select->settings())
+        {
+            if (auto * set_query = settings->as<ASTSetQuery>())
+            {
+                std::erase_if(set_query->changes, [](const SettingChange & change) { return isSettingIgnoredInQueryPlanCache(change.name); });
+                std::erase_if(set_query->default_settings, [](const String & name) { return isSettingIgnoredInQueryPlanCache(name); });
+                if (set_query->changes.empty() && set_query->default_settings.empty() && set_query->query_parameters.empty())
+                    select->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
+        }
+    }
 
     RemoveQueryOutputMatcher::Data visitor_data;
     RemoveQueryOutputVisitor(visitor_data).visit(normalized_ast);
@@ -511,11 +539,7 @@ public:
         /// `UNION`) is applied to the query context by `InterpreterSetQuery::applySettingsFromQuery`
         /// before the query is interpreted, so it is part of the cache key and the plan is
         /// materialized with it.
-        if (const auto * select = ast.as<ASTSelectQuery>())
-            select_with_query_context_settings = select;
-        else if (const auto * select_with_union = ast.as<ASTSelectWithUnionQuery>();
-                 select_with_union && select_with_union->list_of_selects && !select_with_union->list_of_selects->children.empty())
-            select_with_query_context_settings = select_with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
+        select_with_query_context_settings = getSelectWithQueryContextSettings(ast);
 
         return collectImpl(ast, default_database, /*in_set_or_table_position=*/ false, /*inside_scalar_subquery=*/ false);
     }
