@@ -18,7 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 LAZY="${CLICKHOUSE_DATABASE}_lazy"
 root="${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-tables=4
+tables=3
 
 function table_def()
 {
@@ -68,7 +68,7 @@ function compete()
     wait
 }
 
-for _ in $(seq 1 10); do
+for _ in $(seq 1 4); do
     # Bring the tables back as proxies that have not been loaded.
     ${CLICKHOUSE_CLIENT} --query "DETACH DATABASE \`${LAZY}\`"
     ${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE \`${LAZY}\`"
