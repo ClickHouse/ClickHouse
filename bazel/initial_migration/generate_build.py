@@ -1882,7 +1882,7 @@ def main():
         ("src/Daemon", "daemon"),
         ("src/Functions/URL", "clickhouse_functions_url__compile_0"),
     ])
-    from initial_migration.first_party_packages import group_package_sources
+    from initial_migration.first_party_packages import group_package_sources, without_unused_program_include
     group_package_sources(ROOT)
     from initial_migration.package_source_groups import group_owned_sources
     from initial_migration.package_source_globs import compact_owned_source_globs, join_source_globs
@@ -1892,6 +1892,9 @@ def main():
         if path.is_file():
             before = path.read_text()
             after = join_source_globs(before)
+            if path.parent.parent == ROOT / "programs":
+                build = Build(ROOT, path, header_inventory, (), after)
+                after = without_unused_program_include(build, native_packages.textual_names)
             if after != before:
                 path.write_text(after)
     # Consumers and source owners are final after the BUILD rule rewrites.

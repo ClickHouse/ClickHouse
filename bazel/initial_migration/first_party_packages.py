@@ -594,6 +594,35 @@ def _package_source_globs(folder, files, pattern, allow_excludes):
     return " + ".join(expressions)
 
 
+def without_unused_program_include(build, textual_names):
+    """A program with only C++ sources and no textual inputs needs no private include directory."""
+    files = set(build.inventory)
+    if ("CMakeLists.txt" not in files or files & textual_names or
+            any("/" in f or not (f.endswith(".cpp") or f in {"CMakeLists.txt", "README.md"}) for f in files)):
+        return build.text
+
+    calls = [stmt.value for stmt in build.source.module.body if isinstance(stmt, ast.Expr)]
+    if any(call_name(call) not in {"load", "package", "ch_cc_library"} for call in calls):
+        return build.text
+    libraries = [call for call in calls if call_name(call) == "ch_cc_library"]
+    if len(libraries) != 1:
+        return build.text
+    lib, = libraries
+    attrs = attributes(lib)
+    if attrs.keys() - {"name", "srcs", "clickhouse_code", "local_defines", "deps", "implementation_deps",
+                       "link_runtime", "local_includes"}:
+        return build.text
+    sources = attrs.get("srcs")
+    local = next((kw for kw in lib.keywords if kw.arg == "local_includes"), None)
+    if (not isinstance(sources, ast.List) or not sources.elts or
+            any(not isinstance(n, ast.Constant) or n.value not in files or not n.value.endswith(".cpp")
+                for n in sources.elts) or local is None or not isinstance(local.value, ast.List) or
+            [getattr(n, "value", None) for n in local.value.elts] != ["."]):
+        return build.text
+    start, end = build.source.span(local)
+    return build.source.rewrite([(start, end + (build.source.bytes[end:end + 1] == b","), "")])
+
+
 def group_package_sources(root):
     """Keep unit_tests_dbms and clickhouse_common_io sources in their own packages."""
     path = root / "src/BUILD.bazel"

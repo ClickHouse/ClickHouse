@@ -9,5 +9,4 @@ ch_cc_library(
     clickhouse_code = True,
     link_runtime = True,
     local_defines = common_io_defines(),
-    local_includes = ["."],
 )

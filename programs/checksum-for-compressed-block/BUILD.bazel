@@ -17,7 +17,4 @@ ch_cc_library(
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
-    local_includes = [
-        ".",
-    ],
 )
