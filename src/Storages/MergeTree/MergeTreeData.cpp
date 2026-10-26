@@ -5840,6 +5840,60 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
+/// The column of the table that holds `name`, if it is named like a subcolumn of another column (`a.size0` next to
+/// an `Array` column `a`, or `a.x` next to a `JSON` column `a`, for the name `a.x` or `a.x.y`).
+static std::optional<String> getColumnShadowingSubcolumn(const ColumnsDescription & columns, const String & name)
+{
+    auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+    if (!column)
+        return {};
+    String name_in_storage = column->getNameInStorage();
+    for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name_in_storage))
+    {
+        if (prefix.size() >= name_in_storage.size() || !columns.hasPhysical(String(prefix)))
+            continue;
+        if (columns.getPhysical(String(prefix)).type->tryGetSubcolumnType(subcolumn))
+            return name_in_storage;
+    }
+    return {};
+}
+
+/// Whether `part` does not hold the column `shadowing_column` of the table, which holds `name`, and reads `name` as
+/// a subcolumn of another column instead (see `IMergeTreeReader::tryGetColumnInPart`). A part that records the column
+/// as missing (`skip_empty_columns_on_insert`) reads its default.
+static bool partReadsColumnAsSubcolumnOfAnother(
+    const IMergeTreeDataPart & part, const String & name, const String & shadowing_column, const ColumnsDescription & columns)
+{
+    return !part.tryGetColumnForTable(name, columns) && part.tryGetColumn(name)
+        && !part.getSerializationInfos().getMissingColumnInfo(shadowing_column);
+}
+
+void MergeTreeData::checkTTLInputsOfAdoptedPart(const IMergeTreeDataPart & part, const StorageInMemoryMetadata & metadata) const
+{
+    if (!metadata.hasAnyTTL())
+        return;
+
+    /// The reader keeps the old meaning of a name that a TTL expression reads for a part that misses the column of that
+    /// name, so that the TTL agrees with the TTL infos the part was written with. A part written without that TTL (in this
+    /// table before it was detached and the TTL was added, or in another table) would read a different value here than
+    /// the one it read there, and the TTL could expire its rows by values it never held. The same is refused by `ALTER`
+    /// for the active parts (see `checkAlterEligibility`).
+    const auto & columns = metadata.getColumns();
+    for (const auto & ttl_column : getColumnsRequiredForTTL(metadata))
+    {
+        auto shadowing_column = getColumnShadowingSubcolumn(columns, ttl_column);
+        if (shadowing_column && partReadsColumnAsSubcolumnOfAnother(part, ttl_column, *shadowing_column, columns))
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot attach part {} to table {}: a TTL expression reads column {}, which the part does not hold, and the part "
+                "reads its name as a subcolumn of another column. Attach the part to a table without this TTL and rewrite it "
+                "first, for example with `OPTIMIZE TABLE ... FINAL`",
+                part.name,
+                getStorageID().getNameForLogs(),
+                backQuoteIfNeed(ttl_column));
+    }
+}
+
 void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -6290,29 +6344,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & new_columns = new_metadata.getColumns();
             auto old_ttl_columns = getColumnsRequiredForTTL(old_metadata);
 
-            /// The column of the table that holds the name, if it is named like a subcolumn of another column.
-            auto get_shadowing_column = [&](const String & name) -> std::optional<String>
-            {
-                auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-                if (!column)
-                    return {};
-                String name_in_storage = column->getNameInStorage();
-                for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name_in_storage))
-                {
-                    if (prefix.size() >= name_in_storage.size() || !new_columns.hasPhysical(String(prefix)))
-                        continue;
-                    if (new_columns.getPhysical(String(prefix)).type->tryGetSubcolumnType(subcolumn))
-                        return name_in_storage;
-                }
-                return {};
-            };
-
             std::optional<DataPartsVector> parts;
             for (const auto & ttl_column : getColumnsRequiredForTTL(new_metadata))
             {
                 if (std::ranges::find(old_ttl_columns, ttl_column) != old_ttl_columns.end())
                     continue;
-                auto shadowing_column = get_shadowing_column(ttl_column);
+                auto shadowing_column = getColumnShadowingSubcolumn(new_columns, ttl_column);
                 if (!shadowing_column)
                     continue;
 
@@ -6320,8 +6357,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     parts = getDataPartsVectorForInternalUsage();
                 for (const auto & part : *parts)
                 {
-                    if (!part->tryGetColumnForTable(ttl_column, new_columns) && part->tryGetColumn(ttl_column)
-                        && !part->getSerializationInfos().getMissingColumnInfo(*shadowing_column))
+                    if (partReadsColumnAsSubcolumnOfAnother(*part, ttl_column, *shadowing_column, new_columns))
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "Cannot use column {} in a TTL expression: part {} does not hold it and reads its name as a subcolumn "
@@ -12394,6 +12430,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     LOG_DEBUG(log, "Checking {} parts", renamed_parts.old_and_new_names.size());
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
@@ -12419,6 +12456,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             .build();
 
         loadPartAndFixMetadataImpl(part, local_context);
+        checkTTLInputsOfAdoptedPart(*part, *metadata_snapshot);
 
         chassert(!part->version->getInfo().isRemoved());
         loaded_parts.push_back(part);

@@ -9716,6 +9716,8 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
                                 "Cannot replace partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
+            checkTTLInputsOfAdoptedPart(*src_part, *metadata_snapshot);
+
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             const bool is_duplicated_part = replaced_parts.contains(hash_hex);
             replaced_parts.insert(hash_hex);
@@ -10021,6 +10023,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Cannot move partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
+
+            dest_table_storage->checkTTLInputsOfAdoptedPart(*src_part, *dest_metadata_snapshot);
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             std::vector<std::string> block_id_path;

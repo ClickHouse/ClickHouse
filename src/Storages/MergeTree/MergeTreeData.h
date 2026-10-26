@@ -1186,6 +1186,10 @@ public:
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
 
+    /// Throws if `part`, attached from outside the table (`ATTACH PART`, `ATTACH PARTITION FROM`, `MOVE PARTITION TO TABLE`),
+    /// does not hold a column that a TTL expression of `metadata` reads and reads its name as a subcolumn of another column.
+    void checkTTLInputsOfAdoptedPart(const IMergeTreeDataPart & part, const StorageInMemoryMetadata & metadata) const;
+
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
