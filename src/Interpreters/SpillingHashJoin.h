@@ -18,28 +18,19 @@ namespace DB
 
 class HashJoin;
 class GraceHashJoin;
-class ConcurrentHashJoin;
+struct HashJoinBuildLayout;
 
 /// An IJoin wrapper that automatically switches to GraceHashJoin to spill to disk when memory limits are exceeded.
 ///
-/// Operates in two modes depending on the constructor parameters:
-///
-/// Single-thread mode:
-/// Blocks are fed directly into a HashJoin instance during the build phase.
-/// If the data exceeds max_bytes_before_external_join, the blocks are extracted via releaseJoinedBlocks and drained into a new
-/// GraceHashJoin.
-/// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
-///
-/// Concurrent mode:
-/// Blocks are fed into a ConcurrentHashJoin from multiple threads concurrently.
+/// Blocks are fed into a HashJoin, possibly from multiple threads concurrently.
 /// A SharedMutex protects the COLLECTING -> GRACE_HASH_JOIN transition: addBlockToJoin takes a shared lock, while
 /// switchToGraceHashJoin takes an exclusive lock.
-/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and ConcurrentHashJoin slots are converted via
+/// If the data exceeds max_bytes_before_external_join, a GraceHashJoin is created and HashJoin workers are converted via
 /// addBlockToJoin calls possibly from multiple threads.
-/// If all blocks fit in memory, the ConcurrentHashJoin is promoted to chosen_join with zero rework.
+/// If all blocks fit in memory, the HashJoin is promoted to chosen_join with zero rework.
 ///
 /// hasDelayedBlocks always returns true so that the pipeline includes the delayed-block
-/// transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin is used,
+/// transforms needed by GraceHashJoin. When HashJoin is used,
 /// isDelayedBlocksProcessingEnabled is false and the probe streams close those transforms after the build.
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
@@ -47,7 +38,6 @@ class ConcurrentHashJoin;
 class SpillingHashJoin final : public IJoin
 {
 public:
-    /// Single-thread mode: wraps a HashJoin.
     SpillingHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_,
@@ -55,18 +45,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
-
-    /// Concurrent mode: wraps a ConcurrentHashJoin.
-    SpillingHashJoin(
-        std::shared_ptr<TableJoin> table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_,
-        TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        size_t concurrent_slots_,
+        HashJoinBuildLayout build_layout_,
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
@@ -93,11 +72,12 @@ public:
 
     ISpillable * getSpillable() override { return &spillable; }
     /// While collecting: the whole right side, spilled by switching to the grace join.
-    /// After the switch: the grace join and unconverted concurrent slots. Nothing once the build ended in memory.
+    /// After the switch: the grace join and the blocks of unconverted workers. Nothing once the build ended in memory.
     ProcessorMemoryStats getMemoryStats() const;
     size_t spill(size_t at_least_bytes);
 
-    bool supportParallelJoin() const override { return concurrent_join != nullptr; }
+    bool supportParallelJoin() const override;
+    size_t getMaxBuildThreads() const override;
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
 
@@ -136,13 +116,15 @@ private:
 
     enum class State
     {
-        COLLECTING, // Right-side blocks are being collected in HashJoin / ConcurrentHashJoin, no spilling yet.
-        GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but some concurrent slots may still be unconverted.
-        IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
+        COLLECTING, // Right-side blocks are being collected in HashJoin, no spilling yet.
+        GRACE_HASH_JOIN, // Spilled to disk and switched to GraceHashJoin, but the blocks of some workers may still be unconverted.
+        IN_MEMORY_JOIN, // All blocks fit in memory, using HashJoin directly without switching.
+        FAILED // A switch requested by `spill` threw after freeing the maps, so no join can take more blocks.
     };
 
     void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
-    void tryConvertSlots(JoinBuildContext context);
+    void tryConvertWorkers(JoinBuildContext context);
+    void throwIfSwitchFailed() const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -155,17 +137,17 @@ private:
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;
-    std::atomic<size_t> next_slot_to_convert{0};
+    std::atomic<size_t> next_worker_to_convert{0};
     mutable std::mutex totals_mutex;
     bool supports_parallel_non_joined_blocks_processing{false};
 
     std::atomic<State> state{State::COLLECTING};
 
-    /// HashJoin that stores right-side blocks during COLLECTING phase (single-thread mode).
-    std::shared_ptr<HashJoin> hash_join;
+    /// The error of the failed switch, written before `state` becomes `FAILED`.
+    int switch_error_code = 0;
+    String switch_error_message;
 
-    /// ConcurrentHashJoin for multi-thread path (mutually exclusive with hash_join).
-    std::shared_ptr<ConcurrentHashJoin> concurrent_join;
+    std::shared_ptr<HashJoin> hash_join;
 
     /// GraceHashJoin created during overflow. Also assigned to chosen_join.
     std::shared_ptr<GraceHashJoin> grace_join;

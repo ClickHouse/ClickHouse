@@ -490,6 +490,7 @@ static struct InitFiu
     ONCE(postgresql_output_format_cancel_mid_loop) \
     PAUSEABLE_ONCE(external_distinct_suppression_run_prepared_pause) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(spilling_hash_join_throw_after_maps_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \

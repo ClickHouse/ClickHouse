@@ -29,7 +29,6 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/ConstantJoin.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -98,6 +97,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsBool allow_suspicious_types_in_group_by;
@@ -1005,7 +1005,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     /// Preserve the set of algorithms that accepted CROSS and comma joins before they were handled by ConstantJoin.
     const auto is_cross_join_compatible = algorithm == JoinAlgorithm::DEFAULT || algorithm == JoinAlgorithm::AUTO
-        || algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+        || algorithm == JoinAlgorithm::HASH
         || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE;
 
     if (is_cross_join_compatible && isCrossOrComma(analyzed_join->kind()))
@@ -1033,10 +1033,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
 
+    /// The old analyzer has no estimate of the right table size.
+    const auto build_layout
+        = analyzed_join->preferParallelHashLayout(
+              /*rhs_size_estimation=*/std::nullopt, context->getSettingsRef()[Setting::parallel_hash_join_threshold])
+        ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
+        : HashJoinBuildLayout::oneBucket(1);
+
     if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
-        algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
         const auto & settings = context->getSettingsRef();
@@ -1047,31 +1053,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
             {
-                if (analyzed_join->allowParallelHashJoin())
-                    return std::make_shared<SpillingHashJoin>(
-                        analyzed_join,
-                        std::make_shared<const Block>(std::move(left_sample_block)),
-                        right_sample_block,
-                        context->getTempDataOnDisk(),
-                        settings[Setting::grace_hash_join_initial_buckets],
-                        settings[Setting::grace_hash_join_max_buckets],
-                        settings[Setting::max_threads],
-                        HashJoinStatsCollectingParams{});
-                else
-                    return std::make_shared<SpillingHashJoin>(
-                        analyzed_join,
-                        std::make_shared<const Block>(std::move(left_sample_block)),
-                        right_sample_block,
-                        context->getTempDataOnDisk(),
-                        settings[Setting::grace_hash_join_initial_buckets],
-                        settings[Setting::grace_hash_join_max_buckets]);
+                return std::make_shared<SpillingHashJoin>(
+                    analyzed_join,
+                    std::make_shared<const Block>(std::move(left_sample_block)),
+                    right_sample_block,
+                    context->getTempDataOnDisk(),
+                    settings[Setting::grace_hash_join_initial_buckets],
+                    settings[Setting::grace_hash_join_max_buckets],
+                    build_layout);
             }
         }
 
-        if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(
-                analyzed_join, settings[Setting::max_threads], right_sample_block, HashJoinStatsCollectingParams{});
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+        return HashJoin::create(analyzed_join, right_sample_block, build_layout);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
@@ -1109,7 +1102,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 right_sample_block,
                 context->getTempDataOnDisk(),
                 /*any_take_last_row_=*/false,
-                analyzed_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : analyzed_join->maxBytesBeforeExternalJoin());
+                analyzed_join->legacyJoinSizeLimitsTriggerSpilling() ? 0 : analyzed_join->maxBytesBeforeExternalJoin(),
+                context->getSettingsRef()[Setting::max_threads]);
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
@@ -1122,30 +1116,20 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
             {
-                if (analyzed_join->allowParallelHashJoin())
-                    return std::make_shared<SpillingHashJoin>(
-                        analyzed_join,
-                        std::make_shared<const Block>(std::move(left_sample_block)),
-                        right_sample_block,
-                        context->getTempDataOnDisk(),
-                        settings[Setting::grace_hash_join_initial_buckets],
-                        settings[Setting::grace_hash_join_max_buckets],
-                        settings[Setting::max_threads],
-                        HashJoinStatsCollectingParams{});
-                else
-                    return std::make_shared<SpillingHashJoin>(
-                        analyzed_join,
-                        std::make_shared<const Block>(std::move(left_sample_block)),
-                        right_sample_block,
-                        context->getTempDataOnDisk(),
-                        settings[Setting::grace_hash_join_initial_buckets],
-                        settings[Setting::grace_hash_join_max_buckets]);
+                return std::make_shared<SpillingHashJoin>(
+                    analyzed_join,
+                    std::make_shared<const Block>(std::move(left_sample_block)),
+                    right_sample_block,
+                    context->getTempDataOnDisk(),
+                    settings[Setting::grace_hash_join_initial_buckets],
+                    settings[Setting::grace_hash_join_max_buckets],
+                    build_layout);
             }
         }
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, /*any_take_last_row_=*/false);
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+        return HashJoin::create(analyzed_join, right_sample_block, build_layout);
     }
     return nullptr;
 }

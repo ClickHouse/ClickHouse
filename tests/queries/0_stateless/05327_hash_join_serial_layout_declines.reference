@@ -1,0 +1,16 @@
+05327_estimate_below	1	0
+05327_estimate_equal	0	1
+05327_semi_estimate_below	1	0
+05327_semi_estimate_equal	0	1
+05327_any_estimate_below	1	0
+05327_any_estimate_equal	0	1
+05327_one_thread	0	1
+05327_one_thread_control	1	0
+05327_grace_buckets	4	0
+05327_grace_control	0	1
+05327_shard_by_pk	4	0
+05327_shard_control	0	1
+05327_join_engine	0	0
+05327_join_engine_control	0	1
+05327_spill_switched	1	0	1
+05327_spill_in_memory	0	1	0

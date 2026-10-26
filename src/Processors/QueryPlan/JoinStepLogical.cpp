@@ -51,7 +51,9 @@
 #include <IO/Operators.h>
 
 #include <Planner/PlannerJoins.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
@@ -60,6 +62,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -2563,6 +2566,28 @@ static QueryPlanNode buildPhysicalJoinImpl(
     return node;
 }
 
+/// Whether the plan below `node` reads nothing: a `ReadNothingStep` under steps that cannot add rows.
+/// Joins are made physical bottom-up, so a join below `node` is already a `JoinStep` with its two inputs as children.
+static bool isKnownEmpty(const QueryPlan::Node & node)
+{
+    const auto * step = node.step.get();
+    if (typeid_cast<const ReadNothingStep *>(step))
+        return true;
+
+    if (typeid_cast<const ExpressionStep *>(step) || typeid_cast<const FilterStep *>(step)
+        || typeid_cast<const BuildRuntimeFilterStep *>(step))
+        return isKnownEmpty(*node.children.front());
+
+    if (const auto * join_step = typeid_cast<const JoinStep *>(step))
+    {
+        const auto kind = join_step->getJoin()->getTableJoin().kind();
+        if (isInner(kind) || isCrossOrComma(kind))
+            return isKnownEmpty(*node.children.front()) || isKnownEmpty(*node.children.back());
+    }
+
+    return false;
+}
+
 void JoinStepLogical::buildPhysicalJoin(
     QueryPlanNode & node,
     const QueryPlanOptimizationSettings & optimization_settings,
@@ -2597,6 +2622,7 @@ void JoinStepLogical::buildPhysicalJoin(
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
+        join_step->join_algorithm_params->rhs_known_empty = isKnownEmpty(*node.children.back());
         if (join_step->result_rows_estimation)
             join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
 

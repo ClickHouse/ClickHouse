@@ -63,7 +63,7 @@
     </fill_query>
 
     <!-- Parallel hash join with low-cardinality keys: many dispatched blocks will be empty,
-        exercising the empty-block skip optimisation in ConcurrentHashJoinResult -->
+        exercising the empty-block skip optimisation in HashJoinResult -->
     <query tag='inner_low_card'>
         SELECT count() FROM
             (SELECT number % 10 AS k FROM numbers_mt(100000)) AS l

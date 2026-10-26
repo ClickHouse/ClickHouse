@@ -20,6 +20,8 @@ INSERT INTO t_probe_i32 SELECT toInt32(number % 250 - 100) FROM numbers(20000);
 SET enable_parallel_replicas = 0; -- The descriptors are not serialized with the query plan.
 
 SET join_algorithm = 'hash', max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
+-- Only a join with the serial layout converts its map; the join order pass gives the estimate that layout needs.
+SET parallel_hash_join_threshold = 1000000000, query_plan_optimize_join_order_limit = 10, query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_runtime_filters = 1, enable_join_fixed_hash_table_conversion = 1, join_runtime_filter_from_fixed_hash_table = 1;
 -- The join order optimizer may put the small table on the probe side (for example when
 -- `query_plan_optimize_join_order_randomize` is on and `query_plan_join_swap_table` is `false`, so the

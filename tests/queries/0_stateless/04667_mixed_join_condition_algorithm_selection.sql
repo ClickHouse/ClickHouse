@@ -36,7 +36,7 @@ SELECT 'prefer_partial_merge,hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (
 SETTINGS join_algorithm = 'prefer_partial_merge,hash';
 
 SELECT 'fsm,parallel_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'full_sorting_merge,parallel_hash';
+SETTINGS join_algorithm = 'full_sorting_merge,parallel_hash', parallel_hash_join_threshold = 0;
 
 SELECT 'fsm,grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,grace_hash';
@@ -95,13 +95,13 @@ SELECT 'hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND 
 SETTINGS join_algorithm = 'hash';
 
 SELECT 'parallel_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'parallel_hash';
+SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0;
 
 SELECT 'grace_hash', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'grace_hash';
 
 SELECT 'default list', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'direct,parallel_hash,hash';
+SETTINGS join_algorithm = 'direct,hash,ie_join';
 
 -- INNER ALL pushes the residual down to a post-join filter instead of building a mixed
 -- condition, so it is algorithm-independent and reads 1 matched row both ways.
@@ -169,7 +169,7 @@ DROP TABLE IF EXISTS t3;
 CREATE TABLE t3 (key UInt64, a UInt32) ENGINE = Memory;
 INSERT INTO t3 VALUES (1, 1), (2, 2), (3, 3);
 
--- join_algorithm defaults to 'direct,parallel_hash,hash,ie_join', so DirectKeyValueJoin is tried
+-- join_algorithm defaults to 'direct,hash,ie_join', so DirectKeyValueJoin is tried
 -- first and used to drop the residual. No pair satisfies a * 10 < d.a here, so every left
 -- row is unmatched. A dictionary fills unmatched rows with the attribute default (0)
 -- rather than NULL, so the oracle uses 0 for them too => count 3, sum 0.

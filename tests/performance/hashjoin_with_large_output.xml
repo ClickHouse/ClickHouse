@@ -9,7 +9,7 @@
             <name>settings</name>
             <values>
                 <value>join_algorithm='hash'</value>
-                <value>join_algorithm='parallel_hash'</value>
+                <value>join_algorithm='parallel_hash', parallel_hash_join_threshold=0</value>
                 <value>join_algorithm='grace_hash'</value>
             </values>
         </substitution>

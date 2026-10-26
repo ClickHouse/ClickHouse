@@ -1,16 +1,16 @@
 <test>
     <substitutions>
         <substitution>
-            <name>join_algorithm</name>
+            <name>join_settings</name>
             <values>
-                <value>grace_hash</value>
-                <value>hash</value>
-                <value>parallel_hash</value>
-                <value>partial_merge</value>
-<!--                <value>direct</value>-->
-                <value>auto</value>
-                <value>full_sorting_merge</value>
-                <value>prefer_partial_merge</value>
+                <value>join_algorithm = 'grace_hash'</value>
+                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
+                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
+                <value>join_algorithm = 'partial_merge'</value>
+<!--                <value>join_algorithm = 'direct'</value>-->
+                <value>join_algorithm = 'auto'</value>
+                <value>join_algorithm = 'full_sorting_merge'</value>
+                <value>join_algorithm = 'prefer_partial_merge'</value>
             </values>
         </substitution>
     </substitutions>
@@ -82,7 +82,7 @@
         INNER JOIN my_table AS t38 ON t37.id = t38.id
         INNER JOIN my_table AS t39 ON t38.id = t39.id
         INNER JOIN my_table AS t40 ON t39.id = t40.id
-        SETTINGS join_algorithm = '{join_algorithm}'
+        SETTINGS {join_settings}
         FORMAT Null
     </query>
 </test>

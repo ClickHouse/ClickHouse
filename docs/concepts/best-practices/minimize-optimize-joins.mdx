@@ -3,7 +3,7 @@ slug: /best-practices/minimize-optimize-joins
 sidebarTitle: 'Minimize and optimize JOINs'
 title: 'Minimize and optimize JOINs'
 description: 'Document describing best practices for using JOINs in ClickHouse'
-keywords: ['JOIN', 'Parallel Hash JOIN']
+keywords: ['JOIN', 'Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
@@ -47,7 +47,7 @@ Follow these best practices to improve JOIN performance:
 ## Choosing the optimal JOIN algorithm {#choosing-the-optimal-join-algorithm}
 
 ClickHouse supports several JOIN algorithms that trade off between speed and memory.
-The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,parallel_hash,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/joining-tables#join-algorithms).
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/joining-tables#join-algorithms).
 
 If your key optimization metric is performance and you're looking to execute the join as fast as possible, then you can use the following decision tree for choosing the right join algorithm:
 
@@ -61,7 +61,7 @@ If your key optimization metric is performance and you're looking to execute the
 
 - **(2)** If your table's [physical row order](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) matches the join key sort order, then it depends. In this case, the **full sorting merge join** [skips](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) the sorting phase resulting in significantly reduced memory usage plus, depending on data size and join key value distribution, faster execution times than some of the hash join algorithms.
 
-- **(3)** If the right table fits into memory, even with the [additional memory usage overhead](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) of the **parallel hash join**, then this algorithm or the hash join can be faster. This depends on data size, data types, and value distribution of the join key columns.
+- **(3)** If the right table fits into memory, use the hash join. `parallel_hash` is an obsolete alias of `hash`; choosing it does not control parallelism. This is typically the fastest in-memory option, depending on data size, data types, and the value distribution of the join key columns.
 
 - **(4)** If the right table does not fit into memory, hash and parallel hash joins can spill by switching to grace hash when [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) is reached. Full sorting merge and partial merge joins can also use external storage. Which approach is fastest depends on the data volume, data types, and value distribution of the join key columns.
 

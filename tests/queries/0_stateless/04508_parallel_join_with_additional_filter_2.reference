@@ -154,3 +154,15 @@
 3	12	l3	0	0	
 4	16	l4	0	0	
 5	20	l5	0	0	
+04508_right_anti_serial	1	0
+04508_right_anti_parallel	0	1
+04508_right_serial	1	0
+04508_right_parallel	0	1
+04508_full_serial	1	0
+04508_full_parallel	0	1
+04508_uint16_right_anti_serial	1	0
+04508_uint16_right_anti_parallel	0	1
+04508_uint16_right_serial	1	0
+04508_uint16_right_parallel	0	1
+04508_uint16_full_serial	1	0
+04508_uint16_full_parallel	0	1
