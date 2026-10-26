@@ -56,7 +56,8 @@ def test_cluster_partition_pruning_reads(started_cluster_iceberg_no_spark, stora
         instance.query(
             f"SELECT * FROM {table_function} WHERE a = 1 ORDER BY ALL",
             query_id=query_id,
-            settings={"use_iceberg_partition_pruning": prune},
+            # The query condition cache would skip the files an earlier query found to have no match.
+            settings={"use_iceberg_partition_pruning": prune, "use_query_condition_cache": 0},
         )
         # No ZooKeeper here, so flush and read `system.query_log` on each present
         # node (`cluster_simple` lists node3, which is not started); the cluster
