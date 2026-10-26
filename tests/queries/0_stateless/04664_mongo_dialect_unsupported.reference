@@ -11,8 +11,6 @@ Code: 36. A filter must be a document
 Code: 36. A filter must be a document
 Code: 36. A filter must be a document
 Code: 36. A filter must not name an empty field
-Code: 36. The filter at the position 0 of '$or' holds no condition
-Code: 36. The filter at the position 0 of '$and' holds no condition
 -- arguments MongoDB rejects
 Code: 36. '$or' must be a non empty array of filters
 Code: 36. '$and' must be a non empty array of filters

@@ -44,8 +44,6 @@ run 'db.docs.find({"$and" : [{"id" : 1}, true]});'
 run 'db.docs.find({"$or" : [{"id" : 1}, "string"]});'
 run 'db.docs.find({"$nor" : [{"id" : 1}, 42]});'
 run 'db.docs.find({"" : "foo"});'
-run 'db.docs.find({"$or" : [{}, {}]});'
-run 'db.docs.find({"$and" : [{"$comment" : "only a comment"}, {"id" : 1}]});'
 
 echo '-- arguments MongoDB rejects'
 run 'db.docs.find({"$or" : []});'

@@ -61,15 +61,20 @@ ASTPtr makeNull()
   */
 constexpr size_t MAX_EXPRESSION_SIZE = 100000;
 
-ASTPtr checkExpressionSize(ASTPtr expression)
+void checkExpressionSize(size_t size)
 {
-    /// `IAST::size` counts a subtree each time it is referenced, which is the size of the query text.
-    if (expression->size() > MAX_EXPRESSION_SIZE)
+    if (size > MAX_EXPRESSION_SIZE)
         throw Exception(
             ErrorCodes::TOO_BIG_AST,
             "The translation of the aggregation expression is larger than {} elements: it nests operators that refer to their "
             "arguments more than once too deeply",
             MAX_EXPRESSION_SIZE);
+}
+
+ASTPtr checkExpressionSize(ASTPtr expression)
+{
+    /// `IAST::size` counts a subtree each time it is referenced, which is the size of the query text.
+    checkExpressionSize(expression->size());
     return expression;
 }
 
@@ -153,8 +158,16 @@ ASTPtr makeFunction(const std::string & name, std::vector<ASTPtr> arguments)
 /// `DateFormatSegment` for why the milliseconds cannot be a token of one format string.
 ASTPtr makeFormattedDate(const ASTPtr & date, const std::vector<DateFormatSegment> & segments, const ASTPtr & timezone)
 {
+    /// The date is copied once per piece and the number of pieces is chosen by the format, so the
+    /// size of the translation is checked before each copy rather than only once it is built.
+    const size_t piece_size = date->size() + timezone->size() + 8;
+    size_t total_size = 0;
     auto formatted = [&](const std::string & format)
-    { return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)), timezone->clone()); };
+    {
+        total_size += piece_size;
+        checkExpressionSize(total_size);
+        return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)), timezone->clone());
+    };
 
     std::vector<ASTPtr> parts;
     for (const auto & segment : segments)
@@ -197,7 +210,6 @@ void requireArgumentCount(std::string_view operator_name, const std::vector<ASTP
 
 /// Operators that map onto a ClickHouse function of the same arity, argument for argument.
 const std::unordered_map<std::string_view, std::string> direct_functions = {
-    {"$toString", "toString"},
     {"$strLenBytes", "length"},
     {"$strLenCP", "lengthUTF8"},
     {"$toUpper", "upper"},
@@ -469,6 +481,102 @@ std::string parseRegularExpressionField(const rapidjson::Value & argument, std::
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'regex' of '{}' must be a string or a regular expression", operator_name);
 }
 
+/** Which capture groups of a regular expression may not take part in a match: the groups under a
+  * quantifier that allows zero repetitions - `?`, `*`, `{0,n}` - and the groups inside a branch of
+  * an alternation. Mongo answers `null` for the capture of such a group when it does not take part,
+  * while the ClickHouse functions answer an empty string, the same as for a group that matched an
+  * empty text. The capture of a group that always takes part is never `null`.
+  */
+std::vector<bool> findOptionalCaptureGroups(std::string_view pattern)
+{
+    struct Group
+    {
+        bool capturing = false;
+        /// The index of the first capture group inside this group, or of the group itself.
+        size_t first_capture = 0;
+        bool has_alternation = false;
+    };
+
+    std::vector<bool> optional;
+    std::vector<Group> groups;
+    bool top_level_alternation = false;
+    auto mark_from = [&](size_t first)
+    {
+        for (size_t i = first; i < optional.size(); ++i)
+            optional[i] = true;
+    };
+
+    for (size_t pos = 0; pos < pattern.size(); ++pos)
+    {
+        const char c = pattern[pos];
+        if (c == '\\')
+        {
+            /// `\Q...\E` quotes its text, and any other escape is one character.
+            if (pos + 1 < pattern.size() && pattern[pos + 1] == 'Q')
+            {
+                auto end = pattern.find("\\E", pos + 2);
+                if (end == std::string_view::npos)
+                    break;
+                pos = end + 1;
+            }
+            else
+                ++pos;
+        }
+        else if (c == '[')
+        {
+            ++pos;
+            if (pos < pattern.size() && pattern[pos] == '^')
+                ++pos;
+            if (pos < pattern.size() && pattern[pos] == ']')
+                ++pos;
+            while (pos < pattern.size() && pattern[pos] != ']')
+            {
+                if (pattern[pos] == '\\')
+                    ++pos;
+                else if (pattern.substr(pos).starts_with("[:"))
+                {
+                    auto end = pattern.find(":]", pos + 2);
+                    if (end != std::string_view::npos)
+                        pos = end + 1;
+                }
+                ++pos;
+            }
+        }
+        else if (c == '(')
+        {
+            /// `(?P<name>...)` and `(?<name>...)` capture; every other group starting with `(?` does not.
+            const auto rest = pattern.substr(pos + 1);
+            const bool named = rest.starts_with("?P<") || (rest.starts_with("?<") && !rest.starts_with("?<=") && !rest.starts_with("?<!"));
+            const bool capturing = !rest.starts_with('?') || named;
+            groups.push_back({.capturing = capturing, .first_capture = optional.size(), .has_alternation = false});
+            if (capturing)
+                optional.push_back(false);
+        }
+        else if (c == ')')
+        {
+            if (groups.empty())
+                continue;
+            const Group group = groups.back();
+            groups.pop_back();
+            if (group.has_alternation)
+                mark_from(group.first_capture + (group.capturing ? 1 : 0));
+            const auto next = pattern.substr(pos + 1);
+            if (next.starts_with('?') || next.starts_with('*') || next.starts_with("{0"))
+                mark_from(group.first_capture);
+        }
+        else if (c == '|')
+        {
+            if (groups.empty())
+                top_level_alternation = true;
+            else
+                groups.back().has_alternation = true;
+        }
+    }
+    if (top_level_alternation)
+        mark_from(0);
+    return optional;
+}
+
 /** The lowering of `$toDecimal`, which is supposed to preserve the full value: Mongo's
   * `Decimal128` carries an exponent of its own, so no single fixed scale can hold every value,
   * and the scale has to be derived from the argument the way `$numberDecimal` derives it.
@@ -614,12 +722,18 @@ ASTPtr makeToBool(ASTPtr argument)
   * `{$not: [null]}` a `NULL` rather than `true`. A comparison or a boolean operator is a boolean
   * already, and only its `NULL` has to be turned into `false`.
   */
-ASTPtr makeTruth(ASTPtr argument)
+bool isBooleanFunction(const ASTPtr & argument)
 {
     static const std::unordered_set<std::string_view> boolean_functions{
         "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "and", "or", "not", "isNull", "isNotNull",
         "isNotDistinctFrom"};
 
+    const auto * function = argument->as<ASTFunction>();
+    return function && boolean_functions.contains(function->name);
+}
+
+ASTPtr makeTruth(ASTPtr argument)
+{
     if (argument->as<ASTLiteral>())
     {
         auto converted = makeToBool(std::move(argument));
@@ -630,7 +744,7 @@ ASTPtr makeTruth(ASTPtr argument)
         return makeASTFunction("ifNull", std::move(converted), makeLiteral(Field(false)));
     }
 
-    if (const auto * function = argument->as<ASTFunction>(); function && boolean_functions.contains(function->name))
+    if (isBooleanFunction(argument))
         return makeASTFunction("ifNull", std::move(argument), makeLiteral(Field(false)));
 
     return makeASTFunction("ifNull", makeToBool(std::move(argument)), makeLiteral(Field(false)));
@@ -751,6 +865,20 @@ ASTPtr makeMillisecondsOfDate(const ASTPtr & value)
 ASTPtr makeNumberAsFloat(const ASTPtr & value)
 {
     return makeASTFunction("toFloat64OrZero", makeASTFunction("toString", value->clone()));
+}
+
+/** The lowering of `$toString`. Mongo writes a date as ISO 8601 in UTC with milliseconds, the
+  * same text as the default of `$dateToString`, while `toString` writes the local time of the type
+  * of the value without the `T` and the `Z`. A value of any other type is converted by `toString`.
+  */
+ASTPtr makeToString(const ASTPtr & value)
+{
+    std::vector<DateFormatSegment> iso_format{
+        {.format = "%Y-%m-%dT%H:%i:%s.", .milliseconds = false},
+        {.format = {}, .milliseconds = true},
+        {.format = "Z", .milliseconds = false}};
+    auto as_date = makeFormattedDate(makeDateOrEpoch(value), iso_format, makeLiteral(Field(String("UTC"))));
+    return makeASTFunction("if", makeIsDate(value), std::move(as_date), makeASTFunction("toString", value->clone()));
 }
 
 bool isNumericLiteral(const ASTPtr & value)
@@ -962,6 +1090,13 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (date_part_functions.contains(name))
         return makeDatePart(name, argument);
 
+    if (name == "$toString")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeToString(arguments[0]);
+    }
+
     if (name == "$toBool")
     {
         auto arguments = parseArguments(argument);
@@ -1122,7 +1257,25 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             arguments.push_back(parseMongoAggregateExpression(requireMember(branch, "then", name)));
         }
         auto default_it = argument.FindMember("default");
-        arguments.push_back(default_it == argument.MemberEnd() ? makeNull() : parseMongoAggregateExpression(default_it->value));
+        if (default_it != argument.MemberEnd())
+        {
+            arguments.push_back(parseMongoAggregateExpression(default_it->value));
+            return makeFunction("multiIf", std::move(arguments));
+        }
+
+        /** Without a `default`, Mongo fails a document that no branch matches. The check is a
+          * `throwIf` on none of the cases holding: it does not depend on whether `multiIf` skips
+          * the branch for the rows a case matched, because it answers `0` for those rows.
+          */
+        std::vector<ASTPtr> cases;
+        for (size_t i = 0; i + 1 < arguments.size(); i += 2)
+            cases.push_back(arguments[i]->clone());
+        ASTPtr any_case = cases.size() == 1 ? cases[0] : makeFunction("or", std::move(cases));
+        auto check = makeASTFunction(
+            "throwIf",
+            makeASTFunction("not", std::move(any_case)),
+            makeLiteral(Field(String("'$switch' could not find a matching branch for an input, and no default was specified"))));
+        arguments.push_back(makeASTFunction("if", std::move(check), makeNull(), makeNull()));
         return makeFunction("multiIf", std::move(arguments));
     }
 
@@ -1507,13 +1660,33 @@ ASTPtr makeNullPreservingArray(ASTPtr tuples)
     return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(tuples));
 }
 
-/// The values of a group in the order of the stream: they are collected together with the sort key
-/// and sorted by it, because `groupArray` appends them in the order the query reads the rows in.
+/** The values of a group in the order of the stream: they are collected together with the sort key
+  * and sorted by it, because `groupArray` appends them in the order the query reads the rows in.
+  *
+  * The documents with equal keys keep the order they were collected in, which is the order of the
+  * elements of an array that a `$unwind` after the `$sort` expanded one document into: the rows of
+  * one document are read together. The sort is by the key and then by the position in the group -
+  * after the key, and not the value, which would order those elements by themselves.
+  */
 ASTPtr makeOrderedGroupValues(ASTPtr value, const MongoGroupOrder & order, std::string_view accumulator)
 {
     auto [key, direction] = makeGroupOrderKey(order, accumulator);
     auto pairs = makeASTFunction("groupArray", makeASTFunction("tuple", std::move(key), std::move(value)));
-    auto sorted = makeASTFunction(direction == 1 ? "arraySort" : "arrayReverseSort", std::move(pairs));
+    auto positions = makeASTFunction("arrayEnumerate", pairs->clone());
+
+    /// A descending sort reverses the positions too, so they are negated to stay ascending.
+    ASTPtr position = make_intrusive<ASTIdentifier>("__position");
+    if (direction != 1)
+        position = makeASTFunction("negate", makeASTFunction("toInt64", std::move(position)));
+    auto pair_key = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("__pair"), makeLiteral(Field(UInt64(1))));
+    auto sort_key = makeASTFunction("tuple", std::move(pair_key), std::move(position));
+    auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__pair"), make_intrusive<ASTIdentifier>("__position"));
+    auto sorted = makeASTFunction(
+        direction == 1 ? "arraySort" : "arrayReverseSort",
+        makeASTFunction("lambda", std::move(parameters), std::move(sort_key)),
+        std::move(pairs),
+        std::move(positions));
+
     auto element = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), makeLiteral(Field(UInt64(2))));
     return makeASTFunction("arrayMap", makeLambda("x", std::move(element)), std::move(sorted));
 }
@@ -1637,6 +1810,16 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The accumulator '{}' is not supported", name);
 }
 
+ASTPtr parseMongoAggregateCondition(const rapidjson::Value & value)
+{
+    auto expression = parseMongoAggregateExpression(value);
+    /// A filter drops a row whose condition is `NULL` already, so a boolean is kept as it is, where
+    /// an index can still use it.
+    if (isBooleanFunction(expression))
+        return expression;
+    return makeTruth(std::move(expression));
+}
+
 void expandMongoProjectedField(const std::string & name, const rapidjson::Value & value, std::vector<MongoProjectedField> & result)
 {
     if (name.empty())
@@ -1672,8 +1855,34 @@ void expandMongoProjectedField(const std::string & name, const rapidjson::Value 
               * array of captures. So an empty group is appended to the grouped expression - it
               * matches the empty string and changes no match - and its capture is dropped.
               */
-            auto captures_pattern = makeLiteral(Field("(?:" + pattern->as<ASTLiteral &>().value.safeGet<String>() + ")()"));
-            auto captures = makeASTFunction("arrayPopBack", makeASTFunction("extractGroups", input->clone(), std::move(captures_pattern)));
+            const auto & pattern_text = pattern->as<ASTLiteral &>().value.safeGet<String>();
+            auto captures_pattern = makeLiteral(Field("(?:" + pattern_text + ")()"));
+            ASTPtr captures
+                = makeASTFunction("arrayPopBack", makeASTFunction("extractGroups", input->clone(), std::move(captures_pattern)));
+            /** A group that may not take part in the match answers `null` rather than an empty
+              * string when it did not. `extractGroups` does not tell the two apart, so an empty
+              * capture of such a group is taken as one that did not take part: only a group that
+              * may both be skipped and match an empty text - `(a*)?` - is answered wrongly.
+              */
+            const auto optional_groups = findOptionalCaptureGroups(pattern_text);
+            if (std::find(optional_groups.begin(), optional_groups.end(), true) != optional_groups.end())
+            {
+                auto flags = makeASTFunction("array");
+                for (bool optional : optional_groups)
+                    flags->arguments->children.push_back(makeLiteral(Field(UInt64(optional))));
+                auto body = makeASTFunction(
+                    "if",
+                    makeASTFunction(
+                        "and",
+                        make_intrusive<ASTIdentifier>("__optional"),
+                        makeASTFunction("empty", make_intrusive<ASTIdentifier>("__capture"))),
+                    makeNull(),
+                    make_intrusive<ASTIdentifier>("__capture"));
+                auto parameters = makeASTFunction(
+                    "tuple", make_intrusive<ASTIdentifier>("__capture"), make_intrusive<ASTIdentifier>("__optional"));
+                captures = makeASTFunction(
+                    "arrayMap", makeASTFunction("lambda", std::move(parameters), std::move(body)), std::move(captures), std::move(flags));
+            }
             result.push_back({name + ".captures", makeASTFunction("if", matched->clone(), std::move(captures), makeNull())});
             return;
         }

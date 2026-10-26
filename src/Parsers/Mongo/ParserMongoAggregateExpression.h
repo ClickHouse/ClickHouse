@@ -25,6 +25,12 @@ namespace Mongo
   */
 ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value);
 
+/** An aggregation expression as a condition, as `$expr` uses it in a filter: its value is converted
+  * to a boolean the way Mongo converts it - a string, an array and a date are true, `null`, `false`
+  * and a zero are false - rather than having to be a boolean already.
+  */
+ASTPtr parseMongoAggregateCondition(const rapidjson::Value & value);
+
 /** The order of the documents a `$group` stage consumes, when a preceding `$sort` established one.
   *
   * Mongo defines the value of the accumulators `$first`, `$last`, `$push`, `$firstN` and `$lastN`

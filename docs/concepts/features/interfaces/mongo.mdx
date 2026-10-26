@@ -159,6 +159,10 @@ db.hits.aggregate([
 ])
 ```
 
+When the regular expression does not match, the three fields are `null`, and a reply over the wire carries the document `{"match": null, "idx": null, "captures": null}` where MongoDB answers `null` for the whole result. The capture of a group that may be skipped - under `?`, `*` or `{0,n}`, or in a branch of `|` - is `null` when it is empty, as MongoDB answers for a group that did not take part in the match; for such a group that matched an empty text, such as `(a*)?`, MongoDB answers an empty string instead.
+
+`$switch` without a `default` fails the query for a document that no branch matches, as MongoDB does. `$toString` writes a date in ISO 8601 in UTC with milliseconds, the same text as `$dateToString` without a `format`. `$expr` in a filter converts its value to a boolean the way MongoDB does: a string, an array and a date are true, and `null`, `false` and a zero are false.
+
 ### Schemas {#schemas}
 
 MongoDB collections have no schema, while ClickHouse tables do. A collection this endpoint creates - by the first `insert` into it, or by `createCollection` - is therefore a table of whole documents:

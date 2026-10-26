@@ -368,7 +368,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
 
 bool MongoExprFunction::parseImpl(ASTPtr & node)
 {
-    node = parseMongoAggregateExpression(data);
+    node = parseMongoAggregateCondition(data);
     return true;
 }
 
@@ -391,9 +391,9 @@ bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
         {
             return false;
         }
+        /// An empty filter `{}` matches every document, the same as it does at the top level.
         if (!child_node)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "The filter at the position {} of '{}' holds no condition", i, getFunctionName());
+            child_node = make_intrusive<ASTLiteral>(Field(UInt64(1)));
         child_trees.push_back(child_node);
     }
 
