@@ -1926,9 +1926,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            String part_name = data_part->isProjectionPart()
-                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                : data_part->name;
+            String part_name = data_part->getNameForQueryConditionCache();
             /// Row-level entries are sound under any profile; skip-index entries only under the
             /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
             /// This is one logical cache consultation, so it must emit at most one

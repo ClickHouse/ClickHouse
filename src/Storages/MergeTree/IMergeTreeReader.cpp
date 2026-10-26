@@ -681,7 +681,8 @@ void IMergeTreeReader::initColumnsCache(bool can_read)
         return;
 
     stripes = ColumnsCacheStripes::forPart(data_part_info_for_read->getIndexGranularity());
-    columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
+    columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName())
+        + data_part_info_for_read->getCacheKeySuffix();
 
     column_identities.reserve(requested_column_names.size());
     for (const auto & name : requested_column_names)

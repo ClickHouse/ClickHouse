@@ -725,7 +725,7 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getPathForCacheKey());
     auto callback = [this] { return loadIndex(); };
     return index_cache.getOrSet(key, callback);
 }
@@ -736,7 +736,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getPathForCacheKey());
     index_cache.set(key, std::const_pointer_cast<Index>(index));
     index.reset();
 
@@ -749,7 +749,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    auto key = PrimaryIndexCache::hash(getPathForCacheKey());
     index_cache->remove(key);
 }
 
@@ -761,7 +761,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     if (!vector_similarity_index_cache)
         return;
 
-    vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+    vector_similarity_index_cache->removeEntriesFromCache(getPathForCacheKey());
 }
 
 void IMergeTreeDataPart::setIndex(Columns index_columns)
@@ -1078,7 +1078,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
             String stream_name = stream_name_opt.value_or(full_stream_name);
 
             auto marks_file = index_granularity_info.getMarksFilePath(stream_name);
-            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
+            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string() + getCacheKeySuffix());
             index_mark_cache->remove(key);
         }
     }
@@ -1108,7 +1108,7 @@ void IMergeTreeDataPart::clearCaches()
         /// there is no in-flight write to guard against, and removing the entries is enough.
         if (auto columns_cache = storage.getContext()->getColumnsCache())
         {
-            columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name));
+            columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name) + getCacheKeySuffix());
         }
     }
 
@@ -1120,7 +1120,7 @@ void IMergeTreeDataPart::clearCaches()
         for (const auto & [_, projection_part] : projection_parts)
         {
             if (projection_part->mayStoreColumnsInColumnsCache())
-                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name));
+                columns_cache->removePart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name) + projection_part->getCacheKeySuffix());
         }
     }
 }
@@ -1153,14 +1153,14 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     if (!columns_cache)
         return false;
 
-    if (mayStoreColumnsInColumnsCache() && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name)))
+    if (mayStoreColumnsInColumnsCache() && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(name, parent_part_name) + getCacheKeySuffix()))
         return true;
 
     /// The entries of the projection parts are removed with the caches of this part, see `clearCaches`.
     for (const auto & [_, projection_part] : projection_parts)
     {
         if (projection_part->mayStoreColumnsInColumnsCache()
-            && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name)))
+            && columns_cache->containsPart(storage.getStorageID().uuid, getColumnsCachePartName(projection_part->name, name) + projection_part->getCacheKeySuffix()))
             return true;
     }
     return false;
@@ -1601,9 +1601,26 @@ void IMergeTreeDataPart::removeStatisticsFromCache(StatisticsCache * cache) cons
         cache->remove(StatisticsCache::hash(part_path, column.name));
 }
 
+String IMergeTreeDataPart::getCacheKeySuffix() const
+{
+    const IMergeTreeDataPart * root_part = this;
+    while (root_part->getParentPart())
+        root_part = root_part->getParentPart();
+
+    if (!root_part->shared_storage_incarnation)
+        return {};
+    return "@" + *root_part->shared_storage_incarnation;
+}
+
 String IMergeTreeDataPart::getPathForCacheKey() const
 {
-    return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart() + getCacheKeySuffix();
+}
+
+String IMergeTreeDataPart::getNameForQueryConditionCache() const
+{
+    String res = isProjectionPart() ? fmt::format("{}:{}", getParentPartName(), name) : name;
+    return res + getCacheKeySuffix();
 }
 
 Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
@@ -2178,7 +2195,7 @@ std::optional<String> IMergeTreeDataPart::getDenseIndexBackingPath() const
 std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
 {
     if (uuid == UUIDHelpers::Nil)
-        return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+        return getPathForCacheKey();
     return toString(uuid);
 }
 

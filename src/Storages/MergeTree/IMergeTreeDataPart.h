@@ -663,6 +663,18 @@ public:
     /// the name of part when it was or will be in Active state.
     String getRelativePathOfActivePart() const;
 
+    /// Appended to the keys under which the caches shared between tables store the data of the part:
+    /// the identity of the part directory on shared storage under `leader_election` (see
+    /// `shared_storage_incarnation`, taken from the parent part for a projection), empty otherwise.
+    /// A part name and path can be reused by another leader for different data, and a reader that
+    /// still holds the replaced part object must not serve its data to the replacement, or the other
+    /// way around.
+    String getCacheKeySuffix() const;
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
+    /// The part name under which `QueryConditionCache` stores the entries of the part.
+    String getNameForQueryConditionCache() const;
+
     bool isProjectionPart() const { return parent_part != nullptr; }
 
     void setPatchPartIndex(PatchPartIndex patch_part_index_);
@@ -1052,8 +1064,6 @@ private:
     std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
         const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
-    /// The path that identifies the part in the caches shared between tables.
-    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 
