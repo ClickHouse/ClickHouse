@@ -55,3 +55,5 @@ $CLICKHOUSE_CLIENT --query="
     DROP DICTIONARY ssd_dup_complex;
     DROP TABLE ssd_dup_source;
 "
+
+rm -f "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE:?}_ssd_dup_simple.bin" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE:?}_ssd_dup_complex.bin"
