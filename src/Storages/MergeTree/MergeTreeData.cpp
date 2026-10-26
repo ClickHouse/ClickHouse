@@ -9214,7 +9214,25 @@ void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> &
                 covering_part = getActiveContainingPart(part_info, DataPartState::PreActive, lock);
             /// No covering part means the data is already gone (dropped partition, TRUNCATE, ...),
             /// so there is nothing to make durable.
-            if (covering_part && seen_part_names.emplace(covering_part->name).second)
+            if (!covering_part)
+                continue;
+
+            /// The committed part itself can still be pending if it was replaced by a part that did
+            /// not read it, i.e. a part fetched from another replica, which is synced only according to
+            /// `min_compressed_bytes_to_fsync_after_fetch`, or not at all on a disk that cannot sync
+            /// finalized files. StorageReplicatedMergeTree::fetchPart syncs the pending parts it covers,
+            /// but it can miss a part that becomes `PreActive` or `Active` only after it looked, and it
+            /// syncs a part that became `Active` in between only after the fetched part is published.
+            /// So it is synced here directly, which does not depend on that timing. Its files are still
+            /// there: an `Outdated` part is not removed while it is referenced, and holding it here
+            /// over the fsync keeps it referenced.
+            auto committed_part = getPartIfExistsUnlocked(
+                part_info, {DataPartState::Active, DataPartState::PreActive, DataPartState::Outdated}, lock);
+            if (committed_part && committed_part != covering_part && committed_part->pending_fsync_after_insert.load()
+                && seen_part_names.emplace(committed_part->name).second)
+                parts_to_sync.push_back(std::move(committed_part));
+
+            if (seen_part_names.emplace(covering_part->name).second)
                 parts_to_sync.push_back(std::move(covering_part));
         }
     }

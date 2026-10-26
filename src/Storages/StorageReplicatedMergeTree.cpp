@@ -5761,8 +5761,17 @@ bool StorageReplicatedMergeTree::fetchPart(
             /// sync finalized files. A covered part whose fsync is deferred to the end of an `INSERT`
             /// still running on this replica has to be made durable before it is replaced, the same as
             /// before a merge or a mutation reads it, see IMergeTreeDataPart::syncIfPendingFsyncAfterInsert.
-            /// This is done before the parts lock is taken, because an fsync of a whole part is slow.
-            for (const auto & covered_part : getDataPartsVectorInPartitionForInternalUsage(DataPartState::Active, part_info.getPartitionId()))
+            /// A `PreActive` part is included: an `INSERT` makes its part `Outdated` at commit if it is
+            /// already covered by the fetched part. A part that this misses is synced by the `INSERT`
+            /// itself at its end, see MergeTreeData::fsyncPartsAfterInsert.
+            /// This is done outside the parts lock, because an fsync of a whole part is slow.
+            DataPartsVector parts_in_partition;
+            {
+                auto parts_lock = readLockParts();
+                parts_in_partition = getDataPartsVectorInPartitionForInternalUsage(
+                    {DataPartState::Active, DataPartState::PreActive}, part_info.getPartitionId(), parts_lock);
+            }
+            for (const auto & covered_part : parts_in_partition)
                 if (part_info.contains(covered_part->info))
                     covered_part->syncIfPendingFsyncAfterInsert();
 
@@ -5805,7 +5814,8 @@ bool StorageReplicatedMergeTree::fetchPart(
             for (const auto & replaced_part : replaced_parts)
             {
                 /// A part that became active after the loop above, before the fetched part was committed.
-                /// Its files are still there, as it is only outdated now.
+                /// Its files are still there, as it is only outdated now. An `INSERT` that finishes before
+                /// this sync does not rely on it: it syncs its own pending parts, see MergeTreeData::fsyncPartsAfterInsert.
                 replaced_part->syncIfPendingFsyncAfterInsert();
                 LOG_DEBUG(log, "Part {} is rendered obsolete by fetching part {}", replaced_part->name, part_name);
                 ProfileEvents::increment(ProfileEvents::ObsoleteReplicatedParts);
