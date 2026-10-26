@@ -452,6 +452,20 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     /// Runs before any diagnostic that names the external path, host or object version.
     auto check_access = [&]
     {
+        /// A background operation has no user whose grants could allow the path.
+        if (context->isBackgroundContext())
+        {
+            if (access_check)
+            {
+                access_check->granted = false;
+                return;
+            }
+            throw DB::Exception(
+                DB::ErrorCodes::ACCESS_DENIED,
+                "Iceberg path '{}' outside the table location is not read by background operations",
+                maskCredentialsInURI(path));
+        }
+
         const auto source = sourceForScheme(target_scheme_normalized);
         if (!source)
         {

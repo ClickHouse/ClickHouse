@@ -398,6 +398,10 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
         {
             for (const auto & entry : actual_data_snapshot->manifest_list_entries)
             {
+                /// Manifests outside the table location need a user grant, so only queries read them.
+                if (!isPathReadGranted(persistent_components.table_location, entry.manifest_file_path.serialize(), object_storage, ctx))
+                    continue;
+
                 /// second, we fetch, parse and cache each manifest file
                 auto manifest_file_ptr = getManifestFileEntriesHandle(
                     object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id, *external_storages);

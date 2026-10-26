@@ -48,6 +48,9 @@ def get_absolute_path(storage_type: str, cluster, relative_path: str) -> str:
     elif storage_type.startswith("url:"):
         bucket = storage_type.split(":")[1]
         return f"http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{relative_path}"
+    elif storage_type.startswith("ip:"):
+        bucket = storage_type.split(":")[1]
+        return f"http://{cluster.minio_ip}:{cluster.minio_port}/{bucket}/{relative_path}"
     elif storage_type == "azure":
         return f"abfs://{cluster.azure_container_name}@{cluster.azurite_account}/{relative_path}"
     elif storage_type.startswith("azure:"):
@@ -62,7 +65,7 @@ def get_absolute_path(storage_type: str, cluster, relative_path: str) -> str:
 def get_uploader(storage_type: str, cluster):
     if storage_type == "s3":
         return cluster.default_s3_uploader
-    elif storage_type.startswith("s3:") or storage_type.startswith("url:"):
+    elif storage_type.startswith("s3:") or storage_type.startswith("url:") or storage_type.startswith("ip:"):
         bucket = storage_type.split(":")[1]
         return S3Uploader(cluster.minio_client, bucket)
     elif storage_type == "azure":

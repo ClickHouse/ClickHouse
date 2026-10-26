@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -111,7 +112,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "Position delete file {} has no column '{}'",
-                    position_deletes_object.file_path,
+                    maskCredentialsInURI(position_deletes_object.file_path),
                     column_name);
 
         CompressionMethod compression_method = chooseCompressionMethod(resolved_key, "auto");

@@ -142,6 +142,20 @@ bool useMetadataCacheForManifestFiles(const PersistentTableComponents & persiste
         && local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value < DB::IcebergMetadataLogLevel::ManifestFileMetadata;
 }
 
+/// A file of an external storage is cached per client of that storage, whose name reflects the credentials policy of the
+/// session that resolved it, so a session with another policy does not get a file it could not read itself.
+String getMetadataFilesCacheKey(
+    const PersistentTableComponents & persistent_table_components,
+    const IcebergPathFromMetadata & filename,
+    const ObjectStoragePtr & storage_to_use,
+    const ObjectStoragePtr & base_storage)
+{
+    auto key = IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, filename.serialize());
+    if (storage_to_use != base_storage)
+        key += "#" + storage_to_use->getDiskName();
+    return key;
+}
+
 }
 
 Iceberg::ManifestFileCacheableInfo getManifestFile(
@@ -190,7 +204,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            getMetadataFilesCacheKey(persistent_table_components, filename, storage_to_use, object_storage), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -384,7 +398,7 @@ ManifestFileCacheKeys getManifestList(
     ManifestFileCacheKeys manifest_file_cache_keys;
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            getMetadataFilesCacheKey(persistent_table_components, filename, storage_to_use, object_storage), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;
@@ -461,11 +475,11 @@ void ManifestFilesPrefetcher::fill()
         if (use_metadata_cache)
         {
             /// Resolved before the cache lookup: it checks the querying user's grant, and the cache is shared between users.
-            resolveObjectStorageForPath(
+            auto [storage_to_use, _] = resolveObjectStorageForPath(
                 persistent_table_components.table_location, manifest.manifest_file_path.serialize(), object_storage, *external_storages,
                 local_context, persistent_table_components.path_resolver);
             cached = persistent_table_components.metadata_cache->tryGetManifestFile(
-                IcebergMetadataFilesCache::getKey(*persistent_table_components.table_uuid, manifest.manifest_file_path.serialize()));
+                getMetadataFilesCacheKey(persistent_table_components, manifest.manifest_file_path, storage_to_use, object_storage));
         }
 
         const size_t bytes = cached ? 0 : manifest.manifest_file_byte_size;

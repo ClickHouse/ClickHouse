@@ -14,6 +14,7 @@ from .external_paths_utils import (
     _rewrite_paths_to_local_uri,
     create_and_upload_table,
     external_bucket,
+    get_query_args,
     relocate_data_files_to_bucket,
 )
 
@@ -405,3 +406,60 @@ def test_missing_external_local_file_does_not_create_directories(started_cluster
     assert instance.exec_in_container(["bash", "-c", f"test -e {missing_root} && echo exists || echo absent"]).strip() == "absent"
 
     instance.query(f"DROP USER {user}")
+
+
+def test_background_prefetch_does_not_read_external_manifests(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_background_prefetch_external_{get_uuid_str()}"
+    other_bucket = external_bucket(started_cluster_iceberg_with_spark)
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    base_path = _distribute_table_components(
+        started_cluster_iceberg_with_spark, TABLE_NAME,
+        metadata_storage="s3", manifest_list_storage="s3", manifest_storage=f"s3:{other_bucket}", data_storage="s3")
+
+    args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergS3({args}) SETTINGS iceberg_metadata_async_prefetch_period_ms = 100")
+
+    # The second prefetch after the cache is dropped starts with an empty cache.
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    instance.wait_for_log_line(
+        f"backgroundMetadataPrefetcherThread: interval=.*{TABLE_NAME}", repetitions=2, look_behind_lines=0)
+
+    log_comment = f"{TABLE_NAME}_select"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id", settings={"log_comment": log_comment}) == ALL_ROWS
+    instance.query("SYSTEM FLUSH LOGS query_log")
+    manifests_read = instance.query(
+        f"SELECT ProfileEvents['IcebergManifestFilesRead'] FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND log_comment = '{log_comment}'")
+    assert int(manifests_read) > 0, manifests_read
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_cached_external_manifest_requires_same_credentials_policy(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_manifest_cache_credentials_{get_uuid_str()}"
+    other_bucket = external_bucket(started_cluster_iceberg_with_spark)
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    # An endpoint other than the table's, which gets the table's credentials only when they are propagated.
+    base_path = _distribute_table_components(
+        started_cluster_iceberg_with_spark, TABLE_NAME,
+        metadata_storage="s3", manifest_list_storage="s3", manifest_storage=f"ip:{other_bucket}", data_storage="s3")
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = f"icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{started_cluster_iceberg_with_spark.minio_bucket}/')"
+    query = f"SELECT * FROM {table_function} ORDER BY id SETTINGS s3_allow_server_credentials_in_user_queries = 1"
+
+    cold_error = instance.query_and_get_error(query)
+    assert "Access Denied" in cold_error, cold_error
+
+    # A query that propagates the credentials puts the manifest into the shared cache.
+    assert instance.query(f"{query}, object_storage_propagate_credentials_to_other_storages = 1") == ALL_ROWS
+
+    error = instance.query_and_get_error(query)
+    assert "Access Denied" in error, error
