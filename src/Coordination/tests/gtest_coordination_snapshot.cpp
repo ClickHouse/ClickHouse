@@ -16,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/tests/gtest_global_context.h>
 
@@ -29,6 +30,8 @@
 #include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -36,6 +39,7 @@
 #include <Poco/Util/MapConfiguration.h>
 
 #include <base/scope_guard.h>
+#include <pcg_random.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -55,15 +59,46 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsBool snapshot_transfer_remote_disk_streaming;
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperReadSnapshotStreamingSeeks;
 }
 
 namespace
 {
 
+class FailingSnapshotReadBuffer : public DB::ReadBufferFromFileDecorator
+{
+public:
+    FailingSnapshotReadBuffer(std::unique_ptr<DB::ReadBufferFromFileBase> impl_, const std::atomic<bool> & fail_)
+        : DB::ReadBufferFromFileDecorator(std::move(impl_))
+        , fail(fail_)
+    {
+    }
+
+    bool nextImpl() override
+    {
+        if (fail)
+            throw std::runtime_error("Injected snapshot read failure");
+        return DB::ReadBufferFromFileDecorator::nextImpl();
+    }
+
+    size_t getFileOffsetOfBufferEnd() const override { return impl->getFileOffsetOfBufferEnd(); }
+
+private:
+    const std::atomic<bool> & fail;
+};
+
 class TestLocalObjectStorage : public DB::LocalObjectStorage
 {
 public:
     mutable std::atomic<int> read_count{0};
+    /// Lets a test break one reader mid-transfer: the buffer of this `readObject` call (1-based) throws once `fail_reads` is set.
+    std::atomic<int> failing_read{0};
+    std::atomic<bool> fail_reads{false};
 
     explicit TestLocalObjectStorage(DB::LocalObjectStorageSettings settings)
         : DB::LocalObjectStorage(std::move(settings)) {}
@@ -75,8 +110,10 @@ public:
         bool use_external_buffer,
         bool restrict_seek) const override
     {
-        ++read_count;
-        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
+        auto buf = DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
+        if (++read_count == failing_read)
+            return std::make_unique<FailingSnapshotReadBuffer>(std::move(buf), fail_reads);
+        return buf;
     }
 };
 
@@ -2138,6 +2175,95 @@ TEST_P(CoordinationTestWithCompression, TestReadSnapshotParallelMultiChunk)
         EXPECT_EQ(loaded_data[i], "world") << "thread " << i;
 
     EXPECT_EQ(obj_storage->read_count.load() - reads_after_init, 1);
+
+    snap_disk->shutdown();
+}
+
+/// `snapshot_transfer_remote_disk_streaming` gives every transfer its own reader of the remote file: a reader
+/// error fails only its transfer, and repeated or backward objects reposition the reader.
+TEST_P(CoordinationTestWithCompression, TestReadSnapshotStreaming)
+{
+    getContext(); /// needed for `DiskObjectStorage` background threads
+
+    ChangelogDirTest snap_meta("./snapshots");
+    ChangelogDirTest snap_obj("./snapshots_obj");
+
+    constexpr uint64_t chunk_size = 384 * 1024;
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = chunk_size;
+    (*settings)[DB::CoordinationSetting::snapshot_transfer_remote_disk_streaming] = true;
+    auto keeper_context = this->makeKeeperContext(settings);
+    auto [snap_disk, obj_storage] = createLocalObjectStorageDisk("./snapshots", "./snapshots_obj/");
+    keeper_context->setSnapshotDisk(snap_disk);
+
+    /// Random data spans several 1 MiB read buffers; objects straddle refills, so re-reads that leave the buffer call `readObject` again.
+    DB::KeeperSnapshotManager manager(3, keeper_context, this->enable_compression);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", keeper_context);
+    pcg64_fast rng(42);
+    for (int i = 0; i < 4; ++i)
+    {
+        std::string data(1024 * 1024, '\0');
+        for (auto & c : data)
+            c = static_cast<char>(rng());
+        addNode(*storage_ptr, fmt::format("/node{}", i), data);
+    }
+    DB::KeeperStorageSnapshot snap(storage_ptr.get(), 50, nullptr, keeper_context->getWriteSnapshotVersion());
+    auto snap_buf = manager.serializeSnapshotToBuffer(snap);
+    const auto file_info = manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto leader = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
+    leader->init();
+
+    std::string file;
+    DB::readStringUntilEOF(file, *snap_disk->readFile(file_info->path, DB::getReadSettings()));
+    const uint64_t objects = (file.size() + chunk_size - 1) / chunk_size;
+    ASSERT_GT(objects, 8u);
+
+    nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
+    auto read = [&](void *& transfer, uint64_t obj_id)
+    {
+        nuraft::ptr<nuraft::buffer> data;
+        bool is_last = false;
+        if (leader->read_logical_snp_obj(s, transfer, obj_id, data, is_last) < 0)
+            return false;
+        EXPECT_EQ(is_last, obj_id + 1 == objects);
+        EXPECT_TRUE(std::string_view(reinterpret_cast<const char *>(data->data_begin()), data->size())
+            == std::string_view(file).substr(obj_id * chunk_size, chunk_size)) << "object " << obj_id;
+        return true;
+    };
+    auto seeks = [] { return ProfileEvents::global_counters[ProfileEvents::KeeperReadSnapshotStreamingSeeks]; };
+    const auto seeks_before = seeks();
+
+    /// Transfer A gets the first reader opened, which breaks after A and B have both started.
+    const int reads_before = obj_storage->read_count.load();
+    obj_storage->failing_read = reads_before + 1;
+    void * transfer_a = nullptr;
+    void * transfer_b = nullptr;
+    ASSERT_TRUE(read(transfer_a, 0));
+    ASSERT_TRUE(read(transfer_b, 0));
+    obj_storage->fail_reads = true;
+    uint64_t obj_a = 1;
+    while (obj_a < objects && read(transfer_a, obj_a))
+        ++obj_a;
+    EXPECT_LT(obj_a, objects);
+    EXPECT_EQ(transfer_a, nullptr);
+    for (uint64_t obj = 1; obj < objects; ++obj)
+        ASSERT_TRUE(read(transfer_b, obj)) << "object " << obj;
+    leader->free_user_snp_ctx(transfer_b);
+    EXPECT_EQ(obj_storage->read_count.load() - reads_before, 2);
+    EXPECT_EQ(seeks() - seeks_before, 0u);
+
+    /// NuRaft re-requests an object after an RPC error, also the final one after the reader reached EOF.
+    std::vector<uint64_t> requests{0, 1, 2, 2, 1};
+    for (uint64_t obj = 2; obj < objects; ++obj)
+        requests.push_back(obj);
+    requests.push_back(objects - 1);
+    void * transfer_c = nullptr;
+    for (auto obj : requests)
+        ASSERT_TRUE(read(transfer_c, obj)) << "object " << obj;
+    leader->free_user_snp_ctx(transfer_c);
+    EXPECT_EQ(seeks() - seeks_before, 3u);
 
     snap_disk->shutdown();
 }
