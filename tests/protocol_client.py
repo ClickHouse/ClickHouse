@@ -527,6 +527,11 @@ class HTTPClient(QueryClient):
 
     def execute(self, query):
         params = [("session_id", self.session_id)]
+        # With `http_write_exception_in_output_format`, an exception after the response has started is
+        # written in the output format, e.g. as an `exception` object of `JSONEachRowWithProgress`, in a
+        # complete response with status 200. Disable it, so that such an exception always comes as the
+        # tagged block checked below. `supports` excludes the tests that set it themselves.
+        params += [("http_write_exception_in_output_format", "0")]
         params += [(f"param_{name}", value) for name, value in self.params]
         url = "/?" + urllib.parse.urlencode(params)
         body = query.encode("utf-8", errors="surrogateescape")
@@ -914,6 +919,9 @@ def supports(protocol, data):
         return False
     if protocol == "ssh":
         return len(data) <= SSH_MAX_TEST_SIZE
+    if protocol in ("http", "https") and "http_write_exception_in_output_format" in text:
+        # `HTTPClient` cannot tell an exception written in the output format from the data.
+        return False
     if protocol == "webterminal":
         # The line editor removes the whitespace at the end of the pasted text, which can be a field
         # separator or a part of a value at the end of the inline data of `INSERT ... FORMAT`.
