@@ -490,7 +490,16 @@ NamesAndTypesList IMergeTreeReader::getMissingDefaultInputs(const NamesAndTypesL
     };
 
     for (const auto & column : columns)
-        add_inputs(column.getNameInStorage());
+    {
+        auto name_in_storage = column.getNameInStorage();
+        add_inputs(name_in_storage);
+
+        /// A subcolumn is taken from its parent, so a missing parent is read by all of its subcolumns,
+        /// e.g. `b.x` and `b.y` of `b DEFAULT tuple(a + rand(), a + rand())` must come from one value of `b`.
+        if (column.isSubcolumn() && !block.has(name_in_storage) && combined_columns.getDefault(name_in_storage)
+            && visited.emplace(name_in_storage).second)
+            result.emplace_back(name_in_storage, column.getTypeInStorage());
+    }
 
     return result;
 }
