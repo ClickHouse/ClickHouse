@@ -76,7 +76,8 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 |-------|------|-------------|----------|---------|
 | `replicas` | integer | Number of replicas in the single shard. | false | 3 |
 | `shards` | integer | Number of shards in the cluster. | false | 1 |
-| `keeperClusterRef` | [KeeperClusterReference](#keeperclusterreference) | Reference to the KeeperCluster that is used for ClickHouse coordination.<br />When namespace is omitted, the ClickHouseCluster namespace is used. | true |  |
+| `keeperClusterRef` | [KeeperClusterReference](#keeperclusterreference) | Reference to the KeeperCluster that is used for ClickHouse coordination.<br />When namespace is omitted, the ClickHouseCluster namespace is used.<br />Mutually exclusive with `externalKeeper`, exactly one of them must be set. | false |  |
+| `externalKeeper` | [ExternalKeeperSpec](#externalkeeperspec) | Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.<br />The operator does not own the lifecycle of these servers and only points ClickHouse at them.<br />Mutually exclusive with `keeperClusterRef`, exactly one of them must be set. | false |  |
 | `podTemplate` | [PodTemplateSpec](#podtemplatespec) | Parameters passed to the ClickHouse pod spec. | false |  |
 | `containerTemplate` | [ContainerTemplateSpec](#containertemplatespec) | Parameters passed to the ClickHouse container spec. | false |  |
 | `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse data. | false |  |
@@ -203,6 +204,7 @@ ContainerTemplateSpec describes the container configuration overrides for the cl
 | `livenessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | LivenessProbe overrides the operator's default liveness probe. | false |  |
 | `readinessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | ReadinessProbe overrides the operator's default readiness probe. | false |  |
 | `startupProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | StartupProbe holds back the liveness and readiness probes until it succeeds, giving slow-starting<br />containers time to come up. The operator sets no startup probe by default. | false |  |
+| `lifecycle` | [Lifecycle](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#lifecycle-v1-core) | Lifecycle defines actions the kubelet triggers on container lifecycle events (PostStart/PreStop).<br />A non-nil Lifecycle fully replaces operator defaults; the user owns the entire struct. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
@@ -233,6 +235,42 @@ Encryption cannot be disabled once enabled.
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
+
+## ExternalKeeperNode {#externalkeepernode}
+
+ExternalKeeperNode addresses a single server of an external Keeper ensemble.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `host` | string | Host name or IP address of the Keeper server. IPv6 addresses must be enclosed in square brackets. | true |  |
+| `port` | integer | Port the Keeper server accepts client connections on. | false | 9181 |
+
+Appears in:
+- [ExternalKeeperSpec](#externalkeeperspec)
+
+## ExternalKeeperSpec {#externalkeeperspec}
+
+ExternalKeeperSpec describes a Keeper ensemble managed outside of this operator.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `nodes` | [ExternalKeeperNode](#externalkeepernode) array | Servers of the Keeper ensemble ClickHouse connects to for coordination. | true |  |
+| `tls` | [ExternalKeeperTLSPolicy](#externalkeepertlspolicy) | TLS controls whether ClickHouse connects to the ensemble over TLS.<br />The ports in nodes must match the chosen policy.<br />Server certificates are verified against the system trust store and `spec.settings.tls.caBundle`. | false | Disabled |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+## ExternalKeeperTLSPolicy {#externalkeepertlspolicy}
+
+ExternalKeeperTLSPolicy controls how ClickHouse connects to an external Keeper ensemble.
+
+| Field | Description |
+|-------|-------------|
+| `Enabled` | ExternalKeeperTLSEnabled makes ClickHouse connect to the ensemble over TLS.<br /> |
+| `Disabled` | ExternalKeeperTLSDisabled is the default policy: connections are made in plain text.<br /> |
+
+Appears in:
+- [ExternalKeeperSpec](#externalkeeperspec)
 
 ## ExternalSecret {#externalsecret}
 
@@ -476,7 +514,7 @@ PodTemplateSpec describes the pod configuration overrides for the cluster's pods
 | `runtimeClassName` | string | RuntimeClassName is the name of the RuntimeClass to use for the pod. | false |  |
 | `volumes` | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array | Volumes defines the list of volumes that can be mounted by containers belonging to the pod.<br />More info: https://kubernetes.io/docs/concepts/storage/volumes<br />Merged with operator defaults by name; a user volume replaces any operator volume with the same name. | false |  |
 | `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext holds pod-level security attributes and common container settings.<br />A non-nil SecurityContext fully replaces operator defaults; the user owns the<br />entire struct. When nil, operator defaults are preserved. | false |  |
-| `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology domain,<br />e.g. the same availability zone for "topology.kubernetes.io/zone" or the same node for "kubernetes.io/hostname".<br />Set it to balance pods holding the same data (replicas of one shard for ClickHouse, all replicas for Keeper)<br />across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.<br />Pods of different shards may share a domain, so multiple pods per domain are allowed.<br />With fewer domains than replicas, several replicas share a domain, still evenly balanced.<br />ClickHouse pods additionally prefer domains hosting the Keeper pods they use.<br />Recommended to be set to "topology.kubernetes.io/zone". | false |  |
+| `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology domain,<br />e.g. the same availability zone for "topology.kubernetes.io/zone" or the same node for "kubernetes.io/hostname".<br />Set it to balance pods holding the same data (replicas of one shard for ClickHouse, all replicas for Keeper)<br />across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.<br />Pods of different shards may share a domain, so multiple pods per domain are allowed.<br />With fewer domains than replicas, several replicas share a domain, still evenly balanced.<br />With keeperClusterRef, ClickHouse pods additionally prefer domains hosting the Keeper pods they use.<br />Recommended to be set to "topology.kubernetes.io/zone". | false |  |
 | `topologyMinDomains` | integer | TopologyMinDomains sets the minDomains field on the TopologySpreadConstraint generated by TopologyZoneKey.<br />The Kubernetes scheduler counts only zones that already have eligible nodes as topology domains.<br />With demand-driven autoscalers (e.g. Karpenter, Cluster Autoscaler) this means that if nodes<br />exist in only two AZs at scheduling time, a maxSkew:1/DoNotSchedule constraint is satisfied with<br />a 2/1 split and the autoscaler never provisions a node in the third AZ.<br />Setting TopologyMinDomains to the expected number of zones (typically 3) tells the scheduler to<br />treat that many zones as domains regardless of whether nodes exist in all of them, forcing the<br />autoscaler to provision into the missing zone.<br />Requires TopologyZoneKey to be set. Omit (nil) to preserve the default behaviour<br />of the scheduler counting only zones with existing eligible nodes. | false |  |
 | `nodeHostnameKey` | string | NodeHostnameKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be on the same node.<br />Set it to enforce exclusive node occupancy: a required PodAntiAffinity rule across all pods of the cluster,<br />at most one pod per node regardless of shard. Requires at least as many nodes as pods;<br />with fewer nodes the excess pods stay Pending.<br />To spread replicas of the same shard across nodes while packing several pods per node,<br />set TopologyZoneKey to "kubernetes.io/hostname" instead.<br />Recommended to be set to "kubernetes.io/hostname". | false |  |
 | `initContainers` | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) array | InitContainers is the list of init containers to run before the main server container starts.<br />Merged with operator defaults by name.<br />with the same name. | false |  |

@@ -19,6 +19,9 @@
 #else
 
 #include <base/defines.h>
-#define SCHED_DBG(...) UNUSED(__VA_ARGS__)
+#include <tuple>
+// Disabled: type-check the arguments in an unevaluated context so nothing runs on the hot path
+// (e.g. getPath() is not built per dequeue), while `-Werror` still sees the arguments as used.
+#define SCHED_DBG(...) (void)sizeof(std::make_tuple(__VA_ARGS__))
 
 #endif

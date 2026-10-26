@@ -24,7 +24,6 @@ SELECT sum(b), count(b), sum(a), count(a) FROM (SELECT a, b FROM test);
 41	8	nan	10
 SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'Nullable(Int32)') AS a) t;
 1	1
-SET enable_analyzer = 1;
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count(b) * count(b) IGNORE NULLS FROM (SELECT b FROM test);
 SELECT multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`\nFROM\n(\n    SELECT __table2.b AS b\n    FROM default.test AS __table2\n) AS __table1

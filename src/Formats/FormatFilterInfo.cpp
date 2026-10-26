@@ -6,6 +6,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -28,6 +29,98 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool input_format_parquet_filter_push_down;
+    extern const SettingsBool input_format_parquet_bloom_filter_push_down;
+    extern const SettingsUInt64 input_format_parquet_dictionary_filter_push_down;
+    extern const SettingsBool input_format_parquet_page_filter_push_down;
+    extern const SettingsBool input_format_parquet_spatial_filter_push_down;
+    extern const SettingsBool input_format_orc_filter_push_down;
+    extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
+    extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+    extern const SettingsBool input_format_arrow_case_insensitive_column_matching;
+    extern const SettingsBool input_format_parquet_allow_missing_columns;
+    extern const SettingsBool input_format_orc_allow_missing_columns;
+    extern const SettingsBool input_format_arrow_allow_missing_columns;
+    extern const SettingsBool input_format_parquet_use_offset_index;
+    extern const SettingsBool input_format_parquet_local_time_as_utc;
+    extern const SettingsBool input_format_null_as_default;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_parquet_allow_geoparquet_parser;
+    extern const SettingsBool input_format_parquet_enable_json_parsing;
+    extern const SettingsBool input_format_parquet_detect_variant_by_structure;
+    extern const SettingsBool type_json_use_partial_match_to_skip_paths_by_regexp;
+    extern const SettingsBool precise_float_parsing;
+}
+
+/// The entries for files are written from the row groups the reader pruned, not from evaluating the
+/// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
+/// still has rows the query returns when it is not pruned, so a read with another set of enabled
+/// pruning methods must not consult the entries of this one. The column matching settings decide
+/// which physical column a predicate is evaluated against, so they are part of the key as well. So are
+/// the settings allowing missing columns: a read that fills a missing column with defaults may cache
+/// a verdict, and a read that must throw for that column would otherwise skip the file instead.
+/// `input_format_parquet_use_offset_index` enables page pruning, and `input_format_parquet_local_time_as_utc`
+/// decides the time zone in which the timestamp statistics are decoded. `input_format_null_as_default`
+/// decides whether a `NULL` read into a non-`Nullable` column becomes the default, or throws: a read that
+/// fills defaults may cache a verdict, and a read that must throw would otherwise skip the file instead.
+/// `date_time_overflow_behavior` decides whether an out-of-range date is saturated or throws, for the same reason.
+/// The rest change the values decoded from a file without changing their types, as in the identity of the
+/// columns cache (see `ParquetV3BlockInputFormat`): e.g. `type_json_use_partial_match_to_skip_paths_by_regexp`
+/// decides which paths of a `JSON` column decoded from a variant are skipped.
+/// `queryConditionCacheSettingsSalt` covers it for the session, but a table may pin another value at `CREATE`.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
+{
+    SipHash hash;
+    hash.update(settings[Setting::input_format_parquet_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_bloom_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_dictionary_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_page_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_spatial_filter_push_down].value);
+    hash.update(settings[Setting::input_format_orc_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_arrow_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_parquet_use_offset_index].value);
+    hash.update(settings[Setting::input_format_parquet_local_time_as_utc].value);
+    hash.update(settings[Setting::input_format_null_as_default].value);
+    hash.update(static_cast<UInt64>(settings[Setting::date_time_overflow_behavior].value));
+    hash.update(settings[Setting::input_format_parquet_allow_geoparquet_parser].value);
+    hash.update(settings[Setting::input_format_parquet_enable_json_parsing].value);
+    hash.update(settings[Setting::input_format_parquet_detect_variant_by_structure].value);
+    hash.update(settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp].value);
+    hash.update(settings[Setting::precise_float_parsing].value);
+    return hash.get64();
+}
+
+/// The same settings as above, taken from the format settings a reader actually uses. Keep them in sync.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
+{
+    SipHash hash;
+    hash.update(format_settings.parquet.filter_push_down);
+    hash.update(format_settings.parquet.bloom_filter_push_down);
+    hash.update(static_cast<UInt64>(format_settings.parquet.dictionary_filter_push_down));
+    hash.update(format_settings.parquet.page_filter_push_down);
+    hash.update(format_settings.parquet.spatial_filter_push_down);
+    hash.update(format_settings.orc.filter_push_down);
+    hash.update(format_settings.parquet.case_insensitive_column_matching);
+    hash.update(format_settings.orc.case_insensitive_column_matching);
+    hash.update(format_settings.arrow.case_insensitive_column_matching);
+    hash.update(format_settings.parquet.allow_missing_columns);
+    hash.update(format_settings.orc.allow_missing_columns);
+    hash.update(format_settings.arrow.allow_missing_columns);
+    hash.update(format_settings.parquet.use_offset_index);
+    hash.update(format_settings.parquet.local_time_as_utc);
+    hash.update(format_settings.null_as_default);
+    hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
+    hash.update(format_settings.parquet.allow_geoparquet_parser);
+    hash.update(format_settings.parquet.enable_json_parsing);
+    hash.update(format_settings.parquet.detect_variant_by_structure);
+    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    hash.update(format_settings.precise_float_parsing);
+    return hash.get64();
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -72,54 +165,58 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
-    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
-    if (use_query_condition_cache && filter_actions_dag)
-    {
-        /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
-        /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
-        /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
-        bool prewhere_covered = true;
-        if (prewhere_info)
-        {
-            const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-            prewhere_covered = prewhere_node && VirtualColumnUtils::isDeterministic(prewhere_node);
-        }
+    if (filter_actions_dag && context_->getSettingsRef()[Setting::use_query_condition_cache])
+        condition_hash = computeConditionHash(*filter_actions_dag, prewhere_info, context_, row_level_filter);
+}
 
+std::optional<size_t> FormatFilterInfo::computeConditionHash(
+    const ActionsDAG & filter_actions_dag,
+    const PrewhereInfoPtr & prewhere_info,
+    const ContextPtr & context,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    /// PREWHERE runs before the row count this hash describes, so a row group PREWHERE empties looks
+    /// like one the hashed condition rejected. A PREWHERE collected with the read's filters is inside
+    /// `filter_actions_dag`, so the hash covers it; a join runtime filter is moved in afterwards.
+    if (prewhere_info)
+    {
+        const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+        if (!prewhere_node || !VirtualColumnUtils::isDeterministic(prewhere_node))
+            return {};
+    }
+
+    const auto & outputs = filter_actions_dag.getOutputs();
+    if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
+        return {};
+
+    UInt64 dag_hash = filter_actions_dag.getHash();
+    if (row_level_filter)
+    {
         /// `getMatchedBuckets` treats `rows_pass == 0` as unmatched, and the Parquet reader applies
         /// `row_level_filter` before that count. A row policy must be part of the key, or a later read
         /// without that policy reuses row groups the policy alone eliminated.
-        bool row_policy_covered = true;
-        UInt64 dag_hash = filter_actions_dag->getHash();
-        if (row_level_filter)
-        {
-            const auto * policy_node = row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name);
-            row_policy_covered = policy_node && VirtualColumnUtils::isDeterministic(policy_node);
-            if (row_policy_covered)
-            {
-                SipHash hash;
-                hash.update(dag_hash);
-                hash.update(row_level_filter->actions.getHash());
-                dag_hash = hash.get64();
-            }
-        }
+        const auto * policy_node = row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name);
+        if (!policy_node || !VirtualColumnUtils::isDeterministic(policy_node))
+            return {};
+
+        SipHash hash;
+        hash.update(dag_hash);
+        hash.update(row_level_filter->actions.getHash());
+        dag_hash = hash.get64();
 
         /// Format-side key version. Entries written before the row policy was mixed in used the `WHERE`
         /// hash alone and can hide row groups. `MergeTree` hashes its own key and is unaffected.
         constexpr UInt64 format_query_condition_cache_key_version = 1;
-        {
-            SipHash hash;
-            hash.update(dag_hash);
-            hash.update(format_query_condition_cache_key_version);
-            dag_hash = hash.get64();
-        }
-
-        const auto & outputs = filter_actions_dag->getOutputs();
-        if (prewhere_covered && row_policy_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
-        {
-            condition_hash = queryConditionCacheHash(
-                dag_hash, queryConditionCacheSettingsSalt(context_->getSettingsRef()));
-        }
+        SipHash version_hash;
+        version_hash.update(dag_hash);
+        version_hash.update(format_query_condition_cache_key_version);
+        dag_hash = version_hash.get64();
     }
+
+    const auto & settings = context->getSettingsRef();
+    return queryConditionCacheHash(
+        dag_hash,
+        queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;
@@ -127,11 +224,7 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    /// Any of these can reduce the number of rows emitted by the reader pipeline.
-    /// Count-from-files cache must not be populated when they are present.
-    /// `top_k_filter` is the `ORDER BY ... LIMIT` dynamic filter: it drops rows inside the reader,
-    /// so the emitted count is not the file's row count.
-    return filter_actions_dag != nullptr || row_level_filter != nullptr || prewhere_info != nullptr || top_k_filter != nullptr;
+    return filter_actions_dag || row_level_filter || prewhere_info || top_k_filter;
 }
 
 namespace

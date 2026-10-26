@@ -28,7 +28,8 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// The steps after a gather depend on the streams of the sources: a sorted gather merges them
     /// in order, and the merge of partial aggregation results expects every sender's buckets on one
     /// input, in order. So the receive keeps one stream per source, with the deserializer behind it.
-    pipeline = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false);
+    pipeline
+        = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false, /*advisory=*/ false);
 
     if (maintain_sort_description && pipeline.getNumStreams() > 1)
     {
@@ -55,7 +56,7 @@ void GatherReceiveStep::serialize(Serialization & ctx) const
     writeVarUInt(num_buckets, ctx.out);
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization & ctx)
