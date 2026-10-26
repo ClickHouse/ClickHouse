@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 
 #include <optional>
@@ -37,15 +38,19 @@ void resolveGatherNode(
     size_t num_blocks,
     bool default_from_type = true);
 
-/// Resolve block `block_no`'s planes of `node` from the row store field `access` of `row_store`.
-/// The row store keeps a fixed-width value or an `UnhashedPackedStringRef`, so the node's shape stops at `Fixed` or `String`.
+/// Resolve block `block_no`'s planes of `node` from `field` of `row_store`, recursively, as `resolveGatherNode`
+/// does from a column, with `RowDataStore::getPlanes` in place of `IColumn::getPlanes`. A nullable field has its
+/// null byte and its value in one `FieldPlanes`, and resolves into a `Nullable` node over the value's node. The row
+/// store keeps a fixed-width value, an `UnhashedPackedStringRef` or a tuple of fixed-width values, so the node's
+/// shape stops at `Fixed` or `String`, possibly below `Nullable` and `Tuple` levels.
 void resolveRowStoreGatherNode(
     GatherNode & node,
     const DataTypePtr & type,
     const RowDataStore & row_store,
-    const ColumnAccessIndex & access,
+    const RowDataStore::FieldLayout & field,
     size_t block_no,
-    size_t num_blocks);
+    size_t num_blocks,
+    bool default_from_type = true);
 
 /// Append one output row per row of `selection` to every column of `columns` that `gather` (parallel
 /// to it) has a resolved source for, reading the ref words in whichever shape they arrive and the
