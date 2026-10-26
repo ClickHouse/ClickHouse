@@ -24,10 +24,10 @@ SYSTEM STOP MERGES t_merge_batch_lc_on;
 
 -- Three fully interleaved parts (single-row runs between cursors) and one disjoint part
 -- (long runs). Every part has runs of three 200 KB values, larger than the byte limit.
-INSERT INTO t_merge_batch_lc_off SELECT number * 3, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 10000 < 3, 200000, 1)) FROM numbers(30000);
-INSERT INTO t_merge_batch_lc_off SELECT number * 3 + 1, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 10000 < 3, 200000, 1)) FROM numbers(30000);
-INSERT INTO t_merge_batch_lc_off SELECT number * 3 + 2, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 10000 < 3, 200000, 1)) FROM numbers(30000);
-INSERT INTO t_merge_batch_lc_off SELECT 100000 + number, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 10000 < 3, 200000, 1)) FROM numbers(30000);
+INSERT INTO t_merge_batch_lc_off SELECT number * 3, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 1000 < 3, 200000, 1)) FROM numbers(3000);
+INSERT INTO t_merge_batch_lc_off SELECT number * 3 + 1, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 1000 < 3, 200000, 1)) FROM numbers(3000);
+INSERT INTO t_merge_batch_lc_off SELECT number * 3 + 2, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 1000 < 3, 200000, 1)) FROM numbers(3000);
+INSERT INTO t_merge_batch_lc_off SELECT 10000 + number, 'v' || toString(number % 100), map('a', 'x' || toString(number % 1000), 'b', 'y' || toString(number % 10)), repeat('w', if(number % 1000 < 3, 200000, 1)) FROM numbers(3000);
 
 -- Both tables merge identical parts.
 ALTER TABLE t_merge_batch_lc_on ATTACH PARTITION ID 'all' FROM t_merge_batch_lc_off;

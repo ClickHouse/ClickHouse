@@ -14,6 +14,26 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool byteSizeAtCanUnderestimateGrowth(const IColumn & column)
+{
+    if (column.getDataType() == TypeIndex::AggregateFunction
+        || column.isReplicated()
+        || column.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        result = result || byteSizeAtCanUnderestimateGrowth(*subcolumn);
+    });
+    return result;
+}
+
+}
+
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
@@ -279,16 +299,22 @@ size_t MergedData::rowsToInsertBeforeFlush(
         }
     }
 
-    if (!max_block_size_bytes)
+    if (!max_block_size_bytes || rows_to_insert == 1)
         return rows_to_insert;
 
     chassert(columns.size() == raw_columns.size());
 
-    /// For some column types (`LowCardinality`, `AggregateFunction`, dynamic columns), the sum of
-    /// `IColumn::byteSizeAt` over the source rows only estimates how much the destination grows:
-    /// e.g. a repeated `LowCardinality` value adds just an index entry. The estimate is still good
-    /// enough to cut the batch at a wide value, and any remaining error is bounded by one batch,
-    /// because `hasEnoughRows` measures the actual size before the next one.
+    /// The sum of `IColumn::byteSizeAt` over the source rows can arbitrarily underestimate how much
+    /// the destination grows for aggregate states (their data is copied into the destination arena)
+    /// and dynamic columns (the destination adds defaults for paths missing in the source), so let
+    /// `hasEnoughRows` measure the actual size after inserting one row. For `LowCardinality` the sum
+    /// is a close, mostly pessimistic estimate: a repeated value adds just an index entry.
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (byteSizeAtCanUnderestimateGrowth(*columns[i]) || byteSizeAtCanUnderestimateGrowth(*raw_columns[i]))
+            return 1;
+    }
+
     size_t merged_bytes = 0;
     for (const auto & column : columns)
         merged_bytes += column->byteSize();

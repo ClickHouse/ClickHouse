@@ -1,5 +1,7 @@
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDynamic.h>
 #include <Core/Block.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -137,6 +139,26 @@ TEST(MergedDataHasEnoughRows, ZeroByteLimitDisablesTheBranch)
     EXPECT_FALSE(merged_data.hasEnoughRows());
 }
 
+TEST(MergedDataHasEnoughRows, DynamicColumnsUseDestinationSizeForBatching)
+{
+    auto dynamic_type = std::make_shared<DataTypeDynamic>();
+    Block header;
+    header.insert(ColumnWithTypeAndName(dynamic_type->createColumn(), dynamic_type, "value"));
+
+    auto source = ColumnDynamic::create(254);
+    source->insert(Field(Int64(1)));
+    source->insert(Field(Int64(2)));
+
+    IMergingAlgorithm::Inputs inputs(1);
+    inputs[0].chunk.setColumns(Columns{source->getPtr()}, 2);
+
+    MergedData merged_data(false, MAX_BLOCK_SIZE, 32, 254);
+    merged_data.initialize(header, inputs);
+
+    ColumnRawPtrs raw_columns{source.get()};
+    EXPECT_EQ(merged_data.rowsToInsertBeforeFlush(raw_columns, 0, 2, 2), 1u);
+}
+
 /// Repeated `LowCardinality` values far below the byte limit must be inserted as one batch,
 /// not row by row: per-row insertion is what the batch queue avoids.
 TEST(MergedDataHasEnoughRows, RepeatedLowCardinalityValuesKeepTheFullBatch)
@@ -151,7 +173,7 @@ TEST(MergedDataHasEnoughRows, RepeatedLowCardinalityValuesKeepTheFullBatch)
     EXPECT_EQ(batchRowsBeforeFlush(header, std::move(source)), 100u);
 }
 
-/// A wide value must cut the batch right after it, as in the row-by-row path, even inside a column
+/// A wide value must cut the batch right after it, as in the row-by-row path, also inside a column
 /// whose `byteSizeAt` is only an estimate, such as a `Map` with `LowCardinality` keys.
 TEST(MergedDataHasEnoughRows, WideValueInLowCardinalityMapCutsTheBatch)
 {
