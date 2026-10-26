@@ -4,6 +4,8 @@
 
 SET enable_analyzer = 1;
 SET optimize_push_subcolumns_into_subqueries = 1;
+SET optimize_use_projections = 1;
+SET optimize_read_in_order = 1;
 
 DROP TABLE IF EXISTS t_push_proj_group;
 CREATE TABLE t_push_proj_group
