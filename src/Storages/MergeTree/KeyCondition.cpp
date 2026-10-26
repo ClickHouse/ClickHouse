@@ -29,6 +29,7 @@
 #include <Functions/geometryConverters.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HashTable/HashTable.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -46,7 +47,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -2388,6 +2391,122 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
+
+/// The values one step below and one step above each value of a `Decimal32` or `Decimal64` column, or nothing if a value is
+/// the smallest or the largest one of the storage type.
+template <typename T>
+static std::optional<std::pair<ColumnPtr, ColumnPtr>> neighbouringDecimalValues(const IColumn & column)
+{
+    using NativeType = typename T::NativeType;
+    const auto & values = assert_cast<const ColumnDecimal<T> &>(column).getData();
+    const UInt32 scale = assert_cast<const ColumnDecimal<T> &>(column).getScale();
+    auto below = ColumnDecimal<T>::create(values.size(), scale);
+    auto above = ColumnDecimal<T>::create(values.size(), scale);
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        const NativeType value = values[i].value;
+        if (value == std::numeric_limits<NativeType>::min() || value == std::numeric_limits<NativeType>::max())
+            return {};
+        below->getData()[i] = T(value - 1);
+        above->getData()[i] = T(value + 1);
+    }
+    return std::pair<ColumnPtr, ColumnPtr>{std::move(below), std::move(above)};
+}
+
+/// Whether the converted cast values have the bits of the floats they were cast from, and the converted neighbours of each
+/// cast value have other bits, all as `Float`. The bits, because a `Set` compares them (`bitEquals`): `-0.0` is not `0.0`
+/// there, so `d NOT IN (SELECT -0.0)` holds for `d = 0`, while the cast of `-0.0` is `0`. A comparison sees no other
+/// difference: a cast value never converts to `-0.0` or a NaN.
+template <typename Float>
+static bool castValuesAreTheOnlyMatches(const IColumn & floats, const IColumn & cast_values, const IColumn & below, const IColumn & above)
+{
+    const auto & float_data = assert_cast<const ColumnVector<Float> &>(floats).getData();
+    const auto & cast_data = assert_cast<const ColumnVector<Float> &>(cast_values).getData();
+    const auto & below_data = assert_cast<const ColumnVector<Float> &>(below).getData();
+    const auto & above_data = assert_cast<const ColumnVector<Float> &>(above).getData();
+    for (size_t i = 0; i < float_data.size(); ++i)
+        if (!bitEquals(cast_data[i], float_data[i]) || bitEquals(below_data[i], float_data[i]) || bitEquals(above_data[i], float_data[i]))
+            return false;
+    return true;
+}
+
+/// A float and a `Decimal`, `DateTime64` or `Time64` value are compared as `Float64` (see `FunctionsComparison.h`), and `IN`
+/// converts such a value to the type of the set elements (see `Set::execute`). Many values of such a type can convert to the
+/// same float, and the cast of a float to such a type can be inexact: `toFloat32(1)` becomes `0.99999998430674944` in
+/// `Decimal(38, 18)`, and `0.29` becomes `0.28` in `Decimal(9, 2)`. Casting the float to such a key expression input then
+/// names a key point that misses matching values.
+///
+/// Over a `Decimal32` or `Decimal64` input, the cast is exact if the cast value converts back to the float in
+/// `comparison_type`, bit for bit, and both of its neighbours in the storage type, one step below and one step above it,
+/// convert to other floats. The conversion (`DecimalUtils::convertTo`) rounds the stored integer to `Float64` in one step,
+/// divides it by a power of 10 and rounds the quotient to `comparison_type`, so it never decreases as the value grows: every
+/// smaller value converts to at most the float of the lower neighbour, which is smaller than the float, and every greater
+/// value to at least the float of the upper neighbour, which is greater. The cast value is then the only value that equals
+/// the float, and it compares with the others as the float does. The precision of the type does not bound the stored values:
+/// `INSERT SELECT toDecimal64(x, 0)` stores 16 digits in a `Decimal(15, 0)` column. So `d = 20.00` still uses the index over
+/// `d Decimal(10, 2)`, but `d IN (SELECT toFloat32(1000000))` does not, because `999999.99` is the same `Float32`.
+///
+/// A wider `Decimal` converts its integer to `Float64` in several rounding steps, so any float is reported for it, and so is
+/// any other float, also a `BFloat16` or one inside a `Dynamic` value: `Float32` is stored as `Float64` in a `Field` as well.
+static bool floatValuesMissKeyValues(
+    ColumnPtr column, DataTypePtr type, const DataTypePtr & key_expression_input_type, const DataTypePtr & comparison_type)
+{
+    if (!anyInTypeTree(*key_expression_input_type, [](const IDataType & input_type) { return isColumnedAsDecimal(input_type); }))
+        return false;
+
+    /// Only a float, or a `Dynamic`, `Variant` or `JSON` value, can be a float, so the values of another type are not looked
+    /// at: index analysis would read a large `IN` set of `DateTime64` values over a `DateTime64` key value by value.
+    if (!anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node) || isDynamic(node) || isVariant(node) || isObject(node); }))
+        return false;
+
+    column = column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    type = removeLowCardinality(type);
+    /// A NULL value holds the default value of the nested column, which converts exactly.
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        column = nullable_column->getNestedColumnPtr();
+        type = removeNullable(type);
+    }
+
+    const DataTypePtr decimal_type = removeLowCardinalityAndNullable(key_expression_input_type);
+    const WhichDataType decimal_which(*decimal_type);
+    if (!WhichDataType(*type).isNativeFloat() || !WhichDataType(*comparison_type).isNativeFloat()
+        || !(decimal_which.isDecimal32() || decimal_which.isDecimal64()))
+    {
+        for (size_t i = 0, size = column->size(); i < size; ++i)
+            if (anyFieldSatisfies((*column)[i], [](const Field & field) { return field.getType() == Field::Types::Float64; }))
+                return true;
+        return false;
+    }
+
+    /// The same cast as the key analysis applies.
+    const ColumnPtr cast_column = tryCastColumnAccurateOrNull({column, type, ""}, decimal_type);
+    if (!cast_column)
+        return true;
+
+    const ColumnPtr full_cast_column = cast_column->convertToFullColumnIfConst();
+    const auto & cast_nullable_column = assert_cast<const ColumnNullable &>(*full_cast_column);
+    for (size_t i = 0, size = column->size(); i < size; ++i)
+        if (cast_nullable_column.isNullAt(i))
+            return true;
+
+    const ColumnPtr & cast_values = cast_nullable_column.getNestedColumnPtr();
+    const auto neighbours = decimal_which.isDecimal32() ? neighbouringDecimalValues<Decimal32>(*cast_values)
+                                                        : neighbouringDecimalValues<Decimal64>(*cast_values);
+    if (!neighbours)
+        return true;
+
+    /// The same conversions as the comparison.
+    const ColumnPtr compared_floats = castColumn({column, type, ""}, comparison_type);
+    const ColumnPtr converted_cast_values = castColumn({cast_values, decimal_type, ""}, comparison_type);
+    const ColumnPtr converted_below = castColumn({neighbours->first, decimal_type, ""}, comparison_type);
+    const ColumnPtr converted_above = castColumn({neighbours->second, decimal_type, ""}, comparison_type);
+    if (WhichDataType(*comparison_type).isFloat32())
+        return !castValuesAreTheOnlyMatches<Float32>(*compared_floats, *converted_cast_values, *converted_below, *converted_above);
+    return !castValuesAreTheOnlyMatches<Float64>(*compared_floats, *converted_cast_values, *converted_below, *converted_above);
+}
+
 /// Over a type of consecutive integers (the integers, `Date`, `Date32` and `DateTime`), the strict
 /// comparison `x < c` matches the same rows as `x <= c - 1`, and `x > c` the same as `x >= c + 1`. This
 /// replaces the constant `c` of such a comparison with that inclusive bound, where `x` has the type
@@ -2479,6 +2598,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
             makeStrictBoundInclusive(func_name, transform_input_type, normalized_constant);
@@ -3278,7 +3398,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     for (auto & candidate : dags)
     {
         /// The DAG casts the constant to its input type.
-        if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type))
+        if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
 
         auto normalized_constant = constant;
@@ -3573,6 +3694,16 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !element_type->equals(*predicate_column_type))
                 return false;
         }
+
+        /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
+        /// as a float constant does, unless the cast is exact (see `floatValuesMissKeyValues`). `IN` compares the value
+        /// with the elements in their own type (see `Set::execute`).
+        if (floatValuesMissKeyValues(
+                set_column,
+                set_element_type,
+                mapping.set_transform ? mapping.set_transform->input_type : key_column_type,
+                removeLowCardinalityAndNullable(set_element_type)))
+            return false;
 
         if (mapping.set_transform)
         {
