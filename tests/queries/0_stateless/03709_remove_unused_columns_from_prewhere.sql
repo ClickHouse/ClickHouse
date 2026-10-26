@@ -14,8 +14,6 @@ ORDER BY (day, account_id);
 
 INSERT INTO test SELECT * FROM generateRandom('account_id Int64, country String, source_type String, day DateTime', 42) LIMIT 100;
 
-SET enable_analyzer = 1;
-
 EXPLAIN PLAN header = 1
 SELECT
     account_id AS accountId,

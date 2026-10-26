@@ -7,7 +7,9 @@ keywords: ['JOIN', 'Parallel Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
-This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [Joining tables](/concepts/features/operations/select/joining-tables).
+import { Image } from "/snippets/components/Image.jsx";
+
+This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables).
 
 ## Prefer avoiding JOINs {#prefer-avoiding-joins}
 
@@ -22,7 +24,7 @@ In general, denormalize when:
 
 Not all data needs to be denormalized - focus on the attributes that are frequently queried. Also consider [materialized views](/concepts/best-practices/use-materialized-views) to incrementally compute aggregates instead of duplicating entire sub-tables. When schema updates are rare and latency is critical, denormalization offers the best performance trade-off.
 
-For a full guide on denormalizing data in ClickHouse see [here](/guides/clickhouse/data-modelling/denormalization).
+For a full guide on denormalizing data in ClickHouse see [denormalization](/guides/clickhouse/data-modelling/denormalization).
 
 ## When JOINs are required {#when-joins-are-required}
 
@@ -39,8 +41,48 @@ Follow these best practices to improve JOIN performance:
 - **Consider `IN` instead of `INNER JOIN`.** When a query only needs to test whether a key exists in the other table, an `IN` subquery expresses that requirement directly and can use less memory than producing an `INNER JOIN` result.
 - **Prefer the `Join` table engine for reusable lookups.** The [`Join` table engine](/reference/engines/table-engines/special/join) stores a precomputed in-memory structure for a declared JOIN type, strictness, and key. In ClickHouse Cloud, it is implemented as `SharedJoin` with a `MergeTree` backing table, and `Join(ANY, LEFT, key)` provides an updatable per-key lookup. See [Fast, updatable lookups with the Join table engine](https://clickhouse.com/blog/join-table-engine).
 - **Join on table sorting keys when possible.** When both tables are physically ordered by the JOIN key, `full_sorting_merge` can skip sorting and reduce memory use. Confirm the execution plan and benchmark this algorithm against the default on representative data.
-- **Avoid disk-spilling JOINs.** Spilling intermediate JOIN state to disk can keep a query within its memory limit, but disk I/O usually increases latency. Some join algorithms, for example `grace_hash`, `partial_merge` and `full_sorting_merge`, are able to spill intermediate states to disk and continue query execution. These join algorithms should nevertheless be used with care as disk access can significantly slow down join processing. Reduce input rows and columns, use `ANY` semantics where valid, or change the data model before relying on spilling.
+- **Avoid disk-spilling JOINs.** Spilling intermediate JOIN state to disk can keep a query within its memory limit, but disk I/O usually increases latency. Hash joins can switch to grace hash at configured spill thresholds, while merge joins can use external sorting. Reduce input rows and columns or change the data model before relying on spilling. See [Choosing the optimal JOIN algorithm](#choosing-the-optimal-join-algorithm) for details.
 - **Use default values as no-match markers when appropriate.** The default [`join_use_nulls = 0`](/reference/settings/session-settings/join#join_use_nulls) fills unmatched outer JOIN columns with their data type's default value and avoids `Nullable` wrappers. Enable `join_use_nulls` only when the query must distinguish an unmatched row from a matched row containing a default value.
+
+## Choosing the optimal JOIN algorithm {#choosing-the-optimal-join-algorithm}
+
+ClickHouse supports several JOIN algorithms that trade off between speed and memory.
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,parallel_hash,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/joining-tables#join-algorithms).
+
+If your key optimization metric is performance and you're looking to execute the join as fast as possible, then you can use the following decision tree for choosing the right join algorithm:
+
+<br />
+
+<Image img="/images/guides/joins-4.webp" size="lg" alt="Join performance optimization decision tree"/>
+
+<br />
+
+- **(1)** If the data from the right-hand side table can be pre-loaded into an in-memory low-latency key-value data structure, e.g. a dictionary, and if the join key matches the key attribute of the underlying key-value storage, and if `LEFT ANY JOIN` semantics are adequate - then the **direct join** is applicable and is often the fastest approach.
+
+- **(2)** If your table's [physical row order](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) matches the join key sort order, then it depends. In this case, the **full sorting merge join** [skips](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) the sorting phase resulting in significantly reduced memory usage plus, depending on data size and join key value distribution, faster execution times than some of the hash join algorithms.
+
+- **(3)** If the right table fits into memory, even with the [additional memory usage overhead](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) of the **parallel hash join**, then this algorithm or the hash join can be faster. This depends on data size, data types, and value distribution of the join key columns.
+
+- **(4)** If the right table does not fit into memory, hash and parallel hash joins can spill by switching to grace hash when [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) is reached. Full sorting merge and partial merge joins can also use external storage. Which approach is fastest depends on the data volume, data types, and value distribution of the join key columns.
+
+Partial merge join is optimized for minimizing memory usage when large tables are joined, at the expense of join speed which is quite slow. This is especially the case when the physical row order of the left table doesn't match the join key sorting order.
+
+Grace hash join is the most flexible of the three non-memory-bound join algorithms and offers good control of settings. The [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) setting controls the initial number of buckets and provides a tradeoff between memory use and join speed.
+
+Which one of the three disk based algorithms is the fastest depends on the volume of data, the data types, and the value distribution of the join key columns. It is always best to run some benchmarks with realistic data volumes of your data in order to determine which algorithm is the fastest.
+
+## Optimizing for memory {#optimizing-for-memory}
+
+If you want to optimize a join for the lowest memory usage instead of the fastest execution time, then you can use this decision tree instead:
+
+<br />
+
+<Image img="/images/guides/joins-5.webp" size="lg" alt="Join memory optimization decision tree" />
+
+<br />
+
+- **(1)** If your table's physical row order matches the join key sort order, then the memory usage of the **full sorting merge join** is as low as it gets with the additional benefit of good join speed because the sorting phase is [disabled](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
+- **(2)** The **grace hash join** can be tuned for very low memory usage by increasing [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) at the expense of join speed. The **partial merge join** intentionally uses a low amount of main memory. The **full sorting merge join** with external sorting enabled generally uses more memory than the partial merge join when the row order does not match the key sort order, with the benefit of significantly better join execution time. Hash and parallel hash joins can also reduce memory pressure by switching to grace hash at the configured spill threshold.
 
 ## JOIN optimization examples {#join-optimization-examples}
 
@@ -121,14 +163,9 @@ WHERE
 
 The `IN` query also returns `261915`. Its median elapsed time was 0.696 seconds, with 51.70 MiB peak memory. It read 46.20 million rows and 817.49 MiB of data.
 
-## Choosing a JOIN algorithm {#choosing-the-right-join-algorithm}
-
-ClickHouse supports several JOIN algorithms that trade off between speed and memory.
-The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,parallel_hash,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. See [Choosing a JOIN algorithm](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm) for algorithm details and selection guidance.
-
 ## Further reading {#further-reading}
 
-- [Joining tables](/concepts/features/operations/select/joining-tables)
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
 - [`JOIN` clause reference](/reference/statements/select/join)
 - [Dictionary best practices](/concepts/features/dictionaries/best-practices)
 - [Full SQL JOIN support, Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
