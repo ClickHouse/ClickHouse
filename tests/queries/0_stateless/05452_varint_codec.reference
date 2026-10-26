@@ -1,0 +1,14 @@
+u8	0
+u16	0
+u32	0
+u64	0
+i8	0
+i16	0
+i32	0
+i64	0
+u64 delta	0
+i64 delta	0
+DateTime	0
+DateTime64	0
+1
+VarInt	0	0

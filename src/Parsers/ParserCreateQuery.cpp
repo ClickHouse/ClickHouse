@@ -2946,6 +2946,27 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. `delta_bytes` is the maximum size of raw values, the default value is `sizeof(type)`. Specifying `delta_bytes` as an argument is deprecated and support will be removed in a future release. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
 
+### VarInt {#varint}
+
+<ExperimentalBadge/>
+
+`VarInt` — Stores values as differences from a per-block frame of reference (the smallest value or zero, whichever encodes smaller) using a byte-aligned group-varint encoding: values are grouped four at a time, and a 16-bit control word holds the byte width of each value, so a zero difference takes no bytes at all. Can be used with numeric types of 1, 2, 4 or 8 bytes. `VarInt` is a data preparation codec, i.e. it cannot be used stand-alone. Combine it with a general-purpose codec, usually after [`Delta`](#delta):
+
+```sql
+CREATE TABLE codec_example
+(
+    timestamp DateTime CODEC(Delta, VarInt, ZSTD(1))
+)
+ENGINE = MergeTree()
+ORDER BY timestamp
+```
+
+For regular time series the deltas are equal, so every value stored by `VarInt` is zero and only the control words remain; the codec pays off when the deltas are small but varied, such as a counter that grows by a few units per row or a series sampled at irregular intervals. To encode second differences, apply `Delta` twice: `CODEC(Delta, Delta, VarInt, ZSTD(1))`. The algorithm uses the frame-of-reference and group-varint ideas from [FastPFor](https://github.com/lemire/FastPFor) and [StreamVByte](https://github.com/lemire/streamvbyte).
+
+<Note>
+This codec is experimental and requires `SET enable_varint_codec = 1` to use.
+</Note>
+
 ### DoubleDelta {#doubledelta}
 
 `DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. The `bytes_size` has a similar meaning than `delta_bytes` in [Delta](#delta) codec. Specifying `bytes_size` as an argument is deprecated and support will be removed in a future release. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any numeric type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).

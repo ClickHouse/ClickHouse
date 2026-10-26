@@ -833,6 +833,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("DoubleDelta"),
     Codec("DoubleDelta, LZ4"),
     Codec("DoubleDelta, ZSTD"),
+    Codec("VarInt"),
+    Codec("VarInt, LZ4"),
+    Codec("Delta, VarInt, ZSTD"),
+    Codec("Delta, Delta, VarInt, ZSTD"),
     Codec("Gorilla"),
     Codec("Gorilla, LZ4"),
     Codec("Gorilla, ZSTD"),
@@ -1454,6 +1458,78 @@ TEST(DoubleDeltaTest, TranscodeRawInput)
             for (size_t i = 0; i < decompressed; ++i)
                 ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
         }
+    }
+}
+
+TEST(VarIntTest, TranscodeRawInput)
+{
+    DataTypes types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+    };
+
+    for (const auto & type : types)
+    {
+        for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(buffer_size);
+
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = static_cast<char>(i);
+
+            auto codec = makeCodec("VarInt", type);
+
+            DB::Memory<> memory_for_compression;
+            memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
+
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
+    }
+}
+
+TEST(VarIntTest, RegularTimestampsCompressWell)
+{
+    /// The main use case: regular scrape intervals. After `Delta` all values are equal, and after
+    /// `Delta, Delta` all values are zero, so `VarInt` has nothing but control words to store.
+    constexpr size_t count = 10'000;
+    const auto data_type = std::make_shared<DataTypeUInt64>();
+
+    DB::Memory<> source_memory;
+    source_memory.resize(count * sizeof(UInt64));
+    for (size_t i = 0; i < count; ++i)
+        unalignedStoreLittleEndian<UInt64>(source_memory.data() + i * sizeof(UInt64), 1700000000 + i * 15);
+
+    for (const auto * codec_statement : {"Delta, VarInt", "Delta, Delta, VarInt"})
+    {
+        auto codec = makeCodec(codec_statement, data_type);
+
+        DB::Memory<> memory_for_compression;
+        memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(source_memory.size())));
+        auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+        ASSERT_LT(compressed, source_memory.size() / 10) << "with codec " << codec_statement;
+
+        DB::Memory<> memory_for_decompression;
+        memory_for_decompression.resize(source_memory.size());
+        auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+        ASSERT_EQ(decompressed, source_memory.size());
+        ASSERT_EQ(memcmp(memory_for_decompression.data(), source_memory.data(), source_memory.size()), 0) << "with codec " << codec_statement;
     }
 }
 

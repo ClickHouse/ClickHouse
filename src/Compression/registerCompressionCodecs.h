@@ -19,6 +19,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+void registerCodecVarInt(CompressionCodecFactory & factory);
 void registerCodecALP(CompressionCodecFactory & factory);
 void registerCodecQuantized(CompressionCodecFactory & factory);
 void registerCodecZXC(CompressionCodecFactory & factory);
