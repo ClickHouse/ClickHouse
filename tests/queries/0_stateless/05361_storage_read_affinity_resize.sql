@@ -79,8 +79,8 @@ WITH if(changed, trimBoth(value), 'user_files/') AS user_files_path,
     concat(if(startsWith(user_files_path, '/'), '', (SELECT path FROM system.disks WHERE name = 'default')), user_files_path, '/', currentDatabase(), '/') AS dir
 SELECT dir || '05361_sorted/' AS sorted, dir || '05361_unsorted/' AS unsorted
 FROM system.server_settings WHERE name = 'user_files_path';
-CREATE TABLE t_sorted (k UInt64) ENGINE = IcebergLocal((SELECT sorted FROM iceberg_paths), 'Parquet') ORDER BY k;
-CREATE TABLE t_unsorted (k UInt64) ENGINE = IcebergLocal((SELECT unsorted FROM iceberg_paths), 'Parquet');
+CREATE TABLE t_sorted (k Int64) ENGINE = IcebergLocal((SELECT sorted FROM iceberg_paths), 'Parquet') ORDER BY k;
+CREATE TABLE t_unsorted (k Int64) ENGINE = IcebergLocal((SELECT unsorted FROM iceberg_paths), 'Parquet');
 INSERT INTO t_sorted SELECT number FROM numbers(1000);
 INSERT INTO t_sorted SELECT number + 1000 FROM numbers(10);
 INSERT INTO t_unsorted SELECT number FROM numbers(1000);
