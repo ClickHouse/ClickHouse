@@ -241,9 +241,11 @@ SELECT log_comment, multiIf(
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_low', '05361_low_order', '05361_low_prewhere') AND type = 'QueryFinish'
 ORDER BY log_comment;
--- Once the threshold step stopped, k is read only in the row groups the PREWHERE keeps, as without the boundary.
+-- The threshold step ran, and once it stopped, k is read only in the row groups the PREWHERE keeps, as without the boundary.
 SELECT 'low_hash', sumIf(ProfileEvents['ParquetReadPages'], log_comment = '05361_low_hash_on')
     < 1.25 * sumIf(ProfileEvents['ParquetReadPages'], log_comment = '05361_low_hash_off')
+    AND sumIf(ProfileEvents['ParquetRowsFilterExpression'], log_comment = '05361_low_hash_on')
+    > sumIf(ProfileEvents['ParquetRowsFilterExpression'], log_comment = '05361_low_hash_off')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_low_hash_on', '05361_low_hash_off') AND type = 'QueryFinish';
 SELECT log_comment, ProfileEvents['SelectedRows'] < if(log_comment LIKE '05361_stats_pq_%', 1000, 100000)
