@@ -1,0 +1,35 @@
+Array(String)
+0	['0']
+1	['a','b']
+2	['c']
+3	['3']
+Map(String, UInt64)
+0	{'0':0}
+1	{'x':1}
+2	{'y':2}
+3	{'3':3}
+String
+0	d0
+1	one
+2	two
+3	d3
+Nullable(String)
+0	d0
+1	none
+2	\N
+3	d3
+UInt64
+0	100
+1	11
+2	22
+3	103
+JSON
+0	{"k":0}
+1	{"k":1}
+2	{"k":2}
+3	{"k":3}
+Nullable(JSON)
+0	{"k":0}
+1	{"k":1}
+2	\N
+3	{"k":3}

@@ -1,0 +1,9 @@
+tool calls:
+Found 0 tables in database 'no_such_db'
+Could not retrieve schema for system.no_such_table
+Tool not found
+SQL query generated successfully
+empty answer:
+No SQL query was generated
+rejected request:
+AI query generation failed

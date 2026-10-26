@@ -1,0 +1,10 @@
+-- merging the partial states yields the same centroid as aggregating the rows directly
+[[1,2]]
+[[1,2]]
+-- an empty state contributes nothing, on either side of the merge
+[[1,2]]
+[[1,2]]
+-- a side that never dropped a row is replayed into the other reservoir, in either direction
+[[1,2]]
+[[1,2]]
+-- states of different dimension cannot be merged

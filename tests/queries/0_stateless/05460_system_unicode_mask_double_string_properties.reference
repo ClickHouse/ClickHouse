@@ -1,0 +1,20 @@
+Row 1:
+──────
+mask_is_not_one_bit:                 0
+numeric_value_without_numeric_type:  0
+age_is_not_a_version:                0
+mirroring_glyph_is_not_one_char:     0
+paired_bracket_is_not_one_char:      0
+simple_case_folding_is_not_one_char: 0
+simple_lowercase_is_not_one_char:    0
+simple_titlecase_is_not_one_char:    0
+titlecase_is_not_one_char:           0
+case_folding_is_too_long:            0
+U+0028	Open_Punctuation	1048576	None	0	1.1
+U+0031	Decimal_Number	512	Decimal	0	1.1
+U+00BD	Other_Number	2048	Numeric	0.5	1.1
+U+1E9E	Uppercase_Letter	2	None	0	5.1
+U+0028	)	)	(	(	(	(	(
+U+0031	1	1	1	1	1	1	1
+U+00BD	½	½	½	½	½	½	½
+U+1E9E	ẞ	ẞ	ss	ß	ß	ẞ	ẞ

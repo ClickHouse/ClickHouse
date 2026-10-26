@@ -1,0 +1,8 @@
+--- armed
+GET 200
+HEAD 200 0
+prof_enabled=1 prof_active=1 thread_active_init=1 lg_sample=20 errors=0
+--- off
+GET 200
+HEAD 200 0
+prof_enabled=0 prof_active=0 thread_active_init=0 lg_sample=0 errors=0
