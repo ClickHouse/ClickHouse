@@ -80,6 +80,8 @@ _ARROW_PRIVATE_HEADERS = [
     "cpp/src/arrow/util/ulp_distance_internal.h",
     "cpp/src/arrow/util/union_util.h",
     "cpp/src/arrow/util/utf8_internal.h",
+    "cpp/src/arrow/vendored/fast_float/*.h",
+    "cpp/src/arrow/vendored/utfcpp/*.h",
 ]
 
 _PARQUET_PRIVATE_HEADERS = [
@@ -425,7 +427,7 @@ ch_cc_library(
         "cpp/src/arrow/io/hdfs_internal.h",
         "cpp/src/arrow/testing/extension_type.h",
         "cpp/src/arrow/testing/visibility.h",
-    ] + _ARROW_PRIVATE_HEADERS,
+    ] + glob(_ARROW_PRIVATE_HEADERS),
     hdrs = glob(
         [
             "cpp/src/arrow/*.h",
