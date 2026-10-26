@@ -256,6 +256,12 @@ std::optional<std::string> ObjectStorageQueueOrderedFileMetadata::BucketHolder::
     return std::nullopt;
 }
 
+std::string ObjectStorageQueueOrderedFileMetadata::BucketHolder::getActiveRegistryPath() const
+{
+    const auto queue_path = std::filesystem::path(bucket_info->bucket_lock_path).parent_path().parent_path().parent_path();
+    return (queue_path / "registry" / active_registry_id).string();
+}
+
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
 {
     /// Released holders are removed from the iterator's bucket_holders,
@@ -291,9 +297,8 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
         }
         else
         {
-            const auto queue_path = std::filesystem::path(bucket_info->bucket_lock_path).parent_path().parent_path().parent_path();
             Coordination::Requests requests;
-            requests.push_back(zkutil::makeCheckRequest(queue_path / "registry" / active_registry_id, -1));
+            requests.push_back(zkutil::makeCheckRequest(getActiveRegistryPath(), -1));
             requests.push_back(zkutil::makeSetRequest(bucket_info->bucket_lock_path, data, stat.version));
             code = zk_client->tryMulti(requests, responses);
         }
@@ -347,12 +352,9 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::refresh()
             bucket_info->bucket_lock_path, bucket_info->processor_info, current_owner.value_or("none"));
     }
     if (active_registry_lost)
-    {
-        const auto queue_path = std::filesystem::path(bucket_info->bucket_lock_path).parent_path().parent_path().parent_path();
         throw zkutil::KeeperException::fromPath(
             Coordination::Error::ZNONODE,
-            queue_path / "registry" / active_registry_id);
-    }
+            getActiveRegistryPath());
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueBucketLockRefreshes);
     LOG_TEST(log, "Refreshed bucket lock {}", bucket_info->bucket_lock_path);

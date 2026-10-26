@@ -368,6 +368,12 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
     return false;
 }
 
+std::string ObjectStorageQueueIFileMetadata::getActiveRegistryPath() const
+{
+    const auto queue_path = std::filesystem::path(processing_node_path).parent_path().parent_path();
+    return (queue_path / "registry" / active_registry_id).string();
+}
+
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     /// An optimization for local parallel processing.
@@ -402,8 +408,7 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
         && processing_node_age_watch.elapsedSeconds() < static_cast<double>(refresh_interval_seconds))
         return;
 
-    const auto queue_path = std::filesystem::path(processing_node_path).parent_path().parent_path();
-    const auto registry_path = queue_path / "registry" / active_registry_id;
+    const auto registry_path = getActiveRegistryPath();
     bool ownership_lost = false;
     bool active_registry_lost = false;
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
@@ -484,10 +489,7 @@ void ObjectStorageQueueIFileMetadata::refreshProcessingNode(size_t refresh_inter
 void ObjectStorageQueueIFileMetadata::addProcessingNodeRemovalRequest(Coordination::Requests & requests) const
 {
     if (!active_registry_id.empty())
-    {
-        const auto queue_path = std::filesystem::path(processing_node_path).parent_path().parent_path();
-        requests.push_back(zkutil::makeCheckRequest(queue_path / "registry" / active_registry_id, -1));
-    }
+        requests.push_back(zkutil::makeCheckRequest(getActiveRegistryPath(), -1));
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, processing_node_version));
 }
 

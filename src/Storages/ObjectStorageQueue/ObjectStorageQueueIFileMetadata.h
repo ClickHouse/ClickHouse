@@ -284,6 +284,7 @@ protected:
     int32_t processing_node_version = 0;
 
     bool checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
+    std::string getActiveRegistryPath() const;
     void addProcessingNodeRemovalRequest(Coordination::Requests & requests) const;
 
     static NodeMetadata createNodeMetadata(const std::string & path, const std::string & exception = {}, size_t retries = 0);
