@@ -195,9 +195,7 @@ cc_library(
 
 cc_library(
     name = "_isal",
+    implementation_deps = [":_isal__compile_1"],
     target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    deps = [
-        ":_isal__compile_0",
-        ":_isal__compile_1",
-    ],
+    deps = [":_isal__compile_0"],
 )

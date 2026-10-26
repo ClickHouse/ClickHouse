@@ -107,8 +107,6 @@ ch_cc_library(
         "//base/glibc-compatibility",
         "//contrib/lz4-cmake:_lz4",
         "//src/Compression:clickhouse_compression",
-        "@clickhouse_aws//:_aws",
-        "@clickhouse_boost//:_boost_context",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",

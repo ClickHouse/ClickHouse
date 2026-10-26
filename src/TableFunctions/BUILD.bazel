@@ -57,8 +57,6 @@ ch_cc_library(
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
         "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
         "@clickhouse_arrow//:_arrow",
-        "@clickhouse_aws//:_aws",
-        "@clickhouse_boost//:_boost_context",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMAsmPrinter",
         "@clickhouse_llvm_project//:LLVMBitReader",
@@ -83,7 +81,6 @@ ch_cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_silk//:_silk_fibers",
-        "//base/glibc-compatibility",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
         "@clickhouse_grpc//:grpc",
         "@clickhouse_vectorscan//:_vectorscan",
@@ -117,7 +114,6 @@ ch_cc_library(
     ],
     link_runtime = True,
     local_defines = DBMS_CONSUMER_DEFINES,
-    source_headers = True,
 )
 
 cc_library(

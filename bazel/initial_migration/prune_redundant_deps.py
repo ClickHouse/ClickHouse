@@ -38,11 +38,11 @@ CPU_KEYS = frozenset('@platforms//cpu:' + cpu for cpu in ARCHES)
 
 
 class PublicDeps:
-    def __init__(self, docs):
+    def __init__(self, docs, arches=ARCHES):
         self.graph = Graph(docs)
         # Store only public deps (and alias actual), never implementation_deps.
         self.edges = {
-            target: {cpu: set(self.graph.dependencies(target, cpu)) for cpu in ARCHES}
+            target: {cpu: set(self.graph.dependencies(target, cpu)) for cpu in arches}
             for target, (_, kind, _) in self.graph.rules.items() if kind in FORWARD
         }
         self.order, self.cycles = self.dependencies_first()
@@ -56,7 +56,7 @@ class PublicDeps:
             index[target] = low[target] = len(index)
             stack.append(target)
             active.add(target)
-            adjacent = set.union(*(self.edges[target][cpu] for cpu in ARCHES))
+            adjacent = set.union(*self.edges[target].values())
             for dep in sorted(adjacent & self.edges.keys()):
                 if dep not in index:
                     visit(dep)
@@ -108,6 +108,9 @@ class PublicDeps:
         result, pending = set(), [target]
         while pending:
             current = pending.pop()
+            # For example, @clickhouse//src/Common links //src/Common:Common.
+            if linking and ':' not in current and (package := current.partition('//')[2]):
+                current += ':' + package.rsplit('/', 1)[-1]
             if current in result:
                 continue
             if proof and not self.cc_endpoint(current, cpu):
@@ -118,8 +121,11 @@ class PublicDeps:
             if current in self.edges:
                 pending.extend(self.edges[current][cpu])
                 if linking:
-                    doc, _, attrs = self.graph.rules[current]
+                    doc, kind, attrs = self.graph.rules[current]
                     pending.extend(doc.labels(attrs.get("implementation_deps"), cpu))
+                    if (kind == 'ch_cc_library' and getattr(attrs.get('link_runtime'), 'value', None) is True
+                            and (cpu == 'default' or 'arches' not in attrs or cpu in doc.values(attrs['arches'], cpu))):
+                        pending.append('@clickhouse_llvm_project//:cxx')
         return frozenset(result)
 
     def public(self, target, cpu):
@@ -258,21 +264,60 @@ def prune_llvm_link_deps(graph):
     return edits
 
 
+def private_compile_groups(doc):
+    """Keep trailing compile groups private when they publish no C++ interface."""
+    from initial_migration.base_cpp_dependencies import attrs, replace_attrs
+
+    rules = [(call.func.id, attrs(call)) for _, call in doc.source.rules()
+             if isinstance(call.func, ast.Name)]
+    private = {
+        ':' + a['name'].value for kind, a in rules
+        if kind in {'cc_library', 'ch_cc_library', 'poco_cc_library'} and 'srcs' in a
+        and not {'hdrs', 'textual_hdrs', 'includes', 'defines', 'deps', 'include_prefix',
+                 'strip_include_prefix', 'module_interfaces'} & a.keys()
+        and isinstance(a['name'], ast.Constant)
+    }
+    # Moving the 15 glibc C headers changes the inputs of over 5,000 source files per CPU.
+    # The assembly group publishes no headers.
+    if doc.package == 'base/glibc-compatibility':
+        private.discard(':glibc-compatibility__compile_0')
+    changes = {}
+    for kind, a in rules:
+        deps = a.get('deps')
+        if (not isinstance(a['name'], ast.Constant) or kind != 'cc_library' or set(a) - {'name', 'deps', 'target_compatible_with'}
+                or not isinstance(deps, ast.List) or not all(isinstance(v, ast.Constant) and isinstance(v.value, str) for v in deps.elts)):
+            continue
+        labels = ast.literal_eval(deps)
+        if not any(label.startswith(':' + a['name'].value + '__compile_') for label in labels):
+            continue
+        split = len(labels)
+        while split and labels[split - 1] in private:
+            split -= 1
+        if split < len(labels):
+            changes[a['name'].value] = {
+                'deps': repr(labels[:split]) if split else None,
+                'implementation_deps': repr(labels[split:]),
+            }
+    if changes:
+        doc.path.write_text(replace_attrs(doc.path.read_text(), changes))
+
+
 def prune_aggregate_deps(root, paths):
-    """Preserve header and linker input order when pruning source-free ClickHouse compile groups."""
+    """Remove repeated compile-group dependencies without changing compiler or linker input order."""
     from initial_migration.measured_deps import editable_dependency_lists
     from initial_migration.native_include_deps import explicit_list, rejects_cpu
 
     docs = [Document(p, package=p.parent.relative_to(root).as_posix().removeprefix('.'))
             if p.name == 'BUILD.bazel' else Document(p) for p in sorted(paths)]
-    public = PublicDeps(docs)
+    public = PublicDeps(docs, (*ARCHES, 'default'))
 
-    def repeated(deps, cpu, linking=False):
+    def repeated(deps, cpu, linking=False, skip=()):
         seen, result = set(), set()
         for dep in deps:
             if dep in seen:
                 result.add(dep)
-            seen.update(public.reachable(dep, cpu, True, linking=linking))
+            if dep not in skip:
+                seen.update(public.reachable(dep, cpu, True, linking=linking))
         return result
 
     edits = {}
@@ -294,14 +339,46 @@ def prune_aggregate_deps(root, paths):
             drop = set.intersection(*redundant)
             if drop and (changes := editable_dependency_lists(doc, deps, drop, doc.reference)):
                 edits.setdefault(doc, []).extend(changes)
+    # These cc_libraries own no headers or objects. Their __compile_N targets do.
+    fields = ('deps', 'implementation_deps')
+    groups = {
+        target for target, (doc, kind, attrs) in public.graph.rules.items()
+        if kind == 'cc_library' and attrs.keys() <= {'name', *fields}
+        and all(any(child.startswith(target + '__compile_')
+                    for field in fields for child in doc.labels(attrs.get(field), cpu)) for cpu in ARCHES)
+    }
+    for _, (doc, kind, attrs) in public.graph.rules.items():
+        if doc.repo != '@clickhouse' or kind != 'ch_cc_library' or 'srcs' not in attrs:
+            continue
+        lists = [attrs[f] for f in fields if f in attrs]
+        if not lists or not all(explicit_list(node, doc) for node in lists):
+            continue
+        cpus = ARCHES if any(rejects_cpu(node, doc, 'default') for node in lists) else (*ARCHES, 'default')
+        drop = groups.copy()
+        for cpu in cpus:
+            direct = [doc.reference(dep) for node in lists for dep in doc.values(node, cpu)]
+            if len(set(direct)) != len(direct):
+                drop.clear()
+                break
+            # An earlier public route preserves headers; a later link route preserves objects.
+            # Do not use another removable compile-group dependency as the witness.
+            drop &= repeated(direct, cpu, skip=groups) & repeated(reversed(direct), cpu, True, groups)
+        if drop:
+            for node in lists:
+                if changes := editable_dependency_lists(doc, node, drop, doc.reference):
+                    edits.setdefault(doc, []).extend(changes)
     for doc, changes in edits.items():
         doc.path.write_text(doc.source.rewrite(changes))
 
     # Use the remaining aggregate deps as witnesses, never the removed deps.
     if edits:
         docs = [Document(d.path, package=d.package) if d in edits else d for d in docs]
-    for doc, changes in prune_llvm_link_deps(Graph(docs)).items():
-        doc.path.write_text(doc.source.rewrite(changes))
+    llvm_edits = prune_llvm_link_deps(Graph(docs))
+    for doc in docs:
+        if doc in llvm_edits:
+            doc.path.write_text(doc.source.rewrite(llvm_edits[doc]))
+            doc = Document(doc.path, package=doc.package)
+        private_compile_groups(doc)
 
 
 class Reduction:

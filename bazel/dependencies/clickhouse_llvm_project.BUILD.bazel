@@ -96,15 +96,6 @@ copy_file(
     out = "gen/libcxx/include/c++/v1/__config_site",
 )
 
-cc_library(
-    name = "libcxx_config_headers",
-    hdrs = [
-        ":configure_libcxx_include_c_v1___assertion_handler",
-        ":configure_libcxx_include_c_v1___config_site",
-    ],
-    includes = ["gen/libcxx/include/c++/v1"],
-)
-
 expand_template(
     name = "configure_llvm_include_llvm_Config_llvm_config_h",
     out = "gen/llvm/include/llvm/Config/llvm-config.h",
@@ -4671,11 +4662,11 @@ llvm_outline_atomics(
 
 cc_library(
     name = "clang_rt_builtins",
-    deps = [
-        ":clang_rt_xray",
+    implementation_deps = [
         ":clang_rt_builtins__compile_0",
         ":clang_rt_builtins__compile_1",
     ],
+    deps = [":clang_rt_xray"],
 )
 
 _GENERATED_LOCAL_DEFINES_3 = [
@@ -4876,11 +4867,11 @@ cc_library(
 
 cc_library(
     name = "clang_rt_xray",
-    deps = [
-        ":libllvmlibc",
+    implementation_deps = [
         ":clang_rt_xray__compile_0",
         ":clang_rt_xray__compile_1",
     ],
+    deps = [":libllvmlibc"],
 )
 
 llvm_runtime_objects(
@@ -5319,7 +5310,7 @@ cc_library(
 
 cc_library(
     name = "unwind",
-    deps = [
+    implementation_deps = [
         ":unwind__compile_0",
         ":unwind__compile_1",
         ":unwind__compile_2",

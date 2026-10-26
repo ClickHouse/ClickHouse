@@ -118,8 +118,6 @@ ch_cc_library(
 
 cc_library(
     name = "glibc-compatibility",
-    deps = [
-        ":glibc-compatibility__compile_0",
-        ":glibc-compatibility__compile_1",
-    ],
+    implementation_deps = [":glibc-compatibility__compile_1"],
+    deps = [":glibc-compatibility__compile_0"],
 )

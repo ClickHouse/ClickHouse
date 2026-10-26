@@ -49,7 +49,6 @@ ch_cc_library(
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper",
-        "//base/glibc-compatibility",
         "//src/Common",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",

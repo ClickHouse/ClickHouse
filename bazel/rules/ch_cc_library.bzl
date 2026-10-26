@@ -43,18 +43,13 @@ def ch_cc_library(
         source_headers = False,
         language = "CXX",
         arches = ["x86_64", "aarch64"],
-        libcxx_headers = False,
-        llvm_headers = False,
         link_runtime = False,
         map_source_files = True,
         features = [],
         **kwargs):
     """Compile a CMake library, with CPU defaults before source overrides.
 
-    llvm_headers supplies LLVM compiler-rt, libc and libunwind headers for
-    libraries which request them. For C and ASM, libcxx_headers adds
-    libcxx_config_headers privately. link_runtime adds libc++ privately;
-    libc++ supplies libc++abi and libunwind.
+    link_runtime adds libc++ privately; libc++ supplies libc++abi and libunwind.
     source_headers adds //src:clickhouse_source_headers privately when True.
     Compiled C++ libraries use CXX_RUNTIME_DEFINES unless local_defines is set.
     Third-party C and C++ libraries default to -w and the ClickHouse language
@@ -83,21 +78,9 @@ def ch_cc_library(
         standard = "-std=gnu11" if language == "C" else "-std=c++23"
         defaults = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [standard]
         code_flags = code_flags + _for_arches(arches, defaults)
-    if llvm_headers:
-        headers = [
-            Label("@llvm-project//compiler-rt:headers"),
-            Label("@llvm-project//libc:libc_headers"),
-            Label("@llvm-project//libunwind:headers"),
-        ]
-        kwargs["deps"] = _for_arches(arches, headers) + kwargs.get("deps", [])
     if link_runtime:
         runtime = [Label("@clickhouse_llvm_project//:cxx")]
         kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + _for_arches(arches, runtime)
-    if language in ["C", "ASM"] and libcxx_headers:
-        kwargs["implementation_deps"] = select({
-            str(Label("@platforms//cpu:" + arch)): [Label("@clickhouse_llvm_project//:libcxx_config_headers")]
-            for arch in arches
-        } | {"//conditions:default": []}) + kwargs.get("implementation_deps", [])
     cc_library(
         name = name,
         hdrs = hdrs,

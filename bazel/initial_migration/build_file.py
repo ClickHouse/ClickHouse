@@ -25,10 +25,12 @@ TARGETS_WITH_DIRECT_SOURCE_HEADERS = {
     'clickhouse-benchmark-lib', 'clickhouse-client-lib', 'clickhouse-format-lib',
     'clickhouse-install-lib', 'clickhouse-keeper-lib', 'clickhouse-keeper-utils-lib',
     'clickhouse-local-lib', 'clickhouse-server-lib', 'clickhouse_common_zookeeper',
+    'clickhouse_dictionaries__compile_1',
     'clickhouse_functions_array__compile_0', 'clickhouse_functions_array__compile_1',
     'clickhouse_functions_array__compile_2', 'clickhouse_functions_array__compile_3',
-    'clickhouse_functions_gatherutils',
-    'clickhouse_functions_time_series', 'clickhouse_functions_uniqtheta', 'dbms_embedded',
+    'clickhouse_functions_gatherutils', 'clickhouse_functions_obj__compile_0',
+    'clickhouse_functions_time_series', 'clickhouse_functions_uniqtheta',
+    'clickhouse_table_functions', 'dbms__compile_0', 'dbms_embedded',
 }
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
 
@@ -941,12 +943,8 @@ class BuildFile:
                 attrs['arches'] = arches
             expected_includes = [] if language == 'CXX' else [['-I', 'generated', 'libcxx/include/c++/v1']]
             includes = [group['includes'] for group in copts.groups.values()]
-            if any(includes):
-                if not all(value == expected_includes for value in includes):
-                    raise ValueError(f'{name}: unsupported native libc++ includes: {includes}')
-                # CMake adds this directory to many C targets. Only libprotoc's C group retains it in Bazel.
-                if (self.owner, name) == ('contrib/google-protobuf', '_libprotoc__compile_1'):
-                    attrs['libcxx_headers'] = True
+            if any(includes) and not all(value == expected_includes for value in includes):
+                raise ValueError(f'{name}: unsupported native libc++ includes: {includes}')
             flags = copts.flags
             if isinstance(flags, CMakeCopts) and set(flags.arches) == set(arches):
                 flags = flags.flags

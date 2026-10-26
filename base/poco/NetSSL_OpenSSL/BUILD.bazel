@@ -87,9 +87,9 @@ poco_cc_library(
 
 cc_library(
     name = "_poco_net_ssl",
-    deps = [
-        ":_poco_net_ssl__compile_0",
+    implementation_deps = [
         ":_poco_net_ssl__compile_1",
         ":secure_socket",
     ],
+    deps = [":_poco_net_ssl__compile_0"],
 )

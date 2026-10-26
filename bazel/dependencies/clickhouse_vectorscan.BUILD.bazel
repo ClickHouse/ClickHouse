@@ -717,9 +717,9 @@ ch_cc_library(
 
 cc_library(
     name = "_vectorscan",
-    deps = [
-        ":_vectorscan__compile_0",
+    implementation_deps = [
         ":_vectorscan__compile_1",
         ":_vectorscan__compile_2",
     ],
+    deps = [":_vectorscan__compile_0"],
 )

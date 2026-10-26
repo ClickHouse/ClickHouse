@@ -206,7 +206,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_DICTIONARIES_LOCAL_DEFINES,
     private_hdrs = glob(["*.txx"]),
-    source_headers = True,
     deps = [
         "//src:core_types",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",

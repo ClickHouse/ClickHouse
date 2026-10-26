@@ -144,7 +144,7 @@ def prune_native_exports(root=ROOT, write=False, *, only=None):
     documents = {}
     sources = {}
     exports = defaultdict(list)
-    required = set()
+    required = defaultdict(set)
     target_stems = defaultdict(set)
     package_stems = set()
     native_inventory = git_inventory(root)
@@ -171,7 +171,7 @@ def prune_native_exports(root=ROOT, write=False, *, only=None):
             if dynamic or value[match.end():match.end() + 1] in {'{', '%', '$'}:
                 target_stems[owner].add(name)
             else:
-                required.add('//' + owner + ':' + name)
+                required['//' + owner + ':' + name].add(filename)
 
     def scan_json(value, filename):
         if isinstance(value, str):
@@ -235,6 +235,18 @@ def prune_native_exports(root=ROOT, write=False, *, only=None):
         source = sources[filename]
         edits = []
         for statement, labels in declarations:
+            # The contrib extension computes OpenSSL header labels. Its lock
+            # entry records those labels; the OpenSSL BUILD selects the C and
+            # assembly sources. Keep each source visible to that package only.
+            if filename == 'contrib/openssl-cmake/BUILD.bazel' and only is None:
+                replacement = openssl_source_exports(root, documents[filename], statement, labels, required)
+                if replacement is not None:
+                    text, removed = replacement
+                    edits.append((*source.span(statement), text))
+                    stats['removed_exports'] += removed
+                    stats[filename] += removed
+                    stats['retained_exports'] += len(labels) - removed
+                    continue
             kept = []
             for exported in labels:
                 owner, name = exported[2:].split(':', 1)
@@ -267,6 +279,41 @@ def prune_native_exports(root=ROOT, write=False, *, only=None):
         if write:
             (root / filename).write_text(text)
     return stats
+
+
+def openssl_source_exports(root, build, statement, labels, required):
+    package = '//contrib/openssl-cmake:'
+    names = {label.removeprefix(package) for label in labels}
+    if not any(name.startswith('asm/') for name in names):
+        return None
+    globs = build.globs
+    sources = [
+        'asm/**/*x86_64*.s', 'asm/**/rsaz-*.s', 'asm/crypto/aes/*-avx512.s',
+        'asm/crypto/modes/*-avx512.s', 'asm/**/*arm*.S', 'asm/**/*aarch64.S', 'common/**/*.c',
+    ]
+    selected = globs.union(sources)
+    users = {label.removeprefix(package): paths for label, paths in required.items()
+             if label.startswith(package) and label.endswith(('.s', '.S', '.c'))}
+    if selected != users.keys() or not selected <= names:
+        raise ValueError('OpenSSL source globs differ from the files used by its BUILD: ' + repr(sorted(selected ^ users.keys())))
+    if any(paths != {'bazel/dependencies/clickhouse_openssl.BUILD.bazel'} for paths in users.values()):
+        raise ValueError('A different package consumes an OpenSSL source export')
+    lock = json.loads((root / 'MODULE.bazel.lock').read_text())
+    specs = lock['moduleExtensions']['//bazel/rules:repositories.bzl%contrib']['general']['generatedRepoSpecs']
+    headers = {label.removeprefix('@@' + package) for label in specs['clickhouse_openssl']['attributes']['files'].values()}
+    if not all(name.endswith('.h') for name in headers):
+        raise ValueError('The OpenSSL repository now installs a non-header from the main repository')
+    header_patterns = ['common/include/**/*.h', 'linux_x86_64/include_private/*.h', 'linux_aarch64/include_private/*.h']
+    others = {name for name in names if not name.endswith(('.s', '.S', '.c'))}
+    if others and (globs.union(header_patterns) != others or headers != others):
+        raise ValueError('OpenSSL header exports differ from its configured repository files')
+    calls = ['exports_files(glob(' + json.dumps(sources) + '), visibility = ["@clickhouse_openssl//:__pkg__"])']
+    if others:
+        calls.append('exports_files(glob(' + json.dumps(header_patterns) + '))')
+    text = '\n\n'.join(calls)
+    if not others and ast_key(statement) == ast_key(ast.parse(text).body[0]):
+        return None
+    return text, len(names - selected - others)
 
 
 def main():

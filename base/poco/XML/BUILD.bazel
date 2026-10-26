@@ -85,7 +85,6 @@ poco_cc_library(
         "-Wno-zero-as-null-pointer-constant",
     ],
     includes = ["include"],
-    llvm_headers = False,
     local_defines = [
         "POCO_ENABLE_CPP11",
         "POCO_OS_FAMILY_UNIX",
@@ -134,7 +133,6 @@ poco_cc_library(
     implementation_deps = ["//base/poco/Foundation:_poco_foundation"],
     includes = ["include"],
     language = "C",
-    llvm_headers = False,
     local_defines = [
         "PRIVATE",
         "STD_EXCEPTION_HAS_STACK_TRACE=1",

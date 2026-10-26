@@ -121,8 +121,7 @@ def normalize(text, package):
         own_cxx = language == "CXX" and literal(attrs.get("clickhouse_code"), False)
         deps = attrs.get("deps", empty)
         configured = [[literal(item) for item in selected(deps, cpu)] for cpu in arches]
-        headers = "llvm_headers" not in original and all(
-            tuple(values[:len(HEADERS)]) == HEADERS for values in configured)
+        headers = all(tuple(values[:len(HEADERS)]) == HEADERS for values in configured)
         runtime = "link_runtime" not in original and all(
             all(values.count(label) == 1 for label in RUNTIME) for values in configured)
         # Some incompatible targets still declare headers on the other CPU.
@@ -147,21 +146,18 @@ def normalize(text, package):
                 found = [llvm_directory(item) for item in items if llvm_directory(item) in include_values]
                 if found and tuple(llvm_directory(item) for item in items[-3:]) != include_values:
                     raise ValueError(f"{package}:{literal(original['name'])} {cpu}: unexpected LLVM includes")
-        changed_includes = False
         labels = (HEADERS if headers else ()) + (RUNTIME if runtime else ())
         filters = {
             "deps": (labels, ()),
             "local_includes": ((), include_values),
         }
         if language in ("C", "ASM"):
-            # A C or assembly library can depend on libcxx_config_headers without taking the entire runtime source tree.
+            # C and assembly sources do not need the captured libc++ source and generated-header inputs.
             filters["additional_compiler_inputs"] = (CXX_INPUTS, ())
         for field, (remove_labels, remove_directories) in filters.items():
             replacement = strip_items(attrs.get(field, empty), remove_labels, remove_directories)
             if field not in original or ast_key(attrs[field]) == ast_key(replacement):
                 continue
-            if field == "local_includes":
-                changed_includes = True
             if isinstance(replacement, ast.List) and not replacement.elts:
                 kw = next(kw for kw in rule.keywords if kw.arg == field)
                 start, end = source.span(kw)
@@ -175,14 +171,9 @@ def normalize(text, package):
                 named = strip_items(original[field], remove_labels, remove_directories, symbols, requests)
                 requested = {name for name, items in requests.items() if len(items) != previous.get(name, 0)}
                 attributes.append((original[field], named, replacement, requested))
-        options = []
-        if "llvm_headers" not in original and headers != own_cxx and (headers or changed_includes):
-            options.append("llvm_headers = " + str(headers))
-        if "link_runtime" not in original and runtime:
-            options.append("link_runtime = True")
-        if options:
+        if runtime:
             _, end = source.span(rule)
-            edits.append((end - 1, end - 1, ",\n".join(options) + ",\n"))
+            edits.append((end - 1, end - 1, "link_runtime = True,\n"))
     shared = {name for name, values in requests.items() if len(values) == uses[name]
               and len({ast_key(value) for value in values}) == 1}
     for name in shared:

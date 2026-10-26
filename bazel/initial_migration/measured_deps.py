@@ -440,15 +440,6 @@ def apply(root):
                 continue
             found.add(name)
             unused, private, public = spec
-            llvm_headers = attrs.get('llvm_headers')
-            if (call_name(rule) == 'ch_cc_library' and isinstance(llvm_headers, ast.Constant)
-                    and llvm_headers.value is True and set(LLVM_RUNTIME_HEADERS).issubset(unused)):
-                # ch_cc_library adds all three LLVM dependencies for this keyword.
-                kw = next(k for k in rule.keywords if k.arg == 'llvm_headers')
-                start, end = source.span(kw)
-                if source.bytes[end:end + 1] == b',':
-                    end += 1
-                edits.append((start, end, ''))
             if package == 'src' and name in ('dbms__compile_0', 'clickhouse_common_io__compile_0'):
                 # The CMake import predates some header owners. Only move existing edges.
                 defs = constant_defs(source.module)

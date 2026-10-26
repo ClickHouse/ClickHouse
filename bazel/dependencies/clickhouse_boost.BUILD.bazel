@@ -32,7 +32,7 @@ ch_cc_library(
 
 cc_library(
     name = "_boost_context",
-    deps = [
+    implementation_deps = [
         ":_boost_context__compile_0",
         ":_boost_context__compile_1",
     ],
