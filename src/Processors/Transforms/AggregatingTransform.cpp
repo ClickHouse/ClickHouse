@@ -1530,9 +1530,13 @@ void AggregatingTransform::capturePerStreamKeptKeysSeed()
 {
     const auto & aggregator_params = params->params;
 
-    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, and only when the
-    /// table can actually be flushed to disk: the seed is needed to re-fill it after the flush.
-    /// Scheduler spills are possible even with `max_bytes_before_external_group_by` disabled.
+    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, which caps the
+    /// stream at exactly `max_rows_to_group_by` keys and only lets a table already restricted to
+    /// them spill, and only when the table can actually be flushed to disk: the seed is needed to
+    /// re-fill it after the flush. Scheduler spills are possible even with
+    /// `max_bytes_before_external_group_by` disabled.
+    /// A plain `max_rows_to_group_by` cap keeps whatever the crossing block brought in and needs
+    /// no rebuild, so there the `Aggregator` snapshots the keys during the flush itself.
     if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.tmp_data_scope)
         return;
 
