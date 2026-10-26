@@ -709,6 +709,135 @@ MultiPolygon
 
 Polygon
 
+## polygonMinimumRotatedRectangleCartesian {#polygonminimumrotatedrectanglecartesian}
+
+Returns the rectangle of the smallest area that contains a geometry, which can be rotated (the oriented envelope), like `ST_OrientedEnvelope` in PostGIS and `ST_MinimumRotatedRectangle` in DuckDB.
+It is found with rotating calipers over the convex hull, so the function takes the same arguments as [`polygonConvexHullCartesian`](#polygonconvexhullcartesian).
+For collinear points the rectangle has zero width, and for a single point all its corners are that point.
+
+Coordinates are in Cartesian coordinate system.
+
+### Example {#example-polygonminimumrotatedrectanglecartesian}
+
+```sql
+SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (4., 3.), (2., 3.), (-1.5, 2.), (1., 1.5)]::MultiPoint)
+```
+```response
+[[(-1.5,2),(2.5,5),(4,3),(0,0),(-1.5,2)]]
+```
+
+### Input parameters {#input-parameters-polygonminimumrotatedrectanglecartesian}
+
+A geometry other than a point: `MultiPolygon`, `Polygon`, `Ring`, `MultiLineString`, `LineString`, `MultiPoint` or `Geometry`.
+
+### Returned value {#returned-value-polygonminimumrotatedrectanglecartesian}
+
+Polygon with one ring of five points: the corners clockwise, and the first corner again.
+
+## exteriorRing {#exteriorring}
+
+Returns the exterior ring of a polygon, which is the first ring of a `Polygon`, like `ST_ExteriorRing`.
+
+For a `Geometry` argument the result is `Geometry`, which is NULL if the row is not a `Polygon` or has no rings, as in PostGIS.
+For a `Polygon` without rings, the result is an empty `Ring`.
+
+### Syntax {#syntax-exteriorring}
+
+```sql
+exteriorRing(polygon)
+```
+
+Alias: `ST_ExteriorRing`.
+
+### Arguments {#arguments-exteriorring}
+
+- `polygon` — [Polygon](/reference/data-types/geo#polygon) or [Geometry](/reference/data-types/geo#geometry).
+
+### Returned value {#returned-value-exteriorring}
+
+[Ring](/reference/data-types/geo#ring), or [Geometry](/reference/data-types/geo#geometry) for a `Geometry` argument.
+
+### Example {#example-exteriorring}
+
+```sql
+SELECT exteriorRing([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(2., 2.), (4., 2.), (4., 4.), (2., 2.)]]::Polygon)
+```
+
+```response
+[(0,0),(0,10),(10,10),(10,0),(0,0)]
+```
+
+## interiorRingN {#interiorringn}
+
+Returns the `n`-th interior ring (hole) of a polygon, like `ST_InteriorRingN`.
+`n` counts from 1, and a negative `n` counts from the last hole.
+
+For a `Geometry` argument the result is `Geometry`, which is NULL if the row is not a `Polygon` or has no such hole, as in PostGIS.
+For a `Polygon` without such a hole, the result is an empty `Ring`, as `arrayElement` returns the default value.
+
+### Syntax {#syntax-interiorringn}
+
+```sql
+interiorRingN(polygon, n)
+```
+
+Alias: `ST_InteriorRingN`.
+
+### Arguments {#arguments-interiorringn}
+
+- `polygon` — [Polygon](/reference/data-types/geo#polygon) or [Geometry](/reference/data-types/geo#geometry).
+- `n` — The number of the hole. [(U)Int*](/reference/data-types/int-uint).
+
+### Returned value {#returned-value-interiorringn}
+
+[Ring](/reference/data-types/geo#ring), or [Geometry](/reference/data-types/geo#geometry) for a `Geometry` argument.
+
+### Example {#example-interiorringn}
+
+```sql
+SELECT interiorRingN([[(0., 0.), (0., 10.), (10., 10.), (10., 0.), (0., 0.)], [(2., 2.), (4., 2.), (4., 4.), (2., 2.)]]::Polygon, 1)
+```
+
+```response
+[(2,2),(4,2),(4,4),(2,2)]
+```
+
+## pointN {#pointn}
+
+Returns the `n`-th point of a line or a ring, like `ST_PointN`.
+`n` counts from 1, and a negative `n` counts from the last point.
+
+For a `Geometry` argument the result is `Geometry`, which is NULL if the row is not a `LineString` or a `Ring` or has no such point, as in PostGIS.
+For a `LineString` or a `Ring` without such a point, the result is `(0, 0)`, as `arrayElement` returns the default value.
+
+### Syntax {#syntax-pointn}
+
+```sql
+pointN(line, n)
+```
+
+Alias: `ST_PointN`.
+
+### Arguments {#arguments-pointn}
+
+- `line` — [LineString](/reference/data-types/geo#linestring), [Ring](/reference/data-types/geo#ring) or [Geometry](/reference/data-types/geo#geometry).
+- `n` — The number of the point. [(U)Int*](/reference/data-types/int-uint).
+
+### Returned value {#returned-value-pointn}
+
+[Point](/reference/data-types/geo#point), or [Geometry](/reference/data-types/geo#geometry) for a `Geometry` argument.
+
+### Example {#example-pointn}
+
+```sql
+WITH [(1., 2.), (3., 4.), (5., 6.)]::LineString AS line
+SELECT (pointN(line, 1), pointN(line, -1))
+```
+
+```response
+((1,2),(5,6))
+```
+
 ## polygonAreaSpherical {#polygonareaspherical}
 
 Calculates the surface area of a polygon.
