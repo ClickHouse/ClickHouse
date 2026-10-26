@@ -47,6 +47,7 @@ ${CLICKHOUSE_CLIENT} \
             database = 'system',
             join_use_nulls = 1"
 
+echo "queued settings"
 ${CLICKHOUSE_CLIENT} --query "
     WITH
         [
@@ -69,3 +70,21 @@ ${CLICKHOUSE_CLIENT} --query "
         AND startsWith(name, 'query-')
         AND position(value, '${TABLE}') > 0
 "
+
+for setting_source in query session; do
+    settings_clause=""
+    session_value=1
+    if [[ ${setting_source} == query ]]; then
+        session_value=0
+        settings_clause="SETTINGS implicit_select = 1, allow_settings_after_format_in_insert = 1"
+    fi
+    table="${DB}.ddl_parser_replicated_${setting_source}"
+
+    ${CLICKHOUSE_CLIENT} --implicit_select="${session_value}" --allow_settings_after_format_in_insert="${session_value}" \
+        --distributed_ddl_output_mode=throw --query "
+            CREATE TABLE ${table} ENGINE = Memory AS SELECT
+                formatQueryOrNull('1 + 1') AS formatted,
+                JSONHas(parseQueryToJSON('INSERT INTO t SELECT 1 FORMAT Null SETTINGS max_threads = 1'), 'settings_ast') AS parsed_settings
+            ${settings_clause}" >/dev/null
+    ${CLICKHOUSE_CLIENT} --query "SELECT '${setting_source}', 'replicated', formatted, parsed_settings FROM ${table}"
+done
