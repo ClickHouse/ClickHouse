@@ -1,6 +1,8 @@
 # rebuild in #33610
 # docker build -t clickhouse/integration-test .
+ARG CCTOOLS_TAG
 ARG FROM_TAG=latest
+FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM clickhouse/test-base:$FROM_TAG
 
 SHELL ["/bin/bash", "-c"]
@@ -45,7 +47,8 @@ RUN arch=${TARGETARCH:-amd64} \
     esac \
   && cd /tmp \
   && curl -o mysql-odbc.rpm "https://cdn.mysql.com/archives/mysql-connector-odbc-8.0/mysql-connector-odbc-8.0.32-1.el9.${rarch}.rpm" \
-  && rpm2archive mysql-odbc.rpm \
+  # rpm 4.18 rpm2archive streams to stdout when it is not a tty instead of creating <file>.tgz
+  && rpm2archive - < mysql-odbc.rpm > mysql-odbc.rpm.tgz \
   && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
   && rm mysql-odbc.rpm mysql-odbc.rpm.tgz \
   && ODBC_DIR=$(dpkg -L odbc-postgresql | rg '^/usr/lib/.*-linux-gnu/odbc$') \
@@ -71,10 +74,10 @@ maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg && \
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
+COPY --from=cctools /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
 
-COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
+COPY --from=cctools \
   /opt/openssl-fips/openssl.cnf \
   /opt/openssl-fips/fipsmodule.cnf \
   /opt/openssl-fips/fips.so \

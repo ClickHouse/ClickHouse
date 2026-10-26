@@ -2,17 +2,20 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SocketPeerClosed.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Client/ClientApplicationBase.h>
@@ -24,7 +27,9 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
@@ -34,7 +39,6 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
-#include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
@@ -70,12 +74,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsString network_compression_method;
-    extern const SettingsInt64 network_zstd_compression_level;
-}
-
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
@@ -201,6 +199,12 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
     auto addresses = DNSResolver::instance().resolveAddressList(host, port);
     const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
 
+    /// The local address to bind to is resolved once, before the loop over the peer addresses: it
+    /// does not change between the attempts.
+    std::optional<Poco::Net::SocketAddress> bind_address;
+    if (!bind_host.empty())
+        bind_address = makeBindAddress(bind_host, 0);
+
     /// An address that is already known to accept connections goes first: the addresses are tried
     /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
     if (preferred_address)
@@ -233,24 +237,16 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
             /// so any errors during negotiation would be properly processed
             static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
 
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-            }
+            if (bind_address)
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->bind(*bind_address, true);
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
         }
         else
         {
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
-            }
+            if (bind_address)
+                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(*bind_address, true);
         }
 
         try
@@ -311,6 +307,17 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     disconnect();
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
+
+    /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
+    /// program has no `DNSCacheUpdater`, so a cached source address that is no longer assigned to
+    /// this host would otherwise fail every bind until the process is restarted.
+    auto remove_stale_entries_from_dns_cache = [this]
+    {
+        DNSResolver::instance().removeHostFromCache(host);
+        if (!bind_host.empty())
+            DNSResolver::instance().removeHostFromCache(bind_host);
+    };
+
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -349,11 +356,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 #endif
         }
 
-        in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
-        in->setAsyncCallback(async_callback);
+        {
+            /// The buffers live as long as the connection, which outlives the query that connects it. Only here: the
+            /// I/O around can suspend the coroutine that connects, and a blocker left active would block its thread.
+            MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+            in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
+            in->setAsyncCallback(async_callback);
 
-        out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
-        out->setAsyncCallback(async_callback);
+            out = std::make_shared<WriteBufferFromPocoSocketChunked>(*socket);
+            out->setAsyncCallback(async_callback);
+        }
         connected = true;
         setDescription();
 
@@ -426,8 +438,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Exception will preserve stack trace.
         e.addMessage("({})", getDescription(/*with_extra*/ true));
@@ -437,8 +448,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
@@ -447,8 +457,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        /// Remove this possible stale entry from cache
-        DNSResolver::instance().removeHostFromCache(host);
+        remove_stale_entries_from_dns_cache();
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
@@ -484,7 +493,11 @@ void Connection::cancel() noexcept
 void Connection::reset() noexcept
 {
     maybe_compressed_out.reset();
-    out.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        out.reset();
+    }
     socket.reset();
     nonce.reset();
 
@@ -494,7 +507,11 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    in.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_buffers_not_charged_to_the_query;
+        in.reset();
+    }
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections
@@ -1038,28 +1055,7 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
-    if (settings)
-    {
-        std::optional<int> level;
-        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
-
-        /// Bad custom logic
-        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
-        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
-        /// be broken afterwards.
-        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
-
-        /// More bad custom logic
-        if (method == "ZSTD")
-            level = (*settings)[Setting::network_zstd_compression_level];
-
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
-    }
-    else
-        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+    compression_codec = chooseNetworkCompressionCodec(settings);
 
     query_id = query_id_;
 
@@ -1183,14 +1179,7 @@ void Connection::sendQuery(
         /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
-    maybe_compressed_in.reset();
-    if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->finalize();
-    maybe_compressed_out.reset();
-    block_in.reset();
-    block_logs_in.reset();
-    block_profile_events_in.reset();
-    block_out.reset();
+    resetQueryBuffers();
 
     out->finishChunk();
 
@@ -1202,6 +1191,28 @@ void Connection::sendQuery(
     }
 
     completed = true;
+}
+
+
+void Connection::resetQueryBuffers()
+{
+    maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->finalize();
+    maybe_compressed_out.reset();
+    block_in.reset();
+    block_logs_in.reset();
+    block_profile_events_in.reset();
+    block_out.reset();
+}
+
+
+void Connection::releaseQueryBuffers() noexcept
+{
+    /// Data still buffered is flushed by the next `sendQuery`.
+    if (maybe_compressed_out && maybe_compressed_out != out && maybe_compressed_out->offset())
+        return;
+    resetQueryBuffers();
 }
 
 
@@ -1596,8 +1607,11 @@ Packet Connection::receivePacket()
                 // materializing it (do not resize a vector to a peer-chosen size).
                 UInt64 num_part_uuids = 0;
                 readVarUInt(num_part_uuids, *in);
-                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                /// The count comes from the server and is only used to skip the payload, but it
+                /// still decides how much the client reads from the socket, so keep it realistic.
+                static constexpr UInt64 max_part_uuids = 1000000;
+                if (num_part_uuids > max_part_uuids)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", max_part_uuids);
                 in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
             }
@@ -1712,7 +1726,9 @@ void Connection::initBlockInput()
     if (!block_in)
     {
         initMaybeCompressedInput();
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
+        /// The server may send marshalled result blocks; their consumers convert them back.
+        block_in = std::make_unique<NativeReader>(
+            *maybe_compressed_in, server_revision, format_settings, ISerialization::KindSet::all());
     }
 }
 

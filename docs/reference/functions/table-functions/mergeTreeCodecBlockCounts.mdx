@@ -13,6 +13,8 @@ Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The o
 
 Parts that do not record their substreams in `columns_substreams.txt` are not listed.
 
+Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`. A user who is not allowed to see the table at all, that is, one without the `SHOW TABLES` privilege on it, gets `ACCESS_DENIED` whether or not it exists, so the function does not tell such a user which tables exist.
+
 If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
 
 ## Syntax {#syntax}

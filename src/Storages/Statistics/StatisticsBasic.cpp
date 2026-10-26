@@ -78,7 +78,7 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     : IStatistics(description)
     , data_type(removeLowCardinalityAndNullable(removeNullable(data_type_)))
 {
-    tracks_numeric = data_type->isValueRepresentedByNumber();
+    tracks_numeric = canStatisticsTrackMinMax(data_type);
     tracks_string = isStringOrFixedString(data_type);
 
     /// Compute the column-level default once so `estimateEqual` can compare against the same
@@ -107,10 +107,8 @@ void StatisticsBasic::build(const ColumnPtr & column)
         Field max_field;
         column->getExtremes(min_field, max_field, 0, column_size);
 
-        if (!min_field.isNull() && (min.isNull() || min_field < min))
-            min = min_field;
-        if (!max_field.isNull() && (max.isNull() || max_field > max))
-            max = max_field;
+        StatisticsUtils::updateMin(min, min_field);
+        StatisticsUtils::updateMax(max, max_field);
     }
 
     if (tracks_string)
@@ -127,10 +125,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
 
     if (tracks_numeric)
     {
-        if (!other->min.isNull() && (min.isNull() || other->min < min))
-            min = other->min;
-        if (!other->max.isNull() && (max.isNull() || other->max > max))
-            max = other->max;
+        StatisticsUtils::updateMin(min, other->min);
+        StatisticsUtils::updateMax(max, other->max);
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
@@ -152,8 +148,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::NumericMinMax;
     if (tracks_string)
         mask |= BasicFeatureMask::StringLengthSum;
-
-    mask |= BasicFeatureMask::DefaultCount;
+    if (has_default_count)
+        mask |= BasicFeatureMask::DefaultCount;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -163,8 +159,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
-
-    writeIntBinary(default_count, buf);
+    if (has_default_count)
+        writeIntBinary(default_count, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -232,6 +228,11 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
     return static_cast<Float64>(default_count);
 }
 
+size_t StatisticsBasic::allocatedBytes() const
+{
+    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
+}
+
 String StatisticsBasic::getNameForLogs() const
 {
     String result = "Basic: ";
@@ -285,6 +286,14 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
     return tracks_numeric == other_basic->tracks_numeric
         && tracks_string == other_basic->tracks_string
         && has_default_count == other_basic->has_default_count;
+}
+
+void StatisticsBasic::copyStructureFrom(const IStatistics & other)
+{
+    const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
+    if (!other_basic)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy the structure of Basic statistics from a different type");
+    has_default_count = other_basic->has_default_count;
 }
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)

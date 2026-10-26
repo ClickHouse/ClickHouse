@@ -82,16 +82,16 @@ Each node has corresponding children and the overall tree represents the overall
 
 ## Analyzer {#analyzer}
 
-ClickHouse currently has two architectures for the Analyzer. You can use the old architecture by setting: `enable_analyzer=0`. The current architecture has been enabled by default since ClickHouse `24.3`. We're going to describe only the current architecture here, given the old one is deprecated and kept only for backward compatibility.
+The analyzer has been enabled by default since ClickHouse `24.3` and is the only query analysis since `26.9`, where `enable_analyzer` became an obsolete setting that can no longer be disabled.
 
 <Note>
-The current architecture should provide us with a better framework to improve ClickHouse's performance. However, given it is a fundamental component of the query processing steps, it also might have a negative impact on some queries and there are [known incompatibilities](/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). You can revert back to the old architecture by changing the `enable_analyzer` setting at the query or user level.
+The analyzer is a fundamental component of the query processing steps, and it might have a negative impact on some queries: see the [known incompatibilities](/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities) for the queries that need to be updated for it.
 </Note>
 
 The analyzer is an important step of the query execution. It takes an AST and transforms it into a query tree. The main benefit of a query tree over an AST is that a lot of the components will be resolved, like the storage for instance. We also know from which table to read, aliases are also resolved, and the tree knows the different data types used. With all these benefits, the analyzer can apply optimizations. The way these optimizations work is via "passes". Every pass is going to look for different optimizations. You can see all the passes [here](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249), let's see it in practice with our previous query:
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -109,12 +109,11 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
-│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -135,7 +134,6 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
-│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

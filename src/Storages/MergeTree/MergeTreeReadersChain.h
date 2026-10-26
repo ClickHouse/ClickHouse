@@ -30,6 +30,10 @@ struct ColumnForPatch
 using ColumnsForPatch = std::vector<ColumnForPatch>;
 using ColumnsForPatches = std::vector<ColumnsForPatch>;
 
+/// Cached for the same reason as `getMergeTreeRangeReaderLogger`: a readers chain is built for every
+/// read task, and `getLogger` would take a process-global mutex each time.
+LoggerPtr getMergeTreeReadersChainLogger();
+
 class MergeTreeReadersChain
 {
     using DataflowCacheUpdateCallback = std::function<void(
@@ -46,7 +50,8 @@ public:
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
     ReadResult
-    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {});
+    read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
+         size_t max_block_size_rows = 0);
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
@@ -63,6 +68,7 @@ private:
         Columns & read_columns,
         MergeTreeRangeReader & range_reader,
         const Block & previous_header,
+        const NameSet & previous_step_columns,
         size_t num_read_rows) const;
 
     /// Evaluates default expressions for columns that are absent in part.
@@ -100,8 +106,14 @@ private:
         const Block & additional_columns) const;
 
     RangeReaders range_readers;
+    /// The readers of `range_readers` that read columns, not only a filter: see `MergeTreeRangeReader::startReadingChain`.
+    std::vector<IMergeTreeReader *> columns_cache_readers;
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;
+
+    /// For every reader, the names of the columns produced by the previous steps of the chain.
+    /// They don't change between blocks, so they are collected once.
+    std::vector<NameSet> previous_steps_columns;
 
     /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
     /// as a function input before any step overwrites them. They must still be converted to
@@ -116,7 +128,7 @@ private:
     NameSet columns_consumed_by_chain_actions;
 
     bool is_initialized = false;
-    LoggerPtr log = getLogger("MergeTreeReadersChain");
+    LoggerPtr log = getMergeTreeReadersChainLogger();
 };
 
 };

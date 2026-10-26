@@ -5,8 +5,7 @@
 -- element-wise over a common supertype instead, so the rewrite is skipped for this shape and the
 -- regular IN handling keeps its semantics. Regression test for the review finding in PR #97540.
 
-SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 
 -- Regular IN throws when the one-key cast of the left tuple to the right column type fails
@@ -33,7 +32,8 @@ SELECT CAST((1, number), 'Nullable(Tuple(UInt8, UInt64))') IN (SELECT CAST((1, 0
 -- the rewrite must report the very same error.
 SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Dynamic') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT count() FROM numbers(1) WHERE CAST('{"a":1}', 'JSON') IN (SELECT CAST('{"a":1}', 'JSON')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError TYPE_MISMATCH }
+-- A plain `Variant` keeps a tuple value as one key, so it fails in the set-key cast like a plain tuple.
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Variant(Tuple(UInt16, UInt64), UInt8)') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- A multi-column right side of the same arity is unpacked element-wise by regular IN, so the
 -- rewrite still applies there and must keep working.
@@ -55,9 +55,9 @@ SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) 
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
 
 -- The shapes above stay on the regular `IN` path, so they perform no correlated rewrite and must
--- not require `allow_experimental_correlated_subqueries`: enabling `rewrite_in_to_join` alone must
+-- not require `allow_correlated_subqueries`: enabling `rewrite_in_to_join` alone must
 -- never change which queries are accepted.
-SET allow_experimental_correlated_subqueries = 0;
+SET allow_correlated_subqueries = 0;
 SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELECT toUInt8(1));
 SELECT count() FROM numbers(1) WHERE (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)'));
 -- A shape that is actually rewritten still requires the setting.

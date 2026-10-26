@@ -6,6 +6,16 @@
 namespace DB
 {
 
+namespace
+{
+
+/// One factory exists per listener, while the connection ID has to be unique across the server:
+/// it is what a `CancelRequest` from an unrelated connection resolves to, and it is the query ID
+/// of every statement of its connection.
+std::atomic<Int32> last_connection_id = 0;
+
+}
+
 PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
     IServer & server_,
     bool secure_required_,

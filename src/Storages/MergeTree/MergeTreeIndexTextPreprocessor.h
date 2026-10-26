@@ -29,7 +29,10 @@ public:
     /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
     ASTPtr getExpressionAST(const String & col_name) const;
 
-    bool isLowerOrUpper() const { return is_lower_or_upper; }
+    /// The preprocessor expression over an input column `col_name` of type `col_type`, to merge into a larger DAG.
+    ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
+
+    bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
     /// The preprocessor can turn a non-NULL source value into NULL, e.g. `nullIf(str, '')`.
     bool producesNull() const { return produces_null; }
@@ -38,9 +41,9 @@ public:
     bool removesNull() const { return removes_null; }
 
 private:
-    /// True only when the preprocessor is exactly lower/lowerUTF8/upper/upperUTF8 applied
-    /// directly to the index column (no nested transformations).
-    bool is_lower_or_upper = false;
+    /// True only when the preprocessor is exactly lower/upper applied directly to the index column
+    /// (no nested transformations, and not the UTF-8 variants).
+    bool is_ascii_lower_or_upper = false;
     bool produces_null = false;
     bool removes_null = false;
     /// The name of the column on which the index is defined.
