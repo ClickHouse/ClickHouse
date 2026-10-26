@@ -5,30 +5,104 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Poco/Exception.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+
+namespace fs = std::filesystem;
+
+/// OSX does not have O_DIRECTORY
+#ifndef O_DIRECTORY
+#define O_DIRECTORY O_RDONLY
+#endif
+
+namespace ProfileEvents
+{
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
+    extern const Event DirectorySync;
+    extern const Event DirectorySyncElapsedMicroseconds;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IBackupReader::readFilePinnedToGeneration(
-    const String & file_name, std::optional<size_t> expected_file_size, const String & /*generation*/)
-{
-    /// A reader that names no generation is a reader whose files cannot be replaced under an open
-    /// backup, so there is nothing to pin the read to.
-    return readFile(file_name, expected_file_size);
 }
 
 std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & file_name)
 {
     return writeFile(file_name);
 }
+
+void fsyncBackupFileContents(const fs::path & path)
+{
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} for fsync", path.string());
+
+    ProfileEvents::increment(ProfileEvents::FileSync);
+    Stopwatch watch;
+    try
+    {
+#if defined(OS_DARWIN)
+        if (-1 == ::fsync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync {}", path.string());
+#else
+        if (-1 == ::fdatasync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fdatasync {}", path.string());
+#endif
+    }
+    catch (...)
+    {
+        [[maybe_unused]] int err = ::close(fd);
+        throw;
+    }
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (-1 == ::close(fd))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close file {} after fsync", path.string());
+}
+
+void fsyncBackupDirectory(const fs::path & path)
+{
+    int fd = ::open(path.c_str(), O_DIRECTORY | O_CLOEXEC);
+    if (-1 == fd)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open directory {} for fsync", path.string());
+
+    ProfileEvents::increment(ProfileEvents::DirectorySync);
+    Stopwatch watch;
+    try
+    {
+#if defined(OS_DARWIN)
+        if (-1 == ::fsync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync directory {}", path.string());
+#else
+        if (-1 == ::fdatasync(fd))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fdatasync directory {}", path.string());
+#endif
+    }
+    catch (...)
+    {
+        [[maybe_unused]] int err = ::close(fd);
+        throw;
+    }
+    ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (-1 == ::close(fd))
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close directory {} after fsync", path.string());
+}
+
 
 BackupReaderDefault::BackupReaderDefault(const ReadSettings & read_settings_, const WriteSettings & write_settings_, LoggerPtr log_)
     : log(log_)
@@ -43,7 +117,7 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
 {
     LOG_TRACE(log, "Copying file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
 
-    auto read_buffer = readFile(path_in_backup, file_size);
+    auto read_buffer = readFile(path_in_backup);
 
     std::unique_ptr<WriteBuffer> write_buffer;
     auto buf_size = std::min(file_size, write_buffer_size);
@@ -56,13 +130,13 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
     write_buffer->finalize();
 }
 
-void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t /* file_size */,
                                               bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                                               WriteMode write_mode)
 {
     LOG_TRACE(log, "Copying a range of file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
 
-    auto read_buffer = readFile(path_in_backup, file_size);
+    auto read_buffer = readFile(path_in_backup);
     read_buffer->seek(offset, SEEK_SET);
 
     std::unique_ptr<WriteBuffer> write_buffer;

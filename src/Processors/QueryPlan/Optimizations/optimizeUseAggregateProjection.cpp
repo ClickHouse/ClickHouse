@@ -44,6 +44,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -51,6 +52,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
 }
@@ -240,6 +242,8 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
+    std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
@@ -305,6 +309,11 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
+    Block source_block;
+    for (const auto & column : metadata_snapshot->getColumns().getByNames(
+             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), projection.required_columns))
+        source_block.insert({column.type->createColumn(), column.type, column.name});
+
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
@@ -315,7 +324,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(metadata_snapshot->getSampleBlockWithSubcolumns()))),
+        Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(source_block)))),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();
@@ -644,8 +653,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
         return {};
 
-    /// TODO(unique-key): the delete bitmap of a unique-key table is applied at read time,
-    /// statistics don't reflect it.
+    /// TODO(unique-key): support statistics-based answers; they don't see the delete bitmap.
     if (metadata->hasUniqueKey())
         return {};
 
@@ -982,6 +990,12 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
 
+    /// The columns whose estimates are needed, so that only their statistics are read.
+    NameSet required_columns;
+    for (const auto & stats_aggregate : stats_aggregates)
+        if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
+            required_columns.insert(stats_aggregate.column_name);
+
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
     {
         const auto & part = part_with_ranges.data_part;
@@ -1002,7 +1016,9 @@ static Block makeBlockWithMinMaxFromStatistics(
         Estimates estimates;
         try
         {
-            estimates = part->getEstimates();
+            /// An empty set would mean all columns, but `count` needs no statistics.
+            if (!required_columns.empty())
+                estimates = part->getEstimates(required_columns);
         }
         catch (const Exception &)
         {
@@ -1250,9 +1266,9 @@ UseProjectionsResult optimizeUseAggregateProjections(
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
 
-        const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+        const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-        if (!force_optimize_projection)
+        if (!relax_projection_checks)
         {
             /// Nothing to read. Ignore projections.
             if (parent_reading_select_result->parts_with_ranges.empty())
@@ -1266,6 +1282,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// store the remaining inexact ranges (not covered by exact analysis), to be used for for normal reading
             /// and count calculation.
             inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+            inexact_ranges_select_result->exact_ranges_excluded = true;
             auto & parent_parts_with_ranges = inexact_ranges_select_result->parts_with_ranges;
             size_t exact_ranges_count = 0;
             size_t exact_ranges_parts = 0;
@@ -1356,7 +1373,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
 
         /// If there are remaining parts to read, attempt to select the best candidate.
-        if (!parent_reading_select_result->parts_with_ranges.empty() || force_optimize_projection)
+        if (!parent_reading_select_result->parts_with_ranges.empty() || relax_projection_checks)
         {
             for (auto & candidate : candidates.real)
             {
@@ -1382,12 +1399,15 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
+                    reading->getMutationsSnapshot(),
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,
                     *parent_reading_select_result,
                     projection_query_info,
                     reading->getTopKFilterInfo(),
+                    reading->isQueryConditionCacheAllowed(),
+                    reading->isTopKPrewhereQueryConditionCacheAllowed(),
                     context);
 
                 if (!analyzed)
@@ -1414,7 +1434,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 candidate.stat = &stat;
 
                 size_t parent_reading_marks = parent_reading_select_result->selected_marks;
-                if (candidate.sum_marks > parent_reading_marks)
+                if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
                 {
                     stat.description = fmt::format(
                         "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -1631,7 +1651,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
         if (candidates.has_filter && best_candidate->has_filter)
         {
-            const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
+            /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
+            const String result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),

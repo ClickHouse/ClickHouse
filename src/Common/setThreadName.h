@@ -9,6 +9,7 @@ namespace DB
     M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
     M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
     M(AGGREGATOR_POOL, "AggregatorPool") \
+    M(AI_REQUEST, "AIRequest") \
     M(ARROW_FILE, "ArrowFile") \
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
@@ -73,7 +74,6 @@ namespace DB
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
-    M(ICEBERG_DELETE_DECODE, "IcebergDelDec") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
@@ -167,6 +167,7 @@ namespace DB
     M(TCP_HANDLER, "TCPHandler") \
     M(TEST_KEEPER_PROC, "TestKeeperProc") \
     M(TEST_SCHEDULER, "TestScheduler") \
+    M(TIMER_DESCRIPTOR, "TimerDescriptor") \
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
@@ -182,6 +183,7 @@ namespace DB
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
+    M(DISK_OBJECT_STORAGE_WRITE_BLOB, "DiskObjStWrBlob") \
     M(DISTRIBUTED_CACHE, "DistribCache") \
     M(DISTRIBUTED_CACHE_DROP, "DropDistCache") \
 

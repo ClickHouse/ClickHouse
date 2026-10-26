@@ -14,6 +14,8 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
+class ICompressionCodec;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 namespace StreamingExchangeProtocol
 {
@@ -83,13 +85,12 @@ namespace StreamingExchangeProtocol
     };
 
     /// Appends one Data packet for `chunk` to `out`: the packet header, the flags, the row and column
-    /// counts, the aggregation chunk number when the chunk carries one, and the compressed Native block
-    /// with the columns of `header`. A chunk without rows or columns is a data packet too; only
-    /// `writeEndOfStreamPacket` ends the stream.
-    /// The body size in the packet header is known only after the block is serialized; the caller
-    /// fills it in with `finishDataPacket` once it can address the written bytes. Returns the offset
-    /// of the packet in `out`.
-    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out);
+    /// counts, the aggregation chunk number when the chunk carries one, and the Native block with the
+    /// columns of `header` compressed with `codec`. A chunk without rows or columns is a data packet
+    /// too; only `writeEndOfStreamPacket` ends the stream. The body size in the packet header is known
+    /// only after the block is serialized; the caller fills it in with `finishDataPacket` once it can
+    /// address the written bytes. Returns the offset of the packet in `out`.
+    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out, const CompressionCodecPtr & codec);
 
     /// Appends the end-of-stream packet to `out`: the end-of-stream flag, no rows, no columns and
     /// nothing else. The packet is complete, its header carries the body size. Returns the offset of

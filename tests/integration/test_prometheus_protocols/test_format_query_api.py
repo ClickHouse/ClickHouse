@@ -76,19 +76,35 @@ def format_query(query):
         # Aggregation and vector-matching modifiers.
         (
             'sum by(job)(rate(http_requests_total{code="200"}[5m]))/2',
-            'sum by (job) (rate(http_requests_total{code="200"}[300])) / 2',
+            'sum by (job) (rate(http_requests_total{code="200"}[5m])) / 2',
         ),
         ("bar + on(a, b) group_left(c) baz", "bar + on(a, b) group_left(c) baz"),
-        # Durations are printed as numbers of seconds, and subqueries keep their structure.
+        # Durations are printed in the units the parser accepts, and subqueries keep their structure.
         (
             "min_over_time(rate(foo[5m])[30m:5s])",
-            "min_over_time(rate(foo[300])[1800:5])",
+            "min_over_time(rate(foo[5m])[30m:5s])",
         ),
-        # Numeric literals are canonicalized.
+        # A duration that is not a whole number of one unit is spelled with each unit it needs.
+        ("rate(foo[90s])", "rate(foo[1m30s])"),
+        # A scalar written with time units keeps them too, instead of becoming a number of seconds.
+        ("rate(foo[5m]) / 1m", "rate(foo[5m]) / 1m"),
+        ("3h20m10s5ms", "3h20m10s5ms"),
+        # A scalar is canonicalized like any other duration, so both sides of this agree.
+        ("90s", "1m30s"),
+        ("1h00m", "1h"),
+        ("rate(foo[90s]) / 90s", "rate(foo[1m30s]) / 1m30s"),
+        # Longer than a double can carry in whole milliseconds: returned as written rather than
+        # rounded into a duration it is not.
+        ("9223372036854776s", "9223372036854776s"),
+        # Large duration with millisecond precision preserved exactly without float rounding.
+        ("4503599627360521ms", "52124995d16h29m20s521ms"),
+        # Numeric literals are canonicalized, and a hexadecimal one is not a duration even when its
+        # digits contain the letter of a time unit.
         ("100 * 0x1F", "100 * 31"),
+        ("0x3d", "61"),
         # @ timestamps are parsed with millisecond precision, like in Prometheus.
         ("foo @ 1.23456789", "foo @ 1.234"),
-        ("foo @ 1609746183 offset 5m", "foo @ 1609746183 offset 300"),
+        ("foo @ 1609746183 offset 5m", "foo @ 1609746183 offset 5m"),
     ],
 )
 def test_format_query(query, expected):
@@ -104,7 +120,7 @@ def test_format_query_post_urlencoded():
     data = response.json()
     assert data == {
         "status": "success",
-        "data": "sum by (job) (rate(http_requests_total[300]))",
+        "data": "sum by (job) (rate(http_requests_total[5m]))",
     }
 
 

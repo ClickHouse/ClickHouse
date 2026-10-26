@@ -54,19 +54,19 @@ std::optional<String> tryGetExternalDatabaseQuery(
     const ASTPtr & argument,
     const ContextPtr & context,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style)
+    LiteralEscapingStyle literal_escaping_style,
+    IdentifierQuotingRule identifier_quoting_rule)
 {
     if (const auto * subquery = argument->as<ASTSubquery>())
     {
         /// The subquery is formatted back to SQL text in the dialect of the external database, so that
         /// identifiers that require quoting (e.g. mixed case or containing spaces) and string literals are
         /// emitted using the external database's quoting/escaping style rather than the ClickHouse one (which
-        /// would, for example, produce backtick-quoted identifiers that PostgreSQL rejects). `WhenNecessary`
-        /// keeps simple identifiers unquoted, exactly as a hand-written query would be.
+        /// would, for example, produce backtick-quoted identifiers that PostgreSQL rejects).
         WriteBufferFromOwnString out;
         IAST::FormatSettings settings(
             /*one_line=*/true,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_rule=*/identifier_quoting_rule,
             /*identifier_quoting_style=*/identifier_quoting_style,
             /*show_secrets_=*/true,
             /*literal_escaping_style=*/literal_escaping_style);
@@ -81,20 +81,24 @@ std::optional<String> tryGetExternalDatabaseQuery(
         return out.str();
     }
 
-    if (const auto * function = argument->as<ASTFunction>(); function && function->name == "query")
-    {
-        if (!function->arguments || function->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' for an external database expects exactly one argument");
+    return tryGetQueryFunctionArgument(argument, context);
+}
 
-        auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[0], context);
-        const auto * literal = evaluated->as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' for an external database expects a string literal argument");
+std::optional<String> tryGetQueryFunctionArgument(const ASTPtr & argument, const ContextPtr & context)
+{
+    const auto * function = argument->as<ASTFunction>();
+    if (!function || function->name != "query")
+        return {};
 
-        return literal->value.safeGet<String>();
-    }
+    if (!function->arguments || function->arguments->children.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' expects exactly one argument");
 
-    return {};
+    auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(function->arguments->children[0], context);
+    const auto * literal = evaluated->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function 'query' expects a string literal argument");
+
+    return literal->value.safeGet<String>();
 }
 
 static String quoteExternalIdentifier(const String & name, IdentifierQuotingStyle identifier_quoting_style)
@@ -103,6 +107,10 @@ static String quoteExternalIdentifier(const String & name, IdentifierQuotingStyl
         return backQuoteMySQL(name);
     if (identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
         return doubleQuoteString(name);
+    if (identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotesPostgreSQL)
+        return doubleQuoteStringPostgreSQL(name);
+    if (identifier_quoting_style == IdentifierQuotingStyle::BackticksSQLite)
+        return backQuoteSQLite(name);
     return backQuote(name);
 }
 

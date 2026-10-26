@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: enables a global failpoint.
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/114603.
@@ -9,7 +9,6 @@
 -- apply mode then tried to create a posting-list cursor over the unread raw postings of 'zrare'
 -- and threw a logical error "Multi-block postings must be compressed".
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET text_index_posting_list_apply_mode = 'lazy';

@@ -217,6 +217,9 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
         return std::make_shared<JSONAsStringRowInputFormat>(std::make_unique<const Block>(sample), buf, params, format_settings);
     });
 
+    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONAsString", /*used_for_format_inference=*/ false);
+
     factory.setDocumentation("JSONAsString", Documentation{
         .description = R"DOCS_MD(
 | Input | Output  | Alias |
@@ -314,6 +317,9 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
     {
         return std::make_shared<JSONAsObjectRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), settings);
     });
+
+    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONAsObject", /*used_for_format_inference=*/ false);
 
     factory.setDocumentation("JSONAsObject", Documentation{
         .description = R"DOCS_MD(
