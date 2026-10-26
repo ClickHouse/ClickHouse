@@ -26,35 +26,24 @@ ch_cc_library(
 
 ch_cc_library(
     name = "aws_checksums__compile_2",
-    srcs = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": ["source/arm/crc32c_arm.c"] + glob(["include/aws/checksums/private/crc32*.h"]),
-    }),
+    srcs = ["source/arm/crc32c_arm.c"] + glob(["include/aws/checksums/private/crc32*.h"]),
     arches = [
         "aarch64",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": AWS_CRT_COPTS + [
-            "-march=armv8-a+crc",
-        ],
-    }),
-    implementation_deps = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            ":aws_checksums",
-            "@clickhouse_aws_c_common//:aws_c_common",
-        ],
-    }),
+    copts = AWS_CRT_COPTS + [
+        "-march=armv8-a+crc",
+    ],
+    implementation_deps = [
+        ":aws_checksums",
+        "@clickhouse_aws_c_common//:aws_c_common",
+    ],
     language = "C",
-    local_defines = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
-            "AWS_ENABLE_EPOLL",
-            "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
-            "ENABLE_OPENSSL_ENCRYPTION",
-            "INTEL_NO_ITTNOTIFY_API",
-        ] + CXX_RUNTIME_DEFINES,
-    }),
+    local_defines = [
+        "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
+        "AWS_ENABLE_EPOLL",
+        "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
+        "ENABLE_OPENSSL_ENCRYPTION",
+        "INTEL_NO_ITTNOTIFY_API",
+    ] + CXX_RUNTIME_DEFINES,
+    target_compatible_with = ["@platforms//cpu:aarch64"],
 )

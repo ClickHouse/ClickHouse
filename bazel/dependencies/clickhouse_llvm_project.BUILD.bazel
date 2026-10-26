@@ -3497,71 +3497,53 @@ ch_cc_library(
     local_defines = LLVM_DEFINES,
 )
 
-_GENERATED_LOCAL_DEFINES_1 = select({
-    "@platforms//cpu:x86_64": [
-        "LLVM_ENABLE_EH=1",
-        "LLVM_ENABLE_RTTI=1",
-        "LLVM_ENABLE_THREADS=1",
-        "LLVM_HAS_ATOMICS=1",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LARGEFILE64_SOURCE",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-        "__STDC_CONSTANT_MACROS",
-        "__STDC_FORMAT_MACROS",
-        "__STDC_LIMIT_MACROS",
-    ],
-    "@platforms//cpu:aarch64": [],
-})
+_GENERATED_LOCAL_DEFINES_1 = [
+    "LLVM_ENABLE_EH=1",
+    "LLVM_ENABLE_RTTI=1",
+    "LLVM_ENABLE_THREADS=1",
+    "LLVM_HAS_ATOMICS=1",
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "_LARGEFILE64_SOURCE",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+    "__STDC_CONSTANT_MACROS",
+    "__STDC_FORMAT_MACROS",
+    "__STDC_LIMIT_MACROS",
+]
 
 ch_cc_library(
     name = "LLVMSupport__compile_2",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            "llvm/lib/Support/BLAKE3/blake3_sse2_x86-64_unix.S",
-            "llvm/lib/Support/BLAKE3/blake3_sse41_x86-64_unix.S",
-            "llvm/lib/Support/BLAKE3/blake3_avx2_x86-64_unix.S",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = [
+        "llvm/lib/Support/BLAKE3/blake3_sse2_x86-64_unix.S",
+        "llvm/lib/Support/BLAKE3/blake3_sse41_x86-64_unix.S",
+        "llvm/lib/Support/BLAKE3/blake3_avx2_x86-64_unix.S",
+        "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
+    ],
     arches = [
         "x86_64",
     ],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    target_compatible_with = ["@platforms//cpu:x86_64"],
 )
 
 ch_cc_library(
     name = "LLVMSupport__compile_3",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            "llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + select({
-        "@platforms//cpu:x86_64": [
-            "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = [
+        "llvm/lib/Support/BLAKE3/blake3_avx512_x86-64_unix.S",
+        "llvm/lib/Support/BLAKE3/llvm_blake3_prefix.h",
+    ],
     arches = [
         "x86_64",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": [
-            "-mavx512f",
-            "-mavx512vl",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    copts = [
+        "-mavx512f",
+        "-mavx512vl",
+    ],
     language = "ASM",
     local_defines = _GENERATED_LOCAL_DEFINES_1,
+    target_compatible_with = ["@platforms//cpu:x86_64"],
 )
 
 filegroup(
@@ -3569,9 +3551,13 @@ filegroup(
     srcs = [
         ":LLVMSupport__compile_0",
         ":LLVMSupport__compile_1",
-        ":LLVMSupport__compile_2",
-        ":LLVMSupport__compile_3",
-    ],
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            ":LLVMSupport__compile_2",
+            ":LLVMSupport__compile_3",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }),
     output_group = "compilation_outputs",
     visibility = ["//visibility:private"],
 )

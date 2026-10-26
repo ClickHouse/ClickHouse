@@ -128,45 +128,31 @@ ch_cc_library(
 
 ch_cc_library(
     name = "aws_c_common__compile_2",
-    srcs = select({
-        "@platforms//cpu:x86_64": ["source/arch/intel/encoding_avx2.c"],
-        "@platforms//cpu:aarch64": [],
-    }),
+    srcs = ["source/arch/intel/encoding_avx2.c"],
     arches = [
         "x86_64",
     ],
-    copts = select({
-        "@platforms//cpu:x86_64": AWS_CRT_COPTS + [
-            "-mavx",
-            "-mavx2",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    implementation_deps = select({
-        "@platforms//cpu:x86_64": [":aws_c_common"],
-        "@platforms//cpu:aarch64": [],
-    }),
+    copts = AWS_CRT_COPTS + [
+        "-mavx",
+        "-mavx2",
+    ],
+    implementation_deps = [":aws_c_common"],
     language = "C",
-    local_defines = select({
-        "@platforms//cpu:x86_64": [
-            "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
-            "AWS_ENABLE_EPOLL",
-            "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
-            "ENABLE_OPENSSL_ENCRYPTION",
-            "INTEL_NO_ITTNOTIFY_API",
-            "STD_EXCEPTION_HAS_STACK_TRACE=1",
-            "USE_SIMD_ENCODING",
-            "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-            "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-            "_LIBUNWIND_IS_NATIVE_ONLY",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
-    local_includes = select({
-        "@platforms//cpu:x86_64": [
-            "source/external/libcbor/cbor",
-            "source/external/libcbor",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }),
+    local_defines = [
+        "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
+        "AWS_ENABLE_EPOLL",
+        "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
+        "ENABLE_OPENSSL_ENCRYPTION",
+        "INTEL_NO_ITTNOTIFY_API",
+        "STD_EXCEPTION_HAS_STACK_TRACE=1",
+        "USE_SIMD_ENCODING",
+        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+        "_LIBUNWIND_IS_NATIVE_ONLY",
+    ],
+    local_includes = [
+        "source/external/libcbor/cbor",
+        "source/external/libcbor",
+    ],
+    target_compatible_with = ["@platforms//cpu:x86_64"],
 )

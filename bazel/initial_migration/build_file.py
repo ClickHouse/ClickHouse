@@ -1127,13 +1127,17 @@ class BuildFile:
         )
         binary_attrs = {}
         group_names = []
+        llvm_support = self.owner == llvm_targets.PREFIX and name == 'LLVMSupport'
         for index in range(group_count):
             groups = {arch: v['groups'][index] for arch, v in variants.items() if index < len(v['groups'])}
             group_name, = {compile_group_name(name, index, (source_path(src) for src in g['srcs']))
                            for g in groups.values()}
             group_names.append(group_name)
             sve = fastops and index == 1
-            attribute_arches = tuple(groups) if sve else ARCHES
+            # The AWS alias and LLVMSupport's compilation_outputs select only the active group.
+            # Other libraries can still forward CcInfo on the CPU that has no sources.
+            cpu_group = len(groups) == 1 and (llvm_support or input_name == '_aws' and name != input_name)
+            attribute_arches = tuple(groups) if sve or cpu_group else ARCHES
             if all(not g.get('srcs') and g.get('foreign_deps') for g in groups.values()):
                 self.rule('cc_library', name + '__compile_' + str(index), {
                     'deps': select({'@platforms//cpu:' + arch: [self.label(d) for d in g['foreign_deps']]
@@ -1458,7 +1462,7 @@ class BuildFile:
                 })
                 attrs = {'srcs': [':' + nasm_name]}
             rule_name = name if collapse_single else group_name
-            rule_compatible = compatible
+            rule_compatible = ['@platforms//cpu:' + next(iter(groups))] if cpu_group else compatible
             if fastops:
                 rule_name = '_fastops_sve' if sve else '_fastops'
                 if sve:
@@ -1488,6 +1492,29 @@ class BuildFile:
             if collapse_single:
                 return
         if fastops:
+            return
+        if llvm_support:
+            compiled = [':' + n for n in group_names]
+            common = min(len(v['groups']) for v in variants.values())
+            outputs = '_LLVMSupport_compilation_outputs'
+            self.rule('filegroup', outputs, {
+                'srcs': Concat([compiled[:common], select({
+                    '@platforms//cpu:' + arch: compiled[common:len(v['groups'])]
+                    for arch, v in variants.items()
+                })]),
+                'output_group': 'compilation_outputs',
+                'visibility': ['//visibility:private'],
+            })
+            self.rule('cc_library', name, {
+                'srcs': [':' + outputs],
+                # The native executable links libc++ and compiler-rt separately from LLVMSupport.
+                'deps': select({
+                    '@platforms//cpu:' + arch: [
+                        self.label(d) for d in v['deps'] if d.removeprefix(':') not in llvm_targets.NATIVE_RUNTIMES
+                    ] + [':llvm_headers']
+                    for arch, v in variants.items()
+                }),
+            })
             return
         deps = select({
             '@platforms//cpu:' + arch: [self.label(d) for d in v['deps']] + [

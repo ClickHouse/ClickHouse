@@ -136,6 +136,10 @@ def fold_single_cpu_lists(source):
             guards = {key: ast.literal_eval(value) for key, value in cpu_choices(guard).items()}
         except (TypeError, ValueError):
             continue
+        if isinstance(guard, ast.List) and len(guard.elts) == 1 and isinstance(guard.elts[0], ast.Constant):
+            constraint = guard.elts[0].value
+            if constraint in CPUS:
+                guards = {key: [] if key == constraint else ["@platforms//:incompatible"] for key in CPUS}
         cpus = [key for key in CPUS if guards.get(key) == []]
         if len(cpus) != 1 or any(value != ["@platforms//:incompatible"]
                                  for key, value in guards.items() if key != cpus[0]):
