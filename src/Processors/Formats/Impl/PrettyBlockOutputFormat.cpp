@@ -31,6 +31,7 @@
 #include <Common/assert_cast.h>
 
 #include <algorithm>
+#include <limits>
 
 
 namespace DB
@@ -253,7 +254,9 @@ void PrettyBlockOutputFormat::calculateWidths(
             /// (e.g. non-printable characters, diacritics, combining characters)
             if (effective_value_width_limit)
             {
-                size_t max_byte_size = effective_value_width_limit * 4;
+                /// Clamp before multiplying: the limit comes from settings and can be large enough
+                /// for `* 4` to wrap.
+                size_t max_byte_size = std::min<UInt64>(effective_value_width_limit, std::numeric_limits<size_t>::max() / 4) * 4;
                 if (serialized_value.size() > max_byte_size)
                     serialized_value.resize(max_byte_size);
             }
@@ -392,8 +395,9 @@ void PrettyBlockOutputFormat::writingThread()
         /// The writing methods are called only when the query produces more output. A query that has
         /// already produced all of its output and keeps reading (for example, `SELECT DISTINCT` over a
         /// huge table) would not notice the error until it finishes, so cancel it with this exception.
+        /// In the client the format outlives the query, so its process list element may be gone already.
         if (auto query_context = CurrentThread::tryGetQueryContext())
-            if (auto process_list_element = query_context->getProcessListElement())
+            if (auto process_list_element = query_context->getProcessListElementSafe())
                 process_list_element->cancelQuery(DB::CancelReason::CANCELLED_BY_ERROR, exception);
     }
 }
@@ -1130,7 +1134,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
         if (color)
         {
-            serialized_fragment += "\033[31;1m";
+            /// Reset first: the cut may have dropped the reset of an escape sequence opened in the kept part.
+            serialized_fragment += "\033[0;31;1m";
             serialized_fragment += ellipsis;
             serialized_fragment += "\033[0m";
         }
