@@ -3467,7 +3467,8 @@ def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
     # Two databases with explicit tables lists and unique replication consumer identifiers have separate
     # replication slots, but share the publication. `ATTACH TABLE` on one of them adds the table to the
     # shared publication. It is not a table of the other database, so after a restart the backup of the
-    # other database must not be refused because of it.
+    # other database must not be refused because of it. The publication is shared only without the server
+    # UUID mixed into the identifier, as for the databases created by older versions.
     good = "shared_publication_good"
     later = "shared_publication_later"
     for table in (good, later):
@@ -3485,6 +3486,7 @@ def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
             settings=[
                 f"materialized_postgresql_tables_list = '{good}'",
                 "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+                "materialized_postgresql_use_unique_replication_consumer_identifier_mixed_with_server_uuid = 0",
             ],
         )
         check_tables_are_synchronized(instance, good, materialized_database=database)
