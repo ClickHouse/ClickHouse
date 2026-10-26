@@ -31,4 +31,5 @@ query_compact_block_of_one_row	1
 1	1	1
 1	1	1
 cached_column	1	1	1
+cached_shared_blocks	0	1	1
 cached_short_rows	1	1	1

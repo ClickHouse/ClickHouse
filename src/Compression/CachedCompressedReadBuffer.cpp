@@ -84,8 +84,9 @@ bool CachedCompressedReadBuffer::nextImpl()
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is beyond the decompressed block (pos: "
         "{}, block size: {})", nextimpl_working_buffer_offset, toString(working_buffer.size()));
 
+    if (blocks_read)
+        blocks_read->emplace_back(file_pos, file_pos + owned_cell->compressed_size);
     file_pos += owned_cell->compressed_size;
-    compressed_bytes_of_blocks_read += owned_cell->compressed_size;
 
     return true;
 }

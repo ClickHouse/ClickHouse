@@ -154,6 +154,9 @@ void MergeTreeReaderStream::init()
         compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
+    if (compressed_data_buffer)
+        compressed_data_buffer->setBlocksReadSink(blocks_read);
+
     announceReadRequestMap();
 
     initialized = true;
@@ -327,12 +330,14 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-size_t MergeTreeReaderStream::getCompressedBytesOfBlocksRead() const
+void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
 {
     if (!settings.is_compressed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot count the compressed blocks read from a stream of uncompressed data");
-    /// The buffer is created on the first read.
-    return compressed_data_buffer ? compressed_data_buffer->getCompressedBytesOfBlocksRead() : 0;
+    /// The buffer is created on the first read, see `init`.
+    blocks_read = blocks_read_;
+    if (compressed_data_buffer)
+        compressed_data_buffer->setBlocksReadSink(blocks_read);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
@@ -605,33 +610,41 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     return {max_range_bytes, sum_range_bytes};
 }
 
-size_t MergeTreeReaderStreamMultipleColumns::getCompressedBytesOfColumn(size_t from_mark, size_t to_mark, size_t first_position, size_t last_position)
+void MergeTreeReaderStreamMultipleColumns::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
 {
     loadMarks();
-    const size_t num_columns = marks_getter->getNumColumns();
-
-    /// The granules are written one after another, and the columns of a granule in the order of their positions.
-    auto get_end = [&](size_t mark, size_t begin)
+    const size_t num_positions = marks_getter->getNumColumns();
+    /// The granules are written one after another, and the positions of a granule in their order.
+    auto next = [&](size_t & current_mark, size_t & current_position)
     {
-        for (size_t next_column = last_position + 1; mark < marks_count; ++mark, next_column = 0)
+        if (++current_position == num_positions)
         {
-            for (; next_column < num_columns; ++next_column)
-            {
-                const size_t offset = marks_getter->getMark(mark, next_column).offset_in_compressed_file;
-                if (offset > begin)
-                    return offset;
-            }
+            current_position = 0;
+            ++current_mark;
         }
-        return file_size;
     };
 
-    size_t bytes = 0;
-    for (size_t mark = from_mark; mark < to_mark; ++mark)
+    const size_t begin = marks_getter->getMark(mark, position).offset_in_compressed_file;
+    size_t end = file_size;
+    next(mark, position);
+    if (mark < marks_count)
     {
-        const size_t begin = marks_getter->getMark(mark, first_position).offset_in_compressed_file;
-        bytes += get_end(mark, begin) - begin;
+        const auto next_mark = marks_getter->getMark(mark, position);
+        end = next_mark.offset_in_compressed_file;
+        if (next_mark.offset_in_decompressed_block != 0)
+        {
+            end = file_size;
+            for (; mark < marks_count; next(mark, position))
+            {
+                if (marks_getter->getMark(mark, position).offset_in_compressed_file > next_mark.offset_in_compressed_file)
+                {
+                    end = marks_getter->getMark(mark, position).offset_in_compressed_file;
+                    break;
+                }
+            }
+        }
     }
-    return bytes;
+    ranges.emplace_back(begin, end);
 }
 
 MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position)

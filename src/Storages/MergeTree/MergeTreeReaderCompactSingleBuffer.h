@@ -25,7 +25,7 @@ public:
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
     std::optional<size_t> takeCompressedBytesRead() override;
-    size_t getCompressedBytesInPart(size_t pos, size_t from_mark, size_t to_mark) override;
+    void addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark) override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override
     {
@@ -41,8 +41,9 @@ private:
 
     bool initialized = false;
     std::unique_ptr<MergeTreeReaderStreamAllOfMultipleColumns> stream;
-    /// The compressed bytes read by `stream` that `takeCompressedBytesRead` returned.
-    size_t compressed_bytes_taken = 0;
+    /// The ranges in the file of the compressed blocks read, and of those that hold the granules served from the columns
+    /// cache, since `takeCompressedBytesRead` was called, see `CompressedReadBufferBase::setBlocksReadSink`.
+    CompressedBlockRanges ranges_read;
 };
 
 }
