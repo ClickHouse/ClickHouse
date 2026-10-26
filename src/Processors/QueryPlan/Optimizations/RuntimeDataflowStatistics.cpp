@@ -429,7 +429,19 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     {
         if (!column_sizes.empty())
         {
+            /// A stream several columns of the block read is charged once. Those priced through `column_sizes` are
+            /// charged whole, so their streams are taken before any other column: a full `single_stream` `s` read
+            /// next to `s.size` shares its only stream with it.
             std::unordered_set<std::string_view> charged_streams;
+            for (const auto & column : input_columns)
+            {
+                if (!column_sizes.contains(column.name))
+                    continue;
+                if (const auto streams_it = streams_bytes_per_row.find(column.name); streams_it != streams_bytes_per_row.end())
+                    for (const auto & [stream_name, _] : streams_it->second)
+                        charged_streams.insert(stream_name);
+            }
+
             for (const auto & column : input_columns)
             {
                 if (column_sizes.contains(column.name))
