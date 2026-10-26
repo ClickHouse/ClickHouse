@@ -18,7 +18,7 @@ T64	147	1	0	0	0	Production	Preprocessor. Crops unused high bits; puts them into 
 Wallaby	162	1	0	0	1	Experimental	Adaptive floating-point codec that picks per block between integerization with delta or frame-of-reference packing and windowed XOR; suitable for time series data.
 ZSTD	144	1	1	0	0	Production	Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.
 ZXC	159	1	1	0	0	Experimental	Asymmetric LZ codec (zxc): slow compression, very fast decompression, ratio between LZ4 and ZSTD. Levels 1..7.
-19
+20
 name
 method_byte
 is_compression
