@@ -1560,6 +1560,47 @@ TEST(VarIntTest, RegularTimestampsCompressWell)
     }
 }
 
+TEST(VarIntTest, DecompressMalformedInput)
+{
+    /// A block is accepted on decompression even when the codec is disabled, so every rejection path
+    /// has to be checked on hand-made input rather than only on what the encoder produces.
+    auto codec = makeCodec("VarInt", std::make_shared<DataTypeUInt64>());
+
+    auto expect_throw = [&](std::initializer_list<unsigned char> payload, UInt32 uncompressed_size)
+    {
+        std::vector<unsigned char> block{0xa2};
+        const UInt32 compressed_size = static_cast<UInt32>(9 + payload.size());
+        for (int i = 0; i < 4; ++i)
+            block.push_back(static_cast<unsigned char>((compressed_size >> (8 * i)) & 0xff));
+        for (int i = 0; i < 4; ++i)
+            block.push_back(static_cast<unsigned char>((uncompressed_size >> (8 * i)) & 0xff));
+        block.insert(block.end(), payload.begin(), payload.end());
+
+        DB::Memory<> dest;
+        dest.resize(uncompressed_size);
+
+        ASSERT_THROW(
+            codec->decompress(
+                reinterpret_cast<const char *>(block.data()), static_cast<UInt32>(block.size()), dest.data()),
+            Exception);
+    };
+
+    /// The element width is not 1, 2, 4 or 8.
+    expect_throw({0x03, 0x00}, 2);
+    /// A declared value but a truncated frame of reference.
+    expect_throw({0x08}, 8);
+    /// A frame of reference but a truncated control word.
+    expect_throw({0x01, 0x00}, 4);
+    /// A control word that claims value bytes that are not there.
+    expect_throw({0x01, 0x00, 0x11, 0x11}, 4);
+    /// A value width that is larger than the element width.
+    expect_throw({0x01, 0x00, 0x02, 0x00}, 1);
+    /// A valid width but a truncated leading partial value.
+    expect_throw({0x04}, 6);
+    /// Payload that the width, the count and the control words do not account for.
+    expect_throw({0x01, 0x00, 0x00, 0x00, 0xff}, 1);
+}
+
 TEST(T64Test, TranscodeRawInput)
 {
     DataTypes types = {
