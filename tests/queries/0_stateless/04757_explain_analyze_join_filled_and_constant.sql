@@ -11,7 +11,6 @@
 -- comparable across tests. A one-sided report still has `match rate` and `fanout` when the absent side
 -- is not a preserved one: this test pins the groups, not only their values.
 
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
 SET join_use_nulls = 0;
