@@ -193,6 +193,32 @@ def test_delete_data_on_drop_keeps_server_credentials_restriction(started_cluste
     instance.query(f"DROP USER {user}")
 
 
+def test_delete_data_on_drop_keeps_credentials_propagation(started_cluster):
+    # The external endpoint is reachable only with the table's credentials, which the dropping session propagates.
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_drop_propagate_creds_{get_uuid_str()}"
+    data_bucket = external_bucket(started_cluster)
+    endpoint = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+
+    create_and_upload_table(started_cluster, TABLE_NAME)
+    base_path = relocate_data_files_to_bucket(started_cluster, TABLE_NAME, data_bucket, endpoint=endpoint)
+    external_prefix = f"{base_path}/data/"
+
+    def count_objects(bucket, prefix):
+        return sum(1 for _ in started_cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True))
+
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+    settings = {"object_storage_propagate_credentials_to_other_storages": 1}
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id", settings=settings) == ALL_ROWS
+    assert count_objects(data_bucket, external_prefix) > 0
+
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC", settings=settings, timeout=120)
+
+    assert count_objects(started_cluster.minio_bucket, f"{base_path}/") == 0
+    assert count_objects(data_bucket, external_prefix) == 0
+
+
 def test_delete_data_on_drop_write_grant_does_not_normalize_dot_segments(started_cluster):
     instance = started_cluster.instances["node1"]
 

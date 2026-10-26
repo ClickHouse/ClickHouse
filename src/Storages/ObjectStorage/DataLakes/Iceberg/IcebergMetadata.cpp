@@ -160,6 +160,7 @@ extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
 extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+extern const SettingsBool object_storage_propagate_credentials_to_other_storages;
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsSeconds iceberg_compaction_delay_bias;
 extern const SettingsSeconds iceberg_compaction_data_cleanup;
@@ -2152,11 +2153,13 @@ std::vector<Iceberg::ExternalFile> IcebergMetadata::tryCollectExternalFilesToDel
     }
 }
 
-/// A copy of `context` with `s3_allow_server_credentials_in_user_queries` set to the given value.
-static ContextPtr withServerCredentialsPolicy(ContextPtr context, bool allow_server_credentials_in_user_queries)
+/// A copy of `context` with `s3_allow_server_credentials_in_user_queries` and
+/// `object_storage_propagate_credentials_to_other_storages` set to the given values.
+static ContextPtr withCredentialsPolicy(ContextPtr context, bool allow_server_credentials, bool propagate_credentials)
 {
     auto result = Context::createCopy(context);
-    result->setSetting("s3_allow_server_credentials_in_user_queries", Field(allow_server_credentials_in_user_queries));
+    result->setSetting("s3_allow_server_credentials_in_user_queries", Field(allow_server_credentials));
+    result->setSetting("object_storage_propagate_credentials_to_other_storages", Field(propagate_credentials));
     return result;
 }
 
@@ -2174,10 +2177,12 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_p
     if (!deletesDataOnDrop(query_context) || persistent_components.table_root_was_derived)
         return;
 
-    /// The external clients are created with the dropping session's restriction on server credentials, which
-    /// `drop` reapplies when it runs in the background.
+    /// The external clients are created with the dropping session's credentials policy, which `drop` reapplies
+    /// when it runs in the background.
     const bool allow_server_credentials = query_context->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
-    const auto resolve_context = withServerCredentialsPolicy(Context::getGlobalContextInstance(), allow_server_credentials);
+    const bool propagate_credentials = query_context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
+    const auto resolve_context
+        = withCredentialsPolicy(Context::getGlobalContextInstance(), allow_server_credentials, propagate_credentials);
 
     /// The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
     const auto external_files = catalog_purges_files
@@ -2200,6 +2205,7 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_p
     std::lock_guard lock(external_files_drop_authorized_mutex);
     external_files_drop_authorized = std::move(authorized);
     external_files_drop_allow_server_credentials = allow_server_credentials;
+    external_files_drop_propagate_credentials = propagate_credentials;
 }
 
 void IcebergMetadata::drop(ContextPtr context)
@@ -2221,15 +2227,18 @@ void IcebergMetadata::drop(ContextPtr context)
 
     std::unordered_set<String> authorized;
     bool allow_server_credentials = false;
+    bool propagate_credentials = false;
     {
         std::lock_guard lock(external_files_drop_authorized_mutex);
         authorized = external_files_drop_authorized;
         allow_server_credentials = external_files_drop_allow_server_credentials;
+        propagate_credentials = external_files_drop_propagate_credentials;
     }
 
     /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
     /// Only the files checked by `checkCanBeDropped` are deleted: the metadata may have changed since then.
-    auto external_files = tryCollectExternalFilesToDeleteOnDrop(withServerCredentialsPolicy(context, allow_server_credentials));
+    auto external_files = tryCollectExternalFilesToDeleteOnDrop(
+        withCredentialsPolicy(context, allow_server_credentials, propagate_credentials));
     size_t unauthorized_files
         = std::erase_if(external_files, [&](const auto & file) { return !authorized.contains(file.path.serialize()); });
     if (unauthorized_files)
