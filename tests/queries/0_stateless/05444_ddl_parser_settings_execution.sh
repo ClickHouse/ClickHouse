@@ -49,7 +49,7 @@ for setting_source in query session; do
                 CREATE TABLE ${table} ${on_cluster} ENGINE = Memory AS SELECT
                     formatQueryOrNull('1 + 1') AS formatted,
                     JSONHas(parseQueryToJSON('INSERT INTO t SELECT 1 FORMAT Null SETTINGS max_threads = 1'), 'settings_ast') AS parsed_settings
-                ${settings_clause}"
+                ${settings_clause}" >/dev/null
         ${CLICKHOUSE_CLIENT} --query "SELECT '${setting_source}', '${execution}', formatted, parsed_settings FROM ${table}"
     done
 done
