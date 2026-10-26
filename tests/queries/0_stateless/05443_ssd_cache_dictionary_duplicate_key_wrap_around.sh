@@ -17,6 +17,8 @@ function get()
 
 check="SELECT splitByChar(':', dictGet('ssd_dup_simple', 'v', toUInt64(5)))[1], splitByChar(':', dictGet('ssd_dup_complex', 'v', ('5', toUInt64(5))))[1];"
 
+trap 'rm -f "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE:?}_ssd_dup_simple.bin" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE:?}_ssd_dup_complex.bin"' EXIT
+
 $CLICKHOUSE_CLIENT --query="
     DROP DICTIONARY IF EXISTS ssd_dup_simple;
     DROP DICTIONARY IF EXISTS ssd_dup_complex;
@@ -55,5 +57,3 @@ $CLICKHOUSE_CLIENT --query="
     DROP DICTIONARY ssd_dup_complex;
     DROP TABLE ssd_dup_source;
 "
-
-rm -f "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE:?}_ssd_dup_simple.bin" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE:?}_ssd_dup_complex.bin"
