@@ -641,6 +641,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
+       {"use_top_k_dynamic_filtering_for_single_string_sort_column", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -1078,8 +1079,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
-    {"iceberg_delete_manifest_decode_concurrency",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
     {"iceberg_expire_default_min_snapshots_to_keep",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
@@ -1239,6 +1238,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_tsv_skip_trailing_empty_lines", trueOrFalseSettingNoOracle},
     {"input_format_tsv_use_best_effort_in_schema_inference", trueOrFalseSettingNoOracle},
     {"input_format_values_accurate_types_of_literals", trueOrFalseSettingNoOracle},
+    {"input_format_vortex_filter_push_down", trueOrFalseSetting},
+    {"input_format_vortex_preserve_order", trueOrFalseSetting},
     {"input_format_values_deduce_templates_of_expressions", trueOrFalseSettingNoOracle},
     {"insert_allow_materialized_columns", trueOrFalseSettingNoOracle},
     {"insert_deduplicate", trueOrFalseSettingNoOracle},
@@ -1667,6 +1668,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"parallel_replicas_filter_pushdown", trueOrFalseSetting},
     {"parallel_replicas_for_cluster_engines", trueOrFalseSetting},
     {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalseSetting},
+    {"parallel_replicas_for_object_storage_tables", trueOrFalseSetting},
     {"parallel_replicas_for_queries_with_multiple_tables", trueOrFalseSetting},
     {"parallel_replicas_index_analysis_only_on_coordinator", trueOrFalseSetting},
     {"parallel_replicas_local_plan", trueOrFalseSetting},
@@ -2199,9 +2201,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "shrink_over_allocated_columns_min_waste_bytes"};
     /// NonZeroUInt64 row-count settings — must not receive 0
     DB::Strings nonzero_rows_values
-        = {"iceberg_file_entries_queue_size",
-           "iceberg_manifest_decode_concurrency",
-           "max_insert_block_size_rows",
+        = {"max_insert_block_size_rows",
            "merge_tree_min_read_task_size"};
     DB::Strings max_rows_values
         = {"adaptive_aggregator_freeze_threshold",

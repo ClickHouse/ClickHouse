@@ -296,14 +296,21 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
     }
 
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    virtual DataLakeStorageSettingsPtr getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual void setDataLakeSettings(ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
+
+    virtual ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, const StorageID & /*table_id*/) const
@@ -340,6 +347,13 @@ public:
     virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
     {
         return true;
+    }
+
+    /// See `IDataLakeMetadata::estimateRead`. Plain object storage has no metadata to estimate from.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr /*storage_metadata_snapshot*/, const ActionsDAG * /*filter*/, ContextPtr /*context*/) const
+    {
+        return std::nullopt;
     }
 
     /// Whether the data files that back this configuration are immutable, i.e. an existing data

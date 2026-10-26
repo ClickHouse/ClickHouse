@@ -604,6 +604,24 @@ public:
 
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
+    /// Calls `load_part(part_index)` for every part index in `[0, num_parts)`, using up to `max_threads`
+    /// threads, and `consume_part(part_index)` for every part index in their order in the calling thread.
+    /// It is used to load the statistics (or the estimates) of many parts at once: each part does several
+    /// small reads, so on a cold disk loading them one after another adds up the latencies. With more than one
+    /// thread, the parts are processed in bounded windows of consecutive parts, and a window is consumed before
+    /// the next one is loaded, so `consume_part` should release what was loaded for the part. Every part of a
+    /// window is first passed to `try_load_part_from_memory(part_index)` in the calling thread, which loads the
+    /// part and returns true if that needs no reads from disk, and returns false otherwise; only the parts for
+    /// which it returns false are passed to `load_part`, in other threads. `load_part` must be safe to call concurrently for different
+    /// parts. If it throws for some parts, the exception of the first of them in the order of parts is
+    /// rethrown, and the parts from it onwards are not consumed.
+    static void loadStatisticsOfPartsInParallel(
+        size_t num_parts,
+        size_t max_threads,
+        const std::function<bool(size_t)> & try_load_part_from_memory,
+        const std::function<void(size_t)> & load_part,
+        const std::function<void(size_t)> & consume_part);
+
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
@@ -1197,6 +1215,10 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
+    /// Only for a definition written now: an existing table with such a column must still load and replicate.
+    static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -2467,12 +2489,14 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,

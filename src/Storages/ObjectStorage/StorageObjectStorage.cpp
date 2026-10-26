@@ -1,5 +1,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -23,12 +26,15 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
@@ -38,6 +44,7 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
@@ -61,6 +68,9 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
     extern const SettingsBool iceberg_delete_data_on_drop;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_object_storage_tables;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace ErrorCodes
@@ -444,6 +454,9 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
+    /// The files of a data lake snapshot can have other formats than the one new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context);
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
@@ -663,11 +676,16 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    auto metadata_with_virtuals = new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         new_metadata.columns,
         query_context,
         format_settings,
-        configuration->partition_strategy_type)));
+        configuration->partition_strategy_type));
+
+    std::lock_guard lock(settings_changes_mutex);
+    auto latest_metadata = getInMemoryMetadataPtr(query_context, false);
+    metadata_with_virtuals.settings_changes = latest_metadata->settings_changes;
+    setInMemoryMetadata(metadata_with_virtuals);
 }
 
 
@@ -709,6 +727,80 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
+}
+
+StoragePtr StorageObjectStorage::getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const
+{
+    if (!has_cluster_variant || is_table_function || distributed_processing)
+        return nullptr;
+
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return nullptr;
+
+    const auto & settings = context->getSettingsRef();
+    if (!context->canReplaceClusterEngineWithClusterVariant() || !settings[Setting::parallel_replicas_for_object_storage_tables])
+        return nullptr;
+
+    /// `ReadFromCluster` uses every replica when `max_parallel_replicas` is 1, so such a query reads the table itself.
+    if (settings[Setting::max_parallel_replicas] <= 1)
+        return nullptr;
+
+    /// A materialized view reads the inserted block, not the table.
+    if (context->getViewSource())
+        return nullptr;
+
+    /// The replicas do not run the query as the current user when it is not the initial one (e.g. the
+    /// definer of a `SQL SECURITY DEFINER` view body), so such a query reads the table itself.
+    if (context->getUserName() != context->getClientInfo().initial_user)
+        return nullptr;
+
+    /// A row policy is not applied to a remote read.
+    if (getEffectiveRowPolicyFilter(*this, context))
+        return nullptr;
+
+    /// Server-internal tables are different on every server.
+    if (getStorageID().database_name == DatabaseCatalog::SYSTEM_DATABASE)
+        return nullptr;
+
+    if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
+        return nullptr;
+
+    if (settings[Setting::delta_lake_snapshot_start_version] != -1 || settings[Setting::delta_lake_snapshot_end_version] != -1)
+        return nullptr;
+
+    auto storage = std::make_shared<StorageObjectStorageCluster>(
+        settings[Setting::cluster_for_parallel_replicas].value,
+        configuration,
+        object_storage,
+        getStorageID(),
+        storage_snapshot->metadata,
+        hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path,
+        format_settings,
+        catalog,
+        shared_from_this());
+    storage->startup();
+    return storage;
+}
+
+bool StorageObjectStorage::isReadOnReplicaForInitiator(const ContextPtr & context, const SelectQueryInfo & query_info) const
+{
+    if (!has_cluster_variant || is_table_function)
+        return false;
+
+    const auto & client_info = context->getClientInfo();
+    if (client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY || !client_info.collaborate_with_initiator)
+        return false;
+
+    const auto * query_node = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
+    if (!query_info.is_secondary_query_root || !query_node)
+        return false;
+
+    const auto * table_expression = query_node->getJoinTreeNode().get();
+    while (const auto * array_join_node = table_expression->as<ArrayJoinNode>())
+        table_expression = array_join_node->getTableExpressionNode().get();
+
+    const auto * table_node = table_expression->as<TableNode>();
+    return table_node && resolveStorageProxy(table_node->getStorage()).get() == this;
 }
 
 void StorageObjectStorage::read(
@@ -783,7 +875,9 @@ void StorageObjectStorage::read(
         }
     }
 
-    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+    const bool read_tasks_from_initiator = distributed_processing || isReadOnReplicaForInitiator(local_context, query_info);
+
+    if (read_tasks_from_initiator && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
             local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
@@ -878,7 +972,7 @@ void StorageObjectStorage::read(
         query_info,
         storage_snapshot,
         modified_format_settings,
-        distributed_processing,
+        read_tasks_from_initiator,
         read_from_format_info,
         need_only_count,
         local_context,
@@ -1258,6 +1352,12 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
     checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
+    if (params.isSettingsAlter())
+    {
+        alterSettings(new_metadata, context);
+        return;
+    }
+
     configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     if (catalog)
@@ -1268,6 +1368,59 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
+void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
+{
+    auto new_settings = std::make_shared<DataLakeStorageSettings>();
+    new_settings->loadFromQuery(new_metadata.settings_changes->as<ASTSetQuery &>());
+
+    /// The metadata object of the table is created again with the new settings. It takes the global context rather
+    /// than the context of the query, so that the settings of the session which runs the `ALTER` do not stick to it.
+    const auto global_context = Context::getGlobalContextInstance();
+
+    /// The background jobs of the table (the compaction of an Iceberg table) belong to its metadata object and take
+    /// the settings from it, so they are stopped before it is replaced and started again if the table has them with
+    /// the new settings. This is how switching `allow_experimental_iceberg_compaction` stops or starts the compaction.
+    if (configuration->isBackgroundExecutable())
+    {
+        configuration->finishAllBackgroundJobs();
+        background_operations_assignee.finish();
+    }
+    auto start_background_jobs = [&]
+    {
+        if (configuration->isBackgroundExecutable())
+            background_operations_assignee.start();
+    };
+
+    try
+    {
+        auto previous_settings = configuration->getDataLakeSettings();
+        configuration->setDataLakeSettings(global_context, std::move(new_settings));
+        try
+        {
+            DatabaseCatalog::instance()
+                .getDatabase(storage_id.database_name)
+                ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// The definition of the table is not changed, so the table keeps the previous settings.
+            configuration->setDataLakeSettings(global_context, std::move(previous_settings));
+            throw;
+        }
+        std::lock_guard lock(settings_changes_mutex);
+        auto latest_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+        auto latest_metadata = *latest_metadata_snapshot;
+        latest_metadata.settings_changes = new_metadata.settings_changes;
+        setInMemoryMetadata(latest_metadata);
+    }
+    catch (...)
+    {
+        start_background_jobs();
+        throw;
+    }
+    start_background_jobs();
+}
+
 Pipe StorageObjectStorage::alterPartition(
     const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
@@ -1279,6 +1432,9 @@ Pipe StorageObjectStorage::alterPartition(
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
     checkSessionMayUseServerIdentity(*object_storage, context);
+    if (catalog && std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY SETTING and RESET SETTING are not supported for tables of a data lake catalog");
+
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 

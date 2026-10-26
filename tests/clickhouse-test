@@ -13,6 +13,7 @@ import glob
 
 # Not requests, to avoid requiring extra dependency.
 import http.client
+import importlib.util
 import io
 import ipaddress
 import itertools
@@ -262,6 +263,34 @@ def find_benign_lsan_ptrace_probe_lines(lines, kills_processes_by_cmdline):
 
 
 MAX_RETRIES = 3
+
+# The protocols for `--protocols`: the environment variable with the port of each, and its default.
+# `protocol_client.py` runs the tests over all but `native` and `native_tls`.
+TEST_PROTOCOLS = {
+    "native": ("CLICKHOUSE_PORT_TCP", 9000),
+    "native_tls": ("CLICKHOUSE_PORT_TCP_SECURE", 9440),
+    "http": ("CLICKHOUSE_PORT_HTTP", 8123),
+    "https": ("CLICKHOUSE_PORT_HTTPS", 8443),
+    "mysql": ("CLICKHOUSE_PORT_MYSQL", 9004),
+    "postgresql": ("CLICKHOUSE_PORT_POSTGRESQL", 9005),
+    "grpc": ("CLICKHOUSE_PORT_GRPC", 9100),
+    "arrowflight": ("CLICKHOUSE_PORT_ARROWFLIGHT", 9090),
+    "ssh": ("CLICKHOUSE_PORT_SSH", 9022),
+    "webterminal": ("CLICKHOUSE_PORT_HTTP", 8123),
+}
+PROTOCOL_CLIENT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "protocol_client.py")
+# The `ssh` protocol runs the tests as this user, authenticated by `config/ssh_user_ed25519_key`.
+SSH_TEST_USER = "clickhouse_test_ssh"
+
+
+@cache
+def protocol_client_module():
+    """`protocol_client.py`, imported to check which protocols can run a test."""
+    spec = importlib.util.spec_from_file_location("protocol_client", PROTOCOL_CLIENT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
@@ -2041,6 +2070,7 @@ class SettingsRandomizer:
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
+        "use_top_k_dynamic_filtering_for_single_string_sort_column": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
         "page_cache_max_coalesced_bytes": lambda: random.choice([65536, 1048576, 16777216, 67108864]),
@@ -2119,6 +2149,7 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
+        "use_top_k_dynamic_filtering_for_single_string_sort_column": "use_top_k_dynamic_filtering",
         # forcing independent DISTINCT is a no-op when the optimization is not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }
@@ -2785,15 +2816,66 @@ class TestCase:
         "no-async-insert": "async_insert",
     }
 
-    def feature_tag_overrides(self) -> str:
+    def feature_tag_override_settings(self) -> Dict[str, int]:
         tags = self.tags or set()
-        return self.cli_format_settings(
-            {
-                setting: 0
-                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
-                if tag in tags
+        return {
+            setting: 0
+            for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
+            if tag in tags
+        }
+
+    def feature_tag_overrides(self) -> str:
+        return self.cli_format_settings(self.feature_tag_override_settings())
+
+    def choose_protocol(self, args) -> str:
+        """The protocol to run this `.sql` test over, at random from `--protocols`."""
+        with open(self.case_file, "rb") as file:
+            data = file.read()
+        # The native protocols run every test with `clickhouse-client`.
+        protocols = [
+            protocol
+            for protocol in args.protocols
+            if protocol in ("native", "native_tls") or protocol_client_module().supports(protocol, data)
+        ]
+        return random.choice(protocols or ["native"])
+
+    def protocol_client_command(self, protocol, database) -> str:
+        """The command that runs this `.sql` test, read from stdin, over a protocol of
+        `protocol_client.py`. The settings are the ones that `clickhouse-client` gets, in the
+        same order, so the last one wins. The MergeTree settings are left out: the client applies
+        them by rewriting `CREATE TABLE` queries, which only `clickhouse-client` does."""
+        args = self.testcase_args
+        settings = [(name, str(value)) for name, value in self.effective_settings.items()]
+        settings += [option.split("=", 1) for option in args.client_option or []]
+        settings += [(name, str(value)) for name, value in self.feature_tag_override_settings().items()]
+        settings.append(("log_comment", f"{args.testcase_basename}-{database}"))
+
+        command = [
+            sys.executable,
+            PROTOCOL_CLIENT,
+            "--protocol",
+            protocol,
+            "--host",
+            args.tcp_host,
+            "--database",
+            database,
+        ]
+        for name, value in settings:
+            command += ["--setting", f"{name}={value}"]
+        if "need-query-parameters" in self.tags:
+            params = {
+                "CLICKHOUSE_DATABASE": database,
+                "CLICKHOUSE_DATABASE_1": database + "_1",
+                "CLICKHOUSE_DATABASE_2": database + "_2",
             }
-        )
+            for env_to_param in ["CLICKHOUSE_USER_FILES", "CLICKHOUSE_USER_FILES_UNIQUE"]:
+                if os.environ.get(env_to_param):
+                    params[env_to_param] = os.environ[env_to_param]
+            for name, value in params.items():
+                command += ["--param", f"{name}={value}"]
+        if protocol == "ssh":
+            command += ["--ssh-user", SSH_TEST_USER]
+        return shlex.join(command)
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
@@ -3370,6 +3452,8 @@ class TestCase:
         )
 
         self.show_whitespaces_in_diff = args.show_whitespaces_in_diff
+        # The protocol of the last run, see `--protocols`.
+        self.protocol = "native"
 
         # Native routing option for `CLICKHOUSE_CLIENT_OPT`, set by `configure_testcase_args`
         # with `--cloud`: the sticky SNI override, or an empty string for `cloud-no-sticky`.
@@ -4188,6 +4272,8 @@ class TestCase:
 
         if result.status == TestStatus.FAIL and self.testcase_args:
             description_full += "Database: " + self.testcase_args.testcase_database
+            if self.protocol != "native":
+                description_full += "\nProtocol: " + self.protocol
 
         result.description = description_full
         return result
@@ -4300,22 +4386,39 @@ class TestCase:
         if args.trace:
             tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
-        if self.ext == ".sql":
-            pattern = (
-                "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
-                + pattern
+        self.protocol = "native"
+        if self.ext == ".sql" and args.protocols:
+            self.protocol = self.choose_protocol(args)
+
+        if self.protocol == "native_tls":
+            # Replace the plain port and `--no-secure` of `args.client`: a repeated `--port` is
+            # a list of servers for the client, not an override.
+            secure_port = os.environ.get("CLICKHOUSE_PORT_TCP_SECURE") or "9440"
+            params["client"] = re.sub(r" --port[= ]\S+", "", params["client"]).replace(" --no-secure", "")
+            params["secure"] = f"--secure --accept-invalid-certificate --port={secure_port}"
+
+        if self.protocol not in ("native", "native_tls"):
+            command = (
+                self.protocol_client_command(self.protocol, database)
+                + " < "
+                + pattern.format(**params)
             )
         else:
-            # Do not execute the test file itself, pass it to its interpreter. On macOS the first exec of every new
-            # or modified executable blocks on a Gatekeeper/XProtect security scan (`syspolicyd`, `XprotectService`).
-            # The CI checkout is fresh in every job, so on the Darwin fast test runners every test paid about 100 ms
-            # for that scan. An interpreter only reads the file, which is not scanned.
-            if self.ext not in TEST_INTERPRETERS:
-                raise TestException(f"Unknown test file extension: {self.case_file}")
-            params["interpreter"] = TEST_INTERPRETERS[self.ext]
-            pattern = "{interpreter} " + pattern
-
-        command = pattern.format(**params)
+            if self.ext == ".sql":
+                pattern = (
+                    "{client} --send_logs_level={logs_level} {secure} --multiquery {options} < "
+                    + pattern
+                )
+            else:
+                # Do not execute the test file itself, pass it to its interpreter. On macOS the first exec of every new
+                # or modified executable blocks on a Gatekeeper/XProtect security scan (`syspolicyd`, `XprotectService`).
+                # The CI checkout is fresh in every job, so on the Darwin fast test runners every test paid about 100 ms
+                # for that scan. An interpreter only reads the file, which is not scanned.
+                if self.ext not in TEST_INTERPRETERS:
+                    raise TestException(f"Unknown test file extension: {self.case_file}")
+                params["interpreter"] = TEST_INTERPRETERS[self.ext]
+                pattern = "{interpreter} " + pattern
+            command = pattern.format(**params)
 
         preexec_fn = None
         cgroup_name = None
@@ -6146,6 +6249,37 @@ def get_server_memory_fraction(args) -> Optional[float]:
     return rss / maximum
 
 
+def prepare_protocols(args):
+    """Check that the server listens on the port of every protocol in `--protocols`, so that a
+    misconfigured server does not silently turn every test of a protocol into a failure."""
+    unknown = [protocol for protocol in args.protocols if protocol not in TEST_PROTOCOLS]
+    if unknown:
+        raise ConfigException(
+            f"Unknown protocols {unknown} in --protocols, available: {', '.join(TEST_PROTOCOLS)}"
+        )
+    for protocol in args.protocols:
+        env_name, default_port = TEST_PROTOCOLS[protocol]
+        port = int(os.environ.get(env_name) or default_port)
+        try:
+            socket.create_connection((args.tcp_host, port), timeout=30).close()
+        except OSError as e:
+            raise ConfigException(
+                f"The server does not accept connections on port {port} ({env_name}) for the "
+                f"protocol {protocol} from --protocols: {e}"
+            ) from e
+
+    if "ssh" in args.protocols:
+        key_path = os.path.join(os.path.dirname(PROTOCOL_CLIENT), "config", "ssh_user_ed25519_key.pub")
+        with open(key_path, encoding="utf-8") as f:
+            key_type, key = f.read().split()[:2]
+        # Several `clickhouse-test` processes of the Stress test do it concurrently, hence IF NOT EXISTS.
+        clickhouse_execute(
+            args,
+            f"CREATE USER IF NOT EXISTS {SSH_TEST_USER} IDENTIFIED WITH ssh_key BY KEY '{key}' TYPE '{key_type}'",
+        )
+        clickhouse_execute(args, f"GRANT CURRENT GRANTS ON *.* TO {SSH_TEST_USER} WITH GRANT OPTION")
+
+
 def check_server_started(args):
     print("Connecting to ClickHouse server...", end="")
 
@@ -7215,6 +7349,9 @@ def main(args):
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
 
+    if args.protocols:
+        prepare_protocols(args)
+
     print(
         f"build_flags={args.build_flags} "
         f"collect_per_test_coverage={args.collect_per_test_coverage} "
@@ -8165,6 +8302,13 @@ def parse_args():
         "--stress-tests",
         action="store_true",
         help="A CI test configuration that runs all possible test combinations without validating results. This is used to bypass specific test restrictions.",
+    )
+    parser.add_argument(
+        "--protocols",
+        type=lambda value: value.split(","),
+        help="Run every .sql test over a protocol chosen at random from this comma-separated list. "
+        f"Available: {', '.join(TEST_PROTOCOLS)}. The output of a protocol other than native "
+        "does not match the reference, so this is only for runs that do not compare it, like the Stress test.",
     )
     parser.add_argument(
         "--secure",
