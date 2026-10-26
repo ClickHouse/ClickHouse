@@ -254,6 +254,8 @@ def test_shutdown_after_target_starts_deduplicating_between_batches(started_clus
     files_path = f"{table_name}_data"
 
     format = "column1 Int32, column2 String"
+    files_per_batch = 3
+    files_to_generate = 2 * files_per_batch
     create_table(
         started_cluster,
         node,
@@ -264,15 +266,16 @@ def test_shutdown_after_target_starts_deduplicating_between_batches(started_clus
         additional_settings={
             "keeper_path": f"/clickhouse/test_{table_name}",
             "s3queue_processing_threads_num": 2,
-            # One file per batch, so the two files are two batches of one cycle.
-            "max_processed_files_before_commit": 1,
+            # Two batches of one cycle. While a source of the second batch is parked in the
+            # failpoint, the other one keeps reading the other files of that batch, so its rows
+            # reach the destination before the restart.
+            "max_processed_files_before_commit": files_per_batch,
             "polling_max_timeout_ms": 100,
             "polling_min_timeout_ms": 100,
             "deduplication_v2": 1,
         },
     )
 
-    files_to_generate = 2
     rows_per_file = 300000
     for i in range(files_to_generate):
         file_name = f"file_{table_name}_{uuid.uuid4()}_{i}.csv"
@@ -304,7 +307,8 @@ def test_shutdown_after_target_starts_deduplicating_between_batches(started_clus
 
         # The first batch is committed, the second one has not started yet.
         wait_failpoint_paused(node, PAUSE_AFTER_COMMIT_FAILPOINT)
-        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == rows_per_file
+        rows_of_first_batch = files_per_batch * rows_per_file
+        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == rows_of_first_batch
 
         node.query(
             f"ALTER TABLE {dst_table_name} MODIFY SETTING non_replicated_deduplication_window = 100"
@@ -329,7 +333,7 @@ def test_shutdown_after_target_starts_deduplicating_between_batches(started_clus
             rows_before_restart = int(
                 node.query(f"SELECT count() FROM {dst_table_name}")
             )
-            if in_progress >= 1 and rows_before_restart > rows_per_file:
+            if in_progress >= 1 and rows_before_restart > rows_of_first_batch:
                 parked = True
                 break
             time.sleep(0.1)
