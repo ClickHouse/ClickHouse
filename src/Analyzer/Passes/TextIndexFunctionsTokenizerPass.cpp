@@ -112,7 +112,8 @@ std::optional<size_t> projectionPosition(const NamesAndTypes & projection_column
 }
 
 QueryTreeNodePtr projectionAt(const IQueryTreeNode & source, size_t position, const ContextPtr & context, size_t & substitutions);
-Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions);
+Resolution resolveToTableColumns(
+    const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions, bool tolerate_foreign_map_key);
 
 /// A row comes from exactly one branch, so every branch must expose the same indexed expression of the
 /// same table; otherwise the tokenizer would depend on which branch produced the row.
@@ -128,7 +129,7 @@ QueryTreeNodePtr findAgreedUnionProjection(const UnionNode & union_node, size_t 
         if (!projection)
             return nullptr;
 
-        auto resolution = resolveToTableColumns(projection, context, substitutions);
+        auto resolution = resolveToTableColumns(projection, context, substitutions, /*tolerate_foreign_map_key=*/ false);
         if (!resolution.expression)
             return nullptr;
 
@@ -183,7 +184,8 @@ QueryTreeNodePtr findProjection(const IQueryTreeNode & source, const String & na
 }
 
 /// Null unless the expression reads one table occurrence, because otherwise no index describes it.
-Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions)
+Resolution resolveToTableColumns(
+    const QueryTreeNodePtr & expression, const ContextPtr & context, size_t & substitutions, bool tolerate_foreign_map_key)
 {
     StoragePtr storage;
     /// Not the storage: a self-join shares it, and `concat(a.first_name, b.last_name)` serializes like an
@@ -214,6 +216,9 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const Cont
                 auto [found_key, key_failed] = self(lookup.back(), self);
                 if (key_failed)
                 {
+                    if (!tolerate_foreign_map_key)
+                        return {nullptr, true};
+
                     foreign_map_key = true;
                     found_key = nullptr;
                 }
@@ -410,9 +415,32 @@ private:
     String findTextIndexTokenizer(const QueryTreeNodePtr & expression, const String & function_name)
     {
         size_t substitutions = 0;
-        const auto resolution = resolveToTableColumns(expression, getContext(), substitutions);
+        auto resolution = resolveToTableColumns(expression, getContext(), substitutions, /*tolerate_foreign_map_key=*/ true);
         if (!resolution.expression)
             return {};
+
+        /// A key reading another table leaves the expression name describing nothing, so the Map alone
+        /// carries the index - reached through whatever conversions wrap the lookup. Only that key is
+        /// exempt: the Map it reads must still resolve on its own, or `mm[side.k]['x']` would match an
+        /// index on `mapValues(mm[k])` that covers a different inner map.
+        String map_only_name;
+        if (resolution.foreign_map_key)
+        {
+            const IQueryTreeNode * node = resolution.expression.get();
+            while (const auto * under = losslessConversionArgument(*node))
+                node = under;
+
+            const auto * element = node->as<FunctionNode>();
+            if (!element || element->getFunctionName() != "arrayElement" || element->getArguments().getNodes().size() != 2)
+                return {};
+
+            resolution = resolveToTableColumns(
+                element->getArguments().getNodes().front(), getContext(), substitutions, /*tolerate_foreign_map_key=*/ false);
+            if (!resolution.expression)
+                return {};
+
+            map_only_name = "mapValues(" + indexExpressionName(*resolution.expression) + ")";
+        }
 
         const auto & resolved = *resolution.expression;
         const auto & storage = resolution.storage;
@@ -421,22 +449,6 @@ private:
         const auto & indices = metadata->getSecondaryIndices();
         if (indices.empty())
             return {};
-
-        /// A key reading another table leaves the expression name describing nothing, so the Map alone
-        /// carries the index - reached through whatever conversions wrap the lookup.
-        String map_only_name;
-        if (resolution.foreign_map_key)
-        {
-            const IQueryTreeNode * node = &resolved;
-            while (const auto * under = losslessConversionArgument(*node))
-                node = under;
-
-            const auto * element = node->as<FunctionNode>();
-            if (!element || element->getFunctionName() != "arrayElement" || element->getArguments().getNodes().size() != 2)
-                return {};
-
-            map_only_name = "mapValues(" + indexExpressionName(*element->getArguments().getNodes().front()) + ")";
-        }
 
         const auto name = map_only_name.empty() ? indexExpressionName(resolved) : map_only_name;
         auto key = std::make_tuple(storage.get(), name, function_name);

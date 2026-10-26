@@ -103,6 +103,9 @@ a Map element whose key comes from the joined table
 1
 1
 1
+a nested Map whose inner key comes from the joined table
+0
+1
 a Distributed haystack, predicate on the initiator
 1
 1

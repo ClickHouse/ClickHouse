@@ -550,6 +550,34 @@ SELECT count() FROM t_115999_keyed WHERE hasAnyTokens(m['k'], ['alpha beta']);
 DROP TABLE t_115999_keys;
 DROP TABLE t_115999_keyed;
 
+-- Only the outer key is exempt. The Map it reads must resolve on its own, or a nested lookup keyed from
+-- the joined table would match an index covering a different inner map.
+SELECT 'a nested Map whose inner key comes from the joined table';
+CREATE TABLE t_115999_nested
+(
+    id UInt64,
+    k String,
+    mm Map(String, Map(String, String)),
+    INDEX idx_mm mapValues(mm[k]) TYPE text(tokenizer = ngrams(3))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE t_115999_nested_keys (k String) ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO t_115999_nested VALUES (1, 'a', map('a', map('x', 'hello'), 'b', map('x', 'world')));
+INSERT INTO t_115999_nested_keys VALUES ('b');
+
+-- Prints 0: the index covers `mm['a']`, not the `mm['b']` this reads.
+SELECT count() FROM t_115999_nested AS t CROSS JOIN t_115999_nested_keys AS kk
+WHERE hasAnyTokens(t.mm[kk.k]['x'], ['orl']) OR kk.k = 'zzz';
+-- The table's own key is the indexed expression, so the tokenizer is forwarded.
+SELECT count() FROM t_115999_nested AS t CROSS JOIN t_115999_nested_keys AS kk
+WHERE hasAnyTokens(t.mm[t.k]['x'], ['ell']) OR kk.k = 'zzz';
+
+DROP TABLE t_115999_nested_keys;
+DROP TABLE t_115999_nested;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';
