@@ -12950,8 +12950,8 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
     enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
-    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
-    enumerate_settings.enumerate_dynamic_streams = false;
+    /// Dynamic streams stay enumerated (the default), so the typed paths and the typed shared data of JSON take part in
+    /// the check.
 
     std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
