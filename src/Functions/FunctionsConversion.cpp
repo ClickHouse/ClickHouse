@@ -2057,6 +2057,11 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
+    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+        return createIdentityWrapper(from_type);
+
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
