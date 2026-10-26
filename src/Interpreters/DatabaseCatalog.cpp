@@ -855,6 +855,11 @@ std::vector<StorageID> DatabaseCatalog::getHierarchicalNameCandidates(const Stor
     return candidates;
 }
 
+bool DatabaseCatalog::isBoundHierarchicalName(const StorageID & table_id, const ContextPtr & context_)
+{
+    return !table_id.database_name.empty() && context_->isDDLOrOnClusterInternal();
+}
+
 StorageID DatabaseCatalog::getHierarchicalNamePlacement(const StorageID & table_id, ContextPtr context_) const
 {
     return getHierarchicalNamePlacement(table_id, context_->getCurrentDatabase(), context_);
@@ -862,6 +867,9 @@ StorageID DatabaseCatalog::getHierarchicalNamePlacement(const StorageID & table_
 
 StorageID DatabaseCatalog::getHierarchicalNamePlacement(const StorageID & table_id, const String & current_database, ContextPtr context_) const
 {
+    if (isBoundHierarchicalName(table_id, context_))
+        return StorageID(table_id.database_name, table_id.table_name);
+
     size_t table_name_parts = splitHierarchicalName(table_id.table_name).size();
 
     for (const auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
@@ -911,6 +919,9 @@ StorageID DatabaseCatalog::resolveHierarchicalName(const StorageID & table_id, c
             return as_written;
     }
 
+    if (isBoundHierarchicalName(table_id, context_))
+        return as_written;
+
     for (auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
     {
         if (candidate.database_name == as_written.database_name && candidate.table_name == as_written.table_name)
@@ -955,6 +966,9 @@ std::optional<StorageID> resolveHierarchicalNameForCreationImpl(
     /// Fast path: the database as written exists.
     if (catalog.isDatabaseExist(database_as_written))
         return StorageID(database_as_written, table_id.table_name);
+
+    if (DatabaseCatalog::isBoundHierarchicalName(table_id, context_))
+        return std::nullopt;
 
     size_t table_name_parts = DatabaseCatalog::splitHierarchicalName(table_id.table_name).size();
     for (const auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(table_id, current_database))

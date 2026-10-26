@@ -65,7 +65,8 @@ void InterpreterUndropQuery::resolveHierarchicalName(ASTUndropQuery & query) con
     /// other hosts only.
     std::optional<StorageID> resolved;
     /// A qualified name has other candidates even without dots: inside `USE a`, `b.t` may be `a`.`b.t`.
-    if (!as_written.database_name.empty() || as_written.table_name.contains('.') || current_database.contains('.'))
+    if ((!as_written.database_name.empty() || as_written.table_name.contains('.') || current_database.contains('.'))
+        && !DatabaseCatalog::isBoundHierarchicalName(as_written, getContext()))
     {
         auto dropped_tables = catalog.getTablesMarkedDropped();
         for (const auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database))

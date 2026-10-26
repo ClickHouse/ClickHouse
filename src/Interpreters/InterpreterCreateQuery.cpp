@@ -2104,7 +2104,7 @@ void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, b
     /// of the table (`b.*` of the database `a`) may have no attached tables while it is detached.
     /// A name with a single candidate takes the same code path as before.
     bool is_short_attach = create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
-    if (is_short_attach)
+    if (is_short_attach && !DatabaseCatalog::isBoundHierarchicalName(as_written, getContext()))
     {
         auto candidates = DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database);
         if (candidates.size() > 1)

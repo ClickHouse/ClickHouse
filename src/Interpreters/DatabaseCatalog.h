@@ -173,6 +173,13 @@ public:
     /// the fast paths of the methods below do not cost anything extra for them.
     static std::vector<StorageID> getHierarchicalNameCandidates(const StorageID & table_id, const String & current_database);
 
+    /// Whether a name is bound already and is used exactly as written, without trying the other candidates: the
+    /// qualified name (with a database) of a query that a host replays from the distributed DDL queue (or from the log of
+    /// a `Replicated` database). The initiator has bound the name to the table it denotes and checked the access for
+    /// that table, or, when it could not bind it, checked the access for the name as written. Another split chosen
+    /// on this host (`a.b`.`c` instead of `a`.`b.c` absent here) would be an object the access was not checked for.
+    static bool isBoundHierarchicalName(const StorageID & table_id, const ContextPtr & context_);
+
     /// The database and the table that an existing table with this name has. `table_id.database_name` may be empty,
     /// then the name is resolved in the current database of `context_`. If no candidate names an existing table,
     /// returns the placement (see `getHierarchicalNamePlacement`), without a UUID.
