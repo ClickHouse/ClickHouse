@@ -2945,7 +2945,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             [&capturing_buf, current_format, expected_header = sample, context = client_context](
                 std::optional<size_t> rows_reached_by_parser) -> String
             {
-                const auto prefix = capturing_buf->getCapturedPrefix(current_format);
+                const auto prefix = capturing_buf->getCapturedPrefix(current_format, context);
                 return getInsertDataSchemaMismatchDescription(
                     prefix.data,
                     current_format,

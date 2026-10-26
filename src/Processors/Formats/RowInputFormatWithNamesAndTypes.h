@@ -199,6 +199,10 @@ public:
         return (with_types || types_detected_from_data) && format_settings.with_types_use_header;
     }
 
+    /// `RowInputFormatWithNamesAndTypes::readPrefix` compares the declared type name with `getName` of
+    /// the destination type, not the types themselves.
+    bool validatesDeclaredTypesByName() const override { return hasExactTypesFromData(); }
+
     /// When a types row is present but the parser is configured to ignore it
     /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
     /// verbatim, while the parser reads the data by value instead. The inferred schema then does not

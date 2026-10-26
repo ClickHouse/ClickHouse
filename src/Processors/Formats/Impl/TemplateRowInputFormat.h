@@ -127,10 +127,10 @@ private:
     /// `TemplateRowInputFormat::deserializeField` picks an escaping rule per placeholder
     /// (`row_format.escaping_rules[file_column]`), so a single format-level value-form contract
     /// exists only when every placeholder uses the same rule; the capabilities are then derived
-    /// from that rule exactly as in `CustomSeparated`. For a row format mixing different rules
-    /// they keep the conservative defaults: a caller comparing an inferred schema against an
-    /// expected one then misses a mismatch that only an escaping rule could reveal, but never
-    /// invents one.
+    /// from that rule exactly as in `CustomSeparated`. A row format mixing different rules cannot be
+    /// described by any format-level contract in either direction (e.g. with `${b:Quoted}|${n:Escaped}`
+    /// the quoted `'true'` is a valid `Bool`, while the raw-text defaults would reject the inferred
+    /// `String`), so `schemaDescribesParsedData` below is false for it and no conclusion is drawn.
     bool readsTypedJSONValueTokens() const override { return homogeneous_escaping_rule == FormatSettings::EscapingRule::JSON; }
     bool readsQuotedTextValues() const override { return homogeneous_escaping_rule == FormatSettings::EscapingRule::Quoted; }
     BoolValueIntoNumericColumn readsBoolValueIntoNumericColumn() const override
@@ -145,9 +145,10 @@ private:
     /// and omitted destination columns are filled with defaults. The schema reader names the inferred
     /// columns after the placeholders, so comparing them by name mirrors the parser. A row format with
     /// a placeholder without a name (`${:CSV}`, which the parser skips) cannot be represented by the
-    /// inferred schema, so then no conclusion is drawn from it.
+    /// inferred schema, so then no conclusion is drawn from it, nor from a row format mixing
+    /// different escaping rules (see above).
     bool mapsColumnsByName() const override { return all_placeholders_are_named; }
-    bool schemaDescribesParsedData() const override { return all_placeholders_are_named; }
+    bool schemaDescribesParsedData() const override { return all_placeholders_are_named && homogeneous_escaping_rule.has_value(); }
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 

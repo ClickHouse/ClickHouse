@@ -64,6 +64,13 @@ public:
     /// comparison mirrors the parser and a loose (supertype-based) one would be wrong.
     virtual bool hasExactTypesFromData() const { return false; }
 
+    /// True if, in addition to `hasExactTypesFromData`, the parser validates the declared types by their
+    /// names rather than by type equality: the -WithNamesAndTypes formats compare the declared type name
+    /// against `getName` of the destination type, so e.g. a declared `Bool` is rejected for a `UInt8`
+    /// column even though both types compare equal (`Bool` is a customized `UInt8`). The metadata-based
+    /// `JSON*` formats compare types with `equals` instead and keep the default.
+    virtual bool validatesDeclaredTypesByName() const { return false; }
+
     /// True when the schema returned by `readSchema` describes the structure the parser actually reads
     /// and validates. It is false for the metadata-based `JSON*` formats (`JSON`, `JSONCompact`,
     /// `JSONColumnsWithMetadata`) when `input_format_json_validate_types_from_metadata` = 0: schema

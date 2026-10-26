@@ -1,0 +1,11 @@
+-- CSVWithNamesAndTypes, declared type names
+explanation present
+explanation present
+explanation missing
+-- Template with mixed escaping rules
+explanation missing
+inserted
+-- A streamed quoted multiline CSV field longer than the first captured buffer
+explanation missing
+inserted
+explanation present

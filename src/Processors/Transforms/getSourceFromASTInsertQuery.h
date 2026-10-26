@@ -133,7 +133,8 @@ public:
     /// The captured prefix together with whether it may be a truncated view of the data (see the
     /// `data_is_truncated` parameter of getInsertDataSchemaMismatchDescription): either more bytes
     /// streamed through than the cap allowed to capture, or the end of the input has not been seen and
-    /// the capture may end inside a row of the format `format_name`.
+    /// the capture may end inside a row of the format `format_name` (`context` provides the format
+    /// settings that decide where a row may end).
     struct CapturedPrefix
     {
         String data;
@@ -144,7 +145,7 @@ public:
     /// segmentation thread while the parse-error diagnostic reads the capture from the thread that
     /// handles the exception, so the capture is taken under a lock and copied out: a `string_view` into
     /// the growing string would be read while another thread appends to it.
-    CapturedPrefix getCapturedPrefix(const String & format_name) const;
+    CapturedPrefix getCapturedPrefix(const String & format_name, const ContextPtr & context) const;
 
     /// Keep diagnostics that inspect the buffer chain (e.g. the file name added to error messages)
     /// working as if the wrapper were not there.

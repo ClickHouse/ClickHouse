@@ -337,6 +337,7 @@ String getInsertDataSchemaMismatchDescription(
     /// low-false-positive interpretation) and are used only if the schema reader cannot be created.
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
+    bool format_validates_declared_types_by_name = false;
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
     bool format_allows_fewer_columns_than_expected = false;
@@ -380,6 +381,7 @@ String getInsertDataSchemaMismatchDescription(
 
         format_has_strict_order_of_columns = schema_reader->hasStrictOrderOfColumns();
         format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
+        format_validates_declared_types_by_name = schema_reader->validatesDeclaredTypesByName();
         format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
         format_allows_variable_number_of_columns = schema_reader->allowVariableNumberOfColumns();
         format_allows_fewer_columns_than_expected = schema_reader->allowsFewerColumnsThanExpected();
@@ -793,6 +795,12 @@ String getInsertDataSchemaMismatchDescription(
     std::function<bool(const DataTypePtr &, const DataTypePtr &, const SampledValueEvidence &)> types_are_compatible
         = [&](const DataTypePtr & inferred_type, const DataTypePtr & expected_type, const SampledValueEvidence & evidence) -> bool
     {
+        /// The -WithNamesAndTypes parser compares the declared type name with the name of the destination
+        /// type, so types that compare equal but have different names (`Bool` and `UInt8`) are a real
+        /// mismatch there. Check this before the general equality shortcut.
+        if (format_validates_declared_types_by_name)
+            return inferred_type->getName() == expected_type->getName();
+
         if (inferred_type->equals(*expected_type))
             return true;
 
@@ -1960,9 +1968,29 @@ bool formatEndsRowsWithLineBreak(const String & format_name)
     return std::ranges::any_of(prefixes, [&](std::string_view prefix) { return name.starts_with(prefix); });
 }
 
+/// Whether `data` may end inside a quoted field read with the `CSV` escaping rule, where a line break
+/// is a part of the value rather than the end of the row. `readCSVStringInto` accepts a quoted field
+/// cut by the end of the data, so inference would see such an unfinished row as a complete short one.
+/// An escaped quote inside a quoted field is doubled, so an odd number of quote characters means that
+/// a quoted field is still open. A quote character inside an unquoted field may make the count odd
+/// as well, which then only suppresses the explanation.
+bool mayEndInsideCSVQuotedField(std::string_view data, const String & format_name, const FormatSettings & format_settings)
+{
+    String name = Poco::toLower(format_name);
+    const bool csv_escaping = name.starts_with("csv")
+        || (name.starts_with("customseparated") && format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV);
+    if (!csv_escaping)
+        return false;
+
+    auto has_odd_count = [&](char quote) { return std::ranges::count(data, quote) % 2 != 0; };
+    return (format_settings.csv.allow_double_quotes && has_odd_count('"'))
+        || (format_settings.csv.allow_single_quotes && has_odd_count('\''));
 }
 
-PrefixCapturingReadBuffer::CapturedPrefix PrefixCapturingReadBuffer::getCapturedPrefix(const String & format_name) const
+}
+
+PrefixCapturingReadBuffer::CapturedPrefix
+PrefixCapturingReadBuffer::getCapturedPrefix(const String & format_name, const ContextPtr & context) const
 {
     std::lock_guard lock(capture_mutex);
     /// Unless the end of the input has been seen, the capture ends where the bytes buffered so far end,
@@ -1971,9 +1999,10 @@ PrefixCapturingReadBuffer::CapturedPrefix PrefixCapturingReadBuffer::getCaptured
     /// inference. In the formats with a row per line, a capture that does not end with a line break
     /// therefore may end inside a row. In the other formats an unfinished row usually makes inference
     /// fail instead, and a complete input commonly does not end with a line break there (`Values`,
-    /// `Form`, the binary formats), so it cannot be told from a cut one.
-    bool may_end_inside_row = !reached_end_of_input && !captured.empty() && captured.back() != '\n'
-        && formatEndsRowsWithLineBreak(format_name);
+    /// `Form`, the binary formats), so it cannot be told from a cut one. A trailing line break does not
+    /// end a row when it is inside a quoted multiline `CSV` field.
+    bool may_end_inside_row = !reached_end_of_input && !captured.empty() && formatEndsRowsWithLineBreak(format_name)
+        && (captured.back() != '\n' || mayEndInsideCSVQuotedField(captured, format_name, getFormatSettings(context)));
     return {captured, prefix_truncated || may_end_inside_row};
 }
 
@@ -2108,7 +2137,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
                 [captured_prefix_buffer, expected_header = header, format_name = resolved_format, context](
                     std::optional<size_t> rows_reached_by_parser) -> String
                 {
-                    const auto prefix = captured_prefix_buffer->getCapturedPrefix(format_name);
+                    const auto prefix = captured_prefix_buffer->getCapturedPrefix(format_name, context);
                     return getInsertDataSchemaMismatchDescription(
                         prefix.data,
                         format_name,
