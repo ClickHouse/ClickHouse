@@ -17,6 +17,7 @@
 #include <Parsers/parseQuery.h>
 #include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -40,6 +41,11 @@ namespace ErrorCodes
 {
     extern const int CANNOT_BACKUP_TABLE;
     extern const int CANNOT_RESTORE_TABLE;
+}
+
+namespace FailPoints
+{
+    extern const char named_collections_restore_pause_after_write[];
 }
 
 namespace
@@ -293,6 +299,11 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     std::unordered_map<String /* collection name */, String /* formatted statement */> statements_by_name;
     for (const auto & [entry_data_path, filename] : entry_files)
     {
+        /// Stops a cancelled restore (`KILL QUERY`) between the entries. The check throws outside
+        /// the sanitizing handlers below, so the cancellation (which names no collection) is
+        /// reported as such instead of being replaced.
+        restorer.checkIsQueryCancelled();
+
         String filepath = fs::path(entry_data_path) / filename;
         String stored;
         try
@@ -419,6 +430,13 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
 
     for (auto & ast : create_queries)
     {
+        /// A cancelled restore (`KILL QUERY`) must not write the remaining entries - with
+        /// `create_named_collection = 'replace'` every write overwrites an existing collection.
+        /// Without this check a cancellation arriving during a write would stop the restore only
+        /// at the stage change after all the entries. Like in the read loop above, the check
+        /// throws outside the sanitizing handler below.
+        restorer.checkIsQueryCancelled();
+
         auto & create_query = ast->as<ASTCreateNamedCollectionQuery &>();
 
         /// A collection defined in the server configuration is rendered from the configuration, not
@@ -462,6 +480,11 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
                 backup->getNameForLogging(),
                 ErrorCodes::getName(getCurrentExceptionCode()));
         }
+
+        /// Holds the restore right after an entry write, so a test can cancel the query while the
+        /// loop is inside a write and observe that the remaining entries stay unwritten.
+        FailPointInjection::pauseFailPoint(FailPoints::named_collections_restore_pause_after_write);
+
         ++restored_count;
     }
 

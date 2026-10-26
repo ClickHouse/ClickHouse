@@ -132,6 +132,7 @@ static struct InitFiu
     PAUSEABLE(remote_fs_gather_pause_in_read) \
     PAUSEABLE(plain_object_storage_pause_on_file_copy) \
     PAUSEABLE(named_collections_replicated_update_pause) \
+    PAUSEABLE(named_collections_restore_pause_after_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
