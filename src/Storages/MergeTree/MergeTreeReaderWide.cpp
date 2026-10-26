@@ -721,8 +721,13 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         if (served_columns)
         {
             for (size_t i = run_begin; i < run_end; ++i)
+            {
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
                     ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
+                /// Counted on the first piece of the granule: when rows are skipped, it may never be served to its end.
+                if (count_compressed_bytes_read)
+                    addGranuleServedFromColumnsCache(segments[i].mark, from_disk);
+            }
         }
 
         read_rows += rows;
@@ -1043,6 +1048,85 @@ std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() 
     return result;
 }
 
+void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & [stream_name, stream] : streams)
+        callback(stream_name, *stream);
+}
+
+CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream_name)
+{
+    std::lock_guard lock(ranges_read_mutex);
+    return ranges_read[stream_name];
+}
+
+void MergeTreeReaderWide::countCompressedBytesRead()
+{
+    IMergeTreeReader::countCompressedBytesRead();
+    /// The streams created later get their sink in `getOrAddStream`.
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
+}
+
+std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
+{
+    if (!count_compressed_bytes_read)
+        return std::nullopt;
+
+    std::lock_guard lock(ranges_read_mutex);
+    size_t bytes = 0;
+    for (auto & [stream_name, ranges] : ranges_read)
+    {
+        /// Only the bytes of a range that are not counted already, merging it into the counted ones.
+        auto & counted = counted_ranges[stream_name];
+        for (const auto & [range_begin, range_end] : ranges)
+        {
+            size_t begin = range_begin;
+            size_t end = range_end;
+            size_t covered = 0;
+            auto it = counted.upper_bound(begin);
+            if (it != counted.begin() && std::prev(it)->second >= begin)
+                --it;
+            while (it != counted.end() && it->first <= range_end)
+            {
+                if (it->second > range_begin && it->first < range_end)
+                    covered += std::min(range_end, it->second) - std::max(range_begin, it->first);
+                begin = std::min(begin, it->first);
+                end = std::max(end, it->second);
+                it = counted.erase(it);
+            }
+            bytes += range_end - range_begin - covered;
+            counted.emplace(begin, end);
+        }
+        ranges.clear();
+    }
+    return bytes;
+}
+
+void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk)
+{
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos) || from_disk[pos])
+            continue;
+
+        const auto & name_and_type = columns_to_read[pos];
+        serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            auto * stream = stream_name ? streams.find(*stream_name) : nullptr;
+            if (!stream)
+                return;
+
+            /// A block that holds the granule is counted once for the reader by `takeCompressedBytesRead`, also when it is read,
+            /// or holds other granules or columns served from the cache.
+            stream->addRangeOfPosition(mark, 0, getRangesRead(*stream_name));
+        });
+    }
+}
+
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
 {
     std::lock_guard lock(mutex);
@@ -1103,6 +1187,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
+            if (count_compressed_bytes_read)
+                stream->setBlocksReadSink(&getRangesRead(stream_name));
             return stream;
         };
 
@@ -1562,47 +1648,6 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-}
-
-std::unordered_map<String, IMergeTreeReader::StreamsBytes> MergeTreeReaderWide::getCompressedBytesOfColumnsToRead()
-{
-    const auto & checksums = data_part_info_for_read->getChecksums();
-    std::unordered_map<String, StreamsBytes> column_to_streams;
-    for (size_t i = 0; i < columns_to_read.size(); ++i)
-    {
-        const auto & name_and_type = columns_to_read[i];
-        /// Without the prefixes, a dynamic structure lists only its structure stream and a bucketed `Map` only its
-        /// buckets info, not the streams that hold the data.
-        if (name_and_type.getTypeInStorage()->hasDynamicStructure())
-            continue;
-
-        StreamsBytes column_streams;
-        bool has_all_streams = true;
-        serializations[i]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-        {
-            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                return;
-
-            if (!substream_path.empty() && substream_path.back().type == ISerialization::Substream::MapBucketsInfo)
-            {
-                has_all_streams = false;
-                return;
-            }
-
-            /// The same name the read opens the stream by, e.g. the shared `n.size0` for `n.a.size0`.
-            const auto & stream_name = getStreamName(name_and_type, substream_path);
-            const auto it = stream_name ? checksums.files.find(*stream_name + DATA_FILE_EXTENSION) : checksums.files.end();
-            if (it == checksums.files.end())
-                has_all_streams = false;
-            else
-                column_streams.emplace_back(*stream_name, it->second.file_size);
-        });
-
-        if (has_all_streams && !column_streams.empty())
-            column_to_streams.emplace(name_and_type.name, std::move(column_streams));
-    }
-
-    return column_to_streams;
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()

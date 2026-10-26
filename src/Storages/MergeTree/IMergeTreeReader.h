@@ -100,15 +100,14 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
-    /// The streams read for the columns of `getColumnsToRead`, keyed by their names there, with the compressed bytes
-    /// of each on disk. Columns may share a stream, e.g. the offsets of the arrays of a `Nested`. Only for the columns
-    /// whose streams are known without deserializing prefixes and are all in the part.
-    using StreamsBytes = std::vector<std::pair<String, size_t>>;
+    /// Returns the compressed size of the blocks the reader loaded from the part since the previous call, the blocks
+    /// served from the uncompressed cache included. `nullopt` if the reader cannot tell.
+    virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
 
-    /// The part's columns, named the way `getColumnsToRead` names them: in a wide part the arrays of a `Nested` read
-    /// their shared offsets as `n.size0`, a subcolumn of the collected `Nested`, and in a compact part as `n.a.size0`.
-    const ColumnsDescription & getPartColumnsDescription() const;
-    virtual std::unordered_map<String, StreamsBytes> getCompressedBytesOfColumnsToRead() { return {}; }
+    /// For a caller that takes `takeCompressedBytesRead`: makes it count the granules served from the columns cache as well,
+    /// as the compressed size of the data reading them from the part would load. Costs loading the marks of the columns
+    /// served, and keeping the granules until they are taken, so a reader whose caller does not take them does not count them.
+    virtual void countCompressedBytesRead() { count_compressed_bytes_read = true; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -170,6 +169,9 @@ protected:
     StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `countCompressedBytesRead`.
+    bool count_compressed_bytes_read = false;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
