@@ -163,6 +163,9 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
+        /// The memory per value that the output column takes after it is converted to a fixed-size type, see
+        /// `OutputColumnInfo::needs_cast`. Charged to the first primitive column of the output column.
+        double cast_bytes_per_value = 0;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
         /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
         /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
@@ -768,8 +771,9 @@ struct Reader
     /// longest value of the dictionary, not by the average one: the rows may repeat a long value much more often than
     /// the others. Meaningless if `decodedSizeIsUnknown`.
     double estimateMaxColumnMemoryBytesOfChunk(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
-    /// Whether `estimateColumnMemoryBytesPerRow` can only guess: the column is of dictionary-encoded strings, the
-    /// metadata has no length of the strings, and the dictionary is not decoded.
+    /// Whether `estimateMaxColumnMemoryBytesOfChunk` can only guess: the column is of strings whose length is not in the
+    /// metadata, and either they are dictionary-encoded and the dictionary is not decoded, or some of them are encoded
+    /// with `DELTA_BYTE_ARRAY`, which may take much less than the decoded strings.
     bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
     /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
     /// capped far below overflow.
