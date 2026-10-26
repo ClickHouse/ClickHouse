@@ -2406,9 +2406,9 @@ void InterpreterSystemQuery::stopReplicatedDDLQueries()
     /// flag does not survive a restart of the server either.
     DatabaseCatalog::instance().stopReplicatedDDLQueries();
 
-    String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath();
     for (const auto & name : getZooKeeperNamesOfReplicatedDatabases())
     {
+        String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(name);
         /// Remember the Keeper before creating the flag, so `START` removes it even if this command fails midway.
         fenced_zookeeper_names.insert(name);
         auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(name);
@@ -2429,9 +2429,9 @@ void InterpreterSystemQuery::startReplicatedDDLQueries()
     std::set<String> zookeeper_names = getZooKeeperNamesOfReplicatedDatabases();
     zookeeper_names.insert(fenced_zookeeper_names.begin(), fenced_zookeeper_names.end());
 
-    String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath();
     for (const auto & name : zookeeper_names)
     {
+        String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(name);
         auto code = getContext()->getDefaultOrAuxiliaryZooKeeper(name)->tryRemove(path, -1);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(code, path);
