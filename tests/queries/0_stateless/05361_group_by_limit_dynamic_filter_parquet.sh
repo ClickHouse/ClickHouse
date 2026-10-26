@@ -168,11 +168,11 @@ SELECT k, count() FROM file('${DIR}/low.parquet') PREWHERE c % 1000 != 999 GROUP
 SELECT k, count() FROM file('${DIR}/low.parquet') GROUP BY k ORDER BY k DESC LIMIT 2;
 -- ORDER BY ... LIMIT does not stop.
 SELECT k FROM file('${DIR}/low.parquet') ORDER BY k LIMIT 10 FORMAT Null SETTINGS log_comment = '05361_low_order';
--- The PREWHERE keeps whole row groups, but statistics cannot tell which.
+-- The PREWHERE keeps whole row groups, but statistics cannot tell which. The pages read are compared, so not from the columns cache.
 SELECT k, count() FROM file('${DIR}/low.parquet') PREWHERE cityHash64(intDiv(c, 10000)) % 10 = 0 GROUP BY k ORDER BY k LIMIT 2
-SETTINGS log_comment = '05361_low_hash_on';
+SETTINGS log_comment = '05361_low_hash_on', use_columns_cache = 0;
 SELECT k, count() FROM file('${DIR}/low.parquet') PREWHERE cityHash64(intDiv(c, 10000)) % 10 = 0 GROUP BY k ORDER BY k LIMIT 2
-FORMAT Null SETTINGS log_comment = '05361_low_hash_off', enable_group_by_top_k_dynamic_filtering = 0;
+FORMAT Null SETTINGS log_comment = '05361_low_hash_off', enable_group_by_top_k_dynamic_filtering = 0, use_columns_cache = 0;
 
 SELECT 'a row policy and a PREWHERE after the boundary';
 CREATE ROW POLICY p_05361_steps ON t_05361_steps USING c % 3 != 1 TO ALL;
