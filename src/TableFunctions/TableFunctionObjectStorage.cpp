@@ -2622,14 +2622,14 @@ void registerTableFunctionLance(TableFunctionFactory & factory)
 #if USE_AWS_S3
     factory.registerFunction<TableFunctionLanceS3>(
          {.description = R"(The table function can be used to read the Lance table stored on S3 object store.)",
-            .examples{{LanceS3Definition::name, "SELECT * FROM lanceS3(url, access_key_id, secret_access_key)", ""}},
+            .syntax = "lanceS3(url [, NOSIGN | access_key_id, secret_access_key [, session_token]])",
             .category = FunctionDocumentation::Category::TableFunction},
          DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionLanceLocal>(
          {.description = R"(The table function can be used to read the Lance table stored locally.)",
-            .examples{{LanceLocalDefinition::name, "SELECT * FROM lanceLocal(path)", ""}},
+            .syntax = "lanceLocal(path)",
             .category = FunctionDocumentation::Category::TableFunction},
          DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
