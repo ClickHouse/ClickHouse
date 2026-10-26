@@ -2516,3 +2516,24 @@ ARM64: no verified comparison for the `base/argsToConfig.cpp` Action.
 | `@clickhouse_google_protobuf//:_libprotoc__compile_1` | held | held |
 
 </details>
+
+## 31e40b4ec
+
+At [31e40b4ec](https://github.com/dzbarsky/clickhouse/commit/31e40b4ec9efff68a482785621496cea42a4c30d), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/773c4ebfb6d5de28a719e30685dd959c3a51abb8).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/7906cff0-c0d1-4c23-8823-3220d6f77a2b) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/7906cff0-c0d1-4c23-8823-3220d6f77a2b) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/7906cff0-c0d1-4c23-8823-3220d6f77a2b) | `//src:unit_tests_dbms` | `181f0455d18a0f2a8cc67ddd4cd20ae8b71651ce8818031351fcb55e98dc211b` | 811964184 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/35877238-c7e3-4ffb-9b74-cbaa82fe7ff6) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/35877238-c7e3-4ffb-9b74-cbaa82fe7ff6) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/35877238-c7e3-4ffb-9b74-cbaa82fe7ff6) | `//src:unit_tests_dbms` | `970f06d2762e6748737e39daa35e30dd17cf9ab66548b79ce43cceb3b939e49c` | 795059392 | Differs from previous Bazel |
+
+[x86-64](https://app.buildbuddy.io/invocation/7906cff0-c0d1-4c23-8823-3220d6f77a2b): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,788 operands; its response file was `2e9ae62cdbe20b97ed31df0285616683c11f9f6f2cb7c75560ef1f87eb7b313b`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+x86-64 DWYU as of 2026-10-26T10:50:09Z: no product. Clean: none. Findings: none. Ungraded: `//base/glibc-rseq:glibc-rseq`, `//base/readpassphrase:readpassphrase`. Bazel stopped before running DWYU because MODULE.bazel.lock lacks the depend_on_what_you_use non_module_dependencies extension.
+
+[ARM64](https://app.buildbuddy.io/invocation/35877238-c7e3-4ffb-9b74-cbaa82fe7ff6): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,701 operands; its response file was `9990128afeaf4bb413e7634485fda5228c8489227c9d9283529ae795bfe889c1`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+ARM64 DWYU as of 2026-10-26T10:50:09Z: no product. Clean: none. Findings: none. Ungraded: `//base/glibc-rseq:glibc-rseq`, `//base/readpassphrase:readpassphrase`. Bazel stopped before running DWYU because MODULE.bazel.lock lacks the depend_on_what_you_use non_module_dependencies extension.
