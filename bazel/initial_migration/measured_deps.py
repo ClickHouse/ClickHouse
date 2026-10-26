@@ -113,7 +113,10 @@ DEPENDENCIES = {
     ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (
         ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
     ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'): (['@clickhouse_icu//:_icudata'], [], []),
-    ('src/Loggers', 'loggers'): (['@clickhouse_icu//:_icudata'], ['//src/Common'], []),
+    ('src/Loggers', 'loggers'): ([
+        '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai',
+        '@clickhouse_arrow//:_arrow', '@clickhouse_aws//:_aws', '@clickhouse_icu//:_icudata',
+    ], ['//src/Common'], []),
     ('src/Functions/JSONPath', 'clickhouse_functions_jsonpath'): ([], ['//src/Parsers:headers'], ['//src/Parsers:parser_api']),
     ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (['@clickhouse_icu//:_icudata'], [], []),
     ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
