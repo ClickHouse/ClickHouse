@@ -68,9 +68,10 @@ Polygon<Point> minimumRotatedRectangle(const Polygon<Point> & convex_hull)
     auto y = [&](size_t i) { return get<1>(points[i]); };
 
     /// The calipers go counterclockwise, so that the inside of the polygon is to the left of every edge.
+    /// The area is relative to the first vertex, so that it does not cancel out for coordinates far from the origin.
     Float64 doubled_signed_area = 0;
     for (size_t i = 0; i < n; ++i)
-        doubled_signed_area += x(i) * y(next(i)) - x(next(i)) * y(i);
+        doubled_signed_area += (x(i) - x(0)) * (y(next(i)) - y(0)) - (x(next(i)) - x(0)) * (y(i) - y(0));
     if (doubled_signed_area < 0)
         std::reverse(points.begin(), points.end());
 
@@ -82,7 +83,7 @@ Polygon<Point> minimumRotatedRectangle(const Polygon<Point> & convex_hull)
     for (size_t i = 0; i < n; ++i)
     {
         /// The coordinates along and across the edge are in the units of its length, without a square root,
-        /// so that the corners are exact when the vertices are. The squares overflow for coordinates beyond 1e154.
+        /// which keeps the rounding small. The squares overflow for coordinates beyond 1e154.
         const Float64 ex = x(next(i)) - x(i);
         const Float64 ey = y(next(i)) - y(i);
         const Float64 squared_length = ex * ex + ey * ey;
@@ -238,7 +239,7 @@ POLYGON((0 0,0 5,5 5,5 0,0 0))
 Returns the rectangle of the smallest area that contains a geometry, which can be rotated (the oriented envelope),
 like `ST_OrientedEnvelope` in PostGIS and `ST_MinimumRotatedRectangle` in DuckDB.
 It is found with rotating calipers over the convex hull, so the function takes the same arguments as `polygonConvexHullCartesian`.
-For collinear points the rectangle has zero width, and for a single point all its corners are that point.
+For collinear points the rectangle has zero width, for a single point all its corners are that point, and without points the ring is empty.
 
 Coordinates are in Cartesian coordinate system.
         )";
@@ -247,7 +248,7 @@ Coordinates are in Cartesian coordinate system.
             {"geometry", "A geometry other than a point.", {"MultiPolygon", "Polygon", "Ring", "MultiLineString", "LineString", "MultiPoint", "Geometry"}}
         };
         FunctionDocumentation::ReturnedValue rectangle_returned_value = {
-            "Returns the rectangle as a Polygon with one ring of five points: the corners clockwise, and the first corner again.", {"Polygon"}};
+            "Returns the rectangle as a Polygon with one ring: the four corners clockwise, and the first corner again.", {"Polygon"}};
         FunctionDocumentation::Examples rectangle_examples =
         {
         {

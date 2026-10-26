@@ -10,6 +10,9 @@ SELECT polygonMinimumRotatedRectangleCartesian([(0., 0.), (4., 3.), (2.5, 5.), (
 SELECT polygonMinimumRotatedRectangleCartesian(points), polygonConvexHullCartesian(points)
 FROM (SELECT [(0., 0.), (4., 3.), (2., 3.), (-1.5, 2.), (1., 1.5)]::MultiPoint AS points);
 
+-- Far from the origin, where the area of the convex hull must not cancel out.
+SELECT arrayMap(p -> (p.1 - 1e10, p.2 - 1e10), polygonMinimumRotatedRectangleCartesian([(1e10, 1e10), (1e10 + 100, 1e10), (1e10 + 50, 1e10 + 1), (1e10 + 20, 1e10 + 0.3)]::MultiPoint)[1]);
+
 -- A square rotated by 45 degrees: the bounding box has twice its area.
 SELECT polygonMinimumRotatedRectangleCartesian([(0., 1.), (1., 0.), (2., 1.), (1., 2.)]::Ring) AS r, polygonAreaCartesian(r);
 

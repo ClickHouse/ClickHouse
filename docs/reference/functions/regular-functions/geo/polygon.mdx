@@ -713,7 +713,7 @@ Polygon
 
 Returns the rectangle of the smallest area that contains a geometry, which can be rotated (the oriented envelope), like `ST_OrientedEnvelope` in PostGIS and `ST_MinimumRotatedRectangle` in DuckDB.
 It is found with rotating calipers over the convex hull, so the function takes the same arguments as [`polygonConvexHullCartesian`](#polygonconvexhullcartesian).
-For collinear points the rectangle has zero width, and for a single point all its corners are that point.
+For collinear points the rectangle has zero width, for a single point all its corners are that point, and without points the ring is empty.
 
 Coordinates are in Cartesian coordinate system.
 
@@ -732,7 +732,7 @@ A geometry other than a point: `MultiPolygon`, `Polygon`, `Ring`, `MultiLineStri
 
 ### Returned value {#returned-value-polygonminimumrotatedrectanglecartesian}
 
-Polygon with one ring of five points: the corners clockwise, and the first corner again.
+Polygon with one ring: the four corners clockwise, and the first corner again.
 
 ## exteriorRing {#exteriorring}
 
