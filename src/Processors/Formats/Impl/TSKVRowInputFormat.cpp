@@ -244,12 +244,6 @@ TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
-void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, FormatSettings::EscapingRule::Escaped);
-    ISchemaReader::transformTypesIfNeeded(type, new_type);
-}
-
 /// IP readers inside arrays, tuples, maps and variants do not decode escapes either, so nested IP types become String.
 static DataTypePtr replaceIPTypesWithString(const DataTypePtr & type)
 {
@@ -273,6 +267,99 @@ static DataTypePtr replaceIPTypesWithString(const DataTypePtr & type)
     };
     transformTypesRecursively(types, to_string, nullptr);
     return types[0];
+}
+
+static bool hasIPType(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    bool found = false;
+    DataTypes types{type};
+    auto check_leaves = [&](DataTypes & leaves, TypeIndexesSet & type_indexes)
+    {
+        if (type_indexes.contains(TypeIndex::IPv4) || type_indexes.contains(TypeIndex::IPv6))
+        {
+            found = true;
+            return;
+        }
+
+        for (const auto & leaf : leaves)
+        {
+            if (isIPv4(leaf) || isIPv6(leaf))
+            {
+                found = true;
+                return;
+            }
+            if (const auto * variant = typeid_cast<const DataTypeVariant *>(leaf.get()))
+            {
+                for (const auto & alternative : variant->getVariants())
+                {
+                    if (hasIPType(alternative))
+                    {
+                        found = true;
+                        return;
+                    }
+                }
+            }
+        }
+    };
+
+    transformTypesRecursively(types, check_leaves, nullptr);
+    return found;
+}
+
+static void transformIPTypes(DataTypes & data_types, TypeIndexesSet & type_indexes)
+{
+    bool have_ipv4 = type_indexes.contains(TypeIndex::IPv4);
+    bool have_ipv6 = type_indexes.contains(TypeIndex::IPv6);
+
+    for (const auto & type : data_types)
+    {
+        if (hasIPType(type))
+        {
+            have_ipv4 |= isIPv4(type);
+            have_ipv6 |= isIPv6(type);
+        }
+    }
+
+    if (!have_ipv4 && !have_ipv6)
+        return;
+
+    bool all_ip = (type_indexes.size() == (static_cast<size_t>(have_ipv4) + static_cast<size_t>(have_ipv6)));
+    if (!all_ip || (have_ipv4 && have_ipv6))
+    {
+        for (auto & type : data_types)
+        {
+            if (isIPv4(type) || isIPv6(type))
+                type = std::make_shared<DataTypeString>();
+            else if (const auto * variant = typeid_cast<const DataTypeVariant *>(type.get()))
+            {
+                if (hasIPType(type))
+                    type = replaceIPTypesWithString(type);
+            }
+        }
+        type_indexes.erase(TypeIndex::IPv4);
+        type_indexes.erase(TypeIndex::IPv6);
+        type_indexes.insert(TypeIndex::String);
+    }
+}
+
+void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    if ((format_settings.try_infer_ipv4 || format_settings.try_infer_ipv6) && (hasIPType(type) || hasIPType(new_type)))
+    {
+        DataTypes types = {type, new_type};
+        auto transform_simple_types = [](DataTypes & data_types, TypeIndexesSet & type_indexes)
+        {
+            transformIPTypes(data_types, type_indexes);
+        };
+        transformTypesRecursively(types, transform_simple_types, nullptr, &format_settings);
+        type = std::move(types[0]);
+        new_type = std::move(types[1]);
+    }
+
+    ISchemaReader::transformTypesIfNeeded(type, new_type);
 }
 
 NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)

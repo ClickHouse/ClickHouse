@@ -208,3 +208,16 @@ for input in "ip=192.168.1.1\\nip=123\\n" \
         $CLICKHOUSE_CLIENT $setting -q "SELECT ip FROM format(TSKV, '$input')"
     done
 done
+
+# 24. Non-IP TSKV samples preserve lossless string merging with IP inference disabled
+echo '24. TSKV non-IP lossless merge'
+for setting in "--input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=0" "--input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1"; do
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "SELECT x, toTypeName(x) FROM format(TSKV, 'x=9007199254740993\\nx=0.5\\n')"
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "SELECT x, toTypeName(x) FROM format(TSKV, 'x=-1\\nx=18446744073709551615\\n')"
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "SELECT x, toTypeName(x) FROM format(TSKV, 'x=[9007199254740993]\\nx=[0.5]\\n')"
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting -q "SELECT x, toTypeName(x) FROM format(TSKV, 'x=[-1]\\nx=[18446744073709551615]\\n')"
+done
