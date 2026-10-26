@@ -239,6 +239,8 @@ static std::string_view getNamePart(const String & engine_name)
 /// Extracts zookeeper path and replica name from the table engine's arguments.
 /// The function can modify those arguments (that's why they're passed separately in `engine_args`) and also determines RenamingRestrictions.
 /// The function assumes the table engine is Replicated.
+/// `validate_substitutions` judges a path the definition's own arguments supplied;
+/// `validate_injected_defaults` judges one minted here from `default_replica_path`.
 static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const ASTCreateQuery & query,
     const StorageID & table_id,
@@ -246,7 +248,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
     const ContextPtr & local_context,
-    bool validate_substitutions)
+    bool validate_substitutions,
+    bool validate_injected_defaults)
 {
     chassert(isReplicated(engine_name));
 
@@ -259,9 +262,9 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         evaluateEngineArgs(engine_args, local_context);
     }
 
-    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
+    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name, bool validate) -> TableZnodeInfo
     {
-        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate);
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -321,7 +324,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
             ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
 
-        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
+        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>(), validate_substitutions);
     }
     if (is_extended_storage_def
         && (arg_cnt == 0
@@ -341,7 +344,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name]);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name], validate_injected_defaults);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));
@@ -353,8 +356,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two string literal arguments: zookeeper_path and replica_name");
 }
 
-/// Extracts a zookeeper path from a specified CREATE TABLE query.
-std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & local_context)
+std::optional<TableZnodeInfo> extractZnodeInfoFromReplicatedTableDef(
+    const ASTCreateQuery & query, const StorageID & table_id, LoadingStrictnessLevel mode, const ContextPtr & local_context)
 {
     if (!query.storage || !query.storage->engine)
         return {};
@@ -363,22 +366,29 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
     if (!isReplicated(engine_name))
         return {};
 
-    StorageID table_id{query.getDatabase(), query.getTable(), query.uuid};
-
     ASTs engine_args;
     if (query.storage->engine->arguments)
         engine_args = query.storage->engine->arguments->children;
     for (auto & engine_arg : engine_args)
         engine_arg = engine_arg->clone();
 
+    return extractZooKeeperPathAndReplicaNameFromEngineArgs(
+        query, table_id, engine_name, engine_args, mode, local_context,
+        /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
+}
+
+/// Extracts a zookeeper path from a specified CREATE TABLE query.
+std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreateQuery & query, const ContextPtr & local_context)
+{
     try
     {
         /// This only reads back the path of an already-created table, so it must never reject it:
         /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
-        auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
-            /*validate_substitutions=*/ false);
-        return res.full_path;
+        auto res = extractZnodeInfoFromReplicatedTableDef(
+            query, StorageID{query.getDatabase(), query.getTable(), query.uuid}, LoadingStrictnessLevel::CREATE, local_context);
+        if (!res)
+            return {};
+        return res->full_path;
     }
     catch (Exception & e)
     {
@@ -578,6 +588,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                                                    "See also `allow_deprecated_syntax_for_merge_tree` setting.");
     }
 
+    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
+    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    const bool is_ddl_replay = isSecondaryDDLReplay(args.getLocalContext());
+
     /// Extract zookeeper path and replica name from engine arguments.
     TableZnodeInfo zookeeper_info;
 
@@ -592,7 +607,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
-            validate_substitutions);
+            validate_substitutions,
+            /*validate_injected_defaults=*/ validate_substitutions || (args.is_restore_from_backup && !is_ddl_replay));
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -696,30 +712,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
     const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
 
-    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
-    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
-    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
-    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-
     /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
     const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
 
-    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
-    /// they are told apart by the client info instead (the same marker `AlterCommands` and
-    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
-        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
@@ -730,8 +730,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
+    /// Like the check above, but a full-definition `ATTACH` is exempt too, so an existing table with such a column stays loadable.
+    if (args.mode <= LoadingStrictnessLevel::CREATE && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+        MergeTreeData::checkLossyCodecOnLowCardinality(columns);
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
+
+    const bool check_aliases = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
 
     if (is_extended_storage_def)
     {
@@ -956,8 +962,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
         /// intentionally skipped because the disk configuration was already validated when the
         /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
+        /// User-initiated `ATTACH TABLE` queries, with a definition or in the short form, use
+        /// `LoadingStrictnessLevel::ATTACH` and must still be subject to these checks.
         storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
@@ -1032,7 +1038,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =
@@ -1046,19 +1051,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
 
-                    /// Backward compatibility: older versions (before 25.12) stored implicit indices
-                    /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
-                    auto & added = metadata.secondary_indices.back();
+                    /// Backward compatibility: older versions (before 25.12) stored implicit indices on disk
+                    /// as regular indices. Skip one identical to the index generated below, keep any other one.
                     String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
                     if (columns.has(col_name))
                     {
                         const auto & col_type = columns.get(col_name).type;
-                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
-                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
-                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
-                            added.is_implicitly_created = true;
+                        if (((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                                || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                                || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                            && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(col_name)->formatWithSecretsOneLine())
+                            continue;
                     }
                 }
+
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
             }
         }
 
@@ -1068,6 +1075,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.addImplicitIndicesForColumn(column, context);
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
+
+        /// The expression and the text index transforms of an index have the ALIAS columns they use expanded.
+        if (check_aliases)
+        {
+            for (const auto & index : metadata.secondary_indices)
+            {
+                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
+                KeyDescription::checkNoAlias(index.arguments.get(), "INDEX " + index.name);
+            }
+        }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
@@ -1131,6 +1148,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
+            if (check_aliases)
+                KeyDescription::checkNoAlias(engine_args[arg_num].get(), "SAMPLE BY");
             metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
@@ -1144,6 +1163,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
+        if (check_aliases)
+            KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
@@ -1182,6 +1203,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
+
+    /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
+        MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
@@ -1232,7 +1257,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
           * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
           * is the way out of that state.
           */
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition
             && (*storage_settings)[MergeTreeSetting::table_readonly])
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 
@@ -1286,7 +1311,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
-    factory.registerStorage("MergeTree", create, features, Documentation{
+    factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -1504,9 +1529,11 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. To reorder the rows of every inserted block to improve compressibility, enable the `optimize_row_order_if_no_order_by` setting. It applies to ordinary `MergeTree`-family tables, including `ReplicatedMergeTree`. Specialized engines of the family, e.g. `ReplacingMergeTree` or `AggregatingMergeTree`, are never row-order optimized and keep the order of the inserted rows.
 
-To select data in the initial order, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries.
+To enable reordering, set `optimize_row_order_if_no_order_by = 1` in the table's `SETTINGS` clause. When inserting data with `INSERT ... SELECT` queries, also set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads) to preserve the optimized order.
+
+When reordering is disabled, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries to select data in the insertion order. When reordering is enabled, a single-threaded `SELECT` query preserves the on-disk order.
 
 ### Choosing a primary key that differs from the sorting key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -1855,6 +1882,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitive](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8)    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
@@ -2009,7 +2038,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause can't be used for key columns.
+The `TTL` clause can't be used for key columns, or for columns whose subcolumns are used in the sorting or partition key.
 
 **Examples**
 
@@ -2264,6 +2293,7 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `BACKUP` and `RESTORE` of specific partitions of such a table fail. Only the plain `MergeTree` family is supported: a replicated or shared `MergeTree` table, or a materialized view or a `TimeSeries` table with an inner table on such a policy, is backed up and restored as usual, with a warning.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
@@ -2692,7 +2722,7 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
         .syntax = "ENGINE = MergeTree() ORDER BY expr [PARTITION BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [TTL expr] [SETTINGS ...]",
         .related = {"ReplicatedMergeTree"}});
 
-    factory.registerStorage("CollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("CollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 ## Description {#description}
 
@@ -3055,7 +3085,7 @@ SELECT * FROM UAct
         .syntax = "ENGINE = CollapsingMergeTree(sign) ORDER BY expr",
         .related = {"MergeTree", "VersionedCollapsingMergeTree", "ReplicatedCollapsingMergeTree"}});
 
-    factory.registerStorage("ReplacingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine differs from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -3276,7 +3306,7 @@ For further details on `FINAL`, including how to optimize `FINAL` performance, w
         .syntax = "ENGINE = ReplacingMergeTree([ver [, is_deleted]]) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedReplacingMergeTree"}});
 
-    factory.registerStorage("CoalescingMergeTree", create, features, Documentation{
+    factory.registerStorage("CoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note title="Available from version 25.6">
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
@@ -3444,7 +3474,7 @@ SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tupl
         .syntax = "ENGINE = CoalescingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "SummingMergeTree", "AggregatingMergeTree", "ReplicatedCoalescingMergeTree"}});
 
-    factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
+    factory.registerStorage("AggregatingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
@@ -3670,7 +3700,7 @@ SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY 
         .syntax = "ENGINE = AggregatingMergeTree() ORDER BY expr",
         .related = {"MergeTree", "SummingMergeTree", "ReplicatedAggregatingMergeTree"}});
 
-    factory.registerStorage("SummingMergeTree", create, features, Documentation{
+    factory.registerStorage("SummingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -3772,7 +3802,7 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 The values in the columns with the numeric data type are summed. The set of columns is defined by the parameter `columns`.
 
-If the values were 0 in all of the columns for summation, the row is deleted.
+If the values were 0 in all of the columns for summation, the row is deleted during a merge. A query with the [FINAL](/reference/statements/select/from#final-modifier) modifier sums the rows but does not delete such rows, so the set of rows it returns does not depend on which columns the query reads. Note that `FINAL` merges a [nested structure](#nested-structures) whose name ends with `Map` the same way as a merge only if the query reads all columns of that structure.
 
 If column is not in the primary key and is not summed, an arbitrary value is selected from the existing ones.
 
@@ -3862,7 +3892,7 @@ The same rules apply to the flattened sub-columns as to regular columns:
 - Only numeric sub-columns are summed.
 - Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from summation.
 - If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
-- If all numeric sub-columns of a row are zero after summation, the row is deleted.
+- If all numeric sub-columns of a row are zero after summation, the row is deleted during a merge (but not by a query with `FINAL`).
 
 <Note>
 This setting is immutable and must be specified at table creation time.
@@ -3904,7 +3934,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
         .syntax = "ENGINE = SummingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "AggregatingMergeTree", "ReplicatedSummingMergeTree"}});
 
-    factory.registerStorage("GraphiteMergeTree", create, features, Documentation{
+    factory.registerStorage("GraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -4170,7 +4200,7 @@ Data rollup is performed during merges. Usually, for old partitions, merges are 
         .syntax = "ENGINE = GraphiteMergeTree(config_section) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedGraphiteMergeTree"}});
 
-    factory.registerStorage("VersionedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("VersionedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 This engine:
 
@@ -4406,7 +4436,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
 
-    factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note>
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -4747,37 +4777,37 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"MergeTree"}});
 
-    factory.registerStorage("ReplicatedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the CollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCollapsingMergeTree('zoo_path', 'replica_name', sign) ORDER BY expr",
         .related = {"CollapsingMergeTree"}});
 
-    factory.registerStorage("ReplicatedReplacingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the ReplacingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedReplacingMergeTree('zoo_path', 'replica_name'[, ver [, is_deleted]]) ORDER BY expr",
         .related = {"ReplacingMergeTree"}});
 
-    factory.registerStorage("ReplicatedAggregatingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedAggregatingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the AggregatingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedAggregatingMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"AggregatingMergeTree"}});
 
-    factory.registerStorage("ReplicatedSummingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedSummingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the SummingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedSummingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"SummingMergeTree"}});
 
-    factory.registerStorage("ReplicatedCoalescingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the CoalescingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCoalescingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"CoalescingMergeTree"}});
 
-    factory.registerStorage("ReplicatedGraphiteMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedGraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the GraphiteMergeTree engine.",
         .syntax = "ENGINE = ReplicatedGraphiteMergeTree('zoo_path', 'replica_name', config_section) ORDER BY expr",
         .related = {"GraphiteMergeTree"}});
 
-    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the VersionedCollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedVersionedCollapsingMergeTree('zoo_path', 'replica_name', sign, version) ORDER BY expr",
         .related = {"VersionedCollapsingMergeTree"}});

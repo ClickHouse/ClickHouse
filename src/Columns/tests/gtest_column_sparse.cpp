@@ -186,6 +186,51 @@ TEST(ColumnSparse, Filter)
     }
 }
 
+TEST(ColumnSparse, Expand)
+{
+    auto test_case = [&](size_t n, size_t k, bool inverted)
+    {
+        auto [sparse_src, full_src] = createColumns(n, k);
+
+        /// A mask of twice the size with exactly n bytes set, one for each row, at random positions.
+        IColumn::Filter mask(n * 2, 0);
+        std::vector<size_t> positions(n * 2);
+        std::iota(positions.begin(), positions.end(), 0);
+        std::shuffle(positions.begin(), positions.end(), rng);
+        positions.resize(n);
+        for (size_t position : positions)
+            mask[position] = 1;
+
+        if (inverted)
+            for (auto & byte : mask)
+                byte = !byte;
+
+        auto sparse = IColumn::mutate(std::move(sparse_src));
+        auto full = IColumn::mutate(std::move(full_src));
+        sparse->expand(mask, inverted);
+        full->expand(mask, inverted);
+
+        if (!checkEquals(*sparse, *full))
+        {
+            DUMP_COLUMN(sparse);
+            DUMP_COLUMN(full);
+            throw Exception(error_code, "Expanded columns are unequal");
+        }
+    };
+
+    try
+    {
+        for (size_t n = 0; n < MAX_ROWS; n += 1 + n / 2)
+            for (size_t ratio : sparse_ratios)
+                for (bool inverted : {false, true})
+                    test_case(n, ratio, inverted);
+    }
+    catch (const Exception & e)
+    {
+        FAIL() << e.displayText();
+    }
+}
+
 TEST(ColumnSparse, Permute)
 {
     auto test_case = [&](size_t n, size_t k, size_t limit)

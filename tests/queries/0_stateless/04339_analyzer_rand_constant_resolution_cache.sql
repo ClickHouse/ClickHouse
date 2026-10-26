@@ -3,8 +3,6 @@
 -- working after the cache was narrowed to non-deterministic functions only (it used to apply to all
 -- functions and recomputed an expensive tree hash for every function node).
 
-SET enable_analyzer = 1;
-
 -- Identical randConstant() calls must share the same value and therefore compare equal.
 SELECT randConstant() = randConstant();
 SELECT randConstant(10) = randConstant(10);
