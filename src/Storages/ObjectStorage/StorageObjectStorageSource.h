@@ -419,7 +419,7 @@ public:
         {
             auto copied_file_info = file_info;
             auto cloned = std::make_shared<ObjectInfoInArchive>(
-                archive_object, path_in_archive, archive_reader, std::move(copied_file_info));
+                archive_object, path_in_archive, archive_reader, std::move(copied_file_info), archive_entry_index);
             /// `RelativePathWithMetadata` has a user-declared destructor, so its implicit
             /// assignment operator is ill-formed under `-Werror`. Copy the fields instead.
             cloned->relative_path_with_metadata.relative_path = relative_path_with_metadata.relative_path;
@@ -430,6 +430,7 @@ public:
             cloned->relative_path_with_metadata.metadata = relative_path_with_metadata.metadata;
             cloned->data_lake_metadata = data_lake_metadata;
             cloned->file_bucket_info = file_bucket_info;
+            cloned->file_bucket_info_from_query_condition_cache = file_bucket_info_from_query_condition_cache;
             cloned->rows_to_read = rows_to_read;
             return cloned;
         }
