@@ -14,7 +14,7 @@ ORDER BY id;
 
 INSERT INTO t_mutations_nondeterministic VALUES (10, 20);
 
-ALTER TABLE t_mutations_nondeterministic UPDATE v = (SELECT sum(number) FROM numbers(100)) WHERE 1;
+ALTER TABLE t_mutations_nondeterministic UPDATE v = assumeNotNull( (SELECT sum(number) FROM numbers(100)) ) WHERE 1;
 
 SELECT id, v FROM t_mutations_nondeterministic ORDER BY id;
 
@@ -32,12 +32,12 @@ ORDER BY id;
 
 INSERT INTO t_mutations_nondeterministic VALUES (10, [20]);
 
-ALTER TABLE t_mutations_nondeterministic UPDATE v = (SELECT groupArray(number) FROM numbers(10)) WHERE 1;
+ALTER TABLE t_mutations_nondeterministic UPDATE v = assumeNotNull( (SELECT groupArray(number) FROM numbers(10)) ) WHERE 1;
 
 SELECT id, v FROM t_mutations_nondeterministic ORDER BY id;
 
 -- Too big result.
-ALTER TABLE t_mutations_nondeterministic UPDATE v = (SELECT groupArray(number) FROM numbers(10000)) WHERE 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_mutations_nondeterministic UPDATE v = assumeNotNull( (SELECT groupArray(number) FROM numbers(10000)) ) WHERE 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT command FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_mutations_nondeterministic' AND is_done
@@ -53,7 +53,7 @@ ORDER BY id;
 
 INSERT INTO t_mutations_nondeterministic VALUES (10, initializeAggregation('uniqExactState', 1::UInt64));
 
-ALTER TABLE t_mutations_nondeterministic UPDATE v = (SELECT uniqExactState(number) FROM numbers(5)) WHERE 1;
+ALTER TABLE t_mutations_nondeterministic UPDATE v = assumeNotNull( (SELECT uniqExactState(number) FROM numbers(5)) ) WHERE 1;
 
 SELECT id, finalizeAggregation(v) FROM t_mutations_nondeterministic ORDER BY id;
 
@@ -103,10 +103,10 @@ INSERT INTO t_mutations_nondeterministic VALUES (10, 10);
 
 -- Check that function in subquery is not rewritten.
 ALTER TABLE t_mutations_nondeterministic
-UPDATE v =
+UPDATE v = assumeNotNull(
 (
     SELECT sum(number) FROM numbers(1000) WHERE number > randConstant()
-) WHERE 1
+) ) WHERE 1
 SETTINGS mutations_execute_subqueries_on_initiator = 0, allow_nondeterministic_mutations = 1;
 
 SELECT command FROM system.mutations
