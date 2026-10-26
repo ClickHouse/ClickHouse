@@ -17,7 +17,7 @@ for t in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database 
     $CLICKHOUSE_CLIENT -q "DROP TABLE $db.\`$t\` SYNC SETTINGS ignore_drop_queries_probability = 0"
 done
 
-$CLICKHOUSE_CLIENT -q "SELECT countIf(name LIKE '.inner_id.tags.%'), count() FROM system.tables WHERE database = '$db'"
+$CLICKHOUSE_CLIENT -q "SELECT countIf(name LIKE '.inner_id.tags.%'), countIf(name IN ('ts', 'mv')), countIf(name LIKE '.inner_id.samples.%') FROM system.tables WHERE database = '$db'"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE $db SYNC"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '$db'"
