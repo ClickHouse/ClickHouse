@@ -3484,19 +3484,25 @@ public:
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
         checkSplittingIsPossible();
-        initialize();
+        try
+        {
+            initialize();
+        }
+        catch (...)
+        {
+            /// The destructor does not run for a sink whose constructor throws: if opening the first file succeeded,
+            /// but creating the compressing wrapper or the output format failed, the unfinished file is removed here.
+            const bool file_is_unfinished = isFileUnfinished();
+            cancelBuffers();
+            if (file_is_unfinished)
+                removeUnfinishedFile();
+            throw;
+        }
     }
 
     ~StorageFileSink() override
     {
-        /// A file that is not published yet and is still open has not been completed: the insert has failed while
-        /// writing it. The table does not read it, but a glob pattern over the directory would, and the next truncating
-        /// insert would not delete it either, as it deletes only the files the table knows. So the file is removed:
-        /// the insert has created it itself - the first file of the insert that steps aside from a non-empty one and
-        /// the next files of a split insert are always new names, or names it has truncated and overwritten.
-        /// A file that already had data before the insert opened it (it is appended to) was not created by the insert,
-        /// and it is never removed.
-        const bool file_is_unfinished = !path_is_published && naked_buffer && !use_table_fd && bytes_in_file_before_write == 0;
+        const bool file_is_unfinished = isFileUnfinished();
         if (isCancelled() || file_is_unfinished)
             cancelBuffers();
         if (file_is_unfinished)
@@ -3654,6 +3660,18 @@ private:
             write_buf->cancel();
         if (naked_buffer)
             naked_buffer->cancel();
+    }
+
+    /// A file that is not published yet and is still open has not been completed: the insert has failed while
+    /// writing it. The table does not read it, but a glob pattern over the directory would, and the next truncating
+    /// insert would not delete it either, as it deletes only the files the table knows. So the file is removed:
+    /// the insert has created it itself - the first file of the insert that steps aside from a non-empty one and
+    /// the next files of a split insert are always new names, or names it has truncated and overwritten.
+    /// A file that already had data before the insert opened it (it is appended to) was not created by the insert,
+    /// and it is never removed.
+    bool isFileUnfinished() const
+    {
+        return !path_is_published && naked_buffer && !use_table_fd && bytes_in_file_before_write == 0;
     }
 
     void removeUnfinishedFile() noexcept
