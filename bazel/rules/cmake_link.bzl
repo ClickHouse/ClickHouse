@@ -49,17 +49,10 @@ def _objects(ranges, libraries):
         files.extend(objects[start:end])
     return files
 
-def _stage_pie_startup(ctx):
-    objects = ctx.files._glibc_startup + ctx.files._gcc_startup
-    names = sorted([obj.basename for obj in objects])
-    if names != ["Scrt1.o", "crtbeginS.o", "crtendS.o", "crti.o", "crtn.o"]:
-        fail("Expected the five glibc and GCC PIE startup objects, got {}".format(names))
-    staged = []
-    for obj in objects:
-        out = ctx.actions.declare_file(ctx.label.name + ".crt/" + obj.basename)
-        ctx.actions.symlink(output = out, target_file = obj)
-        staged.append(out)
-    return staged
+def _startup_directory(objects, names):
+    if sorted([obj.basename for obj in objects]) != names or len({obj.dirname: True for obj in objects}) != 1:
+        fail("Expected {} in one startup directory, got {}".format(names, objects))
+    return objects[0].dirname
 
 def _cmake_link_impl(ctx):
     plan = _CMAKE_LINKS[ctx.attr.arch]
@@ -146,8 +139,11 @@ def _cmake_link_impl(ctx):
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
-    startup = _stage_pie_startup(ctx)
-    inputs = list(startup)
+    startup_dirs = [
+        _startup_directory(ctx.files._glibc_startup, ["Scrt1.o", "crti.o", "crtn.o"]),
+        _startup_directory(ctx.files._gcc_startup, ["crtbeginS.o", "crtendS.o"]),
+    ]
+    inputs = ctx.files._glibc_startup + ctx.files._gcc_startup
     for operand in plan["sequence"]:
         kind = operand[0]
         if kind == "archive":
@@ -161,8 +157,7 @@ def _cmake_link_impl(ctx):
         elif kind == "arg":
             args.add(operand[1])
         elif kind == "gcc":
-            # Clang reads Scrt1.o, crti.o, crtbeginS.o, crtendS.o and crtn.o from -B.
-            args.add("-B" + startup[0].dirname + "/")
+            args.add_all(startup_dirs, format_each = "-B%s/")
         elif kind == "sysroot":
             args.add("--sysroot=" + sysroot)
         elif kind == "lld":
