@@ -57,3 +57,60 @@ FROM format(CSV, 'x Decimal256(38), id UInt8',
 SELECT 'TSV', count(), sum(x) = toDecimal256(1, 38), sum(id) = 3
 FROM format(TSV, 'x Decimal256(38), id UInt8',
     '12345678901234567890123456789012345678.12345678901234567890123456789012345678\t1\n-12345678901234567890123456789012345677.12345678901234567890123456789012345678\t2\n');
+
+-- Unlike `format`, `file` refills its input buffer. The first TSV value's fractional
+-- chunk ends in deferred zeroes at each of the 17/18/19-byte boundaries, before the final 1.
+INSERT INTO FUNCTION file(currentDatabase() || '_decimal_parse_chunks.tsv', 'RawBLOB')
+SELECT '.1234567890123400001\t17\tzeroes\n-123456789012345678901234567890123456789e-1\t29\texponent\n1.00000000000000000000000000000000000001\t43\tfraction\n'
+SETTINGS engine_file_truncate_on_insert = 1;
+
+INSERT INTO FUNCTION file(currentDatabase() || '_decimal_parse_chunks.csv', 'CSV')
+SELECT * FROM file(currentDatabase() || '_decimal_parse_chunks.tsv', 'TSV', 'x String, id UInt8, tag String')
+SETTINGS engine_file_truncate_on_insert = 1, input_format_tsv_detect_header = 0;
+
+SET storage_file_read_method = 'pread', input_format_parallel_parsing = 0,
+    input_format_tsv_detect_header = 0, input_format_csv_detect_header = 0;
+
+CREATE TEMPORARY TABLE decimal_refill_expected ENGINE = Memory AS
+SELECT * FROM file(currentDatabase() || '_decimal_parse_chunks.tsv', 'TSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 65536;
+
+-- Pin exact values and subsequent fields independently of the small-buffer comparisons.
+SELECT toString(x), id, tag FROM decimal_refill_expected ORDER BY id;
+
+SELECT 'TSV', 17, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.tsv', 'TSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 17;
+
+SELECT 'TSV', 18, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.tsv', 'TSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 18;
+
+SELECT 'TSV', 19, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.tsv', 'TSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 19;
+
+SELECT 'CSV', 65536, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.csv', 'CSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 65536;
+
+SELECT 'CSV', 17, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.csv', 'CSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 17;
+
+SELECT 'CSV', 18, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.csv', 'CSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 18;
+
+SELECT 'CSV', 19, arraySort(groupArray(tuple(x, id, tag))) =
+    (SELECT arraySort(groupArray(tuple(x, id, tag))) FROM decimal_refill_expected)
+FROM file(currentDatabase() || '_decimal_parse_chunks.csv', 'CSV', 'x Decimal256(38), id UInt8, tag String')
+SETTINGS max_read_buffer_size = 19;
+
+DROP TABLE decimal_refill_expected;
