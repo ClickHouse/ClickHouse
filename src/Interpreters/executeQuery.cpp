@@ -3027,7 +3027,8 @@ static BlockIO executeQueryImpl(
                         "A query whose data streams over the connection cannot be run in the background");
 
                 /// The worker re-parses the text it is given and does not apply the rewrite rules
-                /// again, so a query rewritten by a rule is handed over in its rewritten form.
+                /// again, so a query rewritten by a rule is handed over in its rewritten form, and
+                /// the worker parses it without the `max_query_size` limit of the submitted text.
                 std::future<void> background_query_execution_started;
                 if (applied_rewrite_rules.empty())
                 {
@@ -4460,7 +4461,13 @@ std::future<void> executeQueryInBackground(
             ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
             SCOPE_EXIT_SAFE(thread_group->memory_tracker.logPeakMemoryUsage());
 
-            auto io = executeQuery(query_text, background_context, QueryFlags{ .background = true, .rewritten_query_origin = rewritten_query_origin }).second;
+            /// The result of a rewrite rule is SQL that this server formatted from the accepted AST, so it
+            /// can be longer than the submitted query, and `max_query_size` must not reject it here.
+            QueryFlags background_flags{
+                .parse_server_formatted_query_text = rewritten_query_origin != nullptr,
+                .background = true,
+                .rewritten_query_origin = rewritten_query_origin};
+            auto io = executeQuery(query_text, background_context, background_flags).second;
             background_context->onQueryExecutionStarted();
             try
             {
