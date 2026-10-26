@@ -43,6 +43,14 @@ public:
     void flush();
     void setAutoFlush() { auto_flush = true; }
 
+    /// Writes to the output the data that the format has accepted but not written yet, such as Parquet row groups
+    /// that are still being encoded in background threads, waiting for that work to finish. It stalls the pipelining
+    /// of the format, so it is for a caller that makes decisions by the size of the output, not for every block.
+    void writePendingData();
+
+    /// An upper estimate of the size of the data that `writePendingData` would write.
+    virtual size_t getPendingDataBytes() const { return 0; }
+
     /// Value for rows_before_limit_at_least field.
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
 
@@ -172,6 +180,7 @@ protected:
     void finalizeUnlocked();
 
     virtual void flushImpl();
+    virtual void writePendingDataImpl() {}
 
     /// Counterpart of `flushImpl` for the framing payload boundary: re-attach format-owned buffers
     /// to the payload buffer after the framing has taken the boundary. A format-owned buffer can

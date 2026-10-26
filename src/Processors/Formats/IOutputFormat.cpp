@@ -198,6 +198,12 @@ void IOutputFormat::flush()
     flushImpl();
 }
 
+void IOutputFormat::writePendingData()
+{
+    std::lock_guard lock(writing_mutex);
+    writePendingDataImpl();
+}
+
 void IOutputFormat::write(const Block & block)
 {
     std::lock_guard lock(writing_mutex);

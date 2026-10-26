@@ -23,6 +23,9 @@ public:
     std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
     std::vector<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
 
+    /// Estimated by the memory of the row groups that are being encoded or wait to be written.
+    size_t getPendingDataBytes() const override { return bytes_in_flight; }
+
 private:
     struct MemoryToken
     {
@@ -97,6 +100,11 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void writePendingDataImpl() override;
+
+    /// Waits for the row groups that are being encoded in background threads and writes them to the file.
+    /// Returns false if the format has been stopped meanwhile.
+    bool writeEncodedRowGroups();
     void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
