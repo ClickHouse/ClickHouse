@@ -1769,6 +1769,81 @@ def test_mysql_ssl_encrypted_key_passphrase_config_named_collection(started_clus
             cursor.execute("FLUSH PRIVILEGES")
 
 
+def test_mysql_ssl_encrypted_key_passphrase_dictionary(started_cluster):
+    """A dictionary with credentials given directly in `SOURCE(MYSQL(...))` builds its pool from the
+    generated configuration rather than from arguments, so the passphrase must be read there too,
+    both for the source itself and for a replica inheriting it from the parent source.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_enc_dict_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_enc_dict_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    passphrase = "testpass-a"
+    credentials = f"""
+        USER 'ssl_enc_dict_user' PASSWORD '' DB 'clickhouse' TABLE '{table_name}'
+        SSL_CA_PEM {quote_certificate("ca.pem")}
+        SSL_CERT_PEM {quote_certificate("client-cert.pem")}
+        SSL_KEY_PEM {quote_pem(encrypt_client_key(passphrase))}
+    """
+
+    def create_dictionary(source):
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_enc_dict")
+        node1.query(
+            f"""
+            CREATE DICTIONARY mysql_ssl_enc_dict (id UInt32, name String DEFAULT '')
+            PRIMARY KEY id
+            SOURCE(MYSQL({source}))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+
+    def assert_load_fails():
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_enc_dict")
+        assert "Connections to" in str(exception.value)
+
+    try:
+        create_dictionary(
+            f"HOST 'mysql80' PORT 3306 {credentials} SSL_KEY_PASSPHRASE '{passphrase}'"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_enc_dict")
+        assert node1.query("SELECT count() FROM mysql_ssl_enc_dict") == "0\n"
+
+        create_dictionary(f"HOST 'mysql80' PORT 3306 {credentials}")
+        assert_load_fails()
+
+        create_dictionary(
+            f"HOST 'mysql80' PORT 3306 {credentials} SSL_KEY_PASSPHRASE 'wrong-passphrase'"
+        )
+        assert_load_fails()
+
+        # The replica carries no TLS keys of its own and inherits the passphrase from the source.
+        create_dictionary(
+            f"{credentials} SSL_KEY_PASSPHRASE '{passphrase}' "
+            "REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)"
+        )
+        node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_enc_dict")
+        assert node1.query("SELECT count() FROM mysql_ssl_enc_dict") == "0\n"
+
+        create_dictionary(
+            f"{credentials} SSL_KEY_PASSPHRASE 'wrong-passphrase' "
+            "REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306)"
+        )
+        assert_load_fails()
+    finally:
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_enc_dict")
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_enc_dict_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
 def test_mysql_ssl_paths_are_rejected_from_sql(started_cluster):
     """A path to a certificate or a key is only accepted from the server configuration file.
 
