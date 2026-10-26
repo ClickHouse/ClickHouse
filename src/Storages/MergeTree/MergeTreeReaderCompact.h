@@ -118,6 +118,7 @@ protected:
 
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
+    LoggerPtr log;
 
 private:
     /// The columns cache.

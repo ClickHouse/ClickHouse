@@ -8,6 +8,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include <ranges>
 
 namespace ProfileEvents
@@ -74,6 +75,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
     , deserialization_prefixes_cache(deserialization_prefixes_cache_)
+    , log(getLogger("MergeTreeReaderCompact"))
 {
     marks_loader->startAsyncLoad();
 }
@@ -666,7 +668,11 @@ void MergeTreeReaderCompact::startColumnsCacheRange(size_t from_mark, size_t end
 
     cached_entries.clear();
     if (columns_cache_reads_possible)
+    {
         cached_entries = lookupColumnsCache(range_first_mark, range_end_mark);
+        LOG_TEST(log, "Range of marks [{}, {}) of part {} is looked up in the columns cache",
+            range_first_mark, range_end_mark, columns_cache_part_name);
+    }
 }
 
 std::vector<std::vector<ColumnsCache::MappedPtr>> MergeTreeReaderCompact::lookupColumnsCache(size_t first_mark, size_t end_mark) const
