@@ -378,6 +378,18 @@ class SessionPool {
     return {};
   }
 
+  // Closes every idle session (`SYSTEM DROP CONNECTIONS CACHE`), giving back the
+  // idle slots they hold in their connection groups. Sessions in use are not
+  // affected. The sessions are destroyed outside the lock: closing a TLS socket
+  // may block, and the registrations take the locks of their groups.
+  void Clear() {
+    std::unordered_map<std::string, std::vector<Entry>> dropped;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      dropped.swap(idle_);
+    }
+  }
+
   // Called from the destructor of a response, so it does not throw: when the
   // session cannot be retained (e.g. an allocation of the pool fails), it is
   // destroyed, which closes its connection.
@@ -1342,3 +1354,11 @@ GOOGLE_CLOUD_CPP_INLINE_NAMESPACE_END
 }  // namespace rest_internal
 }  // namespace cloud
 }  // namespace google
+
+namespace ClickHouse {
+
+void dropPocoRestIdleSessions() {
+  google::cloud::rest_internal::SessionPool::Instance().Clear();
+}
+
+}  // namespace ClickHouse

@@ -220,4 +220,9 @@ struct PocoRestSessionHooksOption
     using Type = std::function<void(Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request)>;
 };
 
+/// Closes every idle keep-alive session the transport retains for reuse, process-wide, and gives back the idle
+/// slots they hold in their connection groups. Sessions in use are not affected. `SYSTEM DROP CONNECTIONS CACHE`
+/// calls it next to `HTTPConnectionPools::dropCache`, as the transport keeps its sessions in a pool of its own.
+void dropPocoRestIdleSessions();
+
 }

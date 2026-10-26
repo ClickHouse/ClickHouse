@@ -121,6 +121,10 @@
 #include <IO/S3/Client.h>
 #endif
 
+#if USE_GOOGLE_CLOUD
+#include <poco_rest_options.h>
+#endif
+
 #if USE_FILELOG
 #include <Storages/FileLog/StorageFileLog.h>
 #endif
@@ -510,6 +514,10 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
+#if USE_GOOGLE_CLOUD
+            /// The native GCS transport keeps its idle sessions in a pool of its own.
+            ClickHouse::dropPocoRestIdleSessions();
+#endif
             break;
         }
         case Type::PREWARM_MARK_CACHE:
