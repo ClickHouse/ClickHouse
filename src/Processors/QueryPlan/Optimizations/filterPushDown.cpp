@@ -665,23 +665,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     bool left_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Left);
     bool right_stream_filter_push_down_input_columns_available = canPrefilterJoinSide(kind, strictness, JoinTableSide::Right);
 
-    /** `ANY INNER` join emits at most one row per key, deduplicating both sides.
-      * Both sides are blocked: filtering the right stream can change which match is taken for the left row.
-      * If the left side has multiple rows with the same value, only one survives
-      * and pushing the filter down to the left may affect which one survives.
-      * Also the optimizer is allowed to swap the sides of the join after that pass,
-      * thus a filter on the left may end up on the right.
-      * Predicates over the equi-join keys are still pushed to both sides through the equivalent-columns path below.
-      */
-    const bool is_any_inner_join = (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
-        || (logical_join && isAnyInnerJoin(logical_join->getJoinOperator().kind, logical_join->getJoinOperator().strictness));
-
-    if (is_any_inner_join)
-    {
-        right_stream_filter_push_down_input_columns_available = false;
-        left_stream_filter_push_down_input_columns_available = false;
-    }
-
     /** `canPrefilterJoinSide` only decides whether this side's own columns may be
       * used as ordinary filter inputs (false on the null-producing outer-JOIN side).
       * Equivalent-key filters can still be attached to that child. That attach is
