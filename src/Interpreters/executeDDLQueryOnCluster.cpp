@@ -214,7 +214,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
     /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
     /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
+    ClusterProxy::stripInitiatorOnlySettingsFromDDLQuery(query_ptr);
     /// Parser-only settings have already served their purpose on the initiator. The queued query is normalized
     /// to the `ClickHouse` dialect, so keep these settings out of its text for mixed-version clusters as well.
     removeSettingsFromQuery(query_ptr, getDDLQueryParserOnlySettingNames());

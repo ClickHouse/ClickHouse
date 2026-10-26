@@ -27,7 +27,7 @@ WITH ${DB} AS MATERIALIZED (SELECT 42 AS id)
 SELECT ${DB}.other.value
 FROM ${DB}
 JOIN ${DB}.other USING (id)
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+SETTINGS enable_materialized_cte = 1;
 "
 
 # Under `analyzer_compatibility_prefer_alias_over_subcolumn = 1` the materialized CTE name is a
@@ -44,7 +44,7 @@ WITH ${DB} AS MATERIALIZED (SELECT 42 AS id, 99 AS \`tbl.value\`)
 SELECT ${DB}.tbl.value
 FROM ${DB}
 JOIN ${DB}.tbl USING (id)
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+SETTINGS enable_materialized_cte = 1,
     analyzer_compatibility_prefer_alias_over_subcolumn = 1, single_join_prefer_left_table = 0;
 "
 
@@ -57,7 +57,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH cte AS MATERIALIZED (SELECT 1 AS id, CAST(tuple(2), 'Tuple(id Int32)') AS cte)
 SELECT cte.id
 FROM cte
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+SETTINGS enable_materialized_cte = 1,
     analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 "
 
@@ -66,7 +66,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH cte AS (SELECT 1 AS id, CAST(tuple(2), 'Tuple(id Int32)') AS cte)
 SELECT cte.id
 FROM cte
-SETTINGS enable_analyzer = 1, analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 "
 
 # The qualifier of a qualified matcher is looked up as a table expression after the expression lookup
@@ -76,7 +76,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH ${DB} AS MATERIALIZED (SELECT 42 AS id, 7 AS v)
 SELECT ${DB}.*
 FROM ${DB}
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+SETTINGS enable_materialized_cte = 1;
 "
 
 # The same matcher shape with a CTE name that does not collide with any database name.
@@ -84,7 +84,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH cte AS MATERIALIZED (SELECT 42 AS id)
 SELECT cte.*
 FROM cte
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+SETTINGS enable_materialized_cte = 1;
 "
 
 # When a matcher-expanded column has to be qualified (another table expression in scope binds the same
@@ -95,7 +95,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH cte AS MATERIALIZED (SELECT 1 AS id)
 SELECT t.*, cte.*
 FROM (SELECT 2 AS id) AS t, cte
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+SETTINGS enable_materialized_cte = 1
 FORMAT TSVWithNames;
 "
 
@@ -104,7 +104,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH cte AS MATERIALIZED (SELECT 1 AS id)
 SELECT t.*, c2.*
 FROM (SELECT 2 AS id) AS t, cte AS c2
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+SETTINGS enable_materialized_cte = 1
 FORMAT TSVWithNames;
 "
 
@@ -115,7 +115,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH tbl AS MATERIALIZED (SELECT 2 AS id)
 SELECT *
 FROM tbl, ${DB}.tbl
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+SETTINGS enable_materialized_cte = 1
 FORMAT TSVWithNames;
 " | sed "s/${DB}/db/g"
 
@@ -123,7 +123,7 @@ $CLICKHOUSE_CLIENT --query "
 WITH tbl AS MATERIALIZED (SELECT 2 AS id)
 SELECT ${DB}.tbl.*
 FROM tbl, ${DB}.tbl
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+SETTINGS enable_materialized_cte = 1
 FORMAT TSVWithNames;
 " | sed "s/${DB}/db/g"
 
@@ -133,14 +133,13 @@ $CLICKHOUSE_CLIENT --query "
 WITH tbl AS MATERIALIZED (SELECT 2 AS id)
 SELECT ${DB}.tbl.*, tbl.*
 FROM ${DB}.tbl, tbl
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+SETTINGS enable_materialized_cte = 1;
 " 2>&1 | grep -o -m1 'AMBIGUOUS_IDENTIFIER'
 
 $CLICKHOUSE_CLIENT --query "
 WITH tbl AS (SELECT 2 AS id)
 SELECT ${DB}.tbl.*, tbl.*
-FROM ${DB}.tbl, tbl
-SETTINGS enable_analyzer = 1;
+FROM ${DB}.tbl, tbl;
 " 2>&1 | grep -o -m1 'AMBIGUOUS_IDENTIFIER'
 
 # The forced qualification of the multiple-joins compatibility mode
@@ -156,7 +155,7 @@ FROM
     LEFT JOIN (SELECT 1 AS k) AS t1 ON cte.k = t1.k
     LEFT JOIN (SELECT 1 AS k) AS t2 ON cte.k = t2.k
 )
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+SETTINGS enable_materialized_cte = 1,
     analyzer_compatibility_multiple_joins_qualify_column_names = 1;
 "
 
@@ -171,8 +170,7 @@ FROM
     LEFT JOIN (SELECT 1 AS k) AS t1 ON cte.k = t1.k
     LEFT JOIN (SELECT 1 AS k) AS t2 ON cte.k = t2.k
 )
-SETTINGS enable_analyzer = 1,
-    analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 1;
 "
 
 # The forced qualifier is directly visible in the header of the matcher expansion.
@@ -182,7 +180,7 @@ SELECT cte.*
 FROM cte
 LEFT JOIN (SELECT 1 AS k) AS t1 ON cte.k = t1.k
 LEFT JOIN (SELECT 1 AS k) AS t2 ON cte.k = t2.k
-SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+SETTINGS enable_materialized_cte = 1,
     analyzer_compatibility_multiple_joins_qualify_column_names = 1
 FORMAT TSVWithNames;
 "

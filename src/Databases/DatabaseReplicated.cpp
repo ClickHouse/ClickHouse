@@ -1568,7 +1568,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     /// Initiator-only and parser-only settings have already served their purpose. Keep them out of the
     /// normalized query text so replicas do not reapply them and older replicas do not reject unknown settings.
     auto query_to_enqueue = query->clone();
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_enqueue);
+    ClusterProxy::stripInitiatorOnlySettingsFromDDLQuery(query_to_enqueue);
     removeSettingsFromQuery(query_to_enqueue, getDDLQueryParserOnlySettingNames());
     entry.query = query_to_enqueue->formatWithSecretsOneLine();
     entry.initiator = host_fqdn_id;

@@ -1,7 +1,6 @@
 -- this test is just like 02944_variant_as_common_type, but with different expected output, because
 -- analyzer changes some return types. Specifically, if(c, x, y) always casts to the common type of
 -- x and y, even if c is constant.
-set enable_analyzer=1;
 
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;

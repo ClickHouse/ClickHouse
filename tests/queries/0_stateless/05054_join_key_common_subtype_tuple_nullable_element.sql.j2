@@ -3,8 +3,6 @@
 -- of the common range does.
 -- https://github.com/ClickHouse/ClickHouse/issues/117102
 
-SET enable_analyzer = 1;
-
 {% for algorithm in ['hash', 'parallel_hash', 'grace_hash', 'partial_merge', 'full_sorting_merge'] -%}
 SELECT '{{ algorithm }}';
 
