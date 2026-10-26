@@ -1,8 +1,13 @@
--- Tags: no-ordinary-database, no-async-insert, no-fasttest
+-- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-random-settings, no-s3-storage
 -- The SST reader cache: a repeated dedup probe of the same part must reuse the
 -- already-opened reader instead of reopening the SST (footer + index + filter).
 -- A query-level read throttler bypasses the cache, and so does a user-level one
 -- on remote disks, so pin a local disk and drop the query-level limits.
+-- no-random-settings: randomized read toggles (`enable_filesystem_cache`,
+-- `use_page_cache_*`, ...) make the probe's settings differ from the shared
+-- server-level settings, and such a probe bypasses the cache by design.
+-- no-s3-storage: an S3-backed `default` policy makes the part remote, where the
+-- test profile's user-level network throttler bypasses the cache too.
 
 SET enable_unique_key = 1;
 SET max_local_read_bandwidth = 0, max_remote_read_network_bandwidth = 0;
