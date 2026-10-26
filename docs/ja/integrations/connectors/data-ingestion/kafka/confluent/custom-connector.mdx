@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'Confluent Platform 上の Kafka Connector Sink'
+sidebarTitle: 'Custom Connector としての Kafka Connector Sink'
 slug: /integrations/kafka/cloud/confluent/custom-connector
-description: 'Kafka Connect と ClickHouse で ClickHouse Connector Sink を使用する'
-title: 'Confluent platform と ClickHouse の統合'
+description: 'ClickHouse Connector Sink を Custom Connector として Confluent Cloud にアップロードし、実行します'
+title: 'Confluent Cloud で ClickHouse Connector Sink を Custom Connector として利用する'
 keywords: ['Confluent ClickHouse 連携', 'ClickHouse Kafka コネクタ', 'Kafka Connect ClickHouse sink', 'Confluent Platform ClickHouse', 'Confluent custom connector']
 doc_type: 'guide'
 ---
@@ -30,24 +30,26 @@ picture-in-picture"
 以下に精通していることを前提としています。
 
 * [ClickHouse Connector Sink](/ja/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
-* Confluent Platform と [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html)。
+* Confluent Cloud と [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html)。
 
-<div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
-  ## Confluent Platform 向け ClickHouse 公式 Kafka コネクタ
-</div>
+<Note>
+  このページでは、コネクタを Confluent Cloud にご自身でアップロードする方法を説明します。特定のコネクタのバージョンやカスタム設定が不要であれば、[完全マネージド型コネクタ](/ja/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)の方がより簡単にセットアップできます。
+</Note>
+
+## Custom Connector としての ClickHouse 公式 Kafka コネクタ {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
 
 <div id="installing-on-confluent-platform">
-  ### Confluent Platform へのインストール
+  ### Custom Connector としてのインストール
 </div>
 
-以下は、Confluent Platform で ClickHouse Sink Connector をすぐに使い始めるための簡単なガイドです。
+以下は、Confluent Cloud で ClickHouse Sink Connector を Custom Connector としてすぐに使い始めるための簡単なガイドです。
 詳細については、[Confluent の公式ドキュメント](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector)を参照してください。
 
 <div id="create-a-topic">
   #### トピックを作成する
 </div>
 
-Confluent Platform でトピックを作成するのは比較的簡単です。詳細な手順は[こちら](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)を参照してください。
+Confluent Cloud でトピックを作成するのは比較的簡単です。詳細な手順は[こちら](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)を参照してください。
 
 <div id="important-notes">
   #### 重要な注意事項
@@ -56,9 +58,7 @@ Confluent Platform でトピックを作成するのは比較的簡単です。�
 * Kafkaトピック名は、ClickHouseテーブル名と同じである必要があります。これを調整するには、トランスフォーマー (たとえば [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)) を使用します。
 * パーティション数が多ければ、必ずしもパフォーマンスが向上するわけではありません。詳しくは、今後公開予定のガイドでパフォーマンス向上のヒントとあわせて紹介します。
 
-<div id="install-connector">
-  #### コネクタをインストールする
-</div>
+#### コネクタをインストールする {#install-connector}
 
 コネクタは当社の[repository](https://github.com/ClickHouse/clickhouse-kafka-connect/releases)からダウンロードできます。コメントやissueもぜひそちらにお寄せください。
 
@@ -125,6 +125,6 @@ Confluent Platform でトピックを作成するのは比較的簡単です。�
 </div>
 
 * Custom Connectors では、パブリックインターネット上のエンドポイントを使用する必要があります。静的 IP アドレスはサポートされていません。
-* 一部の Custom Connector プロパティはオーバーライドできます。詳しくは、[公式ドキュメントの一覧](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)を参照してください。
+* 一部の Custom Connector プロパティはオーバーライドできます。詳しくは、[公式ドキュメントの完全な一覧](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)を参照してください。
 * Custom Connectors は、[AWS の一部のリージョン](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)でのみ利用できます。
 * 詳しくは、[公式ドキュメントにある Custom Connectors の制限事項一覧](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)を参照してください。

@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -m --query """
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Ki', path = ${CLICKHOUSE_TEST_UNIQUE_NAME}, disk = s3_disk);
+SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '100Ki', max_file_segment_size = '32Ki', boundary_alignment = '32Ki', path = ${CLICKHOUSE_TEST_UNIQUE_NAME}, disk = s3_disk);
 
 INSERT INTO test SELECT 1, 'test';
 """

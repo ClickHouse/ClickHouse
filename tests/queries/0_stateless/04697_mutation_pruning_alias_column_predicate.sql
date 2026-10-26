@@ -2,9 +2,6 @@
 -- An `ALIAS` column is not physically present, so the pruning analysis has to know it anyway:
 -- it is not part of the partition key, so the predicate is simply opaque to the pruner and every
 -- partition is mutated.
--- The old analyzer cannot resolve an `ALIAS` column in a mutation predicate at all (it fails with
--- `Missing columns` regardless of the pruning optimization), and a mutation is executed in the
--- background with the server settings, so a query level `enable_analyzer` does not help.
 
 SET mutations_sync = 2;
 SET optimize_mutations_with_partition_pruning = 1;

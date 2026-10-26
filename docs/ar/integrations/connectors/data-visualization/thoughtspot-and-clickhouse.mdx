@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ThoughtSpot'
+slug: /integrations/thoughtspot
+keywords: ['clickhouse', 'ThoughtSpot', 'connect', 'integrate', 'ui']
+description: 'ThoughtSpot منصة تحليلات مدعومة بالذكاء الاصطناعي تتيح لك البحث في بياناتك واستكشافها وتصوّرها في الوقت الفعلي.'
+title: 'ThoughtSpot'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+يمكن لـ ThoughtSpot الاتصال بـ ClickHouse Cloud أو بعمليات النشر المحلية عبر موصل ClickHouse الأصلي المدمج فيه.
+
+<Steps>
+  <Step title="اجمع بيانات الاتصال" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="أنشئ اتصال ClickHouse في ThoughtSpot" id="2-create-a-clickhouse-connection-in-thoughtspot">
+    1. انتقل إلى **Data workspace** &gt; **Connections**.
+
+    2. انقر على **+ Create connection**، واختر مربع **ClickHouse**، ثم انقر على **Next**.
+
+    3. أدخل اسمًا للاتصال، ووصفًا اختياريًا، وبيانات اتصال ClickHouse التي جمعتها في الخطوة السابقة، ثم انقر على **Next**. للاطلاع على تفاصيل كل attribute، راجع [مرجع اتصال ClickHouse](https://docs.thoughtspot.com/cloud/latest/connections-clickhouse-reference) في وثائق ThoughtSpot.
+
+    4. (اختياري) لتهيئة مهلة على مستوى الاستعلام، افتح قائمة **Advanced Config**. في حقل **Key**، أدخل `queryTimeoutSeconds`، وفي حقل **Value**، أدخل مدة المهلة بالثواني. يُوصى بألا تتجاوز 10 دقائق.
+
+    5. (اختياري) لإضافة أزواج مفتاح-قيمة أخرى، افتح قائمة **Advanced Config** وأدخل **Key** و**Value**. انقر على علامة الجمع (**+**) لإضافة المزيد من الأزواج.
+
+       <Note>
+         يجب أن تكون جميع أزواج مفتاح-قيمة التي تُدخلها معرّفة في مصدر بيانات ClickHouse لديك. علمًا بأن أزواج مفتاح-قيمة حساسة لحالة الأحرف.
+       </Note>
+
+    6. اختر الجداول والأعمدة التي تريد استخدامها، ثم انقر على **Create connection**. ستظهر رسالة تؤكد عدد الجداول والأعمدة التي أُضيفت.
+
+    يظهر الاتصال الآن في صفحة **Data workspace** &gt; **Connections**. ويمكنك البحث في بيانات ClickHouse وتشغيل استعلامات مباشرة على الجداول المرتبطة في ThoughtSpot.
+  </Step>
+</Steps>
