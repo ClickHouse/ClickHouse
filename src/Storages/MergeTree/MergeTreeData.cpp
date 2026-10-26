@@ -10835,8 +10835,9 @@ static DataTypePtr getActiveTypeOfPartitionValue(const ConstantValue & constant,
         return variant_type->getVariant(discriminator);
     }
 
+    /// The `Field` of a `Dynamic` value keeps its `UUID2` values in the layout of `UUID`.
     if (isDynamic(type))
-        return assert_cast<const ColumnDynamic &>(*column).getTypeAt(0);
+        return getTypeOfDynamicValueField(assert_cast<const ColumnDynamic &>(*column).getTypeAt(0));
 
     return type;
 }

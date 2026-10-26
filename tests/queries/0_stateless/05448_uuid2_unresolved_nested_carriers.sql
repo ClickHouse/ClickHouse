@@ -1,10 +1,11 @@
 -- A `Dynamic` (or a `Variant`) nested in a collection loses the type of its value when the value becomes a `Field`.
 -- A nested `Variant` is resolved by its only alternative of the kind of the value; when the type of a nested UUID
 -- value cannot be resolved, the conversion to `UUID` / `UUID2` is rejected instead of guessing the layout.
+-- The `Field` of a `Dynamic` value keeps its UUID values in the layout of `UUID`, so it is converted by that layout.
 
 SET allow_suspicious_variant_types = 1;
 
-SELECT u FROM values('u Array(UUID1)', [CAST(toUUID2('00000000-0000-0000-0000-000000000001') AS Dynamic)]); -- { serverError BAD_ARGUMENTS }
+SELECT u FROM values('u Array(UUID1)', [CAST(toUUID2('00000000-0000-0000-0000-000000000001') AS Dynamic)]);
 SELECT u FROM values('u Array(Tuple(UUID1))', [CAST(tuple(toUUID2('00000000-0000-0000-0000-000000000001')) AS Variant(Tuple(UUID2), String))]);
 SELECT u FROM values('u Array(Tuple(UUID2))', [CAST(tuple(toUUID('00000000-0000-0000-0000-000000000001')) AS Variant(Tuple(UUID), String))]);
 
@@ -15,11 +16,11 @@ INSERT INTO t_uuid2_nested_dynamic SETTINGS input_format_values_deduce_templates
 SELECT u FROM t_uuid2_nested_dynamic;
 DROP TABLE t_uuid2_nested_dynamic;
 
--- A partition is not selected by a guessed layout.
+-- A partition is selected by the identifier, not by the layout of the value.
 DROP TABLE IF EXISTS t_uuid2_partition_dynamic;
 CREATE TABLE t_uuid2_partition_dynamic (u Array(UUID1)) ENGINE = MergeTree PARTITION BY u ORDER BY tuple();
 INSERT INTO t_uuid2_partition_dynamic VALUES (['00000000-0000-0000-0000-000000000001']), (['00000000-0000-0001-0000-000000000000']);
-ALTER TABLE t_uuid2_partition_dynamic DROP PARTITION tuple([CAST(toUUID2('00000000-0000-0000-0000-000000000001') AS Dynamic)]); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_uuid2_partition_dynamic DROP PARTITION tuple([CAST(toUUID2('00000000-0000-0000-0000-000000000001') AS Dynamic)]);
 SELECT u FROM t_uuid2_partition_dynamic ORDER BY toString(u);
 DROP TABLE t_uuid2_partition_dynamic;
 

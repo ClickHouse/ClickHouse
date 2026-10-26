@@ -777,20 +777,19 @@ namespace
         const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
 
-        /// A cast between `UUID` and `UUID2` keeps the value but swaps the halves of its representation, so the cast
-        /// entry never equals the original `Field`, although the conversion is exact.
-        const auto decayed_from_type = removeNullable(removeLowCardinality(from_type));
-        const auto decayed_from_array_nested_type = removeNullable(removeLowCardinality(from_array_nested_type));
-        const bool cast_between_uuid_types = (isUUID(decayed_from_type) && isUUID2(decayed_from_array_nested_type))
-            || (isUUID2(decayed_from_type) && isUUID(decayed_from_array_nested_type));
+        /// A cast between `UUID` and `UUID2` (also nested, e.g. `Tuple(UUID)` to `Tuple(UUID2)`) keeps the value but
+        /// swaps the halves of its representation, so compare both entries with their `UUID` values in the same layout.
+        const bool cast_between_uuid_types = typesHaveDifferentUUIDLayouts(*from_type, *from_array_nested_type);
 
         const auto entry_converted_exactly = [&](size_t i)
         {
             if (cast_checked_enum_membership)
                 return true;
             const Field original = (*from_column_uncast)[i];
-            if (cast_between_uuid_types && !original.isNull())
-                return true;
+            if (cast_between_uuid_types)
+                return accurateEquals(
+                    convertUUID2LeavesToUUIDLayout((*cache->from_column)[i], *from_type),
+                    convertUUID2LeavesToUUIDLayout(original, *from_array_nested_type));
             return accurateEquals((*cache->from_column)[i], original);
         };
 

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
@@ -254,6 +255,16 @@ VectorWithMemoryTracking<ColumnVariant::Discriminator> * ColumnDynamic::combineV
     return &it->second;
 }
 
+namespace
+{
+
+bool variantContainsUUID2(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & t) { return WhichDataType(t).isUUID2(); });
+}
+
+}
+
 void ColumnDynamic::insert(const Field & x)
 {
     if (x.isNull())
@@ -264,10 +275,14 @@ void ColumnDynamic::insert(const Field & x)
 
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
+    const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     /// Check if we can insert field into existing variants and avoid Variant extension.
     for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
     {
-        if (i != shared_variant_discr && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
+        /// A `Field` does not keep the type of its value, so its `UUID` values have the layout of `UUID` (see `get`),
+        /// while a `UUID2` variant keeps them in another layout.
+        if (i != shared_variant_discr && !variantContainsUUID2(*variant_types[i])
+            && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
         {
             variant_col.getLocalDiscriminators().push_back(variant_col.localDiscriminatorByGlobal(i));
             variant_col.getOffsets().push_back(variant_col.getVariantByGlobalDiscriminator(i).size() - 1);
@@ -325,13 +340,20 @@ void ColumnDynamic::get(size_t n, Field & res) const
     /// Object, Dynamic and Variant values nest into each other to a depth that comes from the data, not from the declared type.
     checkStackSize();
 
+    /// A `Field` does not keep the type of its value, and `insert` infers `UUID` for a `Field::Types::UUID`.
+    /// So, like any untyped `Field`, a `Field` of a `Dynamic` value keeps its `UUID2` values in the layout of `UUID`,
+    /// and inserting it back keeps the identifier.
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
     {
         variant_col.get(n, res);
         if (!res.isNull())
-            res = convertFieldToType(res, *getTypeAt(n));
+        {
+            const auto type = getTypeAt(n);
+            res = convertFieldToType(res, *type);
+            res = convertUUID2LeavesToUUIDLayout(res, *type);
+        }
         return;
     }
 
@@ -341,6 +363,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     ReadBufferFromMemory buf(value_data);
     auto type = decodeDataType(buf);
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
+    res = convertUUID2LeavesToUUIDLayout(res, *type);
 }
 
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const

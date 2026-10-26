@@ -391,8 +391,9 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
 {
     if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(&value))
     {
+        /// The `Field` of a `Dynamic` value keeps its `UUID2` values in the layout of `UUID`.
         if (DataTypePtr alternative = dynamic_column->getTypeAt(0))
-            return alternative;
+            return getTypeOfDynamicValueField(alternative);
     }
     else if (const auto * variant_column = checkAndGetColumn<ColumnVariant>(&value))
     {

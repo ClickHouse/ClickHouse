@@ -489,6 +489,7 @@ const IDataType * removeNullableAndLowCardinalityFromHint(const IDataType * from
 /// The type, `UUID` or `UUID2`, of a `Field::UUID` value of the source type `hint`, or nothing if the hint does not tell.
 /// A `Variant` value loses its discriminator when it becomes a `Field`, so the layout of the value is known only if
 /// the `Variant` has a single alternative of these types; with both of them the value is ambiguous.
+/// A `Field` of a `Dynamic` value keeps its `UUID` values in the layout of `UUID` (see `ColumnDynamic::get`).
 std::optional<TypeIndex> getUUIDSourceType(const IDataType * hint)
 {
     hint = removeNullableAndLowCardinalityFromHint(hint);
@@ -498,6 +499,9 @@ std::optional<TypeIndex> getUUIDSourceType(const IDataType * hint)
     const WhichDataType which(*hint);
     if (which.isUUID() || which.isUUID2())
         return which.idx;
+
+    if (which.isDynamic())
+        return TypeIndex::UUID;
 
     if (const auto * variant_hint = typeid_cast<const DataTypeVariant *>(hint))
     {
@@ -519,6 +523,57 @@ std::optional<TypeIndex> getUUIDSourceType(const IDataType * hint)
     return {};
 }
 
+bool fieldContainsUUID(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UUID:
+            return true;
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), fieldContainsUUID);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), fieldContainsUUID);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), fieldContainsUUID);
+        default:
+            return false;
+    }
+}
+
+bool isUUIDOrUUID2(const IDataType & t)
+{
+    return WhichDataType(t).isUUID() || WhichDataType(t).isUUID2();
+}
+
+/// A `Variant` value loses its discriminator when it becomes a `Field`, so the type of an array, a tuple or a map value
+/// of a `Variant` is its only alternative of this kind. Returns nullptr if there is no such alternative or several.
+const IDataType * findVariantAlternativeOfFieldKind(const Field & value, const DataTypeVariant & variant_type, size_t & num_matching)
+{
+    const auto has_kind = [&value](const IDataType & alternative)
+    {
+        const IDataType * unwrapped = removeNullableAndLowCardinalityFromHint(&alternative);
+        switch (value.getType())
+        {
+            case Field::Types::Array: return typeid_cast<const DataTypeArray *>(unwrapped) != nullptr;
+            case Field::Types::Tuple: return typeid_cast<const DataTypeTuple *>(unwrapped) != nullptr;
+            case Field::Types::Map: return typeid_cast<const DataTypeMap *>(unwrapped) != nullptr;
+            default: return false;
+        }
+    };
+
+    const IDataType * matching_alternative = nullptr;
+    num_matching = 0;
+    for (const auto & alternative : variant_type.getVariants())
+    {
+        if (has_kind(*alternative))
+        {
+            matching_alternative = alternative.get();
+            ++num_matching;
+        }
+    }
+    return num_matching == 1 ? matching_alternative : nullptr;
+}
+
 /// `FieldVisitorToString` does not know the type and formats a `Field::UUID` with the historical `UUID` layout.
 /// Bring the `UUID2` leaves of `src` (of type `src_type`) to that layout, so that the text keeps the identifier.
 Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
@@ -531,6 +586,20 @@ Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
     {
         if (getUUIDSourceType(unwrapped_type) == TypeIndex::UUID2)
             return UUIDHelpers::swapHalves(src.safeGet<UUID>());
+        return src;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(unwrapped_type))
+    {
+        size_t num_matching = 0;
+        if (const auto * alternative = findVariantAlternativeOfFieldKind(src, *variant_type, num_matching))
+            return uuid2LeavesToUUIDLayout(src, *alternative);
+
+        if (num_matching > 1 && fieldContainsUUID(src) && anyInTypeTree(*variant_type, isUUIDOrUUID2))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot convert a value of type {}: it is not known whether the nested UUID values are UUID or UUID2. "
+                "Cast the value to a concrete type first",
+                src_type.getName());
         return src;
     }
 
@@ -566,71 +635,41 @@ Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
     return src;
 }
 
-bool fieldContainsUUID(const Field & value)
-{
-    switch (value.getType())
-    {
-        case Field::Types::UUID:
-            return true;
-        case Field::Types::Array:
-            return std::ranges::any_of(value.safeGet<Array>(), fieldContainsUUID);
-        case Field::Types::Tuple:
-            return std::ranges::any_of(value.safeGet<Tuple>(), fieldContainsUUID);
-        case Field::Types::Map:
-            return std::ranges::any_of(value.safeGet<Map>(), fieldContainsUUID);
-        default:
-            return false;
-    }
-}
-
 /// The source type of a nested element `value` (an element of an array, a tuple or a map), for the conversion of its
 /// `UUID` leaves to `type`. A `Variant` value loses its discriminator when it becomes a `Field`, so a `Variant` hint
 /// is resolved to its only alternative that can hold a value of this kind. When the hint does not tell the type
-/// (a `Dynamic`, or a `Variant` with several such alternatives) and the value has `UUID` leaves to convert to `UUID`
-/// or `UUID2`, the layout of these leaves is unknown, and the conversion is rejected instead of guessing.
-const IDataType * resolveNestedSourceTypeHint(const Field & value, const IDataType & type, const IDataType * hint)
+/// (a `Variant` with several such alternatives) and the value has `UUID` leaves to convert to `UUID` or `UUID2`,
+/// the layout of these leaves is unknown, and the conversion is rejected instead of guessing. A `Field` of a `Dynamic`
+/// value has the layout of the type inferred from it (see `ColumnDynamic::get`).
+const IDataType * resolveNestedSourceTypeHint(
+    const Field & value, const IDataType & type, const IDataType * hint, DataTypePtr & inferred_type_holder)
 {
     const IDataType * unwrapped_hint = removeNullableAndLowCardinalityFromHint(hint);
     if (!unwrapped_hint || value.isNull())
         return hint;
 
-    if (const auto * variant_hint = typeid_cast<const DataTypeVariant *>(unwrapped_hint))
+    if (isDynamic(*unwrapped_hint))
     {
         /// `getUUIDSourceType` resolves a scalar value by itself.
-        if (value.getType() == Field::Types::UUID)
+        if (value.getType() == Field::Types::UUID || !fieldContainsUUID(value))
             return hint;
-
-        const auto has_kind = [&value](const IDataType & alternative)
-        {
-            const IDataType * unwrapped = removeNullableAndLowCardinalityFromHint(&alternative);
-            switch (value.getType())
-            {
-                case Field::Types::Array: return typeid_cast<const DataTypeArray *>(unwrapped) != nullptr;
-                case Field::Types::Tuple: return typeid_cast<const DataTypeTuple *>(unwrapped) != nullptr;
-                case Field::Types::Map: return typeid_cast<const DataTypeMap *>(unwrapped) != nullptr;
-                default: return false;
-            }
-        };
-
-        const IDataType * matching_alternative = nullptr;
-        size_t num_matching_alternatives = 0;
-        for (const auto & alternative : variant_hint->getVariants())
-        {
-            if (has_kind(*alternative))
-            {
-                matching_alternative = alternative.get();
-                ++num_matching_alternatives;
-            }
-        }
-        if (num_matching_alternatives == 1)
-            return matching_alternative;
+        inferred_type_holder = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), value);
+        return inferred_type_holder.get();
     }
-    else if (!isDynamic(*unwrapped_hint))
-    {
+
+    const auto * variant_hint = typeid_cast<const DataTypeVariant *>(unwrapped_hint);
+    if (!variant_hint)
         return hint;
-    }
 
-    if (fieldContainsUUID(value) && anyInTypeTree(type, [](const IDataType & t) { return WhichDataType(t).isUUID() || WhichDataType(t).isUUID2(); }))
+    /// `getUUIDSourceType` resolves a scalar value by itself.
+    if (value.getType() == Field::Types::UUID)
+        return hint;
+
+    size_t num_matching = 0;
+    if (const auto * alternative = findVariantAlternativeOfFieldKind(value, *variant_hint, num_matching))
+        return alternative;
+
+    if (fieldContainsUUID(value) && anyInTypeTree(type, isUUIDOrUUID2))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot convert a value of type {} to {}: it is not known whether the nested UUID values are UUID or UUID2. "
             "Cast the value to a concrete type first",
@@ -1357,11 +1396,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
+                DataTypePtr inferred_hint;
                 res[i] = convertFieldToType(
                     src_arr[i],
                     element_type,
                     resolveNestedSourceTypeHint(
-                        src_arr[i], element_type, tuple_from_hint ? tuple_from_hint->getElements()[i].get() : element_from_hint),
+                        src_arr[i], element_type, tuple_from_hint ? tuple_from_hint->getElements()[i].get() : element_from_hint, inferred_hint),
                     format_settings,
                     strict,
                     convert_inexact_floats);
@@ -1402,10 +1442,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
+                DataTypePtr inferred_hint;
                 res[i] = convertFieldToType(
                     src_tuple[i],
                     element_type,
-                    resolveNestedSourceTypeHint(src_tuple[i], element_type, tuple_from_hint ? tuple_from_hint->getElements()[i].get() : nullptr),
+                    resolveNestedSourceTypeHint(src_tuple[i], element_type, tuple_from_hint ? tuple_from_hint->getElements()[i].get() : nullptr, inferred_hint),
                     format_settings,
                     strict,
                     convert_inexact_floats);
@@ -1608,13 +1649,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 const auto & value = map_entry[1];
 
                 Tuple updated_entry(2);
+                DataTypePtr inferred_hint;
 
-                updated_entry[0] = convertFieldToType(key, key_type, resolveNestedSourceTypeHint(key, key_type, key_from_hint), format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, resolveNestedSourceTypeHint(key, key_type, key_from_hint, inferred_hint), format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && (!canContainNull(key_type) || (strict && !key.isNull())))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, resolveNestedSourceTypeHint(value, value_type, value_from_hint), format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, resolveNestedSourceTypeHint(value, value_type, value_from_hint, inferred_hint), format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && (!canContainNull(value_type) || (strict && !value.isNull())))
                     have_unconvertible_element = true;
 
@@ -1975,6 +2017,23 @@ Field convertUUID2LeavesToUUIDLayout(const Field & value, const IDataType & type
     if (!typeContainsUUID2(type))
         return value;
     return uuid2LeavesToUUIDLayout(value, type);
+}
+
+DataTypePtr getTypeOfDynamicValueField(const DataTypePtr & type)
+{
+    if (!type || !typeContainsUUID2(*type))
+        return type;
+    return rewriteTypeTree(
+        type,
+        [](const DataTypePtr & t) -> DataTypePtr { return WhichDataType(*t).isUUID2() ? std::make_shared<DataTypeUUID>() : t; },
+        CustomizationPolicy::Keep);
+}
+
+bool typesHaveDifferentUUIDLayouts(const IDataType & lhs, const IDataType & rhs)
+{
+    const auto is_uuid = [](const IDataType & t) { return WhichDataType(t).isUUID(); };
+    const auto is_uuid2 = [](const IDataType & t) { return WhichDataType(t).isUUID2(); };
+    return (anyInTypeTree(lhs, is_uuid) && anyInTypeTree(rhs, is_uuid2)) || (anyInTypeTree(lhs, is_uuid2) && anyInTypeTree(rhs, is_uuid));
 }
 
 Field convertUntypedFieldToType(const Field & value, const IDataType & to_type)

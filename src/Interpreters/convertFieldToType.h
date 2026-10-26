@@ -120,6 +120,14 @@ Field convertUUID2LeavesToUUIDLayout(const Field & value, const IDataType & type
 /// Converts a `Field` without a type, with `UUID` values in the layout described above, to `to_type`.
 Field convertUntypedFieldToType(const Field & value, const IDataType & to_type);
 
+/// A `Field` of a `Dynamic` value is such a `Field` without a type as well (see `ColumnDynamic::get`). The type that
+/// describes the `Field` of a value of the active type `type` of a `Dynamic` value: `type` with `UUID2` replaced by `UUID`.
+DataTypePtr getTypeOfDynamicValueField(const DataTypePtr & type);
+
+/// Whether one of the types has `UUID` and the other has `UUID2` somewhere in it (e.g. `Tuple(UUID)` and
+/// `Tuple(UUID2)`): a conversion between them keeps the values but changes their representation and their order.
+bool typesHaveDifferentUUIDLayouts(const IDataType & lhs, const IDataType & rhs);
+
 /// Where a decimal integer literal falls relative to the range of an integer type. `NotApplicable` also covers
 /// a non-integer type, a non-decimal literal, and `-0` against an unsigned type.
 enum class IntegerLiteralRange : uint8_t
