@@ -761,6 +761,14 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
     return {*column_in_part, IDataType::getSerialization(*column_in_part, infos.getSettings())};
 }
 
+const ColumnsDescription & IMergeTreeReader::getPartColumnsDescription() const
+{
+    /// The same choice as `getColumns`.
+    return data_part_info_for_read->isWidePart() && (*storage_settings)[MergeTreeSetting::share_nested_offsets]
+        ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
+        : data_part_info_for_read->getColumnsDescription();
+}
+
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
     return getColumnAndSerializationInPart(required_column).column;

@@ -123,6 +123,10 @@ public:
     /// of each on disk. Columns may share a stream, e.g. the offsets of the arrays of a `Nested`. Only for the columns
     /// whose streams are known without deserializing prefixes and are all in the part.
     using StreamsBytes = std::vector<std::pair<String, size_t>>;
+
+    /// The part's columns, named the way `getColumnsToRead` names them: in a wide part the arrays of a `Nested` read
+    /// their shared offsets as `n.size0`, a subcolumn of the collected `Nested`, and in a compact part as `n.a.size0`.
+    const ColumnsDescription & getPartColumnsDescription() const;
     virtual std::unordered_map<String, StreamsBytes> getCompressedBytesOfColumnsToRead() { return {}; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }

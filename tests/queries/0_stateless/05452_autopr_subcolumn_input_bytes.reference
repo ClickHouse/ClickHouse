@@ -1,7 +1,9 @@
 05452_compact	1
+05452_nested	1
+05452_nested_compact	1
+05452_nested_shared_stream	1
 05452_renamed	1
 05452_wide	1
 05452_wide_single_stream	1
-05452_nested	1
-05452_nested_shared_stream	1
+05452_wide_single_stream_full_and_size	1
 1

@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_wide_single_stream;
 DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_renamed;
 DROP TABLE IF EXISTS t_nested;
+DROP TABLE IF EXISTS t_nested_compact;
 DROP TABLE IF EXISTS t_codec;
 DROP TABLE IF EXISTS t_codec_renamed;
 
@@ -32,6 +33,10 @@ CREATE TABLE t_renamed AS t_wide;
 CREATE TABLE t_nested (key UInt64, n Nested(a String, b UInt64)) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
 
+-- A compact part reads the offsets as `n.a.size0`, not as the shared `n.size0`.
+CREATE TABLE t_nested_compact (key UInt64, n Nested(a String, b UInt64)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
+
 -- A compact part is sampled with the `CODEC` of the column, which must be found under its old name too.
 CREATE TABLE t_codec (key UInt64, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, ratio_of_defaults_for_sparse_serialization = 1;
@@ -44,6 +49,7 @@ INSERT INTO t_renamed SELECT * FROM t_wide;
 INSERT INTO t_nested SELECT intDiv(number, 100000), arrayMap(i -> 'x', range(cityHash64(number) % 5)), arrayMap(i -> i, range(cityHash64(number) % 5))
 FROM numbers(1e6);
 
+INSERT INTO t_nested_compact SELECT * FROM t_nested;
 INSERT INTO t_codec SELECT * FROM t_wide;
 INSERT INTO t_codec_renamed SELECT * FROM t_wide;
 
@@ -58,16 +64,17 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 SET optimize_functions_to_subcolumns = 1;
--- Some cases are compared with `ReadCompressedBytes`, which a read served from the uncompressed cache does not count.
-SET use_uncompressed_cache = 0;
 
 SELECT key, avg(length(s)) FROM t_wide WHERE s <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_wide';
 SELECT key, avg(length(s)) FROM t_wide_single_stream WHERE s <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_wide_single_stream';
+-- `s` and `s.size` read the one stream of `s`.
+SELECT key, max(s), max(s.size) FROM t_wide_single_stream GROUP BY key FORMAT Null SETTINGS log_comment = '05452_wide_single_stream_full_and_size';
 SELECT key, avg(length(s)) FROM t_compact WHERE s <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_compact';
 SELECT key, avg(length(renamed)) FROM t_renamed WHERE renamed <> '' GROUP BY key FORMAT Null SETTINGS log_comment = '05452_renamed';
 SELECT key, avg(length(n.a)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested';
 -- Both read the one stream `n.size0`.
 SELECT key, avg(length(n.a)), avg(length(n.b)) FROM t_nested GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_shared_stream';
+SELECT key, avg(length(n.a)) FROM t_nested_compact GROUP BY key FORMAT Null SETTINGS log_comment = '05452_nested_compact';
 SELECT key, max(s) FROM t_codec GROUP BY key FORMAT Null SETTINGS log_comment = '05452_codec';
 SELECT key, max(renamed) FROM t_codec_renamed GROUP BY key FORMAT Null SETTINGS log_comment = '05452_codec_renamed';
 
@@ -75,30 +82,39 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The bytes on disk of `key` and of what is read for `s.size`: its own stream if it has one, otherwise all of `s`.
--- A compact part reports no per-column sizes; it holds the same rows as `t_wide`, so it is compared with those,
--- and so is the renamed table, whose part is still the one written for `t_wide`'s columns.
+-- The bytes on disk of what each query reads: `key`, plus the stream of `s.size` if it has one and all of `s`
+-- otherwise, or the offsets `n.size0` that `n.a` and `n.b` share. The compact tables report no per-column sizes;
+-- they hold the same rows as `t_wide` and `t_nested`, and so does the renamed table, whose part is still the one
+-- written for `t_wide`'s columns. A stream read by several columns is charged once, and the per-row pricing of
+-- wide parts is exact, so those cases get a tight bound; the others are sampled or priced by a ratio.
 WITH on_disk AS
 (
-    SELECT table, sum(if(column = 'key' OR NOT has(subcolumns.names, 'size'), column_data_compressed_bytes,
-        subcolumns.data_compressed_bytes[indexOf(subcolumns.names, 'size')])) AS bytes
+    SELECT table, sum(multiIf(
+        column = 'key', column_data_compressed_bytes,
+        column = 's' AND has(subcolumns.names, 'size'), subcolumns.data_compressed_bytes[indexOf(subcolumns.names, 'size')],
+        column = 's', column_data_compressed_bytes,
+        column = 'n.a', subcolumns.data_compressed_bytes[indexOf(subcolumns.names, 'size0')],
+        0)) AS bytes
     FROM system.parts_columns
-    WHERE database = currentDatabase() AND active AND table IN ('t_wide', 't_wide_single_stream')
+    WHERE database = currentDatabase() AND active AND table IN ('t_wide', 't_wide_single_stream', 't_nested')
     GROUP BY table
 )
-SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] BETWEEN on_disk.bytes / 2 AND on_disk.bytes * 2 AS input_bytes_match_disk
+SELECT log_comment, input_bytes_match_disk FROM
+(
+SELECT
+    log_comment,
+    if(log_comment IN ('05452_nested', '05452_nested_shared_stream', '05452_wide_single_stream_full_and_size'), 1.25, 2) AS tolerance,
+    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] BETWEEN on_disk.bytes / tolerance AND on_disk.bytes * tolerance AS input_bytes_match_disk
 FROM system.query_log
-JOIN on_disk ON on_disk.table = if(log_comment = '05452_wide_single_stream', 't_wide_single_stream', 't_wide')
+JOIN on_disk ON on_disk.table = multiIf(
+    startsWith(log_comment, '05452_wide_single_stream'), 't_wide_single_stream',
+    startsWith(log_comment, '05452_nested'), 't_nested',
+    't_wide')
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-    AND log_comment IN ('05452_wide', '05452_wide_single_stream', '05452_compact', '05452_renamed') AND type = 'QueryFinish'
-ORDER BY log_comment;
-
--- `n.size0` is not a column of the part, so it is compared with the bytes read from disk instead. Those are exact
--- here, so the bound is tight enough to tell a stream charged once from one charged for each column that reads it.
-SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] BETWEEN ProfileEvents['ReadCompressedBytes'] * 0.8 AND ProfileEvents['ReadCompressedBytes'] * 1.25 AS input_bytes_match_disk
-FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
-    AND log_comment IN ('05452_nested', '05452_nested_shared_stream') AND type = 'QueryFinish'
+    AND log_comment IN ('05452_wide', '05452_wide_single_stream', '05452_compact', '05452_renamed', '05452_nested',
+        '05452_nested_shared_stream', '05452_nested_compact', '05452_wide_single_stream_full_and_size')
+    AND type = 'QueryFinish'
+)
 ORDER BY log_comment;
 
 -- The renamed column holds the same rows with the same `CODEC`, so it must be priced like the original.
@@ -116,5 +132,6 @@ DROP TABLE t_wide_single_stream;
 DROP TABLE t_compact;
 DROP TABLE t_renamed;
 DROP TABLE t_nested;
+DROP TABLE t_nested_compact;
 DROP TABLE t_codec;
 DROP TABLE t_codec_renamed;

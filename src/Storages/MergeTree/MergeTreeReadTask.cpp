@@ -232,7 +232,10 @@ MergeTreeReadTask::MergeTreeReadTask(
             sampling_updater = updater.get();
         }
 
+        /// Owned by the part, which outlives the task.
+        const auto * part_columns = &readers.main->getPartColumnsDescription();
         dataflow_cache_update_cb = [this,
+                                    part_columns,
                                     default_codec,
                                     column_codecs = std::move(resolved_codecs),
                                     streams_bytes = std::move(resolved_streams_bytes)](const ColumnsWithTypeAndName & columns,
@@ -242,7 +245,6 @@ MergeTreeReadTask::MergeTreeReadTask(
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
-            const auto & part_columns = info->data_part_info->getColumnsDescriptionWithCollectedNested();
             /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
             static const std::unordered_map<String, ColumnSize> no_column_sizes;
             auto column_sizes = info->data_part_info->getColumnSizes();
@@ -250,7 +252,7 @@ MergeTreeReadTask::MergeTreeReadTask(
                 columns,
                 partially_read_columns,
                 string_values_skipped_by_filters,
-                part_columns,
+                *part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
                 streams_bytes,
                 column_codecs,
