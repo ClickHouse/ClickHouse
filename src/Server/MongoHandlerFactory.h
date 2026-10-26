@@ -32,6 +32,8 @@ public:
         std::optional<String> default_session_user_ = {});
 
     Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
+    Poco::Net::TCPServerConnection *
+    createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & server, TCPProtocolStackData & stack_data) override;
 };
 }
 

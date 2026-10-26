@@ -49,6 +49,12 @@ Int32 OpMessageSection::size() const
 /// The body of a message and the statements of the largest write it may carry.
 static constexpr size_t MAX_DOCUMENTS_IN_MESSAGE = MAX_WRITE_BATCH_SIZE + 1;
 
+/** The sections of one message. A command is one body and at most a few sequences of documents -
+  * one per field of the command a driver sends that way, such as the `documents` of an `insert` or
+  * the `ops` and `nsInfo` of a `bulkWrite` - so this is far more than any client needs.
+  */
+static constexpr size_t MAX_SECTIONS_IN_MESSAGE = 64;
+
 static void takeDocumentFromBudget(size_t & remaining_documents)
 {
     if (remaining_documents == 0)
@@ -128,6 +134,11 @@ void OpMessage::deserialize(ReadBuffer & in)
     size_t remaining_documents = MAX_DOCUMENTS_IN_MESSAGE;
     while (!in.eof())
     {
+        /// A sequence section may hold no documents at all, so the sections have a budget of
+        /// their own: a message of millions of empty sections would otherwise be read whole
+        /// before anything looks at it.
+        if (sections.size() == MAX_SECTIONS_IN_MESSAGE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A Mongo message carries more than {} sections", MAX_SECTIONS_IN_MESSAGE);
         OpMessageSection section;
         section.deserialize(in, remaining_documents);
         sections.push_back(std::move(section));

@@ -2,6 +2,8 @@
      <mongo_port>27017</mongo_port>
      <!-- A message of the Mongo endpoint has to arrive within this time before a login. -->
      <handshake_timeout_milliseconds>5000</handshake_timeout_milliseconds>
+     <!-- A login through the endpoint behind `PROXY` is checked against the address it forwards. -->
+     <auth_use_forwarded_address>true</auth_use_forwarded_address>
      <protocols>
          <mongo_anonymous>
              <type>mongo</type>
@@ -9,5 +11,15 @@
              <description>Mongo endpoint with a default session user</description>
              <default_session_user>mongo_anonymous_user</default_session_user>
          </mongo_anonymous>
+         <!-- The Mongo layer behind the `PROXY` one: it has no port, so it listens only through it. -->
+         <mongo_behind_proxy>
+             <type>mongo</type>
+         </mongo_behind_proxy>
+         <mongo_proxy>
+             <type>proxy1</type>
+             <impl>mongo_behind_proxy</impl>
+             <port>27019</port>
+             <description>Mongo endpoint behind PROXY</description>
+         </mongo_proxy>
      </protocols>
  </clickhouse>

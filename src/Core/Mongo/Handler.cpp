@@ -1,6 +1,7 @@
 #include <Core/Mongo/DocumentReply.h>
 #include <Core/Mongo/Handler.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -434,27 +435,66 @@ Int64 dateTime64ToMilliseconds(DateTime64 value, UInt32 scale)
 /** The events of a JSON text passed on to a document, except that the parser hands over every
   * number as its text (`kParseNumbersAsStringsFlag`): the ones that fit a 64-bit integer or are not
   * integers become the numbers RapidJSON would have built, and an integer that does not fit 64 bits
-  * becomes the string of its digits, which RapidJSON would have rounded into a double.
+  * becomes the string of its digits, which RapidJSON would have rounded into a double - but only in
+  * a column whose type holds such integers. In any other column - a `Dynamic` or a `JSON` value, a
+  * float written as its digits - it stays the double RapidJSON would have built, because the type
+  * of that column cannot tell the string of a number from a string.
   */
 struct WideIntegerPreservingHandler
 {
     rapidjson::Document & target;
+    /// For each column of a positional row, whether its type holds integers wider than 64 bits.
+    const std::vector<bool> & wide_columns;
 
-    bool Null() { return target.Null(); }
-    bool Bool(bool b) { return target.Bool(b); }
-    bool Int(int i) { return target.Int(i); }
-    bool Uint(unsigned u) { return target.Uint(u); }
-    bool Int64(int64_t i) { return target.Int64(i); }
-    bool Uint64(uint64_t u) { return target.Uint64(u); }
-    bool Double(double d) { return target.Double(d); }
-    bool String(const char * str, rapidjson::SizeType length, bool copy) { return target.String(str, length, copy); }
-    bool StartObject() { return target.StartObject(); }
+    /// How deep the current value is: 1 inside the array of the row, more inside a value of it.
+    size_t depth = 0;
+    /// The column of the row the current value belongs to.
+    size_t column = 0;
+
+    /// A value of the row ended: the next one is of the next column.
+    bool endValue(bool result)
+    {
+        if (depth == 1)
+            ++column;
+        return result;
+    }
+
+    bool Null() { return endValue(target.Null()); }
+    bool Bool(bool b) { return endValue(target.Bool(b)); }
+    bool Int(int i) { return endValue(target.Int(i)); }
+    bool Uint(unsigned u) { return endValue(target.Uint(u)); }
+    bool Int64(int64_t i) { return endValue(target.Int64(i)); }
+    bool Uint64(uint64_t u) { return endValue(target.Uint64(u)); }
+    bool Double(double d) { return endValue(target.Double(d)); }
+    bool String(const char * str, rapidjson::SizeType length, bool copy) { return endValue(target.String(str, length, copy)); }
+    bool StartObject()
+    {
+        ++depth;
+        return target.StartObject();
+    }
     bool Key(const char * str, rapidjson::SizeType length, bool copy) { return target.Key(str, length, copy); }
-    bool EndObject(rapidjson::SizeType member_count) { return target.EndObject(member_count); }
-    bool StartArray() { return target.StartArray(); }
-    bool EndArray(rapidjson::SizeType element_count) { return target.EndArray(element_count); }
+    bool EndObject(rapidjson::SizeType member_count)
+    {
+        --depth;
+        return endValue(target.EndObject(member_count));
+    }
+    bool StartArray()
+    {
+        ++depth;
+        return target.StartArray();
+    }
+    bool EndArray(rapidjson::SizeType element_count)
+    {
+        --depth;
+        return endValue(target.EndArray(element_count));
+    }
 
     bool RawNumber(const char * str, rapidjson::SizeType length, bool copy)
+    {
+        return endValue(appendNumber(str, length, copy));
+    }
+
+    bool appendNumber(const char * str, rapidjson::SizeType length, bool copy)
     {
         const std::string_view text(str, length);
         if (text.find_first_of(".eE") == std::string_view::npos)
@@ -472,7 +512,8 @@ struct WideIntegerPreservingHandler
                 if (auto [ptr, error] = std::from_chars(str, end, unsigned_value); error == std::errc() && ptr == end)
                     return target.Uint64(unsigned_value);
             }
-            return target.String(str, length, copy);
+            if (depth >= 1 && column < wide_columns.size() && wide_columns[column])
+                return target.String(str, length, copy);
         }
 
         rapidjson::Document number;
@@ -484,15 +525,15 @@ struct WideIntegerPreservingHandler
 
 }
 
-bool parseResultRow(rapidjson::Document & row, std::string_view line, bool keep_wide_integers)
+bool parseResultRow(rapidjson::Document & row, std::string_view line, const std::vector<bool> & wide_columns)
 {
-    if (!keep_wide_integers)
+    if (std::find(wide_columns.begin(), wide_columns.end(), true) == wide_columns.end())
         return !row.Parse(line.data(), line.size()).HasParseError();
 
     bool parsed = false;
     auto generator = [&](rapidjson::Document & target)
     {
-        WideIntegerPreservingHandler handler{target};
+        WideIntegerPreservingHandler handler{.target = target, .wide_columns = wide_columns};
         rapidjson::MemoryStream stream(line.data(), line.size());
         rapidjson::Reader reader;
         parsed = !reader.Parse<rapidjson::kParseNumbersAsStringsFlag>(stream, handler).IsError();
@@ -869,7 +910,7 @@ std::vector<Document> executeSelectIntoCursor(
     std::vector<std::pair<String, DataTypePtr>> columns;
     FieldTree tree;
     /// Set once the types of the columns are known, for the rows that follow them.
-    bool keep_wide_integers = false;
+    std::vector<bool> wide_columns;
 
     auto append_row_document = [&](bson_t * row_document)
     {
@@ -892,7 +933,7 @@ std::vector<Document> executeSelectIntoCursor(
     auto on_row = [&](std::string_view line)
     {
         rapidjson::Document json;
-        if (!parseResultRow(json, line, keep_wide_integers))
+        if (!parseResultRow(json, line, wide_columns))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
         if (holds_documents)
@@ -932,7 +973,7 @@ std::vector<Document> executeSelectIntoCursor(
                 if (!type.IsString())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
                 columns.emplace_back(names[i], DataTypeFactory::instance().get(type.GetString()));
-                keep_wide_integers = keep_wide_integers || hasWideIntegers(columns.back().second);
+                wide_columns.push_back(hasWideIntegers(columns.back().second));
             }
 
             /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted names of both as

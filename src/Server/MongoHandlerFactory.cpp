@@ -28,7 +28,22 @@ Poco::Net::TCPServerConnection * MongoHandlerFactory::createConnectionImpl(const
     Int32 connection_id = last_connection_id++;
     LOG_TRACE(log, "Mongo connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 
-    return new MongoHandler(socket, server, tcp_server, false, connection_id, default_session_user, read_event, write_event);
+    return new MongoHandler(socket, server, tcp_server, false, connection_id, default_session_user, {}, read_event, write_event);
+}
+
+Poco::Net::TCPServerConnection *
+MongoHandlerFactory::createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server, TCPProtocolStackData & stack_data)
+{
+    Int32 connection_id = last_connection_id++;
+    LOG_TRACE(
+        log,
+        "Mongo connection. Id: {}. Address: {}. Forwarded for: {}",
+        connection_id,
+        socket.peerAddress().toString(),
+        stack_data.forwarded_for);
+
+    return new MongoHandler(
+        socket, server, tcp_server, false, connection_id, default_session_user, stack_data.forwarded_for, read_event, write_event);
 }
 
 }

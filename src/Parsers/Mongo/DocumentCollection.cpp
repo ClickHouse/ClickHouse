@@ -331,12 +331,14 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
         if (candidates->arguments->children.empty())
             return make_intrusive<ASTLiteral>(Field(UInt64(0)));
 
-        ASTPtr matches;
+        /// One `or` of all of them rather than a chain of binary ones, which would be as deep as
+        /// there are candidates: this runs after the depth of the query has been checked, and the
+        /// tree is walked recursively afterwards.
+        if (candidates->arguments->children.size() == 1)
+            return make_equality(std::move(path), candidates->arguments->children.front());
+        auto matches = makeASTFunction("or");
         for (const auto & candidate : candidates->arguments->children)
-        {
-            auto match = make_equality(path->clone(), candidate);
-            matches = matches ? makeASTFunction("or", std::move(matches), std::move(match)) : std::move(match);
-        }
+            matches->arguments->children.push_back(make_equality(path->clone(), candidate));
         return matches;
     }
 

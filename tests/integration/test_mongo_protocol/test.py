@@ -1980,18 +1980,19 @@ def test_large_uint64_round_trips_as_a_decimal(started_cluster):
 def test_wide_integers_keep_their_digits(started_cluster):
     """An integer wider than 64 bits is written by the output as a bare JSON number, which a double
     would round. It comes back as a decimal128 when that holds it exactly, and as the string of its
-    digits otherwise; a large float in the same row is still a double."""
+    digits otherwise; a large float in the same row is still a double, also in a `Dynamic` column."""
     node = cluster.instances["node"]
     node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
     node.query("DROP TABLE IF EXISTS db.wide_integers", password="123")
     node.query(
-        "CREATE TABLE db.wide_integers (id Int64, a Int128, b UInt128, c Int256, d UInt256, e Array(Int128), f Float64) "
+        "CREATE TABLE db.wide_integers (id Int64, a Int128, b UInt128, c Int256, d UInt256, e Array(Int128), f Float64, "
+        "g Dynamic) "
         "ENGINE = MergeTree ORDER BY id",
         password="123",
     )
     node.query(
         "INSERT INTO db.wide_integers VALUES (1, 18446744073709551617, 340282366920938463463374607431768211455, "
-        "-18446744073709551617, 12, [18446744073709551617, 3], 1e20)",
+        "-18446744073709551617, 12, [18446744073709551617, 3], 1e20, 1e20::Float64)",
         password="123",
     )
 
@@ -2003,6 +2004,8 @@ def test_wide_integers_keep_their_digits(started_cluster):
     assert document["d"] == 12
     assert document["e"] == [bson.Decimal128("18446744073709551617"), 3]
     assert document["f"] == 1e20 and isinstance(document["f"], float)
+    # A value of a column without a type of its own is not a wide integer because another column is.
+    assert document["g"] == 1e20 and isinstance(document["g"], float)
     assert collection.distinct("a") == [bson.Decimal128("18446744073709551617")]
 
     node.query("DROP TABLE db.wide_integers", password="123")
@@ -3250,6 +3253,85 @@ def test_a_login_over_the_session_limit_closes_the_connection(started_cluster):
             pass
 
     holder.close()
+
+
+def test_a_message_of_many_empty_sections_is_refused(started_cluster):
+    """A document sequence section may hold no documents, so the budget of the documents of a
+    message does not bound the number of its sections; they have a budget of their own."""
+    body = b"\x00" + bson.encode({"ping": 1, "$db": "admin"})
+    empty_sequence = b"\x01" + struct.pack("<i", 5) + b"\x00"
+    payload = struct.pack("<I", 0) + body + empty_sequence * 100000
+    with connect_raw() as sock:
+        sock.sendall(struct.pack("<iiii", 16 + len(payload), 1, 0, OP_MSG) + payload)
+        try:
+            reply = read_op_msg(sock)
+            assert reply["ok"] == 0.0
+            assert "sections" in reply["errmsg"]
+        except (AssertionError, ConnectionResetError) as e:
+            # A message that cannot be read may also end the connection.
+            if isinstance(e, AssertionError) and "connection closed" not in str(e):
+                raise
+
+
+def test_a_login_through_a_proxy_is_checked_against_the_forwarded_address(started_cluster):
+    """Behind a `PROXY` protocol layer with `auth_use_forwarded_address`, the host restriction of a
+    user applies to the address the proxy forwards, not to the address of the proxy."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_forwarded_user", password="123")
+    node.query(
+        "CREATE USER mongo_forwarded_user IDENTIFIED BY 'forwarded_pass' HOST IP '203.0.113.1'",
+        password="123",
+    )
+
+    def login(forwarded_address):
+        with connect_raw(27019) as sock:
+            sock.sendall(f"PROXY TCP4 {forwarded_address} {node.ip_address} 40000 27019\r\n".encode())
+            sock.sendall(
+                encode_op_msg(
+                    {
+                        "saslStart": 1,
+                        "mechanism": "PLAIN",
+                        "payload": bson.Binary(b"\x00mongo_forwarded_user\x00forwarded_pass"),
+                        "$db": "admin",
+                    }
+                )
+            )
+            return read_op_msg(sock)["ok"]
+
+    assert login("203.0.113.1") == 1.0
+    assert login("198.51.100.1") == 0.0
+
+    node.query("DROP USER mongo_forwarded_user", password="123")
+
+
+def test_equal_documents_are_all_inserted(started_cluster):
+    """Each document of an insert is written on its own, and two equal ones are two equal blocks to
+    a table without an `_id` column: the deduplication of inserted blocks must not drop the second
+    one while it is acknowledged."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.equal_documents", password="123")
+    node.query(
+        "CREATE TABLE db.equal_documents (v Int64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS non_replicated_deduplication_window = 100",
+        password="123",
+    )
+
+    result = make_client()["db"]["equal_documents"].insert_many([{"v": 7}, {"v": 7}])
+    assert len(result.inserted_ids) == 2
+    assert node.query("SELECT count() FROM db.equal_documents", password="123") == "2\n"
+
+    node.query("DROP TABLE db.equal_documents", password="123")
+
+
+def test_a_long_in_list_on_a_collection_of_documents(started_cluster):
+    """`$in` over a path of a stored document is answered by one comparison per candidate, which
+    are combined by one `or` rather than a chain as deep as there are candidates."""
+    collection = make_client()["db"]["long_in_list"]
+    collection.drop()
+    collection.insert_one({"a": 1999})
+    assert without_ids(collection.find({"a": {"$in": list(range(2000))}})) == [{"a": 1999}]
+    collection.drop()
 
 
 def test_an_incomplete_message_is_timed_out(started_cluster):

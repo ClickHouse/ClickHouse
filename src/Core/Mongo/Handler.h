@@ -118,15 +118,15 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
   */
 void appendTypedValue(bson_t * document, const String & key, const rapidjson::Value & value, const DataTypePtr & type);
 
-/** Parses one line of a result into `row`, returning false when it is not valid JSON. With
-  * `keep_wide_integers`, an integer wider than 64 bits - a value of `Int128`, `UInt256` and so on,
-  * which the output writes as a bare number - is kept as the string of its digits: a JSON number
-  * past 64 bits would otherwise be parsed as a double and lose its low digits before
-  * `appendTypedValue` sees it. It is asked for only by a result that has such a column (see
+/** Parses one line of a result into `row`, returning false when it is not valid JSON. In a column
+  * of a positional row that `wide_columns` marks, an integer wider than 64 bits - a value of
+  * `Int128`, `UInt256` and so on, which the output writes as a bare number - is kept as the string
+  * of its digits: a JSON number past 64 bits would otherwise be parsed as a double and lose its low
+  * digits before `appendTypedValue` sees it. It is asked for only for a column of such a type (see
   * `hasWideIntegers`), because a value of a column without a type of its own (`Dynamic`) would
-  * then turn into a string as well.
+  * turn into a string as well.
   */
-bool parseResultRow(rapidjson::Document & row, std::string_view line, bool keep_wide_integers);
+bool parseResultRow(rapidjson::Document & row, std::string_view line, const std::vector<bool> & wide_columns);
 
 /// Whether a value of the type holds an integer wider than 64 bits, at the top or inside.
 bool hasWideIntegers(const DataTypePtr & type);

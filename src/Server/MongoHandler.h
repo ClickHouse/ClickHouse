@@ -33,6 +33,7 @@ public:
         bool ssl_enabled_,
         Int32 connection_id_,
         std::optional<String> default_session_user_,
+        String forwarded_for_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -48,6 +49,8 @@ private:
     Int32 connection_id = 0;
     /// If set, overrides the `default_session_user` server setting for this listener.
     std::optional<String> default_session_user;
+    /// The address of the client a `PROXY` protocol layer in front of this one forwarded, if any.
+    String forwarded_for;
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
@@ -57,6 +60,9 @@ private:
     ProfileEvents::Event write_event;
 
     void changeIO(Poco::Net::StreamSocket & socket);
+
+    /// The address the client is authenticated from: the forwarded one under `auth_use_forwarded_address`.
+    Poco::Net::SocketAddress getClientAddress();
 };
 
 }

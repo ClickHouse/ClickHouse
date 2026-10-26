@@ -26,6 +26,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
@@ -46,6 +51,7 @@ MongoHandler::MongoHandler(
     bool ssl_enabled_,
     Int32 connection_id_,
     std::optional<String> default_session_user_,
+    String forwarded_for_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -54,6 +60,7 @@ MongoHandler::MongoHandler(
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
     , default_session_user(std::move(default_session_user_))
+    , forwarded_for(std::move(forwarded_for_))
     , read_event(read_event_)
     , write_event(write_event_)
 {
@@ -67,6 +74,21 @@ void MongoHandler::changeIO(Poco::Net::StreamSocket & socket)
     message_transport = std::make_shared<MongoProtocol::MessageTransport>(in.get(), out.get());
 }
 
+Poco::Net::SocketAddress MongoHandler::getClientAddress()
+{
+    if (!server.config().getBool("auth_use_forwarded_address", false) || forwarded_for.empty())
+        return socket().peerAddress();
+
+    /// Only the last entry of the list can be trusted, the one the proxy in front of the server
+    /// added. An address that cannot be read is an error rather than the address of the proxy,
+    /// the same as for the native protocol.
+    auto forwarded_address = session->getClientInfo().getLastForwardedFor();
+    if (!forwarded_address)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Invalid forwarded client address: expected an IP literal with an optional numeric port");
+    return *forwarded_address;
+}
+
 void MongoHandler::run()
 {
     setThreadName(ThreadName::MONGO_HANDLER);
@@ -75,6 +97,8 @@ void MongoHandler::run()
     SCOPE_EXIT({ session.reset(); });
 
     session->setClientConnectionId(connection_id);
+    if (!forwarded_for.empty())
+        session->setForwardedFor(forwarded_for);
 
     /// An empty user name in `saslStart` means the default session user: the `default_session_user`
     /// server setting, possibly overridden for this listener in the `protocols` section.
@@ -102,6 +126,8 @@ void MongoHandler::run()
 
     try
     {
+        const Poco::Net::SocketAddress client_address = getClientAddress();
+
         while (tcp_server.isOpen())
         {
             constexpr size_t connection_check_timeout = 1; // 1 second
@@ -133,7 +159,7 @@ void MongoHandler::run()
             in->clearHandshakeTimeout();
             ReadBufferFromString payload_buffer(payload);
 
-            auto executor = std::make_shared<MongoProtocol::QueryExecutor>(session, socket().peerAddress(), resolved_default_session_user);
+            auto executor = std::make_shared<MongoProtocol::QueryExecutor>(session, client_address, resolved_default_session_user);
             MongoProtocol::handle(*header, payload_buffer, message_transport, executor);
 
             /// A login that failed has been answered, and nothing else may run in its session.

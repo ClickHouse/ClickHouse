@@ -444,12 +444,18 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
                 exists = true;
             }
 
-            /// An ordered Mongo batch makes every successfully inserted prefix visible before a
-            /// later document fails. Execute one row at a time so a ClickHouse `INSERT` rollback
-            /// cannot erase that prefix.
+            /** An ordered Mongo batch makes every successfully inserted prefix visible before a
+              * later document fails. Execute one row at a time so a ClickHouse `INSERT` rollback
+              * cannot erase that prefix.
+              *
+              * Each document is a write of its own, which the client is told was done, so the
+              * deduplication of inserted blocks is turned off: two equal documents in a table
+              * without an `_id` column are two equal blocks, and the second one would be dropped
+              * while being counted as inserted.
+              */
             executor->execute(
                 fmt::format(
-                    "INSERT INTO {} SETTINGS input_format_skip_unknown_fields = 0 FORMAT JSONEachRow\n{}\n",
+                    "INSERT INTO {} SETTINGS input_format_skip_unknown_fields = 0, deduplicate_insert = 'disable' FORMAT JSONEachRow\n{}\n",
                     collection.getQualifiedName(),
                     row_text));
             ++inserted;
