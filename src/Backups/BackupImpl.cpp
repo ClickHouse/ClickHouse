@@ -30,6 +30,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/copyData.h>
+#include <Interpreters/Context.h>
 #include <Poco/Util/XMLConfiguration.h>
 #if CLICKHOUSE_CLOUD && USE_SSL
 #include <Backups/BackupEncryptionSidecar.h>
