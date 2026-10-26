@@ -263,26 +263,36 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto target_storage = getTargetTable(TargetAccess{getDefinerContext(local_context), AccessType::SELECT, column_names});
+    auto definer_context = getDefinerContext(local_context);
+    auto target_storage = getTargetTable(TargetAccess{definer_context, AccessType::SELECT, column_names});
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(definer_context, false);
+    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, definer_context);
 
+    /// Forward the read with the definer's identity so a target that authorizes during read - a
+    /// `SQL SECURITY INVOKER` view building its inner query, a `Merge` enumerating its children - runs
+    /// with the alias's rights, not the invoker's. The invoker's row policies on the alias and its
+    /// target are collected by the planner (through `getUnderlyingStorages`) before this call and
+    /// injected into the plan, so they still apply regardless of the identity used here. For an
+    /// `INVOKER` alias the definer context is the invoker's, so this is transparent.
     target_storage->read(
         query_plan,
         column_names,
         target_snapshot,
         query_info,
-        local_context,
+        definer_context,
         processed_stage,
         max_block_size,
         num_streams);
 
     query_plan.addStorageHolder(target_storage);
     query_plan.addTableLock(std::move(lock));
+    /// `getDefinerContext` creates the context fresh and nothing else owns it; keep it alive for the
+    /// pipeline the forwarded read just built.
+    query_plan.addInterpreterContext(definer_context);
 }
 
 SinkToStoragePtr StorageAlias::write(
@@ -574,10 +584,14 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     const StorageSnapshotPtr & /* storage_snapshot */,
     SelectQueryInfo & query_info) const
 {
+    /// Resolve the stage with the identity the read will use (the definer, or the invoker for an
+    /// `INVOKER` alias), so a `Merge` target enumerates its children with the same rights read does.
+    /// Unlike the read path this does not reject a legacy alias: that is left to `read`.
+    auto security_context = security_metadata.getSQLSecurityOverriddenContext(local_context);
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
-    return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(security_context, false);
+    auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, security_context);
+    return target_storage->getQueryProcessingStage(security_context, to_stage, target_snapshot, query_info);
 }
 
 void registerStorageAlias(StorageFactory & factory);
