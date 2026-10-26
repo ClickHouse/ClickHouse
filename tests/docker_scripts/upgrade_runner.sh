@@ -842,6 +842,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `shard_1.data` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on an empty `columns` znode is
 #       `02980_dist_insert_readonly_replica` breaking it on purpose; an injected fault can stop the file before its
 #       final `DROP DATABASE`. Other tables and error codes still fail; a `columns` value cut inside its header does not.
+# `t_replace_cover_rep` + `ReplicatedMergeTreeAttachThread` + a read-only initialization on Code 231 is
+#       `05259_replace_partition_covers_outdated_parts_replicated` stopped midway: under `SYSTEM STOP CLEANUP` its `DROP PART`
+#       and `REPLACE PARTITION` leave on disk parts that ZooKeeper no longer has, covered only by the empty part that
+#       `REPLACE PARTITION` writes. When an injected fault fails that statement, `--fake-drop` keeps the table and every later
+#       load of it, by the previous release too, finds them uncovered. Other tables, codes and a load that also misses parts
+#       in ZooKeeper still fail.
 # `Query memory tracker: fault injected` is the stress phase's own fault injection (`memory_tracker_fault_probability`
 #       of stress worker 1) reaching the upgraded server with the work the stress phase left behind: a distributed
 #       DDL entry (e.g. an `ON CLUSTER` `BACKUP`) and a pending batch of a `Distributed` table both keep the settings
@@ -1055,6 +1061,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "StorageKeeperMap (.*\.\`05024_keeper_map_parenthesized_metadata.*Failed to activate table because of invalid metadata in ZooKeeper" \
     | grep -av -e "<Error> shard_1\.data (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 27\. DB::Exception: Cannot parse input: expected 'columns format version: 1.n' at end of stream" \
+    | grep -av -e "<Error> [^ ]*\.t_replace_cover_rep (ReplicatedMergeTreeAttachThread): Initialization failed, table will remain readonly\. Error: Code: 231\. DB::Exception: The local set of parts of table .*, 0 missing parts (with 0 blocks), .*(TOO_MANY_UNEXPECTED_DATA_PARTS)" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
