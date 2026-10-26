@@ -1476,10 +1476,12 @@ impl HttpConnector for NoRedirectConnector {
         if let Some(connect_timeout) = self.connect_timeout {
             builder = builder.connect_timeout(connect_timeout);
         }
-        let client = builder.build().map_err(|err| object_store::Error::Generic {
-            store: "S3",
-            source: Box::new(err),
-        })?;
+        let client = builder
+            .build()
+            .map_err(|err| object_store::Error::Generic {
+                store: "S3",
+                source: Box::new(err),
+            })?;
         Ok(HttpClient::new(client))
     }
 }
