@@ -67,6 +67,11 @@ public:
 
     void setWrittenColumnSizes(ColumnSizeByName sizes) override { written_column_sizes = std::move(sizes); }
 
+    /// The `Parquet` file is not compressed as a whole, so its checksum has no uncompressed size:
+    /// the uncompressed sizes of the columns are added instead. Requires loaded index granularity
+    /// or the sizes provided by the writer.
+    UInt64 calculateBytesUncompressedOnDisk() const override;
+
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
 

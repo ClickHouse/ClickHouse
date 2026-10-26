@@ -1699,6 +1699,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadInvalidatedSystemColumns();
             loadChecksums(require_columns_checksums);
             loadIndexGranularity();
+            /// Some types of parts need the index granularity for it, see `MergeTreeDataPartParquet`.
+            bytes_uncompressed_on_disk = calculateBytesUncompressedOnDisk();
 
             /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata takes
             /// the sort-key columns from it, and the index cannot be deserialized without them.

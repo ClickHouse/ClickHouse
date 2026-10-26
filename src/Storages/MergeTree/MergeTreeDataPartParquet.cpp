@@ -231,6 +231,14 @@ void MergeTreeDataPartParquet::calculateEachColumnSizes(ColumnSizeByName & each_
     }
 }
 
+UInt64 MergeTreeDataPartParquet::calculateBytesUncompressedOnDisk() const
+{
+    ColumnSizeByName each_columns_size;
+    ColumnSize total_size;
+    calculateEachColumnSizes(each_columns_size, total_size);
+    return checksums.getTotalSizeUncompressedOnDisk() + total_size.data_uncompressed;
+}
+
 void MergeTreeDataPartParquet::loadIndexGranularity()
 {
     if (getColumns().empty())

@@ -275,10 +275,10 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->checksums = checksums;
     }
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
-    new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     if (auto written_column_sizes = writer->getWrittenColumnSizes())
         new_part->setWrittenColumnSizes(std::move(*written_column_sizes));
+    new_part->setBytesUncompressedOnDisk(new_part->calculateBytesUncompressedOnDisk());
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])

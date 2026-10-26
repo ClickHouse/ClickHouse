@@ -583,6 +583,9 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
     void setBytesUncompressedOnDisk(UInt64 bytes_uncompressed_on_disk_) { bytes_uncompressed_on_disk = bytes_uncompressed_on_disk_; }
 
+    /// The uncompressed size of the files of the part, see `bytes_uncompressed_on_disk`. Requires loaded checksums.
+    virtual UInt64 calculateBytesUncompressedOnDisk() const { return checksums.getTotalSizeUncompressedOnDisk(); }
+
     /// Returns estimated size of existing rows if setting exclude_deleted_rows_for_part_size_in_merge is true
     /// Otherwise returns bytes_on_disk
     UInt64 getExistingBytesOnDisk() const;

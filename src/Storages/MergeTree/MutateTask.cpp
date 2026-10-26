@@ -2462,7 +2462,7 @@ static void finalizeMutatedPart(
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
-    new_data_part->setBytesUncompressedOnDisk(new_data_part->checksums.getTotalSizeUncompressedOnDisk());
+    new_data_part->setBytesUncompressedOnDisk(new_data_part->calculateBytesUncompressedOnDisk());
     /// Also use information from checksums
     if (!(*new_data_part->storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
