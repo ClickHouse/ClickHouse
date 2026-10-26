@@ -265,6 +265,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.max_dictionary_size = settings[Setting::output_format_parquet_max_dictionary_size];
     format_settings.parquet.output_enum_as_byte_array = settings[Setting::output_format_parquet_enum_as_byte_array];
     format_settings.parquet.write_checksums = settings[Setting::output_format_parquet_write_checksums];
+    format_settings.parquet.use_alp_encoding = settings[Setting::output_format_parquet_use_alp_encoding];
     format_settings.parquet.max_block_size = settings[Setting::input_format_parquet_max_block_size];
     format_settings.parquet.prefer_block_bytes = settings[Setting::input_format_parquet_prefer_block_bytes];
     format_settings.parquet.output_compression_method = settings[Setting::output_format_parquet_compression_method];
@@ -285,6 +286,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.detect_variant_by_structure = settings[Setting::input_format_parquet_detect_variant_by_structure];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
+    format_settings.parquet.write_geometry_logical_type = settings[Setting::output_format_parquet_geometry_logical_type];
     format_settings.parquet.write_file_logical_type = settings[Setting::output_format_parquet_write_file_logical_type];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
@@ -293,8 +295,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         size_t budget = static_cast<size_t>(static_cast<double>(memory_limit) * 0.9);
         format_settings.parquet.memory_high_watermark = std::min<size_t>(
             format_settings.parquet.memory_high_watermark, budget / 8);
+        /// The reader does not hold one block of `prefer_block_bytes` but a whole pipeline of them:
+        /// prefetched, decoded and ready-to-deliver row subgroups across the row groups it reads in
+        /// parallel, and downstream (for an `INSERT`) the blocks the squashing stage has accumulated
+        /// so far. Measured on a 105-column table, the default 16 MiB preferred block size costs about
+        /// 290 MiB of live reader memory, so the cap has to be a much smaller fraction of the budget
+        /// than the block size alone suggests.
         format_settings.parquet.prefer_block_bytes = std::min<size_t>(
-            format_settings.parquet.prefer_block_bytes, budget / 64);
+            format_settings.parquet.prefer_block_bytes, budget / 256);
     }
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings[Setting::output_format_pretty_color].valueOr(2);
@@ -388,6 +396,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
+    format_settings.vortex.filter_push_down = settings[Setting::input_format_vortex_filter_push_down];
+    format_settings.vortex.preserve_order = settings[Setting::input_format_vortex_preserve_order];
     format_settings.defaults_for_omitted_fields = settings[Setting::input_format_defaults_for_omitted_fields];
     format_settings.capn_proto.enum_comparing_mode = settings[Setting::format_capn_proto_enum_comparising_mode];
     format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_capn_proto_skip_fields_with_unsupported_types_in_schema_inference];
@@ -1375,8 +1385,15 @@ bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, cons
     auto format_name = boost::to_lower_copy(name);
     if (format_name == "parquet" && context->getSettingsRef()[Setting::input_format_parquet_preserve_order])
         return false;
+    if (format_name == "vortex" && context->getSettingsRef()[Setting::input_format_vortex_preserve_order])
+        return false;
 
     return true;
+}
+
+bool FormatFactory::checkParallelizeOutputAfterReadingForAnyFormat(const ContextPtr & context) const
+{
+    return checkParallelizeOutputAfterReading("Parquet", context) && checkParallelizeOutputAfterReading("Vortex", context);
 }
 
 void FormatFactory::checkFormatName(const String & name) const

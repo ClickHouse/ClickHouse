@@ -224,6 +224,7 @@ ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/collect_connection_metrics.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
@@ -232,6 +233,7 @@ ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite_alternative.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/grpc_protocol.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/arrowflight.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
@@ -694,6 +696,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
     rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
     rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
+    # Same for the Arrow Flight port.
+    rm -f $ch_server_1_path/config.d/arrowflight.xml $ch_server_2_path/config.d/arrowflight.xml
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
