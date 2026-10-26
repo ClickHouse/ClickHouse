@@ -430,6 +430,28 @@
     M(ZooKeeperMulti, "Number of 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
     M(ZooKeeperMultiRead, "Number of read 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
     M(ZooKeeperMultiWrite, "Number of write 'multi' requests to ZooKeeper (compound transactions).", ValueType::Number) \
+    M(TransactionBeginMicroseconds, "Time spent in `BEGIN TRANSACTION`, explicit or implicit", ValueType::Microseconds) \
+    M(TransactionBeginSnapshotBehindLatest, "Number of transactions that began with a snapshot below the latest CSN, because the global watermark lags", ValueType::Number) \
+    M(TransactionCommitMicroseconds, "Time spent committing transactions, without waiting for the CSN to be loaded", ValueType::Microseconds) \
+    M(TransactionCommitAllocateCSNMicroseconds, "Time from the start of a transaction commit until Keeper allocated its CSN", ValueType::Microseconds) \
+    M(TransactionCommitAfterCSNMicroseconds, "Time spent finalizing committed transactions after their CSN was allocated", ValueType::Microseconds) \
+    M(TransactionCommitUnknownStatus, "Number of transaction commits whose outcome is unknown because of a Keeper hardware error", ValueType::Number) \
+    M(TransactionCommitUnknownStatusWaitMicroseconds, "Time spent waiting for the outcome of commits with unknown status", ValueType::Microseconds) \
+    M(TransactionWaitCSNLoaded, "Number of waits until a CSN is loaded into the latest snapshot, by a synchronous `COMMIT` or `SYSTEM SYNC TRANSACTION LOG`", ValueType::Number) \
+    M(TransactionWaitCSNLoadedMicroseconds, "Time spent waiting until a CSN is loaded into the latest snapshot", ValueType::Microseconds) \
+    M(TransactionWaitWatermark, "Number of waits until the watermark reaches a CSN, so a new transaction on this replica sees it, by `COMMIT` with `wait_visible` or `SYSTEM SYNC TRANSACTION LOG`", ValueType::Number) \
+    M(TransactionWaitWatermarkMicroseconds, "Time spent waiting until the watermark reaches a CSN", ValueType::Microseconds) \
+    M(TransactionsCommitted, "Number of committed transactions, including read-only ones", ValueType::Number) \
+    M(TransactionsRolledBack, "Number of rolled back transactions", ValueType::Number) \
+    M(TransactionCommitConflicts, "Number of transaction commits that failed with `SERIALIZATION_ERROR` because a concurrent operation changed a part", ValueType::Number) \
+    M(TransactionTIDsInvalidated, "Number of transaction IDs this replica invalidated", ValueType::Number) \
+    M(TransactionDeadReplicasMarked, "Number of replicas this replica marked dead for transactions", ValueType::Number) \
+    M(TransactionLogLoadMicroseconds, "Time spent loading the transaction log (`/log`) from Keeper: listing it, reading the new entries and applying them", ValueType::Microseconds) \
+    M(TransactionLogLoadedEntries, "Number of transaction log (`/log`) entries read from Keeper", ValueType::Number) \
+    M(TransactionLogLoads, "Number of loads of the transaction log (`/log`) from Keeper", ValueType::Number) \
+    M(TransactionBegins, "Number of `BEGIN TRANSACTION`, explicit or implicit", ValueType::Number) \
+    M(TransactionCommits, "Number of transaction commits started, including read-only and unsuccessful ones", ValueType::Number) \
+    M(TransactionCommitsWithCSN, "Number of transaction commits for which Keeper allocated a CSN", ValueType::Number) \
     M(ZooKeeperCheck, "Number of 'check' requests to ZooKeeper. Usually they don't make sense in isolation, only as part of a complex transaction.", ValueType::Number) \
     M(ZooKeeperSync, "Number of 'sync' requests to ZooKeeper. These requests are rarely needed or usable.", ValueType::Number) \
     M(ZooKeeperReconfig, "Number of 'reconfig' requests to ZooKeeper.", ValueType::Number) \
@@ -917,6 +939,9 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotRead, "Number of times a read-only 'plain_rewritable' disk loaded its state from the snapshot file instead of listing the object storage (a refresh that finds the snapshot unchanged does not read it and is not counted).", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotWritten, "Number of snapshot files written by 'plain_rewritable' disks.", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotWriteFailed, "Number of failed attempts to write the snapshot file of a 'plain_rewritable' disk (the write is retried).", ValueType::Number) \
     M(DiskPlainRewritableOrphanedObjectsRemoved, "Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).", ValueType::Number) \
     M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
     \
@@ -1149,9 +1174,13 @@ The server successfully detected this situation and will download merged part fr
     \
     M(BlobKillerThreadRuns, "Number of BlobKiller thread executes", ValueType::Number) \
     M(BlobKillerThreadLockedBlobs, "Number of blobs returned from metadata storage", ValueType::Number) \
+    M(BlobKillerThreadLockedSingleBlobs, "Number of blobs returned from metadata storage one by one", ValueType::Number) \
+    M(BlobKillerThreadLockedBatchedBlobs, "Number of blobs returned from metadata storage as part of a batch", ValueType::Number) \
     M(BlobKillerThreadRemoveTasks, "Number of remove tasks created by BlobKiller", ValueType::Number) \
     M(BlobKillerThreadRemovedBlobs, "Number of blobs removed by BlobKiller", ValueType::Number) \
     M(BlobKillerThreadRecordedBlobs, "Number of blobs which removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
+    M(BlobKillerThreadRecordedSingleBlobs, "Number of blobs removed one by one whose removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
+    M(BlobKillerThreadRecordedBatchedBlobs, "Number of blobs removed as part of a batch whose removal by BlobKiller was recorded in metadata storage", ValueType::Number) \
     M(BlobKillerThreadLockBlobsErrors, "Number of blobs lock errors occurred during BlobKiller execution", ValueType::Number) \
     M(BlobKillerThreadRemoveBlobsErrors, "Number of blobs removal errors occurred during BlobKiller execution", ValueType::Number) \
     M(BlobKillerThreadRecordBlobsErrors, "Number of blobs recording errors occurred during BlobKiller execution", ValueType::Number) \
@@ -1233,6 +1262,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
     M(KeeperReadSnapshotDeferred, "Number of snapshot reads deferred because the requested snapshot is no longer available locally; NuRaft will retry the latest snapshot.", ValueType::Number) \
     M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
+    M(KeeperReadSnapshotStreamingSeeks, "Number of times a streaming snapshot transfer repositioned its reader because NuRaft requested an object other than the next one", ValueType::Number) \
     M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
     M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
     M(KeeperSaveSnapshot, "Number of snapshot save", ValueType::Number) \
@@ -1416,6 +1446,8 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheSeekBufferedBytesShortfall, "Distributed Cache read buffer event. The number of bytes the locally buffered data fell short of the gap when a skip was declined", ValueType::Bytes) \
     M(DistrCacheSeekReRequestFirstPacketMicroseconds, "Distributed Cache read buffer event. Time between requesting a new read range on the open stream because of a seek and receiving its first packet", ValueType::Microseconds) \
     M(DistrCacheEstimatedInflightBytesOnSeek, "Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)", ValueType::Bytes) \
+    M(DistrCacheKeptConnectionsWithInflightData, "Distributed Cache read buffer event. The number of times a connection was kept in the pool when a read request was cancelled while data could still arrive, because the estimated in-flight bytes did not exceed `distributed_cache_min_inflight_bytes_to_discard_connection`", ValueType::Number) \
+    M(DistrCacheKeptConnectionsInflightBytes, "Distributed Cache read buffer event. The estimated in-flight bytes of the connections counted in DistrCacheKeptConnectionsWithInflightData (compare with DistrCacheUnusedDataPacketsBytesUnknownRequest)", ValueType::Bytes) \
     M(DistrCacheReadBytesUnconsumedOnEndRequest, "Distributed Cache read buffer event. Bytes of the requested read range left unconsumed when the request was ended early", ValueType::Bytes) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
@@ -1760,11 +1792,13 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetDecompressedBytes, "Total uncompressed size of parquet pages (data and dictionary pages) decompressed by the parquet reader.", ValueType::Bytes) \
     M(ParquetPagesDecompressedToSkipRows, "Number of parquet data pages whose decompression was triggered by skipping rows filtered out by PREWHERE (the page may also serve rows read later).", ValueType::Number) \
     M(ParquetTopKSkippedRowGroups, "The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
+    M(ParquetFilesSkippedByCachedStatistics, "The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group", ValueType::Number) \
     M(ParquetReadMinMaxFromStatistics, "The number of parquet files whose `min` / `max` were computed from column chunk statistics instead of reading the data (see `optimize_min_max_from_files`)", ValueType::Number) \
     M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
     M(ParquetDecodingTaskBatches, "Task groups sent to a thread pool by parquet reader", ValueType::Number) \
+    M(ParquetColumnDataReadAheadRowGroups, "Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads", ValueType::Number) \
     M(ParquetPrefetcherReadRandomRead, "The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetPrefetcherReadSeekAndRead, "The total number of reads with ReadMode::SeekAndRead by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetPrefetcherReadEntireFile, "The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher", ValueType::Number) \
@@ -1865,6 +1899,9 @@ The server successfully detected this situation and will download merged part fr
     M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
     M(AIAPICalls, "Number of HTTP requests dispatched to AI providers.", ValueType::Number) \
+    M(AIAPICallsRetried, "Number of AI provider requests retried after a transient failure.", ValueType::Number) \
+    M(AIAPICallsFailed, "Number of AI provider requests that failed after all retries.", ValueType::Number) \
+    M(AIAPICallsThrottled, "Number of AI provider requests rejected with HTTP 429 (Too Many Requests).", ValueType::Number) \
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \

@@ -31,7 +31,6 @@ run_pair()
 
 settings=(
     --max_threads=1
-    --enable_analyzer=1
     --collect_hash_table_stats_during_aggregation=1
     --max_size_to_preallocate_for_aggregation=1000000000000
     --serialize_query_plan=1
