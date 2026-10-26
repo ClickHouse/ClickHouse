@@ -9,8 +9,6 @@
 --   rows 150000-199999: {'another': 'epsilon'}           -- 'key' absent, map['key'] = ''
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
