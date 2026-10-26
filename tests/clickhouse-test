@@ -2253,11 +2253,8 @@ class SettingsRandomizer:
         # a session value has no effect.
         # Not randomized: a FIPS build rejects MD5 outright (`Requests.cpp`), so every test
         # touching S3 storage fails there, and an S3Express bucket rejects it too.
-        # Iceberg manifest decode concurrency and the queue between the decode tasks and the
-        # query. Both NonZeroUInt64, so never 0; 1 serializes, a small queue forces the
-        # decoders to block on a full queue and a large one removes the backpressure.
-        "iceberg_manifest_decode_concurrency": lambda: random.choice([1, 2, 4, 16]),
-        "iceberg_file_entries_queue_size": lambda: random.choice([1, 10, 100, 1000]),
+        # Not randomized: `iceberg_manifest_decode_concurrency` and `iceberg_file_entries_queue_size` are
+        # obsolete since 26.11, and changing an obsolete setting adds a warning that 01945_system_warnings checks.
         # Skips whole manifest files by their partition summaries, so an unsound bound is a
         # wrong-results bug. Gated on `use_iceberg_partition_pruning` below.
         "use_iceberg_manifest_list_partition_pruning": lambda: random.randint(0, 1),

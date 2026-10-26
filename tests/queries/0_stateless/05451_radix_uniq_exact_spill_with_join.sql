@@ -8,6 +8,8 @@ FROM numbers_mt(4000000) AS a
 INNER JOIN (SELECT number AS k FROM numbers(400000)) AS b ON a.number % 400000 = b.k
 SETTINGS max_threads = 2, max_block_size = 4096, max_threads_min_free_memory_per_thread = 0, join_algorithm = 'hash',
     query_plan_join_swap_table = false,
+    -- the default size: CI randomizes the join's runtime bloom filter up to 16 MiB, which does not fit the memory limit below
+    join_runtime_bloom_filter_bytes = 524288,
     count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0, optimize_uniq_exact_radix_partitioning = 1,
     max_untracked_memory = 0, max_bytes_ratio_before_external_group_by = 0, max_bytes_before_external_group_by = '24Mi',
     max_memory_usage = '40Mi';
