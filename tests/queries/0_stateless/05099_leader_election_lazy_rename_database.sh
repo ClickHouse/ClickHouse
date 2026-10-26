@@ -4,7 +4,7 @@
 # is an unloaded lazy proxy (`lazy_load_tables = 1`). `DatabaseAtomic::renameDatabase` enforces the
 # guard by calling `IStorage::checkTableCanBeRenamedByDatabaseRename` on every table it holds, and
 # for an unloaded table that is a `StorageTableProxy`, whose default implementation is a no-op. The
-# proxy must therefore materialize the nested storage and forward the call — otherwise a
+# proxy must therefore answer it from the table's `CREATE` query — otherwise a
 # database-level rename silently moves the metadata of a table whose shared lease path was captured
 # at startup. `04339_leader_election_rename_database.sh` covers the eagerly loaded table; this is
 # the lazy sibling of it, the same way `04337_leader_election_lazy_rename.sh` is the lazy sibling of
@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT -q "DETACH DATABASE ${LAZY_DB}"
 $CLICKHOUSE_CLIENT -q "ATTACH DATABASE ${LAZY_DB}"
 $CLICKHOUSE_CLIENT -q "SELECT name, engine FROM system.tables WHERE database = '${LAZY_DB}'"
 
-# The database-level rename must materialize the nested storage and hit the `leader_election` guard.
+# The database-level rename must hit the `leader_election` guard.
 $CLICKHOUSE_CLIENT -q "RENAME DATABASE ${LAZY_DB} TO ${LAZY_DB}_new" 2>&1 \
     | grep -o -m1 "SUPPORT_IS_DISABLED"
 

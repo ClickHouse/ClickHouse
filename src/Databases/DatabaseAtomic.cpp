@@ -309,13 +309,20 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         return table_data_path_saved;
     };
 
+    /// The symlink is created after the database mutexes are released (see `create_symlink`), as in `commitCreateTable`.
     auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_) TSA_REQUIRES(db.mutex)
     {
         db.tables.emplace(table_name_, table_);
         if (table_data_path_.empty())
             return;
         db.table_name_to_path.emplace(table_name_, table_data_path_);
-        if (table_->storesDataOnDisk())
+    };
+
+    /// Asking a lazily loaded table for its data paths loads it, and loading a table can resolve other tables of
+    /// the same database (e.g. a scalar subquery in a `CONSTRAINT`), which needs the database mutex again.
+    auto create_symlink = [](DatabaseAtomic & db, const String & table_data_path_, const StoragePtr & table_)
+    {
+        if (!table_data_path_.empty() && table_->storesDataOnDisk())
             db.tryCreateSymlink(table_);
     };
 
@@ -415,6 +422,15 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     attach(other_db, to_table_name, table_data_path, table);
     if (exchange)
         attach(*this, table_name, other_table_data_path, other_table);
+
+    if (db_lock)
+        db_lock.unlock();
+    if (other_db_lock)
+        other_db_lock.unlock();
+
+    create_symlink(other_db, table_data_path, table);
+    if (exchange)
+        create_symlink(*this, other_table_data_path, other_table);
 }
 
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,

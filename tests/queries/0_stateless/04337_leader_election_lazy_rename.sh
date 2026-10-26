@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT -q "DETACH DATABASE ${LAZY_DB}"
 $CLICKHOUSE_CLIENT -q "ATTACH DATABASE ${LAZY_DB}"
 $CLICKHOUSE_CLIENT -q "SELECT name, engine FROM system.tables WHERE database = '${LAZY_DB}'"
 
-# The rename must materialize the nested storage and hit the `leader_election` guard.
+# The rename must hit the `leader_election` guard; the proxy answers it from the `CREATE` query.
 $CLICKHOUSE_CLIENT -q "RENAME TABLE ${LAZY_DB}.t TO ${LAZY_DB}.t_new" 2>&1 \
     | grep -o -m1 "SUPPORT_IS_DISABLED"
 

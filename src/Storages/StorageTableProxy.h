@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
 class StorageTableProxy final : public StorageProxy
@@ -232,44 +237,56 @@ public:
         getNested()->checkTableSizeBelowDropLimit(query_context);
     }
 
-    /// Must materialize the nested storage: the default `Atomic` database renames a table
-    /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
-    /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`
-    /// rejection in `StorageMergeTree::checkTableCanBeRenamed`) for lazily loaded on-disk tables.
+    /// The default `Atomic` database renames a table via `checkTableCanBeRenamed` + `renameInMemory` and
+    /// never calls `rename`, so a no-op here would let a rename bypass the `leader_election` rejection in
+    /// `StorageMergeTree::checkTableCanBeRenamed` for a lazily loaded table. The table is not materialized
+    /// to ask, though: `DatabaseAtomic::renameTable` calls this while holding the database mutex, and
+    /// loading a table can run arbitrary initialization - for example, a scalar subquery in a `CONSTRAINT`
+    /// that resolves another table of the same database, which needs that mutex again. A stand-in answers
+    /// from its `CREATE` query instead: `StorageMergeTree` rejects every rename under `leader_election`, and
+    /// `may_use_leader_election` tells whether this table is such a one. The other overrides of the hook
+    /// are asked only once the table is loaded, as before.
     void checkTableCanBeRenamed(const StorageID & new_name) const override
     {
-        getNested()->checkTableCanBeRenamed(new_name);
-    }
-
-    /// Same reasoning as `checkTableCanBeRenamed`: the nested-storage guard (the
-    /// `leader_election` rejection) must not be bypassed for a lazily loaded on-disk table.
-    /// Materializing unconditionally is too blunt here, though: unlike `checkTableCanBeRenamed`,
-    /// which runs for the single table being renamed, `RENAME DATABASE` calls this for *every*
-    /// table, so it would run the load factory and `startup()` across the whole database. An
-    /// otherwise-allowed rename would then depend on each unrelated table starting successfully
-    /// — an unloaded `ReplicatedMergeTree` would have to reach Keeper — and a rename ultimately
-    /// rejected because of one `leader_election` table would still have started every table
-    /// before it.
-    ///
-    /// A table that is still a stand-in is therefore not loaded to ask unless the storage-free
-    /// predicate below says it may need the `leader_election` guard. For `StorageMergeTree`, which
-    /// only throws under `leader_election`, the predicate decides it exactly. Other overrides of
-    /// `IStorage::checkTableCanBeRenamedByDatabaseRename` (`ObjectStorageQueue`) are asked only once
-    /// the table is loaded: a stand-in has nothing to answer with. It is true only when the `CREATE` query names an
-    /// engine that `StorageMergeTree` backs *and* `leader_election` resolves to on for that
-    /// table (from its own `SETTINGS`, falling back to the server-wide `merge_tree` default);
-    /// when either half is false, the nested call is a no-op by construction and skipping it
-    /// changes nothing. In particular a lazy `ReplicatedMergeTree`, whose hook is the no-op
-    /// one, is not materialized just because the server-wide default happens to be on — which
-    /// would fail the rename outright, since that engine refuses to attach under the setting.
-    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
-    {
+        StoragePtr loaded;
         {
             std::lock_guard lock{nested_mutex};
-            if (!nested && !may_use_leader_election())
-                return;
+            loaded = nested;
         }
-        getNested()->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+        if (loaded)
+        {
+            loaded->checkTableCanBeRenamed(new_name);
+            return;
+        }
+
+        if (may_use_leader_election())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "RENAME TABLE is not supported under `leader_election` because the data path "
+                "is shared between nodes and the lease path is fixed at startup. Followers "
+                "would continue to track the old path. Drop and recreate the table instead.");
+    }
+
+    /// Same as `checkTableCanBeRenamed`, for `RENAME DATABASE`, which calls this for every table while
+    /// holding the database mutex. Materializing the tables here would also make an otherwise-allowed
+    /// rename depend on each unrelated table starting successfully.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        StoragePtr loaded;
+        {
+            std::lock_guard lock{nested_mutex};
+            loaded = nested;
+        }
+        if (loaded)
+        {
+            loaded->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+            return;
+        }
+
+        if (may_use_leader_election())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "RENAME DATABASE is not supported for a `leader_election` table because the data "
+                "path is shared between nodes and the lease path is fixed at startup. Followers "
+                "would continue to track the old path. Drop and recreate the table instead.");
     }
 
     bool dropSkipsDataDirectoryCleanup() const override
