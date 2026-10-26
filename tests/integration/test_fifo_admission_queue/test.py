@@ -169,6 +169,13 @@ def wait_for_queue_length(node, expected, timeout=30):
     )
 
 
+# How long the tests wait for a disconnected waiter to leave the admission queue.
+# Far above the 500 ms liveness poll, but well below the 30 s lifetime of the blockers
+# and the waiter's `queue_max_wait_ms`, so that natural admission or a timeout cannot
+# be mistaken for the cancellation.
+DISCONNECT_DETECTION_TIMEOUT = 10
+
+
 def set_max_concurrent_queries(node, value):
     """Change `max_concurrent_queries` in the config file at runtime.
 
@@ -529,6 +536,39 @@ def test_no_slot_leak_on_timeout(started_cluster):
     assert result == "no_leak", f"Expected 'no_leak', got '{result}'"
 
 
+def assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_query_id):
+    """Check that a waiter whose client disconnected left the admission queue because
+    it was cancelled, not because a blocker finished and admitted it.
+
+    The queue must drain within `DISCONNECT_DETECTION_TIMEOUT`, which is well below
+    both the blockers' lifetime (`sleep(30)`) and the waiter's `queue_max_wait_ms`
+    (30 s), and the blockers must still hold both slots when it does. The waiter's
+    dedicated query ID must never produce a `QueryStart` row in `system.query_log`.
+    Must be called while the blockers are still running; `system.processes` queries
+    bypass the admission limit.
+    """
+    wait_for_queue_length(node, 0, timeout=DISCONNECT_DETECTION_TIMEOUT)
+
+    blocker_list = ", ".join(f"'{qid}'" for qid in blocker_ids)
+    running = node.query(
+        f"SELECT count() FROM system.processes WHERE query_id IN ({blocker_list})"
+    ).strip()
+    assert running == str(len(blocker_ids)), (
+        f"blockers finished before the queue drained (running={running}), "
+        "so the waiter may have been admitted instead of cancelled"
+    )
+
+
+def assert_query_never_started(node, query_id):
+    """Must be called after the slots are free again: `system.query_log` is not exempt
+    from the admission limit."""
+    node.query("SYSTEM FLUSH LOGS query_log")
+    started = node.query(
+        f"SELECT count() FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+    ).strip()
+    assert started == "0", f"abandoned waiter {query_id} was admitted and started"
+
+
 def test_client_disconnect_while_waiting_in_queue(started_cluster):
     """
     Verify that the server detects a client disconnect while the query is
@@ -544,6 +584,7 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     """
     prefix = uuid.uuid4().hex[:8]
     blocker_ids = [f"disconnect_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_id = f"disconnect_waiter_{prefix}"
 
     pool = Pool(4)
 
@@ -567,6 +608,7 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     # queue up, then close the connection abruptly.
     params = urllib.parse.urlencode({
         "query": "SELECT 1",
+        "query_id": waiter_id,
         "queue_max_wait_ms": "30000",
     })
     http_request = (
@@ -590,7 +632,8 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     sock.close()
 
     # The alive check (interval=500ms) must detect the disconnect and empty the queue
-    wait_for_queue_length(node, 0)
+    # while the blockers still hold both slots.
+    assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_id)
 
     # Clean up: kill blockers
     for qid in blocker_ids:
@@ -598,6 +641,8 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
 
     pool.close()
     pool.join()
+
+    assert_query_never_started(node, waiter_id)
 
 
 def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
@@ -612,7 +657,8 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
     request is a PromQL query on the Prometheus port. Unknown URL parameters of that
     handler are applied as settings, so `queue_max_wait_ms` makes the difference
     observable: with the callback the waiter is gone within the 500 ms liveness poll,
-    without it the queue stays non-empty for 30 s.
+    without it the queue stays non-empty for 30 s, until the blockers finish and
+    admit it, which `assert_abandoned_waiter_was_cancelled` distinguishes.
     """
     node.query(
         "CREATE TABLE IF NOT EXISTS default.prometheus_time_series ENGINE = TimeSeries",
@@ -621,6 +667,7 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
 
     prefix = uuid.uuid4().hex[:8]
     blocker_ids = [f"prom_disconnect_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_id = f"prom_disconnect_waiter_{prefix}"
 
     pool = Pool(4)
 
@@ -645,9 +692,11 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
             "query": "up",
             "queue_max_wait_ms": "30000",
         })
+        # The query ID goes in the header: this handler applies URL parameters as settings.
         http_request = (
             f"GET /api/v1/query?{params} HTTP/1.1\r\n"
             f"Host: {node.ip_address}\r\n"
+            f"X-ClickHouse-Query-Id: {waiter_id}\r\n"
             f"Connection: close\r\n"
             f"\r\n"
         )
@@ -664,14 +713,17 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
         sock.close()
 
-        # The alive check (interval=500ms) must detect the disconnect and empty the queue.
-        wait_for_queue_length(node, 0)
+        # The alive check (interval=500ms) must detect the disconnect and empty the queue
+        # while the blockers still hold both slots.
+        assert_abandoned_waiter_was_cancelled(node, blocker_ids, waiter_id)
     finally:
         for qid in blocker_ids:
             node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
 
         pool.close()
         pool.join()
+
+    assert_query_never_started(node, waiter_id)
 
 
 def test_grpc_client_cancel_while_waiting_in_queue(started_cluster):
@@ -2382,4 +2434,74 @@ def test_limits_rechecked_after_secondary_limit_wait(started_cluster):
         )
         set_max_concurrent_queries(node, 2)
         wait_for_max_concurrent_queries(node, 2)
+        node.query(f"DROP TABLE IF EXISTS default.{table}")
+
+
+def test_async_backup_keeps_admission_slot(started_cluster):
+    """
+    `BACKUP ... ASYNC` returns as soon as the backup is started, but `BackupsWorker`
+    keeps the query's `ProcessListEntry` until the backup completes. The admission
+    slot must stay occupied for that time as well, otherwise repeated asynchronous
+    submissions bypass `max_concurrent_queries`.
+
+    The backup is throttled by `max_backup_bandwidth` so that it keeps running for
+    much longer than the test needs. With the backup and one blocker running, a third
+    query must wait in the admission queue (`max_concurrent_queries` is 2).
+    """
+    prefix = uuid.uuid4().hex[:8]
+    table = f"async_backup_{prefix}"
+    backup_query_id = f"async_backup_query_{prefix}"
+    blocker_id = f"async_backup_blocker_{prefix}"
+    waiter_id = f"async_backup_waiter_{prefix}"
+
+    node.query(f"CREATE TABLE default.{table} (x UInt64, s String) ENGINE = MergeTree ORDER BY x")
+    # About 4 MB of incompressible data: with 100 KB/s the backup takes ~40 s.
+    node.query(f"INSERT INTO default.{table} SELECT number, randomString(1000) FROM numbers(4000)")
+
+    pool = Pool(4)
+    try:
+        node.query(
+            f"BACKUP TABLE default.{table} TO Memory('{table}') ASYNC FORMAT Null",
+            settings={"max_backup_bandwidth": 100000},
+            query_id=backup_query_id,
+        )
+        # The `BACKUP` query has returned, but its process list entry (and slot) is kept by the backup.
+        assert node.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{backup_query_id}'"
+        ).strip() == "1"
+
+        pool.apply_async(
+            node.query,
+            ("SELECT sleep(30) FORMAT Null",),
+            {
+                "query_id": blocker_id,
+                "settings": {
+                    "function_sleep_max_microseconds_per_block": 0,
+                    "queue_max_wait_ms": 60000,
+                },
+            },
+        )
+        wait_for_query_start(node, blocker_id)
+
+        waiter = pool.apply_async(
+            node.query,
+            ("SELECT 1 FORMAT Null",),
+            {"query_id": waiter_id, "settings": {"queue_max_wait_ms": 60000}},
+        )
+        # Both slots are held (the backup and the blocker), so the waiter must queue.
+        wait_for_queue_length(node, 1, timeout=10)
+        assert not waiter.ready()
+        assert node.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{backup_query_id}'"
+        ).strip() == "1", "the backup finished too early for the check to be meaningful"
+
+        # Freeing the blocker's slot admits the waiter.
+        node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC SETTINGS kill_throw_if_noop = false")
+        waiter.get(timeout=60)
+    finally:
+        for qid in [blocker_id, waiter_id, backup_query_id]:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC SETTINGS kill_throw_if_noop = false")
+        pool.close()
+        pool.join()
+        wait_for_queue_length(node, 0)
         node.query(f"DROP TABLE IF EXISTS default.{table}")
