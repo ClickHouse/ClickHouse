@@ -113,7 +113,7 @@ static int compress(int in_fd, int out_fd, int level, off_t & pointer, const str
 
     /// Blocks are independent frames, so a batch of them is compressed in parallel and written in order.
     /// Block can't become much bigger after compression.
-    size_t num_threads = std::max(1u, std::thread::hardware_concurrency());
+    size_t num_threads = std::max<size_t>(1, std::min<size_t>(std::thread::hardware_concurrency(), blocks.size()));
     size_t output_size = 2 * max_block_size;
     char * output = static_cast<char*>(
         mmap(nullptr, num_threads * output_size,
