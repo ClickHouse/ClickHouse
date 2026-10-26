@@ -285,8 +285,10 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     /// A table of the database is a file beneath the directory of the database, so that a name like
     /// `../other_dir/file.csv` (or an absolute path) does not reach another directory of `user_files`,
     /// e.g. the directory of another `Filesystem` database. The check is lexical, like the names of the
-    /// tables. `clickhouse-local` accepts any path.
-    if (check_path && !fileOrSymlinkPathStartsWith(path_to_probe, path))
+    /// tables, and it is applied to every path the `{a,b,c}` groups of the name expand to, because an
+    /// alternative like `{../other_dir,x}` becomes a `..` component only after the expansion.
+    /// `clickhouse-local` accepts any path.
+    if (check_path && !allGlobAlternativesStartWith(path_to_probe, path))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside the directory of the database");

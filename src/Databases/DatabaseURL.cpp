@@ -319,7 +319,9 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// With a `file://` base URL, the tables of the database are the files beneath the directory of
     /// the base URL, so that a name that is a `file://` URL of its own does not reach another directory
     /// of `user_files` (a relative name does not go above the root of the base path when it is resolved
-    /// against the base URL). The check is lexical, like that resolution. `clickhouse-local` accepts any path.
+    /// against the base URL). The check is lexical, like that resolution, and it is applied to every path
+    /// the `{a,b,c}` groups of the name expand to, because the `file` delegate expands them, and an
+    /// alternative like `{../other_dir,x}` becomes a `..` component only then. `clickhouse-local` accepts any path.
     /// Like the probe below, it runs only with the read source grant, so that its error does not
     /// reveal the path policy to a user who would get the access error anyway.
     if (!is_local && !base_url.empty() && classifyURLScheme(base_url) == URLSchemeTarget::File)
@@ -328,7 +330,7 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
         /// A relative reference replaces the last segment of the base path (RFC 3986), so the directory
         /// of the base is everything up to its last slash.
         base_directory.resize(base_directory.find_last_of('/') + 1);
-        if (!fileOrSymlinkPathStartsWith(path, to_absolute_path(base_directory)))
+        if (!allGlobAlternativesStartWith(path, to_absolute_path(base_directory)))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside the directory of the base URL of the database");
     }
 

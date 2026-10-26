@@ -52,6 +52,11 @@ bool userFilesPathExists(const String & absolute_path, const Disks & disks);
 /// writing through `IDisk` when the absolute path was supplied by the user.
 bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path);
 
+/// Whether every path that the `{a,b,c}` groups of `path_with_globs` expand to is lexically beneath
+/// `prefix_path` (see `fileOrSymlinkPathStartsWith`). A lexical check of the unexpanded pattern is not
+/// enough, because an alternative like `{../other,x}` becomes a `..` component only after the expansion.
+bool allGlobAlternativesStartWith(const String & path_with_globs, const String & prefix_path);
+
 /// Adjusts read settings for reading a user file through a `user_files_policy` disk. User files
 /// are mutable: `file` and `File` rewrite them in place, and so can anyone with access to the disk.
 /// The userspace page cache identifies a local file only by its path, so it would return stale bytes

@@ -666,6 +666,17 @@ bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_
     return pathStartsWith(resolved, resolved_root);
 }
 
+bool allGlobAlternativesStartWith(const String & path_with_globs, const String & prefix_path)
+{
+    if (!path_with_globs.contains('{'))
+        return fileOrSymlinkPathStartsWith(path_with_globs, prefix_path);
+
+    for (const auto & expanded_path : expandSelectionGlob(path_with_globs))
+        if (!fileOrSymlinkPathStartsWith(expanded_path, prefix_path))
+            return false;
+    return true;
+}
+
 ReadSettings getUserFilesDiskReadSettings(ReadSettings settings)
 {
     settings.use_page_cache_for_disks_without_file_cache = false;
@@ -1031,8 +1042,13 @@ Strings getPathsListOnDisk(
         {
             const Strings expanded_patterns = expandSelectionGlob(relative_pattern);
             Strings relative_matches;
-            for (const auto & pattern : expanded_patterns)
+            for (const auto & expanded_pattern : expanded_patterns)
             {
+                /// `relative_pattern` was normalized before the expansion, but an alternative can still
+                /// make the path absolute (`{/other/secret.csv,x}`) or add a `..` component
+                /// (`{../other,x}/secret.csv`), which an object-storage disk would join with its key
+                /// prefix into a key outside of it. Validate every expanded path before any disk operation.
+                const String pattern = normalizeDiskRelativePath(expanded_pattern);
                 /// Deduplicate matches within a single expanded pattern so adjacent globstars
                 /// (`**/**/*.csv`) do not emit the same entry twice. Scoped per expanded pattern
                 /// on purpose: brace-expanded alternatives keep their pre-existing behavior of
