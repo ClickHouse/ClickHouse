@@ -3,13 +3,15 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/SpillableAdapter.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <base/defines.h>
 
 #include <mutex>
 
@@ -84,12 +86,14 @@ public:
     ~GraceHashJoin() override;
 
     std::string getName() const override { return "GraceHashJoin"; }
+
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::GRACE_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
 
@@ -115,22 +119,23 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill() override { force_spill = true; }
+    ISpillable * getSpillable() override { return &spillable; }
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
 
 private:
+    SpillableAdapter<GraceHashJoin> spillable{*this};
+
     void initBuckets();
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addBlockToJoinImpl(Block block);
+    void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover);
+    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
-    bool forcedSpillPending() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -189,7 +194,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

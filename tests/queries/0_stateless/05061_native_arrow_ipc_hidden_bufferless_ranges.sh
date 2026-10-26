@@ -144,7 +144,7 @@ echo "--- list_struct_nulls_tail ---"; read_column list_struct_nulls_tail "a" "a
 echo "--- list_null_short ---"
 ${CLICKHOUSE_LOCAL} --query "SELECT a FROM file('${TMP_DIR}/list_null_short.arrow', 'Arrow', '${NULLS}')" 2>&1 | grep -o "INCORRECT_DATA" | head -n 1
 echo "--- list_struct_null_small as Nullable tuples, then as plain tuples ---"
-${CLICKHOUSE_LOCAL} --allow_experimental_nullable_tuple_type=1 --query \
+${CLICKHOUSE_LOCAL} --enable_nullable_tuple_type=1 --query \
     "SELECT a FROM file('${TMP_DIR}/list_struct_null_small.arrow', 'Arrow', 'a Array(Nullable(Tuple(a Nullable(Nothing), b Nullable(Nothing))))')"
 read_column list_struct_null_small "a" "a Array(Tuple(a Nullable(Nothing), b Nullable(Nothing)))"
 

@@ -7,17 +7,13 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'API 概览', '云 API', 'REST API', '编程访问']
 ---
 
-<div id="overview">
-  ## 概述
-</div>
+## 概述 {#overview}
 
 ClickHouse Cloud API 是一个面向开发者的 REST API，旨在让您轻松管理 ClickHouse Cloud 上的组织和服务。通过我们的 Cloud API，您可以创建和管理服务、配置 API 密钥，以及在组织中添加或移除成员等。
 
 [了解如何创建您的第一个 API 密钥，并开始使用 ClickHouse Cloud API。](/zh/products/cloud/features/admin-features/api/openapi)
 
-<div id="swagger-openapi-endpoint-and-ui">
-  ## Swagger (OpenAPI) 端点和 UI
-</div>
+## Swagger (OpenAPI) 端点和 UI {#swagger-openapi-endpoint-and-ui}
 
 ClickHouse Cloud API 基于开源的 [OpenAPI 规范](https://www.openapis.org/) 构建，
 便于客户端以可预测的方式进行调用。如果你需要以编程方式
@@ -32,18 +28,14 @@ ClickHouse Cloud API 基于开源的 [OpenAPI 规范](https://www.openapis.org/)
   这会影响 `POST`、`GET` 和 `PATCH` 服务请求返回的对象。因此，任何使用这些 API 的代码都可能需要进行相应调整，以适配这些变更。
 </Note>
 
-<div id="rate-limits">
-  ## 速率限制
-</div>
+## 速率限制 {#rate-limits}
 
 每个组织最多可创建 100 个 API 密钥。每个 API 密钥在
 10 秒时间窗口内最多可发出 10 个请求。如果你希望提高组织的
 API 密钥数量上限，或提高每 10 秒时间窗口内的请求上限，
 请联系 support@clickhouse.com
 
-<div id="terraform-provider">
-  ## Terraform 提供商
-</div>
+## Terraform 提供商 {#terraform-provider}
 
 官方的 ClickHouse Terraform 提供商 让您能够使用 [Infrastructure as Code](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
 创建可预测、可进行版本控制的配置，从而大幅降低部署
@@ -60,15 +52,11 @@ API 密钥数量上限，或提高每 10 秒时间窗口内的请求上限，
   现在，您还可以将 `num_replicas` 字段指定为服务资源的一个属性。
 </Note>
 
-<div id="terraform-provider-releases">
-  ## Terraform 提供商 发行版
-</div>
+## Terraform 提供商 发行版 {#terraform-provider-releases}
 
 ClickHouse 维护着两个官方 Terraform 提供商：用于云基础设施的 ClickHouse Cloud 提供商，以及用于数据库级对象的 DBops 提供商。两者都遵循相同的发布模式。
 
-<div id="ga-vs-beta-resources">
-  ### GA 与 Beta 资源
-</div>
+### GA 与 Beta 资源 {#ga-vs-beta-resources}
 
 每个发行版都是一个包含所有资源的构建。尚未达到正式可用阶段的功能所对应的资源会与 GA 资源一同发布，并标记为 **beta**——无需单独的构建，也无需固定版本才能使用它们。
 
@@ -83,31 +71,23 @@ Beta 表示 schema 和行为可能会在未来的提供商版本中发生变化�
   在 v3.25.2 之前，提供商将这些资源标记为 *alpha* 而非 *beta*，且 plan 阶段的 Warning 为 `Alpha Resource`。仅措辞发生了变化——不涉及 schema、行为或状态迁移——但通过 grep 在 plan 输出中查找 `Alpha Resource` 的工具将悄然不再匹配。更早的发行版还发布过单独的 alpha 构建。
 </Note>
 
-<div id="versioning">
-  ### 版本编号
-</div>
+### 版本编号 {#versioning}
 
 两个提供商都采用语义化版本控制 (MAJOR.MINOR.PATCH) 。主版本号在发生破坏性变更时递增，次版本号用于新增功能或资源，补丁版本号则用于错误修复。发行版按需进行，而不是按固定周期安排。
 
 带有 `-alphaN` 后缀的版本 (例如 `3.15.0-alpha3`) 早于单一构建模型。它们仍然可用，但不再构建。
 
-<div id="promotion">
-  ### 从 Beta 升级为 GA
-</div>
+### 从 Beta 升级为 GA {#promotion}
 
 当某项功能达到正式可用状态后，其资源会在下一个提供商发行版中移除 Beta 标记：plan 时 Warning 不再显示，文档中的提示框也会被移除。其他方面均不会改变——无需修改配置、状态迁移，也无需在不同构建之间切换。
 
-<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
-  ## Terraform 和 OpenAPI 新定价：副本设置说明
-</div>
+## Terraform 和 OpenAPI 新定价：副本设置说明 {#terraform-and-openapi-new-pricing---replica-settings-explained}
 
 每个服务在创建时的默认副本数，在 Scale 和 Enterprise 层级中为 3，而在基础版中为 1。
 对于 Scale 和 Enterprise 层级，可以通过在服务创建请求中传入 `numReplicas` 字段来调整副本数。
-对于仓库中的第一个服务，`numReplicas` 字段的值必须在 2 到 20 之间。在现有仓库中创建的服务，副本数则最低可为 1。
+对于仓库中的第一个服务，`numReplicas` 字段的值必须至少为 2。在现有仓库中创建的服务，副本数则最低可为 1。关于副本数的上限，请参阅 [使用限制](/zh/cloud/bestpractices/usage-limits)。
 
-<div id="support">
-  ## 支持
-</div>
+## 支持 {#support}
 
 我们建议您先访问[我们的 Slack 频道](https://clickhouse.com/slack)，以获得快速支持。如果
 您需要更多帮助，或想进一步了解我们的 API 及其功能，

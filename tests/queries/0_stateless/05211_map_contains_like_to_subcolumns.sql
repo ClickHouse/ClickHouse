@@ -1,6 +1,5 @@
 -- Map LIKE predicates should read only the matching Map subcolumn.
 
-SET enable_analyzer = 1;
 SET enable_identifier_resolve_cache = 1;
 SET optimize_functions_to_subcolumns = 1;
 
