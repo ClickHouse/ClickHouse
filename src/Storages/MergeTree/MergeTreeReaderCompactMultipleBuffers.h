@@ -34,6 +34,7 @@ public:
 
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair & column) override;
+    void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
     void init();
     void updateStreamsReadRequestMap();
 

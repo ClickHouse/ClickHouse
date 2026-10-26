@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/checkDataPart.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -12,9 +14,9 @@ namespace ErrorCodes
 
 size_t MergeTreeReaderCompactMultipleBuffers::readRows(
     size_t from_mark,
-    size_t /* current_range_last_mark */,
+    size_t current_range_last_mark,
     bool continue_reading, size_t max_rows_to_read,
-    MutableColumns & res_columns, Columns & /* shared_columns */)
+    MutableColumns & res_columns, Columns & shared_columns)
 try
 {
     init();
@@ -22,67 +24,7 @@ try
     if (continue_reading)
         from_mark = next_mark;
 
-    size_t read_rows = 0;
-    size_t num_columns = columns_to_read.size();
-
-    checkNumberOfColumns(num_columns);
-    createColumnsForReading(res_columns);
-
-    while (read_rows < max_rows_to_read)
-    {
-        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
-
-        deserialize_binary_bulk_state_map.clear();
-        deserialize_binary_bulk_state_map_for_subcolumns.clear();
-
-        /// See the comments in `MergeTreeReaderCompactSingleBuffer::readRows`.
-        std::unordered_map<String, ColumnPtr> columns_cache;
-        std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
-        std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
-
-        for (size_t pos = 0; pos < num_columns; ++pos)
-        {
-            if (!res_columns[pos])
-                continue;
-
-            /// If we have substream marks, subcolumns will be read separately.
-            if (columns_to_read[pos].isSubcolumn() && has_substream_marks)
-                continue;
-
-            auto & stream = *streams[pos];
-            stream.adjustRightMark(last_mark_to_read); /// Must go before seek.
-            stream.seekToMarkAndColumn(from_mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
-
-            auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
-            auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
-            readPrefix(pos, from_mark, stream, &deserialize_states_cache);
-            readData(pos, *res_columns[pos], rows_to_read, from_mark, res_columns[pos]->size(), stream, columns_cache, cache_for_subcolumns, nullptr);
-        }
-
-        if (has_substream_marks && has_subcolumns)
-        {
-            readSubcolumnsPrefixes(from_mark);
-            initSubcolumnsDeserializationOrder();
-            for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
-            {
-                ISerialization::SubstreamsCache substreams_cache;
-                size_t subcolumns_size_before_reading = res_columns[subcolumns_order[0]]->size();
-                for (size_t pos : subcolumns_order)
-                {
-                    if (!res_columns[pos])
-                        continue;
-
-                    readData(pos, *res_columns[pos], rows_to_read, from_mark, subcolumns_size_before_reading, *streams[pos], columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
-                }
-            }
-        }
-
-        ++from_mark;
-        read_rows += rows_to_read;
-    }
-
-    next_mark = from_mark;
-    return read_rows;
+    return readGranules(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, res_columns, shared_columns);
 }
 catch (...)
 {
@@ -100,6 +42,62 @@ catch (...)
     }
 
     throw;
+}
+
+void MergeTreeReaderCompactMultipleBuffers::readGranule(
+    size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask)
+{
+    const size_t num_columns = columns_to_read.size();
+    auto is_selected = [&](size_t pos) { return res_columns[pos] && (!columns_mask || (*columns_mask)[pos]); };
+
+    deserialize_binary_bulk_state_map.clear();
+    deserialize_binary_bulk_state_map_for_subcolumns.clear();
+
+    /// See the comments in `MergeTreeReaderCompactSingleBuffer::readGranule`.
+    std::unordered_map<String, ColumnPtr> columns_cache;
+    std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
+    std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
+
+    for (size_t pos = 0; pos < num_columns; ++pos)
+    {
+        if (!is_selected(pos))
+            continue;
+
+        /// If we have substream marks, subcolumns will be read separately.
+        if (columns_to_read[pos].isSubcolumn() && has_substream_marks)
+            continue;
+
+        auto & stream = *streams[pos];
+        stream.adjustRightMark(last_mark_to_read); /// Must go before seek.
+        stream.seekToMarkAndColumn(mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
+
+        auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
+        auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
+        readPrefix(pos, mark, stream, &deserialize_states_cache);
+        readData(pos, *res_columns[pos], rows_to_read, mark, res_columns[pos]->size(), stream, columns_cache, cache_for_subcolumns, nullptr);
+    }
+
+    if (has_substream_marks && has_subcolumns)
+    {
+        readSubcolumnsPrefixes(mark);
+        initSubcolumnsDeserializationOrder();
+        for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
+        {
+            auto first_selected = std::find_if(subcolumns_order.begin(), subcolumns_order.end(), is_selected);
+            if (first_selected == subcolumns_order.end())
+                continue;
+
+            ISerialization::SubstreamsCache substreams_cache;
+            size_t subcolumns_size_before_reading = res_columns[*first_selected]->size();
+            for (size_t pos : subcolumns_order)
+            {
+                if (!is_selected(pos))
+                    continue;
+
+                readData(pos, *res_columns[pos], rows_to_read, mark, subcolumns_size_before_reading, *streams[pos], columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
+            }
+        }
+    }
 }
 
 void MergeTreeReaderCompactMultipleBuffers::prefetchBeginOfRange(Priority priority)
