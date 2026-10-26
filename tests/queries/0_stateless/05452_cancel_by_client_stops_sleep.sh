@@ -45,6 +45,20 @@ wait_for_query "initial_query_id = '$query_id' AND NOT is_initial_query AND quer
 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
 wait_until_gone "remote" "initial_query_id = '$query_id'"
 
+# The remote part of a cluster table function: one stream sleeps on the first URL (6000 rows, 300 s), the other keeps
+# asking the initiator for the next of the 300 one-row URLs, so the `Cancel` is received by a read task request
+# (`interactive_delay` keeps the connection's own thread from reading it first).
+query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_cluster"
+url="http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+{0..300}+AS+n+FROM+numbers(6000)+WHERE+n+%3D+0+OR+number+%3D+0"
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "
+    SELECT count() FROM urlCluster('test_shard_localhost', '$url', 'TSV', 'x UInt64') WHERE x + sleepEachRow(0.05) >= 0
+    SETTINGS max_threads = 2, max_threads_min_free_memory_per_thread = 0, use_concurrency_control = 0, max_block_size = 10000,
+        input_format_parallel_parsing = 0, function_sleep_max_microseconds_per_block = 600000000, interactive_delay = 10000000
+    " >/dev/null 2>&1 &
+wait_for_query "initial_query_id = '$query_id' AND NOT is_initial_query AND read_rows >= 6000"
+$CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
+wait_until_gone "cluster function" "initial_query_id = '$query_id'"
+
 # A query with a completed pipeline (INSERT SELECT) cancelled by `clickhouse-client` on SIGINT.
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_insert"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
