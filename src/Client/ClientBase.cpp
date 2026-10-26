@@ -6078,10 +6078,6 @@ Block ClientBase::fetchInternalQueryResult(
     {
         settings_to_send->set("show_remote_databases_in_system_tables", false);
         settings_to_send->set("show_data_lake_catalogs_in_system_tables", false);
-        /// Nor to run on other replicas, or to evaluate the `parallel_replicas_custom_key` of the
-        /// session, which parallel replicas would do (see the sandbox of the read-only tool in
-        /// `runQueryForAI`).
-        settings_to_send->set("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
     }
 #endif
 
@@ -6092,10 +6088,19 @@ Block ClientBase::fetchInternalQueryResult(
     /// `readonly` level (where nothing else is sent), and a session that has them and cannot change
     /// them fails the query instead of running them. This comes last: the checks above take a query
     /// that sends no settings for one that cannot change any.
+    ///
+    /// Parallel replicas are switched off the same way, for the same reason: they would run the
+    /// query on other replicas, and evaluate the `parallel_replicas_custom_key` of the session as a
+    /// filter of any table, `system.settings` of the questions included - an expression that can
+    /// call anything (see the sandbox of the read-only tool in `runQueryForAI`). The switch gates
+    /// every mode of parallel replicas, and turning it off where it is already off is accepted at
+    /// any `readonly` level, so a session whose settings profile turns it on and that cannot turn
+    /// it off fails the query rather than evaluating the key.
     if (!settings_to_send)
         settings_to_send.emplace();
     for (const auto * name : query_construction_settings)
         settings_to_send->set(name, String{});
+    settings_to_send->set("allow_experimental_parallel_reading_from_replicas", static_cast<UInt64>(0));
 
     /// This is a complete query exchange on the shared connection, so it follows the same
     /// resynchronization discipline as the regular queries: recover from a previous failed
