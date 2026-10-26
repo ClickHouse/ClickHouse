@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
-import { CloudSQLIAMAuthentication } from "/snippets/clickpipes/_cloudsql_iam_authentication.mdx";
 
 <Info>
 
@@ -78,10 +77,6 @@ Connect to your Cloud SQL Postgres through the admin user and run the below comm
       ```
 
    The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
-
-## Using IAM database authentication (optional, Beta) {#iam-database-authentication}
-
-<CloudSQLIAMAuthentication engine="postgres" />
 
 [//]: # (TODO Add SSH Tunneling)
 

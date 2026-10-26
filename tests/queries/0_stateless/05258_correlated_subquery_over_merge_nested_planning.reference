@@ -10,5 +10,3 @@ IN subquery
 1
 view
 1
-correlated subquery inside a scalar correlated subquery
-1

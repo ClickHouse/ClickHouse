@@ -99,7 +99,6 @@ public:
     {
         file = OpenedFileCache::instance().get(file_name, flags);
         fd = file->getFD();
-        enableOSPageCacheReadsDetection(flags);
     }
 
     std::string getFileName() const override

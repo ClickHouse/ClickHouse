@@ -35,6 +35,7 @@ def cleanup_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS prometheus SYNC")
+        node.query("DROP TABLE IF EXISTS samples SYNC")
 
 
 def get_async_insert_query_count():
@@ -42,40 +43,6 @@ def get_async_insert_query_count():
         node.query(
             "SELECT sum(value) FROM system.events WHERE event = 'AsyncInsertQuery'"
         )
-    )
-
-
-def get_profile_event(event):
-    return int(
-        node.query(
-            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
-        )
-    )
-
-
-def test_async_insert_metric_families_deduplication_cache():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
-
-    metadata = [("cached_metric", "GAUGE", "Test metric", "seconds")]
-    protobuf = convert_metrics_metadata_to_protobuf(metadata)
-    hits_before = get_profile_event(
-        "TimeSeriesMetricFamiliesDeduplicationCacheHits"
-    )
-
-    # Every remote write is acknowledged after its data is flushed,
-    # so the second one finds the metric family in the deduplication cache.
-    for _ in range(2):
-        send_protobuf_to_remote_write(
-            node.ip_address, 9093, "/write?async_insert=1", protobuf
-        )
-
-    assert (
-        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
-        == "1\n"
-    )
-    assert (
-        get_profile_event("TimeSeriesMetricFamiliesDeduplicationCacheHits")
-        == hits_before + 1
     )
 
 
@@ -116,7 +83,7 @@ def test_async_insert_acknowledged_after_flush():
     assert (
         node.query(
             "SELECT type, help, unit FROM timeSeriesMetricFamilies(prometheus) "
-            "WHERE metric_family = 'async_metric'"
+            "WHERE metric_family_name = 'async_metric'"
         )
         == "gauge\tTest metric\tseconds\n"
     )
@@ -125,24 +92,23 @@ def test_async_insert_acknowledged_after_flush():
 
 
 def test_async_insert_no_acknowledgement_on_failure():
-    # Every sample goes to its own partition of the samples table, and the request limits
-    # an insert block to one partition, so a request with two samples fails.
     node.query(
-        "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES INNER ENGINE=MergeTree PARTITION BY timestamp ORDER BY (id, timestamp)"
+        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
 
-    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5, 1724112001: 2.5})]
+    time_series = [({"__name__": "async_metric"}, {1724112000: 1.5})]
     response = get_response_to_remote_write(
         node.ip_address,
         9093,
-        "/write?async_insert=1&max_partitions_per_insert_block=1",
+        "/write?async_insert=1",
         convert_time_series_to_protobuf(time_series),
     )
 
     assert not response.ok
-    assert "TOO_MANY_PARTS" in response.text
-    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "0\n"
+    assert "VIOLATED_CONSTRAINT" in response.text
+    assert node.query("SELECT count() FROM samples") == "0\n"
 
 
 def test_async_insert_flush_timeout_returns_503():

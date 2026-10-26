@@ -1,6 +1,7 @@
 -- Comparing Time/Time64 with DateTime/DateTime64 promotes Time to DateTime
 
 SET session_timezone = 'UTC';
+SET enable_analyzer = 1;
 
 SELECT 'Time promoted to DateTime64 - epoch date prepended';
 SELECT CAST('14:45:40', 'Time') = toDateTime64('1970-01-01 14:45:40', 9);

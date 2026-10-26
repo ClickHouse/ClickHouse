@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT 11 AS n GROUP BY n WITH TOTALS;
 SELECT 12 AS n GROUP BY n WITH ROLLUP;

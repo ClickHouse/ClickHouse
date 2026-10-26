@@ -1,5 +1,0 @@
-ALTER SETTINGS PROFILE p TO ALL: refused
-ALTER SETTINGS PROFILE p TO ALL EXCEPT u, default: ok
-DROP SETTINGS PROFILE p_all: refused
-CREATE SETTINGS PROFILE `p` SETTINGS enable_funnel_functions = true TO ALL EXCEPT default, u
-CREATE SETTINGS PROFILE `p_all` SETTINGS allow_experimental_prql_dialect = true TO ALL

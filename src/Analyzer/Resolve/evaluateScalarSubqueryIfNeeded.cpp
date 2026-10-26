@@ -18,8 +18,6 @@
 
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -97,9 +95,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                                 || (union_node != nullptr && union_node->isCorrelated());
     if (is_correlated_subquery)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate correlated scalar subquery");
-
-    /// The subquery is executed now, so decide here whether its replaced tables read with parallel replicas.
-    restoreReplacedTableStoragesIfNeeded(node);
 
     auto & context = scope.context;
 
@@ -264,13 +259,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 if (column.column->empty())
                 {
                     auto mut_col = column.column->cloneEmpty();
-                    /// Not `NULL`: the placeholder is still evaluated in the enclosing expression, and
-                    /// e.g. a cast to a non-Nullable type would throw. `Nothing` has no other value.
-                    auto nested_type = removeNullable(removeLowCardinality(column.type));
-                    if (isNothing(nested_type))
-                        mut_col->insertDefault();
-                    else
-                        mut_col->insert(nested_type->getDefault());
+                    mut_col->insertDefault();
                     column.column = std::move(mut_col);
                 }
             }

@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (id Int32, d Tuple(year Int32, month Int32, day Int32))

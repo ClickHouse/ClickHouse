@@ -6,6 +6,8 @@
 
 -- { echoOn }
 
+SET enable_analyzer = 1;
+
 SELECT toInt64(0) IN (materialize(toFloat64(-0.6)));
 SELECT toInt64(1) IN (materialize(toFloat64(1.0)));
 SELECT toInt64(0) NOT IN (materialize(toFloat64(-0.6)));

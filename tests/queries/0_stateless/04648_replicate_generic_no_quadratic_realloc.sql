@@ -4,6 +4,7 @@
 -- The time limit is only on the arms that hold a JSON object, because the other shapes never reach
 -- the quadratic path and their wall clock says nothing about it.
 
+SET enable_analyzer = 1;
 SET max_block_size = 400000;
 SET max_threads = 1;
 

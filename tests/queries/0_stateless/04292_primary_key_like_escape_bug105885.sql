@@ -7,6 +7,7 @@
 --
 -- Issue: https://github.com/ClickHouse/ClickHouse/issues/105885
 
+SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;

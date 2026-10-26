@@ -19,7 +19,7 @@ MOCK_PORT = 18123
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node", stay_alive=True)
+instance = cluster.add_instance("node")
 
 
 def run_mock_server():
@@ -96,43 +96,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions', "
             f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Endpoint that always replies with plain text, ignoring `response_format`, as a
-        # model/gateway that doesn't support structured output would.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_mock_no_structured_output AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/completions_no_structured_output', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        # Slow endpoints, used to observe how many requests an AI function has in flight at once.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_slow AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_hang AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/hang', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_jitter AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/jitter', "
-            f"model = 'test-model', "
-            f"api_key = 'test-key'"
-        )
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_embed_slow AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_slow', "
             f"api_key = 'test-key'"
         )
         instance.query(
@@ -287,14 +250,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
-            f"api_key = 'test-key'"
-        )
-        # Endpoint that always replies HTTP 429, as a rate-limited provider would.
-        instance.query(
-            f"CREATE NAMED COLLECTION ai_rate_limited AS "
-            f"provider = 'openai', "
-            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/rate_limited', "
-            f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
         # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
@@ -470,8 +425,6 @@ def test_generate_truncated_response_counts_tokens(started_cluster):
     result = instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_truncated')) FROM test_input",
         settings={
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_throw_on_error": 0,
             "ai_function_max_output_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -801,7 +754,7 @@ def test_classify_null_input(started_cluster):
 
 
 def test_filter_basic(started_cluster):
-    """aiFilter constrains the model to a JSON-schema boolean `match` field.
+    """aiFilter asks the model for a bare true/false response.
     The mock returns true for ordinary messages."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
@@ -832,54 +785,6 @@ def test_filter_where(started_cluster):
     assert lines == ["also good", "great product"]
 
 
-PREWHERE_SETTINGS = {
-    "enable_analyzer": 1,
-    "optimize_move_to_prewhere": 1,
-    "move_all_conditions_to_prewhere": 1,
-    "allow_reorder_prewhere_conditions": 1,
-}
-
-
-def count_filter_calls(prefix, where):
-    """Runs `SELECT count()` over 16 rows, half of them with `flag = 1`, and returns the number of
-    rows and of AI requests."""
-    instance.query(
-        "CREATE TABLE IF NOT EXISTS prewhere_ai (flag UInt8, text String) ENGINE = MergeTree ORDER BY tuple()"
-    )
-    instance.query("TRUNCATE TABLE prewhere_ai")
-    instance.query(
-        "INSERT INTO prewhere_ai SELECT number % 2, 'row ' || toString(number) FROM numbers(16)"
-    )
-    qid = unique_query_id(prefix)
-    rows = instance.query(
-        f"SELECT count() FROM prewhere_ai WHERE {where}",
-        query_id=qid,
-        settings=PREWHERE_SETTINGS,
-    )
-    return int(rows), int(get_profile_events(qid)["api_calls"])
-
-
-def test_filter_prewhere_after_cheap_condition(started_cluster):
-    """The AI condition is moved to PREWHERE after `flag = 1`, so only the rows passing it are sent."""
-    rows, api_calls = count_filter_calls(
-        "filter_prewhere_after_cheap",
-        "aiFilter(text, 'matches', map('credentials', 'ai_mock')) AND flag = 1",
-    )
-    assert rows == 8
-    assert api_calls == 8
-
-
-def test_filter_prewhere_behind_condition_left_in_where(started_cluster):
-    """`length(text) = flag` uses every queried column, so it stays in WHERE. The AI condition
-    stays there too and is evaluated only for the rows passing it, which are none."""
-    rows, api_calls = count_filter_calls(
-        "filter_prewhere_behind_where",
-        "length(text) = flag AND aiFilter(text, 'matches', map('credentials', 'ai_mock'))",
-    )
-    assert rows == 0
-    assert api_calls == 0
-
-
 def test_filter_truncated_response_throw(started_cluster):
     """aiFilter shares the FunctionBaseAI rejection path. A provider-signalled incomplete reply
     (here `finish_reason="length"`) is an error under the default `ai_function_throw_on_error=1`,
@@ -904,8 +809,8 @@ def test_filter_truncated_response_graceful(started_cluster):
     assert result.strip() == ""
 
 
-def test_filter_response_format(started_cluster):
-    """aiFilter sends a JSON-schema response_format constraining the model to a boolean `match` field."""
+def test_filter_no_response_format(started_cluster):
+    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello')")
     instance.query(
@@ -917,41 +822,9 @@ def test_filter_response_format(started_cluster):
         )
     )
     body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
-    schema = body["response_format"]["json_schema"]["schema"]
-    assert schema["properties"]["match"]["type"] == "boolean"
-    assert schema["required"] == ["match"]
+    assert "response_format" not in body
     system = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "boolean text filter" in system.lower()
-
-
-def test_filter_no_structured_output(started_cluster):
-    """aiFilter still sends `response_format`, but a provider that ignores it and replies with plain
-    text must still be handled correctly by the fallback in `FunctionAiFilter::postProcessResponse`:
-    a bare `true` matches, `false` doesn't, and an unrecognized reply (neither) fails closed to no
-    match rather than matching."""
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query(
-        "INSERT INTO test_input VALUES ('great product'), ('does not match'), ('gibberish reply')"
-    )
-    result = instance.query(
-        "SELECT x, aiFilter(x, 'positive feedback', map('credentials', 'ai_mock_no_structured_output')) "
-        "FROM test_input ORDER BY x",
-    )
-    lines = result.strip().split("\n")
-    assert lines == [
-        "does not match\t0",
-        "gibberish reply\t0",
-        "great product\t1",
-    ]
-
-    last = json.loads(
-        instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
-        )
-    )
-    body = json.loads(last["body"])
-    assert body["response_format"]["type"] == "json_schema"
+    assert "lowercase text true or false" in system.lower()
 
 
 def test_filter_null_input(started_cluster):
@@ -1458,8 +1331,6 @@ def test_embed_quota_throw_records_input_tokens(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1483,8 +1354,6 @@ def test_embed_quota_throw_records_rows_processed(started_cluster):
     error = instance.query_and_get_error(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1539,8 +1408,6 @@ def test_generate_malformed_response_counts_tokens_against_quota(started_cluster
     instance.query(
         "SELECT aiGenerate(x, map('credentials', 'ai_no_choices')) FROM test_input",
         settings={
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_throw_on_error": 0,
             "ai_function_throw_on_quota_exceeded": 0,
             "ai_function_max_retries": 0,
@@ -1581,8 +1448,6 @@ def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
         "SELECT aiSimilarity(p.1, p.2, 'test-embed-model', map('credentials', 'ai_embed')) "
         "FROM (SELECT arrayJoin([('a', 'b'), ('c', 'd')]) AS p)",
         settings={
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 2,
             "ai_function_max_input_tokens_per_query": 2,
             "ai_function_throw_on_quota_exceeded": 1,
@@ -1684,8 +1549,6 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     result = instance.query(
         "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
-            # One request at a time, so the token quota is seen before the next request.
-            "ai_function_max_concurrent_requests_per_thread": 1,
             "ai_function_embedding_max_batch_size": 1,
             "ai_function_max_input_tokens_per_query": 5,
             "ai_function_throw_on_quota_exceeded": 0,
@@ -1734,62 +1597,6 @@ def test_generate_retries_on_network_error(started_cluster):
     # 2 failed attempts + 1 successful attempt for the single row.
     assert int(events["api_calls"]) == 3
     assert int(events["rows_processed"]) == 1
-
-
-def _request_outcome_events(query_id):
-    instance.query("SYSTEM FLUSH LOGS")
-    return [
-        int(v)
-        for v in instance.query(
-            f"SELECT ProfileEvents['AIAPICallsRetried'], ProfileEvents['AIAPICallsFailed'], "
-            f"ProfileEvents['AIAPICallsThrottled'] FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        ).split()
-    ]
-
-
-def _server_event(name):
-    return int(instance.query(f"SELECT sum(value) FROM system.events WHERE event = '{name}'").strip() or 0)
-
-
-def test_request_outcome_profile_events(started_cluster):
-    """`AIAPICallsRetried`, `AIAPICallsFailed` and `AIAPICallsThrottled` count request outcomes per query
-    and for the whole server, including failures swallowed by `ai_function_throw_on_error = 0`."""
-    settings = {"ai_function_throw_on_error": 0, "ai_function_retry_initial_delay_ms": 1}
-
-    # Two dropped connections, then success: two retries, no failure.
-    set_flaky(2)
-    qid = unique_query_id("outcome_recovered")
-    instance.query(
-        "SELECT aiGenerate('x', map('credentials', 'ai_flaky')) FORMAT Null",
-        settings={**settings, "ai_function_max_retries": 5},
-        query_id=qid,
-    )
-    assert _request_outcome_events(qid) == [2, 0, 0]
-
-    # Every attempt dropped: one retry, then the request fails and the row gets a default value.
-    set_flaky(10)
-    try:
-        qid = unique_query_id("outcome_failed")
-        instance.query(
-            "SELECT aiGenerate('x', map('credentials', 'ai_flaky')) FORMAT Null",
-            settings={**settings, "ai_function_max_retries": 1},
-            query_id=qid,
-        )
-    finally:
-        set_flaky(0)
-    assert _request_outcome_events(qid) == [1, 1, 0]
-
-    # HTTP 429 on both attempts: both are throttled, one is retried, the request fails.
-    throttled_before = _server_event("AIAPICallsThrottled")
-    qid = unique_query_id("outcome_throttled")
-    instance.query(
-        "SELECT aiGenerate('x', map('credentials', 'ai_rate_limited')) FORMAT Null",
-        settings={**settings, "ai_function_max_retries": 1},
-        query_id=qid,
-    )
-    assert _request_outcome_events(qid) == [1, 1, 2]
-    assert _server_event("AIAPICallsThrottled") - throttled_before == 2
 
 
 def test_generate_network_error_not_retried_when_disabled(started_cluster):
@@ -1940,75 +1747,6 @@ def test_function_name_header(started_cluster):
     for name, query in cases:
         instance.query(query)
         assert last_request()["headers"].get("x-clickhouse-ai-function") == name
-
-
-def test_query_id_header(started_cluster):
-    """The OpenAI provider sends the `query_id` of the query that makes the request as the
-    `X-ClickHouse-Query-Id` header and its `initial_query_id` as the `X-ClickHouse-Initial-Query-Id` header:
-    on a remote shard the first is the shard's own query id, the second is the initiator's one.
-    Covers the chat and the embedding paths."""
-    local_cases = [
-        "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))",
-        "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
-    ]
-    for i, query in enumerate(local_cases):
-        qid = unique_query_id(f"query_id_header_{i}")
-        instance.query(query, query_id=qid)
-        headers = last_request()["headers"]
-        assert headers.get("x-clickhouse-query-id") == qid
-        assert headers.get("x-clickhouse-initial-query-id") == qid
-
-    remote_cases = [
-        "SELECT aiGenerate(toString(dummy), map('credentials', 'ai_mock')) FROM remote('127.0.0.2', system.one)",
-        "SELECT aiEmbed(toString(dummy), 'test-embed-model', map('credentials', 'ai_embed')) FROM remote('127.0.0.2', system.one)",
-    ]
-    for i, query in enumerate(remote_cases):
-        qid = unique_query_id(f"query_id_header_remote_{i}")
-        instance.query(query, query_id=qid)
-        headers = last_request()["headers"]
-        sent_query_id = headers.get("x-clickhouse-query-id")
-        assert sent_query_id and sent_query_id != qid
-        assert headers.get("x-clickhouse-initial-query-id") == qid
-        instance.query("SYSTEM FLUSH LOGS query_log")
-        assert (
-            instance.query(
-                f"SELECT initial_query_id FROM system.query_log WHERE query_id = '{sent_query_id}' AND NOT is_initial_query AND type = 'QueryFinish'"
-            ).strip()
-            == qid
-        )
-
-    # A background mutation sends the mutation task's own `current_query_id` and has no `initial_query_id`.
-    instance.query("DROP TABLE IF EXISTS query_id_header SYNC")
-    instance.query("CREATE TABLE query_id_header (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
-    instance.query("INSERT INTO query_id_header VALUES (1, 'a')")
-    instance.query(
-        "ALTER TABLE query_id_header UPDATE s = aiGenerate('hi', map('credentials', 'ai_mock')) WHERE 1",
-        settings={"mutations_sync": 2, "allow_nondeterministic_mutations": 1},
-    )
-    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'query_id_header'").strip()
-    headers = last_request()["headers"]
-    assert headers.get("x-clickhouse-query-id") == f"{table_uuid}::all_1_1_0_2"
-    assert "x-clickhouse-initial-query-id" not in headers
-    instance.query("DROP TABLE query_id_header SYNC")
-
-
-def test_query_id_header_control_characters(started_cluster):
-    """A query id from the native protocol can contain control characters. They are replaced with spaces
-    in the `X-ClickHouse-Query-Id` and `X-ClickHouse-Initial-Query-Id` headers, so no extra header is injected."""
-    suffix = uuid.uuid4().hex[:8]
-    qid = f"query_id_crlf_{suffix}\r\nX-Injected: 1"
-    instance.query("SELECT aiGenerate('hi', map('credentials', 'ai_mock'))", query_id=qid)
-    instance.query("SYSTEM FLUSH LOGS query_log")
-    assert (
-        instance.query(
-            f"SELECT count() FROM system.query_log WHERE query_id = 'query_id_crlf_{suffix}\\r\\nX-Injected: 1' AND type = 'QueryFinish'"
-        ).strip()
-        == "1"
-    )
-    headers = last_request()["headers"]
-    assert headers.get("x-clickhouse-query-id") == f"query_id_crlf_{suffix}  X-Injected: 1"
-    assert headers.get("x-clickhouse-initial-query-id") == f"query_id_crlf_{suffix}  X-Injected: 1"
-    assert "x-injected" not in headers
 
 
 def test_embed_retry_respects_api_call_quota(started_cluster):
@@ -2524,8 +2262,6 @@ def test_input_token_quota_is_per_query(started_cluster):
         instance.query(
             f"SELECT {CHAT_CALL} FROM quota_tokens FORMAT Null",
             settings={
-                # One request at a time, so the token quota is seen before the next request.
-                "ai_function_max_concurrent_requests_per_thread": 1,
                 **_QUOTA_SCOPE_SETTINGS,
                 "ai_function_max_input_tokens_per_query": limit,
                 "ai_function_throw_on_quota_exceeded": 0,
@@ -2629,305 +2365,3 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
     assert subquery_only == 64, (
         f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
-
-
-SLOW_CHAT_CALL = "aiClassify(toString(number), ['positive','negative'], map('credentials', 'ai_slow'))"
-SLOW_EMBED_CALL = "aiEmbed(toString(number), 'test-model', map('credentials', 'ai_embed_slow'))"
-
-
-def _concurrency_stats():
-    return json.loads(
-        instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:{MOCK_PORT}/concurrency"]
-        )
-    )
-
-
-def _reset_concurrency():
-    instance.exec_in_container(
-        ["curl", "-s", f"http://localhost:{MOCK_PORT}/reset-concurrency"]
-    )
-
-
-def _observe_concurrency(call, concurrency, rows, expected_requests, extra_settings=None):
-    """Run `call` over `rows` rows at the given `ai_function_max_concurrent_requests_per_thread` and return
-    the high-water mark of requests the mock saw in flight at the same time."""
-    _reset_concurrency()
-    qid = unique_query_id(f"ai_concurrency_{concurrency}")
-    instance.query(
-        f"SELECT {call} FROM numbers({rows}) FORMAT Null",
-        settings={
-            "ai_function_max_concurrent_requests_per_thread": concurrency,
-            **(extra_settings or {}),
-        },
-        query_id=qid,
-    )
-    stats = _concurrency_stats()
-    assert stats["requests"] == expected_requests, (
-        f"expected {expected_requests} requests, got {stats['requests']} at "
-        f"ai_function_max_concurrent_requests_per_thread={concurrency}"
-    )
-    assert int(get_profile_events(qid)["api_calls"]) == expected_requests
-    return stats["max_concurrency"]
-
-
-def test_max_concurrent_requests_controls_requests_in_flight(started_cluster):
-    """`ai_function_max_concurrent_requests_per_thread` decides how many provider requests a text AI function
-    has in flight, and nothing else does: the same query shape and the same data give one request
-    at a time at 1, and several at 8."""
-    one = _observe_concurrency(SLOW_CHAT_CALL, concurrency=1, rows=16, expected_requests=16)
-    many = _observe_concurrency(SLOW_CHAT_CALL, concurrency=8, rows=16, expected_requests=16)
-
-    assert one == 1, (
-        f"ai_function_max_concurrent_requests_per_thread=1 must issue requests one at a time, saw {one} in flight"
-    )
-    assert 2 <= many <= 8, (
-        f"ai_function_max_concurrent_requests_per_thread=8 must overlap requests without exceeding the "
-        f"limit, saw {many} in flight"
-    )
-
-
-def test_max_concurrent_requests_applies_to_embeddings(started_cluster):
-    """The same setting governs the embedding path, where the unit in flight is a batch of texts
-    rather than a row: 16 rows at a batch size of 2 are 8 requests."""
-    batching = {"ai_function_embedding_max_batch_size": 2}
-    one = _observe_concurrency(
-        SLOW_EMBED_CALL, concurrency=1, rows=16, expected_requests=8, extra_settings=batching
-    )
-    many = _observe_concurrency(
-        SLOW_EMBED_CALL, concurrency=4, rows=16, expected_requests=8, extra_settings=batching
-    )
-
-    assert one == 1, (
-        f"ai_function_max_concurrent_requests_per_thread=1 must issue batches one at a time, saw {one} in flight"
-    )
-    assert 2 <= many <= 4, (
-        f"ai_function_max_concurrent_requests_per_thread=4 must overlap batches without exceeding the "
-        f"limit, saw {many} in flight"
-    )
-
-
-def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
-    """Concurrency must not let the API-call quota drift: a slot is reserved before each request is
-    dispatched, so the cap stays exact no matter how many requests are in flight."""
-    _reset_concurrency()
-    qid = unique_query_id("ai_concurrency_quota")
-    instance.query(
-        f"SELECT {SLOW_CHAT_CALL} FROM numbers(64) FORMAT Null",
-        settings={
-            "ai_function_max_concurrent_requests_per_thread": 8,
-            "ai_function_max_api_calls_per_query": 5,
-            "ai_function_throw_on_quota_exceeded": 0,
-        },
-        query_id=qid,
-    )
-    stats = _concurrency_stats()
-    assert stats["requests"] == 5, (
-        f"the provider saw {stats['requests']} requests, but ai_function_max_api_calls_per_query = 5 "
-        "is an exact cap even with concurrent requests"
-    )
-    assert int(get_profile_events(qid)["api_calls"]) == 5
-
-
-def test_concurrent_responses_map_to_their_rows(started_cluster):
-    """With several requests in flight and responses arriving in random order, every row still gets its
-    own response. The mock echoes the prompt after a random delay, so each output must equal its input.
-    Four blocks of 25 rows over two threads also run several function calls at once."""
-    result = instance.query(
-        "SELECT countIf(answer = prompt), count() FROM "
-        "(SELECT concat('row-', toString(number)) AS prompt, "
-        "aiGenerate(prompt, map('credentials', 'ai_jitter')) AS answer FROM numbers_mt(100))",
-        settings={
-            "ai_function_max_concurrent_requests_per_thread": 10,
-            "max_block_size": 25,
-            "max_threads": 2,
-        },
-    ).strip()
-    assert result == "100\t100", f"expected every row to get its own response, got (matching, total) = {result}"
-
-
-MULTI_CALL_QUERY = (
-    "SELECT countIf(a = pa), countIf(b = pb), count(), sum(cityHash64(pa, e)) FROM "
-    "(SELECT concat('a-', toString(number)) AS pa, concat('b-', toString(number)) AS pb, "
-    "aiGenerate(pa, map('credentials', 'ai_jitter')) AS a, "
-    "aiGenerate(pb, map('credentials', 'ai_jitter')) AS b, "
-    "aiEmbed(pa, 'test-embed-model', map('credentials', 'ai_embed')) AS e "
-    "FROM numbers_mt(100))"
-)
-MULTI_CALL_SETTINGS = {
-    "max_block_size": 25,
-    "max_threads": 2,
-    "ai_function_embedding_max_batch_size": 1,
-}
-
-
-def test_multiple_ai_calls_in_one_query(started_cluster):
-    """Three AI function calls in one query share the request pool and the query's quota tracker.
-    Each call's outputs stay with its own rows, the embeddings match a run with one request at a time,
-    and `AIAPICalls` counts the requests of all three calls: 100 + 100 + 100 (one text per batch)."""
-    serial = instance.query(
-        MULTI_CALL_QUERY, settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests_per_thread": 1}
-    ).split("\t")
-
-    qid = unique_query_id("ai_multi_call")
-    concurrent = instance.query(
-        MULTI_CALL_QUERY,
-        settings={**MULTI_CALL_SETTINGS, "ai_function_max_concurrent_requests_per_thread": 10},
-        query_id=qid,
-    ).split("\t")
-
-    assert concurrent[:3] == ["100", "100", "100"], (
-        f"expected each aiGenerate call to answer its own rows, got (a matching, b matching, total) = {concurrent[:3]}"
-    )
-    assert concurrent[3] == serial[3], "aiEmbed returned different row/embedding pairs with concurrent requests"
-    assert int(get_profile_events(qid)["api_calls"]) == 300
-
-
-def test_api_call_quota_is_shared_by_ai_calls_in_one_query(started_cluster):
-    """`ai_function_max_api_calls_per_query` is one allowance for all AI function calls of the query,
-    and stays exact with concurrent requests from three calls drawing on it at once."""
-    qid = unique_query_id("ai_multi_call_quota")
-    instance.query(
-        MULTI_CALL_QUERY,
-        settings={
-            **MULTI_CALL_SETTINGS,
-            "ai_function_max_concurrent_requests_per_thread": 10,
-            "ai_function_max_api_calls_per_query": 50,
-            "ai_function_throw_on_quota_exceeded": 0,
-        },
-        query_id=qid,
-    )
-    assert int(get_profile_events(qid)["api_calls"]) == 50
-
-
-def test_kill_query_stops_issuing_requests(started_cluster):
-    """`KILL QUERY` stops an AI function mid-block: no new request is sent after the kill. The 400 rows
-    form one block, which at 0.5s per request would otherwise take 200s and send all 400 requests."""
-    _reset_concurrency()
-    qid = unique_query_id("ai_kill")
-    request = instance.get_query_request(
-        f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
-        settings={"ai_function_max_concurrent_requests_per_thread": 1},
-        query_id=qid,
-    )
-
-    wait_condition(
-        _concurrency_stats, lambda stats: stats["requests"] >= 2, max_attempts=100, delay=0.1
-    )
-    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
-
-    assert "Query was cancelled" in request.get_error()
-    requests = _concurrency_stats()["requests"]
-    assert requests < 40, f"the killed query kept sending requests: {requests} of 400 were sent"
-
-    instance.query("SYSTEM FLUSH LOGS")
-    exception_code = instance.query(
-        f"SELECT exception_code FROM system.query_log "
-        f"WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing'"
-    ).strip()
-    assert exception_code == "394"
-    assert int(get_profile_events(qid, "ExceptionWhileProcessing")["api_calls"]) == requests
-
-
-def test_max_execution_time_stops_issuing_requests(started_cluster):
-    """`max_execution_time` stops an AI function mid-block like `KILL QUERY`: the 400 rows form one block
-    that would take 200s at 0.5s per request, and the query fails after 2s having sent a fraction of them."""
-    _reset_concurrency()
-    error = instance.query_and_get_error(
-        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
-        settings={"max_execution_time": 2, "ai_function_max_concurrent_requests_per_thread": 1},
-    )
-    assert "TIMEOUT_EXCEEDED" in error
-    requests = _concurrency_stats()["requests"]
-    assert requests < 40, f"the timed-out query kept sending requests: {requests} of 400 were sent"
-
-
-def test_max_execution_time_break_stops_issuing_requests(started_cluster):
-    """With `timeout_overflow_mode = 'break'` the query returns without an error once the time limit is
-    reached, and no further requests are sent."""
-    _reset_concurrency()
-    instance.query(
-        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
-        settings={
-            "max_execution_time": 2,
-            "timeout_overflow_mode": "break",
-            "ai_function_max_concurrent_requests_per_thread": 1,
-        },
-    )
-    requests = _concurrency_stats()["requests"]
-    assert requests < 40, f"the query kept sending requests past the time limit: {requests} of 400 were sent"
-
-
-AI_THREAD_POOL_CONFIG = "/etc/clickhouse-server/config.d/ai_thread_pool.xml"
-
-
-def _set_ai_thread_pool_size(size):
-    instance.replace_config(
-        AI_THREAD_POOL_CONFIG,
-        f"<clickhouse><ai_function_max_thread_pool_size>{size}</ai_function_max_thread_pool_size></clickhouse>",
-    )
-    instance.query("SYSTEM RELOAD CONFIG")
-
-
-def test_cancelled_query_does_not_wait_for_other_queries_requests(started_cluster):
-    """With a single pool thread, query A queues 64 requests. Query B's request queues behind them, and B
-    fails on `max_execution_time` before A's requests are served. Once A is killed, its queued requests
-    are not sent."""
-    _set_ai_thread_pool_size(1)
-    qid_a = unique_query_id("ai_backlog")
-    try:
-        _reset_concurrency()
-        request_a = instance.get_query_request(
-            f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
-            settings={"ai_function_max_concurrent_requests_per_thread": 64},
-            query_id=qid_a,
-        )
-        wait_condition(
-            _concurrency_stats, lambda stats: stats["requests"] >= 1, max_attempts=100, delay=0.1
-        )
-
-        error = instance.query_and_get_error(
-            f"SELECT {SLOW_CHAT_CALL} FROM numbers(1) FORMAT Null",
-            settings={"max_execution_time": 1},
-        )
-        assert "TIMEOUT_EXCEEDED" in error
-        served = _concurrency_stats()["requests"]
-        assert served < 64, f"the timed-out query waited for {served} requests of the other query"
-
-        instance.query(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
-        assert "Query was cancelled" in request_a.get_error()
-        sent = _concurrency_stats()["requests"]
-        wait_condition(
-            lambda: instance.query(
-                "SELECT value FROM system.metrics WHERE metric = 'AIRequestThreadsScheduled'"
-            ).strip(),
-            lambda value: value == "0",
-            max_attempts=100,
-            delay=0.1,
-        )
-        # A request that passed its cancellation check before the kill may still arrive.
-        assert _concurrency_stats()["requests"] <= sent + 1
-    finally:
-        # Fails with `NOTHING_TO_KILL` when the query was already killed above.
-        instance.query_and_get_answer_with_error(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
-        _set_ai_thread_pool_size(1000)
-
-
-def test_shutdown_after_cancelling_query_with_request_in_flight(started_cluster):
-    """A killed query does not wait for its request to `/v1/chat/hang`. The server shuts down right after,
-    while the request is still in flight, and must drain the AI request pool before destroying the context."""
-    _reset_concurrency()
-    qid = unique_query_id("ai_hang")
-    request = instance.get_query_request(
-        "SELECT aiGenerate(toString(number), map('credentials', 'ai_hang')) FROM numbers(1) FORMAT Null",
-        settings={"ai_function_max_retries": 0},
-        query_id=qid,
-    )
-    wait_condition(
-        _concurrency_stats, lambda stats: stats["requests"] >= 1, max_attempts=100, delay=0.1
-    )
-    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
-    assert "Query was cancelled" in request.get_error()
-
-    instance.restart_clickhouse()
-    assert instance.query("SELECT aiGenerate('x', map('credentials', 'ai_slow'))").strip() != ""

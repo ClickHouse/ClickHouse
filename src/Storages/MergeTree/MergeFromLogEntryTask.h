@@ -4,7 +4,6 @@
 #include <utility>
 
 #include <Storages/MergeTree/IExecutableTask.h>
-#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
@@ -60,9 +59,6 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
-
-    /// Taken in `prepare` when the entry is a merge with TTL; see `MergeList::TTLMergeSlot`.
-    MergeList::TTLMergeSlot ttl_merge_slot;
 
     std::map<String, UInt64> projections_merge_time;
 };

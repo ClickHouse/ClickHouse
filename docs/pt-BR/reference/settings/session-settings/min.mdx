@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## min_chunk_bytes_for_parallel_parsing {#min_chunk_bytes_for_parallel_parsing}
+<div id="min_chunk_bytes_for_parallel_parsing">
+  ## min_chunk_bytes_for_parallel_parsing
+</div>
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="10485760" />
 
@@ -22,7 +24,9 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 O tamanho mínimo do fragmento, em bytes, que cada thread analisará em paralelo.
 
-## min_compress_block_size {#min_compress_block_size}
+<div id="min_compress_block_size">
+  ## min_compress_block_size
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
@@ -40,7 +44,9 @@ Estamos gravando uma coluna de URL do tipo String (tamanho médio de 60 bytes po
   Esta é uma configuração de nível especialista, e você não deve alterá-la se estiver apenas começando a usar o ClickHouse.
 </Note>
 
-## min_filtered_ratio_for_lazy_final {#min_filtered_ratio_for_lazy_final}
+<div id="min_filtered_ratio_for_lazy_final">
+  ## min_filtered_ratio_for_lazy_final
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
@@ -48,13 +54,17 @@ Estamos gravando uma coluna de URL do tipo String (tamanho médio de 60 bytes po
 
 Razão mínima de marcas filtradas pela análise de índice para a otimização FINAL lazy. Se menos que essa fração de marcas for filtrada, o sistema recorre ao FINAL normal. O valor 0 desabilita essa verificação.
 
-## min_hit_rate_to_use_consecutive_keys_optimization {#min_hit_rate_to_use_consecutive_keys_optimization}
+<div id="min_hit_rate_to_use_consecutive_keys_optimization">
+  ## min_hit_rate_to_use_consecutive_keys_optimization
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
 Taxa mínima de acertos de um cache usada na otimização de chaves consecutivas na agregação para mantê-la ativada
 
-## min_os_cpu_wait_time_ratio_to_throw {#min_os_cpu_wait_time_ratio_to_throw}
+<div id="min_os_cpu_wait_time_ratio_to_throw">
+  ## min_os_cpu_wait_time_ratio_to_throw
+</div>
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
@@ -62,7 +72,9 @@ Taxa mínima de acertos de um cache usada na otimização de chaves consecutivas
 
 Razão mínima entre os tempos de espera da CPU do SO (métrica OSCPUWaitMicroseconds) e de atividade (métrica OSCPUVirtualTimeMicroseconds) para considerar a rejeição de consultas. A interpolação linear entre a razão mínima e a máxima é usada para calcular a probabilidade; nesse ponto, a probabilidade é 0.
 
-## min_outstreams_per_resize_after_split {#min_outstreams_per_resize_after_split}
+<div id="min_outstreams_per_resize_after_split">
+  ## min_outstreams_per_resize_after_split
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -70,13 +82,17 @@ Razão mínima entre os tempos de espera da CPU do SO (métrica OSCPUWaitMicrose
 
 Especifica o número mínimo de streams de saída de um processador `Resize` ou `StrictResize` após a divisão ser realizada durante a geração do pipeline. Se o número resultante de streams for menor que esse valor, a operação de divisão não será realizada.
 
-### O que é um nó Resize {#what-is-a-resize-node}
+<div id="what-is-a-resize-node">
+  ### O que é um nó Resize
+</div>
 
 Um nó `Resize` é um processador no pipeline de consulta que ajusta o número de stream de dados que passam pelo pipeline. Ele pode aumentar ou diminuir o número de stream para equilibrar a carga de trabalho entre vários threads ou processadores. Por exemplo, se uma consulta exigir mais paralelismo, o nó `Resize` pode dividir um único stream em vários stream. Por outro lado, ele pode mesclar vários stream em menos stream para consolidar o processamento de dados.
 
 O nó `Resize` garante que os dados sejam distribuídos uniformemente entre os stream, mantendo a estrutura dos blocos de dados. Isso ajuda a otimizar a utilização de recursos e a melhorar o desempenho da consulta.
 
-### Por que o nó Resize precisa ser dividido {#why-the-resize-node-needs-to-be-split}
+<div id="why-the-resize-node-needs-to-be-split">
+  ### Por que o nó Resize precisa ser dividido
+</div>
 
 Durante a execução do pipeline, o `status_mutex` de ExecutingGraph::Node no nó `Resize`, que funciona como ponto central, sofre forte contenção, especialmente em ambientes com muitos núcleos, e isso leva a:
 
@@ -84,33 +100,45 @@ Durante a execução do pipeline, o `status_mutex` de ExecutingGraph::Node no n�
 2. Ciclos excessivos de CPU são desperdiçados com contenção de spin-lock (`native_queued_spin_lock_slowpath`), reduzindo a eficiência.
 3. Redução da utilização da CPU, limitando o paralelismo e a taxa de transferência.
 
-### Como o nó Resize é dividido {#how-the-resize-node-gets-split}
+<div id="how-the-resize-node-gets-split">
+  ### Como o nó Resize é dividido
+</div>
 
 1. O número de streams de saída é verificado para garantir que a divisão possa ser realizada: os streams de saída de cada processador resultante da divisão atendem ou excedem o limite `min_outstreams_per_resize_after_split`.
 2. O nó `Resize` é dividido em nós `Resize` menores, com a mesma quantidade de portas, cada um lidando com um subconjunto de streams de entrada e de saída.
 3. Cada grupo é processado de forma independente, reduzindo a contenção de lock.
 
-### Divisão do nó Resize com entradas/saídas arbitrárias {#splitting-resize-node-with-arbitrary-inputsoutputs}
+<div id="splitting-resize-node-with-arbitrary-inputsoutputs">
+  ### Divisão do nó Resize com entradas/saídas arbitrárias
+</div>
 
 Em alguns casos, quando as entradas/saídas não são divisíveis pelo número de nós `Resize` após a divisão, algumas entradas são conectadas a `NullSource`s e algumas saídas são conectadas a `NullSink`s. Isso permite que a divisão ocorra sem afetar o fluxo geral de dados.
 
-### Finalidade da configuração {#purpose-of-the-setting}
+<div id="purpose-of-the-setting">
+  ### Finalidade da configuração
+</div>
 
 A configuração `min_outstreams_per_resize_after_split` garante que a divisão de nós `Resize` seja realmente útil e evita a criação de um número muito pequeno de streams, o que poderia levar a um processamento paralelo ineficiente. Ao impor um número mínimo de streams de saída, essa configuração ajuda a manter o equilíbrio entre paralelismo e sobrecarga, otimizando a execução de consultas em cenários que envolvem divisão e mesclagem de streams.
 
-### Desativando a configuração {#disabling-the-setting}
+<div id="disabling-the-setting">
+  ### Desativando a configuração
+</div>
 
 Para desativar a divisão de nós `Resize`, defina esta configuração como 0. Isso impedirá a divisão de nós `Resize` durante a geração do pipeline, permitindo que mantenham sua estrutura original sem serem divididos em nós menores.
 
-## min_rows_ratio_for_hash_join_row_store {#min_rows_ratio_for_hash_join_row_store}
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
 
-<SettingsInfoBlock type="Double" default_value="3" />
+<SettingsInfoBlock type="Double" default_value="5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "Nova configuração para controlar a razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "3"},{"label": "Redução da razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação que habilita o armazenamento orientado a linhas do hash join."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "Nova configuração para controlar a razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida."}]}]} />
 
 Razão mínima estimada entre as linhas de saída do join e as linhas do lado de compilação, permitindo transformar o payload do hash join em formato orientado a linhas. 0 significa que a transformação é sempre permitida.
 
-## min_table_rows_to_use_projection_index {#min_table_rows_to_use_projection_index}
+<div id="min_table_rows_to_use_projection_index">
+  ## min_table_rows_to_use_projection_index
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

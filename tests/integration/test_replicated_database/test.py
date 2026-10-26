@@ -18,17 +18,6 @@ test_recover_staled_replica_run = 1
 
 cluster = ClickHouseCluster(__file__)
 
-# `bad_settings_node` runs with implicit_transaction=1, so every query on it starts a
-# transaction, and TransactionManager refuses to start unless Keeper advertises the three
-# transaction flags. The harness randomizes flags that a test does not pin.
-KEEPER_FEATURE_FLAGS = [
-    "multi_read",
-    "create_if_not_exists",
-    "list_with_stat_and_data",
-    "check_stat",
-    "filtered_list",
-]
-
 main_node = cluster.add_instance(
     "main_node",
     main_configs=["configs/config.xml"],
@@ -38,7 +27,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -47,7 +36,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -56,7 +45,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -64,14 +53,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 all_nodes = [
@@ -88,7 +77,7 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
-    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -1913,11 +1902,6 @@ def test_system_database_replicas_with_ro(started_cluster):
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
     )
 
-    zookeeper_exception = main_node.query(
-        f"SELECT zookeeper_exception FROM system.database_replicas WHERE database = '{database_1}'"
-    )
-    assert zookeeper_exception.strip()
-
     database_2 = f"{prefix}_test_system_database_replicas_2"
     main_node.query(
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
@@ -2073,11 +2057,11 @@ def test_timeseries(started_cluster):
     main_node.query(
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
-        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_time_ranges = false
+        CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
         SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
-        TAGS ENGINE = ReplicatedReplacingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family;
+        TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
         """,
         settings={"allow_experimental_time_series_table": 1}
     )

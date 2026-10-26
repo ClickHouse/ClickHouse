@@ -459,7 +459,7 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
 
             scale = scale_;
         }
@@ -523,15 +523,6 @@ namespace
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (!yearIsInValidRange(week_year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
-
-            if (week_of_year_ == 53)
-            {
-                Int32 days_since_epoch_of_jan_first = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_first, (daysSinceEpochFromDate(week_year_, 1, 1)))
-                Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_first);
-                if (first_day_of_week_year != 4 && !(isLeapYear(week_year_) && first_day_of_week_year == 3))
-                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week 53 for ISO week year {}", week_year_)
-            }
 
             Int32 days_since_epoch_of_jan_fourth = 0;
             ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch_of_jan_fourth, (daysSinceEpochFromDate(week_year_, 1, 4)))
@@ -621,43 +612,10 @@ namespace
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-        /// row references it, so the throwing variant must not be executed on the whole dictionary -
-        /// the empty string is not a date and it would fail on entirely valid data.
-        bool canBeExecutedOnDefaultArguments() const override { return error_handling != ErrorHandling::Exception; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
-
-        /// Documentation-only — the override below is authoritative (it computes
-        /// the DateTime64 scale from the number of `S` placeholders in the
-        /// format string, and attaches the timezone from the optional third arg).
-        String getSignatureString() const override
-        {
-            String result;
-            if constexpr (return_type == ReturnType::DateTime)
-                result = "DateTime";
-            else
-                result = "DateTime64";
-            if constexpr (error_handling == ErrorHandling::Null)
-                result = "Nullable(" + result + ")";
-            return "(String, [const String], [const String]) -> " + result;
-        }
-
-        /// There is no types-only answer: the result type depends on the *values* of the optional
-        /// arguments — the timezone comes from the third argument and, for the `DateTime64`
-        /// non-MySQL syntax, the scale is the number of `S` placeholders in the format string.
-        /// Decline this entry point instead of letting the documentation-only signature above
-        /// answer with a timezone-less `DateTime`/scale-0 `DateTime64`.
-        DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "getReturnType is not implemented for {}: the result type can only be derived "
-                "when the values of the format and timezone arguments are known",
-                getName());
-        }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
@@ -926,20 +884,6 @@ namespace
                 return cur;
             }
 
-            [[nodiscard]]
-            static PosOrError readDayOfMonthNumber(Pos cur, Pos end, const String & fragment, Int32 & day_of_month)
-            {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "two digits are expected for day of month", fragment))
-                if (cur[0] < '0' || cur[0] > '9' || cur[1] < '0' || cur[1] > '9') [[unlikely]]
-                    RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because two digits are expected for day of month",
-                        fragment,
-                        std::string_view(cur, end - cur))
-
-                return readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day_of_month);
-            }
-
             template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
             static PosOrError readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
@@ -1144,7 +1088,7 @@ namespace
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
 
                 Int32 day = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
 
@@ -1196,7 +1140,7 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))

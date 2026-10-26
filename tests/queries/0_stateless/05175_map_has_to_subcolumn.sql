@@ -1,5 +1,6 @@
 -- Test that Map key predicates use the keys subcolumn without changing results.
 
+SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_rewrite_has_to_in = 0;
 

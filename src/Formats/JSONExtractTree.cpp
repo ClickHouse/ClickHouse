@@ -60,11 +60,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
-#include <Common/memcpySmall.h>
-
-#include <base/memcmpSmall.h>
-
-#include <bit>
 #include <limits>
 
 namespace DB
@@ -630,9 +625,6 @@ public:
     }
 
 private:
-    /// Values up to this length are padded on the stack instead of through a `String`.
-    static constexpr size_t max_padding_on_stack = 64;
-
     template <typename T>
     bool checkValueSizeAndInsert(IColumn & column, const T & value, String & error) const
     {
@@ -645,25 +637,15 @@ private:
         // For the non low cardinality case of FixedString, the padding is done in the FixedString Column implementation.
         // In order to avoid having to pass the data to a FixedString Column and read it back (which would slow down the execution)
         // the data is padded here and written directly to the Low Cardinality Column
-        auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         if (value.size() == fixed_length)
         {
-            lc_column.insertData(value.data(), value.size());
-        }
-        else if (fixed_length <= max_padding_on_stack)
-        {
-            /// Building a `String` here costs a copy plus an out of line `resize` on every value.
-            /// The buffer is zeroed with a constant size so that the compiler inlines it.
-            char padded_value[max_padding_on_stack];
-            memset(padded_value, 0, max_padding_on_stack);
-            memcpySmall(padded_value, value.data(), value.size());
-            lc_column.insertData(padded_value, fixed_length);
+            assert_cast<ColumnLowCardinality &>(column).insertData(value.data(), value.size());
         }
         else
         {
             String padded_value(value);
             padded_value.resize(fixed_length, '\0');
-            lc_column.insertData(padded_value.data(), padded_value.size());
+            assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
         }
         return true;
     }
@@ -763,7 +745,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings & insert_settings,
+        const JSONExtractInsertSettings &,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -782,8 +764,7 @@ public:
         auto data = element.getString();
         ReadBufferFromMemory buf(data);
         DateType date;
-        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
-        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, saturate) || !buf.eof())
+        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
         {
             error = fmt::format("cannot parse Date value here: {}", data);
             return false;
@@ -816,15 +797,12 @@ public:
             return true;
         }
 
-        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
         time_t value = 0;
         if (element.isString())
         {
-            auto data = element.getString();
-            if (!tryParse(value, data, format_settings.date_time_input_format, saturate)
-                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format)))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, !format_settings.throwOnDateTimeOverflow()))
             {
-                error = fmt::format("cannot parse DateTime value here: {}", data);
+                error = fmt::format("cannot parse DateTime value here: {}", element.getString());
                 return false;
             }
         }
@@ -841,7 +819,7 @@ public:
                     return false;
                 }
                 value = element.getInt64();
-                if (!saturate && (value < 0 || value > 0xFFFFFFFF))
+                if (format_settings.throwOnDateTimeOverflow() && (value < 0 || value > 0xFFFFFFFF))
                 {
                     error = fmt::format("value {} is out of bounds of type DateTime", value);
                     return false;
@@ -852,7 +830,7 @@ public:
                 /// Clamp in the unsigned domain before narrowing to time_t,
                 /// because values above INT64_MAX would wrap to negative on cast.
                 UInt64 raw = element.getUInt64();
-                if (!saturate && raw > 0xFFFFFFFF)
+                if (format_settings.throwOnDateTimeOverflow() && raw > 0xFFFFFFFF)
                 {
                     error = fmt::format("value {} is out of bounds of type DateTime", raw);
                     return false;
@@ -869,7 +847,7 @@ public:
             /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
             String str_value = jsonElementToString<JSONParser>(element, format_settings);
             ReadBufferFromMemory buf(str_value);
-            if (!tryReadDateTimeAsNumber(value, buf, saturate) || !buf.eof())
+            if (!tryReadDateTimeAsNumber(value, buf, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
             {
                 error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
                 return false;
@@ -906,30 +884,6 @@ public:
         }
 
         return false;
-    }
-
-    /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
-    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
-    {
-        constexpr UInt32 max_scale = 9;
-        constexpr Int64 max_scale_multiplier = 1'000'000'000;
-        DateTime64 value;
-        ReadBufferFromMemory buf(data);
-        bool parsed = false;
-        switch (date_time_input_format)
-        {
-            case FormatSettings::DateTimeInputFormat::Basic:
-                parsed = tryReadDateTime64Text(value, max_scale, buf, time_zone);
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffort:
-                parsed = tryParseDateTime64BestEffort(value, max_scale, buf, time_zone, utc_time_zone);
-                break;
-            case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                parsed = tryParseDateTime64BestEffortUS(value, max_scale, buf, time_zone, utc_time_zone);
-                break;
-        }
-
-        return parsed && buf.eof() && value.value % max_scale_multiplier == 0;
     }
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
@@ -1584,12 +1538,6 @@ public:
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
-        /// When every element got exactly one value, all the nested columns already have the right
-        /// size and the `set_size` walk below (a virtual `size` per element) can be skipped. A JSON
-        /// object can repeat a key, so the elements that took a value are tracked as a bit set and
-        /// not just counted: two values for one element is not the same as one value for two.
-        size_t inserted_elements = 0;
-        UInt64 filled_elements = 0;
 
         auto set_size = [&](size_t size)
         {
@@ -1607,40 +1555,8 @@ public:
             }
         };
 
-        /// Mark that `index` took a value. Elements past the width of the bit set keep the fixup.
-        auto note_inserted_element = [&](size_t index)
-        {
-            ++inserted_elements;
-            if (index < sizeof(filled_elements) * 8)
-                filled_elements |= 1ULL << index;
-        };
-
-        auto set_size_after_success = [&](size_t size)
-        {
-            /// One value per element, and each in a distinct element, so every nested column is
-            /// already at `size`.
-            const bool all_elements_distinct = static_cast<size_t>(std::popcount(filled_elements)) == inserted_elements;
-            if (were_valid_elements && inserted_elements == tuple.tupleSize() && all_elements_distinct)
-                return;
-            set_size(size);
-        };
-
         if (element.isArray())
         {
-            /// Positional fill from an array is only meaningful for unnamed tuples:
-            /// for named tuples, which array element lands in which field would
-            /// depend on the declaration order. Named tuples read from objects only
-            /// (like the scalar extraction path and the JSON input formats under
-            /// `input_format_json_named_tuples_as_objects`), unless the historical
-            /// positional behavior is requested via the setting. Only the JSON
-            /// functions set it, so the JSON data type keeps the positional fill.
-            if (!name_to_index_map.empty() && format_settings.json.extract_named_tuples_as_objects)
-            {
-                error = "cannot read named Tuple value from JSON array. You can disable setting "
-                        "json_extract_named_tuples_as_objects to fill named tuples from arrays positionally";
-                return false;
-            }
-
             auto array = element.getArray();
             auto it = array.begin();
 
@@ -1649,12 +1565,10 @@ public:
                 if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
-                    note_inserted_element(index);
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
                     tuple.getColumn(index).insertDefault();
-                    note_inserted_element(index);
                 }
                 else
                 {
@@ -1664,7 +1578,7 @@ public:
                 }
             }
 
-            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
+            set_size(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1679,12 +1593,10 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
-                        note_inserted_element(index);
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
                         tuple.getColumn(index).insertDefault();
-                        note_inserted_element(index);
                     }
                     else
                     {
@@ -1696,48 +1608,26 @@ public:
             }
             else
             {
-                /// Objects usually list their keys in the order the tuple declares them, so try the
-                /// next expected name before hashing the key for `name_to_index_map`.
-                size_t expected_index = 0;
-                auto matches_expected_name = [&](std::string_view key)
-                {
-                    if (expected_index >= explicit_names.size())
-                        return false;
-                    const String & name = explicit_names[expected_index];
-                    return memequalSmall(key.data(), key.size(), name.data(), name.size());
-                };
-
                 for (const auto & [key, value] : object)
                 {
-                    size_t index = 0;
-                    if (matches_expected_name(key))
+                    auto index = name_to_index_map.find(key);
+                    if (index != name_to_index_map.end())
                     {
-                        index = expected_index;
-                    }
-                    else
-                    {
-                        auto it = name_to_index_map.find(key);
-                        if (it == name_to_index_map.end())
-                            continue;
-                        index = it->second;
-                    }
-                    expected_index = index + 1;
-
-                    if (nested[index]->insertResultToColumn(tuple.getColumn(index), value, insert_settings, format_settings, error))
-                    {
-                        were_valid_elements = true;
-                        note_inserted_element(index);
-                    }
-                    else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
-                    {
-                        set_size(old_size);
-                        error += fmt::format(" (during reading tuple element \"{}\")", key);
-                        return false;
+                        if (nested[index->second]->insertResultToColumn(tuple.getColumn(index->second), value, insert_settings, format_settings, error))
+                        {
+                            were_valid_elements = true;
+                        }
+                        else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
+                        {
+                            set_size(old_size);
+                            error += fmt::format(" (during reading tuple element \"{}\")", key);
+                            return false;
+                        }
                     }
                 }
             }
 
-            set_size_after_success(old_size + static_cast<size_t>(were_valid_elements));
+            set_size(old_size + static_cast<size_t>(were_valid_elements));
             return were_valid_elements;
         }
 
@@ -1927,10 +1817,6 @@ public:
             auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
             auto insert_settings_with_no_type_conversion = insert_settings;
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
-            /// A value that does not fit a variant as is gets its own type instead of being changed to fit.
-            insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
-            insert_settings_with_no_type_conversion.saturate_on_overflow = false;
-            insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);

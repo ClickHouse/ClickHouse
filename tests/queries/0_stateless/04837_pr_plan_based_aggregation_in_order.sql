@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel, no-fasttest
+-- Tags: no-random-merge-tree-settings
 
 -- Aggregation in order under plan-based parallel replicas (`parallel_replicas_plan_based`).
 --
@@ -20,6 +20,7 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 INSERT INTO t_pr_aggr_in_order SELECT number % 1000, number FROM numbers(100000);
 OPTIMIZE TABLE t_pr_aggr_in_order FINAL;
 
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET max_parallel_replicas = 3;

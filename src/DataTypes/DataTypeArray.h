@@ -43,12 +43,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    size_t getNumberOfChildren() const override { return 1; }
-    const DataTypePtr & getChild(size_t index) const override
-    {
-        chassert(index == 0);
-        return nested;
-    }
+    void forEachChild(const ChildCallback & callback) const override;
 
     Field getDefault() const override;
 
@@ -80,9 +75,6 @@ public:
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
-
-private:
-    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 };
 
 }

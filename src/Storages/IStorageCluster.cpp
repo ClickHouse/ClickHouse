@@ -1,8 +1,6 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
-#include <Client/ConnectionPoolWithFailover.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
@@ -10,8 +8,8 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Planner/Utils.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -21,7 +19,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <Common/ProfileEvents.h>
@@ -40,6 +37,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
@@ -109,16 +107,20 @@ void IStorageCluster::read(
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
-    /// The replicas re-analyze this query, so it must not name CTEs or `grouping` specializations of the initiator's query tree.
-    auto query_tree_to_send = query_info.query_tree->clone();
-    removeGroupingFunctionSpecializations(query_tree_to_send);
-    ASTPtr query_to_send = queryNodeToDistributedSelectQuery(query_tree_to_send);
+    ASTPtr query_to_send = query_info.query;
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(
-        query_to_send, context, SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved());
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        sample_block = interpreter.getSampleBlock();
+        query_to_send = interpreter.getQueryInfo().query->clone();
+    }
 
-    /// The nodes that will run the query are the nodes of this storage's own cluster.
-    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, getClusterName());
+    updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -172,8 +174,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 
-    const auto table_read_on_replicas = storage->getTableReadOnReplicas();
-
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         if (pipes.size() >= max_replicas_to_use)
@@ -181,43 +181,20 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
         /// We're taking all replicas as shards,
         /// so each shard will have only one address to connect to.
-        IConnectionPool::Entry connection;
-        if (table_read_on_replicas)
-        {
-            /// A replica without the table is not used, and neither is an older one, which would read all of its files.
-            auto try_results = shard_info.pool->getManyChecked(
-                timeouts,
-                current_settings,
-                PoolMode::GET_ONE,
-                *table_read_on_replicas,
-                /*async_callback=*/ {},
-                /*skip_unavailable_endpoints=*/ true);
+        auto try_results = shard_info.pool->getMany(
+            timeouts,
+            current_settings,
+            PoolMode::GET_ONE,
+            {},
+            /*skip_unavailable_endpoints=*/true);
 
-            if (try_results.empty()
-                || try_results.front().entry->getWorkerClusterFunctionProtocolVersion() < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS)
-                continue;
-
-            connection = std::move(try_results.front().entry);
-        }
-        else
-        {
-            auto try_results = shard_info.pool->getMany(
-                timeouts,
-                current_settings,
-                PoolMode::GET_ONE,
-                {},
-                /*skip_unavailable_endpoints=*/true);
-
-            if (try_results.empty())
-                continue;
-
-            connection = std::move(try_results.front());
-        }
+        if (try_results.empty())
+            continue;
 
         IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{std::move(connection)},
+            std::vector<IConnectionPool::Entry>{try_results.front()},
             query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
@@ -230,9 +207,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             shard_info.pool);
 
         remote_query_executor->setLogger(log);
-        /// The cluster of a *Cluster function uses every replica as a shard, so `shard_num`
-        /// identifies the fan-out entry rather than a shard of the original cluster definition.
-        remote_query_executor->setShardScope({storage->getClusterName(), shard_info.shard_num});
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,
@@ -241,13 +215,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
         pipes.emplace_back(std::move(pipe));
     }
-
-    if (pipes.empty() && table_read_on_replicas)
-        throw Exception(
-            ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-            "Cannot read table {} with parallel replicas: no replica of cluster {} is available, has the table and supports reading it",
-            table_read_on_replicas->getFullName(),
-            storage->getClusterName());
 
     if (pipes.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
@@ -288,8 +255,6 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
-    /// The workers are leaves of a distributed read, like the shards of the `Distributed` fan-out.
-    new_context->increaseDistributedDepth();
     return new_context;
 }
 

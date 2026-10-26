@@ -39,7 +39,9 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Remarques d’utilisation {#usage-remarks}
+<div id="usage-remarks">
+  ## Remarques d’utilisation
+</div>
 
 Vous pouvez utiliser des valeurs de type `Interval` dans des opérations arithmétiques avec des valeurs de type [Date](/fr/reference/data-types/date) et [DateTime](/fr/reference/data-types/datetime). Par exemple, vous pouvez ajouter 4 jours à l’instant actuel :
 
@@ -87,33 +89,9 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Agrégation {#aggregation}
-
-Appliquées à une colonne `Interval`, les fonctions `sum`, `avg`, `min`, `max` et `any` renvoient un intervalle du même type.
-`sum` additionne le nombre d&#39;unités, tandis que `avg` en calcule la moyenne et arrondit le résultat à un nombre entier
-d&#39;unités :
-
-```sql
-SELECT
-    sum(duration) AS total_duration,
-    avg(duration) AS avg_duration,
-    toTypeName(total_duration)
-FROM VALUES('duration IntervalMillisecond',
-    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
-```
-
-```text
-┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
-│            600 │          200 │ IntervalMillisecond        │
-└────────────────┴──────────────┴────────────────────────────┘
-```
-
-Les valeurs exprimées dans des unités différentes sont converties dans leur unité commune avant d&#39;être agrégées ; ainsi,
-la somme d&#39;une minute et d&#39;une seconde donne 61 secondes. `Month`, `Quarter` et `Year` n&#39;ont aucune unité
-commune avec les unités plus petites (un mois ne compte pas un nombre fixe de jours) et ne peuvent donc en aucun cas
-être combinées avec elles.
-
-## Intervalles de type mixte {#mixed-type-intervals}
+<div id="mixed-type-intervals">
+  ## Intervalles de type mixte
+</div>
 
 Les intervalles de type mixte, par exemple avec plusieurs heures et plusieurs minutes, peuvent être créés à l’aide de la syntaxe `INTERVAL 'value' <from_kind> TO <to_kind>`.
 Le résultat est un tuple de deux intervalles ou plus.
@@ -156,9 +134,9 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## Voir aussi {#see-also}
+<div id="see-also">
+  ## Voir aussi
+</div>
 
 * opérateur [INTERVAL](/fr/reference/operators/index#interval)
 * fonctions de conversion de type [toInterval](/fr/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)
-* fonction d&#39;agrégation [avg](/fr/reference/functions/aggregate-functions/avg)
-* fonction d&#39;agrégation [sum](/fr/reference/functions/aggregate-functions/sum)

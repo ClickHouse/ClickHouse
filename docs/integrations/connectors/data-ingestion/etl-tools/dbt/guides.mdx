@@ -24,7 +24,7 @@ It's designed to be read alongside the rest of the [documentation](/integrations
 
 ## Before you start {#before-you-start}
 
-Follow the README of [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) first. It explains how to set the project up with dbt Core 1.x, dbt OSS, dbt v2 or the dbt platform, how to point it at a local ClickHouse (docker) or ClickHouse Cloud, how to load the sample data with `dbt seed`, and how to run the first `dbt build`. Once `dbt build` completes successfully, come back here for the ClickHouse-specific examples and configurations.
+Follow the README of [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) first. It explains how to set the project up with dbt Core 1.x, dbt Core v2 or the dbt platform, how to point it at a local ClickHouse (docker) or ClickHouse Cloud, how to load the sample data with `dbt seed`, and how to run the first `dbt build`. Once `dbt build` completes successfully, come back here for the ClickHouse-specific examples and configurations.
 
 After the README steps you should have two databases in ClickHouse:
 
@@ -34,7 +34,7 @@ After the README steps you should have two databases in ClickHouse:
 If your profile uses a different `schema`, replace `jaffle_shop` in the queries below with your value.
 
 <Note>
-**dbt Core 1.x, dbt OSS, dbt v2 and the dbt platform.** Every command and model in this guide is the same on all of them. The examples were tested with dbt Core 1.12 with `dbt-clickhouse` 1.10 and with dbt OSS 2.0 against ClickHouse 26.8; dbt v2 runs the same adapter, and the dbt platform runs dbt v2. The console output shown is from dbt Core 1.x, and the few places where the engines behave differently are called out. See the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status of the v2 adapter, and [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) in the dbt documentation to get started on the dbt platform.
+**dbt Core 1.x, dbt Core v2 and the dbt platform.** Every command and model in this guide is the same on all three. The examples were tested with dbt Core 1.12 with `dbt-clickhouse` 1.10 and with dbt Core v2 2.0 against ClickHouse 26.8; the dbt platform runs the dbt Core v2 engine. The console output shown is from dbt Core 1.x, and the few places where the engines behave differently are called out. See the [dbt Core v2 page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) for the current status of the v2 adapter, and [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) in the dbt documentation to get started on the dbt platform.
 </Note>
 
 All SQL statements that aren't dbt commands are meant to be run directly against ClickHouse, for example with `clickhouse client`, the ClickHouse Cloud SQL console or the SQL client of your choice.
@@ -114,8 +114,8 @@ The Jaffle Shop uses dbt [seeds](https://docs.getdbt.com/docs/build/seeds) to lo
 
 Seeds are still a good place to learn how dbt creates ClickHouse tables. dbt infers a column type for each CSV column, and the inferred types differ between engines:
 
-| CSV value | dbt v1 | v2 engine |
-|-----------|--------|-----------|
+| CSV value | dbt Core 1.x | dbt Core v2 |
+|-----------|--------------|-------------|
 | `700` | `Int32` | `Int64` |
 | `0.06` | `Float32` | `Float64` |
 | `2024-09-01T15:01:00` | `DateTime` | `DateTime64(6)` |
@@ -145,7 +145,7 @@ seeds:
 ```
 
 <Note>
-Use a properties file for these ClickHouse seed configurations rather than `+order_by` or `+engine` keys under `seeds:` in `dbt_project.yml`. dbt Core 1.x accepts both forms, but dbt v2 only recognizes them in a properties file and rejects the `dbt_project.yml` keys with `Unrecognized key ... Custom keys must go under +meta`.
+Use a properties file for these ClickHouse seed configurations rather than `+order_by` or `+engine` keys under `seeds:` in `dbt_project.yml`. dbt Core 1.x accepts both forms, but dbt Core v2 only recognizes them in a properties file and rejects the `dbt_project.yml` keys with `Unrecognized key ... Custom keys must go under +meta`.
 </Note>
 
 Re-load that seed and check the table it produced:
@@ -796,4 +796,4 @@ Later runs of `dbt run` keep the target table and its data and only update the v
 
 ## Further information {#further-information}
 
-This guide only touches the surface of dbt. The [dbt documentation](https://docs.getdbt.com/docs/introduction) is the reference for everything that isn't ClickHouse-specific. For the adapter, see the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) page for profile settings and global features, the [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) for every configuration used above, and the [dbt OSS, dbt v2 and dbt platform page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) if you run dbt OSS, dbt v2 or the dbt platform. Contributions of new examples to the [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) are welcome.
+This guide only touches the surface of dbt. The [dbt documentation](https://docs.getdbt.com/docs/introduction) is the reference for everything that isn't ClickHouse-specific. For the adapter, see the [features and configurations](/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) page for profile settings and global features, the [materializations page](/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) for every configuration used above, and the [dbt Core v2 page](/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) if you run the new engine or the dbt platform. Contributions of new examples to the [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) are welcome.
