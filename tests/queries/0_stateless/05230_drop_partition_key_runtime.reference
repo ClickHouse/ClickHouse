@@ -1,0 +1,3 @@
+attach after drop: OK
+rbac deny: OK
+rbac grant: OK
