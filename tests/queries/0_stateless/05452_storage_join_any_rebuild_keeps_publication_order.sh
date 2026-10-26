@@ -16,16 +16,23 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS join_any_take_last_row = 0, max_rows_in_join = 1, join_overflow_mode = 'throw';
 "
 
-# Insert `A` starts first, but publishes its row last: its `SELECT` is slow.
+# Insert `A` starts first, but publishes its row last: its `SELECT` is slow. It produces its only
+# row after reading every row of `numbers`, so no filter can be pushed down into the source to skip
+# the sleeps.
 query_id_a="${CLICKHOUSE_DATABASE}_insert_a"
 $CLICKHOUSE_CLIENT --query_id "$query_id_a" --max_block_size 1 --query "
-    INSERT INTO join_publication_order SELECT 1, 'A' FROM numbers(20) WHERE sleepEachRow(0.5) = 0 AND number = 19
+    INSERT INTO join_publication_order SELECT 1, any('A') FROM numbers(20) WHERE sleepEachRow(0.5) = 0
 " &
 insert_a_pid=$!
 
-# Wait until `A` is running, so that the backup of its `INSERT` is already created.
+# Wait until `A` is running, so that the backup number of its `INSERT` is already reserved.
 while [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.processes WHERE query_id = '$query_id_a' AND read_rows > 0") == 0 ]]
 do
+    if ! kill -0 $insert_a_pid 2>/dev/null
+    then
+        echo "Insert A finished before it was seen running"
+        break
+    fi
     sleep 0.1
 done
 
