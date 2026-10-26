@@ -647,7 +647,8 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         "event.altKey || event.button !== 0) return;\n"
         "    if (event.currentTarget.getAttribute('href') === href) return;\n"
         "    event.preventDefault();\n"
-        "    window.location.href = href;\n"
+        "    if (window.mintlify?.navigate) window.mintlify.navigate(href);\n"
+        "    else window.location.href = href;\n"
         "};"
     )
     docs_base_requirements = {

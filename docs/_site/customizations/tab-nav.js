@@ -29,8 +29,12 @@
     return BASE + localized;
   }
 
-  // A real anchor click lets Mintlify navigate client-side.
+  // Prefer Mintlify's router; a real anchor click is the fallback.
   function followLink(href) {
+    if (window.mintlify && typeof window.mintlify.navigate === 'function') {
+      window.mintlify.navigate(href);
+      return;
+    }
     var a = document.createElement('a');
     a.href = href;
     document.body.appendChild(a);
