@@ -20,7 +20,7 @@ import tokenize
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "bazel"))
-from initial_migration.compact_build import Source, ast_key, render_list, safe_expression, select_dictionary
+from initial_migration.compact_build import Source, ast_key, factor_selects, render_list, safe_expression, select_dictionary
 from initial_migration.normalize_cpp_builds import Configured, call_name, removable_default, CPP_LIBRARIES
 
 CPUS = ("@platforms//cpu:x86_64", "@platforms//cpu:aarch64")
@@ -324,6 +324,7 @@ def join(text):
 
 def normalize(text, stats=None):
     stats = stats if stats is not None else Counter()
+    text = factor_selects(Source(text), {"srcs", "system_includes"})
     while True:
         changed = remove_parens(join(factor(text, stats)))
         if changed == text:

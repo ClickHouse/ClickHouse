@@ -120,15 +120,15 @@ def render_list(source, values, indent):
                             for value in values) + pad + "]"
 
 
-def factor_selects(source):
+def factor_selects(source, attributes=ATTRIBUTES):
     edits = []
     for _, rule in source.rules():
         for attr in rule.keywords:
-            if attr.arg not in ATTRIBUTES:
+            if attr.arg not in attributes:
                 continue
             for node in ast.walk(attr.value):
                 choices = select_dictionary(node)
-                if choices is None or not safe_expression(node):
+                if choices is None or not safe_expression(node) or "#" in source.text(node):
                     continue
                 lists = [value.elts for value in choices.values]
                 # Do not create nested edits. A list member containing select()

@@ -8,15 +8,14 @@ exports_files([
 
 ch_cc_library(
     name = "_crc32c",
-    srcs = select({
+    srcs = [
+        "src/crc32c_portable.cc",
+        "src/crc32c.cc",
+    ] + select({
         "@platforms//cpu:x86_64": [
-            "src/crc32c_portable.cc",
-            "src/crc32c.cc",
             "src/crc32c_sse42.cc",
         ],
         "@platforms//cpu:aarch64": [
-            "src/crc32c_portable.cc",
-            "src/crc32c.cc",
             "src/crc32c_arm64.cc",
         ],
     }) + [
