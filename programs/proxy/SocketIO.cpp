@@ -154,6 +154,34 @@ FiberSocket FiberSocket::adoptTLS(int fd, Poco::Net::Context::Ptr context)
 }
 #endif
 
+void FiberSocket::completeTLSHandshake()
+{
+#if USE_SSL
+    if (is_plaintext)
+        return;
+    auto * impl = dynamic_cast<Poco::Net::SecureStreamSocketImpl *>(socket.impl());
+    chassert(impl);
+    if (!impl->ssl() || SSL_is_init_finished(impl->ssl()))
+        return;
+
+    int rc = 0;
+    try
+    {
+        rc = impl->completeHandshake();
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        throw Exception(ErrorCodes::SOCKET_TIMEOUT, "Timeout during the TLS handshake");
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::NETWORK_ERROR, "TLS handshake failed: {}", e.displayText());
+    }
+    if (rc <= 0)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Connection closed during the TLS handshake");
+#endif
+}
+
 int FiberSocket::receive(char * buffer, int length)
 {
     try

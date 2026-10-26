@@ -21,6 +21,19 @@ void handleImmediatePassthrough(FiberSocket & client, const FrontendContext & ct
     client.setTimeouts(ctx.config.handshake_timeout_ms, ctx.config.send_timeout_ms);
     attributes.peer_address = client.peerAddress().host().toString();
 
+    /// Nothing has been read from the client yet. On a TLS-terminating listener, finish its handshake
+    /// under the handshake deadline before opening a backend connection, so a client that never sends
+    /// a ClientHello cannot hold a backend connection.
+    try
+    {
+        client.completeTLSHandshake();
+    }
+    catch (...)
+    {
+        LOG_DEBUG(ctx.log, "TLS handshake with the client failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+        return;
+    }
+
     RouteResult route = routeConnection(ctx, attributes);
     if (!route.backend)
         return;

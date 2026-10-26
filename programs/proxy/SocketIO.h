@@ -84,6 +84,10 @@ public:
     String tlsServerName();
 #endif
 
+    /// Finish the server-side TLS handshake of a TLS-terminated socket, which otherwise runs on the first I/O.
+    /// A no-op on a plaintext socket or once the handshake is done. Throws if the handshake fails.
+    void completeTLSHandshake();
+
     /// Returns the number of bytes read, or 0 on end of stream.
     int receive(char * buffer, int length);
 

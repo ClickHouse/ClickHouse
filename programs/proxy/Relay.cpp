@@ -208,6 +208,9 @@ void runRelay(
     /// Reads have no deadline, as on the zero-copy splice path: a session ends when a peer closes it.
     /// Writes stay bounded, so a peer that stops draining its socket cannot hold the relay forever.
     /// This governs the user-space copy path; the zero-copy splice path does not consult it.
+    /// The TLS handshake of a TLS-terminating listener is a part of the handshake: complete it, if no
+    /// client I/O has run it yet, before leaving the deadline behind.
+    client.completeTLSHandshake();
     client.disarmHandshakeDeadline();
     client.setTimeouts(/*receive_ms=*/ 0, send_timeout_ms);
     backend_socket.setTimeouts(/*receive_ms=*/ 0, send_timeout_ms);
