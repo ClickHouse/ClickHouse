@@ -1,3 +1,4 @@
+-- Tags: memory-engine
 -- `RESTORE` into a non-empty temporary `Memory` table counts the data already in the table against `max_temporary_table_memory_usage`.
 
 DROP TABLE IF EXISTS tmp_memory;
