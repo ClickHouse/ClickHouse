@@ -991,6 +991,28 @@ def get_cluster_names(remote_servers: typing.Optional[ET.Element]) -> list[str]:
     return [c.tag for c in remote_servers if "remove" not in c.attrib]
 
 
+def get_cache_setting(cache_element: ET.Element, name: str, default: str) -> str:
+    element = cache_element.find(name)
+    if element is None or element.get("remove") is not None or not element.text:
+        return default
+    return element.text
+
+
+def set_cache_setting(cache_element: ET.Element, name: str, value: str):
+    element = cache_element.find(name)
+    if element is None:
+        element = ET.SubElement(cache_element, name)
+    element.attrib.pop("remove", None)
+    element.text = value
+
+
+def parse_cache_size(text: str) -> int:
+    for suffix, multiplier in (("Ki", 1 << 10), ("Mi", 1 << 20), ("Gi", 1 << 30), ("Ti", 1 << 40)):
+        if text.endswith(suffix):
+            return int(text[: -len(suffix)]) * multiplier
+    return int(text)
+
+
 def normalize_cache_properties(cache_element: ET.Element):
     # `FileCacheSettings::validate` rejects split cache with overcommit policies.
     use_split_cache = cache_element.find("use_split_cache")
@@ -1002,6 +1024,30 @@ def normalize_cache_properties(cache_element: ET.Element):
         and cache_policy.text in ("LRU_OVERCOMMIT", "SLRU_OVERCOMMIT")
     ):
         use_split_cache.text = "0"
+
+    # `FileCacheSettings::validate` rejects an SLRU cache whose file segment does not fit
+    # each SLRU queue (of both parts with `use_split_cache`), so shrink the file segment.
+    if get_cache_setting(cache_element, "cache_policy", "SLRU") in ("SLRU", "SLRU_OVERCOMMIT"):
+        # The same rounding as `std::lround` and `std::clamp` in `FileCacheSettings::validate`.
+        get_ratio = lambda total, ratio: int(total * min(max(ratio, 0.0), 1.0) + 0.5)
+        max_size = parse_cache_size(get_cache_setting(cache_element, "max_size", "0"))
+        ratio = float(get_cache_setting(cache_element, "slru_size_ratio", "0.6"))
+        parts = [max_size]
+        if get_cache_setting(cache_element, "use_split_cache", "0") == "1":
+            system_ratio = float(get_cache_setting(cache_element, "split_cache_ratio", "0.1"))
+            parts = [get_ratio(max_size, 1 - system_ratio), get_ratio(max_size, system_ratio)]
+        smallest_queue_size = min(min(get_ratio(part, ratio), get_ratio(part, 1 - ratio)) for part in parts)
+
+        max_file_segment_size = parse_cache_size(
+            get_cache_setting(cache_element, "max_file_segment_size", str(32 << 20))
+        )
+        if 0 < smallest_queue_size < max_file_segment_size:
+            set_cache_setting(cache_element, "max_file_segment_size", str(smallest_queue_size))
+            boundary_alignment = parse_cache_size(
+                get_cache_setting(cache_element, "boundary_alignment", str(4 << 20))
+            )
+            if boundary_alignment > smallest_queue_size:
+                set_cache_setting(cache_element, "boundary_alignment", str(smallest_queue_size))
 
 
 def add_single_cluster(
@@ -1238,7 +1284,7 @@ def add_single_disk(
             # Add random settings
             if random.randint(1, 100) <= 70:
                 apply_properties_recursively(next_disk, cache_storage_properties)
-                normalize_cache_properties(next_disk)
+            normalize_cache_properties(next_disk)
         else:
             enc_algorithm = random.choice(["aes_128_ctr", "aes_192_ctr", "aes_256_ctr"])
             algorithm_xml = ET.SubElement(next_disk, "algorithm")
@@ -1445,7 +1491,7 @@ def add_single_cache(i: int, next_cache: ET.Element):
     # Add random settings
     if random.randint(1, 100) <= 70:
         apply_properties_recursively(next_cache, cache_storage_properties)
-        normalize_cache_properties(next_cache)
+    normalize_cache_properties(next_cache)
 
 
 class CachePropertiesGroup(PropertiesGroup):

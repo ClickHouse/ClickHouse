@@ -6,7 +6,6 @@
 
 SET allow_statistics = 1;
 SET use_statistics_for_part_pruning = 1;
-SET enable_analyzer = 1;
 SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS test_json_null_path_pruning;

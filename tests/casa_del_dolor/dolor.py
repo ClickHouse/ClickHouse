@@ -524,7 +524,72 @@ for val in args.server_binaries:
         sorted_binaries.append(val)
 
 logger.info(f"Private binary {'' if is_private_binary else 'not '}detected")
-keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
+
+# Set as they are created, so a failure or a signal during startup still cleans up what exists
+keeper_configs: list[str] = []
+credentials_file = None
+cluster = None
+modified_server_settings = modified_user_settings = False
+server_settings = user_settings = None
+catalog_server = None
+generator = None
+client = None
+cleanup_started = False
+cleanup_ok = True
+
+
+def dolor_cleanup() -> bool:
+    """Tear everything down once; returns False if the teardown failed or found a problem."""
+    global cleanup_started, cleanup_ok
+    if cleanup_started:
+        return cleanup_ok
+    cleanup_started = True
+    # Another Ctrl+C must not abandon the teardown half-way; SIGKILL still works
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+    if client is not None and client.process.poll() is None:
+        client.process.kill()
+        client.process.wait()
+
+    if cluster is not None:
+        # Raises on a sanitizer report, Keeper's included. Logical errors and fatal messages are
+        # judged at the end of the run instead, which tells a server's own record from a fuzzed
+        # literal quoted in a query and from the expected kill fatals of forced restarts.
+        try:
+            cluster.shutdown(kill=True, ignore_fatal=True, ignore_logical_errors=True)
+        except Exception:
+            logger.exception("Cluster shutdown failed or found a problem")
+            cleanup_ok = False
+    # After the cluster: closing waits for in-flight Spark requests, which stopping the servers releases.
+    # Done first, a stalled request would keep the containers running and their logs unchecked.
+    if catalog_server is not None:
+        try:
+            close_spark_http_server(catalog_server)
+        except Exception:
+            logger.exception("Failed to close the Spark HTTP server")
+            cleanup_ok = False
+
+    # The generated server, user, Keeper and BuzzHouse configs stay: the job attaches them as artifacts
+    if credentials_file is not None:
+        try:
+            os.unlink(credentials_file.name)
+        except FileNotFoundError:
+            pass
+    return cleanup_ok
+
+
+def my_signal_handler(sig, frame):
+    logger.info(f"Received {signal.Signals(sig).name}, cleaning up")
+    dolor_cleanup()
+    sys.exit(128 + sig)
+
+
+signal.signal(signal.SIGINT, my_signal_handler)
+signal.signal(signal.SIGTERM, my_signal_handler)
+atexit.register(dolor_cleanup)
+
+keeper_configs = modify_keeper_settings(args, is_private_binary)
 
 if args.with_minio:
     # Set environment variables before cluster starts
@@ -560,7 +625,6 @@ test_env_variables = set_environment_variables(logger, args, "cluster")
 # Use random server settings sometimes
 server_settings = args.server_config
 user_settings = args.user_config
-modified_server_settings = modified_user_settings = False
 generated_clusters: list[str] = []
 if server_settings is not None:
     modified_server_settings, server_settings, generated_clusters = (
@@ -661,35 +725,6 @@ if args.generator == "buzzhouse":
 logger.info("Starting load generator")
 client = generator.run_generator(servers[0], logger, args)
 logger.info("Load generator started with PID %s", client.process.pid)
-everything_cleaned = False
-
-
-def dolor_cleanup():
-    global everything_cleaned
-    if not everything_cleaned:
-        if client.process.poll() is None:
-            client.process.kill()
-            client.process.wait()
-        try:
-            cluster.shutdown(kill=True, ignore_fatal=False)
-        except:
-            pass
-        close_spark_http_server(catalog_server)
-        if args.with_minio:
-            try:
-                os.unlink(credentials_file.name)
-            except FileNotFoundError:
-                pass
-        everything_cleaned = True
-
-
-def my_signal_handler(sig, frame):
-    dolor_cleanup()
-    sys.exit(0)
-
-
-signal.signal(signal.SIGINT, my_signal_handler)
-atexit.register(dolor_cleanup)
 time.sleep(3)
 
 integrations = []
@@ -987,4 +1022,6 @@ for server in servers:
             )
             good_exit = False
 
+# Tear down here rather than in `atexit`, so what the shutdown finds in the logs decides the exit code
+good_exit = dolor_cleanup() and good_exit
 sys.exit(0 if good_exit else 1)
