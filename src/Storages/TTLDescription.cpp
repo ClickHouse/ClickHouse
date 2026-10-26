@@ -1506,8 +1506,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 result.where_expression_ast = where_expr_ast->clone();
 
-                /// A stored `WHERE` is described without planning its `IN` subqueries: they are planned when the TTL is
-                /// applied (`buildWhereExpression`), so loading reads no table they read.
+                /// A stored `WHERE` is described without planning its `IN` subqueries; `buildWhereExpression` plans them.
                 const bool plan_subqueries = validation_mode != TTLValidationMode::Attach || plan_where_subqueries_on_attach;
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
