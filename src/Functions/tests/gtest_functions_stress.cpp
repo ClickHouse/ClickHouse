@@ -37,6 +37,10 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageGenerateRandom.h>
 
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
+
 using namespace DB;
 namespace po = boost::program_options;
 
@@ -1162,6 +1166,24 @@ bool isDefaultOrDummyAt(const IColumn & column, size_t n)
     return column.isDefaultAt(n);
 }
 
+#if defined(ADDRESS_SANITIZER)
+/// ASan frees fake frames leaked by exceptions only at the next fake-frame allocation after `__asan_handle_no_return`,
+/// and only those below it. Called from the worker loop, this frees the frames of all previous iterations.
+NO_INLINE void allocateAsanFakeFrame()
+{
+    char anchor = 0;
+    __asan_address_is_poisoned(&anchor);
+}
+
+ALWAYS_INLINE void collectAsanFakeStackGarbage()
+{
+    __asan_handle_no_return();
+    allocateAsanFakeFrame();
+}
+#else
+void collectAsanFakeStackGarbage() {}
+#endif
+
 }
 
 struct FunctionsStressTestThread;
@@ -1303,6 +1325,8 @@ struct FunctionsStressTestThread
 
         while (!thread_should_stop.load(std::memory_order_relaxed))
         {
+            collectAsanFakeStackGarbage();
+
             /// Pick random function, biased toward less-tested functions.
             /// Pick two random candidates and choose the one with fewer iterations.
             size_t a = thread_local_rng() % testable_functions.size();
