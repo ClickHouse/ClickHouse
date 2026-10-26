@@ -333,12 +333,9 @@ DBMS_PUBLIC_HEADERS = {
         "StorageSet.h", "StorageTimeSeries*.h", "StorageValues.h", "StorageXDBC.h",
     ),
     "Storages/ArrowFlight": ("ArrowFlightConnection.h",),
-    "Storages/BigQuery": (
-        "BigQueryClient.h", "BigQueryConfiguration.h", "BigQuerySchema.h", "StorageBigQuery.h",
-    ),
+    "Storages/BigQuery": ("StorageBigQuery.h",),
     "Storages/Distributed": ("DistributedSettings.h", "parseRemoteFunctionArguments.h"),
-    "Storages/FileLog": ("DirectoryWatcherBase.h", "FileLogDirectoryWatcher.h"),
-    "Storages/Hive": ("HiveCommon.h", "HiveFile.h", "HiveSettings.h", "StorageHive.h"),
+    "Storages/Hive": ("HiveSettings.h", "StorageHive.h"),
     "Storages/MergeTree": (
         "*PlainMergeTreeTask.h", "IPostingListCodec.h", "MergeMutateSelectedEntry.h",
         "MergeTreeCleanupThread.h", "MergeTreeDeduplicationLog.h", "MergeTreeIndexConditionText.h",
@@ -493,7 +490,8 @@ def declare_dbms_private_headers(rows, files):
     private_globs = expr(
         'glob(["Backups/BackupCoordinationReplicated*.h", '
         '"Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/*.h", '
-        '"Interpreters/HashJoin/*.h", "Processors/Formats/Impl/Parquet/*.h"], exclude=['
+        '"Interpreters/HashJoin/*.h", "Processors/Formats/Impl/Parquet/*.h", '
+        '"Storages/BigQuery/BigQuery*.h", "Storages/FileLog/FileLog*.h"], exclude=['
         '"Interpreters/HashJoin/HashJoin.h", "Interpreters/HashJoin/ScatteredBlock.h", '
         '"Processors/Formats/Impl/Parquet/Reader.h"])'
     )
@@ -515,6 +513,9 @@ def declare_dbms_private_headers(rows, files):
         "Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h",
         "Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h",
         "Processors/QueryPlan/Optimizations/joinOrder.h",
+        "Storages/FileLog/DirectoryWatcherBase.h",
+        "Storages/Hive/HiveCommon.h",
+        "Storages/Hive/HiveFile.h",
         "Storages/MergeTree/UniqueKey/BlockAllocation.h",
         "Storages/NATS/NATS_fwd.h",
         "Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h",
