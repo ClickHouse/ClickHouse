@@ -2411,6 +2411,9 @@ static BlockIO executeQueryImpl(
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
+    /// Whether the text was parsed as a Mongo statement, whose `{` are the documents of the
+    /// statement rather than query parameters.
+    bool parsed_as_mongo = false;
 
     /// Parse the query from string.
     try
@@ -2486,6 +2489,7 @@ static BlockIO executeQueryImpl(
                     "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
             Mongo::ParserMongoQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             out_ast = parseMongoQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+            parsed_as_mongo = !is_set_escape;
 #else
             /// A build without rapidjson must not strand a session whose dialect was set to
             /// `mongo` either: a `SET` is plain SQL and needs nothing of the Mongo parser.
@@ -2750,7 +2754,7 @@ static BlockIO executeQueryImpl(
         /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
         /// in the SELECT body, which form the view's parameterizable interface.
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params && settings[Setting::dialect] != Dialect::mongo)
+        if (out_ast && probably_has_params && !parsed_as_mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
