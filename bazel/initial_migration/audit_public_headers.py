@@ -22,13 +22,13 @@ SOURCE_SHA256 = {
     "bazel/rules/BUILD.bazel": "5419adcf5cedb4752e8a4303bb5b413115b96c3bdd234b2cf11302d3ea457b81",
     "bazel/patches/dwyu-compiler-preprocessing.patch": "8287705125854596985b4d03fec14254f35a3a8748273a49e46f868ae1bd2de1",
     "bazel/patches/rules_cc-implementation-deps-local-includes.patch": "1e8f54793cf1989dc11017982e75bd18f22bd09fc89d077c7749edcc146b6714",
-    "bazel/llvm.MODULE.bazel": "a11779a94edea262cb4960deb42803a006a87993f029e506b4c2ff49af5dc930",
+    "bazel/llvm.MODULE.bazel": "114194bea5e409a65d75577d7ee81dee6ebed7a00246c0e1d893a17dc43a5fa3",
     "bazel/patches/glibc-2.28-aarch64-hwcap2-madvise.patch": "33b4986b047c9268b4e9807f573d83f0959e95d9585c932597d923dbc4e25b28",
     "bazel/patches/glibc-string-cxx-prototypes.patch": "923f6d373c8cef9908e01ea12f30befb8348c4182b78a1ca34c1ac55c1acfda2",
     "bazel/patches/linux-4.15.18-x86-seccomp-spec-allow.patch": "57b4373d1a16af2c91dcbb860fafb84c92fa1b20bad1ad5f2a3d6d24d75f49b8",
     "bazel/patches/linux-4.19.325-arm64-hwcap2-madvise.patch": "5eaad065f66693c88f279c3cdd0b52f51af6924ad931f77920802533c721f073",
     "bazel/patches/llvm-clickhouse-runtime.patch": "0a020c5995c468fbd2fc7120a41379f1c76d057e76a44c36b5df6e462cbeec68",
-    "bazel/patches/llvm-glibc-pie-startup.patch": "871d3c43ca53644e29c8f86ee64b8f52cf75b0fb55843982044d110ed931612d",
+    "bazel/patches/llvm-glibc-pie-startup.patch": "93dca467e9d732ef4a39c23b34b4ee5cabf45cb5a9fb7d39df26a47fd7f86d13",
 }
 REGISTRY_SHA256 = {
     "depend_on_what_you_use/1.1.2/MODULE.bazel": "dc739111b70e715d10ca13fdd69c5da30af8f64a61e6dce0887be5e9a0d70cf9",

@@ -2,7 +2,7 @@ diff --git a/3rd_party/libc/glibc/BUILD.bazel b/3rd_party/libc/glibc/BUILD.bazel
 index 6ac6eb84e1ec4d03d75977bd371fea12544f551a..d555858f09148fb8b7590d8bd53274df0356ca05 100644
 --- a/3rd_party/libc/glibc/BUILD.bazel
 +++ b/3rd_party/libc/glibc/BUILD.bazel
-@@ -7,3 +7,14 @@
+@@ -7,3 +7,14 @@ bzl_library(
      srcs = ["helpers.bzl"],
      visibility = ["//visibility:public"],
  )
@@ -44,38 +44,12 @@ index 0000000000000000000000000000000000000000..85b66524360a6c729ed2cf911eb5ecf2
 +        .long 0x20001
 +        .size _IO_stdin_used, .-_IO_stdin_used
 +        .section .note.GNU-stack,"",%progbits
-diff --git a/3rd_party/libc/glibc/glibc.BUILD.bazel b/3rd_party/libc/glibc/glibc.BUILD.bazel
-index 2383cc56e8e997286a5fec4f3bfa7fd573cf66fe..2f1555c56f8d5933b8c50948454458282fa47f17 100644
---- a/3rd_party/libc/glibc/glibc.BUILD.bazel
-+++ b/3rd_party/libc/glibc/glibc.BUILD.bazel
-@@ -1,6 +1,7 @@
- load("@bazel_skylib//lib:selects.bzl", "selects")
- load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
- load("@llvm//3rd_party/libc/glibc:helpers.bzl", "glibc_includes")
-+load("@llvm//3rd_party/libc/glibc:pie_startup.bzl", "glibc_pie_startup_objects")
- load("@llvm//toolchain/args:llvm_target_triple.bzl", "LLVM_TARGET_TRIPLE")
- load("@llvm//toolchain/runtimes:cc_runtime_library.bzl", "cc_runtime_stage0_library")
- load("@llvm//toolchain/runtimes:cc_runtime_static_library.bzl", "cc_runtime_stage0_static_library")
-@@ -44,6 +45,13 @@
- ) + glob(
-     ["ports/sysdeps/**/*.h"],
-     allow_empty = True,
-+)
-+
-+# Resolve the optional injected binutils repository in this glibc repository.
-+glibc_pie_startup_objects(
-+    name = "pie_startup_objects",
-+    hdrs = HDRS,
-+    ld_bfd = "@binutils//:ld.bfd",
- )
- 
- cc_runtime_stage0_library(
 diff --git a/3rd_party/libc/glibc/pie_startup.bzl b/3rd_party/libc/glibc/pie_startup.bzl
 new file mode 100644
-index 0000000000000000000000000000000000000000..cb3040eb90cc1915e8ac44245449e5c90f63ff19
+index 0000000000000000000000000000000000000000..8139700487b0e3e5ef5c625a0ff60558d7cfc973
 --- /dev/null
 +++ b/3rd_party/libc/glibc/pie_startup.bzl
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,134 @@
 +"""Compile the GNU/Linux PIE startup objects from a selected glibc source release."""
 +
 +load("@llvm//toolchain/runtimes:cc_runtime_library.bzl", "cc_runtime_stage0_library")
@@ -129,35 +103,30 @@ index 0000000000000000000000000000000000000000..cb3040eb90cc1915e8ac44245449e5c9
 +    },
 +)
 +
-+def glibc_pie_startup_objects(name, hdrs, ld_bfd):
++def _by_cpu(values, default):
++    return select({"@platforms//cpu:" + cpu: value for cpu, value in values.items()} | {"//conditions:default": default})
++
++def glibc_pie_startup_objects(name, hdrs, profiles, ld_bfd):
 +    """Declare the three GNU startup objects used by the Clang PIE driver.
 +
 +    Args:
 +      name: Public filegroup name in the glibc source repository.
 +      hdrs: glibc source headers used by sysdeps assembly.
++      profiles: Each requested CPU maps to its GNU ABI note version and CET setting.
 +      ld_bfd: GNU linker label resolved by the glibc source repository.
 +    """
-+    cpus = ["aarch64", "x86_64"]
-+    includes = select({"@platforms//cpu:" + cpu: glibc_includes(cpu) for cpu in cpus} | {"//conditions:default": []})
-+    enabled = select({
-+        "@llvm//runtimes/glibc:crt_source_unset": ["@platforms//:incompatible"],
-+        "//conditions:default": [],
-+    })
-+    compatible = enabled + select(
-+        {"@platforms//cpu:" + cpu: [] for cpu in cpus} |
-+        {"//conditions:default": ["@platforms//:incompatible"]},
-+    ) + ["@platforms//os:linux"]
++    compatible = ["@platforms//os:linux"] + _by_cpu({cpu: [] for cpu in profiles}, ["@platforms//:incompatible"])
 +
 +    # glibc sysdeps/x86/Makefile passes both options to its assembler.
 +    # cet.h defines _CET_ENDBR and emits .note.gnu.property.
-+    asm_copts = ["-nostdlibinc", "-fPIC", "-fno-addrsig", "-g0", "-Wa,--noexecstack"] + select({
-+        "@llvm//runtimes/glibc:x86_64_cet": ["-fcf-protection=full", "-include", "cet.h"],
-+        "//conditions:default": ["-nobuiltininc"],
-+    })
++    asm_copts = ["-nostdlibinc", "-fPIC", "-fno-addrsig", "-g0", "-Wa,--noexecstack"] + _by_cpu({
++        cpu: ["-fcf-protection=full", "-include", "cet.h"] if cet else ["-nobuiltininc"]
++        for cpu, (_, cet) in profiles.items()
++    }, [])
 +    for part in ["start", "crti", "crtn"]:
 +        cc_runtime_stage0_library(
 +            name = "pie_" + part,
-+            srcs = select({"@platforms//cpu:" + cpu: ["sysdeps/{}/{}.S".format(cpu, part)] for cpu in cpus} | {"//conditions:default": []}),
++            srcs = _by_cpu({cpu: ["sysdeps/{}/{}.S".format(cpu, part)] for cpu in profiles}, []),
 +            hdrs = hdrs,
 +            additional_compiler_inputs = ["include/libc-modules.h", "include/libc-symbols.h"],
 +            copts = asm_copts + [
@@ -168,7 +137,7 @@ index 0000000000000000000000000000000000000000..cb3040eb90cc1915e8ac44245449e5c9
 +                "$(location include/libc-symbols.h)",
 +            ],
 +            implementation_deps = [":gnu_libc_headers", ":kernel_headers"],
-+            includes = includes,
++            includes = _by_cpu({cpu: glibc_includes(cpu) for cpu in profiles}, []),
 +            local_defines = ["ASSEMBLER", "MODULE_NAME=libc", "PIC", "SHARED", "TOP_NAMESPACE=glibc", "_LIBC_REENTRANT"],
 +            target_compatible_with = compatible,
 +        )
@@ -178,7 +147,7 @@ index 0000000000000000000000000000000000000000..cb3040eb90cc1915e8ac44245449e5c9
 +        srcs = ["@llvm//3rd_party/libc/glibc/csu:abi-note-2.31.S"],
 +        hdrs = ["csu/abi-tag.h", "include/config.h"],
 +        copts = asm_copts,
-+        implementation_deps = ["@llvm//runtimes/glibc:minimum_kernel"],
++        defines = _by_cpu({cpu: ["__ABI_TAG_VERSION=" + version] for cpu, (version, _) in profiles.items()}, []),
 +        includes = ["csu", "include"],
 +        target_compatible_with = compatible,
 +    )
@@ -189,7 +158,7 @@ index 0000000000000000000000000000000000000000..cb3040eb90cc1915e8ac44245449e5c9
 +        target_compatible_with = compatible,
 +    )
 +
-+    for cpu in cpus:
++    for cpu in profiles:
 +        # The BCR binutils binary implements the ELF emulation of its own
 +        # platform. Build and run it on Linux on the target CPU.
 +        native_linux = ["@platforms//os:linux", "@platforms//cpu:" + cpu]
@@ -206,139 +175,136 @@ index 0000000000000000000000000000000000000000..cb3040eb90cc1915e8ac44245449e5c9
 +            crti = directory + "crti.o",
 +            crtn = directory + "crtn.o",
 +            exec_compatible_with = native_linux,
-+            target_compatible_with = enabled + native_linux,
++            target_compatible_with = native_linux,
 +        )
 +
 +    native.filegroup(
 +        name = name,
-+        srcs = select({"@platforms//cpu:" + cpu: [":pie_startup_" + cpu] for cpu in cpus} | {"//conditions:default": []}),
++        srcs = _by_cpu({cpu: [":pie_startup_" + cpu] for cpu in profiles}, []),
 +        target_compatible_with = compatible,
 +        visibility = ["//visibility:public"],
 +    )
 diff --git a/runtimes/glibc/BUILD.bazel b/runtimes/glibc/BUILD.bazel
-index 32c32281d899a0bb28bc1f9bc849659f34f0e151..188f49b5605ebd7dacaabc08aefdf48341c6e395 100644
+index 32c32281d899a0bb28bc1f9bc849659f34f0e151..523d02bd2440b57b651a6a4d2359ff263fdb29da 100644
 --- a/runtimes/glibc/BUILD.bazel
 +++ b/runtimes/glibc/BUILD.bazel
-@@ -1,12 +1,59 @@
- load("@bazel_lib//:bzl_library.bzl", "bzl_library")
- load("@bazel_lib//lib:copy_file.bzl", "copy_file")
- load("@bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
-+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
- load("//toolchain:selects.bzl", "platform_extra_binary")
- load(":glibc_dynamic_linker.bzl", "glibc_dynamic_linker", "glibc_dynamic_linker_as_needed", "glibc_dynamic_linker_soname_flags")
- load(":glibc_linker_script.bzl", "make_glibc_linker_script")
- load(":glibc_shared_library.bzl", "make_glibc_shared_library")
+@@ -8,6 +8,12 @@ load(":glibc_shared_library.bzl", "make_glibc_shared_library")
  load(":glibc_stubs_assembly_files.bzl", "glibc_stubs_assembly_files")
  load(":libc_aware_target_triple.bzl", "libc_aware_target_triple")
-+load(":startup_config.bzl", "PIE_STARTUP_VERSIONS", "minimum_kernel")
-+
-+string_flag(
-+    name = "crt_source_version",
-+    build_setting_default = "unset",
-+    values = ["unset"] + PIE_STARTUP_VERSIONS,
-+    visibility = ["//visibility:public"],
-+)
-+
-+config_setting(
-+    name = "crt_source_unset",
-+    flag_values = {":crt_source_version": "unset"},
-+    visibility = ["//visibility:public"],
-+)
-+
-+minimum_kernel(
-+    name = "minimum_kernel",
-+    build_setting_default = "2.0.0",
-+    visibility = ["//visibility:public"],
-+)
-+
-+bool_flag(
-+    name = "crt_cet",
-+    build_setting_default = False,
-+    visibility = ["//visibility:public"],
-+)
-+
-+config_setting(
-+    name = "x86_64_cet",
-+    constraint_values = ["@platforms//cpu:x86_64"],
-+    flag_values = {":crt_cet": "true"},
-+    visibility = ["//visibility:public"],
-+)
-+
+ 
 +alias(
 +    name = "pie_startup_objects",
 +    actual = "@glibc//:pie_startup_objects",
 +    visibility = ["//visibility:public"],
 +)
 +
-+bzl_library(
-+    name = "startup_config",
-+    srcs = ["startup_config.bzl"],
-+    visibility = ["//visibility:public"],
-+    deps = ["@rules_cc//cc/common"],
-+)
- 
  # Generate all support libraries unconditionally.
  #
+ # The stubs generator creates empty .s files for libraries not provided by the
+diff --git a/runtimes/glibc/extension/glibc.bzl b/runtimes/glibc/extension/glibc.bzl
+index 3c08a22b00cc32c743047f83673afb7f80cc24f2..c6f80d9e4f81d065a56afb1c7f88276490be37a4 100644
+--- a/runtimes/glibc/extension/glibc.bzl
++++ b/runtimes/glibc/extension/glibc.bzl
+@@ -102,10 +102,12 @@ def _glibc_release_strip_prefix(version):
+ 
+ def _glibc_trampoline_repository_impl(repository_ctx):
+     repository_ctx.template("BUILD.bazel", repository_ctx.attr._build_file)
++    repository_ctx.file("pie_startups.bzl", "PIE_STARTUPS = " + repr(repository_ctx.attr.pie_startups) + "\n")
+ 
+ _glibc_trampoline_repository = repository_rule(
+     implementation = _glibc_trampoline_repository_impl,
+     attrs = {
++        "pie_startups": attr.string_dict(),
+         "_build_file": attr.label(
+             allow_single_file = True,
+             default = ":trampoline.BUILD.bazel",
+@@ -118,19 +120,37 @@ def _glibc_impl(module_ctx):
+ 
+     patches = header_archive_patches(module_ctx)
+     index = {}
++    profiles = {}
++    targets = {}
+     for mod in module_ctx.modules:
++        for tag in mod.tags.pie_startup:
++            cpu = "@platforms//cpu:" + tag.arch
++            if not mod.is_root or cpu in targets:
++                fail("Select at most one glibc.pie_startup per CPU in the root module")
++            parts = tag.minimum_kernel.split(".")
++            if len(parts) != 3 or not all([n.isdigit() and int(n, 10) <= 0xffffffff for n in parts]):
++                fail("minimum_kernel must be three unsigned ELF note words")
++            if tag.cet and tag.arch != "x86_64":
++                fail("CET requires x86_64")
++            profiles.setdefault(tag.version, {})[tag.arch] = (",".join([str(int(n, 10)) for n in parts]), tag.cet)
++            targets[cpu] = "@glibc_{}//:pie_startup_objects".format(tag.version)
+         for index in mod.tags.index:
+             file_path = module_ctx.path(index.file)
+             file_content = module_ctx.read(file_path)
+             index = json.decode(file_content, default = None)
+ 
++    overlay = Label("//3rd_party/libc/glibc:glibc.BUILD.bazel")
+     for version in GLIBC_VERSIONS:
++        build = {"build_file": overlay}
++        if version in profiles:
++            load_startup = 'load("@llvm//3rd_party/libc/glibc:pie_startup.bzl", "glibc_pie_startup_objects")\n'
++            declare_startup = '\nglibc_pie_startup_objects(name = "pie_startup_objects", hdrs = HDRS, profiles = {}, ld_bfd = "@binutils//:ld.bfd")\n'
++            build = {"build_file_content": load_startup + module_ctx.read(overlay) + declare_startup.format(repr(profiles[version]))}
+         http_archive(
+             name = "glibc_%s" % version,
+             urls = _glibc_release_urls(version),
+             strip_prefix = _glibc_release_strip_prefix(version),
+             sha256 = GLIBC_RELEASE_INTEGRITY[version],
+-            build_file = "//3rd_party/libc/glibc:glibc.BUILD.bazel",
+             patches = [
+                 # This file is generated when compiling the glibc.
+                 #
+@@ -158,6 +178,7 @@ def _glibc_impl(module_ctx):
+             patch_args = [
+                 "-p1",
+             ],
++            **build
+         )
+ 
+         for (target_os, target_arch) in LIBC_SUPPORTED_TARGETS:
+@@ -184,6 +205,7 @@ def _glibc_impl(module_ctx):
+ 
+     _glibc_trampoline_repository(
+         name = "glibc",
++        pie_startups = targets,
+     )
+ 
+     repos = ["glibc"]
+@@ -214,6 +236,13 @@ glibc_index = tag_class(
+ glibc = module_extension(
+     implementation = _glibc_impl,
+     tag_classes = {
++        "pie_startup": tag_class(attrs = {
++            "arch": attr.string(mandatory = True, values = ["aarch64", "x86_64"]),
++            "cet": attr.bool(),
++            "minimum_kernel": attr.string(mandatory = True),
++            # These releases' csu/init.c defines only _IO_stdin_used.
++            "version": attr.string(mandatory = True, values = ["2.28", "2.31"]),
++        }),
+         "patch": header_patch,
+         "index": glibc_index,
+     },
 diff --git a/runtimes/glibc/extension/trampoline.BUILD.bazel b/runtimes/glibc/extension/trampoline.BUILD.bazel
-index d92090a7ec335e592ea53485c53e54a56f99413c..a15d6278394608ede8f7a7ea2c15b1c5f981ddc2 100644
+index d92090a7ec335e592ea53485c53e54a56f99413c..37c0f1a3c22700ead0f7591311ec84b110cdbca8 100644
 --- a/runtimes/glibc/extension/trampoline.BUILD.bazel
 +++ b/runtimes/glibc/extension/trampoline.BUILD.bazel
-@@ -1,6 +1,27 @@
-+load("@llvm//runtimes/glibc:startup_config.bzl", "PIE_STARTUP_VERSIONS")
+@@ -1,7 +1,16 @@
  load("@llvm//runtimes/glibc/extension:make_select_glibc_repository_target.bzl", "declare_glibc_repository_target")
++load(":pie_startups.bzl", "PIE_STARTUPS")
  
  package(default_visibility = ["//visibility:public"])
-+
-+[
-+    config_setting(
-+        name = "crt_source_" + version,
-+        flag_values = {"@llvm//runtimes/glibc:crt_source_version": version},
-+    )
-+    for version in PIE_STARTUP_VERSIONS
-+]
-+
+ 
 +alias(
 +    name = "pie_startup_objects",
-+    actual = select(
-+        {":crt_source_" + v: "@glibc_{}//:pie_startup_objects".format(v) for v in PIE_STARTUP_VERSIONS} |
-+        {"//conditions:default": "@llvm//runtimes:none"},
-+    ),
-+    target_compatible_with = ["@platforms//os:linux"] + select({
-+        "@llvm//runtimes/glibc:crt_source_unset": ["@platforms//:incompatible"],
-+        "//conditions:default": [],
++    actual = select(PIE_STARTUPS | {"//conditions:default": "@llvm//runtimes:none"}),
++    target_compatible_with = ["@platforms//os:linux"] + select({cpu: [] for cpu in PIE_STARTUPS} | {
++        "//conditions:default": ["@platforms//:incompatible"],
 +    }),
 +)
- 
++
  declare_glibc_repository_target(
      name = "gnu_libc_headers",
-diff --git a/runtimes/glibc/startup_config.bzl b/runtimes/glibc/startup_config.bzl
-new file mode 100644
-index 0000000000000000000000000000000000000000..cf0d89cb2027766c8023d341a38d1fa318b01132
---- /dev/null
-+++ b/runtimes/glibc/startup_config.bzl
-@@ -0,0 +1,25 @@
-+"""Build settings for the optional glibc PIE startup objects."""
-+
-+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
-+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-+
-+# These releases use csu/init.c only to define _IO_stdin_used.
-+PIE_STARTUP_VERSIONS = ["2.28", "2.31"]
-+
-+def _minimum_kernel_impl(ctx):
-+    parts = ctx.build_setting_value.split(".")
-+    if len(parts) != 3 or not all([p.isdigit() for p in parts]):
-+        fail("minimum_kernel must be three unsigned decimal integers, e.g. 3.2.0")
-+    numbers = [int(p, 10) for p in parts]
-+    if any([n > 0xffffffff for n in numbers]):
-+        fail("minimum_kernel components must fit in an ELF note word")
-+    define = "__ABI_TAG_VERSION=" + ",".join([str(n) for n in numbers])
-+    return [CcInfo(compilation_context = cc_common.create_compilation_context(
-+        defines = depset([define]),
-+    ))]
-+
-+minimum_kernel = rule(
-+    implementation = _minimum_kernel_impl,
-+    build_setting = config.string(flag = True),
-+    doc = "Linux ABI version for the GNU ABI note in the selected glibc PIE startup objects.",
-+)
+     bazel_repository = "@glibc_headers",
