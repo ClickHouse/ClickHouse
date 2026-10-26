@@ -11120,7 +11120,7 @@ Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange
 where a non-zero `lookback_delta` URL parameter takes priority. It is the same as the `--query.lookback-delta` flag of Prometheus:
 0 means the default of 5 minutes. The value is kept to the microsecond, so a value below 1 microsecond also means the default.
 A negative value is an error.
-)", PRIVATE_PREVIEW, \
+)", IMPORTANT | PRIVATE_PREVIEW, \
         {"26.11", 300, 300, "New setting."}) \
     \
     DECLARE(Double, promql_default_subquery_step, 15, R"(
@@ -11128,7 +11128,7 @@ The step of PromQL subqueries written without one, such as `max_over_time(rate(x
 Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API.
 0 means the default of 15 seconds. Prometheus uses its global `evaluation_interval` here, which is 1 minute by default.
 The value is kept to the microsecond, so a value below 1 microsecond also means the default. A negative value is an error.
-)", PRIVATE_PREVIEW, \
+)", IMPORTANT | PRIVATE_PREVIEW, \
         {"26.11", 15, 15, "New setting."}) \
     \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
