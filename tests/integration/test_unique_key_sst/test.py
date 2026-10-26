@@ -1,5 +1,7 @@
 import logging
 import shlex
+import time
+import uuid
 
 import pytest
 
@@ -444,6 +446,101 @@ def test_unique_key_on_a_non_plain_engine_still_loads(started_cluster):
     )
 
     node.query("DROP TABLE uk_old_engine SYNC")
+
+
+def wait_for(condition, description, retries=120, sleep_time=0.5):
+    for _ in range(retries):
+        if condition():
+            return
+        time.sleep(sleep_time)
+    assert condition(), f"Timed out waiting for {description}"
+
+
+# A query- or user-level read throttler makes the probe bypass the SST reader cache.
+UNTHROTTLED_UK_SETTINGS = {**UK_SETTINGS, "max_remote_read_network_bandwidth": 0, "max_local_read_bandwidth": 0}
+
+
+def test_unique_key_sst_reader_cache_follows_background_move(started_cluster):
+    # A background move keeps the part name, UUID and SST checksum, but the part
+    # now lives on another disk. The SST reader cache must not hand the moved
+    # part the reader opened on the old location (which is removed once the old
+    # part is released), so the first probe after the move is a cache miss.
+    node.query("DROP TABLE IF EXISTS uk_move SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_move (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS storage_policy = 'uk_local_to_s3', assign_part_uuids = 1,
+                 min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query("SYSTEM STOP MOVES uk_move")
+    node.query("INSERT INTO uk_move VALUES (10, 'a'), (20, 'b'), (30, 'c')", settings=UK_SETTINGS)
+    base_name, base_uuid = node.query(
+        "SELECT name, toString(uuid) FROM system.parts WHERE database = 'default' AND table = 'uk_move' AND active"
+    ).strip().split("\t")
+    assert base_uuid != "00000000-0000-0000-0000-000000000000"
+
+    # Pause the move after the clone is written but before it replaces the active
+    # part, and probe the still-local part in that window: this caches a reader
+    # on the location that is about to go away.
+    pre_move_query_id = f"uk_move_pre_{uuid.uuid4().hex}"
+    node.query("SYSTEM ENABLE FAILPOINT stop_moving_part_before_swap_with_active")
+    try:
+        node.query("SYSTEM START MOVES uk_move")
+        node.query("SYSTEM WAIT FAILPOINT stop_moving_part_before_swap_with_active PAUSE", timeout=120)
+        node.query("INSERT INTO uk_move VALUES (10, 'x')", settings=UNTHROTTLED_UK_SETTINGS, query_id=pre_move_query_id)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT stop_moving_part_before_swap_with_active")
+
+    # Every part, including the one written during the pause, ends up on S3; the
+    # moved base part keeps its name and UUID.
+    wait_for(
+        lambda: node.query(
+            "SELECT countIf(disk_name != 's3_disk') FROM system.parts WHERE database = 'default' AND table = 'uk_move' AND active"
+        ) == "0\n",
+        "all parts moved to S3",
+    )
+    assert node.query(
+        f"SELECT toString(uuid) FROM system.parts WHERE database = 'default' AND table = 'uk_move' AND active AND name = '{base_name}'"
+    ).strip() == base_uuid
+
+    # The old local copies are removed once released.
+    wait_for(
+        lambda: bash(node, "find /var/lib/clickhouse/uk_move_local -name unique_key_index.sst | wc -l").strip() == "0",
+        "old local parts removed",
+    )
+
+    # Probe the moved parts: the reader must be opened on S3, never reused from
+    # the old local location.
+    query_id = f"uk_move_probe_{uuid.uuid4().hex}"
+    node.query("INSERT INTO uk_move VALUES (20, 'y')", settings=UNTHROTTLED_UK_SETTINGS, query_id=query_id)
+    node.query("SYSTEM FLUSH LOGS query_log")
+
+    def cache_events(qid):
+        hits, misses = node.query(
+            f"""
+            SELECT ProfileEvents['UniqueKeySSTReaderCacheHits'], ProfileEvents['UniqueKeySSTReaderCacheMisses']
+            FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'
+            """
+        ).strip().split("\t")
+        return int(hits), int(misses)
+
+    # The pre-move probe did populate the cache with the local-location reader.
+    assert cache_events(pre_move_query_id)[1] > 0
+
+    hits, misses = cache_events(query_id)
+    assert hits == 0, f"probe after move reused a cached reader (hits={hits})"
+    assert misses > 0
+
+    assert node.query("SELECT id, v FROM uk_move ORDER BY id") == "10\tx\n20\ty\n30\tc\n"
+
+    node.query("DROP TABLE uk_move SYNC")
+
+
 def test_unique_key_sst_roundtrip_on_encrypted_disk(started_cluster):
     # UNIQUE KEY on an encrypted local disk: the load-time SST validation reads
     # `unique_key_index.sst` through `ReadBufferFromEncryptedFile`, whose

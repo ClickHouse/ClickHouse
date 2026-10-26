@@ -1093,12 +1093,15 @@ namespace
 {
 /// Reader cache key of the part's SST, or nullopt when the part has no SST
 /// checksum entry (non-UNIQUE KEY or legacy part): such parts are never cached.
+/// The identity is the physical location (`disk:path`), not the UUID: a
+/// background move keeps the UUID but not the location.
 std::optional<UniqueKeySSTReaderCacheKey> getSSTReaderCacheKey(const IMergeTreeDataPart & part)
 {
     const auto it = part.checksums.files.find(SSTIndexWriter::FILE_NAME);
     if (it == part.checksums.files.end())
         return std::nullopt;
-    return UniqueKeySSTReaderCache::makeKey(part.getDeleteBitmapCacheIdentity(), it->second.file_hash);
+    return UniqueKeySSTReaderCache::makeKey(
+        part.getDataPartStorage().getDiskName() + ":" + part.getRelativePathOfActivePart(), it->second.file_hash);
 }
 }
 #endif
@@ -2159,7 +2162,7 @@ std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
 #if USE_ROCKSDB
 SSTFileReaderPtr IMergeTreeDataPart::getOrOpenSSTReader(const ReadSettings & read_settings) const
 {
-    const auto direct_open = [&]() -> SSTFileReaderPtr
+    const auto direct_open = [&]
     {
         return openSSTReaderFromStorage(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, read_settings);
     };
@@ -2176,18 +2179,24 @@ SSTFileReaderPtr IMergeTreeDataPart::getOrOpenSSTReader(const ReadSettings & rea
     if (!key)
         return direct_open();
 
-    /// Cached readers are shared and long-lived, so they open with server-level
-    /// settings like other background reads, not with the first query's. The
-    /// reader only does `readBigAt`, so keep its unused buffer small. An open
+    /// A cached reader is shared, so it is opened with server-level settings;
+    /// a caller whose settings it cannot honor opens directly instead.
+    const auto & global_context = Context::getGlobalContextInstance();
+    auto shared_read_settings = global_context->getReadSettings();
+    shared_read_settings.remote_throttler = global_context->getServerWideRemoteReadThrottler();
+    shared_read_settings.local_throttler = global_context->getServerWideLocalReadThrottler();
+    if (!canShareSSTReaderSettings(read_settings, shared_read_settings, getDataPartStorage().isStoredOnRemoteDisk()))
+        return direct_open();
+
+    /// The reader only does `readBigAt`, so keep its unused buffer small. An open
     /// failure propagates out of `getOrSet` and is never cached.
     auto [reader, loaded] = cache->getOrSet(*key, [&]() -> SSTFileReaderPtr
     {
-        auto cached_read_settings = Context::getGlobalContextInstance()->getReadSettings();
-        cached_read_settings.local_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
-        cached_read_settings.remote_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
+        shared_read_settings.local_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
+        shared_read_settings.remote_fs_settings.buffer_size = SST_READER_BUFFER_SIZE;
         /// Otherwise `prefer_bigger_buffer_size` raises the remote buffer back to 1 MiB.
-        cached_read_settings.remote_fs_settings.large_buffer_size = SST_READER_BUFFER_SIZE;
-        return std::make_shared<SSTFileReader>(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, cached_read_settings);
+        shared_read_settings.remote_fs_settings.large_buffer_size = SST_READER_BUFFER_SIZE;
+        return std::make_shared<SSTFileReader>(getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, shared_read_settings);
     });
     ProfileEvents::increment(loaded ? ProfileEvents::UniqueKeySSTReaderCacheMisses : ProfileEvents::UniqueKeySSTReaderCacheHits);
     return reader;

@@ -706,9 +706,10 @@ public:
 
 #if USE_ROCKSDB
     /// UNIQUE KEY — this part's SST reader, shared process-wide through the
-    /// reader cache (keyed by part identity + SST checksum). Direct open (no
-    /// caching) when the cache is disabled, the part is not Active, or the SST
-    /// has no checksum entry.
+    /// reader cache (keyed by part location + SST checksum). Direct open (no
+    /// caching) when the cache is disabled, the part is not Active, the SST
+    /// has no checksum entry, or `read_settings` is not shareable (see
+    /// `canShareSSTReaderSettings`).
     SSTFileReaderPtr getOrOpenSSTReader(const ReadSettings & read_settings) const;
 #endif
 
