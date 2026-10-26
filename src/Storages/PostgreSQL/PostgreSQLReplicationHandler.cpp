@@ -917,13 +917,17 @@ PostgreSQLReplicationHandler::~PostgreSQLReplicationHandler()
     /// still executing at that point would read, for example, an already-destroyed `materialized_storages`.
     /// `deactivate` waits for an in-flight execution to finish and is idempotent, so this is safe for a handler
     /// that was already shut down.
+    /// The order is the same as in `shutdown`: the startup and the coordination tasks run `startSynchronization`,
+    /// which activates the consumer and the cleanup tasks (`activateAndSchedule` reverses an earlier `deactivate`),
+    /// so they are quiesced first, and only then the tasks they can schedule.
+    stop_synchronization.store(true);
     try
     {
         startup_task->deactivate();
-        consumer_task->deactivate();
-        cleanup_task->deactivate();
         if (coordination_task)
             coordination_task->deactivate();
+        consumer_task->deactivate();
+        cleanup_task->deactivate();
     }
     catch (...)
     {

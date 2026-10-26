@@ -84,6 +84,8 @@ public:
         ContextPtr context_,
         std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
+    ~StorageMaterializedPostgreSQL() override;
+
     String getName() const override { return "MaterializedPostgreSQL"; }
     bool hasUnreplicatedTableDataOnDisk() const override { return true; }
 

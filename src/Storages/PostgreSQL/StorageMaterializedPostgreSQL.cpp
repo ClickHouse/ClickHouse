@@ -166,6 +166,16 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(*nested_metadata);
 }
 
+StorageMaterializedPostgreSQL::~StorageMaterializedPostgreSQL()
+{
+    /// Destroy the replication handler (it stops its background tasks) while the members its tasks use still
+    /// exist: `replication_handler` is declared before `nested_context` and `nested_table_id`, so the implicit
+    /// member destruction would destroy them first. The storage can be destroyed without `shutdown`, for
+    /// example when a standalone `CREATE TABLE` fails to write the table metadata after the constructor has
+    /// already started the coordination task.
+    replication_handler.reset();
+}
+
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
 {
     VirtualColumnsDescription desc;
