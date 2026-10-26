@@ -332,6 +332,13 @@ private:
 
     /// Context that runs a forwarded operation with the alias's definer rights. Throws for a legacy alias.
     ContextMutablePtr getDefinerContext(ContextPtr local_context) const;
+
+    /// Whether `SELECT` on the target is authorized under this alias's security, i.e. whether a read
+    /// would be allowed to proceed. False for a legacy alias (no stored definer) and when the definer
+    /// (or the invoker, for an `INVOKER` alias) lacks `SELECT` on the target. Paths that return rows or
+    /// row counts without going through `read` (trivial count, `totalRows`/`totalBytes`) consult this so
+    /// they authorize exactly as `read` does instead of leaking a count the security does not allow.
+    bool isTargetSelectAuthorized(ContextPtr query_context) const;
 };
 
 }

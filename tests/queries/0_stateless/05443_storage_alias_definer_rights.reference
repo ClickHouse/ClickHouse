@@ -10,3 +10,14 @@ Reader sees the alias columns in system.columns with no target grant
 2
 Reader SELECTs through the alias with no target grant
 2
+Trivial count while the definer is authorized (optimization on, then off)
+2
+2
+After REVOKE SELECT on the target from the definer, count is denied (optimization on)
+ACCESS_DENIED
+...and with the optimization off
+ACCESS_DENIED
+...and a column read is denied the same way
+ACCESS_DENIED
+...and total_rows is hidden in system.tables
+1

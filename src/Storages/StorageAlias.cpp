@@ -519,22 +519,45 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMeta
     return snapshot->withStorageHolder(std::move(target));
 }
 
+bool StorageAlias::isTargetSelectAuthorized(ContextPtr query_context) const
+{
+    /// A legacy alias (no stored definer) is unusable, so nothing is authorized through it.
+    if (!query_context || !security_metadata.sql_security_type.has_value())
+        return false;
+
+    /// Resolve the security the same way `read` does - as the definer for a `DEFINER` alias, as the
+    /// invoker for an `INVOKER` one - and ask whether that principal may `SELECT` the target.
+    auto security_context = security_metadata.getSQLSecurityOverriddenContext(query_context);
+    return security_context->getAccess()->isGranted(AccessType::SELECT, target_database, target_table);
+}
+
 bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
-    /// Definer rights: visibility and access are gated on the alias object by the caller, so the
-    /// optimization is available whenever the target supports it.
+    /// The trivial-count shortcut returns a row count without going through `read`, so it must authorize
+    /// exactly as `read` does. When it is not authorized, decline the shortcut: the query then falls back
+    /// to `read`, which raises the proper error (a legacy alias is refused, a missing `SELECT` is denied
+    /// against the definer).
+    if (!isTargetSelectAuthorized(query_context))
+        return false;
+
     auto target = tryGetTargetTable();
     return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
+    if (!isTargetSelectAuthorized(query_context))
+        return {};
+
     auto target = tryGetTargetTable();
     return target ? target->totalRows(query_context) : std::optional<UInt64>{};
 }
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
+    if (!isTargetSelectAuthorized(query_context))
+        return {};
+
     auto target = tryGetTargetTable();
     return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
 }

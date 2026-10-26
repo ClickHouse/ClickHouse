@@ -51,6 +51,22 @@ ${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM system.colu
 echo "Reader SELECTs through the alias with no target grant"
 ${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM def_alias;"
 
+# The trivial-count shortcut (SELECT count()) returns a row count without going through the read path,
+# so it must authorize the definer exactly as a read does - whether or not the optimization is enabled.
+echo "Trivial count while the definer is authorized (optimization on, then off)"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM def_alias SETTINGS optimize_trivial_count_query = 1;"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM def_alias SETTINGS optimize_trivial_count_query = 0;"
+
+${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON def_target FROM ${definer};"
+echo "After REVOKE SELECT on the target from the definer, count is denied (optimization on)"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM def_alias SETTINGS optimize_trivial_count_query = 1;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+echo "...and with the optimization off"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT count() FROM def_alias SETTINGS optimize_trivial_count_query = 0;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+echo "...and a column read is denied the same way"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT id FROM def_alias;" 2>&1 | grep -o "ACCESS_DENIED" | uniq
+echo "...and total_rows is hidden in system.tables"
+${CLICKHOUSE_CLIENT} --user="${reader}" --query "SELECT total_rows IS NULL FROM system.tables WHERE database = currentDatabase() AND name = 'def_alias';"
+
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE def_alias;
     DROP TABLE def_target;
