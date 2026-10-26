@@ -509,6 +509,8 @@ struct Reader
         /// the rows delivered from this row group so far, in the query's order. Only maintained with
         /// `FormatTopKFilterInfo::track_row_group_best_values` (see updateTopKBestValue).
         ColumnPtr top_k_best_value;
+        /// `top_k_best_value` equals the bound of `top_k_sort_column_range` on its side, so no later row can improve it.
+        bool top_k_best_value_is_final = false;
 
         std::deque<RowSubgroup> subgroups;
 
