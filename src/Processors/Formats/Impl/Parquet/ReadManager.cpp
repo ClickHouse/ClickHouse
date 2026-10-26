@@ -1175,7 +1175,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
             {
                 const ColumnChunk & column = row_group.columns.at(i);
-                if (!column.served_from_cache || reader.primitive_columns[i].first_step_to_calculate != task.step_idx)
+                if (!column.served_from_cache || reader.firstStepToReadColumn(reader.primitive_columns[i], row_subgroup) != task.step_idx)
                     continue;
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(i);
                 if (subchunk.column_and_offsets_memory)
