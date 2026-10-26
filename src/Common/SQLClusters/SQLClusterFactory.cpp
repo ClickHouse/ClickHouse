@@ -211,6 +211,17 @@ ClusterPtr SQLClusterFactory::materializeCluster(
     Poco::AutoPtr<OrderedMapConfiguration> config = new OrderedMapConfiguration();
     const String cluster_prefix = "cluster." + query.cluster_name;
 
+    /// `Cluster::Address` takes the default replica port and detects local replicas by the listener ports of this server.
+    const auto & server_config = context->getConfigRef();
+    for (const char * port_key : {"tcp_port", "tcp_port_secure"})
+    {
+        if (server_config.has(port_key))
+            config->setString(port_key, server_config.getString(port_key));
+    }
+
+    /// clickhouse-local listens on no port of its own, see the comment in `Cluster::Address::Address`.
+    const bool treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
+
     applyClusterProperties(*config, cluster_prefix, definition.cluster_properties);
 
     size_t shard_num = 0;
@@ -255,7 +266,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
         settings,
         "cluster",
         query.cluster_name,
-        false,
+        treat_local_port_as_remote,
         Cluster::SourceId::SQL,
         std::move(create_statement));
 }
@@ -320,7 +331,7 @@ void SQLClusterFactory::reloadFromStorage()
     for (const auto & cluster_name : stored_cluster_names)
     {
         if (!new_stored_cluster_names.contains(cluster_name))
-            context->removeCluster(cluster_name);
+            context->removeSQLCluster(cluster_name);
     }
 
     const auto previous_cluster_names = std::exchange(stored_cluster_names, {});
@@ -337,7 +348,7 @@ void SQLClusterFactory::reloadFromStorage()
             /// A discovered or a `Replicated` database cluster lives outside the map of static clusters,
             /// so the previously loaded SQL cluster is still there and must be removed.
             if (existing->getSourceId() != Cluster::SourceId::CONFIG && previous_cluster_names.contains(cluster_name))
-                context->removeCluster(cluster_name);
+                context->removeSQLCluster(cluster_name);
             continue;
         }
 
@@ -436,8 +447,10 @@ void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "SQL cluster `{}` does not exist", query.cluster_name);
     }
 
+    /// The metadata is removed regardless of the local state: with shared metadata storage, the SQL cluster may be
+    /// skipped on this server because of a cluster with the same name from another source, which must be kept.
     auto context = Context::getGlobalContextInstance()->getGlobalContext();
-    context->removeCluster(query.cluster_name);
+    context->removeSQLCluster(query.cluster_name);
     stored_cluster_names.erase(query.cluster_name);
 
     LOG_INFO(log, "Dropped SQL cluster `{}`", query.cluster_name);
@@ -448,7 +461,8 @@ void SQLClusterFactory::removeStaleLocalCluster(const String & cluster_name)
     if (!stored_cluster_names.erase(cluster_name))
         return;
 
-    Context::getGlobalContextInstance()->getGlobalContext()->removeCluster(cluster_name);
+    if (!Context::getGlobalContextInstance()->getGlobalContext()->removeSQLCluster(cluster_name))
+        return;
     LOG_INFO(log, "Removed SQL cluster `{}` which no longer exists in the metadata storage", cluster_name);
 }
 

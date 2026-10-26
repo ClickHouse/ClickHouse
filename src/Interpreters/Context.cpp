@@ -38,6 +38,7 @@
 #include <GPU/GPUDevice.h>
 #endif
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLClusters/SQLClusterFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
@@ -1278,6 +1279,7 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
+        SQLClusterFactory::instance().shutdown();
         SQLDefinedHandlersFactory::instance().shutdown();
 
         std::unique_ptr<ThreadPool> delete_background_query_pool;
@@ -8073,17 +8075,24 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
     notifyDDLWorkerAfterClustersChange();
 }
 
-void Context::removeCluster(const String & cluster_name)
+bool Context::removeSQLCluster(const String & cluster_name)
 {
     {
         std::lock_guard lock(shared->clusters_mutex);
         if (!shared->clusters)
-            return;
+            return false;
+
+        /// The source is checked under the same lock as the removal: a cluster from the server configuration
+        /// with the same name must survive `DROP CLUSTER` of a SQL cluster defined on another server.
+        auto cluster = shared->clusters->getCluster(cluster_name);
+        if (!cluster || cluster->getSourceId() != Cluster::SourceId::SQL)
+            return false;
 
         shared->clusters->removeCluster(cluster_name);
         ++shared->clusters_version;
     }
     notifyDDLWorkerAfterClustersChange();
+    return true;
 }
 
 

@@ -5,6 +5,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 METADATA_CONFIG_CONTAINER_PATH = "/etc/clickhouse-server/config.d/cluster_metadata.xml"
@@ -318,3 +319,85 @@ def test_keeper_storage_encrypted(cluster):
         encrypted=True,
         keeper=True,
     )
+
+
+def test_keeper_drop_keeps_config_cluster_with_same_name(cluster):
+    """A SQL cluster created on one node is skipped on a node which has a configured cluster with the same name.
+    `DROP CLUSTER` on that node removes the shared metadata but must keep its configured cluster."""
+    install_metadata_storage(
+        cluster,
+        "cluster_metadata_keeper.xml",
+        keeper_metadata_path=KEEPER_METADATA_PATHS["cluster_metadata_keeper.xml"],
+    )
+
+    node_sql = cluster.instances["clickhouse1"]
+    node_config = cluster.instances["clickhouse2"]
+    name = "collision_cluster"
+    config_path = "/etc/clickhouse-server/config.d/collision_cluster.xml"
+
+    node_config.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cat > {config_path} <<'EOF'\n"
+            f"<clickhouse><remote_servers><{name}><shard><replica><host>clickhouse2</host><port>9000</port></replica></shard></{name}></remote_servers></clickhouse>\n"
+            "EOF",
+        ]
+    )
+    node_config.query("SYSTEM RELOAD CONFIG")
+
+    sources_query = f"SELECT DISTINCT source FROM system.clusters WHERE cluster = '{name}'"
+    try:
+        assert node_config.query(sources_query).strip() == "CONFIG"
+
+        node_sql.query(f"CREATE CLUSTER {name} (SHARD (REPLICA (host = 'clickhouse1', port = 9000)))")
+        assert node_sql.query(sources_query).strip() == "SQL"
+        node_config.wait_for_log_line(f"Not loading SQL cluster `{name}`")
+        assert node_config.query(sources_query).strip() == "CONFIG"
+
+        node_config.query(f"DROP CLUSTER {name}")
+        assert node_config.query(sources_query).strip() == "CONFIG"
+        assert node_config.query(f"SELECT count() FROM cluster({name}, system.one)").strip() == "1"
+
+        assert_eq_with_retry(node_sql, sources_query, "")
+    finally:
+        node_sql.query(f"DROP CLUSTER IF EXISTS {name}")
+        node_config.exec_in_container(["bash", "-c", f"rm -f {config_path}"])
+        node_config.query("SYSTEM RELOAD CONFIG")
+
+
+def test_create_query_secrets_require_grant(cluster):
+    """`system.clusters.create_query` reveals the cluster `secret` and passwords only with every condition met:
+    the server setting (enabled in this fixture), the session setting and the `displaySecretsInShowAndSelect` grant."""
+    node = cluster.instances["clickhouse1"]
+    name = "secrets_cluster"
+    user = "secrets_reader"
+
+    node.query(f"DROP CLUSTER IF EXISTS {name}")
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(
+        f"CREATE CLUSTER {name} (secret = 'cluster_secret_value', password = 'cluster_password_value', "
+        "SHARD (host = 'clickhouse1', port = 9000, password = 'shard_password_value'), "
+        "SHARD (REPLICA (host = 'clickhouse2', port = 9000, password = 'replica_password_value')))"
+    )
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT SELECT ON system.clusters TO {user}")
+
+    query = f"SELECT DISTINCT create_query FROM system.clusters WHERE cluster = '{name}'"
+    secrets = ("cluster_secret_value", "cluster_password_value", "shard_password_value", "replica_password_value")
+    try:
+        for settings in ({"format_display_secrets_in_show_and_select": 0}, {"format_display_secrets_in_show_and_select": 1}):
+            create_query = node.query(query, user=user, settings=settings)
+            assert "[HIDDEN]" in create_query
+            assert not any(secret in create_query for secret in secrets)
+
+        node.query(f"GRANT displaySecretsInShowAndSelect ON *.* TO {user}")
+
+        create_query = node.query(query, user=user, settings={"format_display_secrets_in_show_and_select": 0})
+        assert not any(secret in create_query for secret in secrets)
+
+        create_query = node.query(query, user=user, settings={"format_display_secrets_in_show_and_select": 1})
+        assert all(secret in create_query for secret in secrets)
+    finally:
+        node.query(f"DROP CLUSTER IF EXISTS {name}")
+        node.query(f"DROP USER IF EXISTS {user}")

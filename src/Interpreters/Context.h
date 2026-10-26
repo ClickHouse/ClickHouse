@@ -1892,7 +1892,8 @@ public:
 
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
-    void removeCluster(const String & cluster_name);
+    /// Removes the cluster only if it is SQL-managed. Returns whether it was removed.
+    bool removeSQLCluster(const String & cluster_name);
     void reloadClusterConfig() const;
 
     bool isDistributedCacheServer() const;
