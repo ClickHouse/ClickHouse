@@ -147,9 +147,12 @@ The `DuplicatedAsyncInserts` and `SelfDuplicatedAsyncInserts` events in [`system
 
 Deduplication of asynchronous inserts works together with dependent materialized views. The rule is: one block in, one block out. ClickHouse writes the output of a view for one flushed batch as a single block, whatever the inner query does, for example filtering, aggregation, `ARRAY JOIN`, or a `JOIN` that adds rows. The block size settings [`min_insert_block_size_rows`](/reference/settings/session-settings/min-insert#min_insert_block_size_rows) and [`min_insert_block_size_bytes`](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) don't split it.
 
-The limit is memory. The block can take only a share of the server memory limit, which is divided between all blocks the insert builds at the same time, for the target table and for every dependent view. If the output of a view for one batch is larger than that, ClickHouse throws a `NOT_IMPLEMENTED` exception instead of holding the whole output in memory.
+The limit is memory. The whole output of a view for one batch is held in memory, so its size is roughly the size of the batch times the number of rows the view produces per input row. If it does not fit into the memory limits of the query and the server, the insert fails with a `MEMORY_LIMIT_EXCEEDED` exception. This matters mostly for views that multiply rows, for example an `ARRAY JOIN` over large arrays or a `JOIN` that matches many rows. For such a view, you can:
 
-To insert through such a view, make the batches smaller with [`async_insert_max_data_size`](/reference/settings/session-settings/async-insert#async_insert_max_data_size), set [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) to `0`, or use synchronous inserts.
+- Make the batches smaller with [`async_insert_max_data_size`](/reference/settings/session-settings/async-insert#async_insert_max_data_size).
+- Raise the memory limit of the insert with [`max_memory_usage`](/reference/settings/session-settings/max-memory-usage#max_memory_usage).
+- Set [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) to `0`. The view output is then split into blocks of the usual size, but a retried insert is inserted into the view targets again.
+- Use synchronous inserts, which deduplicate a view output of several blocks.
 
 ## Insert deduplication with materialized views {#insert-deduplication-with-materialized-views}
 

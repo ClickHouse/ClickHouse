@@ -727,15 +727,15 @@ private:
         /// Deduplication of async inserts supports only one view block per source block
         /// (see `DeduplicationInfo::setViewBlockNumber`), so in that case the whole view output
         /// is squashed into one block: unreachable minimums make the squashing emit only on finish.
-        /// Below the minimums the result is the same single block anyway. The memory cap still
-        /// applies, so a view output above it is split (and rejected) instead of exhausting memory.
+        /// Below the minimums the result is the same single block anyway. The memory cap is not applied
+        /// either: splitting would only turn the insert into a `NOT_IMPLEMENTED` failure, so a view output
+        /// that does not fit is left to the memory limits of the query and the server.
         bool squash_into_single_block = async_insert && deduplicate_blocks_in_view;
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             squash_into_single_block ? std::numeric_limits<size_t>::max() : settings[Setting::min_insert_block_size_rows],
-            capInsertBlockSizeBytesToMemoryLimit(
-                squash_into_single_block ? std::numeric_limits<size_t>::max() : settings[Setting::min_insert_block_size_bytes],
-                num_squashing_pipelines),
+            squash_into_single_block ? std::numeric_limits<size_t>::max()
+                                     : capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], num_squashing_pipelines),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
