@@ -4,7 +4,6 @@
 -- `group_by_use_nulls`, while the validator compared it against the Nullable key set, so the
 -- reproducer queries below were rejected with NOT_AN_AGGREGATE.
 
-SET enable_analyzer = 1;
 SET group_by_use_nulls = 1;
 
 SELECT '-- window PARTITION BY over a ROLLUP key, and the key is Nullable inside the window';

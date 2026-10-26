@@ -37,6 +37,17 @@ node3 = cluster.add_instance(
     stay_alive=True,
 )
 
+# Starts with the first release that has union tables and is upgraded. The log tables are prepared
+# during startup, and drops are asynchronous (the default).
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/union_merge.xml", "configs/prepare_on_startup.xml"],
+    image="clickhouse/clickhouse-server",
+    tag="26.8",
+    with_installed_binary=True,
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -243,6 +254,19 @@ def test_stable_across_restarts(start_cluster):
         "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
     )
     assert uuid_before == uuid_after
+
+
+def test_replaced_during_upgrade(start_cluster):
+    node4.query("SYSTEM FLUSH LOGS trace_log")
+    old_create_query = node4.query("SHOW CREATE TABLE system.all_trace_log FORMAT TSVRaw")
+
+    # `all_trace_log` contains the build id, so the first start of another build replaces it, and it does so
+    # before loading the tables left in `metadata_dropped` by previous runs. The replaced table is dropped
+    # by this run and must not be loaded as one of them.
+    node4.restart_with_latest_version()
+
+    assert node4.query("SHOW CREATE TABLE system.all_trace_log FORMAT TSVRaw") != old_create_query
+    assert not node4.contains_in_log("UUID collision", from_host=True)
 
 
 def test_cluster(start_cluster):
