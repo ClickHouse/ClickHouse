@@ -54,7 +54,8 @@ the clusters need to function:
 
 A keeper admits ClickHouse clusters based on their `keeperClusterRef` — adding
 or removing a reference updates the keeper's policy automatically, including
-references from other namespaces.
+references from other namespaces. Clusters using `externalKeeper` are never
+admitted, even when their nodes point at the keeper's pods.
 
 ### Allowing clients and monitoring {#allowing-clients}
 

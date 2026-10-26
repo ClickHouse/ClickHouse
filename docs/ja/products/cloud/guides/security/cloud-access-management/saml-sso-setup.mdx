@@ -19,15 +19,11 @@ ClickHouse Cloud は、Security Assertion Markup Language (SAML) によるシン
 
 SAML インテグレーションを有効にすると、新規ユーザーに割り当てるデフォルトのロールを指定したり、セッションタイムアウトの設定を調整したりすることもできます。
 
-<div id="before-you-begin">
-  ## 始める前に
-</div>
+## 始める前に {#before-you-begin}
 
 IdP での管理者権限、自身のドメインの DNS 設定に TXT レコードを追加する権限、そして ClickHouse Cloud 組織での **Admin** ロールが必要です。ログイン手順を簡略化するため、SAML 接続に加えて、**組織への直接リンク**を設定することをおすすめします。この設定方法は IdP ごとに異なります。お使いの IdP での設定方法については、このまま読み進めてください。
 
-<div id="how-it-works">
-  ## 仕組み
-</div>
+## 仕組み {#how-it-works}
 
 SAML SSO を設定すると、ユーザーはサービスプロバイダー開始型のフローでサインインします。
 
@@ -38,11 +34,11 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
 
 このガイドの残りでは、一回限りの設定について説明します。
 
-<div id="how-to-configure-your-idp">
-  ## IdP の設定方法
-</div>
+## IdP の設定方法 {#how-to-configure-your-idp}
 
-<Steps>
+SAML がすでに有効になっていて管理者アクセスが必要な場合は、[管理者ユーザーを設定する](#configure-your-admin-user)または[トラブルシューティング](#troubleshooting)を参照してください。
+
+<Steps titleSize="h3">
   <Step title="組織設定にアクセスする" id="access-organization-settings">
     左下にある組織名をクリックし、[Organization details] を選択します。
   </Step>
@@ -124,15 +120,13 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   </Step>
 </Steps>
 
-<div id="configure-idp">
-  ### アイデンティティプロバイダーを設定する
-</div>
+### アイデンティティプロバイダーを設定する {#configure-idp}
 
 <Tabs>
   <Tab title="Okta" id="okta">
     Okta では、ClickHouse の各組織ごとに 2 つの App Integration を設定します。1 つは SAML アプリ、もう 1 つは 直接リンク を保持するためのブックマークです。
 
-    #### アクセス管理用のグループを作成する
+#### アクセス管理用のグループを作成する {#okta-create-group}
 
     1. **Administrator** として Okta インスタンスにログインします。
     2. 左側で **Groups** を選択します。
@@ -142,7 +136,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
     6. 作成したグループ名をクリックします。
     7. **Assign people** をクリックし、この ClickHouse 組織へのアクセスを許可するユーザーを割り当てます。
 
-    #### ユーザーがシームレスにログインできるようにブックマークアプリを作成する
+#### ユーザーがシームレスにログインできるようにブックマークアプリを作成する {#okta-bookmark-app}
 
     1. 左側で **Applications** を選択し、次に **Applications** サブ見出しを選択します。
     2. **Browse App Catalog** をクリックします。
@@ -152,7 +146,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
     6. URL に `https://console.clickhouse.cloud/?connection={organizationid}` を入力します
     7. **Assignments** タブに移動し、上で作成したグループを追加します。
 
-    #### 接続を有効にするための SAML アプリを作成する
+#### 接続を有効にするための SAML アプリを作成する {#okta-saml-app}
 
     1. 左側で **Applications** を選択し、次に **Applications** サブ見出しを選択します。
 
@@ -193,7 +187,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   <Tab title="Google" id="google">
     multi-org SSO を使用する場合は、組織ごとに Google で 1 つの SAML アプリを設定し、ユーザーにはブックマーク用に直接リンク (`https://console.clickhouse.cloud/?connection={organizationId}`) を提供する必要があります。
 
-    #### Google のウェブアプリを作成する
+#### Google のウェブアプリを作成する {#google-web-app}
 
     1. Google Admin console (admin.google.com) に移動します。
 
@@ -237,7 +231,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   <Tab title="Azure（Microsoft）" id="azure">
     Azure (Microsoft) SAML は、Azure Active Directory (AD) または Microsoft Entra と呼ばれることもあります。
 
-    #### Azure エンタープライズ アプリケーションを作成する
+#### Azure エンタープライズ アプリケーションを作成する {#azure-enterprise-app}
 
     各組織に対して、それぞれ別個のサインオン URL を持つ 1 つのアプリケーション インテグレーションを設定します。
 
@@ -283,7 +277,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   </Tab>
 
   <Tab title="Duo" id="duo">
-    #### Duo 用の汎用 SAML サービスプロバイダを作成する
+#### Duo 用の汎用 SAML サービスプロバイダを作成する {#duo-saml-provider}
 
     1. [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic) の手順に従ってください。
 
@@ -305,11 +299,20 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## トラブルシューティング
-</div>
+## トラブルシューティング {#troubleshooting}
 
 <AccordionGroup>
+  <Accordion title="SAML でサインインした後に管理者権限がない">
+    **原因:** 新しい SAML アカウントには、設定済みのデフォルトの SAML ロールが付与されます。そのロールが **Admin** でない場合、元のアカウントが **Admin** ロールを持っていても、新しいアカウントには管理者権限がありません。ClickHouse Cloud は SAML アカウントと非 SAML アカウントを自動的に関連付けません。
+
+    **対処:** まず一度 SAML でサインインし、新しいユーザーが ClickHouse Cloud に表示されるようにします。その後ログアウトし、元の管理者アカウントでサインインして、SAML ユーザーに **Admin** ロールを割り当てます。
+
+    * メールアドレスとパスワードのアカウントの場合は、[メールアドレスでのサインイン用リンク](https://console.clickhouse.cloud/?with=email) を使用して、SAML への自動リダイレクトを回避します。`?with=email` の `email` はリテラル値であり、メールアドレスのプレースホルダーではありません。
+    * Google または Microsoft アカウントの場合は、**Continue with Google** または **Continue with Microsoft** を選択します。
+
+    元の管理者アカウントを削除する前に、ログアウトして再度 SAML でサインインし、管理者としてアクセスできることを確認してください。手順全体については [管理者ユーザーを設定する](#configure-your-admin-user) を参照してください。
+  </Accordion>
+
   <Accordion title="システムの設定ミス、またはサービス障害の可能性があります">
     **原因:** サポートされていない identity-provider-initiated login を使用しています。
 
@@ -341,9 +344,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   </Accordion>
 </AccordionGroup>
 
-<div id="faq">
-  ## よくある質問
-</div>
+## よくある質問 {#faq}
 
 <AccordionGroup>
   <Accordion title="ClickHouse Cloud は identity-provider-initiated サインインをサポートしていますか？">
@@ -365,9 +366,7 @@ SAML SSO を設定すると、ユーザーはサービスプロバイダー開�
   </Accordion>
 </AccordionGroup>
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 * [クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — ユーザー権限を管理し、アクセスを SAML 接続のみに制限します。
 * SCIM Provisioning — [Okta](/ja/products/cloud/guides/security/cloud-access-management/scim-setup) または [Microsoft Entra ID](/ja/products/cloud/guides/security/cloud-access-management/scim-setup-entra) を使用して、ユーザーとグループのプロビジョニングを自動化します。

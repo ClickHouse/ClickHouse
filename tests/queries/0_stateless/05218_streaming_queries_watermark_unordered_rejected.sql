@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
 
 SET enable_streaming_queries = 1;
-SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_streaming_watermark_unordered;
 

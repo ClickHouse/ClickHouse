@@ -62,6 +62,8 @@ private:
     /// (e.g. optimizations of seeks).
     Buffer original_working_buffer;
 
+    /// Executes `op` on @impl with the original buffer, then takes the end of the buffer from @impl
+    /// and clamps the buffer to the right bound again. Every operation with @impl must go through it.
     template <typename Op>
     void executeWithOriginalBuffer(Op && op);
 };
