@@ -10,10 +10,8 @@
 #include <Common/WKB.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
@@ -493,17 +491,18 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         in->readStrict(magic, sizeof(magic));
         if (std::string_view(magic, sizeof(magic)) != ARROW_FILE_MAGIC)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: the leading {} magic is missing", ARROW_FILE_MAGIC);
-        file_data.assign(magic, sizeof(magic));
-        WriteBufferFromString out(file_data, AppendModeTag{});
-        copyData(*in, out, is_stopped);
-        out.finalize();
-        /// `copyData` returns early when the read was cancelled, leaving `file_data` partial. Do not parse
+        auto data = std::make_unique<ArrowIPC::InMemoryFile>();
+        data->write(magic, sizeof(magic));
+        copyData(*in, *data, is_stopped);
+        data->finalize();
+        /// `copyData` returns early when the read was cancelled, leaving `data` partial. Do not parse
         /// that truncated buffer as an Arrow file — bail out and let `prepareReader`/`read` finish cleanly
         /// (matching the library path, which returned without parsing after a cancelled `asArrowFile`).
         if (is_stopped)
             return;
-        file_size = file_data.size();
-        memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
+        file_size = data->count();
+        memory_buffer = data->getSeekableReadBuffer();
+        file_data = std::move(data);
         seekable = memory_buffer.get();
     }
     message_reader.emplace(*seekable);
@@ -1269,7 +1268,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     record_batch_current = 0;
     seekable = nullptr;
     memory_buffer.reset();
-    file_data.clear();
+    file_data.reset();
     block_missing_values.clear();
     approx_bytes_read_for_chunk = 0;
 }
