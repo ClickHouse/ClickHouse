@@ -2213,3 +2213,31 @@ Every requested library produced its analyzer JSON. DWYU could not verify link u
 All 5 x86-64 findings and all 3 ARM64 findings identify missing dependencies for headers under `src/AggregateFunctions`. On both CPUs, `//src:dbms__compile_2` uses `IAggregateFunction.h` from `//src/AggregateFunctions:aggregate_api` and `CacheBase.h` from `//src/Common:cache_policy` without directly declaring those owners.
 
 `@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage` is clean on both CPUs. DWYU no longer recommends moving `@clickhouse_abseil_cpp//:absl_function_ref`, `@clickhouse_google_cloud_cpp//:google_cloud_cpp_grpc_utils` from `deps` to `implementation_deps`. The `DwyuRustImportEvidence` action for `//programs:clickhouse__compile_0` succeeded on both CPUs. It checks the chdig Rust archive separately from the C++ dependency grade.
+
+## feea3eb42
+
+[feea3eb42](https://github.com/dzbarsky/clickhouse/commit/feea3eb42803184e9e73c17a640434e53b8626c7): Simplify ch_cc_library options and ClickHouse BUILD dependencies.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/f53d9538-d86f-4a2b-b506-a7d0a7c12cd6) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/f53d9538-d86f-4a2b-b506-a7d0a7c12cd6) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/f53d9538-d86f-4a2b-b506-a7d0a7c12cd6) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/e20c2ad7-5baf-4206-ba32-f828d7874a26) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/e20c2ad7-5baf-4206-ba32-f828d7874a26) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/e20c2ad7-5baf-4206-ba32-f828d7874a26) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The normalized binaries matched native CMake. The other four binaries matched the [previous Bazel build](#f822811d3). Both native builds produced all nine validation reports.
+
+| CPU | Native build | DWYU build | Requested | Clean | With findings | Requested, ungraded | Not requested |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| x86-64 | [Native](https://app.buildbuddy.io/invocation/f53d9538-d86f-4a2b-b506-a7d0a7c12cd6) | [DWYU](https://app.buildbuddy.io/invocation/f4858e70-7b61-4e14-b6e3-0ebf5067fbb4) | 89 | 52 | 5 | 32 | 569 |
+| ARM64 | [Native](https://app.buildbuddy.io/invocation/e20c2ad7-5baf-4206-ba32-f828d7874a26) | [DWYU](https://app.buildbuddy.io/invocation/259aba51-05f0-4953-a6df-369033fbab04) | 90 | 44 | 7 | 39 | 568 |
+
+There are 658 production targets. Only a verified DWYU report counts as clean or with findings. Targets without a verified report remain ungraded.
+
+The [x86-64 workflow](https://app.buildbuddy.io/invocation/0ac04094-7064-4ecb-830a-a43a5cfcf151) ran the platform-independent Bazel loading query and returned all 206 expected declarations (65 `cc_proto_library`, 135 `llvm_runtime_objects`, and 6 `cc_import`). ARM64 did not repeat the query.
+
+Across the 658 declared targets, 601 remain ungraded on x86-64 and 607 on ARM64. The loading query does not grade DWYU.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/f4858e70-7b61-4e14-b6e3-0ebf5067fbb4): 89/89 original analyzer JSONs (52 clean, 5 with include or dependency declaration findings, 32 ungraded with only unresolved link use); 0 requested without an original JSON; [ARM64 DWYU](https://app.buildbuddy.io/invocation/259aba51-05f0-4953-a6df-369033fbab04): 90/90 original analyzer JSONs (44 clean, 7 with include or dependency declaration findings, 39 ungraded with only unresolved link use); 0 requested without an original JSON. A report with only unresolved link use does not establish an unused dependency.
