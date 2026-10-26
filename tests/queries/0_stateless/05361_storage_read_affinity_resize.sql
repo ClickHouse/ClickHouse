@@ -44,8 +44,12 @@ SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT 
 CREATE TABLE t_preserve_order_s3 (k UInt64) ENGINE = S3(s3_conn, filename = currentDatabase() || '_05361/data_*.parquet', format = Parquet) SETTINGS input_format_parquet_preserve_order = 1;
 SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_s3);
 SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_s3) SETTINGS max_threads = 8;
+CREATE TABLE t_preserve_order_url (k UInt64) ENGINE = URL('http://localhost:11111/test/' || currentDatabase() || '_05361/data_{0..3}.parquet', Parquet) SETTINGS input_format_parquet_preserve_order = 1;
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_url);
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_url) SETTINGS max_threads = 8;
 DROP TABLE t_preserve_order;
 DROP TABLE t_preserve_order_s3;
+DROP TABLE t_preserve_order_url;
 
 SELECT 'file';
 SELECT arraySort(groupArray((g, c, s))) FROM (SELECT k % 7 AS g, count() AS c, sum(k) AS s FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g);
@@ -77,20 +81,27 @@ SET allow_insert_into_iceberg = 1, allow_experimental_iceberg_compaction = 0, us
 CREATE TEMPORARY TABLE iceberg_paths AS
 WITH if(changed, trimBoth(value), 'user_files/') AS user_files_path,
     concat(if(startsWith(user_files_path, '/'), '', (SELECT path FROM system.disks WHERE name = 'default')), user_files_path, '/', currentDatabase(), '/') AS dir
-SELECT dir || '05361_sorted/' AS sorted, dir || '05361_unsorted/' AS unsorted
+SELECT dir || '05361_sorted/' AS sorted, dir || '05361_unsorted/' AS unsorted, dir || '05361_preserve_order/' AS preserve_order
 FROM system.server_settings WHERE name = 'user_files_path';
 CREATE TABLE t_sorted (k Int64) ENGINE = IcebergLocal((SELECT sorted FROM iceberg_paths), 'Parquet') ORDER BY k;
 CREATE TABLE t_unsorted (k Int64) ENGINE = IcebergLocal((SELECT unsorted FROM iceberg_paths), 'Parquet');
+CREATE TABLE t_preserve_order_iceberg (k Int64) ENGINE = IcebergLocal((SELECT preserve_order FROM iceberg_paths), 'Parquet') SETTINGS input_format_parquet_preserve_order = 1;
 INSERT INTO t_sorted SELECT number FROM numbers(1000);
 INSERT INTO t_sorted SELECT number + 1000 FROM numbers(10);
 INSERT INTO t_unsorted SELECT number FROM numbers(1000);
 INSERT INTO t_unsorted SELECT number + 1000 FROM numbers(10);
+INSERT INTO t_preserve_order_iceberg SELECT number FROM numbers(1000);
+INSERT INTO t_preserve_order_iceberg SELECT number + 1000 FROM numbers(10);
 -- A table with a sorting key may be read in order, so its streams are kept.
 SELECT countIf(trimLeft(explain) = 'AffinityResize 2 → 2') FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM t_unsorted GROUP BY g);
 SELECT countIf(trimLeft(explain) LIKE 'AffinityResize%') FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM t_sorted GROUP BY g);
 SELECT countIf(trimLeft(explain) LIKE 'AffinityResize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_sorted ORDER BY k);
 SELECT k FROM t_sorted ORDER BY k LIMIT 3 OFFSET 998;
 SELECT count(), sum(k) FROM t_unsorted;
+-- So does a data lake table with `input_format_parquet_preserve_order` in its `SETTINGS`.
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_iceberg);
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_iceberg) SETTINGS max_threads = 8;
 DROP TABLE t_sorted;
 DROP TABLE t_unsorted;
+DROP TABLE t_preserve_order_iceberg;
 DROP TABLE iceberg_paths;
