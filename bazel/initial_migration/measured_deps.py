@@ -510,6 +510,17 @@ def apply(root):
                         else:
                             edits.append((*source.span(original), 'select(' + json.dumps(branches) + ')'))
                     continue
+                if (package, name, field) == ('src', 'headers', 'deps'):
+                    hive = '@clickhouse_hive_metastore//:_hivemetastore'
+                    if any(hive in row for row in values):
+                        # CertificateReloader.h and FileEncryptionCommon.h include OpenSSL.
+                        crypto = '@clickhouse_openssl//:crypto'
+                        direct = editable_dependency_lists(build, original, omit, canonical, {hive: crypto},
+                                                           insert_after=(crypto, ['@clickhouse_openssl//:ssl']))
+                        if direct is None:
+                            raise ValueError('src:headers: cannot replace the Hive Metastore dependency')
+                        edits.extend(direct)
+                        continue
                 if not missing and not any(omit & existing for existing in values):
                     continue
                 if (package, name, field) == ('base/poco/Foundation', '_poco_foundation', 'implementation_deps'):
