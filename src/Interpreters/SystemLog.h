@@ -573,7 +573,7 @@ This table can be configured with different schema types using the XML tag `<sch
 
 The `bucketed` schema stores all profile events and current metrics in a single `metrics` column of type [Map](/reference/data-types/map)([Enum16](/reference/data-types/enum), [Int64](/reference/data-types/int-uint)), so the table consists of a few columns instead of thousands. The `Map` uses the bucketed serialization (`map_serialization_version = 'with_buckets'`) with a constant number of 128 buckets, so reading a single metric reads only one of the 128 buckets. Zero values are not stored: reading a missing key returns `0`. Every metric is also exposed through an `ALIAS` column named as the metric itself (for example, `ProfileEvent_Query UInt64 ALIAS metrics['ProfileEvent_Query']`), so all queries written for the `wide` schema continue to work. Profile events are stored as increments during the collection interval, and current metrics are stored as values at the moment of collection. `ALIAS` columns are excluded from `SELECT *` unless `asterisk_include_alias_columns = 1`.
 
-The `wide` schema stores each metric or profile event in a separate column. It is the most efficient for single-column reads, but the table has thousands of columns, which makes merges and `SELECT *` expensive. It remains the default when `default_system_log_flush_policy.skip_alias_columns` is enabled or when `metric_log` has an explicit `engine`, because the `bucketed` schema needs both the alias columns and its default table definition.
+The `wide` schema stores each metric or profile event in a separate column. It is the most efficient for single-column reads, but the table has thousands of columns, which makes merges and `SELECT *` expensive. It remains the default when `system_tables.skip_alias_columns` is enabled or when `metric_log` has an explicit `engine`, because the `bucketed` schema needs both the alias columns and its default table definition.
 
 ```xml
 <clickhouse>
@@ -583,7 +583,7 @@ The `wide` schema stores each metric or profile event in a separate column. It i
 </clickhouse>
 ```
 
-Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`default_system_log_flush_policy.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
+Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`system_tables.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
 
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
@@ -746,7 +746,7 @@ operation_name:   DB::Block DB::InterpreterSelectQuery::getSampleBlockImpl()
 kind:             INTERNAL
 start_time_us:    1612374594529090
 finish_time_us:   1612374594529108
-finish_date:      2021-02-03
+event_date:       2021-02-03
 attribute.names:  []
 attribute.values: []
 ```
