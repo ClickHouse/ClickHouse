@@ -75,8 +75,10 @@ public:
     // Take one already granted slot if available. Lock-free iff there is no granted slot.
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-    // Blocks until there is a granted slot to acquire
+    // Blocks until there is a granted slot to acquire, or returns an empty pointer once `free` was called
     [[nodiscard]] AcquiredSlotPtr acquire() override;
+
+    void free() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
     bool isRequesting() const override;
@@ -112,6 +114,7 @@ private:
     std::exception_ptr exception;
     SlotCount allocated = 0; // Total allocated slots including already released
     size_t waiters = 0; // Number of threads waiting on acquire() call
+    bool freed = false;
     std::vector<CPUSlotRequest> requests; // Requests per every slot
     CPUSlotRequest * current_request;
     std::optional<CurrentMetrics::Increment> scheduled_slot_increment;
