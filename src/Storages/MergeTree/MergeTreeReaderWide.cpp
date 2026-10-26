@@ -773,8 +773,13 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         if (served_columns)
         {
             for (size_t i = run_begin; i < run_end; ++i)
+            {
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
                     ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
+                /// Counted on the first piece of the granule: when rows are skipped, it may never be served to its end.
+                if (count_compressed_bytes_of_columns_cache_hits)
+                    addCompressedBytesOfColumnsCacheHit(segments[i].mark, from_disk);
+            }
         }
 
         read_rows += rows;
@@ -1207,6 +1212,7 @@ void MergeTreeReaderWide::FileStreams::release(const String & stream_name)
         {
             stream = std::move(it->second);
             streams.erase(it);
+            compressed_bytes_of_blocks_read_by_released_streams += stream->getCompressedBytesOfBlocksRead();
         }
     }
     /// Dropped outside the mutex: `~MergeTreeMarksLoader` waits for an in-flight marks load.
@@ -1220,6 +1226,60 @@ std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() 
     for (const auto & [_, stream] : streams)
         result.push_back(stream.get());
     return result;
+}
+
+size_t MergeTreeReaderWide::FileStreams::getCompressedBytesOfBlocksRead() const
+{
+    std::lock_guard lock(mutex);
+    size_t total = compressed_bytes_of_blocks_read_by_released_streams;
+    for (const auto & [_, stream] : streams)
+        total += stream->getCompressedBytesOfBlocksRead();
+    return total;
+}
+
+std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
+{
+    const size_t total = streams.getCompressedBytesOfBlocksRead();
+    return total - std::exchange(compressed_bytes_taken, total) + std::exchange(compressed_bytes_of_columns_cache_hits, 0);
+}
+
+void MergeTreeReaderWide::addCompressedBytesOfColumnsCacheHit(size_t mark, const std::vector<bool> & from_disk)
+{
+    last_counted_columns_cache_hits.resize(columns_to_read.size());
+
+    /// A stream is counted once, e.g. the offsets the arrays of a `Nested` share, and not at all when a column read
+    /// from the part loads it, e.g. the only stream of a `single_stream` `s` served as `s.size`.
+    std::unordered_set<String> counted_streams;
+    auto for_each_stream = [&](size_t pos, const std::function<void(const String &)> & callback)
+    {
+        const auto & name_and_type = columns_to_read[pos];
+        serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+            if (const auto & stream_name = getStreamName(name_and_type, substream_path))
+                callback(*stream_name);
+        });
+    };
+
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+        if (from_disk[pos])
+            for_each_stream(pos, [&](const String & stream_name) { counted_streams.insert(stream_name); });
+
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos) || from_disk[pos] || last_counted_columns_cache_hits[pos] == mark)
+            continue;
+        last_counted_columns_cache_hits[pos] = mark;
+
+        for_each_stream(pos, [&](const String & stream_name)
+        {
+            if (!counted_streams.insert(stream_name).second)
+                return;
+            if (auto * stream = streams.find(stream_name))
+                compressed_bytes_of_columns_cache_hits += stream->getCompressedBytesBetweenMarks(mark, mark + 1);
+        });
+    }
 }
 
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
@@ -1736,7 +1796,7 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
-    setStringValueFilter(name_and_type, deserialize_settings);
+    deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(

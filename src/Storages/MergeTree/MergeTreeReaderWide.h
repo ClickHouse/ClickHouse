@@ -60,6 +60,9 @@ public:
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
 
+    std::optional<size_t> takeCompressedBytesRead() override;
+    void countCompressedBytesOfColumnsCacheHits() override { count_compressed_bytes_of_columns_cache_hits = true; }
+
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
     /// these containers are mutated concurrently and all of the reader's synchronization lives here.
@@ -79,6 +82,8 @@ private:
         void release(const String & stream_name);
         /// Valid only while no task runs: a running task can `release` streams.
         std::vector<MergeTreeReaderStream *> getAll() const;
+        /// The compressed size of the blocks loaded by all the streams so far, the released ones included.
+        size_t getCompressedBytesOfBlocksRead() const;
 
         bool isPrefetched(const String & stream_name) const;
         void markPrefetched(const String & stream_name);
@@ -89,9 +94,18 @@ private:
         mutable std::mutex mutex;
         std::map<String, std::unique_ptr<MergeTreeReaderStream>> streams;
         std::unordered_set<String> prefetched;
+        size_t compressed_bytes_of_blocks_read_by_released_streams = 0;
     };
 
     FileStreams streams;
+    /// The part of `streams.getCompressedBytesOfBlocksRead` that `takeCompressedBytesRead` returned.
+    size_t compressed_bytes_taken = 0;
+    /// See `countCompressedBytesOfColumnsCacheHits`.
+    bool count_compressed_bytes_of_columns_cache_hits = false;
+    size_t compressed_bytes_of_columns_cache_hits = 0;
+    /// The last granule counted for each column, which is served from the cache in pieces when rows are skipped.
+    std::vector<std::optional<size_t>> last_counted_columns_cache_hits;
+    void addCompressedBytesOfColumnsCacheHit(size_t mark, const std::vector<bool> & from_disk);
 
     struct StreamInfo
     {

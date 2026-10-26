@@ -65,6 +65,11 @@ public:
     /// Must not be called for a stream of uncompressed data.
     size_t getCompressedBytesOfBlocksRead() const;
 
+    /// The compressed size of the data between two marks of a stream of one column, which is what reading the granules
+    /// between them loads, give or take the blocks they share with the neighbouring granules: summed over adjacent
+    /// ranges, the sizes add up to the size of the file.
+    size_t getCompressedBytesBetweenMarks(size_t begin_mark, size_t end_mark);
+
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
 

@@ -96,30 +96,6 @@ private:
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
-/// The codecs a column's `CODEC` resolves to, for the two shapes its serialized sample can have.
-///
-/// The writer resolves a `CODEC` per substream: a type-specific codec (`ALP`, `T64`, `Delta`, ...) is
-/// applied only to a substream that carries the column type itself, and structural substreams (`Array`
-/// offsets, null map, sparse offsets, ...) keep only the generic codecs. The estimate serializes a whole
-/// column into a single buffer, so `type_specific` describes that buffer only when it holds exactly one
-/// stream of `type_specific_for`. Neither is a property of the table metadata alone: the serialization is
-/// chosen per block from the column at hand, and an unfinished `ALTER MODIFY COLUMN` leaves the part
-/// holding the old type while the metadata already reports the new one.
-struct ColumnCodecs
-{
-    /// Null when the column's `CODEC` has no resolution against a type - then only `generic` applies.
-    CompressionCodecPtr type_specific = nullptr;
-    DataTypePtr type_specific_for = nullptr;
-    CompressionCodecPtr generic = nullptr;
-};
-
-/// Only columns whose `CODEC` overrides the part's default; resolved once per read task.
-using ColumnCodecByName = UnorderedMapWithMemoryTracking<String, ColumnCodecs>;
-
-/// Whether `serialization` writes the column as a single stream carrying `type` itself, the only layout
-/// a type-specific codec may be applied to.
-bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type);
-
 /// One execution's dataflow statistics, the single cache entry its updaters fill. Every updater of the
 /// execution shares it, and it writes the entry when the last of them is gone.
 struct RuntimeDataflowStatisticsBlock
@@ -132,16 +108,7 @@ struct RuntimeDataflowStatisticsBlock
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
         size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
-        /// The bytes read as they are stored, compressed, that `bytes` does not include, see `recordInputColumns`.
-        size_t compressed_bytes_read TSA_GUARDED_BY(mutex) = 0;
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
-    };
-
-    enum InputStatisticsType
-    {
-        WithByteHint = 0,
-        WithoutByteHint = 1,
-        MaxInputType = 2,
     };
 
     enum OutputStatisticsType
@@ -170,16 +137,15 @@ struct RuntimeDataflowStatisticsBlock
 
     std::atomic_bool unsupported_case{false};
 
-    std::array<Statistics, MaxInputType> input_bytes_statistics;
-    std::array<Statistics, MaxInputType> duplicated_bytes_statistics;
+    /// The compressed bytes the readers loaded, see `RuntimeDataflowStatisticsCacheUpdater::recordInputBytesRead`.
+    std::atomic_size_t input_bytes_read{0};
+    std::atomic_size_t duplicated_bytes_read{0};
     std::array<Statistics, MaxOutputType> output_bytes_statistics;
 };
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using Statistics = RuntimeDataflowStatisticsBlock::Statistics;
-    using InputStatisticsType = RuntimeDataflowStatisticsBlock::InputStatisticsType;
     using OutputStatisticsType = RuntimeDataflowStatisticsBlock::OutputStatisticsType;
 
 public:
@@ -228,25 +194,12 @@ public:
     /// rather than a hash table. Used by in-order aggregation where states are already materialized into columns (single-stream case).
     void recordAggregationStateColumnSizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header);
 
-    /// Updates should_continue_sampling to true if the current read block is chosen for sampling.
-    /// It is needed because in general we read each block in multiple steps because of prewhere.
-    /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
-    /// so should_continue_sampling remains true for subsequent calls for the same logical block.
-    /// `bytes_skipped_by_string_value_filters` are the sizes of the values read from disk but replaced with
-    /// empty strings in `input_columns` (see `StringValueFilter`), by column name.
-    /// `compressed_bytes_read`, if the reader knows it, is the compressed size of the data read from disk, which is
-    /// recorded as it is instead of estimating it from the read columns.
-    void recordInputColumns(
-        const ColumnsWithTypeAndName & input_columns,
-        const NameSet & partially_read_columns,
-        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
-        const NamesAndTypesList & part_columns,
-        const ColumnSizeByName & column_sizes,
-        const ColumnCodecByName & column_codecs,
-        const CompressionCodecPtr & default_codec,
-        size_t read_bytes,
-        std::optional<size_t> compressed_bytes_read,
-        std::optional<bool> & should_continue_sampling);
+    /// Records the compressed size of the blocks a reader loaded from a part, which is what a replica reading the same
+    /// granules loads: measured rather than estimated, it needs no sample of the read columns and no compression ratio,
+    /// and it covers what the columns do not show, e.g. the values a scan-time string filter replaced, the stream of a
+    /// column that a subcolumn is read from, or a stream several columns share. `nullopt` is for a reader that cannot
+    /// tell, and drops the statistics.
+    void recordInputBytesRead(std::optional<size_t> compressed_bytes_read);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.

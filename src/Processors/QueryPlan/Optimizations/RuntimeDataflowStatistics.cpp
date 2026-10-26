@@ -67,39 +67,19 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     {
         LOG_TEST(
             getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}, compressed_bytes_read={}, elapsed_microseconds={}",
+            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}, elapsed_microseconds={}",
             type,
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
             static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes),
-            stats.compressed_bytes_read,
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
-    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
-    {
-        const auto & stats = input_bytes_statistics[i];
-        if (stats.compressed_bytes)
-        {
-            log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
-            res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
-        }
-        res.input_bytes += stats.compressed_bytes_read;
-    }
-    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
-    {
-        const auto & stats = duplicated_bytes_statistics[i];
-        if (stats.compressed_bytes)
-        {
-            log_stats(stats, fmt::format("Duplicated{}", toString(static_cast<InputStatisticsType>(i))));
-            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
-            res.duplicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
-        }
-        res.duplicated_bytes += stats.compressed_bytes_read;
-    }
+    RuntimeDataflowStatistics res{
+        .input_bytes = input_bytes_read.load(std::memory_order_relaxed),
+        .duplicated_bytes = duplicated_bytes_read.load(std::memory_order_relaxed),
+        .total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
@@ -128,35 +108,10 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     dataflow_cache.update(cache_key, res);
 }
 
-bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization, const DataTypePtr & type)
-{
-    size_t num_streams = 0;
-    bool stream_is_column_itself = false;
-    serialization.enumerateStreams(
-        [&](const auto & substream_path)
-        {
-            ++num_streams;
-            const auto & substream_type = substream_path.back().data.type;
-            stream_is_column_itself
-                = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type && substream_type->equals(*type);
-        },
-        type);
-    return num_streams == 1 && stream_is_column_itself;
-}
-
 /// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const ColumnCodecs & codecs)
+static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const CompressionCodecPtr & codec)
 {
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
-    /// What the sample buffer holds is only known here: the serialization is picked from the column at
-    /// hand, so a column stored `Sparse` (or `Replicated`) arrives as several substreams funnelled into
-    /// the one buffer below, and the column read from the part keeps the pre-`ALTER` type until the
-    /// mutation that rewrites it has run. A type-specific codec then measures a stream it was never
-    /// resolved for. Some codecs merely mismeasure it, but one that validates its input rejects it
-    /// outright - `ALP` throws `CANNOT_COMPRESS` on a byte count that is not a whole number of floats.
-    const bool sample_matches_type_specific_codec = codecs.type_specific && codecs.type_specific_for->equals(*column.type)
-        && isSerializedAsSingleStreamOfColumnType(*serialization, column.type);
-    const auto & codec = sample_matches_type_specific_codec ? codecs.type_specific : codecs.generic;
     NullWriteBuffer null_buf;
     CompressedWriteBuffer compressed_buf(null_buf, codec);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
@@ -228,11 +183,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     size_t compressed_bytes = 0;
     if (shouldSampleBlock(statistics, num_rows))
     {
-        /// Only output columns get here, and they model what a replica sends to the initiator rather than
-        /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
-        /// The transfer codec is `network_compression_method`, whose default the default codec matches.
-        /// It is generic, so it applies to any serialization layout.
-        const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
+        /// Only output columns get here, and they model what a replica sends to the initiator: the transfer codec is
+        /// `network_compression_method`, whose default the default codec matches.
+        const auto codec = CompressionCodecFactory::instance().getDefaultCodec();
         /// Built only for a block that is actually sampled - one in five, and at most five per query.
         ColumnsWithTypeAndName sorted;
         if (key_order)
@@ -244,7 +197,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         }
         for (const auto & col : (key_order ? sorted : cols))
         {
-            auto [sample, compressed] = estimateCompressedColumnSize(col, codecs);
+            auto [sample, compressed] = estimateCompressedColumnSize(col, codec);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
@@ -403,117 +356,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
         keyOrderProviderFor(columns, keys_positions, getKeyTypesFrom(header, keys_positions)));
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & input_columns,
-    const NameSet & partially_read_columns,
-    const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
-    const NamesAndTypesList & part_columns,
-    const ColumnSizeByName & column_sizes,
-    const ColumnCodecByName & column_codecs,
-    const CompressionCodecPtr & default_codec,
-    size_t read_bytes,
-    std::optional<size_t> compressed_bytes_read,
-    std::optional<bool> & should_continue_sampling)
+void RuntimeDataflowStatisticsCacheUpdater::recordInputBytesRead(std::optional<size_t> compressed_bytes_read)
 {
     Stopwatch watch;
-
-    if (compressed_bytes_read)
-    {
-        auto & statistics = (duplicated ? block->duplicated_bytes_statistics : block->input_bytes_statistics)[InputStatisticsType::WithByteHint];
-        std::lock_guard lock(statistics.mutex);
-        statistics.compressed_bytes_read += *compressed_bytes_read;
-        const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
-        statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
-        ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
-        return;
-    }
-
-    const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;
-    if (type == InputStatisticsType::WithoutByteHint)
-    {
-        for (const auto & column : input_columns)
-            read_bytes += column.column->byteSize();
-    }
-
-    /// The values replaced with empty strings were read from disk all the same.
-    auto get_bytes_skipped = [&](const String & name) -> size_t
-    {
-        const auto it = bytes_skipped_by_string_value_filters.find(name);
-        return it == bytes_skipped_by_string_value_filters.end() ? 0 : it->second;
-    };
-    for (const auto & [_, bytes_skipped] : bytes_skipped_by_string_value_filters)
-        read_bytes += bytes_skipped;
-
-    size_t sample_bytes = 0;
-    size_t compressed_bytes = 0;
-    auto & statistics = duplicated ? block->duplicated_bytes_statistics[type] : block->input_bytes_statistics[type];
-    if (read_bytes && !input_columns.empty())
-    {
-        if (!column_sizes.empty())
-        {
-            for (const auto & column : input_columns)
-            {
-                if (column_sizes.contains(column.name))
-                {
-                    const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
-                        ? (static_cast<double>(column_sizes.at(column.name).data_compressed)
-                           / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
-                        : 1.0;
-                    const size_t column_bytes = column.column->byteSize() + get_bytes_skipped(column.name);
-                    sample_bytes += column_bytes;
-                    compressed_bytes += static_cast<size_t>(static_cast<double>(column_bytes) * compressed_ratio);
-                }
-            }
-        }
-        else if (std::ranges::any_of(
-                     input_columns, [&](const auto & column) { return partially_read_columns.contains(column.name); }))
-        {
-            /// Partially read columns (e.g. only the offsets of an array whose data is missing from the part)
-            /// are internally inconsistent until `fillMissingColumns` completes them, so they cannot be
-            /// serialized for the sample below. Excluding just those columns would poison the statistics:
-            /// the compression ratio would be derived from the surviving columns only, but applied to
-            /// `read_bytes` of the whole block, which includes the bytes of the skipped column. There is no
-            /// per-column byte split to subtract here (unlike the `column_sizes` branch above, which never
-            /// serializes and handles such columns fine), so give up on the statistics for this query.
-            markUnsupportedCase();
-        }
-        else
-        {
-            if (!should_continue_sampling.has_value())
-                should_continue_sampling = shouldSampleBlock(statistics, input_columns[0].column->size());
-
-            // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
-            if (*should_continue_sampling)
-            {
-                for (const auto & column : input_columns)
-                {
-                    // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
-                    if (part_columns.contains(column.name))
-                    {
-                        const auto codec_it = column_codecs.find(column.name);
-                        /// A column with no `CODEC` of its own is written with the part's default codec,
-                        /// which is generic, so it applies to any serialization layout.
-                        const auto [sample, compressed] = estimateCompressedColumnSize(
-                            column,
-                            codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
-                        sample_bytes += sample;
-                        compressed_bytes += compressed;
-                    }
-                }
-            }
-        }
-    }
-
-    std::lock_guard lock(statistics.mutex);
-    statistics.bytes += read_bytes;
-    if (compressed_bytes)
-    {
-        statistics.sample_bytes += sample_bytes;
-        statistics.compressed_bytes += compressed_bytes;
-    }
-    const auto elapsed_nanoseconds = watch.elapsedNanoseconds();
-    statistics.elapsed_microseconds += elapsed_nanoseconds / 1000;
-    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, elapsed_nanoseconds);
+    if (!compressed_bytes_read)
+        markUnsupportedCase();
+    else
+        (duplicated ? block->duplicated_bytes_read : block->input_bytes_read).fetch_add(*compressed_bytes_read, std::memory_order_relaxed);
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputNanoseconds, watch.elapsedNanoseconds());
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()

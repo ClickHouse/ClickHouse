@@ -329,6 +329,17 @@ size_t MergeTreeReaderStream::getCompressedBytesOfBlocksRead() const
     return compressed_data_buffer ? compressed_data_buffer->getCompressedBytesOfBlocksRead() : 0;
 }
 
+size_t MergeTreeReaderStream::getCompressedBytesBetweenMarks(size_t begin_mark, size_t end_mark)
+{
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
+        return 0;
+
+    loadMarks();
+    auto offset = [&](size_t mark) { return mark < marks_count ? marks_getter->getMark(mark, 0).offset_in_compressed_file : file_size; };
+    return offset(end_mark) - offset(begin_mark);
+}
+
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
