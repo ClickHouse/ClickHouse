@@ -614,7 +614,7 @@ Extent * extentGrowRetained(
     page_allocator->grow_mutex.unlock(thread_state);
 
     /// The THP handling of the huge arena (`huge_arena_pac_thp.thp_madvise`, `extent_handle_huge_arena_thp`) is not
-    /// ported: it requires `opt.huge_arena_pac_thp` and `metadata_transparent_huge_pages`, both off by default (dead for ClickHouse).
+    /// ported: it requires `opt.huge_arena_pac_thp`, which is reset to false at boot (`hugeArenaTransparentHugePagesDisableUnsupported`).
 
     if constexpr (config::profiling)
     {

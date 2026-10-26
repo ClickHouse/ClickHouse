@@ -24,6 +24,11 @@
 /// "HPA not supported in the current configuration" message and resets `opt.hpa`, as jemalloc itself does on
 /// platforms without HPA support (e.g. Linux aarch64 with 64 KiB pages, where the huge page is too large, or without
 /// THP); on x86_64 with THP jemalloc would enable HPA instead.
+///
+/// Deviation from jemalloc: the huge page promotion of the huge arena (`huge_arena_pac_thp`) is not implemented.
+/// `huge_arena_pac_thp:true` is accepted and stored, and `hugeArenaTransparentHugePagesDisableUnsupported` (called right
+/// after `hugePageAllocatorDisableUnsupported`) prints "huge_arena_pac_thp not supported" and resets
+/// `opt.huge_arena_pac_thp`, so that the option does not silently stop affecting the allocation.
 
 #include <allocator/Common.h>
 #include <allocator/Options.h>
@@ -68,6 +73,10 @@ void mallocConfInit(SizeClassData & size_class_data, unsigned * bin_shard_sizes,
 /// (or "aborting." and abort with `abort_configuration`) and reset `opt.hpa`. HPA is never supported here (see above).
 /// jemalloc: the `hpa_supported` check in `malloc_init_hard_a0_locked`
 void hugePageAllocatorDisableUnsupported();
+
+/// If `huge_arena_pac_thp` is enabled, print "<jemalloc>: huge_arena_pac_thp not supported; disabling." (or "aborting." and
+/// abort with `abort_configuration`) and reset it. Not in jemalloc: the huge arena THP handling is not implemented (see above).
+void hugeArenaTransparentHugePagesDisableUnsupported();
 
 /// Whether HPA can be used. Always false: HPA is a dropped feature.
 /// jemalloc: hpa_supported

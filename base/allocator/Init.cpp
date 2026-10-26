@@ -267,6 +267,7 @@ bool mallocInitHardA0Locked()
     if constexpr (config::profiling)
         profilingBoot1();
     hugePageAllocatorDisableUnsupported();
+    hugeArenaTransparentHugePagesDisableUnsupported();
     if (arenaBoot(&size_class_data, base0Get(), options.huge_page_allocator))
         return true;
     if (threadCacheBoot(nullptr, base0Get()))

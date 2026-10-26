@@ -268,7 +268,7 @@ struct Options
     ssize_t muzzy_decay_ms = 0;
     /// Allocations of at least this size use the dedicated huge arena; 0 disables. jemalloc: opt_oversize_threshold
     size_t oversize_threshold = size_t(8) << 20; /// OVERSIZE_THRESHOLD_DEFAULT
-    /// jemalloc: opt_huge_arena_pac_thp
+    /// Not implemented: reset to false at boot, see `hugeArenaTransparentHugePagesDisableUnsupported`. jemalloc: opt_huge_arena_pac_thp
     bool huge_arena_transparent_huge_pages = false;
 
     /// --- base.c, pages.c, extent_mmap.c, extent_dss.c, extent.c ---

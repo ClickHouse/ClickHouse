@@ -1103,4 +1103,16 @@ void hugePageAllocatorDisableUnsupported()
     }
 }
 
+void hugeArenaTransparentHugePagesDisableUnsupported()
+{
+    if (options.huge_arena_transparent_huge_pages)
+    {
+        printMessage("<jemalloc>: huge_arena_pac_thp not supported; %s.\n", options.abort_configuration ? "aborting" : "disabling");
+        if (options.abort_configuration)
+            mallocAbortInvalidConfiguration();
+        else
+            options.huge_arena_transparent_huge_pages = false;
+    }
+}
+
 }

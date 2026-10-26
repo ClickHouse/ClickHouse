@@ -1807,7 +1807,8 @@ bool arenaInitHuge(ThreadState * thread_state, Arena * arena0_)
         /// a0 init happened before the options were parsed.
         arena0_->page_allocator_shard.page_allocator.oversize_threshold.store(oversize_threshold, std::memory_order_relaxed);
         /// Initialize the `huge_arena_transparent_huge_pages` fields under b0's mutex (so that b0's THP auto-switch won't happen
-        /// concurrently). `opt.huge_arena_pac_thp` is not ported (off by default): only the locking is kept, because
+        /// concurrently). `opt.huge_arena_pac_thp` is not ported (it is reset to false at boot, see
+        /// `hugeArenaTransparentHugePagesDisableUnsupported`): only the locking is kept, because
         /// it is observable through the mutex stats of the base.
         Mutex & b0_mutex = arena0_->base->getMutex();
         b0_mutex.lock(thread_state);
