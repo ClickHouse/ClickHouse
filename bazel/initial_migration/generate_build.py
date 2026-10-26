@@ -74,6 +74,7 @@ FIRST_PARTY_HEADER_DEPS = {
         "//src/Parsers:clickhouse_parsers",
     ],
     ("src", "unit_tests_dbms", "deps"): [
+        ("//src/AggregateFunctions:headers", "//src/AggregateFunctions:clickhouse_aggregate_functions"),
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/Dictionaries:clickhouse_dictionaries__compile_0",
         "@clickhouse_abseil_cpp//:absl_synchronization", "@clickhouse_arrow//:_arrow__compile_0",
