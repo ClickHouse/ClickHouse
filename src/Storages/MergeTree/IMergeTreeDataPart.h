@@ -169,6 +169,8 @@ public:
     ColumnSizeByNameConstPtr getColumnSizes() const;
     /// Return the size of all files required to read the specified subcolumn.
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
+    /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
+    std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -263,6 +265,11 @@ public:
     /// The estimates of the statistics of all columns, memoized.
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
+    /// The result of `loadStatistics(required_columns, cache)` if the statistics of the part are in the cache,
+    /// otherwise `std::nullopt`. It never reads from disk.
+    std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
+    /// The result of `getEstimates` if it needs nothing read from disk, otherwise `std::nullopt`.
+    std::optional<Estimates> tryGetEstimatesFromMemory() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -907,8 +914,8 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+    /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
+    virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -1014,6 +1021,13 @@ private:
     std::shared_ptr<StatisticsCacheCell> readStatistics() const;
     /// The statistics of all columns of the part, from the cache if it is not nullptr.
     std::shared_ptr<const StatisticsCacheCell> getStatistics(StatisticsCache * cache) const;
+    /// The statistics of all columns of the part if they are in the cache, otherwise nullptr. It never reads from disk.
+    std::shared_ptr<const StatisticsCacheCell> tryGetStatisticsFromCache(StatisticsCache * cache) const;
+    /// The statistics of `required_columns` in `cell`; an empty `required_columns` means all columns.
+    static ColumnsStatistics filterStatistics(const StatisticsCacheCell & cell, const NameSet & required_columns);
+
+    /// `getEstimates`, or `tryGetEstimatesFromMemory` if `only_from_memory`.
+    std::optional<Estimates> getEstimatesImpl(bool only_from_memory) const;
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;
 

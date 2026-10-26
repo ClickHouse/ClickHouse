@@ -55,6 +55,7 @@ public:
         const std::string & format_name,
         const FormatSettings & format_settings,
         bool skip_columns_with_unsupported_types = false,
+        bool allow_arrow_null_type = false,
         bool allow_inferring_nullable_columns = true,
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,

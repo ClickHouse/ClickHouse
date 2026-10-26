@@ -1468,9 +1468,28 @@ std::shared_ptr<const StatisticsCacheCell> IMergeTreeDataPart::getStatistics(Sta
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns, StatisticsCache * cache) const
 {
-    auto cell = getStatistics(cache);
+    return filterStatistics(*getStatistics(cache), required_columns);
+}
+
+std::optional<ColumnsStatistics> IMergeTreeDataPart::tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const
+{
+    auto cell = tryGetStatisticsFromCache(cache);
+    if (!cell)
+        return std::nullopt;
+    return filterStatistics(*cell, required_columns);
+}
+
+std::shared_ptr<const StatisticsCacheCell> IMergeTreeDataPart::tryGetStatisticsFromCache(StatisticsCache * cache) const
+{
+    if (!cache || cleared_data_in_caches)
+        return nullptr;
+    return cache->get(StatisticsCache::hash(getPathForCacheKey()));
+}
+
+ColumnsStatistics IMergeTreeDataPart::filterStatistics(const StatisticsCacheCell & cell, const NameSet & required_columns)
+{
     if (required_columns.empty())
-        return cell->stats;
+        return cell.stats;
 
     /// Probe the required columns rather than scan all columns of the part: it is done for every part on every query.
     ColumnsStatistics result;
@@ -1479,12 +1498,12 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
         /// `<col>.null` subcolumn may appear in required_columns when
         /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
         static constexpr std::string_view null_suffix = ".null";
-        if (auto it = cell->stats.find(required_column); it != cell->stats.end())
+        if (auto it = cell.stats.find(required_column); it != cell.stats.end())
             result.emplace(it->first, it->second);
         else if (required_column.ends_with(null_suffix))
         {
             String parent_column = required_column.substr(0, required_column.size() - null_suffix.size());
-            if (auto parent_it = cell->stats.find(parent_column); parent_it != cell->stats.end())
+            if (auto parent_it = cell.stats.find(parent_column); parent_it != cell.stats.end())
                 result.emplace(parent_it->first, parent_it->second);
         }
     }
@@ -1526,6 +1545,16 @@ String IMergeTreeDataPart::getPathForCacheKey() const
 
 Estimates IMergeTreeDataPart::getEstimates() const
 {
+    return *getEstimatesImpl(/* only_from_memory = */ false);
+}
+
+std::optional<Estimates> IMergeTreeDataPart::tryGetEstimatesFromMemory() const
+{
+    return getEstimatesImpl(/* only_from_memory = */ true);
+}
+
+std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(bool only_from_memory) const
+{
     std::lock_guard lock(estimates_mutex);
 
     if (!estimates)
@@ -1533,7 +1562,18 @@ Estimates IMergeTreeDataPart::getEstimates() const
         /// The statistics themselves are owned by the statistics cache; only the estimates map is
         /// kept on the part (until reload), so build it in the dedicated arena, like the rest of the
         /// part's metadata.
-        auto cell = getStatistics(storage.getContext()->getStatisticsCache().get());
+        auto statistics_cache = storage.getContext()->getStatisticsCache();
+        std::shared_ptr<const StatisticsCacheCell> cell;
+        if (only_from_memory)
+        {
+            cell = tryGetStatisticsFromCache(statistics_cache.get());
+            if (!cell)
+                return std::nullopt;
+        }
+        else
+        {
+            cell = getStatistics(statistics_cache.get());
+        }
 
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         Estimates loaded_estimates;
@@ -3702,9 +3742,18 @@ ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) c
         return *size;
 
     /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSize(subcolumn_name);
+    auto size = calculateSubcolumnSizes(NamesAndTypesList{getColumn(subcolumn_name)}).front();
     subcolumns_sizes_cache.add(subcolumn_name, size);
     return size;
+}
+
+std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndTypesList & subcolumns) const
+{
+    auto sizes = calculateSubcolumnSizes(subcolumns);
+    size_t i = 0;
+    for (const auto & subcolumn : subcolumns)
+        subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    return sizes;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const

@@ -1,0 +1,35 @@
+50
+71	337179
+71	337179
+71	337179
+71	337179
+24	56310
+24	56310
+24	56310
+1	2103
+24	56310
+36	170082
+0	4999	0	99	5000
+0	4999	0	99	5000
+0	4999	0	99	5000
+0	4999	0	99	5000
+pruning_cold	1	50
+pruning_warm	0	0
+prewhere_cold	1	50
+prewhere_warm	0	0
+min_max_cold	1	50
+min_max_warm	0	0
+pruning_cold_parallel	5	0	50
+pruning_cold_sequential	5	0	50
+pruning_warm_parallel	5	0	0
+pruning_off	50	0	0
+prewhere_cold_parallel	50	50	50
+prewhere_cold_sequential	50	50	50
+prewhere_warm_parallel	50	50	0
+prewhere_mixed_warmup	3	3	3
+prewhere_mixed_parallel	50	50	47
+both_cold_parallel	5	5	50
+min_max_cold_parallel	0	0	50
+min_max_cold_sequential	0	0	50
+min_max_warm_parallel	0	0	0
+min_max_off	50	0	0
