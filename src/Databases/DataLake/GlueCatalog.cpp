@@ -78,6 +78,7 @@ namespace DB::Setting
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
+    extern const SettingsBool iceberg_list_only_v_prefixed_metadata_files;
 }
 
 namespace DB::ServerSetting
@@ -681,10 +682,15 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     auto storage_settings = std::make_shared<DB::DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
 
+    auto resolve_context = DB::Context::createCopy(getContext());
+    DB::Settings resolve_settings = resolve_context->getSettingsCopy();
+    resolve_settings[DB::Setting::iceberg_list_only_v_prefixed_metadata_files] = false;
+    resolve_context->setSettings(resolve_settings);
+
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, resolve_context, log.get(), std::nullopt, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 

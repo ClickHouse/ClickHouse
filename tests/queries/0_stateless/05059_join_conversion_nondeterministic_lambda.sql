@@ -8,7 +8,6 @@
 -- The conversions are a plan-level optimization of the analyzer, and the test harness turns each of
 -- them off at random, so ask for them explicitly - otherwise the positive control below is a coin
 -- flip. Parallel replicas build a different plan, and the plan is what is asserted here.
-SET enable_analyzer = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET enable_parallel_replicas = 0;
