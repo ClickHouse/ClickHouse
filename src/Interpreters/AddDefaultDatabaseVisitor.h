@@ -173,7 +173,7 @@ public:
         return nullptr;
     }
 
-    /// Collect aliases of expressions in the subtree, skipping nested select queries:
+    /// Collect aliases of expressions in the subtree, skipping nested select queries and lambdas:
     /// their aliases are collected when the visitor descends into them.
     static void collectAliases(const ASTPtr & ast, std::unordered_set<String> & aliases)
     {
@@ -184,7 +184,18 @@ public:
         if (!alias.empty())
             aliases.insert(alias);
 
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+            return;
+
         for (const auto & child : ast->children)
+            collectAliases(child, aliases);
+    }
+
+    /// Like the analyzer, the body of a lambda sees the aliases of the enclosing scope and its own aliases,
+    /// which are not visible outside of it.
+    static void collectLambdaAliases(const ASTFunction & lambda, std::unordered_set<String> & aliases)
+    {
+        for (const auto & child : lambda.children)
             collectAliases(child, aliases);
     }
 
@@ -289,6 +300,16 @@ private:
             }
             else if (table_expression->table_function)
                 visitTableFunction(*table_expression->table_function);
+        }
+
+        if (auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        {
+            auto enclosing_aliases = expression_aliases;
+            collectLambdaAliases(*function, expression_aliases);
+            for (auto & child : ast.children)
+                visitTableExpressionsImpl(*child);
+            expression_aliases = std::move(enclosing_aliases);
+            return;
         }
 
         if (auto * function = ast.as<ASTFunction>(); function && function->arguments)
@@ -663,6 +684,15 @@ private:
 
     void visit(ASTFunction & function, ASTPtr &) const
     {
+        if (function.name == "lambda")
+        {
+            auto enclosing_aliases = expression_aliases;
+            collectLambdaAliases(function, expression_aliases);
+            visitChildren(function);
+            expression_aliases = std::move(enclosing_aliases);
+            return;
+        }
+
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
 

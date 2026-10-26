@@ -441,8 +441,19 @@ namespace
                 addExpressionAliasReference(*function->arguments->children[1]);
             }
 
-            for (const auto & child : ast->children)
-                collectNonTableReferences(child);
+            if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+            {
+                auto enclosing_expression_aliases = expression_aliases;
+                AddDefaultDatabaseVisitor::collectLambdaAliases(*function, expression_aliases);
+                for (const auto & child : ast->children)
+                    collectNonTableReferences(child);
+                expression_aliases = std::move(enclosing_expression_aliases);
+            }
+            else
+            {
+                for (const auto & child : ast->children)
+                    collectNonTableReferences(child);
+            }
 
             if (!alias.empty())
                 enclosing_aliases.pop_back();
