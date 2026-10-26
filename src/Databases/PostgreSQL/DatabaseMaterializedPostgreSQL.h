@@ -131,6 +131,13 @@ private:
 
     mutable std::mutex handler_mutex;
 
+    /// Serializes `attachTable` and `detachTablePermanently`. Each of them reads the list of tables, stores it with one
+    /// table more or less by an internal `ALTER DATABASE ... MODIFY SETTING`, and then updates `materialized_tables`.
+    /// `ATTACH TABLE` and `DETACH TABLE` of different tables run concurrently, so without it each of them stored a list
+    /// that missed the tables attached by the others, and these tables were not replicated after a restart.
+    /// Taken before `handler_mutex` and `tables_mutex`, and before the internal `ALTER` takes the DDL guard of the database.
+    std::mutex attach_detach_mutex;
+
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
 
