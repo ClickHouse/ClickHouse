@@ -62,6 +62,8 @@ protected:
     std::vector<std::pair<size_t, size_t>> granules_from_columns_cache;
     /// The columns read from the part in the granules that also have columns served from the cache, by granule.
     std::unordered_map<size_t, std::vector<size_t>> columns_read_from_part_in_granules;
+    /// The compressed blocks counted for the granules served from the cache: a block can hold several granules and columns.
+    std::unordered_set<size_t> counted_columns_cache_blocks;
 
     /// The positions in the marks that the column at `pos` of `columns_to_read` is read from.
     std::vector<size_t> getPositionsInMarks(size_t pos) const;

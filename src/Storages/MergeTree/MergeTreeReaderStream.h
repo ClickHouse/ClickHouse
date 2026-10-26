@@ -65,14 +65,13 @@ public:
     /// Must not be called for a stream of uncompressed data.
     size_t getCompressedBytesOfBlocksRead() const;
 
-    /// The compressed size of the data at the positions [begin_position, end_position) of the granule `mark`, in a stream
-    /// with `positions` of them in every mark (one for a stream of one column, a column or a substream each in a compact
-    /// part). That is what reading them loads, give or take the blocks they share with their neighbours: summed over
-    /// adjacent positions, the sizes add up to the size of the file.
-    size_t getCompressedBytesOfGranulePositions(size_t mark, size_t begin_position, size_t end_position, size_t positions);
-
-    /// The offset of the compressed block the data at `position` of the granule `mark` begins in.
-    size_t getCompressedOffsetOfGranulePosition(size_t mark, size_t position, size_t positions);
+    /// The compressed blocks that reading the data at `position` of the granule `mark` from the file loads, as the offsets
+    /// [begin, end): from the block it begins in to the next mark in the file at a later offset. A stream has `positions` marks
+    /// in a granule: one for a single column, one for each column or substream in a compact part. The data of several marks
+    /// may share a block, so the caller counts a block once by its `begin`.
+    std::pair<size_t, size_t> getCompressedBlocksOfGranulePosition(size_t mark, size_t position, size_t positions);
+    /// The `begin` of `getCompressedBlocksOfGranulePosition`, without looking for the end.
+    size_t getCompressedBlockOfGranulePosition(size_t mark, size_t position);
 
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
@@ -164,6 +163,7 @@ public:
         : MergeTreeReaderStream{std::forward<Args>(args)...}
     {
     }
+
 
 protected:
     size_t getRightOffsetOneColumn(size_t right_mark_non_included, size_t column_position);

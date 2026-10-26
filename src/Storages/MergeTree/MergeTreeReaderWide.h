@@ -103,8 +103,9 @@ private:
     size_t compressed_bytes_taken = 0;
     /// See `countCompressedBytesRead`.
     size_t compressed_bytes_of_columns_cache_hits = 0;
-    /// The last granule counted for each column, which is served from the cache in pieces when rows are skipped.
-    std::vector<std::optional<size_t>> last_counted_columns_cache_hits;
+    /// The compressed blocks counted for the granules served from the cache, by stream: a block holds many granules, and a
+    /// granule is served in pieces when rows are skipped.
+    std::unordered_map<String, std::unordered_set<size_t>> counted_columns_cache_blocks;
     void addCompressedBytesOfColumnsCacheHit(size_t mark, const std::vector<bool> & from_disk);
 
     struct StreamInfo

@@ -773,17 +773,22 @@ size_t MergeTreeReaderCompact::takeCompressedBytesOfColumnsCacheHits(MergeTreeRe
     size_t bytes = 0;
     for (const auto & [pos, mark] : granules_from_columns_cache)
     {
-        /// A block that a column read from the part loaded is not loaded again: without
+        /// A block that a column read from the part in the granule loaded is not loaded again: without
         /// `compress_per_column_in_compact_parts`, the columns of a granule share their blocks.
         std::unordered_set<size_t> blocks_loaded;
         if (auto it = columns_read_from_part_in_granules.find(mark); it != columns_read_from_part_in_granules.end())
             for (const size_t read_pos : it->second)
                 for (const size_t position : getPositionsInMarks(read_pos))
-                    blocks_loaded.insert(stream.getCompressedOffsetOfGranulePosition(mark, position, positions));
+                    blocks_loaded.insert(stream.getCompressedBlockOfGranulePosition(mark, position));
 
         for (const size_t position : getPositionsInMarks(pos))
-            if (!blocks_loaded.contains(stream.getCompressedOffsetOfGranulePosition(mark, position, positions)))
-                bytes += stream.getCompressedBytesOfGranulePositions(mark, position, position + 1, positions);
+        {
+            const size_t block = stream.getCompressedBlockOfGranulePosition(mark, position);
+            if (blocks_loaded.contains(block) || !counted_columns_cache_blocks.insert(block).second)
+                continue;
+            const auto [begin, end] = stream.getCompressedBlocksOfGranulePosition(mark, position, positions);
+            bytes += end - begin;
+        }
     }
     granules_from_columns_cache.clear();
     columns_read_from_part_in_granules.clear();

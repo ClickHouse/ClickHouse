@@ -39,7 +39,7 @@ private:
     void init();
 
     bool initialized = false;
-    std::unique_ptr<MergeTreeReaderStream> stream;
+    std::unique_ptr<MergeTreeReaderStreamAllOfMultipleColumns> stream;
     /// The compressed bytes read by `stream` that `takeCompressedBytesRead` returned.
     size_t compressed_bytes_taken = 0;
 };

@@ -335,25 +335,33 @@ size_t MergeTreeReaderStream::getCompressedBytesOfBlocksRead() const
     return compressed_data_buffer ? compressed_data_buffer->getCompressedBytesOfBlocksRead() : 0;
 }
 
-size_t MergeTreeReaderStream::getCompressedOffsetOfGranulePosition(size_t mark, size_t position, size_t positions)
+size_t MergeTreeReaderStream::getCompressedBlockOfGranulePosition(size_t mark, size_t position)
 {
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
         return 0;
 
     loadMarks();
-    /// The position after the last one of a granule is the first one of the next granule.
-    if (position == positions)
-    {
-        ++mark;
-        position = 0;
-    }
-    return mark < marks_count ? marks_getter->getMark(mark, position).offset_in_compressed_file : file_size;
+    return marks_getter->getMark(mark, position).offset_in_compressed_file;
 }
 
-size_t MergeTreeReaderStream::getCompressedBytesOfGranulePositions(size_t mark, size_t begin_position, size_t end_position, size_t positions)
+std::pair<size_t, size_t> MergeTreeReaderStream::getCompressedBlocksOfGranulePosition(size_t mark, size_t position, size_t positions)
 {
-    return getCompressedOffsetOfGranulePosition(mark, end_position, positions) - getCompressedOffsetOfGranulePosition(mark, begin_position, positions);
+    if (file_size == 0)
+        return {0, 0};
+
+    const size_t begin = getCompressedBlockOfGranulePosition(mark, position);
+    /// The granules are written one after another, and the marks of a granule in the order of their positions.
+    for (size_t next_position = position + 1; mark < marks_count; ++mark, next_position = 0)
+    {
+        for (; next_position < positions; ++next_position)
+        {
+            const size_t offset = marks_getter->getMark(mark, next_position).offset_in_compressed_file;
+            if (offset > begin)
+                return {begin, offset};
+        }
+    }
+    return {begin, file_size};
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

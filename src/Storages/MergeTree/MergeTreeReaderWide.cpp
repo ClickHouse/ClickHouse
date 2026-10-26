@@ -1066,11 +1066,6 @@ std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
 
 void MergeTreeReaderWide::addCompressedBytesOfColumnsCacheHit(size_t mark, const std::vector<bool> & from_disk)
 {
-    last_counted_columns_cache_hits.resize(columns_to_read.size());
-
-    /// A stream is counted once, e.g. the offsets the arrays of a `Nested` share, and not at all when a column read
-    /// from the part loads it, e.g. the only stream of a `single_stream` `s` served as `s.size`.
-    std::unordered_set<String> counted_streams;
     auto for_each_stream = [&](size_t pos, const std::function<void(const String &)> & callback)
     {
         const auto & name_and_type = columns_to_read[pos];
@@ -1083,22 +1078,28 @@ void MergeTreeReaderWide::addCompressedBytesOfColumnsCacheHit(size_t mark, const
         });
     };
 
+    /// A stream that a column read from the part in the granule reads is loaded already, e.g. the only stream of a
+    /// `single_stream` `s` served as `s.size`.
+    std::unordered_set<String> streams_read_from_part;
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
         if (from_disk[pos])
-            for_each_stream(pos, [&](const String & stream_name) { counted_streams.insert(stream_name); });
+            for_each_stream(pos, [&](const String & stream_name) { streams_read_from_part.insert(stream_name); });
 
     for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
     {
-        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos) || from_disk[pos] || last_counted_columns_cache_hits[pos] == mark)
+        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos) || from_disk[pos])
             continue;
-        last_counted_columns_cache_hits[pos] = mark;
 
+        /// A block is counted once, also when several columns read it, e.g. the offsets the arrays of a `Nested` share.
         for_each_stream(pos, [&](const String & stream_name)
         {
-            if (!counted_streams.insert(stream_name).second)
+            if (streams_read_from_part.contains(stream_name))
                 return;
-            if (auto * stream = streams.find(stream_name))
-                compressed_bytes_of_columns_cache_hits += stream->getCompressedBytesOfGranulePositions(mark, 0, 1, 1);
+            auto * stream = streams.find(stream_name);
+            if (!stream || !counted_columns_cache_blocks[stream_name].insert(stream->getCompressedBlockOfGranulePosition(mark, 0)).second)
+                return;
+            const auto [begin, end] = stream->getCompressedBlocksOfGranulePosition(mark, 0, 1);
+            compressed_bytes_of_columns_cache_hits += end - begin;
         });
     }
 }
