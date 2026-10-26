@@ -4355,22 +4355,31 @@ void dumpDatabaseSchema(
     const std::vector<String> user_defined_function_names = fetchStringColumn(connection, timeouts, client_info,
         "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
     const std::set<String> user_defined_functions(user_defined_function_names.begin(), user_defined_function_names.end());
-    const AnalyzesOnSource analyzes_on_source = [&](const String & select_query, const SettingsChanges & changes)
+    /// Under `analyzer_inline_views` the analyzer replaces a view that a query reads with the view's own query, and runs
+    /// the scalar subqueries in it, so every probe turns the setting off. A server that does not know it does not inline.
+    const bool server_inlines_views = settings_known_to_server.contains("analyzer_inline_views");
+    const AnalyzesOnSource analyzes_on_source = [&](const String & select_query, const SettingsChanges & gate_changes)
     {
+        SettingsChanges changes = gate_changes;
+        if (server_inlines_views)
+            changes.setSetting("analyzer_inline_views", Field(false));
         String query;
         /// A stored query can end with its own SETTINGS clause, so the probe changes go into that clause.
         try
         {
             ParserSelectWithUnionQuery parser;
             ASTPtr ast = parseQuery(parser, select_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            /// The analyzer expands a user-defined function body, which may run a scalar subquery, so such a query is not asked.
-            bool calls_user_defined_function = false;
+            /// The analyzer expands a user-defined function body, which may run a scalar subquery, and a view, if a SETTINGS
+            /// clause of the query itself names `analyzer_inline_views`, so such a query is not asked.
+            bool expands_other_query = false;
             forEachNode(*ast, [&](const IAST & node)
             {
                 if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
-                    calls_user_defined_function = true;
+                    expands_other_query = true;
+                else if (const auto * set_query = node.as<ASTSetQuery>(); set_query && set_query->changes.tryGet("analyzer_inline_views"))
+                    expands_other_query = true;
             });
-            if (calls_user_defined_function)
+            if (expands_other_query)
                 return false;
             ASTSelectQuery * last = nullptr;
             if (const auto * with_union = ast->as<ASTSelectWithUnionQuery>(); with_union && with_union->list_of_selects
@@ -4392,8 +4401,8 @@ void dumpDatabaseSchema(
         }
         catch (const Exception &)
         {
-            /// The server parses the query below and decides, unless it may call a user-defined function.
-            if (!user_defined_functions.empty())
+            /// The server parses the query below and decides, unless it may call a user-defined function or inline a view.
+            if (!user_defined_functions.empty() || select_query.find("analyzer_inline_views") != String::npos)
                 return false;
         }
         if (query.empty())
