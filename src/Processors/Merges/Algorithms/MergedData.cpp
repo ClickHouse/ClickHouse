@@ -14,27 +14,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-bool hasNonAdditiveByteSizeAt(const IColumn & column)
-{
-    if (column.getDataType() == TypeIndex::LowCardinality
-        || column.getDataType() == TypeIndex::AggregateFunction
-        || column.isReplicated()
-        || column.hasDynamicStructure())
-        return true;
-
-    bool result = false;
-    column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
-    {
-        result = result || hasNonAdditiveByteSizeAt(*subcolumn);
-    });
-    return result;
-}
-
-}
-
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
@@ -305,14 +284,11 @@ size_t MergedData::rowsToInsertBeforeFlush(
 
     chassert(columns.size() == raw_columns.size());
 
-    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
-    /// `hasEnoughRows` measure the actual size after inserting one row.
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
-            return 1;
-    }
-
+    /// For some column types (`LowCardinality`, `AggregateFunction`, dynamic columns), the sum of
+    /// `IColumn::byteSizeAt` over the source rows only estimates how much the destination grows:
+    /// e.g. a repeated `LowCardinality` value adds just an index entry. The estimate is still good
+    /// enough to cut the batch at a wide value, and any remaining error is bounded by one batch,
+    /// because `hasEnoughRows` measures the actual size before the next one.
     size_t merged_bytes = 0;
     for (const auto & column : columns)
         merged_bytes += column->byteSize();

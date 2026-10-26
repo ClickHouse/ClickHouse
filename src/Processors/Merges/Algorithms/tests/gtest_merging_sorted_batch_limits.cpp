@@ -241,20 +241,24 @@ TEST(MergingSortedBatchLimits, AverageBlockSize)
         getFirstChunkSize(SortingQueueStrategy::Batch, 0, true));
 }
 
+/// For `LowCardinality` columns and aggregate states, `byteSizeAt` only estimates the growth of the
+/// merged block, so the batch queue may flush at a different row than the default queue, but it
+/// must still flush on the byte limit before consuming all input rows.
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithRepeatedLowCardinalityValues)
 {
-    EXPECT_EQ(
-        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Default, 100),
-        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100));
+    const auto batch_chunk_size = getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100);
+    EXPECT_GT(batch_chunk_size, 0uz);
+    EXPECT_LT(batch_chunk_size, 200uz);
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithAggregateFunctionState)
 {
     const auto default_chunk_size = getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Default);
-    EXPECT_EQ(default_chunk_size, getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Batch));
+    const auto batch_chunk_size = getFirstAggregateFunctionChunkSize(SortingQueueStrategy::Batch);
     /// The exact number of rows depends on `sizeOfData` of the aggregate state, which differs
-    /// between build types, so only check that the byte limit really did flush the block early
-    /// (otherwise the comparison above would be vacuous).
+    /// between build types, so only check that the byte limit really did flush the block early.
     EXPECT_GT(default_chunk_size, 0uz);
     EXPECT_LT(default_chunk_size, aggregate_function_input_rows);
+    EXPECT_GT(batch_chunk_size, 0uz);
+    EXPECT_LT(batch_chunk_size, aggregate_function_input_rows);
 }
