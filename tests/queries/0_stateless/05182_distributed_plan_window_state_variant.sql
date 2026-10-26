@@ -280,4 +280,47 @@ FROM (SELECT v, anyState(tuple(s, CAST(v AS Dynamic))) OVER () AS g FROM (SELECT
 SETTINGS make_distributed_plan = 0, query_plan_enable_optimizations = 0, max_bytes_before_external_sort = 0,
     max_bytes_ratio_before_external_sort = 0, max_block_size = 8;
 
+-- The Rollup and Cube steps only merge states, in the same Cascades stage as the aggregation that built them.
+SELECT '-- window state kept in a column by a state merged by ROLLUP, then by CUBE, in a Cascades stage: distributed then local';
+SELECT sum(cityHash64(p, b, round(finalizeAggregation(r.1), 6)))
+FROM (SELECT p, b, any(tuple(s, CAST(1 AS Dynamic))) AS r FROM (SELECT p, b, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) GROUP BY p, b WITH ROLLUP)
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 1;
+SELECT sum(cityHash64(p, b, round(finalizeAggregation(r.1), 6)))
+FROM (SELECT p, b, any(tuple(s, CAST(1 AS Dynamic))) AS r FROM (SELECT p, b, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) GROUP BY p, b WITH ROLLUP)
+SETTINGS make_distributed_plan = 0;
+SELECT sum(cityHash64(p, b, round(finalizeAggregation(r.1), 6)))
+FROM (SELECT p, b, any(tuple(s, CAST(1 AS Dynamic))) AS r FROM (SELECT p, b, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) GROUP BY p, b WITH CUBE)
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 1;
+SELECT sum(cityHash64(p, b, round(finalizeAggregation(r.1), 6)))
+FROM (SELECT p, b, any(tuple(s, CAST(1 AS Dynamic))) AS r FROM (SELECT p, b, contingencyState(b, c) OVER () AS s FROM t_window_state_variant_gather) GROUP BY p, b WITH CUBE)
+SETTINGS make_distributed_plan = 0;
+
+-- With these statistics the Cascades plan aggregates below the join and merges the states above it, in the same stage.
+SET param__internal_cascades_cluster_node_count = 1, query_plan_optimize_join_order_randomize = 0, automatic_parallel_replicas_mode = 0,
+    param__internal_join_table_stat_hints = '{"t_window_state_variant_gather": {"cardinality": 100000000, "avg_row_bytes": 20, "distinct_keys": {"p": 4}}}';
+SELECT '-- window state kept in a column by a state merged above a join in a Cascades stage: plan shape, distributed then local';
+SELECT minIf(n, explain LIKE '%Aggregating%') < minIf(n, explain LIKE '%JoinLogical%')
+    AND maxIf(n, explain LIKE '%Aggregating%') > minIf(n, explain LIKE '%JoinLogical%')
+FROM
+(
+    SELECT explain, rowNumberInAllBlocks() AS n
+    FROM
+    (
+        EXPLAIN
+        SELECT t1.p, round(finalizeAggregation(any(t1.st).1), 6)
+        FROM (SELECT p, tuple(contingencyState(b, c) OVER (), CAST(1 AS Dynamic)) AS st FROM t_window_state_variant_gather) AS t1
+        INNER JOIN t_window_state_variant_gather AS t2 ON t1.p = t2.p GROUP BY t1.p ORDER BY t1.p
+        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_workers_num = 1, explain_query_plan_default = 'legacy'
+    )
+)
+SETTINGS make_distributed_plan = 0;
+SELECT t1.p, round(finalizeAggregation(any(t1.st).1), 6)
+FROM (SELECT p, tuple(contingencyState(b, c) OVER (), CAST(1 AS Dynamic)) AS st FROM t_window_state_variant_gather) AS t1
+INNER JOIN t_window_state_variant_gather AS t2 ON t1.p = t2.p GROUP BY t1.p ORDER BY t1.p
+SETTINGS enable_cascades_optimizer = 1, distributed_plan_workers_num = 1;
+SELECT t1.p, round(finalizeAggregation(any(t1.st).1), 6)
+FROM (SELECT p, tuple(contingencyState(b, c) OVER (), CAST(1 AS Dynamic)) AS st FROM t_window_state_variant_gather) AS t1
+INNER JOIN t_window_state_variant_gather AS t2 ON t1.p = t2.p GROUP BY t1.p ORDER BY t1.p
+SETTINGS make_distributed_plan = 0;
+
 DROP TABLE t_window_state_variant_gather;

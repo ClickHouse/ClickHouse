@@ -79,3 +79,18 @@ cascades shape distributes
 [0.075652,0.075652]
 5418535389041359701
 5418535389041359701
+-- window state kept in a column by a state merged by ROLLUP, then by CUBE, in a Cascades stage: distributed then local
+12035500015841238685
+12035500015841238685
+16879401016781455939
+16879401016781455939
+-- window state kept in a column by a state merged above a join in a Cascades stage: plan shape, distributed then local
+1
+0	0.075652
+1	0.075652
+2	0.075652
+3	0.075652
+0	0.075652
+1	0.075652
+2	0.075652
+3	0.075652
