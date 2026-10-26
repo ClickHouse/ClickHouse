@@ -10,12 +10,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/sortBlock.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <optional>
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -452,8 +454,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NameSet & partially_read_columns,
     const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
-    const NamesAndTypesList & part_columns,
+    const ColumnsDescription & part_columns,
     const ColumnSizeByName & column_sizes,
+    const StreamsBytesPerRowByName & streams_bytes_per_row,
     const ColumnCodecByName & column_codecs,
     const CompressionCodecPtr & default_codec,
     size_t read_bytes,
@@ -484,6 +487,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     {
         if (!column_sizes.empty())
         {
+            std::unordered_set<std::string_view> charged_streams;
             for (const auto & column : input_columns)
             {
                 if (column_sizes.contains(column.name))
@@ -496,6 +500,19 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     sample_bytes += column_bytes;
                     compressed_bytes += static_cast<size_t>(static_cast<double>(column_bytes) * compressed_ratio);
                 }
+                else if (const auto streams_it = streams_bytes_per_row.find(column.name); streams_it != streams_bytes_per_row.end())
+                {
+                    /// The in-memory bytes of every column count, as they do in `read_bytes`, but a stream is read once.
+                    sample_bytes += column.column->byteSize() + get_bytes_skipped(column.name);
+                    for (const auto & [stream_name, bytes_per_row] : streams_it->second)
+                        if (charged_streams.insert(stream_name).second)
+                            compressed_bytes += static_cast<size_t>(bytes_per_row * static_cast<double>(column.column->size()));
+                }
+                /// Virtual columns and columns missing from the part are read from no stream, so they add nothing
+                /// to `read_bytes`. Any other column does, and its bytes would silently take the compression ratio
+                /// of the columns found here.
+                else if (part_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                    markUnsupportedCase();
             }
         }
         else if (std::ranges::any_of(
@@ -521,7 +538,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                 for (const auto & column : input_columns)
                 {
                     // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
-                    if (part_columns.contains(column.name))
+                    if (part_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
                     {
                         const auto codec_it = column_codecs.find(column.name);
                         /// A column with no `CODEC` of its own is written with the part's default codec,
