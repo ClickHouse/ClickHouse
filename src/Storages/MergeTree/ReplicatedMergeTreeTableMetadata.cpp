@@ -731,7 +731,16 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         /// column with the same name, or when the policy does not cover the column - and then it is not
         /// re-created anyway. `DROP INDEX` of an explicit `minmax` index sees that index in the old
         /// metadata, so the implicit one still replaces it.
-        if (!redefined && !hasMinMaxIndexOnColumn(old_metadata, column.name))
+        /// The same holds for a physical column that stays physical with the same type and changes only
+        /// its default (`MODIFY COLUMN b UInt64 DEFAULT 1` after the above): no mutation rewrites it, so the
+        /// stale files stay in the parts.
+        const auto is_physical = [](const ColumnDescription & c)
+        {
+            return c.default_desc.kind != ColumnDefaultKind::Alias && c.default_desc.kind != ColumnDefaultKind::Ephemeral;
+        };
+        const bool keeps_stored_data = !redefined
+            || (is_physical(old_column) && is_physical(column) && old_column.type->equals(*column.type));
+        if (keeps_stored_data && !hasMinMaxIndexOnColumn(old_metadata, column.name))
             stale_implicit_index_columns.insert(column.name);
     }
 

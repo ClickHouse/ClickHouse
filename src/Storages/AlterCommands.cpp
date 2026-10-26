@@ -1043,6 +1043,12 @@ void AlterCommand::apply(
                 if (ttl)
                     column.ttl = ttl;
 
+                /// Captured before the type and the default are replaced below, see the implicit indices.
+                const DataTypePtr old_type = column.type;
+                const bool was_physical = column.default_desc.kind != ColumnDefaultKind::Alias
+                    && column.default_desc.kind != ColumnDefaultKind::Ephemeral;
+                const bool had_implicit_index = metadata.secondary_indices.has(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
+
                 if (data_type)
                 {
                     column.type = data_type;
@@ -1110,7 +1116,18 @@ void AlterCommand::apply(
                     /// same-named implicit index would silently reuse the stale files and prune
                     /// wrong. Drop the index and do not re-create it, the same way
                     /// `MODIFY COLUMN ... REMOVE ALIAS` above does.
-                    if (!was_expression_alias && !is_expression_alias)
+                    /// A physical column that keeps its type is not rewritten either, so its stored data and
+                    /// the files under the implicit index name stay as they are. If the index is absent, an
+                    /// earlier `ALTER` may have dropped it deliberately: for example, `MODIFY COLUMN b ... DEFAULT 0`
+                    /// of `b ALIAS a + 1` keeps the files built over `a + 1` in the parts, and `MATERIALIZE COLUMN b`
+                    /// carries them over unchanged, because it rewrites only the indices of the current metadata.
+                    /// Keep the absence then, until a rewrite of the column (e.g. a change of its type) builds
+                    /// fresh files.
+                    const bool is_physical = column.default_desc.kind != ColumnDefaultKind::Alias
+                        && column.default_desc.kind != ColumnDefaultKind::Ephemeral;
+                    const bool keeps_absence = !had_implicit_index && was_physical && is_physical && old_type->equals(*column.type);
+
+                    if (!was_expression_alias && !is_expression_alias && !keeps_absence)
                         metadata.addImplicitIndicesForColumn(column, context);
                 }
             }
