@@ -83,6 +83,12 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         && isStringOrFixedString(first_argument_type))
         return true;
 
+    /// The `parseDateTime` family parses a string in the time zone of the server when the optional third argument
+    /// is omitted, and attaches the name of that time zone to the result type, so the type looks explicitly bound.
+    if (function_name.starts_with("parseDateTime") && !function_name.starts_with("parseDateTimeBestEffort")
+        && arguments.size() < 3)
+        return true;
+
     /// A `Date` or `Date32` is converted to a point in time at its midnight in the time zone of the server,
     /// like in `toRelativeSecondNum(d)` or `toUnixTimestamp(d)`. Only the functions that work with whole days,
     /// or do not look at the value at all, are known to give the same result on every server.
@@ -149,8 +155,9 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
   *
   * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
   * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
-  * - with `abort_on_side_effects`, any function with observable side effects (like `sleepEachRow`) -> `AbortRewrite`
-  *   (stricter than legacy, which moved them): it must be evaluated once per group, and a sibling conjunct moved to `WHERE`
+  * - with `abort_on_side_effects`, any function with observable side effects (like `sleepEachRow`), or that is not
+  *   deterministic in the scope of the query (like `blockSize`), -> `AbortRewrite` (stricter than legacy, which moved
+  *   them): it must be evaluated once per group on the original blocks of groups, and a sibling conjunct moved to `WHERE`
   *   would remove groups before it is evaluated. The compatibility rewrite of the analyzer must move the conjuncts with
   *   the columns that are not grouped, so it does not check it;
   * - else any aggregate function -> `KeepInHaving`;
@@ -174,7 +181,8 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
   * or reads a table or a table function, in a subquery or as the right-hand side of `IN`. A subquery without `FROM`,
   * which reads `system.one`, is still moved.
   * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
-  * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` to parse a string, converts a number as a Unix timestamp
+  * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` or the `parseDateTime` family without the time zone argument
+  * to parse a string, converts a number as a Unix timestamp
   * to a `Date` or `Date32` (like `toDate(k)`) or to a string (like `fromUnixTimestamp(k, '%F')`), or converts a `Date`
   * or `Date32` to a point in time (like `toRelativeSecondNum(d)`): the result depends
   * on the time zone of the server, which may differ between the shards and the initiator.
@@ -281,7 +289,11 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                     {
                         /// Functions like `sleepEachRow` must be evaluated once per group, not per source row,
                         /// and a sibling conjunct moved to `WHERE` must not change the number of groups they see.
-                        if (function_base->isStateful() || (abort_on_side_effects && function_base->hasObservableSideEffects()))
+                        /// The same holds for functions depending on the block, like `blockSize`: a sibling conjunct
+                        /// moved to `WHERE` would change the blocks of groups they are evaluated on.
+                        if (function_base->isStateful()
+                            || (abort_on_side_effects
+                                && (function_base->hasObservableSideEffects() || !function_base->isDeterministicInScopeOfQuery())))
                             return HavingConjunctMoveAction::AbortRewrite;
 
                         if (!function_base->isDeterministicInScopeOfQuery()
