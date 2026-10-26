@@ -13,7 +13,6 @@ INSERT INTO t_ie_left VALUES (1, '1');
 INSERT INTO t_ie_right SELECT number, toString(number) FROM numbers(500, 1000);
 INSERT INTO t_ie_right VALUES (1, '1'), (1, '1');
 
-SET allow_experimental_analyzer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;

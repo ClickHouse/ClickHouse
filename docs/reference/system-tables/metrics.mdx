@@ -50,6 +50,18 @@ Number of threads in the Aggregator thread pool running a task.
 
 Number of queued or active jobs in the Aggregator thread pool.
 
+### AIRequestThreads {#airequestthreads}
+
+Number of threads in the AI request thread pool.
+
+### AIRequestThreadsActive {#airequestthreadsactive}
+
+Number of threads in the AI request thread pool running a task.
+
+### AIRequestThreadsScheduled {#airequestthreadsscheduled}
+
+Number of queued or active jobs in the AI request thread pool.
+
 ### ASTFuzzerAccumulatedFragments {#astfuzzeraccumulatedfragments}
 
 Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.
@@ -2269,6 +2281,18 @@ Number of entries in the deduplication caches of the tags tables of TimeSeries t
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 
 Number of temporary files created
+
+### TransactionLogEntries {#transactionlogentries}
+
+Number of entries in the transaction log (`/log`) at its last listing
+
+### TransactionsRunning {#transactionsrunning}
+
+Number of running transactions started on this replica
+
+### TransactionWatermarkLag {#transactionwatermarklag}
+
+Latest transaction snapshot minus the global watermark; new transactions read this many CSNs behind
 
 ### UDFDriverInvokerThreads {#udfdriverinvokerthreads}
 

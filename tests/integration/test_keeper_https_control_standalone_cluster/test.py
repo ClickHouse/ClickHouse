@@ -162,6 +162,21 @@ def _wait_keeper_ready(node, pid, timeout=60.0):
     )
 
 
+def _wait_for_node(nodes, has_role, timeout=60.0):
+    # Every node serving does not mean a leader exists right now: an election can still be in progress.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for node in nodes:
+            if has_role(cluster, node):
+                return node
+        time.sleep(0.5)
+    raise AssertionError(
+        "No node in {names} matched {role} within {timeout}s".format(
+            names=[node.name for node in nodes], role=has_role.__name__, timeout=timeout
+        )
+    )
+
+
 def _get_https_command_response(node, secure_port=9183):
     session = requests.Session()
     session.trust_env = False
@@ -195,7 +210,7 @@ def test_standalone_keeper_cluster_https_control_secure_port(started_cluster):
         for node, pid in zip(nodes, pids):
             _wait_keeper_ready(node, pid, timeout=60.0)
 
-        leader = keeper_utils.get_leader(cluster, nodes)
+        leader = _wait_for_node(nodes, keeper_utils.is_leader)
         response = _get_https_command_response(leader, secure_port=9183)
         assert response.status_code == 200
         command_data = response.json()
@@ -203,7 +218,7 @@ def test_standalone_keeper_cluster_https_control_secure_port(started_cluster):
             cluster, leader, "conf", port=9181
         )
 
-        follower = keeper_utils.get_any_follower(cluster, nodes)
+        follower = _wait_for_node(nodes, keeper_utils.is_follower)
         response = _get_https_command_response(follower, secure_port=9183)
         assert response.status_code == 200
         command_data = response.json()
