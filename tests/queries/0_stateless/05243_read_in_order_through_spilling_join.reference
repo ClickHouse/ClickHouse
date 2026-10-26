@@ -11,9 +11,12 @@
 1
 125000	75000	1
 100000	75000	1
+25000	25000	1
 -- Concurrent build: parallel_hash switches to MergeJoin from multiple threads
 50000	25000	1
--- The spilled results match the non-spilled hash join
+-- The spilled results match the non-spilled hash join (INNER/LEFT x ALL/ANY)
+1
+1
 1
 1
 -- DISTINCT in order over the spilled join

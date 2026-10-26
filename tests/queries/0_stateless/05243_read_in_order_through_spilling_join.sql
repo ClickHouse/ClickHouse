@@ -108,6 +108,15 @@ SELECT count(), countIf(payload = ''), arraySort(groupArray(materialize(t))) = g
     SETTINGS join_algorithm = 'hash', max_threads = 1
 );
 
+-- INNER ANY: one output row per matched key, in the left order (the left keys are unique, so
+-- exactly one deterministic left row per key).
+SELECT count(), uniqExact(t), arraySort(groupArray(materialize(t))) = groupArray(materialize(t)) FROM (
+    SELECT events.t AS t FROM events
+    INNER ANY JOIN payloads ON events.id = payloads.id
+    ORDER BY events.t
+    SETTINGS join_algorithm = 'hash', max_threads = 1
+);
+
 SELECT '-- Concurrent build: parallel_hash switches to MergeJoin from multiple threads';
 
 SELECT count(), uniqExact(t), arraySort(groupArray(materialize(t))) = groupArray(materialize(t)) FROM (
@@ -116,18 +125,32 @@ SELECT count(), uniqExact(t), arraySort(groupArray(materialize(t))) = groupArray
     SETTINGS join_algorithm = 'parallel_hash', max_threads = 8
 );
 
-SELECT '-- The spilled results match the non-spilled hash join';
+SELECT '-- The spilled results match the non-spilled hash join (INNER/LEFT x ALL/ANY)';
+
+-- Every kind/strictness `canPreserveLeftBlockOrder` accepts: the ORDER BY inside the subqueries
+-- pins the order-preserving MergeJoin fallback on the spilled side (the session threshold is the
+-- "tiny" one, 250000), while `max_bytes_before_external_join = 0` keeps the other side on the
+-- in-memory hash join. The ANY checksums exclude `payload`: every key has two duplicate right
+-- rows and ANY picks one of them nondeterministically (and differently across the algorithms);
+-- the left columns and `payload != ''` (matched or not) are deterministic because the left keys
+-- are unique.
+
+-- The checksum aggregation is order-insensitive, so the redundant-sorting removal would drop the
+-- inner ORDER BY - and with it the MergeJoin pin - before the read-in-order gate sees it.
+SET query_plan_remove_redundant_sorting = 0;
 
 SELECT
     (SELECT sum(cityHash64(t, id, payload)) FROM (
         SELECT events.t AS t, events.id AS id, payloads.payload AS payload FROM events
         INNER JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
         SETTINGS join_algorithm = 'hash'
     ))
     =
     (SELECT sum(cityHash64(t, id, payload)) FROM (
         SELECT events.t AS t, events.id AS id, payloads.payload AS payload FROM events
         INNER JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
         SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0
     ));
 
@@ -135,14 +158,48 @@ SELECT
     (SELECT sum(cityHash64(t, id, payload)) FROM (
         SELECT events.t AS t, events.id AS id, payloads.payload AS payload FROM events
         LEFT JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
         SETTINGS join_algorithm = 'hash'
     ))
     =
     (SELECT sum(cityHash64(t, id, payload)) FROM (
         SELECT events.t AS t, events.id AS id, payloads.payload AS payload FROM events
         LEFT JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
         SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0
     ));
+
+SELECT
+    (SELECT sum(cityHash64(t, id)) FROM (
+        SELECT events.t AS t, events.id AS id FROM events
+        INNER ANY JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
+        SETTINGS join_algorithm = 'hash'
+    ))
+    =
+    (SELECT sum(cityHash64(t, id)) FROM (
+        SELECT events.t AS t, events.id AS id FROM events
+        INNER ANY JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
+        SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0
+    ));
+
+SELECT
+    (SELECT sum(cityHash64(t, id, payload != '')) FROM (
+        SELECT events.t AS t, events.id AS id, payloads.payload AS payload FROM events
+        LEFT ANY JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
+        SETTINGS join_algorithm = 'hash'
+    ))
+    =
+    (SELECT sum(cityHash64(t, id, payload != '')) FROM (
+        SELECT events.t AS t, events.id AS id, payloads.payload AS payload FROM events
+        LEFT ANY JOIN payloads ON events.id = payloads.id
+        ORDER BY events.t
+        SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 0
+    ));
+
+SET query_plan_remove_redundant_sorting = DEFAULT;
 
 SELECT '-- DISTINCT in order over the spilled join';
 
