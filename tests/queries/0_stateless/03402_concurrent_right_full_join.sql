@@ -1,7 +1,6 @@
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
 SET join_algorithm = 'parallel_hash';
 SET parallel_hash_join_threshold = 0;
 SET query_plan_join_swap_table = 0;
@@ -133,7 +132,6 @@ DROP TABLE IF EXISTS t_r_cmp;
 
 SELECT 'Consistency of results with HashJoin for multiple conditions';
 
-SET allow_experimental_analyzer = 1;
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS l;

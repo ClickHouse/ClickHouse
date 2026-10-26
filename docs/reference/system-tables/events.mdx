@@ -190,6 +190,18 @@ How many rows were skipped during aggregation because their grouping key could n
 
 Number of HTTP requests dispatched to AI providers.
 
+### AIAPICallsFailed {#aiapicallsfailed}
+
+Number of AI provider requests that failed after all retries.
+
+### AIAPICallsRetried {#aiapicallsretried}
+
+Number of AI provider requests retried after a transient failure.
+
+### AIAPICallsThrottled {#aiapicallsthrottled}
+
+Number of AI provider requests rejected with HTTP 429 (Too Many Requests).
+
 ### AIInputTokens {#aiinputtokens}
 
 Total prompt tokens consumed across all AI function calls in the query.
@@ -634,17 +646,33 @@ Number of BlobCopier thread executes
 
 Number of blobs lock errors occurred during BlobKiller execution
 
+### BlobKillerThreadLockedBatchedBlobs {#blobkillerthreadlockedbatchedblobs}
+
+Number of blobs returned from metadata storage as part of a batch
+
 ### BlobKillerThreadLockedBlobs {#blobkillerthreadlockedblobs}
 
 Number of blobs returned from metadata storage
+
+### BlobKillerThreadLockedSingleBlobs {#blobkillerthreadlockedsingleblobs}
+
+Number of blobs returned from metadata storage one by one
 
 ### BlobKillerThreadRecordBlobsErrors {#blobkillerthreadrecordblobserrors}
 
 Number of blobs recording errors occurred during BlobKiller execution
 
+### BlobKillerThreadRecordedBatchedBlobs {#blobkillerthreadrecordedbatchedblobs}
+
+Number of blobs removed as part of a batch whose removal by BlobKiller was recorded in metadata storage
+
 ### BlobKillerThreadRecordedBlobs {#blobkillerthreadrecordedblobs}
 
 Number of blobs which removal by BlobKiller was recorded in metadata storage
+
+### BlobKillerThreadRecordedSingleBlobs {#blobkillerthreadrecordedsingleblobs}
+
+Number of blobs removed one by one whose removal by BlobKiller was recorded in metadata storage
 
 ### BlobKillerThreadRemoveBlobsErrors {#blobkillerthreadremoveblobserrors}
 
@@ -1268,6 +1296,18 @@ Number of directories created by the 'plain_rewritable' metadata storage for S3O
 
 Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 
+### DiskPlainRewritableSnapshotRead {#diskplainrewritablesnapshotread}
+
+Number of times a read-only 'plain_rewritable' disk loaded its state from the snapshot file instead of listing the object storage (a refresh that finds the snapshot unchanged does not read it and is not counted).
+
+### DiskPlainRewritableSnapshotWriteFailed {#diskplainrewritablesnapshotwritefailed}
+
+Number of failed attempts to write the snapshot file of a 'plain_rewritable' disk (the write is retried).
+
+### DiskPlainRewritableSnapshotWritten {#diskplainrewritablesnapshotwritten}
+
+Number of snapshot files written by 'plain_rewritable' disks.
+
 ### DiskPlainRewritableUndoStageRetries {#diskplainrewritableundostageretries}
 
 Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.
@@ -1455,6 +1495,14 @@ Distributed Cache registry event. Number of distributed cache hash ring rebuilds
 ### DistrCacheInlineWrites {#distrcacheinlinewrites}
 
 Distributed Cache write buffer event. Number of cache writes that ran inline on the calling thread (writes of temporary data, which has no object storage write to overlap with)
+
+### DistrCacheKeptConnectionsInflightBytes {#distrcachekeptconnectionsinflightbytes}
+
+Distributed Cache read buffer event. The estimated in-flight bytes of the connections counted in DistrCacheKeptConnectionsWithInflightData (compare with DistrCacheUnusedDataPacketsBytesUnknownRequest)
+
+### DistrCacheKeptConnectionsWithInflightData {#distrcachekeptconnectionswithinflightdata}
+
+Distributed Cache read buffer event. The number of times a connection was kept in the pool when a read request was cancelled while data could still arrive, because the estimated in-flight bytes did not exceed `distributed_cache_min_inflight_bytes_to_discard_connection`
 
 ### DistrCacheLockRegistryMicroseconds {#distrcachelockregistrymicroseconds}
 
@@ -4464,6 +4512,10 @@ Number of replicas used to execute a query with task-based parallel replicas
 
 The total number of parquet row groups pruned by bloom filters.
 
+### ParquetColumnDataReadAheadRowGroups {#parquetcolumndatareadaheadrowgroups}
+
+Row groups whose column data a Parquet reader of a file in object storage or at a URL started reading before their decoding was scheduled, within its share of max_download_threads
+
 ### ParquetColumnsFilterExpression {#parquetcolumnsfilterexpression}
 
 The total number of columns that were passed through filter
@@ -4487,6 +4539,10 @@ The total number of parquet row groups pruned by dictionary filters (with a bloo
 ### ParquetFetchWaitTimeMicroseconds {#parquetfetchwaittimemicroseconds}
 
 Time of waiting for parquet file reads from decoding threads (not prefetching threads)
+
+### ParquetFilesSkippedByCachedStatistics {#parquetfilesskippedbycachedstatistics}
+
+The number of Parquet files that a read skipped without opening them, because the min/max statistics of the filter columns, kept with the cached file metadata by an earlier read of the same file version, exclude every row group
 
 ### ParquetFooterReadMicroseconds {#parquetfooterreadmicroseconds}
 
@@ -6675,6 +6731,94 @@ Number of TLS handshakes completed for incoming (server) connections, across the
 ### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
 
 Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).
+
+### TransactionBeginMicroseconds {#transactionbeginmicroseconds}
+
+Time spent in `BEGIN TRANSACTION`, explicit or implicit
+
+### TransactionBegins {#transactionbegins}
+
+Number of `BEGIN TRANSACTION`, explicit or implicit
+
+### TransactionBeginSnapshotBehindLatest {#transactionbeginsnapshotbehindlatest}
+
+Number of transactions that began with a snapshot below the latest CSN, because the global watermark lags
+
+### TransactionCommitAfterCSNMicroseconds {#transactioncommitaftercsnmicroseconds}
+
+Time spent finalizing committed transactions after their CSN was allocated
+
+### TransactionCommitAllocateCSNMicroseconds {#transactioncommitallocatecsnmicroseconds}
+
+Time from the start of a transaction commit until Keeper allocated its CSN
+
+### TransactionCommitConflicts {#transactioncommitconflicts}
+
+Number of transaction commits that failed with `SERIALIZATION_ERROR` because a concurrent operation changed a part
+
+### TransactionCommitMicroseconds {#transactioncommitmicroseconds}
+
+Time spent committing transactions, without waiting for the CSN to be loaded
+
+### TransactionCommits {#transactioncommits}
+
+Number of transaction commits started, including read-only and unsuccessful ones
+
+### TransactionCommitsWithCSN {#transactioncommitswithcsn}
+
+Number of transaction commits for which Keeper allocated a CSN
+
+### TransactionCommitUnknownStatus {#transactioncommitunknownstatus}
+
+Number of transaction commits whose outcome is unknown because of a Keeper hardware error
+
+### TransactionCommitUnknownStatusWaitMicroseconds {#transactioncommitunknownstatuswaitmicroseconds}
+
+Time spent waiting for the outcome of commits with unknown status
+
+### TransactionDeadReplicasMarked {#transactiondeadreplicasmarked}
+
+Number of replicas this replica marked dead for transactions
+
+### TransactionLogLoadedEntries {#transactionlogloadedentries}
+
+Number of transaction log (`/log`) entries read from Keeper
+
+### TransactionLogLoadMicroseconds {#transactionlogloadmicroseconds}
+
+Time spent loading the transaction log (`/log`) from Keeper: listing it, reading the new entries and applying them
+
+### TransactionLogLoads {#transactionlogloads}
+
+Number of loads of the transaction log (`/log`) from Keeper
+
+### TransactionsCommitted {#transactionscommitted}
+
+Number of committed transactions, including read-only ones
+
+### TransactionsRolledBack {#transactionsrolledback}
+
+Number of rolled back transactions
+
+### TransactionTIDsInvalidated {#transactiontidsinvalidated}
+
+Number of transaction IDs this replica invalidated
+
+### TransactionWaitCSNLoaded {#transactionwaitcsnloaded}
+
+Number of waits until a CSN is loaded into the latest snapshot, by a synchronous `COMMIT` or `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitCSNLoadedMicroseconds {#transactionwaitcsnloadedmicroseconds}
+
+Time spent waiting until a CSN is loaded into the latest snapshot
+
+### TransactionWaitWatermark {#transactionwaitwatermark}
+
+Number of waits until the watermark reaches a CSN, so a new transaction on this replica sees it, by `COMMIT` with `wait_visible` or `SYSTEM SYNC TRANSACTION LOG`
+
+### TransactionWaitWatermarkMicroseconds {#transactionwaitwatermarkmicroseconds}
+
+Time spent waiting until the watermark reaches a CSN
 
 ### UncompressedCacheHits {#uncompressedcachehits}
 

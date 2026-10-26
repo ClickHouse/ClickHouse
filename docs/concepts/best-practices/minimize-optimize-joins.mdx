@@ -9,7 +9,7 @@ doc_type: 'guide'
 ---
 import { Image } from "/snippets/components/Image.jsx";
 
-This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [Joining tables](/concepts/features/operations/select/joining-tables).
+This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables).
 
 ## Prefer avoiding JOINs {#prefer-avoiding-joins}
 
@@ -47,7 +47,7 @@ Follow these best practices to improve JOIN performance:
 ## Choosing the optimal JOIN algorithm {#choosing-the-optimal-join-algorithm}
 
 ClickHouse supports several JOIN algorithms that trade off between speed and memory.
-The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [Choosing a JOIN algorithm](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [JOIN algorithms](/concepts/features/operations/select/joining-tables#join-algorithms).
 
 If your key optimization metric is performance and you're looking to execute the join as fast as possible, then you can use the following decision tree for choosing the right join algorithm:
 
@@ -165,7 +165,7 @@ The `IN` query also returns `261915`. Its median elapsed time was 0.696 seconds,
 
 ## Further reading {#further-reading}
 
-- [Joining tables](/concepts/features/operations/select/joining-tables)
+- [Using JOINs in ClickHouse](/concepts/features/operations/select/joining-tables)
 - [`JOIN` clause reference](/reference/statements/select/join)
 - [Dictionary best practices](/concepts/features/dictionaries/best-practices)
 - [Full SQL JOIN support, Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)

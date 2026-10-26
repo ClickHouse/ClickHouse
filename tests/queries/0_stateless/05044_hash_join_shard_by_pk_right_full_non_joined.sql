@@ -3,7 +3,6 @@
 -- as the unsharded one, including the unmatched right rows. This holds also when the unsharded join
 -- would use the parallel layout.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;

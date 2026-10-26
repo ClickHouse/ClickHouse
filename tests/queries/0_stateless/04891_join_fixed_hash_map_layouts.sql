@@ -51,7 +51,6 @@ INSERT INTO t_rf_l SELECT toUInt8(number % 100) FROM numbers(5000);
 
 SET join_algorithm = 'hash';
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
-SET enable_analyzer = 1;
 SET max_threads = 4;
 SET query_plan_join_swap_table = 'false';
 SET query_plan_optimize_join_order_limit = 10;

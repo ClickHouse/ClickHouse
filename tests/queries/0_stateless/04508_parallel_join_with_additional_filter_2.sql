@@ -12,7 +12,6 @@ CREATE TABLE t2 (key UInt32, a UInt32, attr String) ENGINE = MergeTree ORDER BY 
 INSERT INTO t1 SELECT number, number * 4, concat('l', toString(number)) FROM numbers(6);
 INSERT INTO t2 SELECT number, 10, concat('r', toString(number)) FROM numbers(12);
 
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 -- The tables are ordered by the join key, and a join sharded by key ranges always builds the serial layout.
 SET query_plan_join_shard_by_pk_ranges = 0;
