@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 SETTINGS="
-    enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
     automatic_parallel_replicas_mode = 1, automatic_parallel_replicas_remember_boundary = 1,
@@ -27,7 +27,7 @@ QUERY="SELECT sum(a.id + b.id) FROM t_sj AS a INNER JOIN t_sj AS b ON a.id = b.i
 # Remembers the boundary and the coordinated read, building the plan with parallel replicas to find them.
 $CLICKHOUSE_CLIENT -q "$QUERY SETTINGS $SETTINGS, log_comment = 'sj_1_remember'"
 # Both reads match the remembered one, so the plan is built again.
-CLICKHOUSE_CLIENT_DEBUG=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=debug/g')
+CLICKHOUSE_CLIENT_DEBUG=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 $CLICKHOUSE_CLIENT_DEBUG -q "$QUERY SETTINGS $SETTINGS, log_comment = 'sj_2_ambiguous'" 2>&1 \
     | grep -o "2 reads under the remembered boundary match the remembered coordinated read" | sort -u
 

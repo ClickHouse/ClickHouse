@@ -104,6 +104,10 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 class PrimaryIndexCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
+class StatisticsCache;
+using StatisticsCachePtr = std::shared_ptr<StatisticsCache>;
+struct StatisticsCacheCell;
+
 class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
@@ -166,6 +170,8 @@ public:
     ColumnSizeByNameConstPtr getColumnSizes() const;
     /// Return the size of all files required to read the specified subcolumn.
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
+    /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
+    std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -241,11 +247,26 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
+    /// A static subcolumn's serialization from the part's shared serializations;
+    /// see `PartSerializations::tryGetSubcolumnSerialization` for when it returns nothing.
+    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const;
+
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
-    Estimates getEstimates() const;
+    /// The statistics of the part's columns; an empty `required_columns` means all columns.
+    /// Without a cache, the statistics are read from disk and are private to the caller.
+    /// With a cache, the statistics of a column are read from disk only when they are not cached, and the
+    /// returned objects are shared with other callers, so they must not be modified.
+    ColumnsStatistics loadStatistics(const NameSet & required_columns = {}, StatisticsCache * cache = nullptr) const;
+    /// Loads the statistics of all columns into the cache (prewarming), unless the cache is already filled up to
+    /// `statistics_cache_prewarm_ratio`. Best-effort: an error is logged, not thrown.
+    void loadStatisticsToCache(StatisticsCache & cache) const;
+    /// Removes the statistics of all columns of the part from the cache.
+    void removeStatisticsFromCache(StatisticsCache * cache) const;
+    /// The estimates of the statistics of `required_columns`; an empty `required_columns` means all columns.
+    /// The estimates are memoized per column, so only the statistics of the columns that were not requested
+    /// before are read. The result may contain the estimates of other columns as well.
+    Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -473,7 +494,8 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
+    /// Columns with no values to store: every value zeroed by a column TTL, or no source part stores the column
+    /// (e.g. added by `ADD COLUMN` without a default and never written).
     NameSet expired_columns;
 
     NameSet invalidated_system_columns;
@@ -641,6 +663,9 @@ public:
     bool hasProjection() const { return !projection_parts.empty(); }
 
     bool hasBrokenProjection(const String & projection_name) const;
+
+    /// Listed in checksums but not loaded by loadProjections, e.g. because the part was loaded with table metadata that did not have it yet.
+    bool hasUnloadedProjection(const String & projection_name) const;
 
     /// Return true, if all projections were loaded successfully and none was marked as broken.
     void loadProjections(
@@ -892,8 +917,8 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+    /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
+    virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -947,9 +972,13 @@ private:
     PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
     /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// Lazily initialized per column on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
+    /// The columns whose statistics were already looked up, including the columns without statistics.
+    mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
+    /// The estimates of all columns are known.
+    mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -995,9 +1024,13 @@ private:
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
 
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
+    /// statistics file separately instead of in the packed archive.
+    std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
+        const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
     PackedFilesReader * getStatisticsPackedReader() const;
+    /// The path that identifies the part in the caches shared between tables.
+    String getPathForCacheKey() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 
@@ -1031,6 +1064,9 @@ private:
 
     /// If it's true then data related to this part is cleared from mark and index caches.
     mutable std::atomic_bool cleared_data_in_caches = false;
+
+    /// If it's true then the statistics of this part may have been put into the statistics cache.
+    mutable std::atomic_bool may_store_data_in_statistics_cache = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

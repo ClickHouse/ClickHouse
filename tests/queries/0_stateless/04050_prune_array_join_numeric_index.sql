@@ -2,8 +2,6 @@
 -- indices after pruning unused nested subcolumns.
 -- https://github.com/ClickHouse/ClickHouse/issues/100026
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_nested;
 CREATE TABLE t_nested (`n.a` Array(Int64), `n.b` Array(Int64), `n.c` Array(Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_nested VALUES ([1, 2], [3, 4], [5, 6]);

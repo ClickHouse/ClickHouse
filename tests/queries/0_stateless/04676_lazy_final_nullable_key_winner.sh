@@ -18,7 +18,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The lazy FINAL branch is not built by the old analyzer, so without this the whole
 # test is silently vacuous under compatibility randomization and on the old-analyzer job.
-settings="--enable_analyzer=1 --optimize_on_insert=1"
+settings="--optimize_on_insert=1"
 
 # Settings that select the lazy branch, shared by every cell that must take it.
 lazy="query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0.0"

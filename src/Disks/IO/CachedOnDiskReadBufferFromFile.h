@@ -43,7 +43,8 @@ public:
         bool use_external_buffer_,
         std::optional<size_t> read_until_position_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
-        ThrottlerPtr local_throttler_ = nullptr);
+        ThrottlerPtr local_throttler_ = nullptr,
+        const IOSchedulingSettings & io_scheduling_ = {});
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -62,6 +63,8 @@ public:
     void setReadUntilPosition(size_t position) override;
 
     void setReadUntilEnd() override;
+
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
     String getFileName() const override { return info.source_file_path; }
 
@@ -123,6 +126,8 @@ public:
         const size_t local_fs_buffer_size;
         /// Throttler for local filesystem reads (cache file reads).
         const ThrottlerPtr local_throttler;
+        /// IO scheduling links of the remote reads.
+        IOSchedulingSettings io_scheduling;
 
         /// Non-included range end offset.
         size_t read_until_position = 0;
