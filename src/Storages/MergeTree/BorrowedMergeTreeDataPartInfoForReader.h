@@ -161,15 +161,24 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override
     {
+        /// A column without its own info still follows the part-wide settings, such as the serialization
+        /// versions of the types (`types_serialization_versions` in `serialization.json`).
         auto it = serialization_infos.find(column.getNameInStorage());
         return it == serialization_infos.end()
-            ? IDataType::getSerialization(column)
+            ? IDataType::getSerialization(column, serialization_infos.getSettings())
             : IDataType::getSerialization(column, *it->second);
     }
 
-    /// There is no loaded part holding prebuilt serializations to share, so the readers build them from
-    /// `serialization_infos` themselves (see `IMergeTreeReader::getColumnAndSerializationInPart`).
-    SerializationPtr tryGetSerialization(const String & /* column_name */) const override { return nullptr; }
+    /// There is no loaded part holding prebuilt serializations to share, so the serialization of a column of
+    /// the part is built from `serialization_infos` on request. The readers resolve dynamic subcolumns
+    /// (paths of `JSON`, types of `Dynamic`) against it, see `IMergeTreeReader::tryGetColumnInPart`.
+    SerializationPtr tryGetSerialization(const String & column_name) const override
+    {
+        auto column = columns_description.tryGetPhysical(column_name);
+        if (!column)
+            return nullptr;
+        return getSerialization(*column);
+    }
 
     String getTableName() const override { return table_name; }
 
