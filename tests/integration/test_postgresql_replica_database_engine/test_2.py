@@ -178,6 +178,32 @@ def test_add_new_table_to_replication(started_cluster):
     check_several_tables_are_synchronized(instance, NUM_TABLES + 3)
 
 
+@pytest.mark.parametrize(
+    "query,error",
+    [
+        ("DETACH DATABASE test_database", "NOT_IMPLEMENTED"),
+        (
+            "DROP DATABASE test_database SETTINGS max_table_size_to_drop = 1",
+            "TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT",
+        ),
+    ],
+)
+def test_refused_database_drop_keeps_replication(started_cluster, query, error):
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 1000)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    assert error in instance.query_and_get_error(query)
+
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(1000, 1000)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+
 def test_remove_table_from_replication(started_cluster):
     NUM_TABLES = 5
     pg_manager.create_and_fill_postgres_tables(NUM_TABLES, 10000)
