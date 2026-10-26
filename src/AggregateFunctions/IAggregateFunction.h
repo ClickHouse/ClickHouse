@@ -501,6 +501,16 @@ public:
         const IColumn ** columns,
         Arena * arena) const = 0;
 
+    /// The same as addBatchConsecutivePlaces, but the rows with `null_map[i] != 0` are skipped.
+    virtual void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena) const = 0;
+
     /** The case when the aggregation key is UInt8
       * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
       */
@@ -940,6 +950,20 @@ public:
     {
         for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchConsecutivePlacesNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            if (!null_map[i])
+                static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchLookupTable8(

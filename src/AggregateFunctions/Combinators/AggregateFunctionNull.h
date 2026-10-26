@@ -539,27 +539,15 @@ public:
         const IColumn * nested_column = &column->getNestedColumn();
         const UInt8 * null_map = column->getNullMapData().data();
 
-        /// Pass each run of non-NULL rows to the nested function in one call, instead of a virtual call per row.
-        size_t run_begin = row_begin;
-        while (run_begin < row_end)
+        /// One call for all rows, the nested function skips the NULL ones itself, instead of a virtual call per row.
+        this->nested_function->addBatchConsecutivePlacesNotNull(
+            row_begin, row_end, this->nestedPlace(place), place_stride, &nested_column, null_map, arena);
+
+        if constexpr (result_is_nullable)
         {
-            if (null_map[run_begin])
-            {
-                ++run_begin;
-                continue;
-            }
-
-            size_t run_end = run_begin + 1;
-            while (run_end < row_end && !null_map[run_end])
-                ++run_end;
-
-            AggregateDataPtr run_place = place + (run_begin - row_begin) * place_stride;
-            for (size_t i = run_begin; i < run_end; ++i)
-                this->setFlag(run_place + (i - run_begin) * place_stride);
-
-            this->nested_function->addBatchConsecutivePlaces(
-                run_begin, run_end, this->nestedPlace(run_place), place_stride, &nested_column, arena);
-            run_begin = run_end;
+            for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+                if (!null_map[i])
+                    this->setFlag(place);
         }
     }
 
