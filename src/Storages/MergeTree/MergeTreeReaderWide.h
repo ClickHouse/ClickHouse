@@ -144,9 +144,13 @@ private:
         bool deserialize_prefixes,
         const ColumnReadSelector & selector);
 
+    struct ColumnKind;
+
+    /// Open the streams of a column that is read, and classify it in `kind`.
     void addStreams(
         const NameAndTypePair & name_and_type,
-        const SerializationPtr & serialization);
+        const SerializationPtr & serialization,
+        ColumnKind & kind);
 
     ReadBuffer * getStream(
         bool seek_to_start,
@@ -224,16 +228,12 @@ private:
     bool read_without_marks = false;
     LoggerPtr log;
 
-    /// Columns without a single stream in the part, the counterpart of `partially_read_columns`.
-    /// Filled by `addStreams`.
-    NameSet columns_absent_from_part;
-
-    /// Columns that are not cacheable, see `isColumnNotCacheable`. Such a column is read from the
-    /// part by every read, like a partially read column. Filled by `addStreams`.
-    NameSet columns_not_cacheable;
-
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
-    /// served from the cache: a partially read column or a column that is not cacheable.
+    /// served from the cache: a partially read column - only some of its streams are in the part,
+    /// in practice a `Nested` member added by an `ALTER`, whose offsets are read from the shared
+    /// stream of its group while its elements stay empty; `fillMissingColumns` takes those offsets
+    /// to size every re-added member of the group - or a column that is not cacheable, see
+    /// `isColumnNotCacheable`.
     bool isColumnReadOnlyFromPart(size_t pos) const;
     bool hasColumnsReadOnlyFromPart() const;
 
@@ -249,16 +249,20 @@ private:
     /// and both paths leave it null for `fillMissingColumns`.
     bool isColumnAbsentFromPart(size_t pos) const;
 
-    /// Only some of the streams of the column at `pos` are in the part - in practice a `Nested`
-    /// member added by an `ALTER`, whose offsets are read from the shared stream of its group
-    /// while its elements stay empty. Reading it does produce data: `fillMissingColumns`
-    /// discards its values but takes those offsets to size every re-added member of the group,
-    /// so it has to be read from the part even when the rest of the granule is served from cache.
-    bool isColumnPartiallyRead(size_t pos) const;
-
     /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
     /// system column. Both paths leave it null.
     bool isColumnSkipped(size_t pos) const;
+
+    /// The answers of the predicates above per result column, computed once by the constructor:
+    /// the columns cache path asks them for every granule.
+    struct ColumnKind
+    {
+        bool skipped = false;
+        bool absent_from_part = false;
+        bool read_only_from_part = false;
+    };
+    std::vector<ColumnKind> column_kinds;
+    bool has_columns_read_only_from_part = false;
 
     /// The columns cache.
     ///
@@ -316,8 +320,8 @@ private:
     std::vector<bool> accumulated_from_disk;
     MutableColumns accumulated_columns;
 
-    /// Begin a new contiguous mark range at `from_mark`: write what the previous range left,
-    /// look the stripes of the new one up in the cache and reset the state.
+    /// Begin a new contiguous mark range at `from_mark`, or re-enter the current one there: write
+    /// what was read so far, look the stripes of a new range up in the cache and reset the cursor.
     void startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns);
 
     /// Look the granules [first_mark, end_mark) up in the cache for every regular column. Returns
@@ -347,14 +351,16 @@ private:
 
     /// Copy the rows [offset, offset + rows) of granule `mark`, just read from the part, for the
     /// cache: they are at `sizes_before_reading[pos] + row_in_run` of every result column read
-    /// from the part (`from_disk`). A run of granules read to their end becomes an entry when
-    /// its stripe ends, when the range ends, or when the run is broken.
+    /// from the part (`from_disk`), followed by `rows_left_in_run - rows` more rows of the run read
+    /// from the part by this call. A run of granules read to their end becomes an entry when its
+    /// stripe ends, when the range ends, or when the run is broken.
     void accumulateRowsForColumnsCache(
         size_t mark,
         size_t offset,
         size_t rows,
         size_t granule_rows,
         size_t row_in_run,
+        size_t rows_left_in_run,
         const std::vector<bool> & from_disk,
         const std::vector<size_t> & sizes_before_reading,
         const MutableColumns & res_columns);

@@ -168,8 +168,8 @@ private:
     size_t readGranulesWithColumnsCache(size_t from_mark, size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns);
 
     /// Copy the `rows` rows of granule `mark` of the column at `pos`, which start at `offset` of
-    /// `column`, for the cache.
-    void accumulateGranuleForColumnsCache(size_t pos, size_t mark, const IColumn & column, size_t offset, size_t rows);
+    /// `column`, for the cache. The block being read ends at `block_end_mark`.
+    void accumulateGranuleForColumnsCache(size_t pos, size_t mark, size_t block_end_mark, const IColumn & column, size_t offset, size_t rows);
 
     /// Turn the accumulated run of granules of the column at `pos` into an entry.
     void finishAccumulation(size_t pos);
