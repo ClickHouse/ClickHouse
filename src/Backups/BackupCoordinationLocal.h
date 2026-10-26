@@ -66,6 +66,10 @@ public:
     void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
     Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
 
+    /// A backup without ON CLUSTER has no initiating host: the query itself takes the decision
+    /// against its own user (see `backupNamedCollections`).
+    bool doesInitiatorTakeNamedCollectionsExportDecision() const override { return true; }
+
     void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) override;
     String getKeeperMapDataPath(const String & table_zookeeper_root_path) const override;
 

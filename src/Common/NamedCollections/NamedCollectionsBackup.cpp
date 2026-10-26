@@ -15,6 +15,7 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
@@ -37,6 +38,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_BACKUP_TABLE;
     extern const int CANNOT_RESTORE_TABLE;
 }
 
@@ -56,7 +58,8 @@ constexpr std::string_view encrypted_sql_extension = ".sql.enc";
 
 void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup)
 {
-    const auto & backup_named_collections = backup_entries_collector.getBackupSettings().backup_named_collections;
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    const auto & backup_named_collections = backup_settings.backup_named_collections;
 
     /// `backup_named_collections = false` turns the export off entirely, even for an explicitly
     /// named `system.named_collections` table.
@@ -73,26 +76,55 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     /// `displaySecretsInShowAndSelect` (the former alone does not allow reading the values back).
     const AccessFlags show_values_rights = AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS};
 
-    if (!backup_named_collections.has_value()
-        && !backup_entries_collector.isTableExplicitlySelectedForBackup(
-            QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"}))
+    const bool explicitly_selected = backup_entries_collector.isTableExplicitlySelectedForBackup(
+        QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"});
+
+    if (!backup_named_collections.has_value())
     {
-        /// The default for a DATABASE or ALL element selecting this table implicitly: export the
-        /// collections if the user may read their values, skip them with a warning otherwise, so
-        /// that `BACKUP ALL` works for a user who may back up everything but may not read the
-        /// values. For `BACKUP ON CLUSTER` this decision was already taken by the initiating host
-        /// against the initiating user (see `BackupsWorker`), because this host may be running the
-        /// query with full access.
-        auto access = context->getAccess();
-        if (!access->isGranted(show_values_rights) || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+        /// An internal backup executes a query dispatched by the initiating host of a `BACKUP ON
+        /// CLUSTER`, possibly with full access (the default `distributed_ddl_use_initial_user_and_roles
+        /// = false`), so the rights checks below may pass for an initiating user who holds none of the
+        /// rights. The export must therefore be authorized by the initiating host against the
+        /// initiating user: an initiator aware of the export resolves a wildcard selection before
+        /// dispatching the query and requires the rights for an explicit one (see `BackupsWorker` and
+        /// `BackupUtils::getRequiredAccessToBackup`), which its backup coordination version shows. An
+        /// older initiator supplies no such decision, so the collections must not be exported: fail
+        /// close by skipping a wildcard selection and refusing an explicit one.
+        if (backup_settings.internal
+            && !backup_entries_collector.getBackupCoordination()->doesInitiatorTakeNamedCollectionsExportDecision())
         {
+            if (explicitly_selected)
+                throw Exception(
+                    ErrorCodes::CANNOT_BACKUP_TABLE,
+                    "Cannot back up the `system.named_collections` table: the initiating host of this ON CLUSTER query "
+                    "is too old to authorize exporting the named collections against the initiating user's rights. "
+                    "Upgrade the initiating host or run the backup on it");
             LOG_WARNING(
                 getLogger("backupNamedCollections"),
-                "Not exporting the named collections to the backup: the user has no rights to read their values "
-                "(`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and `displaySecretsInShowAndSelect`). "
-                "Set backup_named_collections = 1 to make this an error, or backup_named_collections = 0 to "
-                "silence this warning");
+                "Not exporting the named collections to the backup: the initiating host of this ON CLUSTER query "
+                "is too old to authorize the export against the initiating user's rights");
             return;
+        }
+
+        if (!explicitly_selected)
+        {
+            /// The default for a DATABASE or ALL element selecting this table implicitly: export the
+            /// collections if the user may read their values, skip them with a warning otherwise, so
+            /// that `BACKUP ALL` works for a user who may back up everything but may not read the
+            /// values. For `BACKUP ON CLUSTER` this decision was already taken by the initiating host
+            /// against the initiating user (see `BackupsWorker`), because this host may be running the
+            /// query with full access.
+            auto access = context->getAccess();
+            if (!access->isGranted(show_values_rights) || !access->isGranted(AccessType::displaySecretsInShowAndSelect))
+            {
+                LOG_WARNING(
+                    getLogger("backupNamedCollections"),
+                    "Not exporting the named collections to the backup: the user has no rights to read their values "
+                    "(`SHOW NAMED COLLECTIONS`, `SHOW NAMED COLLECTIONS SECRETS` and `displaySecretsInShowAndSelect`). "
+                    "Set backup_named_collections = 1 to make this an error, or backup_named_collections = 0 to "
+                    "silence this warning");
+                return;
+            }
         }
     }
 
@@ -270,6 +302,12 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
             /// the original out of the error statistics too. The sanitized replacement is
             /// constructed outside the scope and is recorded normally.
             Exception::SuppressErrorCodesScope suppress_error_codes;
+            /// A failing read logs its diagnostics before throwing - `ReadBufferFromS3` logs the
+            /// object key of the entry, in particular - and the log records of the query reach the
+            /// restoring client (`send_logs_level`), who may not see the collection's name. Keep
+            /// the records of the read out of the client's log stream; they still reach the server
+            /// logs.
+            CurrentThread::HideLogsFromClientScope hide_logs_from_client;
             auto in = backup->readFile(filepath);
             readStringUntilEOF(stored, *in);
         }
@@ -403,9 +441,11 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         /// Keeper for the Keeper storage types).
         try
         {
-            /// Keeps the name-bearing errors of `createFromSQL` out of the error statistics; see
-            /// the read in the first loop.
+            /// Keeps the name-bearing errors of `createFromSQL` out of the error statistics, and
+            /// its log records - a Keeper error names the entry's path - out of the client's log
+            /// stream; see the read in the first loop.
             Exception::SuppressErrorCodesScope suppress_error_codes;
+            CurrentThread::HideLogsFromClientScope hide_logs_from_client;
             factory.createFromSQL(create_query);
         }
         catch (...)

@@ -143,7 +143,9 @@ struct BackupSettings
     /// For `BACKUP ON CLUSTER` the initiating host takes the unset-default decision against its
     /// user's rights before dispatching the query, because the other hosts may execute it with full
     /// access; a refusal is dispatched as an `EXCEPT TABLES` clause of the wildcard elements, not
-    /// as a resolved value of this setting (see `BackupsWorker`).
+    /// as a resolved value of this setting (see `BackupsWorker`). The hosts verify through the
+    /// backup coordination version that the initiating host takes this decision, and never export
+    /// the collections for an initiator too old to take it (see `backupNamedCollections`).
     std::optional<bool> backup_named_collections;
 
 #if CLICKHOUSE_CLOUD

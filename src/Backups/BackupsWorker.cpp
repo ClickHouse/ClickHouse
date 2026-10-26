@@ -527,7 +527,10 @@ struct BackupsWorker::BackupStarter
             /// elements through `EXCEPT TABLES`, not by forwarding a resolved
             /// `backup_named_collections = false`: every host understands the long-established EXCEPT
             /// clause, while a host predating the setting would reject a query carrying it (e.g. during
-            /// a rolling upgrade).
+            /// a rolling upgrade). The hosts executing the dispatched query trust the elements to carry
+            /// this decision only when the initiator's backup coordination version shows it was taken;
+            /// a query dispatched by an older initiator, which checks none of the rights the export
+            /// requires, never exports the collections (see `backupNamedCollections`).
             if (!backup_settings.backup_named_collections.has_value()
                 && BackupUtils::wildcardSelectionCoversSystemNamedCollections(backup_query->elements))
             {

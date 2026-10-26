@@ -42,7 +42,8 @@ run_backup() { # <suffix> <user> <query> [<settings>]
 echo "unset: an implicit selection skips the collections for a user without the rights to read them"
 # The skip emits a server-side warning. Request it through `send_logs_level` and capture it, both
 # to assert it and to keep it out of the test's own stderr, which must stay empty.
-output=$(${CLICKHOUSE_CLIENT} --send_logs_level=warning --user "${user}" --query \
+# `CLICKHOUSE_CLIENT` already carries a `--send_logs_level`, so the override must allow the repeat.
+output=$(${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=warning --user "${user}" --query \
     "BACKUP DATABASE system ${except_tables_clause} TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_default_skip')" 2>&1)
 echo "${output}" | grep -c "BACKUP_CREATED"
 echo "${output}" | grep -m1 -c "Not exporting the named collections"

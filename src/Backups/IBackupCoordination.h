@@ -130,6 +130,12 @@ public:
     virtual void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) = 0;
     virtual Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const = 0;
 
+    /// Whether the initiating host of the BACKUP ON CLUSTER query takes the authorization decision
+    /// for exporting named collections before dispatching the query. An internal backup must not
+    /// export the collections when the initiator predates that decision, because the dispatched
+    /// query may be executed with full access (see `backupNamedCollections`).
+    virtual bool doesInitiatorTakeNamedCollectionsExportDecision() const = 0;
+
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
     virtual void addFileInfos(BackupFileInfos && file_infos) = 0;

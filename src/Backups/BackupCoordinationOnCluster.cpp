@@ -803,6 +803,11 @@ Strings BackupCoordinationOnCluster::getReplicatedNamedCollectionsDirs(const Str
     return replicated_named_collections->getDirectories(replication_id, current_host);
 }
 
+bool BackupCoordinationOnCluster::doesInitiatorTakeNamedCollectionsExportDecision() const
+{
+    return stage_sync.doesInitiatorTakeNamedCollectionsExportDecision();
+}
+
 void BackupCoordinationOnCluster::prepareReplicatedNamedCollections() const
 {
     if (replicated_named_collections)
