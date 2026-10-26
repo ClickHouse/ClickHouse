@@ -5829,10 +5829,10 @@ NameSet getColumnsDroppedByAlter(const AlterCommands & commands, const ColumnsDe
     auto old_names = getColumnOldNames(old_columns);
     for (const auto & command : commands)
     {
-        if (command.type == AlterCommand::DROP_COLUMN)
+        if (command.type == AlterCommand::DROP_COLUMN && !command.ignore)
         {
             auto it = old_names.find(command.column_name);
-            if (!command.ignore && !command.clear && !command.partition && it != old_names.end())
+            if (!command.clear && !command.partition && it != old_names.end())
             {
                 if (it->second)
                     dropped_columns.emplace(*it->second);

@@ -159,6 +159,13 @@ ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, ADD COLUMN q 
 SELECT * FROM t_alter_previous_commands_single;
 DROP TABLE t_alter_previous_commands_single;
 
+-- DROP COLUMN IF EXISTS of the name the statement renamed away removes no stored column.
+CREATE TABLE t_alter_previous_commands_single (q UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+ALTER TABLE t_alter_previous_commands_single RENAME COLUMN q TO r, DROP COLUMN IF EXISTS q SETTINGS alter_sync = 2;
+SELECT r FROM t_alter_previous_commands_single;
+DROP TABLE t_alter_previous_commands_single;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/117824: ADD COLUMN IF NOT EXISTS adds back the column that DROP COLUMN
 -- IF EXISTS of the same statement drops.
 CREATE TABLE t_alter_previous_commands_if (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;
