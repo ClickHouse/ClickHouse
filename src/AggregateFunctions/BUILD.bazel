@@ -89,19 +89,6 @@ ch_cc_library(
     ) + glob(["TimeSeries/*.cpp"]) + _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS,
     clickhouse_code = True,
     implementation_deps = [
-        "@clickhouse_llvm_project//:llvm_headers",
-        "@clickhouse_libdivide//:libdivide",
-        "//contrib/pdqsort:headers",
-        "//src/Compression:clickhouse_compression",
-        "//src/Functions:headers",
-        "//src/Functions/array:headers",
-        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
-        "//src/Common:target_specific",
-        "//src/Compression:codec_api",
-    ],
-    local_defines = DBMS_CONSUMER_DEFINES,
-    source_headers = True,
-    deps = [
         ":headers",
         "//src/Common:memory_tracking_api",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
@@ -134,7 +121,18 @@ ch_cc_library(
         ":aggregate_api",
         "//src/Parsers:parser_api",
         "//src:column_types",
+        "@clickhouse_llvm_project//:llvm_headers",
+        "@clickhouse_libdivide//:libdivide",
+        "//contrib/pdqsort:headers",
+        "//src/Compression:clickhouse_compression",
+        "//src/Functions:headers",
+        "//src/Functions/array:headers",
+        "@clickhouse_abseil_cpp//:absl_inlined_vector_internal",
+        "//src/Common:target_specific",
+        "//src/Compression:codec_api",
     ],
+    local_defines = DBMS_CONSUMER_DEFINES,
+    source_headers = True,
 )
 
 ch_cc_library(

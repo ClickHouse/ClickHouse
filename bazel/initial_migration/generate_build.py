@@ -1876,8 +1876,10 @@ def main():
         ("programs/disks", "clickhouse-disks-lib"),
         ("programs/format", "clickhouse-format-lib"),
         ("programs/server", "clickhouse-server-lib"),
+        ("src/AggregateFunctions", "clickhouse_aggregate_functions__compile_0"),
         ("src/Common", "clickhouse_new_delete"),
         ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_no_log"),
+        ("src/Daemon", "daemon"),
         ("src/Functions/URL", "clickhouse_functions_url__compile_0"),
     ])
     from initial_migration.first_party_packages import group_package_sources

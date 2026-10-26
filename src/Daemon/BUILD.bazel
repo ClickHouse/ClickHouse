@@ -13,6 +13,8 @@ ch_cc_library(
     ],
     clickhouse_code = True,
     implementation_deps = [
+        "@clickhouse_llvm_project//:LLVMSupport",
+        "//base/poco/Net:_poco_net",
         "//src/Loggers:headers",
         "//src/Loggers:loggers",
         ":headers",
@@ -31,10 +33,6 @@ ch_cc_library(
         "USE_CLICKHOUSE_THREADS=1",
     ]),
     source_headers = True,
-    deps = [
-        "@clickhouse_llvm_project//:LLVMSupport",
-        "//base/poco/Net:_poco_net",
-    ],
 )
 
 cc_library(
