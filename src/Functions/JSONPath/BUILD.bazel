@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 _PRIVATE_FUNCTIONS_JSONPATH_HEADERS = glob(
     [
+        "ASTs/*.h",
         "Generator/VisitorJSONPath*.h",
         "Parsers/*.h",
     ],

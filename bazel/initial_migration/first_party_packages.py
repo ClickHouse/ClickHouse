@@ -1192,7 +1192,8 @@ class Migration:
                 ("src/Compression", "clickhouse_compression",
                  list_expr(["PFor/bitpack.h", "PFor/block.h", "PFor/bulk.h", "PFor/vertical.h"])),
                 ("src/Functions/array", "clickhouse_functions_array__compile_0", list_expr(["arrayIndex.h"])),
-                ("src/Functions/JSONPath", "clickhouse_functions_jsonpath", expr('glob(["Generator/VisitorJSONPath*.h"])')),
+                ("src/Functions/JSONPath", "clickhouse_functions_jsonpath",
+                 expr('glob(["ASTs/*.h", "Generator/VisitorJSONPath*.h"])')),
             ):
                 if package in self.rows:
                     declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, headers, field="srcs")
