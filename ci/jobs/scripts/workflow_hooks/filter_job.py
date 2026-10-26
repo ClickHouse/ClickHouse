@@ -1,8 +1,14 @@
 import re
 from pathlib import PurePosixPath
 
-from ci.defs.defs import BuildTypes, JobNames
+from ci.defs.defs import ArtifactNames, BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
+from ci.jobs.scripts.clang_tidy_changed_files import (
+    is_selectable_path as is_analyzed_by_clang_tidy,
+    is_generator_input,
+    is_tidy_config_path,
+    normalize_changed_path as normalize_tidy_path,
+)
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
@@ -48,6 +54,18 @@ COVERAGE_REPLACEMENT_JOBS = [
     for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
     + JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
 ]
+# The builds the replacement jobs require, kept with them when `ci-llvm-coverage` meets `ci-no-coverage`.
+COVERAGE_REPLACEMENT_BUILDS = [
+    j.name
+    for j in JobConfigs.build_jobs
+    if any(
+        artifact in r.requires
+        for artifact in j.provides
+        for r in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+        + JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+    )
+]
+assert COVERAGE_REPLACEMENT_BUILDS, "no build provides the artifacts of the coverage replacement jobs"
 
 BUILDS_FOR_TESTS = [
     j.name
@@ -73,6 +91,43 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
+
+
+def _is_llvm_coverage_family_job(job_name):
+    """The LLVM coverage family: the coverage build, the `amd_llvm_coverage` test shards and unit
+    tests, the `excluded_from_llvm` jobs that run the tests the shards skip, and the
+    `LLVM Coverage` merge job. The family runs or is skipped as a whole, see `should_skip_job`."""
+    return (
+        "llvm_coverage" in job_name
+        or "excluded_from_llvm" in job_name
+        or job_name == JobNames.LLVM_COVERAGE
+    )
+
+
+# With the `ci-llvm-coverage` label a pull request runs the LLVM coverage family and these jobs
+# only: the style check, the AI code review, and the stateless flaky checks of the changed tests
+# with their builds (`FUNCTIONAL_TEST_FLAKY_CHECK_JOBS`; the `amd_binary` build among them is also
+# what the `excluded_from_llvm` jobs need). The coverage shards cannot serve as the flaky check:
+# they run without random settings and sanitizers and never fail the pipeline
+# (`functional_tests.py`). Made for pull requests that only add tests and need the coverage
+# report, such as the pull requests of the test-writing agents: `ci-force-all` runs about three
+# times as many machine minutes for them. `can_be_merged.py` lets a pull request that changes only
+# stateless tests merge with the label. The code review is the review of such a pull request:
+# nobody else reads a generated test, so its threads must be answered before the merge.
+LLVM_COVERAGE_ONLY_JOBS = [
+    JobNames.STYLE_CHECK,
+    JobNames.CODE_REVIEW,
+    *FUNCTIONAL_TEST_FLAKY_CHECK_JOBS,
+]
+
+assert (
+    f"{JobNames.BUILD} ({BuildTypes.AMD_BINARY})" in FUNCTIONAL_TEST_FLAKY_CHECK_JOBS
+), "LLVM_COVERAGE_ONLY_JOBS no longer keeps the amd_binary build"
+assert all(
+    j.requires == [ArtifactNames.CH_AMD_BINARY]
+    for j in JobConfigs.functional_test_excluded_from_llvm_job
+    + JobConfigs.integration_test_excluded_from_llvm_job
+), "the excluded_from_llvm jobs need a build that LLVM_COVERAGE_ONLY_JOBS does not keep"
 
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
 KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
@@ -136,7 +191,8 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     # Narrows the `arm_binary` replacement jobs down to the batches containing a changed test.
     "ci/jobs/scripts/find_tests.py",
-    # Defines the `ci-coverage` label that switches between the coverage jobs and their replacements.
+    # Defines the `ci-coverage` and `ci-llvm-coverage` labels that switch between the coverage jobs
+    # and their replacements.
     "ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
@@ -184,9 +240,12 @@ def _has_llvm_coverage_only_changes(changed_files):
 
 def _llvm_coverage_requested():
     """True if a pull request runs the LLVM coverage jobs instead of their `arm_binary`
-    replacements: it has the `ci-coverage` label or changes the coverage-only code."""
-    return Labels.CI_COVERAGE in _info_cache.pr_labels or _has_llvm_coverage_only_changes(
-        _info_cache.get_changed_files() or []
+    replacements: it has the `ci-coverage` or `ci-llvm-coverage` label or changes the
+    coverage-only code."""
+    return (
+        Labels.CI_COVERAGE in _info_cache.pr_labels
+        or Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels
+        or _has_llvm_coverage_only_changes(_info_cache.get_changed_files() or [])
     )
 
 
@@ -458,6 +517,28 @@ def _has_fuzzer_target_changes(changed_files):
     )
 
 
+# A small PR that changes any product code still runs one stress test. A few lines of
+# `src/` can break an invariant that only concurrent load reaches, and nothing else in a
+# small PR exercises data races under load. Example: https://github.com/ClickHouse/ClickHouse/pull/125033
+# (60 lines) skipped all stress tests, and its exception `Cannot call function ... columns
+# were captured` was first seen on master, also by `Stress test (amd_tsan)`. An untargeted
+# AST fuzzer is not added: the targeted AST fuzzers already run on small PRs and caught
+# this exception at a higher rate per run (about 1.4% vs 0.8% in PR CI after the merge).
+# `Stress test (amd_tsan)` reuses a build that the PR workflow makes anyway. A PR that
+# changes only tests, docs or CI scripts has no product code lines and keeps skipping it.
+SMALL_PR_PRODUCT_CODE_JOBS = (f"{JobNames.STRESS} (amd_tsan)",)
+
+assert set(SMALL_PR_PRODUCT_CODE_JOBS) <= {
+    j.name for j in JobConfigs.stress_test_jobs
+}, "SMALL_PR_PRODUCT_CODE_JOBS names a job that does not exist"
+
+
+def _changes_product_code(info):
+    """True if the PR changes at least one line of product code, see `_is_small_pr`."""
+    product_changed_lines = info.get_kv_data("product_changed_lines")
+    return not isinstance(product_changed_lines, int) or product_changed_lines > 0
+
+
 def _is_small_pr(info):
     """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
     code. False when the count is unknown (the pre-hook failed to fetch it), so an
@@ -558,6 +639,9 @@ _PIPELINE_NOTES = {
     ),
     Labels.CI_COVERAGE: (
         "Label `ci-coverage` (or a change of the coverage code) runs the LLVM coverage jobs and the `LLVM Coverage` merge job."
+    ),
+    Labels.CI_LLVM_COVERAGE: (
+        "Label `ci-llvm-coverage` runs the LLVM coverage jobs, the `LLVM Coverage` merge job, the stateless flaky checks and the code review only."
     ),
 }
 
@@ -681,7 +765,8 @@ def should_skip_job(job_name):
     # of these jobs takes up to 1-3 hours and they rarely catch anything a change
     # of this size introduces;
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
-    # master once more. Bypass: the `ci-force-all` label.
+    # master once more. Bypass: the `ci-force-all` label. A PR that changes product
+    # code keeps `SMALL_PR_PRODUCT_CODE_JOBS`.
     # The builds that only the skipped stress tests use go with them, except with the
     # `ci-build` label, which asks for the whole build matrix. A change under `cmake/` or
     # `base/glibc-compatibility/` is never small: like the uncounted build inputs, one line
@@ -698,6 +783,7 @@ def should_skip_job(job_name):
             )
         )
         and _is_small_pr(_info_cache)
+        and not (job_name in SMALL_PR_PRODUCT_CODE_JOBS and _changes_product_code(_info_cache))
         and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
         and not _has_arch_sensitive_changes(changed_files)
@@ -819,29 +905,52 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
+    # The coverage family and `LLVM_COVERAGE_ONLY_JOBS` only. The family jobs go on to the family
+    # rule below, which runs them (`_llvm_coverage_requested`), and the flaky checks to their own
+    # rule, which skips them when the pull request changes no test. With `ci-no-coverage` on top,
+    # the family is skipped and the `arm_binary` replacement jobs with their build take its place,
+    # as with `ci-coverage`: they go on to the replacement rules below.
+    if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels and not (
+        _is_llvm_coverage_family_job(job_name)
+        or job_name in LLVM_COVERAGE_ONLY_JOBS
+        or (
+            job_name in COVERAGE_REPLACEMENT_JOBS + COVERAGE_REPLACEMENT_BUILDS
+            and Labels.CI_NO_COVERAGE in _info_cache.pr_labels
+        )
+    ):
+        _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+        return (
+            True,
+            f"Skipped, labeled with '{Labels.CI_LLVM_COVERAGE}' - run the LLVM coverage jobs only",
+        )
+
     # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
     #
-    # Pull requests run the family only with the `ci-coverage` label; by default they run the same
-    # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
-    # finds the same failures several times cheaper. Outside pull requests (pr_number gate) the family is
-    # never skipped here: master does not run it, it runs in the scheduled coverage workflow.
-    if (
-        "llvm_coverage" in job_name
-        or "excluded_from_llvm" in job_name
-        or job_name == JobNames.LLVM_COVERAGE
-    ):
+    # Pull requests run the family only with the `ci-coverage` or `ci-llvm-coverage` label; by
+    # default they run the same test configurations on the `arm_binary` build instead
+    # (`COVERAGE_REPLACEMENT_JOBS`), which finds the same failures several times cheaper. Outside
+    # pull requests (pr_number gate) the family is never skipped here: master does not run it, it
+    # runs in the scheduled coverage workflow.
+    if _is_llvm_coverage_family_job(job_name):
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
             _add_pipeline_note(Labels.CI_NO_COVERAGE)
             return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
         if _info_cache.pr_number > 0:
             if not _llvm_coverage_requested():
-                return True, f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' label or when changing the coverage code"
-            _add_pipeline_note(Labels.CI_COVERAGE)
+                return (
+                    True,
+                    f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' "
+                    f"or '{Labels.CI_LLVM_COVERAGE}' label or when changing the coverage code",
+                )
+            if Labels.CI_LLVM_COVERAGE in _info_cache.pr_labels:
+                _add_pipeline_note(Labels.CI_LLVM_COVERAGE)
+            else:
+                _add_pipeline_note(Labels.CI_COVERAGE)
 
-    # With `ci-coverage` (or changed coverage code) the coverage jobs run these configurations
-    # themselves. `ci-no-coverage` wins over `ci-coverage` for the coverage jobs, so with both labels
-    # the replacement jobs still run.
+    # With `ci-coverage` or `ci-llvm-coverage` (or changed coverage code) the coverage jobs run these
+    # configurations themselves. `ci-no-coverage` wins over both for the coverage jobs, so with both
+    # labels the replacement jobs still run.
     if (
         job_name in COVERAGE_REPLACEMENT_JOBS
         and _info_cache.pr_number > 0
@@ -994,16 +1103,21 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, and the docs examples). Only
-    the flaky check is conditional: it reruns the PR's new/changed stateless
-    tests as a drift guard, so a PR that changes no stateless tests has nothing
-    for it to do. Filter it out here, at config time, so such a PR does not
-    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
-    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
-    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
+    `amd_binary` build, the stateless flaky check, the docs examples, and the
+    limited clang-tidy check). Two of them are conditional. The limited
+    clang-tidy check has nothing to analyze when the change touches neither a C
+    or C++ file, nor an input of a code generator producing C++, nor the
+    clang-tidy configuration or the check's own logic, so a docs- or test-only
+    PR does not need to claim a large runner for it. And the flaky check reruns
+    the PR's new/changed stateless tests and the tests `master` changed after
+    the PR's last CI run as a drift guard, so when there are none it has nothing
+    to do. Filter it out here, at config time, so such a PR does not schedule
+    the runner, restore `CH_AMD_BINARY`, and enter the test container only to
+    exit `SKIPPED`. This is the merge-queue counterpart to the `flaky` branch of
+    `should_skip_job`, kept deliberately minimal so it cannot skip the
     build/style/fast-test/docs-examples jobs the queue always needs. The skip
     condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
+    on `Targeting.get_merge_queue_tests`), so the early exit and the config-time
     skip never disagree. `get_changed_tests` resolves data fixtures (a
     `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
     subdirectory) back to the tests that consume them, so a fixture-only PR
@@ -1014,6 +1128,23 @@ def should_skip_merge_queue_job(job_name):
     if _info_cache is None:
         _info_cache = Info()
 
+    if job_name == JobNames.CLANG_TIDY_CHANGED_FILES:
+        # Fail-close: with the changed files unknown there is no basis for a
+        # skip, so run the job - it refuses to report a selection it could not
+        # compute, rather than passing on an empty one.
+        changed_files = _info_cache.get_changed_files()
+        if changed_files is not None and not any(
+            is_analyzed_by_clang_tidy(normalize_tidy_path(f))
+            or is_tidy_config_path(normalize_tidy_path(f))
+            or is_generator_input(normalize_tidy_path(f))
+            for f in changed_files
+        ):
+            return (
+                True,
+                "Skipped, the change touches no C or C++ file that clang-tidy analyzes",
+            )
+        return False, ""
+
     if "flaky" not in job_name.lower() or "stateless" not in job_name.lower():
         return False, ""
 
@@ -1021,6 +1152,6 @@ def should_skip_merge_queue_job(job_name):
 
     targeter = Targeting(info=_info_cache)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    if not targeter.get_changed_tests():
+    if not targeter.get_merge_queue_tests():
         return True, "Skipped, no new/changed stateless tests to rerun in the merge queue"
     return False, ""

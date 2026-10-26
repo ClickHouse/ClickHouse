@@ -14,9 +14,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="enable_lightweight_delete">
-  ## enable_lightweight_delete
-</div>
+## enable_lightweight_delete {#enable_lightweight_delete}
 
 **الأسماء البديلة**: `allow_experimental_lightweight_delete`
 
@@ -24,9 +22,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تمكين عمليات mutation من نوع DELETE خفيفة الوزن لجداول MergeTree.
 
-<div id="enable_lightweight_update">
-  ## enable_lightweight_update
-</div>
+## enable_lightweight_update {#enable_lightweight_update}
 
 <BetaBadge />
 
@@ -34,7 +30,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "نُقلت التحديثات خفيفة الوزن إلى مرحلة بيتا. وأُضيف اسم بديل للإعداد 'allow_experimental_lightweight_update'."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "نُقلت التحديثات خفيفة الوزن إلى مرحلة بيتا. وأُضيف اسم بديل للإعداد 'allow_experimental_lightweight_update'."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "إعداد جديد. كان اسم الإعداد آنذاك `allow_experimental_lightweight_update`، وأصبح الآن اسمًا بديلًا له."}]}]} />
 
 يسمح باستخدام التحديثات خفيفة الوزن.
 

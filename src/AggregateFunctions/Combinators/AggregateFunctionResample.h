@@ -229,6 +229,54 @@ public:
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
     }
 
+    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        /// The whole state with all its buckets is deferred as one unit (the deferred pointers are later passed
+        /// to `parallelizeMergeMulti` of this function), so it is large as soon as one bucket pair is.
+        for (size_t i = 0; i < total; ++i)
+            if (nested_function->isLargeMergePair(place + i * size_of_data, rhs + i * size_of_data))
+                return true;
+        return false;
+    }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < total; ++i)
+        {
+            for (size_t p = 0; p < places.size(); ++p)
+                nested_places[p] = places[p] + i * size_of_data;
+            nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
+        }
+    }
+
+    void mergeImpl(
+        AggregateDataPtr __restrict place,
+        ConstAggregateDataPtr rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < total; ++i)
+            nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < total; ++i)
+        {
+            if (is_cancelled.load(std::memory_order_seq_cst))
+                return;
+            for (size_t p = 0; p < places.size(); ++p)
+                nested_places[p] = places[p] + i * size_of_data;
+            nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
+        }
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         for (size_t i = 0; i < total; ++i)

@@ -4,9 +4,9 @@
 -- query (same reason as 04131_prometheus_query_parser).
 --
 -- Regression test for the `StorageTimeSeries` constructor: when the external
--- metrics target table is not loaded at ATTACH time (server startup ordering),
--- the constructor used to dereference a null pointer from `tryGetTable` and
--- abort the server under UBSan.
+-- metrics target table (a table of version 9 or earlier could have one) is not
+-- loaded at ATTACH time (server startup ordering), the constructor used to
+-- dereference a null pointer from `tryGetTable` and abort the server under UBSan.
 --
 -- Reproduces the ordering by detaching both tables and then re-attaching the
 -- `TimeSeries` table before its metrics target.
@@ -23,7 +23,7 @@ CREATE TABLE metrics_target_04238 (
     help String)
 ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
-CREATE TABLE ts_with_external_metrics_04238 ENGINE = TimeSeries METRICS metrics_target_04238;
+CREATE TABLE ts_with_external_metrics_04238 ENGINE = TimeSeries SETTINGS version = 8 METRICS metrics_target_04238;
 
 DETACH TABLE ts_with_external_metrics_04238;
 DETACH TABLE metrics_target_04238;

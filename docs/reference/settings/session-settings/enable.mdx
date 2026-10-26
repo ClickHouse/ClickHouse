@@ -34,8 +34,8 @@ The external aggregation settings (`max_bytes_before_external_group_by`, `max_by
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting. Enable spill memory data into external storage adaptively."}]}]}/>
 
-Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
-`grace_hash` and the adaptive `hash` / `parallel_hash` path.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
@@ -88,6 +88,16 @@ Takes effect only together with `make_distributed_plan = 1`: the setting alone d
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there
+
+## enable_elasticsearch {#enable_elasticsearch}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to gate the experimental Elasticsearch integration (the `Elasticsearch` table engine and the `elasticsearch` table function)."}]}]}/>
+
+Enable the experimental Elasticsearch integration: the `Elasticsearch` table engine and the `elasticsearch` table function.
 
 ## enable_extended_results_for_datetime_functions {#enable_extended_results_for_datetime_functions}
 
@@ -151,6 +161,16 @@ When enabled, eligible dead scalar-subquery branches are analyzed to preserve th
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_funnel_functions`."}]}]}/>
 
 Enable functions for funnel analysis.
+
+## enable_gdeflate_codec {#enable_gdeflate_codec}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to enable the experimental `GDeflate` compression codec."}]}]}/>
+
+Enables the `GDeflate` compression codec.
 
 ## enable_global_with_statement {#enable_global_with_statement}
 
@@ -234,6 +254,16 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "New setting to control the identifier resolution cache in the query analyzer"}]}]}/>
 
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
+
+## enable_ipcrypt {#enable_ipcrypt}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable experimental IP address encryption functions."}]}]}/>
+
+Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 
 ## enable_job_stack_trace {#enable_job_stack_trace}
 
@@ -432,6 +462,16 @@ All servers participating in a distributed query must agree on this value: with 
 
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
 
+## enable_pco_codec {#enable_pco_codec}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable the beta `PCO` compression codec."}]}]}/>
+
+Enables the `PCO` compression codec.
+
 ## enable_producing_buckets_out_of_order_in_aggregation {#enable_producing_buckets_out_of_order_in_aggregation}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -558,6 +598,19 @@ When off, any table expression using the `STREAM` modifier is rejected
 at plan-build time. This is the umbrella gate for the streaming-queries
 feature; additional capabilities may be gated by their own settings.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to enable codec declarations for subcolumns."}]}]}/>
+
+Allows declaring compression codecs for subcolumns of a column, such as elements of a `Tuple` or the keys and values of a `Map`,
+with `CODEC name (...)` entries in `CREATE TABLE` and with `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tables that already have such declarations work regardless of this setting, and the declarations can always be removed.
+A table with subcolumn codecs cannot be attached by a server of an older version.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge/>
@@ -606,11 +659,11 @@ Allows creation of [Time](/reference/data-types/time) and [Time64](/reference/da
 
 ## enable_trino_dialect {#enable_trino_dialect}
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "The `trino` dialect was moved to Beta."}]}]}/>
 
 Enable the `trino` value of the `dialect` setting.
 

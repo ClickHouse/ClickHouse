@@ -145,7 +145,10 @@ def test_aggregate_states(start_cluster):
                 )
                 return "failed"
 
-            allowed_changes_if_result_is_the_same = ["anyHeavy"]
+            # `uniqTheta`: since datasketches-cpp 5.3.0 a single-item compact theta sketch has the
+            # IS_SINGLE_ITEM flag set in its header (flags byte 0x1a -> 0x3a). Old and new servers
+            # read both encodings, so compare the finalized values across versions instead.
+            allowed_changes_if_result_is_the_same = ["anyHeavy", "uniqTheta"]
 
             if aggregate_function in allowed_changes_if_result_is_the_same:
                 backward_final_from_upstream = get_final_value_unhex(
