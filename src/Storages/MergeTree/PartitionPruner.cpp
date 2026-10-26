@@ -26,7 +26,7 @@ PartitionPruner::PartitionPruner(
           true /* single_point */,
           skip_analysis,
           require_ready_sets,
-          (skip_analysis || !filter_dag.predicate) ? nullptr : getAlternativeKeyExpression(partition_key, context))
+          (skip_analysis || !filter_dag.predicate) ? nullptr : getAlternativeKeyExpression(partition_key, metadata->getColumns(), context))
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }

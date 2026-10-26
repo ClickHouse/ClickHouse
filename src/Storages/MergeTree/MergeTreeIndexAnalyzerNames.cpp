@@ -309,10 +309,32 @@ private:
     std::unordered_map<UInt128, AlternativeKeyExpressionPtr> entries;
 };
 
+/// The alternative form is computed against a storage with only the source columns of the key, so the
+/// rewrite passes do not see the other columns of the table. In the query, a rewrite to a subcolumn
+/// read (e.g. of `m['k']` to `m.key_k` by `FunctionToSubcolumnsPass`) is not applied when the table has
+/// a column of the same name, and then that name refers to the other column, not to the key. This
+/// does not depend on the settings, so it is checked for every table rather than cached.
+bool readsOtherTableColumn(
+    const AlternativeKeyExpression & alternative_key,
+    const ExpressionActionsPtr & expression,
+    const ColumnsDescription & table_columns)
+{
+    NameSet key_source_columns;
+    for (const auto & column : expression->getRequiredColumns())
+        key_source_columns.insert(column);
+
+    for (const auto * input : alternative_key.expression->getActionsDAG().getInputs())
+        if (!key_source_columns.contains(input->result_name) && table_columns.has(input->result_name))
+            return true;
+
+    return false;
+}
+
 AlternativeKeyExpressionPtr getAlternativeExpression(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
     const Names & column_names,
+    const ColumnsDescription & table_columns,
     const std::function<void(StorageInMemoryMetadata &)> & register_key,
     const String & key_kind,
     const String & description_for_log,
@@ -338,13 +360,16 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
     /// fall back to matching by the original names only. A failure is not cached.
     try
     {
-        return AlternativeExpressionCache::instance().getOrCompute(
+        auto alternative_key = AlternativeExpressionCache::instance().getOrCompute(
             expression_list_ast,
             expression,
             column_names,
             key_kind,
             context,
             [&] { return computeAlternativeExpression(expression_list_ast, expression, column_names, register_key, context); });
+        if (alternative_key && readsOtherTableColumn(*alternative_key, expression, table_columns))
+            return nullptr;
+        return alternative_key;
     }
     catch (...)
     {
@@ -358,12 +383,14 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
 
 }
 
-AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription & index, const ContextPtr & context)
+AlternativeKeyExpressionPtr getAlternativeIndexExpression(
+    const IndexDescription & index, const ColumnsDescription & table_columns, const ContextPtr & context)
 {
     return getAlternativeExpression(
         index.expression_list_ast,
         index.expression,
         index.column_names,
+        table_columns,
         [&](StorageInMemoryMetadata & metadata)
         {
             IndicesDescription indices;
@@ -376,26 +403,30 @@ AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription
         context);
 }
 
-AlternativeKeyExpressionPtr getAlternativeKeyExpression(const KeyDescription & key, const ContextPtr & context)
+AlternativeKeyExpressionPtr getAlternativeKeyExpression(
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context)
 {
     return getAlternativeExpression(
         key.expression_list_ast,
         key.expression,
         key.column_names,
+        table_columns,
         [&](StorageInMemoryMetadata & metadata) { metadata.primary_key = key; },
         "key",
         "the key expression",
         context);
 }
 
-AlternativeKeyExpressionPtr LazyAlternativeKeyExpression::get(const KeyDescription & key, const ContextPtr & context) const
+AlternativeKeyExpressionPtr LazyAlternativeKeyExpression::get(
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context) const
 {
-    std::call_once(initialized, [&] { alternative_key = getAlternativeKeyExpression(key, context); });
+    std::call_once(initialized, [&] { alternative_key = getAlternativeKeyExpression(key, table_columns, context); });
     return alternative_key;
 }
 
-RewriteAwareIndexConditionFactory::RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_)
+RewriteAwareIndexConditionFactory::RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_)
     : index_helper(std::move(index_helper_))
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , minmax_index(typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get()))
 {
 }
@@ -406,7 +437,7 @@ MergeTreeIndexConditionPtr RewriteAwareIndexConditionFactory::create(const Actio
         return nullptr;
 
     if (minmax_index)
-        std::call_once(alternative_key_initialized, [&] { alternative_key = getAlternativeIndexExpression(index_helper->index, context); });
+        std::call_once(alternative_key_initialized, [&] { alternative_key = getAlternativeIndexExpression(index_helper->index, metadata_snapshot->getColumns(), context); });
 
     if (alternative_key)
         return minmax_index->createIndexConditionWithAlternativeKey(predicate, context, alternative_key);

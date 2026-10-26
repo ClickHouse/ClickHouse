@@ -12,6 +12,9 @@ namespace DB
 
 struct IndexDescription;
 struct KeyDescription;
+class ColumnsDescription;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct AlternativeKeyExpression;
 using AlternativeKeyExpressionPtr = std::shared_ptr<const AlternativeKeyExpression>;
 
@@ -42,17 +45,23 @@ class MergeTreeIndexMinMax;
   * `column_names` is parallel to `index.column_names` and `expression` computes the same index
   * columns in the rewritten form.
   *
+  * The rewritten form is not used either when it reads a column by a name that is another column of the
+  * table, `table_columns`: e.g. the rewrite of `m['k']` to the subcolumn `m.key_k` is not applied to the
+  * query when the table has a column `m.key_k`, and the name refers to that column.
+  *
   * The result is cached by the content of the key (its AST and the stored key expression) and the
   * query's changed settings and current database, because computing it runs the query tree passes.
   */
-AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription & index, const ContextPtr & context);
+AlternativeKeyExpressionPtr getAlternativeIndexExpression(
+    const IndexDescription & index, const ColumnsDescription & table_columns, const ContextPtr & context);
 
 /** The same for a primary or partition key: index analysis matches the filter expression against the
   * key expressions by name as well, so a key on expressions (e.g. `ORDER BY multiIf(v > 0, v, NULL)`
   * or the same as `PARTITION BY`) loses pruning when the query's rewrite passes rename the filter
   * side of the comparison. Returns nullptr when not applicable, see above.
   */
-AlternativeKeyExpressionPtr getAlternativeKeyExpression(const KeyDescription & key, const ContextPtr & context);
+AlternativeKeyExpressionPtr getAlternativeKeyExpression(
+    const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context);
 
 /** Computes the alternative form of a key at most once, for the query plan's condition factories,
   * which create a `KeyCondition` many times for the same query (once per part, for constant folding).
@@ -60,7 +69,7 @@ AlternativeKeyExpressionPtr getAlternativeKeyExpression(const KeyDescription & k
 class LazyAlternativeKeyExpression
 {
 public:
-    AlternativeKeyExpressionPtr get(const KeyDescription & key, const ContextPtr & context) const;
+    AlternativeKeyExpressionPtr get(const KeyDescription & key, const ColumnsDescription & table_columns, const ContextPtr & context) const;
 
 private:
     mutable std::once_flag initialized;
@@ -79,12 +88,13 @@ private:
 class RewriteAwareIndexConditionFactory
 {
 public:
-    explicit RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_);
+    RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_);
 
     MergeTreeIndexConditionPtr create(const ActionsDAG::Node * predicate, const ContextPtr & context) const;
 
 private:
     MergeTreeIndexPtr index_helper;
+    StorageMetadataPtr metadata_snapshot;
     const MergeTreeIndexMinMax * minmax_index = nullptr;
 
     mutable std::once_flag alternative_key_initialized;

@@ -287,7 +287,7 @@ WhatIfCandidateResult evaluateIndex(
         /// Use the same rewrite-aware entry point as the read path, so a hypothetical `minmax`
         /// index on an expression the query analyzer renames is estimated the way it would really
         /// be used (issue #103128).
-        condition = RewriteAwareIndexConditionFactory(index_helper).create(predicate, context);
+        condition = RewriteAwareIndexConditionFactory(index_helper, read_step->getStorageMetadata()).create(predicate, context);
     }
     catch (const Exception &)
     {

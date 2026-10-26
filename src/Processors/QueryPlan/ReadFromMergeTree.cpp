@@ -3251,7 +3251,7 @@ void ReadFromMergeTree::buildIndexes(
             const bool skip_primary_key_analysis = !query_context->getSettingsRef()[Setting::use_primary_key];
             return KeyCondition{
                 wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, skip_primary_key_analysis,
-                (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(metadata_snapshot->getPrimaryKey(), query_context)};
+                (skip_primary_key_analysis || !predicate) ? nullptr : alternative_primary_key->get(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getColumns(), query_context)};
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));
@@ -3330,7 +3330,7 @@ void ReadFromMergeTree::buildIndexes(
             /// rewritten filter expression does not match the index expression (issue #103128).
             /// The factory computes the alternative form of the key once, because it is invoked
             /// per part for constant folding.
-            auto condition_factory = std::make_shared<RewriteAwareIndexConditionFactory>(index_helper);
+            auto condition_factory = std::make_shared<RewriteAwareIndexConditionFactory>(index_helper, metadata_snapshot);
             factory = [condition_factory, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
             {
                 return condition_factory->create(predicate, query_context);
