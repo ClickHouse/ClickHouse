@@ -1358,7 +1358,7 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Stri
     return it != primitive_column_types.end() && isTransformApplicableToType(transform->second, it->second);
 }
 
-/// Iceberg limits the precision of a decimal to 38: https://iceberg.apache.org/spec/#primitive-types
+/// Iceberg limits the precision of a decimal to 38 and stores `timestamp` in microseconds: https://iceberg.apache.org/spec/#primitive-types
 /// `geometry` is a format version 3 type: https://iceberg.apache.org/spec/#version-3-extended-types-and-capabilities
 /// and it is read back as `Geometry` only with `allow_geo_types_in_iceberg`.
 static void checkIcebergColumnType(const DataTypePtr & type, UInt64 format_version, bool allow_geo_types)
@@ -1369,6 +1369,15 @@ static void checkIcebergColumnType(const DataTypePtr & type, UInt64 format_versi
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Type {} cannot be stored in Iceberg: the maximum precision of an Iceberg decimal is 38",
+                type->getName());
+    }
+    else if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+    {
+        if (datetime64->getScale() > 6)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Type {} cannot be stored in Iceberg: the Iceberg `timestamp` type has microsecond precision, "
+                "use a scale of at most 6",
                 type->getName());
     }
     else if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")

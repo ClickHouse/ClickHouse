@@ -1240,6 +1240,51 @@ def test_native_create_decimal_precision_limit(started_cluster):
     assert str(table.schema().find_field("amount").field_type) == "decimal(38, 2)", table.schema()
 
 
+def test_native_create_timestamp_precision_limit(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_timestamp_precision_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    settings = {
+        "allow_experimental_database_glue_catalog": 1,
+        "allow_database_glue_catalog": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for ddl in [
+        "(ts DateTime64(9))",
+        "(ts Array(Nullable(DateTime64(7))))",
+        "AS SELECT toDateTime64('2026-01-01 00:00:00.123456789', 9) AS ts",
+    ]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` {ddl}",
+            settings=settings,
+        )
+        assert "the Iceberg `timestamp` type has microsecond precision" in error, error
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    assert root_namespace not in [db["Name"] for db in glue_client.get_databases()["DatabaseList"]]
+    assert not list(
+        started_cluster.minio_client.list_objects("warehouse-glue", prefix=f"{root_namespace}/", recursive=True)
+    )
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` "
+        "AS SELECT toDateTime64('2026-01-01 00:00:00.123456', 6) AS ts",
+        settings={**settings, "allow_insert_into_iceberg": 1},
+    )
+    table = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}")
+    assert str(table.schema().find_field("ts").field_type) == "timestamp", table.schema()
+    assert (
+        node.query(f"SELECT ts FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings=settings)
+        == "2026-01-01 00:00:00.123456\n"
+    )
+
+
 def test_native_create_geometry_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 
