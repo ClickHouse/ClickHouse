@@ -42,7 +42,6 @@
 #include <Common/escapeForFileName.h>
 #include <base/scope_guard.h>
 #include <Disks/IDisk.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
