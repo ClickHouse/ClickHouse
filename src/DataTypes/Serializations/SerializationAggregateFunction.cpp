@@ -1,7 +1,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Core/Defines.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatSettings.h>
@@ -26,6 +28,24 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+namespace
+{
+
+/// The state variants of the aggregate states nested in `types`, which their names do not show.
+void updateHashWithNestedStateVariants(SipHash & hash, const DataTypes & types)
+{
+    for (const auto & type : types)
+        forEachInTypeTree(*type, [&](const IDataType & child)
+        {
+            if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+            {
+                hash.update(static_cast<UInt8>(aggregate_type->getFunction()->getStateVariant()));
+                updateHashWithNestedStateVariants(hash, aggregate_type->getFunction()->getArgumentTypes());
+            }
+        });
+}
+
+}
 
 UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_)
 {
@@ -38,6 +58,7 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
     hash.update(type_name_);
     hash.update(version_);
     hash.update(static_cast<UInt8>(function_->getStateVariant()));
+    updateHashWithNestedStateVariants(hash, function_->getArgumentTypes());
     return hash.get128();
 }
 
