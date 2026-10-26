@@ -84,18 +84,23 @@ ALTER TABLE t_alter_previous_commands_nested ADD COLUMN `n.b` Array(UInt32), DRO
 SELECT id, `n.a` FROM t_alter_previous_commands_nested;
 DROP TABLE t_alter_previous_commands_nested;
 
--- A column dropped and added again by the same ALTER cannot be renamed in it: the mutation would rename the data of the
--- dropped column instead of removing it.
+-- A column dropped and added again by the same ALTER can be renamed in it: the mutation removes the data of the dropped
+-- column instead of renaming it.
 CREATE TABLE t_alter_previous_commands_readd (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_alter_previous_commands_readd VALUES (1, 42);
-ALTER TABLE t_alter_previous_commands_readd DROP COLUMN q, ADD COLUMN IF NOT EXISTS q UInt32 DEFAULT 7, RENAME COLUMN IF EXISTS q TO r; -- { serverError NOT_IMPLEMENTED }
-SELECT id, q FROM t_alter_previous_commands_readd;
+ALTER TABLE t_alter_previous_commands_readd DROP COLUMN q, ADD COLUMN IF NOT EXISTS q UInt32 DEFAULT 7, RENAME COLUMN IF EXISTS q TO r;
+SELECT id, r FROM t_alter_previous_commands_readd;
 DROP TABLE t_alter_previous_commands_readd;
 
 CREATE TABLE t_alter_previous_commands_readd (id UInt64, n Nested(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_alter_previous_commands_readd VALUES (1, [42]);
-ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`; -- { serverError NOT_IMPLEMENTED }
-SELECT id, `n.a` FROM t_alter_previous_commands_readd;
+ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`;
+SELECT id, `n.c` FROM t_alter_previous_commands_readd;
+DROP TABLE t_alter_previous_commands_readd;
+
+CREATE TABLE t_alter_previous_commands_readd (id UInt64, q UInt32) ENGINE = Memory;
+ALTER TABLE t_alter_previous_commands_readd DROP COLUMN q, ADD COLUMN q UInt32, RENAME COLUMN q TO r;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_readd' ORDER BY position;
 DROP TABLE t_alter_previous_commands_readd;
 
 -- A column renamed and then dropped by the same ALTER is dropped under the name the part stores it, so a column of
