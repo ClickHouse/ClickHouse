@@ -798,11 +798,23 @@ drop_query_templates = [q.text for q in root.findall("drop_query")] + extra_drop
 setup_connections = []
 threads = []
 teardown_done = False
+teardown_clean_result = False
+# Record an enable attempt BEFORE issuing it: a connection may lose its response
+# after the server applied the command. The exit hook handles failed setup,
+# failed queries, and tests without an explicit disable. Normal teardown also
+# calls this directly so cleanup errors are visible as test failures.
+enabled_failpoints = {}
+
+
+def report_clean():
+    """`CHServer.run_test` reuses the servers only after this marker."""
+    if teardown_clean_result and not enabled_failpoints:
+        print("teardown-complete")
 
 
 def teardown():
-    """Print `teardown-complete` and return True only if every drop query succeeded or found its object absent."""
-    global teardown_done
+    """Return True only if every drop query succeeded or found its object absent."""
+    global teardown_done, teardown_clean_result
     if teardown_done:
         return
     teardown_done = True
@@ -826,22 +838,15 @@ def teardown():
                     continue
                 print(f"drop query failed on server {conn_index}: {q}\n{e}", file=sys.stderr)
                 clean = False
-    if clean:
-        print("teardown-complete")
+    teardown_clean_result = clean
     return clean
 
 
+# Registered first so it runs last, after `teardown` and `disable_failpoints_on_exit`.
+atexit.register(report_clean)
 # Runs after an uncaught exception, `KeyboardInterrupt` and `sys.exit` too.
 if not args.keep_created_tables and not args.use_existing_tables:
     atexit.register(teardown)
-
-# Record an enable attempt BEFORE issuing it: a connection may lose its response
-# after the server applied the command. The exit hook handles failed setup,
-# failed queries, and tests without an explicit disable. Normal teardown also
-# calls this directly so cleanup errors are visible as test failures.
-enabled_failpoints = {}
-skipping_unsupported_failpoint = False
-
 
 def disable_enabled_failpoints(names=None):
     first_error = None
@@ -867,11 +872,8 @@ def disable_failpoints_on_exit():
         try:
             disable_enabled_failpoints()
         except Exception:
-            # A cleanup failure must not hide the original exception. An
-            # unsupported failpoint also rejects `DISABLE`, but that skip is not
-            # a run error; avoid writing it to the test's stderr log.
-            if not skipping_unsupported_failpoint:
-                logging.exception("Could not disable all performance-test failpoints")
+            # A cleanup failure must not hide the original exception.
+            logging.exception("Could not disable all performance-test failpoints")
 
 
 atexit.register(disable_failpoints_on_exit)
@@ -1059,13 +1061,10 @@ for name in failpoint_enables:
         ]
         if fatal_errors:
             raise fatal_errors[0]
-        # Even a failed side may have enabled it before losing the reply.
-        # Cleanup is best-effort here; the exit hook retries any failures.
-        skipping_unsupported_failpoint = True
-        try:
-            disable_enabled_failpoints()
-        except Exception:
-            pass
+        # A server that rejected the name or lacks FIU cannot have it enabled.
+        for index in enable_errors:
+            enabled_failpoints[name].discard(index)
+        disable_enabled_failpoints()
         print(f"skipped\tfailpoint {name} not supported - skip")
         sys.exit(0)
 

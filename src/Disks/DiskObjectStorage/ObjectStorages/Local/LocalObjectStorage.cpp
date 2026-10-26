@@ -686,6 +686,9 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     throwIfReadonly();
 
+    /// Simulated per-request latency of a slow store, the DELETE analogue (one per object, before the exclusive lock).
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
+
     /// Exclusive: see `directories_mutex`.
     std::unique_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
@@ -766,9 +769,6 @@ void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
 
 void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    /// Simulated per-request latency of a slow store, the DELETE analogue (batch removes loop here, one per object).
-    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
-
     removeObject(object);
 
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
