@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -85,12 +86,24 @@ IMergeTreeReader::IMergeTreeReader(
     CurrentMemoryTracker::check();
 
     columns_to_read.reserve(getColumns().size());
+    subcolumns_of_columns_with_replaced_nulls.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
     for (const auto & column : getColumns())
     {
         auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
+
+        /// A patch part provides a subcolumn as stored, or not at all when the patched part extracts it (see `addPatchPartsColumns`).
+        bool replaced_nulls = false;
+        if (column.isSubcolumn() && !data_part_info_for_read->getPartInfo().isPatch())
+        {
+            auto parent_in_part = data_part_info_for_read->getColumnsDescription().tryGetPhysical(
+                getStorageAndSubcolumnNameInPart(column).first);
+            replaced_nulls = parent_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, parent_in_part->type);
+        }
+        subcolumns_of_columns_with_replaced_nulls.push_back(replaced_nulls);
+
         auto & serialization = column_and_serialization_in_part.serialization;
         if (data_part_info_for_read->isCompactPart()
             && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
@@ -197,6 +210,11 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
 {
     return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
+}
+
+bool IMergeTreeReader::isSubcolumnOfColumnWithReplacedNulls(size_t pos) const
+{
+    return subcolumns_of_columns_with_replaced_nulls[pos];
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const

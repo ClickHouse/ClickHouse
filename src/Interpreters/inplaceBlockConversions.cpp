@@ -184,7 +184,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
 
         /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.
         /// Users should specify DEFAULT expression in ALTER MODIFY COLUMN statement to replace NULL values.
-        if (isNullableOrLowCardinalityNullable(column_in_block.type) && !isNullableOrLowCardinalityNullable(required_column.type))
+        if (conversionReplacesNullsWithDefault(column_in_block.type, required_column.type))
         {
             /// Before executing ALTER we explicitly check that user provided DEFAULT value to make it a conscious decision.
             /// However, we may still need to use type's default value in some cases
@@ -288,6 +288,11 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     return actions;
 }
+}
+
+bool conversionReplacesNullsWithDefault(const DataTypePtr & type_in_part, const DataTypePtr & type_in_storage)
+{
+    return isNullableOrLowCardinalityNullable(type_in_part) && !isNullableOrLowCardinalityNullable(type_in_storage);
 }
 
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)

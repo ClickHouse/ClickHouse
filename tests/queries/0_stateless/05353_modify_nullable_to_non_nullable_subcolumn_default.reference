@@ -1,0 +1,81 @@
+tuple, compact
+1	7	8	[5,6]	2	def	3	(9)	9
+2	10	20	[1]	1	zz	2	(30)	30
+1	(7,8,[5,6],'def',(9))	7
+2	(10,20,[1],'zz',(30))	10
+1
+1
+1
+1	7
+2	10
+1	7
+1	7	9
+2	10	30
+tuple, wide
+1	7	8	[5,6]	2	def	3	(9)	9
+2	10	20	[1]	1	zz	2	(30)	30
+1	(7,8,[5,6],'def',(9))	7
+2	(10,20,[1],'zz',(30))	10
+1
+1
+1
+1	7
+2	10
+1	7
+1	7	9
+2	10	30
+string, compact
+1	3
+2	5
+1	3	0
+2	5	0
+1
+string, wide
+1	3
+2	5
+1	3	0
+2	5	0
+1
+low cardinality, compact
+1	3
+2	5
+1	3	0
+2	5	0
+1
+low cardinality, wide
+1	3
+2	5
+1	3	0
+2	5	0
+1
+on the fly
+1	7	100
+2	10	200
+mutation
+0
+1	(7,8)	8
+2	(10,20)	20
+default removed
+1	(0,0)	0
+2	(10,20)	10
+1	0
+2	10
+patches
+1	updated	7	7
+2	abc	3	3
+3	updated	7	7
+4	abc	3	3
+1	7
+2	3
+3	7
+4	3
+[1,3]
+patches v1
+1	abc	3
+2	b	1
+1	3
+2	1
+[1]
+key subcolumns
+1	\N	\N
+2	(10,'20')	10

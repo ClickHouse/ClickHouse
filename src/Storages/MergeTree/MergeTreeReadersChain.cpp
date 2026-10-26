@@ -415,10 +415,19 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// fillMissingColumns() must be called after reading but before any filterings because
     /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
     /// fillMissingColumns() fixes this.
-    /// Names of columns produced by earlier chain steps (advertised in `previous_header`), so a
+    /// Names of columns produced by earlier chain steps (in `previous_header` or `result.additional_columns`), so a
     /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
+    const NameSet * step_columns = &previous_step_columns;
+    NameSet step_columns_with_projected_out;
+    if (!result.additional_columns.empty())
+    {
+        step_columns_with_projected_out = previous_step_columns;
+        for (const auto & col : result.additional_columns)
+            step_columns_with_projected_out.insert(col.name);
+        step_columns = &step_columns_with_projected_out;
+    }
     bool should_evaluate_missing_defaults = false;
-    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, previous_step_columns);
+    merge_tree_reader->fillMissingColumns(read_columns, should_evaluate_missing_defaults, num_read_rows, *step_columns);
 
     if (result.total_rows_per_granule != num_read_rows)
     {
@@ -769,6 +778,10 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
                 continue;
 
             if (!patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name_in_patch))
+                continue;
+
+            /// A patch does not provide every column it has (see `addPatchPartsColumns`) and updates only those it reads.
+            if (!patch_reader->getReader()->getColumns().contains(column.name))
                 continue;
 
             /// Add requested column name, not the column name in patch, for correct applying patches.

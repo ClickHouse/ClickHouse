@@ -6661,6 +6661,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); it != column_to_subcolumns_used_in_keys.end())
             {
                 const auto & new_columns = new_metadata.getColumns();
+
+                /// Replacing the NULLs of the column changes the values of its key subcolumns even if their types stay the same.
+                /// Not checked when a `Replicated` database replays an ALTER that an older version accepted.
+                const auto & old_column = old_columns.getPhysical(command.column_name);
+                auto new_column = new_columns.tryGetPhysical(command.column_name);
+                if (new_column && !isSecondaryDDLReplay(local_context)
+                    && conversionReplacesNullsWithDefault(old_column.type, new_column->type))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} is forbidden because its subcolumn {} is part of a key expression and converting "
+                        "the column from {} to {} replaces its NULL values, which changes the key",
+                        backQuoteIfNeed(command.column_name),
+                        backQuoteIfNeed(it->second.front()),
+                        old_column.type->getName(),
+                        new_column->type->getName());
+
                 for (const String & subcolumn : it->second)
                 {
                     auto old_subcolumn = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, subcolumn);

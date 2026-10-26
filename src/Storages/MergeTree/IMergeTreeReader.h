@@ -175,6 +175,8 @@ protected:
     const ColumnsDescription & part_columns;
     /// Actual column names and types of columns in part, which may differ from table metadata.
     NamesAndTypes columns_to_read;
+    /// See `isSubcolumnOfColumnWithReplacedNulls`, one entry per element of `columns_to_read`.
+    std::vector<bool> subcolumns_of_columns_with_replaced_nulls;
     /// Actual serialization of columns in part.
     Serializations serializations;
     SerializationByName serializations_of_full_columns;
@@ -222,6 +224,10 @@ protected:
 
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
+
+    /// Returns true if the column at position @pos in columns_to_read is a subcolumn extracted from its converted column
+    /// (see `isSubcolumnReadFromConvertedColumn`). Such a subcolumn is not read from the part.
+    bool isSubcolumnOfColumnWithReplacedNulls(size_t pos) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
     /// building a serialization of it when the part already holds one.
