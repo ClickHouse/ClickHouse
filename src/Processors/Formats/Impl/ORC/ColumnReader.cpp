@@ -214,13 +214,9 @@ ColumnString::MutablePtr readStrings(
 std::shared_ptr<StringDictionary> loadStringDictionary(UInt64 column_id, StripeStreams & stripe)
 {
     const auto & encoding = stripe.getEncoding(column_id);
+    /// The dictionary is not bounded by the number of rows of the stripe: a column nested in a list or a map
+    /// can have more values than the stripe has rows.
     UInt32 dictionary_size = encoding.dictionary_size;
-
-    /// A dictionary cannot have more entries than the stripe has values.
-    if (dictionary_size > stripe.getNumberOfRows())
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "The dictionary of ORC column {} has {} entries, more than the {} rows of the stripe",
-            column_id, dictionary_size, stripe.getNumberOfRows());
 
     auto dictionary = std::make_shared<StringDictionary>();
     if (dictionary_size == 0)
@@ -440,6 +436,7 @@ private:
 };
 
 constexpr UInt32 MAX_PRECISION_64 = 18;
+constexpr UInt32 MAX_PRECISION_128 = 38;
 
 constexpr Int64 POWERS_OF_TEN[MAX_PRECISION_64 + 1] = {
     1LL,
@@ -472,6 +469,9 @@ public:
         , precision(static_cast<Int32>(type.getPrecision()))
         , scale(static_cast<Int32>(type.getScale()))
     {
+        if (type.getPrecision() > MAX_PRECISION_128 || type.getScale() > MAX_PRECISION_128)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid precision {} or scale {} of decimal ORC column {}",
+                type.getPrecision(), type.getScale(), column_id);
         value_stream = getRequiredStream(stripe, column_id, Proto::StreamKind::DATA, "DATA", "decimal");
         scale_decoder = createIntRleDecoder(
             getRequiredStream(stripe, column_id, Proto::StreamKind::SECONDARY, "SECONDARY", "decimal"),
@@ -513,6 +513,15 @@ protected:
                 break;
         }
         return static_cast<Int128>((value >> 1) ^ (UInt128(0) - (value & 1)));
+    }
+
+    /// The scale of each value is read from the file. The valid scales are from 0 to 38, the bound
+    /// also keeps the differences of the scales and the rescaling work small.
+    Int32 getValueScale(Int64 value_scale) const
+    {
+        if (value_scale < -Int64(MAX_PRECISION_128) || value_scale > Int64(MAX_PRECISION_128))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Decimal scale {} is out of range in ORC column {}", value_scale, column_id);
+        return static_cast<Int32>(value_scale);
     }
 
     static void scaleInt128(Int128 & value, Int32 target_scale, Int32 current_scale)
@@ -558,7 +567,7 @@ public:
         {
             if (not_null && !not_null[i])
                 continue;
-            values[i] = readInt64(static_cast<Int32>(scales[i]));
+            values[i] = readInt64(getValueScale(scales[i]));
         }
     }
 
@@ -598,7 +607,7 @@ public:
             if (not_null && !not_null[i])
                 continue;
             values[i] = readInt128();
-            scaleInt128(values[i], scale, static_cast<Int32>(scales[i]));
+            scaleInt128(values[i], scale, getValueScale(scales[i]));
         }
     }
 };
@@ -649,7 +658,7 @@ public:
             Int128 decoded = static_cast<Int128>((value >> 1) ^ (UInt128(0) - (value & 1)));
             if (!overflow)
             {
-                scaleInt128(decoded, scale, static_cast<Int32>(scales[i]));
+                scaleInt128(decoded, scale, getValueScale(scales[i]));
                 overflow = decoded > max_value || decoded < -max_value;
             }
             if (overflow)

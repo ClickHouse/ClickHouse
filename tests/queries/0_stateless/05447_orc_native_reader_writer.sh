@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The Arrow ORC adapter stores negative nanoseconds for the timestamps before the epoch,
 # and the reader must decode them as the reference implementation does.
-$CLICKHOUSE_LOCAL -q "SELECT t, toUnixTimestamp64Micro(t) FROM file('$CUR_DIR/data_orc/timestamps_before_epoch_arrow.orc', ORC)"
+$CLICKHOUSE_LOCAL -q "SELECT t, toUnixTimestamp64Micro(t) FROM file('$CUR_DIR/data_orc/timestamps_before_epoch_arrow.orc', ORC) SETTINGS session_timezone = 'UTC'"
 
 DATA_FILE="$CLICKHOUSE_TMP/05447_${CLICKHOUSE_DATABASE}.orc"
 
@@ -37,5 +37,10 @@ $CLICKHOUSE_LOCAL -q "SELECT 'expected', count(), sum(cityHash64(*)) FROM ($QUER
 # Filter pushdown skips the row groups by the statistics in the row index.
 $CLICKHOUSE_LOCAL -q "SELECT count(), min(n), max(n) FROM file('$DATA_FILE', ORC) WHERE n BETWEEN 4500 AND 5500 SETTINGS input_format_orc_filter_push_down = 1"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_FILE', ORC) WHERE low_cardinality = '12' SETTINGS input_format_orc_filter_push_down = 1"
+
+# The dictionary of a string column nested in an array can have more entries than the stripe has rows.
+$CLICKHOUSE_LOCAL -q "SELECT ['a', 'b', 'a', 'b'] AS arr FORMAT ORC SETTINGS output_format_orc_dictionary_key_size_threshold = 0.5" > "$DATA_FILE"
+$CLICKHOUSE_LOCAL -q "SELECT arr FROM file('$DATA_FILE', ORC, 'arr Array(String)')"
+$CLICKHOUSE_LOCAL -q "SELECT arr, toTypeName(arr) FROM file('$DATA_FILE', ORC, 'arr Array(LowCardinality(String))')"
 
 rm "$DATA_FILE"

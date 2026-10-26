@@ -1002,6 +1002,12 @@ Int64 getLongHash(Int64 key)
 
 BloomFilter::BloomFilter(const Proto::BloomFilter & proto) : num_hash_functions(proto.num_hash_functions)
 {
+    /// The writers use a few hash functions (the optimal number for the false positive probability),
+    /// a huge number from a corrupt file would make every probe extremely slow.
+    static constexpr UInt32 MAX_HASH_FUNCTIONS = 256;
+    if (num_hash_functions == 0 || num_hash_functions > MAX_HASH_FUNCTIONS)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid number of hash functions {} of a bloom filter in ORC file, must be from 1 to {}",
+            num_hash_functions, MAX_HASH_FUNCTIONS);
     const std::string & bitset = proto.utf8bitset.value();
     if (bitset.empty() || bitset.size() % 8 != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The size of a bloom filter in ORC file must be a positive multiple of 8 bytes");

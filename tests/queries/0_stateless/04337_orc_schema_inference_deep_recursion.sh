@@ -64,8 +64,14 @@ $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/moderate.orc', ORC) SETTI
 # parseORCType would accept it, the reader must reject it (without crashing). The reader throws
 # before recursing past its limit, so this is safe to run.
 gen_orc 3000 "${TMP_DIR}/deep.orc"
-$CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep.orc', ORC) SETTINGS max_parser_depth = 100000" 2>&1 \
-    | expect_contains orc_library_depth_limit "nesting depth exceeds the limit"
+# Under TSan the stack size check allows only 5% of the stack, so it can reject the file before the depth limit.
+out=$($CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep.orc', ORC) SETTINGS max_parser_depth = 100000" 2>&1)
+if printf '%s\n' "$out" | grep -qF -e "nesting depth exceeds the limit" -e "TOO_DEEP_RECURSION"; then
+    echo "orc_library_depth_limit: nesting depth exceeds the limit"
+else
+    echo "orc_library_depth_limit: expected 'nesting depth exceeds the limit', got:"
+    printf '%s\n' "$out" | head -3
+fi
 
 # (3) max_parser_depth=0 means unlimited (matching the SQL parser), so a moderately nested file must
 # still be inferred normally rather than rejected by the explicit limit.
