@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 
@@ -32,13 +33,17 @@ public:
     /// The key is back-quoted to handle special characters (dots, backticks, etc.).
     static String getCombinedSubcolumnName(const String & key);
 
+    /// The typed paths by name; the hasher takes a string_view, so a prefix of a name is looked up without a copy.
+    using TypedPathsMap = std::unordered_map<String, DataTypePtr, StringHashForHeterogeneousLookup, std::equal_to<>>;
+
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
-        std::unordered_map<String, DataTypePtr> typed_paths_ = {},
+        TypedPathsMap typed_paths_ = {},
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
-        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::unordered_set<String> shared_typed_paths_ = {});
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -62,20 +67,32 @@ public:
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
+    /// Equal except for the set of SHARED typed paths. Such types have identical columns.
+    bool equalsIgnoringSharedTypedPaths(const DataTypeObject & rhs) const;
 
     void updateHashImpl(SipHash & hash) const override;
 
-    void forEachChild(const ChildCallback &) const override;
+    size_t getNumberOfChildren() const override { return sorted_typed_paths.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < sorted_typed_paths.size());
+        return sorted_typed_paths[index].second;
+    }
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override;
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;
-    const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
+    const TypedPathsMap & getTypedPaths() const { return typed_paths; }
+    /// Typed paths declared SHARED: stored in the typed shared data of a part instead of separate streams.
+    const std::unordered_set<String> & getSharedTypedPaths() const { return shared_typed_paths; }
+    bool hasSharedTypedPaths() const { return !shared_typed_paths.empty(); }
+    bool isSharedTypedPath(const String & path) const { return shared_typed_paths.contains(path); }
 
     /// Returns a map from typed-path name to its default serialization, resolved once.
     /// Used by mergedJSONPatch to serialize/deserialize typed-path values without a type tag.
@@ -89,23 +106,32 @@ public:
     DataTypePtr getTypeOfNestedObjects() const;
     DataTypePtr getDynamicType() const;
 
-    /// Extracts a combined literal+sub-object subcolumn for the given path.
-    /// When skip_null_typed_paths is true, typed paths with NULL values in sub-objects
-    /// are not considered present, so a parent path whose typed descendants are all NULL
-    /// is treated as absent (NULL in the result).
+    /// Extracts a combined literal+sub-object subcolumn for the given path as Dynamic.
+    /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present:
+    /// a parent whose typed descendants are all NULL is absent, while a NULL typed literal still
+    /// surfaces a non-empty sub-object. Typed literals are cast to Dynamic so the result type is
+    /// always Dynamic (including the empty-sub-object early return).
     ColumnPtr extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const;
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
+
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
 
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
-    std::unordered_map<String, DataTypePtr> typed_paths;
+    TypedPathsMap typed_paths;
+    /// The same typed paths in the canonical order `getChild` and `doCloneWithChildren` agree on.
+    /// `typed_paths` is a hash map, so an order has to be imposed rather than read off it, and it is
+    /// imposed once here so that enumerating the children does not sort or allocate.
+    std::vector<std::pair<String, DataTypePtr>> sorted_typed_paths;
+    /// The typed paths declared `SHARED`.
+    std::unordered_set<String> shared_typed_paths;
     /// Set of paths that should be skipped during data parsing.
     std::unordered_set<String> paths_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.
@@ -115,5 +141,6 @@ private:
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
 };
+
 
 }
