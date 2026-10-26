@@ -165,12 +165,12 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     auto context = getContext();
-    auto make_format_filter_info = [&](std::shared_ptr<const ActionsDAG> filter)
+    auto make_format_filter_info = [&](std::shared_ptr<const ActionsDAG> filter, ColumnMapperPtr column_mapper)
     {
         auto result = std::make_shared<FormatFilterInfo>(
             std::move(filter),
             context,
-            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+            std::move(column_mapper),
             query_info.row_level_filter,
             query_info.prewhere_info);
         result->top_k_filter = top_k_filter;
@@ -179,6 +179,9 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     /// A dataset reader gets the whole filter, including the conjuncts on virtual columns: it pushes
     /// down `LIMIT` and `count` only when it can evaluate the whole filter itself.
+    /// It maps the columns itself, so it gets no column mapper: the column mapper of the current
+    /// schema must not be requested before `createIterator`, which pins the data lake snapshot
+    /// (e.g. for a storage object of a catalog table that was built again for the read).
     if (auto dataset_pipe = configuration->readDataset(
             storage_snapshot,
             info,
@@ -186,7 +189,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             context,
             max_block_size,
             num_streams,
-            make_format_filter_info(info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag),
+            make_format_filter_info(info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, /*column_mapper=*/ nullptr),
             need_only_count,
             limit,
             distributed_processing))
@@ -221,7 +224,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     /// Iceberg reads the row lineage columns from the data file.
     auto format_filter_info = make_format_filter_info(
-        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()));
+        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()),
+        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context));
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
