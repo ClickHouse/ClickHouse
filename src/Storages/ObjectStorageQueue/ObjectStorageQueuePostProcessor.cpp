@@ -56,6 +56,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
+namespace S3RequestSetting
+{
+    extern const S3RequestSettingsBool allow_native_copy;
+}
+
 #endif
 
 namespace ErrorCodes
@@ -409,6 +414,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 /* for_disk_s3 */ false
             );
             auto dst_uri = S3::URI(move_uri);
+            /// Native copy sends `CopyObject` through the source client, so it writes to the source endpoint. That is the checked
+            /// destination only if both clients use the same endpoint, otherwise use the buffered copy, which uploads with `dst_client`.
+            if (src_client->getInitialEndpoint() != dst_client->getInitialEndpoint())
+                s3_settings->request_settings[S3RequestSetting::allow_native_copy] = false;
             auto read_settings = getReadSettings();
             const auto read_settings_to_use = s3_storage->patchSettings(read_settings);
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
