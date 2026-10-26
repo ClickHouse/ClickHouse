@@ -1,0 +1,207 @@
+---
+description: 'Выполняйте запросы независимо от клиентского соединения и отслеживайте ход их выполнения.'
+sidebarTitle: 'Фоновые запросы'
+slug: /operations/background-queries
+title: 'Фоновые запросы'
+doc_type: 'guide'
+---
+
+## Обзор {#overview}
+
+Фоновые запросы позволяют клиентам отправлять запросы, которые выполняются независимо от клиентского сеанса — для этого нужно задать `run_query_in_background=1`. Сразу после отправки ClickHouse server отвечает клиенту, а запрос при этом продолжает выполняться на стороне сервера до завершения (успешного или с ошибкой).
+
+Поскольку выполнение запроса не привязано к сетевому соединению клиента, фоновые задачи полностью устойчивы к разрывам соединения на стороне клиента и кратковременным сетевым сбоям.
+
+Фоновые запросы в первую очередь предназначены для длительных операций, таких как `INSERT ... SELECT`,
+`CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE` или `OPTIMIZE TABLE ... FINAL`,
+которые не должны прерываться при разрыве клиентского соединения.
+
+Не каждый запрос можно отвязать от соединения. Список запросов, которые вместо этого отклоняются, см. в разделе [Неподдерживаемые формы запросов](#unsupported-query-forms).
+
+<Warning>
+  Результат фонового запроса отбрасывается. Получить его или подключиться к запросу позднее невозможно.
+  Используйте `query_id` запроса, чтобы отслеживать его в `system.processes` во время выполнения и в `system.query_log` после завершения.
+</Warning>
+
+Фоновый запрос не переживает перезапуск сервера. Поведение при остановке сервера определяется параметрами
+`shutdown_wait_unfinished_queries` и `shutdown_wait_unfinished`.
+
+## Неподдерживаемые формы запросов {#unsupported-query-forms}
+
+Фоновый запрос живёт дольше, чем отправившее его соединение, поэтому уже в момент приёма запроса у сервера должно быть всё необходимое для его выполнения. Запросы, не удовлетворяющие этому условию, отклоняются синхронно — в том же соединении, из которого были отправлены, — и никогда не запускаются.
+
+### Данные, передаваемые через соединение {#data-that-streams-over-the-connection}
+
+`INSERT` отклоняется, если после отправки запроса на выполнение серверу всё ещё потребуется читать данные из соединения, по которому этот запрос пришёл.
+
+Это может касаться как `INSERT ... FORMAT ...`, так и запросов, читающих данные через `input`. Такой запрос отклоняется с ошибкой `A query whose data streams over the connection cannot be run in the background`:
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`clickhouse-client` отправляет данные `INSERT ... FORMAT ...` отдельными пакетами, поэтому такая форма в принципе не может выполняться в фоновом режиме через собственный протокол.
+
+По HTTP допустима любая из форм, если запрос целиком вместе с данными помещается в начальный буфер разбора, размер которого ограничен параметром `max_query_size`.
+
+Это относится и к HTTP-запросу, который читает встроенную полезную нагрузку через `input`. Более объёмное тело продолжает передаваться потоком за пределами буферизованного текста запроса и будет отклонено.
+
+Не полагайтесь на это ограничение по размеру: для данных, которые должны загружаться в фоновом режиме, используйте `INSERT ... SELECT` либо табличную функцию, например `url` или `s3`.
+
+### Другие отклонённые запросы {#other-rejected-requests}
+
+| Запрос                                                                                                                                                           | Ошибка                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                                                                                                                | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| Запрос внутри явной транзакции                                                                                                                                   | `Background queries inside transactions are not supported`                                   |
+| Запрос с `implicit_transaction = 1`                                                                                                                              | `Background queries with 'implicit_transaction' are not supported`                           |
+| Вторичный запрос, запрошенный, например, с помощью `clickhouse-client --query_kind secondary_query`                                                              | `run_query_in_background cannot be used for a secondary query`                               |
+| Стадия обработки запроса, отличная от `Complete`, запрошенная, например, с помощью `clickhouse-client --stage with_mergeable_state`                              | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| Предложение `SETTINGS` в запросе `CREATE` или `ATTACH`, содержащем определение хранилища, поскольку клиент передаёт это предложение серверу в неразрешённом виде | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+Эта настройка никогда не распространяется на вторичные запросы распределённого запроса: фоновый распределённый `INSERT`
+выполняет свои запросы к отдельным сегментам не в фоне, а в рамках фонового исходного запроса.
+
+## Отправка фонового запроса {#submit-a-background-query}
+
+### Собственный TCP-протокол {#native-tcp-protocol}
+
+В клиенте ClickHouse передайте `run_query_in_background` как настройку командной строки:
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+Также можно использовать встроенное предложение `SETTINGS`:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+Собственный протокол передаёт настройки запроса отдельно от текста SQL.
+`clickhouse-client` разбирает большинство настроек, указанных в самом запросе, и отправляет их в этой секции настроек.
+
+Драйверы, работающие поверх собственного протокола, могут вместо этого передавать `run_query_in_background` в своём наборе настроек для отдельного запроса, оставляя текст SQL без изменений.
+
+Собственный протокол не возвращает сгенерированный сервером `query_id`. Нативные клиенты должны сами сформировать уникальный ID и отправить его вместе с запросом.
+
+`clickhouse-client --echo-query-id` делает это и выводит ID перед отправкой запроса:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP-протокол {#http-protocol}
+
+Для HTTP-запросов передавайте `run_query_in_background` в качестве URL-параметра:
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+Ответ содержит сгенерированный идентификатор запроса в заголовке `X-ClickHouse-Query-Id`:
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+Этот заголовок доходит только до клиента, который читает ответ. Если вам нужен идентификатор запроса, не зависящий от того, придёт ли ответ, передавайте собственный `query_id` в качестве URL-параметра.
+
+Тогда клиент знает ID ещё до отправки запроса и может отслеживать или завершить (`KILL`) запрос на принимающем узле, даже если так и не получит ответ:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+В отличие от собственного протокола, HTTP не позволяет включить фоновое выполнение с помощью встроенного в SQL-запрос предложения `SETTINGS`:
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+Такой запрос возвращает исключение `BAD_ARGUMENTS`. HTTP handler должен решить, создавать ли detached-контекст запроса, ещё до того, как будет разобрано тело запроса.
+
+Передайте настройку в URL либо задайте её на уровне пользователя или профиля.
+
+## Мониторинг выполнения {#monitor-execution}
+
+Используйте `query_id`, чтобы проверить, выполняется ли запрос в данный момент:
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+После завершения запроса проверьте его итоговый status в `system.query_log`:
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+Запрос на отправку может завершиться успешно, даже если фоновое выполнение впоследствии завершится с ошибкой. В этом случае исключение записывается
+в `system.query_log`, а не возвращается по исходному соединению.
+
+<Note title="Кластерные развертывания и развертывания с балансировкой нагрузки">
+  `system.processes`, `system.query_log` и `KILL QUERY` работают локально на узле: каждый из них видит только запросы того сервера, который его обрабатывает.
+
+  Фоновый запрос принадлежит серверу, который его принял, а это не обязательно тот сервер, на который попадет ваш следующий запрос через балансировщик нагрузки. Вместо этого читайте данные по всему кластеру:
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  То же самое относится и к `system.query_log`, а для отмены требуется общекластерная форма:
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## Задержка сброса журнала запросов {#query-log-flush-delay}
+
+Записи буферизуются, прежде чем попасть в `system.query_log`.
+В самоуправляемом ClickHouse в примере серверной конфигурации параметру `query_log.flush_interval_milliseconds` присвоено значение `7500`.
+
+В ClickHouse Cloud записи могут появляться с задержкой до 30 секунд. Учитывайте эту задержку при мониторинге кратковременных фоновых запросов.
+
+На самоуправляемом сервере пользователи с достаточными привилегиями могут принудительно сбросить журнал запросов. Указывайте журнал явно, чтобы не затрагивать остальные системные журналы:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+Сброс данных выполняется на том сервере, который получил оператор.
+
+Фоновый запрос отслеживается тем сервером, который его принял, а это не обязательно тот сервер, к которому подключён ваш текущий сеанс, поэтому в кластере выполните сброс на всех серверах, прежде чем искать запрос:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+Сброс данных на уровне всего кластера лишь заставляет каждый сервер записать собственные буферизованные записи. При этом `system.query_log` другого сервера не становится доступен локально, поэтому лог по-прежнему следует читать через `clusterAllReplicas`, как описано в разделе [Monitor execution](#monitor-execution).

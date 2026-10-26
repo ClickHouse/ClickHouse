@@ -982,6 +982,21 @@ static void buildORCSearchArgumentImpl(
 
             break;
         }
+        case KeyCondition::RPNElement::FUNCTION_ATOM_GROUP:
+        {
+            /// Each atom approximates the whole predicate leaf, so ORC may skip the data that any of the
+            /// atoms rules out, which is what their conjunction does.
+            auto atoms = std::move(rpn_stack.back().group_atoms);
+            rpn_stack.pop_back();
+            builder.startAnd();
+            for (auto & atom : atoms)
+            {
+                rpn_stack.push_back(std::move(atom));
+                buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            }
+            builder.end();
+            break;
+        }
         /// There is no optimization with space-filling curves for ORC.
         case KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE:
         /// There is no optimization with pointInPolygon for ORC.
@@ -1045,6 +1060,17 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     return builder->build();
 }
 
+std::unique_ptr<orc::Reader> createORCReader(std::unique_ptr<orc::InputStream> stream, const orc::ReaderOptions & options)
+{
+    auto reader = orc::createReader(std::move(stream), options);
+    if (reader->getType().getKind() != orc::STRUCT)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "ORC files whose root type is not a struct are not supported, the file has root type {}",
+            reader->getType().toString());
+    return reader;
+}
+
 static void getFileReader(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
@@ -1066,7 +1092,7 @@ static void getFileReader(
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
-    file_reader = orc::createReader(std::move(input_stream), options);
+    file_reader = createORCReader(std::move(input_stream), options);
 }
 
 static const orc::Type *
@@ -1557,7 +1583,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 {
     const auto * struct_batch = dynamic_cast<const orc::StructVectorBatch *>(table);
     if (!struct_batch)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table must be StructVectorBatch but is {}", struct_batch->toString());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table must be StructVectorBatch but is {}", table->toString());
 
     if (schema->getSubtypeCount() != struct_batch->fields.size())
         throw Exception(

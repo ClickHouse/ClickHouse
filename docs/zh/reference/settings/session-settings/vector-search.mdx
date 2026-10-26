@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="vector_search_filter_strategy">
-  ## vector_search_filter_strategy
-</div>
+## vector_search_filter_strategy {#vector_search_filter_strategy}
 
 <SettingsInfoBlock type="VectorSearchFilterStrategy" default_value="auto" />
 
@@ -27,21 +25,17 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * &#39;postfilter&#39; - 先使用向量相似度索引识别最近邻，然后再应用其他过滤条件
 * &#39;prefilter&#39; - 先评估其他过滤条件，再执行穷举搜索以识别邻居。
 
-<div id="vector_search_index_fetch_multiplier">
-  ## vector_search_index_fetch_multiplier
-</div>
+## vector_search_index_fetch_multiplier {#vector_search_index_fetch_multiplier}
 
 **别名**: `vector_search_postfilter_multiplier`
 
 <SettingsInfoBlock type="Float" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "设置 'vector_search_postfilter_multiplier' 的别名"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "设置 'vector_search_postfilter_multiplier' 的别名"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "新增设置。该设置最初名为 `vector_search_postfilter_multiplier`，该名称现为此设置的别名。"}]}]} />
 
 将从向量相似度索引中拉取的最近邻数量乘以此数值。仅在使用其他谓词进行后过滤时，或在设置 `vector_search_with_rescoring = 1` 时生效。有效范围：[1.0, 1000.0]。超出此范围的值会被拒绝。
 
-<div id="vector_search_use_quantized_codes">
-  ## vector_search_use_quantized_codes
-</div>
+## vector_search_use_quantized_codes {#vector_search_use_quantized_codes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -52,9 +46,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 1. 扫描并过滤量化后的向量 (此步骤会产生 `k * vector_search_index_fetch_multiplier` 个结果) ，以及
 2. 使用原始全精度向量对找到的向量重新评分。
 
-<div id="vector_search_with_rescoring">
-  ## vector_search_with_rescoring
-</div>
+## vector_search_with_rescoring {#vector_search_with_rescoring}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -98,6 +98,7 @@
         "clickstack/features/event-patterns",
         "clickstack/features/event-deltas",
         "clickstack/features/alerts",
+        "clickstack/features/anomaly-detection",
         "clickstack/service-maps",
         "clickstack/features/session-replay",
         "clickstack/mcp",
@@ -110,8 +111,17 @@
               "group": "2026",
               "pages": [
                 {
+                  "group": "October",
+                  "pages": [
+                    "clickstack/demo-days/2026/2026-10-08",
+                    "clickstack/demo-days/2026/2026-10-01"
+                  ]
+                },
+                {
                   "group": "September",
                   "pages": [
+                    "clickstack/demo-days/2026/2026-09-24",
+                    "clickstack/demo-days/2026/2026-09-17",
                     "clickstack/demo-days/2026/2026-09-10",
                     "clickstack/demo-days/2026/2026-09-04"
                   ]
@@ -175,6 +185,7 @@
         "clickstack/managing/admin",
         "clickstack/managing/config",
         "clickstack/managing/estimating-resources",
+        "clickstack/managing/isolating-read-write",
         "clickstack/managing/materialized-views",
         "clickstack/managing/performance-tuning",
         "clickstack/managing/production",

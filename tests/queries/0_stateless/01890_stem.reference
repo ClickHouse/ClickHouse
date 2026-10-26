@@ -103,6 +103,17 @@ run
 bless
 bless
 disguis
+- Lengthening stemmers.
+-- Turkish stems a 3-byte word to a 5-byte word, so the output is longer than the input.
+uagı
+-- Over a multi-block scan the output must stay correct even when it overflows the input-sized estimate.
+0
+-- Turkish also lengthens via a multi-byte substitution (3 bytes to 4 bytes).
+aaç
+-- Estonian lengthens by appending ASCII letters (4 bytes to 5 bytes), a different mechanism.
+keesi
+-- Estonian over a multi-block scan must also stay correct past the input-sized estimate.
+0
 - Negative tests.
 -- Whitespace in a String input raises BAD_ARGUMENTS.
 -- Whitespace in an Array element raises BAD_ARGUMENTS.

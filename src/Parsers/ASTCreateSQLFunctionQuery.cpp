@@ -87,7 +87,8 @@ void ASTCreateSQLFunctionQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_name' for `CreateSQLFunctionQuery` during AST JSON deserialization");
     children.push_back(function_name);
 
-    function_core = r.readChild("function_core");
+    /// `UserDefinedSQLFunctionVisitor` inlines the body into the caller's query, so it is an expression slot.
+    function_core = r.readExpressionChild("function_core");
     if (!function_core)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'function_core' for `CreateSQLFunctionQuery` during AST JSON deserialization");
     children.push_back(function_core);

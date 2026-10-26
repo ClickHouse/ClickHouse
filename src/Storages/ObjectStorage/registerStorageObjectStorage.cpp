@@ -1,5 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -8,10 +9,12 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -19,6 +22,8 @@
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -46,28 +51,53 @@ namespace
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
+bool hasClusterVariant(std::string_view engine_name)
+{
+    static constexpr std::string_view engines[] = {
+        AzureClusterDefinition::non_clustered_storage_engine_name,
+        S3ClusterDefinition::non_clustered_storage_engine_name,
+        HDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergClusterDefinition::non_clustered_storage_engine_name,
+        IcebergS3ClusterDefinition::non_clustered_storage_engine_name,
+        IcebergAzureClusterDefinition::non_clustered_storage_engine_name,
+        IcebergHDFSClusterDefinition::non_clustered_storage_engine_name,
+        IcebergLocalClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeS3ClusterDefinition::non_clustered_storage_engine_name,
+        DeltaLakeAzureClusterDefinition::non_clustered_storage_engine_name,
+        HudiClusterDefinition::non_clustered_storage_engine_name,
+        PaimonClusterDefinition::non_clustered_storage_engine_name,
+        PaimonS3ClusterDefinition::non_clustered_storage_engine_name,
+        PaimonAzureClusterDefinition::non_clustered_storage_engine_name,
+        PaimonHDFSClusterDefinition::non_clustered_storage_engine_name,
+    };
+    return std::ranges::find(engines, engine_name) != std::end(engines);
+}
+
 std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+    configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Use format settings from global server context + settings from
-    // the SETTINGS clause of the create query. Settings from current
-    // session and user are ignored.
+    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
+    // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
+    // on server startup.
+    const auto global_context = args.getContext();
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
-        Settings settings = context->getSettingsCopy();
+        Settings settings = global_context->getSettingsCopy();
 
-        // Apply changes from SETTINGS clause, with validation.
+        // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
-        format_settings = getFormatSettings(context, settings);
+        format_settings = getFormatSettings(global_context, settings);
     }
     else
     {
-        format_settings = getFormatSettings(context);
+        format_settings = getFormatSettings(global_context);
     }
 
     ASTPtr partition_by;
@@ -105,7 +135,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -123,6 +153,19 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (configuration->isDataLakeConfiguration() && args.storage_def->settings)
+    {
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto metadata = *metadata_snapshot;
+        metadata.settings_changes = args.storage_def->settings->ptr();
+        storage->setInMemoryMetadata(metadata);
+    }
+
+    if (hasClusterVariant(args.engine_name))
+        storage->setHasClusterVariant();
+
+    return storage;
 }
 
 #endif
@@ -133,9 +176,11 @@ static void registerStorageAzure(StorageFactory & factory)
 {
     factory.registerStorage(AzureDefinition::storage_engine_name, [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
+    azureTableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -543,7 +588,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `**` — Substitutes any number of any character include `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -756,9 +801,11 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
+    s3TableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -799,9 +846,11 @@ static void registerStorageHDFS(StorageFactory & factory)
 {
     factory.registerStorage(HDFSDefinition::storage_engine_name, [=](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -887,7 +936,7 @@ Multiple path components can have globs. For being processed file should exists 
 
 - `*` — Substitutes any number of any characters except `/` including empty string.
 - `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
@@ -1137,6 +1186,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1248,7 +1298,8 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when ClickHouse creates or evolves Iceberg schemas and writes data:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `FixedString`, `Int8`, `UInt8`, `Int16`, `UInt16`, `Time`, or `Time64`, or add or modify a column to one of these types. The operation fails with an unsupported-type exception. This does not prevent inserting `Bool` values into existing Iceberg columns.
+- ClickHouse cannot create an Iceberg schema containing `UInt64` either: the widest Iceberg integer type is the signed 64-bit `long`, which cannot represent every `UInt64` value. Use `Int64` or `Decimal(20, 0)`. Creating a table with a `UInt64` column, including a nested one such as `Array(UInt64)`, fails with an exception even if the Iceberg table already exists at the path. A `UInt32` column is widened to Iceberg `long` for the same reason, and is therefore read back as `Int64`.
 - When ClickHouse creates or evolves an Iceberg schema, it maps every `DateTime` and `DateTime64` column to Iceberg `timestamp`, which has microsecond precision and no timezone. ClickHouse cannot generate `timestamptz`, `timestamp_ns`, or `timestamptz_ns` schema types, so higher precision and timezone semantics are not represented in the Iceberg schema.
 - ClickHouse cannot write to an Iceberg table that uses a `decimal`, `fixed`, `timestamp_ns`, or `timestamptz_ns` column as a direct partition field. The operation fails with an unsupported-type exception.
 - For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
@@ -1267,6 +1318,32 @@ To read a table where the schema has changed after its creation with dynamic sch
 ## Partition pruning {#partition-pruning}
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
+
+## `DROP PARTITION` {#drop-partition}
+
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
+
+Enable `allow_insert_into_iceberg` to use this operation.
+
+The operation is supported only for Iceberg `format-version` 2 tables with a single, non-evolved partition spec. Each manifest containing the selected partition must contain no files from other partitions. If a manifest is shared by the selected partition and another partition, the operation fails without changing the table. The operation also rejects affected manifests containing equality-delete files.
+
+The partition value follows the same rules as for `MergeTree`. For a single-column partition, pass a scalar literal; for a multi-column partition, pass a tuple of values:
+
+```sql
+ALTER TABLE iceberg_table DROP PARTITION 2;
+ALTER TABLE iceberg_table DROP PARTITION (2, 5);
+```
+
+For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, and `icebergHour`; the `PARTITION BY` aliases `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum` are accepted and evaluated as these transforms. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
+
+```sql
+ALTER TABLE iceberg_table DROP PARTITION 0;
+ALTER TABLE iceberg_table DROP PARTITION tuple(icebergBucket(4, 'apple'));
+```
+
+The operation rejects explicitly set `iceberg_snapshot_id`, `iceberg_timestamp_ms`, or `iceberg_metadata_file_path` settings. It modifies the current table state, not a historical snapshot or an explicitly selected metadata version.
+
+The `DROP PARTITION ID '...'` and `DROP PARTITION ALL` forms are not supported. Dropping a partition that does not exist is a no-op. The operation does not physically delete the data files. Earlier snapshots retain access to the removed rows and remain available to time-travel queries until those snapshots expire and their files are cleaned up.
 
 ## Time travel {#time-travel}
 
@@ -1296,9 +1373,10 @@ ClickHouse supports reading Iceberg tables that use the following deletion metho
 
 - [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
 - [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
-
-The following deletion method is **not supported**:
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+
+Deletion vector support is read-only. ClickHouse does not write, update, or compact deletion vectors.
+`ALTER TABLE ... DELETE` and `ALTER TABLE ... UPDATE` are not supported for Iceberg format-version 3 tables.
 
 ### Basic usage {#basic-usage}
 ```sql
@@ -1463,6 +1541,7 @@ When using the `Iceberg` table engine in ClickHouse, the system needs to locate 
 
 3. **Default Search**:
 * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the most recent file {#most-recent-file}
 
@@ -1521,6 +1600,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
 
+## Modifying table settings {#modify-settings}
+
+The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
+
+- the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+
+The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## See also {#see-also}
 
 - [iceberg table function](/reference/functions/table-functions/iceberg)
@@ -1554,6 +1649,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1593,6 +1689,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1614,6 +1711,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1652,6 +1750,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1732,6 +1831,7 @@ void registerStoragePaimon(StorageFactory & factory)
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -1811,6 +1911,33 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 - Optional background refresh of metadata when configured.
 - Stable table UUID when using Atomic/Replicated databases, enabling `{uuid}` macros in Keeper paths.
 
+## Primary-key tables {#primary-key-tables}
+
+Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
+snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
+declares `primary-key` therefore throws.
+
+## Tables with deletion vectors {#deletion-vectors}
+
+Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
+contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
+deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
+
+A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
+it can be read again.
+
+An incremental read stops at the first unconsumed snapshot with deletion vectors and stays there even after a full
+compaction, because every snapshot up to that compaction lists the same deletion vectors. The cursor is not advanced.
+The read resumes once Paimon expires those snapshots, or once they are abandoned by moving the cursor to the snapshot of
+the full compaction, which drops every snapshot not yet consumed up to it (see
+[When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+Either way, the rows that those deletion vectors removed stay in what the incremental read has already delivered.
+
 ## Settings {#settings}
 
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
@@ -1876,6 +2003,57 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
+
+### Rewinding the warehouse {#rewinding-the-warehouse}
+
+The Keeper cursor at `paimon_keeper_path` records how far the stream has consumed, and incremental reads assume the warehouse only ever moves forward — Paimon snapshot ids increase monotonically and are never reused. Expiring old snapshots is fine: it removes a prefix and leaves the ids above it untouched.
+
+Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
+
+**Rewinding the warehouse requires resetting the cursor in the same operation.** The cursor also records which snapshot it points at, so once the writer has reused the cursor's snapshot id, the read fails with `INVALID_STATE`: nothing is read and the cursor is left untouched. To recover, point the cursor at the snapshot the warehouse was rewound to, which reads every snapshot written since the rewind, or set it to its current value, which skips the snapshots at the reused ids. A cursor set by hand, or written by an older version, is trusted as written until a read advances it. Nothing can be checked once Paimon has expired the snapshot the cursor points at, nor for a rewind that keeps the cursor's snapshot and lands while a read is loading the snapshots after it.
+
+When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
+
+Before resetting the cursor, pause all consumers sharing `paimon_keeper_path`, including refreshable materialized views, and wait for in-flight reads to finish.
+
+A read's commit is conditioned on the cursor it observed. If the cursor changes after that observation but before the commit, the read fails with `INVALID_STATE`, delivers nothing, and leaves the value you set in place. A read that has already committed can still deliver its batch after the cursor is reset; rewinding the cursor can then cause that batch to be delivered again.
+
+Do not delete or replace `processing_lock` manually. It is an ephemeral node owned by the ClickHouse Keeper session that is running the incremental read; its lifecycle is not an operator recovery interface.
+
+### When a snapshot cannot be read {#when-a-snapshot-cannot-be-read}
+
+Snapshots that Paimon expired are skipped automatically: expiration removes a prefix of the snapshot ids, so anything below the warehouse's earliest snapshot is known to be gone and the cursor moves past it.
+
+Any other failure to read a snapshot — a transient object storage error, a corrupted snapshot file — fails the query and leaves the cursor where it is. There is deliberately no setting to tolerate this. Skipping an unread snapshot means permanently dropping the data committed in it, and a standing "tolerate errors" switch would turn every future network blip into silent data loss. Because the cursor is untouched, a transient error needs no intervention at all: the next poll re-reads the same range and succeeds.
+
+If a snapshot is genuinely unreadable and the stream must move on, abandon it explicitly. The error message names the command, but note what it costs: the failing read delivered nothing, so moving the cursor to the unreadable snapshot abandons **every** snapshot still unconsumed up to and including it — not only the unreadable one.
+
+With a cursor at 1 and snapshots 2, 3 and 4 pending where 3 is unreadable:
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+To keep the readable ones, drain up to the unreadable snapshot first. Each poll consumes one snapshot and advances the cursor, until it reaches the one that cannot be read:
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Either way the decision is recorded as an explicit operator action rather than inferred from a setting.
 
 ## Paimon to MergeTree via Refreshable Materialized View {#paimon-to-mergetree-via-refresh-mv}
 
@@ -1968,7 +2146,7 @@ The `Paimon` table engine auto-detects the storage backend from the `disk` setti
 
 | Paimon Data Type | ClickHouse Data Type |
 |-------|--------|
-|BOOLEAN     |Int8      |
+|BOOLEAN     |Bool      |
 |TINYINT     |Int8      |
 |SMALLINT     |Int16      |
 |INTEGER     |Int32      |
@@ -2041,6 +2219,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2088,6 +2267,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2113,6 +2293,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2159,6 +2340,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2215,6 +2397,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2395,6 +2578,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
 
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2433,6 +2617,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2470,6 +2655,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2495,6 +2681,7 @@ void registerStorageHudi(StorageFactory & factory)
             auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = false,
             .supports_schema_inference = true,
