@@ -1891,6 +1891,7 @@ def main():
         ("programs/format", "clickhouse-format-lib"),
         ("programs/server", "clickhouse-server-lib"),
         ("src/AggregateFunctions", "clickhouse_aggregate_functions__compile_0"),
+        ("src/AggregateFunctions", "clickhouse_aggregate_functions__compile_1"),
         ("src/Common", "clickhouse_new_delete"),
         ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_no_log"),
         ("src/Daemon", "daemon"),
