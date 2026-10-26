@@ -143,10 +143,11 @@ SELECT *
 FROM values('a_total String, k String, v UInt64', ('group', 'a', 2)) AS s
 PIVOT (sum(s.v) AS total, count() AS cnt FOR s.k IN ('a' AS a)); -- { serverError AMBIGUOUS_COLUMN_NAME }
 
--- Validate the final names, not just the original PIVOT output names.
+-- A duplicate final name in the alias list is rejected by the ordinary column alias list
+-- check, the same way as any other AS t(x, x) table expression.
 SELECT *
 FROM values('g String, k String, v UInt64', ('group', 'a', 1))
-PIVOT (sum(v) FOR k IN ('a' AS a)) AS p(x, x); -- { serverError AMBIGUOUS_COLUMN_NAME }
+PIVOT (sum(v) FOR k IN ('a' AS a)) AS p(x, x); -- { serverError BAD_ARGUMENTS }
 
 -- Keep the ordinary column-alias count error, even when the original names collide.
 SELECT *
