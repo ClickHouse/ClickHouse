@@ -1,0 +1,199 @@
+<!--
+    `minmax` and `set(0)` skip indexes at scale: reads that prune or not, evaluated at read time, and builds.
+    Each read statement repeats its filter with different constants in `UNION ALL` branches and pins its index with
+    `force_data_skipping_indices`:
+    * `minmax` on `EventTime` (clustered by day in the table order), 4 one-week windows: each keeps about a third of the granules;
+    * `minmax` on `UserID`, 2 narrow ranges: a granule spans almost the whole range, so 97 % of the granules are kept and read;
+    * `set(0)` on `RegionID` (66 distinct values per granule at the median), 4 sets of 20 rare IDs: 2926 granules kept of 4 x 97 661;
+    * the same index, 8 IDs absent from the data but inside almost every granule's value range: nothing is kept, at the cost of
+      checking every stored value at read time (the same at analysis time, `use_skip_indexes_on_data_read = 0`, is not timed:
+      noisy in A/A runs);
+    * the same index, the two most frequent regions: 95 % kept;
+    * builds: `CLEAR INDEX` + `MATERIALIZE INDEX` of both `minmax` indexes in one mutation, three times per statement (one build
+      takes about 0.35 s), and of the `set`.
+    `skm`: 6 columns of the 100 M rows of `hits_100m_single`, `index_granularity = 1024` (97 661 granules per index), 8
+    partitions of one part, so a build runs 8 parts in parallel.
+    The setup runs both builds once, then checks every read against a scan with the skip indexes off, and its `SelectedMarks`
+    (counted after the read-time pruning) against the granules computed from the data.
+    Per server and invocation: 100 M rows; 3.5 GB written by the setup, about 13 MB per build (0.4 GB in total); no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <use_skip_indexes>1</use_skip_indexes>
+    <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+    <secondary_indices_enable_bulk_filtering>1</secondary_indices_enable_bulk_filtering>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>weeks</name>
+        <values>
+            <value>SELECT count(), sum(ResolutionWidth) FROM skm WHERE EventTime BETWEEN toDateTime('2013-07-03 00:00:00', 'UTC') AND toDateTime('2013-07-09 23:59:59', 'UTC')
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE EventTime BETWEEN toDateTime('2013-07-10 00:00:00', 'UTC') AND toDateTime('2013-07-16 23:59:59', 'UTC')
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE EventTime BETWEEN toDateTime('2013-07-17 00:00:00', 'UTC') AND toDateTime('2013-07-23 23:59:59', 'UTC')
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE EventTime BETWEEN toDateTime('2013-07-24 00:00:00', 'UTC') AND toDateTime('2013-07-30 23:59:59', 'UTC')</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>rare1</name>
+        <values>
+            <value>8272, 8342, 8359, 8475, 8519, 8526, 8644, 8886, 8888, 8904, 8984, 9027, 9074, 9288, 9786, 9805, 9915, 10018, 10025, 10031</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>rare2</name>
+        <values>
+            <value>10092, 10477, 10554, 10656, 10811, 11004, 11074, 11132, 11147, 11286, 11382, 11940, 11973, 12119, 12161, 12217, 12368, 12440, 12565, 12648</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>rare3</name>
+        <values>
+            <value>12667, 12703, 12728, 12768, 12804, 13030, 13076, 13145, 13300, 13350, 13402, 13553, 13851, 14225, 14322, 14331, 14345, 14387, 14560, 14602</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>rare4</name>
+        <values>
+            <value>14611, 14613, 14727, 14952, 14994, 15031, 15403, 15531, 15555, 15808, 16175, 16200, 16352, 16354, 16386, 16844, 16897, 16995, 16999, 17044</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>absent_union</name>
+        <values>
+            <value>SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 20 UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 23
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 26 UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 35
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 37 UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 47
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 60 UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 66</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>
+    CREATE TABLE skm
+    (
+        CounterID UInt32, EventDate Date, EventTime DateTime, UserID UInt64, RegionID UInt32, ResolutionWidth UInt16,
+        INDEX i_time EventTime TYPE minmax GRANULARITY 1,
+        INDEX i_user UserID TYPE minmax GRANULARITY 1,
+        INDEX i_region RegionID TYPE set(0) GRANULARITY 1
+    )
+    ENGINE = MergeTree PARTITION BY intHash32(UserID) % 8 ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime)
+    SETTINGS index_granularity = 1024, old_parts_lifetime = 10, add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0
+</create_query>
+
+<fill_query>INSERT INTO skm SELECT CounterID, EventDate, EventTime, UserID, RegionID, ResolutionWidth FROM hits_100m_single SETTINGS max_insert_threads = 16, max_partitions_per_insert_block = 0</fill_query>
+<fill_query>ALTER TABLE skm MODIFY SETTING lock_acquire_timeout_for_background_operations = 600</fill_query>
+<fill_query>OPTIMIZE TABLE skm FINAL SETTINGS optimize_throw_if_noop = 1, optimize_skip_merged_partitions = 1</fill_query>
+<fill_query>ALTER TABLE skm CLEAR INDEX i_time, MATERIALIZE INDEX i_time, CLEAR INDEX i_user, MATERIALIZE INDEX i_user SETTINGS mutations_sync = 2</fill_query>
+<fill_query>ALTER TABLE skm CLEAR INDEX i_region, MATERIALIZE INDEX i_region SETTINGS mutations_sync = 2</fill_query>
+
+<fill_query>SELECT throwIf((count(), sum(rows), sum(marks)) != (8, 100000000, 97669)) FROM system.parts WHERE database = 'default' AND table = 'skm' AND active</fill_query>
+<fill_query>SELECT throwIf(count() != 3 OR min(data_compressed_bytes) = 0) FROM system.data_skipping_indices WHERE database = 'default' AND table = 'skm'</fill_query>
+<fill_query>
+    SELECT throwIf((
+        countIf(EventTime BETWEEN toDateTime('2013-07-03 00:00:00', 'UTC') AND toDateTime('2013-07-30 23:59:59', 'UTC')),
+        sumIf(ResolutionWidth, EventTime BETWEEN toDateTime('2013-07-03 00:00:00', 'UTC') AND toDateTime('2013-07-30 23:59:59', 'UTC')),
+        countIf(UserID BETWEEN 4611686018427387904 AND 4612686018427387904) + countIf(UserID BETWEEN 9223372036854775808 AND 9224372036854775808),
+        sumIf(ResolutionWidth, UserID BETWEEN 4611686018427387904 AND 4612686018427387904) + sumIf(ResolutionWidth, UserID BETWEEN 9223372036854775808 AND 9224372036854775808),
+        countIf(RegionID IN ({rare1}, {rare2}, {rare3}, {rare4})),
+        sumIf(ResolutionWidth, RegionID IN ({rare1}, {rare2}, {rare3}, {rare4})),
+        countIf(RegionID IN (20, 23, 26, 35, 37, 47, 60, 66)),
+        countIf(RegionID IN (230, 202)),
+        sumIf(ResolutionWidth, RegionID IN (230, 202))
+    ) != (92747387, 120539295295, 5108, 6385568, 11829, 15118689, 0, 22558375, 28229547375))
+    FROM skm SETTINGS use_skip_indexes = 0
+</fill_query>
+<fill_query>
+    SELECT throwIf((
+        countIf(tmax >= toDateTime('2013-07-03 00:00:00', 'UTC') AND tmin &lt;= toDateTime('2013-07-09 23:59:59', 'UTC'))
+            + countIf(tmax >= toDateTime('2013-07-10 00:00:00', 'UTC') AND tmin &lt;= toDateTime('2013-07-16 23:59:59', 'UTC'))
+            + countIf(tmax >= toDateTime('2013-07-17 00:00:00', 'UTC') AND tmin &lt;= toDateTime('2013-07-23 23:59:59', 'UTC'))
+            + countIf(tmax >= toDateTime('2013-07-24 00:00:00', 'UTC') AND tmin &lt;= toDateTime('2013-07-30 23:59:59', 'UTC')),
+        countIf(umin &lt;= 4612686018427387904 AND umax >= 4611686018427387904) + countIf(umin &lt;= 9224372036854775808 AND umax >= 9223372036854775808),
+        sum(rare), countIf(absent), countIf(top1) + countIf(top2)
+    ) != (122709, 189637, 2926, 0, 185481))
+    FROM
+    (
+        SELECT min(EventTime) AS tmin, max(EventTime) AS tmax, min(UserID) AS umin, max(UserID) AS umax,
+            max(RegionID IN ({rare1})) + max(RegionID IN ({rare2})) + max(RegionID IN ({rare3})) + max(RegionID IN ({rare4})) AS rare,
+            max(RegionID IN (20, 23, 26, 35, 37, 47, 60, 66)) AS absent, max(RegionID = 230) AS top1, max(RegionID = 202) AS top2
+        FROM skm GROUP BY _part, intDiv(_part_offset, 1024)
+    )
+    SETTINGS use_skip_indexes = 0
+</fill_query>
+<fill_query>SELECT throwIf((sum(`count()`), sum(`sum(ResolutionWidth)`)) != (92747387, 120539295295)) FROM ({weeks}) SETTINGS force_data_skipping_indices = 'i_time', log_comment = 'skip_index_minmax_set_hits.q1'</fill_query>
+<fill_query>
+    SELECT throwIf((sum(`count()`), sum(`sum(ResolutionWidth)`)) != (5108, 6385568)) FROM
+    (
+        SELECT count(), sum(ResolutionWidth) FROM skm WHERE UserID BETWEEN 4611686018427387904 AND 4612686018427387904
+        UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE UserID BETWEEN 9223372036854775808 AND 9224372036854775808
+    )
+    SETTINGS force_data_skipping_indices = 'i_user', log_comment = 'skip_index_minmax_set_hits.q2'
+</fill_query>
+<fill_query>
+    SELECT throwIf((sum(`count()`), sum(`sum(ResolutionWidth)`)) != (11829, 15118689)) FROM
+    (
+        SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare1})
+        UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare2})
+        UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare3})
+        UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare4})
+    )
+    SETTINGS force_data_skipping_indices = 'i_region', log_comment = 'skip_index_minmax_set_hits.q3'
+</fill_query>
+<fill_query>SELECT throwIf((sum(`count()`), sum(`sum(ResolutionWidth)`)) != (0, 0)) FROM ({absent_union}) SETTINGS force_data_skipping_indices = 'i_region', log_comment = 'skip_index_minmax_set_hits.q4'</fill_query>
+<fill_query>
+    SELECT throwIf((sum(`count()`), sum(`sum(ResolutionWidth)`)) != (22558375, 28229547375)) FROM
+    (
+        SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 230 UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 202
+    )
+    SETTINGS force_data_skipping_indices = 'i_region', log_comment = 'skip_index_minmax_set_hits.q5'
+</fill_query>
+<fill_query>SYSTEM FLUSH LOGS query_log</fill_query>
+<fill_query>
+    SELECT throwIf(groupArray(marks) != [122709, 189637, 2926, 0, 185481])
+    FROM
+    (
+        SELECT ProfileEvents['SelectedMarks'] AS marks FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment LIKE 'skip_index_minmax_set_hits.q_'
+            AND event_time >= (SELECT metadata_modification_time FROM system.tables WHERE database = 'default' AND name = 'skm')
+        ORDER BY log_comment
+    )
+</fill_query>
+
+<query>
+    {weeks}
+    FORMAT Null SETTINGS force_data_skipping_indices = 'i_time'
+</query>
+<query>
+    SELECT count(), sum(ResolutionWidth) FROM skm WHERE UserID BETWEEN 4611686018427387904 AND 4612686018427387904
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE UserID BETWEEN 9223372036854775808 AND 9224372036854775808
+    FORMAT Null SETTINGS force_data_skipping_indices = 'i_user'
+</query>
+<query>
+    SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare1})
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare2})
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare3})
+    UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID IN ({rare4})
+    FORMAT Null SETTINGS force_data_skipping_indices = 'i_region'
+</query>
+<query>
+    {absent_union}
+    FORMAT Null SETTINGS force_data_skipping_indices = 'i_region'
+</query>
+<query>
+    SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 230 UNION ALL SELECT count(), sum(ResolutionWidth) FROM skm WHERE RegionID = 202
+    FORMAT Null SETTINGS force_data_skipping_indices = 'i_region'
+</query>
+<query type="shell"><![CDATA[
+q='ALTER TABLE skm CLEAR INDEX i_time, MATERIALIZE INDEX i_time, CLEAR INDEX i_user, MATERIALIZE INDEX i_user'
+${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "$q; $q; $q"
+]]></query>
+<query type="shell"><![CDATA[${CLICKHOUSE_CLIENT} --mutations_sync 2 --query "ALTER TABLE skm CLEAR INDEX i_region, MATERIALIZE INDEX i_region"]]></query>
+
+<drop_query>DROP TABLE IF EXISTS skm SYNC</drop_query>
+
+</test>

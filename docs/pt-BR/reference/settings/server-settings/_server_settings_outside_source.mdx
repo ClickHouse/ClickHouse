@@ -879,6 +879,7 @@ Para também gravar mensagens de log no syslog:
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ Para também gravar mensagens de log no syslog:
 
 Chaves para `<syslog>`:
 
-| Chave      | Descrição                                                                                                                                                                                                                                                                                                       |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | O endereço do syslog no formato `host\[:port\]`. Se for omitido, o daemon local será usado.                                                                                                                                                                                                                     |
-| `hostname` | O nome do host a partir do qual os logs são enviados (opcional).                                                                                                                                                                                                                                                |
-| `facility` | A [palavra-chave de facility](https://en.wikipedia.org/wiki/Syslog#Facility) do syslog. Deve ser especificada em letras maiúsculas com o prefixo &quot;LOG&#95;&quot;, por exemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` etc. Padrão: `LOG_USER` se `address` for especificado; caso contrário, `LOG_DAEMON`. |
-| `format`   | Formato da mensagem de log. Valores possíveis: `bsd` e `syslog.`                                                                                                                                                                                                                                                |
+| Chave         | Descrição                                                                                                                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | O endereço do syslog no formato `host\[:port\]`. Se for omitido, o daemon local será usado.                                                                                                                                                                                                                     |
+| `hostname`    | O nome do host a partir do qual os logs são enviados (opcional).                                                                                                                                                                                                                                                |
+| `facility`    | A [palavra-chave de facility](https://en.wikipedia.org/wiki/Syslog#Facility) do syslog. Deve ser especificada em letras maiúsculas com o prefixo &quot;LOG&#95;&quot;, por exemplo, `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` etc. Padrão: `LOG_USER` se `address` for especificado; caso contrário, `LOG_DAEMON`. |
+| `format`      | Formato da mensagem de log. Valores possíveis: `bsd` e `syslog.`                                                                                                                                                                                                                                                |
+| `programname` | Nome do programa usado nas mensagens do syslog: o ident do syslog local ou o `APP-NAME` para syslog remoto com `format=syslog`. Não tem efeito com `format=bsd`. De 1 a 48 caracteres ASCII imprimíveis, sem espaços. Padrão: o nome do comando para o syslog local; não definido para o syslog remoto.         |
 
 **Formatos de log**
 
@@ -925,7 +927,7 @@ Para ativar o suporte a logs em JSON, use o snippet a seguir:
 <logger>
     <formatting>
         <type>json</type>
-        <!-- Pode ser configurado por canal (log, errorlog, console, syslog) ou globalmente para todos os canais (nesse caso, basta omiti-lo). -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
@@ -1219,6 +1221,7 @@ Chaves das configurações de servidor/cliente:
 | `caConfig`                    | Caminho para o arquivo ou diretório que contém certificados de CA confiáveis. Se apontar para um arquivo, ele deverá estar no formato PEM e poderá conter vários certificados de CA. Se apontar para um diretório, ele deverá conter um arquivo .pem por certificado de CA. Os nomes dos arquivos são buscados com base no valor de hash do nome do subject da CA. Mais detalhes podem ser encontrados na página de manual de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Assim como `certificateFile` e `privateKeyFile`, os certificados de CA são recarregados sem reinicialização quando o arquivo muda ou ao executar `SYSTEM RELOAD CONFIG`. |                                                                                            |
 | `certificateFile`             | Caminho para o arquivo do certificado de cliente/servidor em formato PEM. Você pode omiti-lo se `privateKeyFile` contiver o certificado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                                                                                            |
 | `cipherList`                  | Cifras OpenSSL compatíveis.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `cipherSuites`                | Conjuntos de cifras TLS 1.3 compatíveis, em notação OpenSSL. Um valor vazio mantém os conjuntos padrão do OpenSSL. `cipherList` se aplica apenas ao TLS 1.2 e versões anteriores. Nomes de conjuntos não reconhecidos pelo OpenSSL são ignorados; um valor que não contenha nenhum conjunto reconhecido é considerado um erro, e o contexto TLS não é inicializado.                                                                                                                                                                                                                                                                                                                                                                  |                                                                                            |
 | `disableProtocols`            | Protocolos cujo uso não é permitido.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |                                                                                            |
 | `extendedVerification`        | Se habilitado, verifica se o CN ou SAN do certificado corresponde ao hostname do peer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `true` para `openSSL.client`, `false` para `openSSL.server`                                |
 | `fips`                        | Ativa o modo FIPS do OpenSSL. Compatível se a versão do OpenSSL usada pela biblioteca oferecer suporte a FIPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
@@ -1264,6 +1267,33 @@ Chaves das configurações de servidor/cliente:
         </invalidCertificateHandler>
     </client>
 </openSSL>
+```
+
+## placement {#placement}
+
+A zona de disponibilidade e a região de nuvem em que o servidor é executado. A zona de disponibilidade é usada pelo cliente do ZooKeeper para dar preferência a hosts na mesma zona (`prefer_local_availability_zone` na seção [zookeeper](#zookeeper)) e pelo ClickHouse Keeper, que a publica no nó `/keeper/availability_zone`.
+
+Se a seção `placement` não estiver presente, a zona de disponibilidade e a região ficam vazias.
+
+As seguintes configurações estão disponíveis:
+
+| Configuração                  | Descrição                                                                                                                                                                                                                    | Valor default                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | Obtém a zona de disponibilidade a partir do serviço de metadados de instância do provedor de nuvem: primeiro da AWS e, depois, do GCP. Quando habilitada, todas as outras configurações são ignoradas e a região fica vazia. | `false`                              |
+| `availability_zone`           | A zona de disponibilidade.                                                                                                                                                                                                   | Vazio                                |
+| `availability_zone_from_file` | O arquivo de onde a zona de disponibilidade é lida quando `availability_zone` está vazio. Se o arquivo não existir, a zona de disponibilidade fica vazia.                                                                    | `/run/instance-metadata/node-zone`   |
+| `region`                      | A região.                                                                                                                                                                                                                    | Vazio                                |
+| `region_from_file`            | O arquivo de onde a região é lida quando `region` está vazio. Se o arquivo não existir, a região fica vazia.                                                                                                                 | `/run/instance-metadata/node-region` |
+
+O placement é lido uma única vez, na inicialização do servidor.
+
+**Exemplo**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
 ```
 
 ## part_log {#part_log}
@@ -1612,7 +1642,7 @@ O arquivo de configuração padrão do servidor, `config.xml`, contém a seguint
 
 Solicita a criação de tabelas `all_...` ao lado das tabelas de log do sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log` e assim por diante). Essa tabela é uma união da tabela de log correspondente, de suas versões rotacionadas (`query_log_0`, `query_log_1`, ...) e/ou das mesmas tabelas em todas as réplicas de um cluster, permitindo consultá-las de uma só vez sem precisar se lembrar de construções como `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-A seção é opcional. Se estiver presente, pelo menos uma das seguintes configurações deve ser especificada:
+A seção é opcional. O arquivo de configuração padrão do servidor, `config.xml`, contém esta seção com `merge_rotated_tables` habilitado, de modo que as tabelas `all_...` são criadas automaticamente em um servidor com a configuração padrão: no primeiro flush de cada log ou na inicialização, se `prepare_system_log_tables_on_startup` estiver habilitado; a configuração `cluster` precisa ser definida explicitamente. Uma tabela que já exista com um dos nomes `all_...` e que não tenha sido criada por este recurso (por exemplo, uma tabela criada manualmente e com dados) nunca é substituída: ela é mantida intacta, um aviso é gravado no log do servidor e a tabela de união é criada no próximo flush do log, assim que essa tabela for removida ou renomeada. As tabelas criadas por este recurso são identificadas pela frase marcadora no final de seu comentário: `It is safe to drop this table at any time: it will be recreated automatically.` Se a seção estiver presente, pelo menos uma das seguintes configurações deve ser especificada:
 
 | Configuração           | Descrição                                                                                                                                                                                                                                  |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1627,9 +1657,9 @@ A opção se aplica a todas as tabelas de log do sistema; não permite configura
   Quando a configuração `cluster` é usada, a definição da tabela faz referência ao cluster, que precisa existir para que a tabela seja carregada. Se você remover o cluster da configuração, remova também as tabelas `all_...` (elas serão recriadas de acordo com a nova configuração no próximo flush).
 </Note>
 
-<Warning>
-  Depois que esta seção é habilitada, os nomes `all_...` no banco de dados `system` ficam reservados para este recurso. Não mantenha suas próprias tabelas com esses nomes: renomeie qualquer tabela desse tipo antes de habilitar a seção.
-</Warning>
+<Note>
+  Uma tabela com um dos nomes `all_...` só é considerada criada por este recurso — e, portanto, pode ser substituída quando sua definição diferir da esperada — se consultar a função de tabela `merge` ou `clusterAllReplicas` e se seu comentário contiver a frase marcadora acima. Não copie essa frase para os comentários de suas próprias tabelas.
+</Note>
 
 **Exemplo**
 
@@ -1764,11 +1794,22 @@ Ao adicionar um host com a tag XML `\<host\>`:
 * se o host for especificado como um endereço IP, ele será verificado conforme especificado na URL. Por exemplo: `[2a02:6b8:a::a]`.
 * se houver redirecionamentos e o suporte a redirecionamentos estiver habilitado, então cada redirecionamento (o campo location) será verificado.
 
+Ao adicionar uma expressão regular com a tag XML `\<host_regexp\>`, o motor RE2 é usado e a correspondência é feita com o host inteiro. Por exemplo: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+Ao adicionar um único bucket do S3 com a tag XML `\<s3_bucket\>`, no formato `host/bucket` ou `host:port/bucket`:
+
+* isso é útil quando o endpoint é compartilhado por várias partes, como o endpoint da AWS no estilo de caminho `s3.us-west-2.amazonaws.com`, em que liberar o host inteiro permitiria o acesso a todos os buckets nele.
+* o bucket é extraído da URL do S3 interpretada, de modo que a entrada corresponde tanto a `https://s3.us-west-2.amazonaws.com/my-bucket/...` quanto a `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
+* aplica-se somente a URLs do S3: as funções de tabela e os motores `s3`, o motor de banco de dados `S3`, `BACKUP`/`RESTORE` para `S3` e os discos S3 criados em SQL com a função `disk`.
+* um redirecionamento permanente (301) retornado pelo S3 também é verificado em relação às entradas de bucket, mas um redirecionamento temporário (307) é verificado apenas pelo host e, portanto, é rejeitado quando a lista contém somente entradas `\<s3_bucket\>`.
+
 Por exemplo:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 
@@ -2016,28 +2057,7 @@ Também existe a configuração `zookeeper_load_balancing` (opcional), que permi
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-Método de armazenamento dos cabeçalhos das partes de dados no ZooKeeper. Essa configuração se aplica apenas à família [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/index). Ela pode ser especificada:
-
-**Globalmente na seção [merge&#95;tree](#merge_tree) do arquivo `config.xml`**
-
-O ClickHouse usa essa configuração para todas as tabelas do servidor. Você pode alterá-la a qualquer momento. As tabelas existentes mudam de comportamento quando a configuração é alterada.
-
-**Para cada tabela**
-
-Ao criar uma tabela, especifique a [configuração do motor](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) correspondente. O comportamento de uma tabela existente com essa configuração não muda, mesmo que a configuração global seja alterada.
-
-**Valores possíveis**
-
-* `0` — A funcionalidade está desativada.
-* `1` — A funcionalidade está ativada.
-
-Se [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper), as tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication) armazenam os cabeçalhos das partes de dados de forma compacta, usando um único `znode`. Se a tabela contiver muitas colunas, esse método de armazenamento reduz significativamente o volume de dados armazenados no ZooKeeper.
-
-<Note>
-  Depois de aplicar `use_minimalistic_part_header_in_zookeeper = 1`, você não pode fazer downgrade do servidor ClickHouse para uma versão que não ofereça suporte a essa configuração. Tenha cuidado ao atualizar o ClickHouse em servidores de um cluster. Não atualize todos os servidores de uma só vez. É mais seguro testar novas versões do ClickHouse em um ambiente de teste ou em apenas alguns servidores do cluster.
-
-  Os cabeçalhos das partes de dados já armazenados com essa configuração não podem ser restaurados para a representação anterior (não compacta).
-</Note>
+Configuração obsoleta, não tem efeito. As tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication) sempre armazenam o cabeçalho de uma parte de dados de forma compacta, em um único `znode`. Os cabeçalhos de partes gravados por versões mais antigas, com `znodes` filhos separados para `columns` e `checksums`, continuam sendo lidos.
 
 ## distributed_ddl {#distributed_ddl}
 

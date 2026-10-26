@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
@@ -137,6 +138,9 @@ public:
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
 
+    /// The profile every user gets, named by `default_profile` in the server configuration.
+    std::optional<UUID> getDefaultProfileId() const;
+
     /// Sets prefixes which should be used for custom settings.
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
@@ -217,6 +221,19 @@ public:
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
+    /// Sets whether `SET ROLE` is refused when the session or the query is readonly.
+    void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
+    bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
+
+    /// Forbid SQL-created quotas/row policies/masking policies/settings profiles from targeting users.xml users.
+    void setForbidSQLAccessEntitiesTargetingUsersConfig(bool enable) { forbid_sql_access_entities_targeting_users_config = enable; }
+    bool doesForbidSQLAccessEntitiesTargetingUsersConfig() const { return forbid_sql_access_entities_targeting_users_config; }
+
+    bool isEntityFromUsersConfig(const UUID & id) const;
+
+    /// True when a SQL-created access entity is about to be applied to a users.xml user and the setting is on.
+    bool shouldSkipSQLAccessEntityForUser(const UUID & policy_id, const UUID & user_id) const;
+
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -262,6 +279,15 @@ public:
 
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
+    /// Inserts into a specific nested access storage while applying the same validation as a regular insert.
+    std::vector<UUID> insertInto(
+        const String & storage_name,
+        const std::vector<AccessEntityPtr> & entities,
+        bool replace_if_exists = false,
+        bool throw_if_exists = true);
+
+    void moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name);
+
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
     /// Gets manager of notifications.
@@ -280,10 +306,36 @@ private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
+    class RestoreAccessStorage;
 
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
+    /// Inserts into `storage`, or into the storage a regular insert picks when it is null.
+    bool insertImpl(
+        const StoragePtr & storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id);
+    bool insertUnlocked(
+        const StoragePtr & storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id) TSA_REQUIRES(access_entities_mutex);
+    bool isShadowedInsertionUnlocked(const IAccessStorage & destination, const IAccessEntity & entity) const
+        TSA_REQUIRES(access_entities_mutex);
+    bool checkNameCollisionInOtherStorage(
+        IAccessStorage & storage, const AccessEntityPtr & entity, bool throw_if_exists, UUID * conflicting_id) const;
+    void checkFeatureTierForMoveUnlocked(
+        const std::vector<UUID> & ids,
+        const String & source_storage_name,
+        const String & destination_storage_name) TSA_REQUIRES(access_entities_mutex);
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
+
+    mutable std::mutex access_entities_mutex;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
@@ -306,6 +358,7 @@ private:
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
     std::atomic_bool throw_on_invalid_replicated_access_entities = false;
+    std::atomic_bool forbid_sql_access_entities_targeting_users_config = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;
@@ -314,6 +367,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool readonly_restricts_set_role = false;
 };
 
 }
