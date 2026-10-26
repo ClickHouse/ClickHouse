@@ -15,6 +15,8 @@ namespace DB
  * A DDSketch is a fully-mergeable quantile sketch with relative-error guarantees. That is, for any value x,
  * the value returned by the sketch is guaranteed to be in the (1 +- epsilon) * x range. The sketch is
  * parameterized by a relative accuracy epsilon, which is the maximum relative error of any quantile estimate.
+ * The guarantee holds while the values fit into the bins of the sketch: otherwise adjacent bins merge, and epsilon grows
+ * (see `DDSketchDenseLogarithmic::addValue`).
  *
  * The sketch is implemented as a set of logarithmically-spaced bins. Each bin is a pair of a value and a count.
  *
@@ -37,6 +39,9 @@ class QuantileDD
 {
 public:
     using Weight = UInt64;
+
+    /// The smallest relative accuracy that `quantileDD` accepts
+    static constexpr Float64 min_relative_accuracy = 1e-6;
 
     QuantileDD() = default;
 
@@ -78,6 +83,9 @@ public:
         getManyImpl(levels, indices, size, result);
     }
 
+    const DDSketchDenseLogarithmic & getSketch() const { return data; }
+    DDSketchDenseLogarithmic & getSketch() { return data; }
+
     Float64 getFloat(Float64 level) const
     {
         return getImpl<Float64>(level);
@@ -94,14 +102,13 @@ private:
     template <typename T>
     T getImpl(Float64 level) const
     {
-        return static_cast<T>(data.get(level));
+        return DDSketchDenseLogarithmic::toResult<T>(data.get(level));
     }
 
     template <typename T>
-    void getManyImpl(const Float64 * levels, const size_t *, size_t num_levels, T * result) const
+    void getManyImpl(const Float64 * levels, const size_t * indices, size_t num_levels, T * result) const
     {
-        for (size_t i = 0; i < num_levels; ++i)
-            result[i] = getImpl<T>(levels[i]);
+        data.getMany(levels, indices, num_levels, result);
     }
 };
 
