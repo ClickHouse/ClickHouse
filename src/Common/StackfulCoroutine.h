@@ -24,7 +24,6 @@ private:
     using CoroutinePtr = StackfulCoroutine *;
 
 public:
-    /// An lvalue reference, not a forwarding reference: the bounds below are read back out of the caller's allocator.
     template <typename Fn>
     StackfulCoroutine(CoroutineStack & salloc, Fn && fn)
         : impl(std::allocator_arg_t(), salloc, RoutineImpl<Fn>(std::forward<Fn>(fn)))
@@ -33,8 +32,7 @@ public:
         if (Silk::isInsideFiber())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Stackful coroutines cannot be created inside silk fibers");
 
-        /// The mem-initializer above already ran the allocation through `salloc`, so what it
-        /// recorded is this coroutine's stack.
+        /// The fiber constructor allocated this coroutine's stack through `salloc`.
         stack_bounds = salloc.lastAllocatedBounds();
     }
 
@@ -91,7 +89,7 @@ public:
     /// shared object its own copy.
     static CoroutinePtr & getCurrentCoroutine();
 
-    /// Empty while this coroutine is being torn down, so a frame check during unwinding cannot fire.
+    /// Empty during teardown (see `unwind`).
     const CoroutineStack::Bounds & getStackBounds() const { return stack_bounds; }
 
 private:
@@ -130,8 +128,7 @@ private:
     /// Destroying a coroutine that is suspended unwinds its stack: Called from the destructor body, while coroutine_locals is still alive.
     void unwind() noexcept
     {
-        /// Teardown runs with this coroutine published as current, and a destructor near the
-        /// allowance must not turn a forced unwind into an exception.
+        /// A forced unwind runs with this coroutine current and must not throw from `checkStackSize`.
         stack_bounds = {};
 
         if (!impl)
