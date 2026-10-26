@@ -1,8 +1,6 @@
 -- The analyzer resolves the expression of an ALIAS column only when the column is used.
 -- Check the cases when ALIAS columns reference each other, subcolumns and matchers.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_lazy_alias;
 
 CREATE TABLE t_lazy_alias

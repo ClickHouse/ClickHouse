@@ -5,6 +5,7 @@
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
@@ -90,6 +91,9 @@ void MergeTreeReaderStream::init()
         return pipeline.build();
     };
 
+    /// The same for every part of the table, so that the read streams of a column share decoder statistics.
+    const UInt64 statistics_hint = sipHash64((fs::path(data_part_storage->getFullRootPath()) / (path_prefix + data_file_extension)).string()) | 1;
+
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
@@ -127,6 +131,7 @@ void MergeTreeReaderStream::init()
 
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
+        buffer->setStatisticsHint(statistics_hint);
 
         read_buffer_holder = std::move(buffer);
         data_buffer = read_buffer_holder.get();
@@ -142,6 +147,7 @@ void MergeTreeReaderStream::init()
 
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
+        buffer->setStatisticsHint(statistics_hint);
 
         read_buffer_holder = std::move(buffer);
         data_buffer = read_buffer_holder.get();
@@ -329,15 +335,20 @@ size_t MergeTreeReaderStream::getCompressedBytesOfBlocksRead() const
     return compressed_data_buffer ? compressed_data_buffer->getCompressedBytesOfBlocksRead() : 0;
 }
 
-size_t MergeTreeReaderStream::getCompressedBytesBetweenMarks(size_t begin_mark, size_t end_mark)
+size_t MergeTreeReaderStream::getCompressedBytesOfGranulePositions(size_t mark, size_t begin_position, size_t end_position, size_t positions)
 {
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
         return 0;
 
     loadMarks();
-    auto offset = [&](size_t mark) { return mark < marks_count ? marks_getter->getMark(mark, 0).offset_in_compressed_file : file_size; };
-    return offset(end_mark) - offset(begin_mark);
+    auto offset = [&](size_t position)
+    {
+        /// The position after the last one of a granule is the first one of the next granule.
+        const size_t at_mark = position == positions ? mark + 1 : mark;
+        return at_mark < marks_count ? marks_getter->getMark(at_mark, position == positions ? 0 : position).offset_in_compressed_file : file_size;
+    };
+    return offset(end_position) - offset(begin_position);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
