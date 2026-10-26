@@ -167,6 +167,8 @@ SELECT count(), sum(x), max(a) FROM (SELECT a, c, count() AS x FROM t_05361_cach
 SELECT count(), sum(x), max(a) FROM (SELECT a, b, count() AS x FROM t_05361_cache GROUP BY a, b LIMIT 10);
 -- The entries of a key do not serve another key whose name and type spell the same text.
 SELECT groupArray(aU) FROM (SELECT aU, count() FROM file('${DIR}/names.parquet') GROUP BY aU ORDER BY aU LIMIT 3);
+SELECT groupArray(aU) FROM (SELECT aU, count() FROM file('${DIR}/names.parquet') GROUP BY aU ORDER BY aU LIMIT 3)
+FORMAT Null SETTINGS log_comment = '05361_names_rerun';
 SELECT groupArray(a) FROM (SELECT a, count() FROM file('${DIR}/names.parquet') GROUP BY a ORDER BY a LIMIT 3);
 SET use_query_condition_cache = 0;
 
@@ -257,6 +259,10 @@ SELECT log_comment, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_count_s3', '05361_steps') AND type = 'QueryFinish'
 ORDER BY log_comment;
+-- The rerun of the aU query uses the entries of the first run.
+SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05361_names_rerun' AND type = 'QueryFinish';
 -- Two threads hold the 3 groups each, and 6 <= 5 * 1.5 drops the heap and its sort from the second run.
 SELECT 'few_1', countDistinct(name) > 0 FROM system.processors_profile_log
 WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log
