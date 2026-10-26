@@ -11,6 +11,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
+#include <Storages/MergeTree/CompressedBytesRead.h>
 #include <Common/CacheBase.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
@@ -235,7 +236,8 @@ public:
     /// `bytes_skipped_by_string_value_filters` are the sizes of the values read from disk but replaced with
     /// empty strings in `input_columns` (see `StringValueFilter`), by column name.
     /// `compressed_bytes_read`, if the reader knows it, is the compressed size of the data read from disk, which is
-    /// recorded as it is instead of estimating it from the read columns.
+    /// recorded as it is instead of estimating it from the read columns, and the rows the reader took from the columns
+    /// cache instead, which are estimated by themselves.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,
@@ -245,7 +247,7 @@ public:
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,
-        std::optional<size_t> compressed_bytes_read,
+        const std::optional<CompressedBytesRead> & compressed_bytes_read,
         std::optional<bool> & should_continue_sampling);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be

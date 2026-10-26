@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/CompressedBytesRead.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
@@ -105,9 +106,9 @@ public:
     /// columns misses these values, although they were read from disk.
     std::unordered_map<String, size_t> takeBytesSkippedByStringValueFilters();
 
-    /// For a reader that knows how many bytes it read from disk as they are stored, compressed: returns the compressed
-    /// size of the blocks it read since the previous call. A compact part has no per-column sizes to estimate it from.
-    virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
+    /// For a reader that knows how many bytes it read from disk as they are stored, compressed: returns what it read
+    /// since the previous call, see `CompressedBytesRead`. A compact part has no per-column sizes to estimate it from.
+    virtual std::optional<CompressedBytesRead> takeCompressedBytesRead() { return std::nullopt; }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 

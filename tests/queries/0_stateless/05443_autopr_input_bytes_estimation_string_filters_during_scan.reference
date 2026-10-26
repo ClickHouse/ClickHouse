@@ -12,6 +12,9 @@
 3000
 3000
 3000
+FFFFD4211528C56Eabcdefgh
+1000
+1000
 query_wide	1
 query_compact	1
 query_wide_two_columns	1
@@ -22,5 +25,6 @@ query_compact_compressible_first_values	1
 query_compact_compressible_first_values_inline_sizes	1
 query_compact_repetitive_long_values_zstd	1
 query_compact_block_of_one_row	1
+1	1	1
 1	1	1
 1	1	1

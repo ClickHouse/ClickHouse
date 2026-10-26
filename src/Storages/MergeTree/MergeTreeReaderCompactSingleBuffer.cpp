@@ -42,14 +42,12 @@ catch (...)
     throw;
 }
 
-std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
+std::optional<CompressedBytesRead> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
     const size_t total = stream ? stream->getCompressedBytesOfBlocksRead() : 0;
-    const size_t read = total - std::exchange(compressed_bytes_taken, total);
-    /// The rows served from the columns cache are not read from the part, so they are not counted.
-    if (std::exchange(served_from_columns_cache, false))
-        return std::nullopt;
-    return read;
+    return CompressedBytesRead{
+        .bytes = total - std::exchange(compressed_bytes_taken, total),
+        .rows_from_columns_cache = std::exchange(rows_from_columns_cache, {})};
 }
 
 void MergeTreeReaderCompactSingleBuffer::readGranule(

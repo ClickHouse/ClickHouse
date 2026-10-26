@@ -24,7 +24,7 @@ public:
                     bool continue_reading, size_t max_rows_to_read,
                     MutableColumns & res_columns, Columns & shared_columns) override;
 
-    std::optional<size_t> takeCompressedBytesRead() override;
+    std::optional<CompressedBytesRead> takeCompressedBytesRead() override;
 
     void updateReadRequestMap(MarkRangesPtr request_map) override
     {

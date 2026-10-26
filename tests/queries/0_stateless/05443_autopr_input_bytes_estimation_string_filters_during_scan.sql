@@ -28,6 +28,7 @@ DROP TABLE IF EXISTS t_compact_compressible_first_values;
 DROP TABLE IF EXISTS t_compact_compressible_first_values_inline_sizes;
 DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_small_blocks;
+DROP TABLE IF EXISTS t_compact_cached_column;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate is taken differently for the two.
@@ -104,6 +105,19 @@ SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
     columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, log_comment='columns_cache_2';
 
+-- One column of the read is served from the columns cache, the other one is read from the part and filtered: the cache is
+-- not written to, otherwise the filter does not apply. The estimate is compared with the same query reading both columns
+-- from the part. The condition on `a` needs its values, not only their sizes.
+CREATE TABLE t_compact_cached_column(id UInt64, a String, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
+INSERT INTO t_compact_cached_column SELECT id, concat(hex(cityHash64(id, 5)), 'abcdefgh'), s FROM t_wide WHERE id < 100000;
+SELECT max(a) FROM t_compact_cached_column SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SELECT count() FROM t_compact_cached_column WHERE s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_column_1';
+SELECT count() FROM t_compact_cached_column WHERE s LIKE '%needle%' AND cityHash64(a) != 0
+SETTINGS enable_multiple_prewhere_read_steps=0, use_columns_cache=0, log_comment='cached_column_0';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -147,6 +161,20 @@ FROM (
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'columns_cache_%') AND (type = 'QueryFinish')
 );
 
+SELECT
+    filter_applied,
+    hits > 0,
+    greatest(estimate, read) / least(estimate, read) < 1.3
+FROM (
+    SELECT
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cached_column_1') AS estimate,
+        sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'cached_column_0') AS read,
+        sumIf(ProfileEvents['ColumnsCacheHits'], log_comment = 'cached_column_1') AS hits,
+        sumIf(ProfileEvents['StringValueFilterValuesReplaced'], log_comment = 'cached_column_1') > 0 AS filter_applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cached_column_%') AND (type = 'QueryFinish')
+);
+
 DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_compact_unread_compressible;
@@ -155,3 +183,4 @@ DROP TABLE t_compact_compressible_first_values;
 DROP TABLE t_compact_compressible_first_values_inline_sizes;
 DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_small_blocks;
+DROP TABLE t_compact_cached_column;
