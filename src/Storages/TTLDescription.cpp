@@ -1276,7 +1276,8 @@ static ExpressionAndSets analyzeExpressionAndSets(
     const ASTPtr & ast_template,
     const NamesAndTypesList & columns,
     const ContextPtr & context,
-    NamesAndTypesList * required_source_columns = nullptr)
+    NamesAndTypesList * required_source_columns = nullptr,
+    bool plan_subqueries = true)
 {
     ExpressionAndSets result;
     /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
@@ -1287,7 +1288,7 @@ static ExpressionAndSets analyzeExpressionAndSets(
     if (required_source_columns)
         *required_source_columns = syntax_analyzer_result->required_source_columns;
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
-    auto dag = analyzer.getActionsDAG(false);
+    auto dag = analyzer.getActionsDAG(false, true, !plan_subqueries);
 
     const auto * col = &dag.findInOutputs(ast->getColumnName());
     if (col->result_name != ttl_string)
@@ -1307,7 +1308,8 @@ static ExpressionAndSets buildExpressionAndSets(
     const NamesAndTypesList & columns,
     const ContextPtr & context,
     NamesAndTypesList * required_source_columns = nullptr,
-    bool widen_temporal_columns = true)
+    bool widen_temporal_columns = true,
+    bool plan_subqueries = true)
 {
     /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
     /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
@@ -1320,7 +1322,7 @@ static ExpressionAndSets buildExpressionAndSets(
     /// the original column types. Such expressions explicitly operate in the narrow
     /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
     if (!widen_temporal_columns)
-        return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
+        return analyzeExpressionAndSets(ast, columns, context, required_source_columns, plan_subqueries);
 
     auto widened_columns = widenTemporalColumns(columns);
     bool widened_any = !std::equal(
@@ -1331,7 +1333,7 @@ static ExpressionAndSets buildExpressionAndSets(
     {
         try
         {
-            auto result = analyzeExpressionAndSets(ast, widened_columns, context, required_source_columns);
+            auto result = analyzeExpressionAndSets(ast, widened_columns, context, required_source_columns, plan_subqueries);
 
             /// The widening is an internal detail of the analysis, so report the required source columns
             /// with their original (narrow) types. This keeps the reported list a subset of `columns` as
@@ -1365,7 +1367,7 @@ static ExpressionAndSets buildExpressionAndSets(
         }
     }
 
-    return analyzeExpressionAndSets(ast, columns, context, required_source_columns);
+    return analyzeExpressionAndSets(ast, columns, context, required_source_columns, plan_subqueries);
 }
 
 /// Collect the argument expressions of every aggregate function found in the AST.
@@ -1449,7 +1451,8 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    TTLValidationMode validation_mode)
+    TTLValidationMode validation_mode,
+    bool plan_where_subqueries_on_attach)
 {
     const auto expression_context = getTTLExpressionContext(context);
 
@@ -1503,10 +1506,14 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 result.where_expression_ast = where_expr_ast->clone();
 
+                /// A stored `WHERE` is described without planning its `IN` subqueries: they are planned when the TTL is
+                /// applied (`buildWhereExpression`), so loading reads no table they read.
+                const bool plan_subqueries = validation_mode != TTLValidationMode::Attach || plan_where_subqueries_on_attach;
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
                 = buildExpressionAndSets(
-                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
+                    ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false,
+                    plan_subqueries).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -1671,7 +1678,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    TTLValidationMode validation_mode)
+    TTLValidationMode validation_mode,
+    bool plan_where_subqueries_on_attach)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -1682,7 +1690,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     bool have_unconditional_delete_ttl = false;
     for (const auto & ttl_element_ptr : definition_ast->children)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode, plan_where_subqueries_on_attach);
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression_ast)
@@ -1713,10 +1721,13 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     }
 
     /// A table is loaded with its TTL analyzed in the global context, where nothing that exists only for a query or
-    /// a session (a table function, a temporary table) resolves, so a TTL that is going to be stored must analyze there.
+    /// a session (a table function, a temporary table) resolves, so a TTL that is going to be stored must analyze there,
+    /// and the `IN` subqueries of its `WHERE` must plan there as a TTL merge plans them.
     /// A replica replaying a DDL that the initiator already committed does not judge it again, or its DDL queue would stall.
     if (validation_mode != TTLValidationMode::Attach && !context->isGlobalContext() && !isSecondaryDDLReplay(context))
-        getTTLForTableFromAST(definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach);
+        getTTLForTableFromAST(
+            definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach,
+            /*plan_where_subqueries_on_attach=*/ true);
 
     return result;
 }

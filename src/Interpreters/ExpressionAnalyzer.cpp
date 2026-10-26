@@ -1937,7 +1937,7 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
     step.addRequiredOutput(expr->getColumnName());
 }
 
-ActionsDAG ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unused_result)
+ActionsDAG ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unused_result, bool no_makeset_for_subqueries)
 {
     ActionsDAG actions_dag(aggregated_columns);
     NamesWithAliases result_columns;
@@ -1960,7 +1960,7 @@ ActionsDAG ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool remove_unuse
             alias = name;
         result_columns.emplace_back(name, alias);
         result_names.push_back(alias);
-        getRootActions(ast, false /* no_makeset_for_subqueries */, actions_dag);
+        getRootActions(ast, no_makeset_for_subqueries, actions_dag);
     }
 
     if (add_aliases)
