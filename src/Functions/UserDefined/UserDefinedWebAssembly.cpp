@@ -516,6 +516,10 @@ public:
     /// as query-deterministic. `IFunction` answers `true` by default, which would let query plan
     /// optimizations duplicate or reorder such a call. `Executable` UDFs answer `false` here as well.
     bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
+    /// Compartments are reused without resetting module globals, so a module not declared `DETERMINISTIC`
+    /// can keep state between invocations: evaluating it on more rows or more times (e.g. on a query
+    /// result preview) changes what the final invocation observes.
+    bool hasObservableSideEffects() const override { return !user_defined_function->getIsDeterministic(); }
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");
