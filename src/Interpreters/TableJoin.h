@@ -172,6 +172,7 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
+    const bool enable_hash_join_deferred_build = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
@@ -179,6 +180,8 @@ private:
 
     /// Decision by the planner whether to enable row store tranformation or not.
     bool enable_row_store = false;
+
+    std::optional<UInt64> right_key_distinct_values_from_uniq;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
@@ -352,9 +355,15 @@ public:
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
+    bool enableHashJoinDeferredBuild() const { return enable_hash_join_deferred_build; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }
     bool isRowStoreEnabled() const { return enable_row_store; }
+    /// The number of distinct values of the single right key, from the `uniq` statistic of the right table, which the
+    /// planner found with no filter, limit or function of the values in between. With `enable_hash_join_deferred_build`
+    /// the hash join then does not defer its build, and a two-level map reserves for this count.
+    void setRightKeyDistinctValuesFromUniq(std::optional<UInt64> value) { right_key_distinct_values_from_uniq = value; }
+    std::optional<UInt64> rightKeyDistinctValuesFromUniq() const { return right_key_distinct_values_from_uniq; }
 
     const std::vector<SharedRuntimeFilterDescriptor> & getSharedRuntimeFilterDescriptors() const
     {

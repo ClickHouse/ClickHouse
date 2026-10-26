@@ -39,6 +39,10 @@ namespace QueryPlanOptimizations
 /// single-argument function of it (which cannot increase the distinct count).
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 
+/// For a step that drops rows, such as a filter, a limit or a join: the distinct counts of its input no longer count
+/// a whole table, see `ColumnStats::num_distinct_values_from_uniq`.
+void clearDistinctValuesFromUniq(std::unordered_map<String, ColumnStats> & column_stats);
+
 /// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
 /// Anti joins and full joins leave both inputs unchanged.
 void updateJoinKeyDistinctCounts(

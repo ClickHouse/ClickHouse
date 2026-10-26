@@ -267,6 +267,8 @@ struct JoinAlgorithmParams
     std::chrono::milliseconds lock_acquire_timeout{};
 
     std::optional<UInt64> rhs_size_estimation;
+    /// See `TableJoin::rightKeyDistinctValuesFromUniq`.
+    std::optional<UInt64> rhs_key_distinct_values_from_uniq;
     std::optional<UInt64> result_rows_estimation;
     /// The right input reads nothing (set by `JoinStepLogical::buildPhysicalJoin`). Only the build layout reads it.
     bool rhs_known_empty = false;

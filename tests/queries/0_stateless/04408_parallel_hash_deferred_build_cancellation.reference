@@ -1,0 +1,3 @@
+deferred_build_used 1
+max_execution_time_interrupts_build 1
+kill_query_cancels_build 1

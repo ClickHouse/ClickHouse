@@ -1461,6 +1461,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                     imprecise_estimate |= leaf_imprecise[i];
 
             join_step->setInputRelations(relation_infos[left_rels], relation_infos[right_rels]);
+            std::unordered_map<String, UInt64> right_distinct_values_from_uniq;
+            for (const auto & [column_name, stats] : (flip_join ? entry->left : entry->right)->column_stats)
+                if (stats.num_distinct_values_from_uniq)
+                    right_distinct_values_from_uniq.emplace(column_name, stats.num_distinct_values);
+            join_step->setRightDistinctValuesFromUniq(std::move(right_distinct_values_from_uniq));
             relation_infos[entry->relations] = RelationEstimateInfo{
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,

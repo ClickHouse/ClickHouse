@@ -188,6 +188,13 @@ public:
         right_relation = std::move(right_relation_);
     }
 
+    /// The distinct counts of the columns of the right input that come from a `uniq` statistic, see
+    /// `ColumnStats::num_distinct_values_from_uniq`. `getRightKeyDistinctValuesFromUniq` takes the count of the join key.
+    void setRightDistinctValuesFromUniq(std::unordered_map<String, UInt64> distinct_values)
+    {
+        right_distinct_values_from_uniq = std::move(distinct_values);
+    }
+
     std::pair<std::reference_wrapper<const String>, std::reference_wrapper<const String>> getInputLabels() const
     {
         return {std::cref(left_relation.name), std::cref(right_relation.name)};
@@ -267,6 +274,7 @@ protected:
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;
+    std::optional<UInt64> getRightKeyDistinctValuesFromUniq() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
@@ -304,6 +312,7 @@ protected:
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
+    std::unordered_map<String, UInt64> right_distinct_values_from_uniq;
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;

@@ -249,7 +249,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
+        auto column_stats = makeColumnStats(estimator.estimateCardinality(), estimator.stats);
+        /// The parts merged into `stats` have the same statistics types, so equal row counts mean that every part has the sketch.
+        column_stats.num_distinct_values_from_uniq = estimator.stats->hasCardinality() && estimator.stats->getNumRows() == total_rows;
+        result.column_stats.emplace(column_name, std::move(column_stats));
     }
     return result;
 }

@@ -10573,6 +10573,12 @@ Has effect for every hash-based `join_algorithm`, including `grace_hash`, provid
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0, \
         {"26.4", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."}) \
+    DECLARE(Bool, enable_hash_join_deferred_build, true, R"(
+When the size of the hash table of a `hash` or `parallel_hash` join is not known in advance, store the right blocks first and estimate the number of distinct keys while they arrive. When all of them have arrived, reserve each hash table once for that number and then insert the keys. The size is known in advance when `collect_hash_table_stats_during_joins` recorded it in an earlier run of the same join. It is also known when the join has a single key that is a column of the right table, read with no filter, limit or aggregation, and every part of the table has a `uniq` or `uniq_v2` statistic of that column (see `use_statistics`). Then the build does not defer, and a two-level hash table is reserved for that count. A join with `join_overflow_mode = 'break'` and a size limit does not defer either.
+
+The build defers only when it holds no more memory than inserting each block as it arrives: the stored right blocks must keep the join keys anyway, and the hash table must keep every right row. So `INNER` and `LEFT` `ANY` joins, `LEFT SEMI` and `LEFT ANTI` joins do not defer. Without a spill threshold (`max_bytes_before_external_join`, `max_bytes_ratio_before_external_join`), an `INNER` or `LEFT` join keeps the keys only for `OR` conditions or for a condition on both tables that the join evaluates itself.
+)", 0, \
+        {"26.11", false, true, "New setting to reserve the hash tables of a hash join once, from the number of distinct keys counted while the right side is stored."}) \
     DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(
 Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
 )", 0, \
