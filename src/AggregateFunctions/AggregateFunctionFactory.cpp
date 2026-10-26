@@ -3,8 +3,11 @@
 #include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -89,6 +92,33 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
     return res_types;
 }
 
+/// Whether the type is `Variant` or contains `Variant` inside, as the arguments of combinators like -ForEach and -Map.
+static bool containsVariant(const DataTypePtr & type)
+{
+    if (isVariant(type))
+        return true;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return containsVariant(array->getNestedType());
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return containsVariant(map->getKeyType()) || containsVariant(map->getValueType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::any_of(tuple->getElements().begin(), tuple->getElements().end(), [](const auto & element) { return containsVariant(element); });
+    return false;
+}
+
+/// Nullable of the least common supertype of the alternatives of the Variant argument.
+static DataTypePtr convertVariantArgument(const DataTypePtr & type, const String & name)
+{
+    const auto & variant = assert_cast<const DataTypeVariant &>(*type);
+    auto supertype = tryGetLeastSupertype(variant.getVariants());
+    if (!supertype || !supertype->canBeInsideNullable())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument for aggregate function {}: "
+            "the alternatives of the Variant don't have a common supertype that can be inside Nullable{}",
+            type->getName(), name, getNumericVariantSupertypeHint(type));
+    return makeNullable(supertype);
+}
+
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name,
     NullsAction action,
@@ -105,27 +135,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
     if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
-            [](const auto & type) { return isVariant(type); }))
+            [](const auto & type) { return containsVariant(type); }))
     {
-        auto arguments_to_convert = getVariantArgumentsToConvert(name, action, types_without_low_cardinality, /* including_nested = */ false);
-        if (!arguments_to_convert.empty())
+        /// Apply the function to Nullable of the least common supertype of the alternatives of every Variant argument
+        /// that is not supported. Other arguments, including other Variant arguments, are passed as is.
+        auto nested_types = getVariantArgumentsConversion(name, action, types_without_low_cardinality, /* including_nested = */ false);
+        if (!nested_types.empty())
         {
-            /// Apply the function to Nullable of the least common supertype of the alternatives of every Variant argument
-            /// that is not supported. Other arguments, including other Variant arguments, are passed as is.
-            DataTypes nested_types = types_without_low_cardinality;
-            for (size_t i : arguments_to_convert)
-            {
-                auto & type = nested_types[i];
-                const auto & variant = assert_cast<const DataTypeVariant &>(*type);
-                auto supertype = tryGetLeastSupertype(variant.getVariants());
-                if (!supertype || !supertype->canBeInsideNullable())
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument for aggregate function {}: "
-                        "the alternatives of the Variant don't have a common supertype that can be inside Nullable{}",
-                        type->getName(), name, getNumericVariantSupertypeHint(type));
-                type = makeNullable(supertype);
-            }
-
             auto nested_function = get(name, action, nested_types, parameters, out_properties, state_variant);
             return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, types_without_low_cardinality, nested_types, parameters);
         }
@@ -465,7 +481,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
 }
 
 
-VectorWithMemoryTracking<size_t> AggregateFunctionFactory::getVariantArgumentsToConvert(
+DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
     const String & name_param, NullsAction action, const DataTypes & argument_types, bool including_nested) const
 {
     String name = getAliasToOrName(name_param);
@@ -508,10 +524,15 @@ VectorWithMemoryTracking<size_t> AggregateFunctionFactory::getVariantArgumentsTo
                 break;
         }
 
-        VectorWithMemoryTracking<size_t> res;
+        DataTypes res;
         for (size_t i = first_converted_argument; i < argument_types.size(); ++i)
-            if (isVariant(argument_types[i]))
-                res.push_back(i);
+        {
+            if (!isVariant(argument_types[i]))
+                continue;
+            if (res.empty())
+                res = argument_types;
+            res[i] = convertVariantArgument(argument_types[i], name_param);
+        }
         return res;
     }
 
@@ -519,13 +540,20 @@ VectorWithMemoryTracking<size_t> AggregateFunctionFactory::getVariantArgumentsTo
     /// The arguments passed to the nested function are converted by the adapter applied to the nested function,
     /// which is created by `get` as well. This way the combinator sees the original values: for example, -Distinct
     /// distinguishes equal values of different alternatives, and the payload of -ArgMin keeps its type.
-    /// But some combinators must not see the NULL values that the nested function skips, see `VariantArgumentsOfNestedFunction`.
+    /// But some combinators must not see the NULL values that the nested function skips, and some combinators pass
+    /// the arguments to the nested function row by row or element by element, see `VariantArgumentsOfNestedFunction`.
     /// Unknown functions don't need the conversion, the exception is thrown by `getImpl`.
     AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name);
     if (!combinator || combinator->isForInternalUsageOnly())
         return {};
 
-    auto res = combinator->getVariantArgumentsToConvert(argument_types);
+    DataTypes res;
+    for (size_t i : combinator->getVariantArgumentsToConvert(argument_types))
+    {
+        if (res.empty())
+            res = argument_types;
+        res[i] = convertVariantArgument(argument_types[i], name);
+    }
 
     auto nested_conversion = combinator->getVariantArgumentsOfNestedFunction();
     if (nested_conversion == VariantArgumentsOfNestedFunction::ConvertedAround
@@ -539,14 +567,13 @@ VectorWithMemoryTracking<size_t> AggregateFunctionFactory::getVariantArgumentsTo
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(types_without_nullable);
-        for (size_t i : getVariantArgumentsToConvert(nested_name, action, nested_types, /* including_nested = */ true))
+        DataTypes converted_nested_types = getVariantArgumentsConversion(nested_name, action, nested_types, /* including_nested = */ true);
+        if (!converted_nested_types.empty())
         {
-            chassert(i < argument_types.size() && nested_types[i]->equals(*argument_types[i]));
-            res.push_back(i);
+            if (res.empty())
+                res = argument_types;
+            combinator->convertVariantArgumentsAround(res, nested_types, converted_nested_types);
         }
-
-        std::sort(res.begin(), res.end());
-        res.erase(std::unique(res.begin(), res.end()), res.end());
     }
 
     return res;

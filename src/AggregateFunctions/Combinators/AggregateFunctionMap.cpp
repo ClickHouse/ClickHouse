@@ -580,6 +580,42 @@ public:
 
     bool transformsArgumentTypes() const override { return true; }
 
+    /// The values of the maps are passed to the nested function one by one, so the maps are converted around.
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
+    void convertVariantArgumentsAround(
+        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const override
+    {
+        /// The same modes as in `transformArguments`.
+        const auto * map_type = arguments.size() == 1 ? checkAndGetDataType<DataTypeMap>(arguments[0].get()) : nullptr;
+        if (map_type)
+        {
+            arguments[0] = std::make_shared<DataTypeMap>(map_type->getKeyType(), converted_nested_arguments[0]);
+            return;
+        }
+
+        auto is_array = [](const DataTypePtr & type) { return type->getTypeId() == TypeIndex::Array; };
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get()))
+        {
+            DataTypes elements = tuple_type->getElements();
+            if (arguments.size() == 1 && elements.size() >= 2 && std::all_of(elements.begin(), elements.end(), is_array))
+            {
+                elements[1] = std::make_shared<DataTypeArray>(converted_nested_arguments[0]);
+                arguments[0] = tuple_type->hasExplicitNames()
+                    ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
+                    : std::make_shared<DataTypeTuple>(elements);
+                return;
+            }
+        }
+        else if (arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), is_array))
+        {
+            arguments[1] = std::make_shared<DataTypeArray>(converted_nested_arguments[0]);
+            return;
+        }
+
+        IAggregateFunctionCombinator::convertVariantArgumentsAround(arguments, nested_arguments, converted_nested_arguments);
+    }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())

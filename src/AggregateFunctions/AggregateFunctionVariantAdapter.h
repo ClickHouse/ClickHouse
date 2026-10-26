@@ -15,6 +15,7 @@ namespace DB
   *     f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
   *
   * The NULL values of the `Variant` become NULL values of `Nullable` and are skipped as usual.
+  * For combinators like -ForEach and -Map, the `Variant` inside the argument is cast: `Array(Variant(...))` to `Array(Nullable(...))`.
   * The adapter shares the state of the nested function, which is created for the converted argument types.
   * It is applied by `AggregateFunctionFactory` according to `AggregateFunctionProperties::variant_arguments_conversion`.
   */

@@ -28,7 +28,10 @@ enum class VariantArgumentsOfNestedFunction : UInt8
     /// processes them, as the `Null` combinator does for `Nullable` arguments. Otherwise, the result would differ
     /// from the result for the arguments explicitly cast to `Nullable`: for example, -ArgMax would select the row
     /// with a NULL value, and -OrDefault and -Resample would return NULL instead of the default value for empty states.
-    /// The combinator must pass the arguments to the nested function at the same positions (example: -ArgMax, -OrDefault).
+    /// It is also used by combinators that pass the arguments to the nested function row by row or element by element,
+    /// so that the conversion is done once for the whole block (example: -SimpleState, -ForEach, -Map).
+    /// The combinator must pass the arguments to the nested function at the same positions (example: -ArgMax, -OrDefault),
+    /// or override `convertVariantArgumentsAround` (example: -ForEach).
     ConvertedAround,
 };
 
@@ -81,6 +84,22 @@ public:
       *  if the nested function does not support them, see `VariantArgumentsOfNestedFunction`.
       */
     virtual VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const { return VariantArgumentsOfNestedFunction::ConvertedByNested; }
+
+    /** Converts the arguments of the combined function (ex: `Array(Variant(UInt8, UInt16))` for -ForEach),
+      *  so that `transformArguments` returns `converted_nested_arguments` (ex: `Nullable(UInt16)`) instead of `nested_arguments`.
+      *  They differ only by the converted `Variant` arguments. By default, the arguments are passed at the same positions.
+      */
+    virtual void convertVariantArgumentsAround(
+        DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const
+    {
+        for (size_t i = 0; i < nested_arguments.size(); ++i)
+        {
+            if (converted_nested_arguments[i]->equals(*nested_arguments[i]))
+                continue;
+            chassert(i < arguments.size() && arguments[i]->equals(*nested_arguments[i]));
+            arguments[i] = converted_nested_arguments[i];
+        }
+    }
 
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).
