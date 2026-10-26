@@ -55,16 +55,15 @@ ${CLICKHOUSE_CLIENT} --query "
             'logsql_database',
             'logsql_table',
             'logsql_time_column',
-            'logsql_message_column',
-            'implicit_select',
-            'allow_settings_after_format_in_insert'
+            'logsql_message_column'
         ] AS parser_settings,
-        ['database ='] AS initiator_only_settings
+        ['database ='] AS initiator_only_settings,
+        ['implicit_select', 'allow_settings_after_format_in_insert', 'join_use_nulls'] AS semantic_settings
     SELECT
         count() = 1,
         countIf(NOT arrayExists(setting -> position(value, setting) > 0, parser_settings)) = count(),
         countIf(NOT arrayExists(setting -> position(value, setting) > 0, initiator_only_settings)) = count(),
-        countIf(position(value, 'join_use_nulls') > 0) = count()
+        countIf(arrayAll(setting -> position(value, setting) > 0, semantic_settings)) = count()
     FROM system.zookeeper
     WHERE path = '${ZK_PATH}/log'
         AND startsWith(name, 'query-')

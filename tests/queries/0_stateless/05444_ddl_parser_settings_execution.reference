@@ -1,0 +1,6 @@
+query	local	SELECT 1 + 1	1
+query	cluster	SELECT 1 + 1	1
+query	replicated	SELECT 1 + 1	1
+session	local	SELECT 1 + 1	1
+session	cluster	SELECT 1 + 1	1
+session	replicated	SELECT 1 + 1	1

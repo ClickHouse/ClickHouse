@@ -78,6 +78,8 @@ std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
 {
     /// These settings are used only while parsing the input query. Their values are materialized in the
     /// normalized ClickHouse query before it is enqueued. Keep this list in sync when adding parser-only settings.
+    /// Preserve `implicit_select` and `allow_settings_after_format_in_insert`: SQL functions also use them
+    /// when parsing their string arguments during execution.
     static constexpr std::array settings{
         std::string_view{"dialect"},
         std::string_view{"allow_experimental_kusto_dialect"},
@@ -91,8 +93,6 @@ std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
         std::string_view{"logsql_table"},
         std::string_view{"logsql_time_column"},
         std::string_view{"logsql_message_column"},
-        std::string_view{"implicit_select"},
-        std::string_view{"allow_settings_after_format_in_insert"},
         std::string_view{"promql_database"},
         std::string_view{"promql_table"},
         std::string_view{"promql_evaluation_time"},

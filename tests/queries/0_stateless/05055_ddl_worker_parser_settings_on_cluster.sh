@@ -78,14 +78,14 @@ ${CLICKHOUSE_CLIENT} --query "
             'logsql_time_column',
             'logsql_message_column',
             'enable_trino_dialect',
-            'implicit_select',
-            'allow_settings_after_format_in_insert',
             'promql_database',
             'promql_table',
             'promql_evaluation_time',
             'evaluation_time'
         ] AS parser_settings,
         [
+            'implicit_select',
+            'allow_settings_after_format_in_insert',
             'join_use_nulls',
             'enable_time_series_table'
         ] AS semantic_settings
