@@ -160,8 +160,35 @@ struct StringValuesSkippedByFilter
     /// to measure their compressed size. The sizes are written as the part has them: as varints before the values, or as
     /// `UInt64` in a stream of their own.
     size_t rows_to_measure = 0;
-    WriteBuffer * values_compressed_size_measurement = nullptr;
-    WriteBuffer * sizes_compressed_size_measurement = nullptr;
+
+    /// Compressing costs much more than reading, especially with a slow codec, so only the first bytes of the measured
+    /// values are compressed, and the compressed size of the rest is extrapolated from them. The short values and the long
+    /// ones are compressed separately: a few long values compress differently from many short ones, and would otherwise
+    /// take all of the bytes to compress. A long value is compressed up to its part that fits, a short one in full.
+    /// The sizes in a stream of their own are compressed up to their own limit, not only of the values compressed,
+    /// because a few of them compress to little more than the header of a compressed block.
+    static constexpr size_t MAX_SHORT_VALUE_SIZE = 64 * 1024;
+    static constexpr size_t MAX_BYTES_TO_COMPRESS_OF_SHORT_VALUES = 16 * 1024;
+    static constexpr size_t MAX_BYTES_TO_COMPRESS_OF_LONG_VALUES = 1024 * 1024;
+    static constexpr size_t MAX_BYTES_TO_COMPRESS_OF_SIZES = 1024 * sizeof(UInt64);
+
+    struct CompressedSizeMeasurement
+    {
+        struct Bytes
+        {
+            /// The bytes written to the compressor, and the bytes of all of the measured values.
+            size_t compressed = 0;
+            size_t total = 0;
+        };
+
+        WriteBuffer * values = nullptr;
+        WriteBuffer * sizes = nullptr;
+        Bytes values_bytes;
+        Bytes sizes_bytes;
+    };
+    CompressedSizeMeasurement short_values;
+    CompressedSizeMeasurement long_values;
+
     /// The number of the rows measured, and the size of the measured values.
     size_t measured_rows = 0;
     size_t measured_bytes = 0;
@@ -169,7 +196,7 @@ struct StringValuesSkippedByFilter
     /// Must be called for every replaced value that is not empty in the rows to measure: an empty value is read as it is.
     void add(const char * data, size_t size, bool size_is_inline)
     {
-        if (values_compressed_size_measurement)
+        if (short_values.values)
             writeToCompressedSizeMeasurement(data, size, size_is_inline);
     }
 
@@ -189,8 +216,8 @@ private:
 struct StringValuesSkippedInBlock
 {
     size_t bytes = 0;
-    /// If the values were measured: the size of the measured values, and with their sizes compressed with the codec of the column,
-    /// in this many first rows of the block.
+    /// If the values were measured: the size of the measured values, and their compressed size with their sizes, as the codec
+    /// of the column compresses them (extrapolated from what is compressed of them), in this many first rows of the block.
     std::optional<size_t> measured_bytes;
     size_t measured_compressed_bytes = 0;
     size_t measured_rows = 0;

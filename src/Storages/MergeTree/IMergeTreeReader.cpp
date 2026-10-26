@@ -160,15 +160,18 @@ IMergeTreeReader::IMergeTreeReader(
     }
 }
 
-/// The data is compressed into nowhere, only to count the bytes. The values are compressed in blocks of the default
-/// `max_compress_block_size`, and their sizes, 8 bytes each, in blocks of a granule of them. The blocks are smaller
-/// when a reader measures many columns at once, so that the buffers of all of them fit into a fixed budget.
+/// The data is compressed into nowhere, only to count the bytes. The values and their sizes are compressed each in a block
+/// of what is compressed of them at most, see `StringValuesSkippedByFilter`. The blocks are smaller when a reader measures
+/// many columns at once, so that the buffers of all of them fit into a fixed budget.
 struct IMergeTreeReader::CompressedSizeMeasurement
 {
-    static constexpr size_t DEFAULT_INDEX_GRANULARITY = 8192;
-    static constexpr size_t MAX_VALUES_BLOCK_SIZE = DBMS_DEFAULT_BUFFER_SIZE;
-    static constexpr size_t MAX_SIZES_BLOCK_SIZE = DEFAULT_INDEX_GRANULARITY * sizeof(UInt64);
-    static constexpr size_t BUDGET = 4 * MAX_VALUES_BLOCK_SIZE;
+    /// A short value that does not fit into what is compressed of them is still compressed in full, with its size.
+    static constexpr size_t MAX_SHORT_VALUES_BLOCK_SIZE = StringValuesSkippedByFilter::MAX_BYTES_TO_COMPRESS_OF_SHORT_VALUES
+        + StringValuesSkippedByFilter::MAX_SHORT_VALUE_SIZE + sizeof(UInt64);
+    static constexpr size_t MAX_LONG_VALUES_BLOCK_SIZE = StringValuesSkippedByFilter::MAX_BYTES_TO_COMPRESS_OF_LONG_VALUES;
+    static constexpr size_t MAX_SIZES_BLOCK_SIZE = StringValuesSkippedByFilter::MAX_BYTES_TO_COMPRESS_OF_SIZES;
+    static constexpr size_t MAX_TOTAL_BLOCK_SIZE = MAX_SHORT_VALUES_BLOCK_SIZE + MAX_LONG_VALUES_BLOCK_SIZE + 2 * MAX_SIZES_BLOCK_SIZE;
+    static constexpr size_t BUDGET = 4 * DBMS_DEFAULT_BUFFER_SIZE;
     static constexpr size_t MIN_BLOCK_SIZE = 4096;
 
     struct Stream
@@ -191,18 +194,52 @@ struct IMergeTreeReader::CompressedSizeMeasurement
         }
     };
 
-    Stream values;
-    Stream sizes;
+    struct Streams
+    {
+        Stream values;
+        Stream sizes;
+
+        Streams(const CompressionCodecPtr & codec, size_t values_block_size, size_t num_measured_columns)
+            : values(codec, getBlockSize(values_block_size, num_measured_columns))
+            , sizes(codec, getBlockSize(MAX_SIZES_BLOCK_SIZE, num_measured_columns))
+        {
+        }
+
+        void attach(StringValuesSkippedByFilter::CompressedSizeMeasurement & measurement)
+        {
+            measurement.values = &values.compressed;
+            measurement.sizes = &sizes.compressed;
+        }
+
+        /// The compressed size of all the measured values, extrapolated from the bytes compressed of them.
+        size_t estimateCompressedBytes(StringValuesSkippedByFilter::CompressedSizeMeasurement & measurement)
+        {
+            const size_t res = extrapolate(values, measurement.values_bytes) + extrapolate(sizes, measurement.sizes_bytes);
+            measurement = {};
+            return res;
+        }
+
+        static size_t extrapolate(Stream & stream, const StringValuesSkippedByFilter::CompressedSizeMeasurement::Bytes & bytes)
+        {
+            if (!bytes.compressed)
+                return 0;
+            return static_cast<size_t>(
+                static_cast<double>(stream.getCompressedBytes()) * static_cast<double>(bytes.total) / static_cast<double>(bytes.compressed));
+        }
+    };
+
+    Streams short_values;
+    Streams long_values;
 
     CompressedSizeMeasurement(const CompressionCodecPtr & codec, size_t num_measured_columns)
-        : values(codec, getBlockSize(MAX_VALUES_BLOCK_SIZE, num_measured_columns))
-        , sizes(codec, getBlockSize(MAX_SIZES_BLOCK_SIZE, num_measured_columns))
+        : short_values(codec, MAX_SHORT_VALUES_BLOCK_SIZE, num_measured_columns)
+        , long_values(codec, MAX_LONG_VALUES_BLOCK_SIZE, num_measured_columns)
     {
     }
 
     static size_t getBlockSize(size_t max_block_size, size_t num_measured_columns)
     {
-        const size_t share = max_block_size * BUDGET / (MAX_VALUES_BLOCK_SIZE + MAX_SIZES_BLOCK_SIZE) / num_measured_columns;
+        const size_t share = max_block_size * BUDGET / MAX_TOTAL_BLOCK_SIZE / num_measured_columns;
         return std::clamp(share, MIN_BLOCK_SIZE, max_block_size);
     }
 };
@@ -229,8 +266,8 @@ void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_pa
     {
         filter_for_column.compressed_size_measurement
             = std::make_shared<CompressedSizeMeasurement>(filter_for_column.codec, string_value_filters_by_part_column_name.size());
-        filter_for_column.skipped.values_compressed_size_measurement = &filter_for_column.compressed_size_measurement->values.compressed;
-        filter_for_column.skipped.sizes_compressed_size_measurement = &filter_for_column.compressed_size_measurement->sizes.compressed;
+        filter_for_column.compressed_size_measurement->short_values.attach(filter_for_column.skipped.short_values);
+        filter_for_column.compressed_size_measurement->long_values.attach(filter_for_column.skipped.long_values);
         filter_for_column.skipped.rows_to_measure = rows_to_measure_compressed_size_of_string_values_skipped_by_filters;
     }
 }
@@ -251,10 +288,9 @@ StringValuesSkippedInBlockByColumn IMergeTreeReader::takeStringValuesSkippedByFi
         if (auto measurement = std::exchange(filter_for_column.compressed_size_measurement, nullptr))
         {
             skipped_in_block.measured_bytes = std::exchange(skipped.measured_bytes, 0);
-            skipped_in_block.measured_compressed_bytes = measurement->values.getCompressedBytes() + measurement->sizes.getCompressedBytes();
+            skipped_in_block.measured_compressed_bytes = measurement->short_values.estimateCompressedBytes(skipped.short_values)
+                + measurement->long_values.estimateCompressedBytes(skipped.long_values);
             skipped_in_block.measured_rows = std::exchange(skipped.measured_rows, 0);
-            skipped.values_compressed_size_measurement = nullptr;
-            skipped.sizes_compressed_size_measurement = nullptr;
         }
         skipped.rows_to_measure = 0;
         if (skipped_in_block.bytes)
