@@ -514,32 +514,129 @@ def test_api_v1_url_path_routing_rejects_legacy_fixed_prefix():
 
 
 def test_remote_write_dynamic_routing_rejects_invalid_percent_escape():
-    # A malformed percent-escape in the URL path is a client mistake: it must be answered with HTTP 400,
+    # A malformed percent-escape in the request target is a client mistake: it must be answered with HTTP 400,
     # not HTTP 500, otherwise remote-write senders treat it as a retriable server failure.
+    # The credentials in the query string must not leak into the error message or the server log.
     timestamp = time.time()
     write_request = convert_time_series_to_protobuf(
         [({"__name__": "invalid_escape_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
     )
 
-    # `requests` would re-quote the invalid escape as `%25ZZ`, so send the raw request target with `http.client`.
-    connection = http.client.HTTPConnection(node.ip_address, 9093, timeout=30)
-    try:
-        connection.request(
-            "POST",
-            "/default/%ZZ/write",
-            body=write_request.SerializeToString(),
-            headers={
-                "Content-Encoding": "snappy",
-                "Content-Type": "application/x-protobuf",
-            },
-        )
-        response = connection.getresponse()
-        body = response.read().decode(errors="replace")
-    finally:
-        connection.close()
+    secret = "invalid_escape_leaked_secret"
+    for target in [
+        "/default/%ZZ/write",
+        "/default/%ZZ/api/v1/write",
+        f"/default/%ZZ/write?user=default&password={secret}",
+        f"/default/%ZZ/api/v1/write?user=default&password={secret}",
+        f"/default/prometheus_dynamic/write?user=default&password=%ZZ{secret}",
+        f"/default/prometheus_dynamic/api/v1/write?user=default&password=%ZZ{secret}",
+    ]:
+        # `requests` would re-quote the invalid escape as `%25ZZ`, so send the raw request target with `http.client`.
+        connection = http.client.HTTPConnection(node.ip_address, 9093, timeout=30)
+        try:
+            connection.request(
+                "POST",
+                target,
+                body=write_request.SerializeToString(),
+                headers={
+                    "Content-Encoding": "snappy",
+                    "Content-Type": "application/x-protobuf",
+                },
+            )
+            response = connection.getresponse()
+            body = response.read().decode(errors="replace")
+        finally:
+            connection.close()
 
-    assert response.status == 400, body
-    assert "BAD_ARGUMENTS" in body
+        assert response.status == 400, (target, body)
+        assert "BAD_ARGUMENTS" in body, (target, body)
+        assert secret not in body, (target, body)
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert not node.contains_in_log(secret)
+
+
+def test_remote_write_dynamic_routing_ignores_url_in_query_parameter():
+    # Only the path of the request target selects the table: a URL passed as the value of a query parameter
+    # must not be taken for the authority of an absolute-form target.
+    table_name = "prometheus_dynamic_other"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(
+        f"CREATE TABLE {table_name} ENGINE=TimeSeries "
+        "SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1"
+    )
+
+    try:
+        write_request = convert_time_series_to_protobuf(
+            [({"__name__": "url_in_query_parameter_metric", "job": "dynamic_test"}, {time.time(): 1.0})]
+        )
+        send_protobuf_to_remote_write(
+            node.ip_address,
+            9093,
+            f"default/prometheus_dynamic/write?query_id=http://host/default/{table_name}/write",
+            write_request,
+        )
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM timeSeriesTags(prometheus_dynamic) "
+            "WHERE metric_name = 'url_in_query_parameter_metric'",
+            "1",
+        )
+        assert (
+            node.query(
+                f"SELECT count() FROM timeSeriesTags({table_name}) "
+                "WHERE metric_name = 'url_in_query_parameter_metric'"
+            ).strip()
+            == "0"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_remote_write_with_column_level_insert_grants():
+    # A sender may have `INSERT` granted only on the columns remote write inserts, as for any `INSERT`.
+    # This works both with a fixed target table and with dynamic routing.
+    table_name = "prometheus_column_grants"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(
+        f"CREATE TABLE {table_name} ENGINE=TimeSeries "
+        "SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1"
+    )
+    node.query("DROP USER IF EXISTS prometheus_column_grants")
+    node.query("CREATE USER prometheus_column_grants IDENTIFIED BY 'secret'")
+
+    try:
+        node.query(
+            f"GRANT INSERT(metric_name, tags, samples) ON default.{table_name} TO prometheus_column_grants"
+        )
+        # The `TimeSeries` sink inserts into the inner tables with the caller's context.
+        uuid = node.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table_name}'"
+        ).strip()
+        inner_tables = node.query(
+            f"SELECT name FROM system.tables WHERE database = 'default' AND name LIKE '.inner_id.%.{uuid}'"
+        ).split()
+        assert inner_tables
+        for inner_table in inner_tables:
+            node.query(f"GRANT INSERT ON default.`{inner_table}` TO prometheus_column_grants")
+
+        headers = {"X-ClickHouse-User": "prometheus_column_grants", "X-ClickHouse-Key": "secret"}
+        for path, metric_name in [
+            (f"write_query_params?database=default&table={table_name}", "column_grants_fixed_metric"),
+            (f"default/{table_name}/write", "column_grants_dynamic_metric"),
+        ]:
+            write_request = convert_time_series_to_protobuf(
+                [({"__name__": metric_name, "job": "dynamic_test"}, {time.time(): 1.0})]
+            )
+            send_protobuf_to_remote_write(node.ip_address, 9093, path, write_request, headers=headers)
+            assert_eq_with_retry(
+                node,
+                f"SELECT count() FROM timeSeriesTags({table_name}) WHERE metric_name = '{metric_name}'",
+                "1",
+            )
+    finally:
+        node.query("DROP USER IF EXISTS prometheus_column_grants")
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 def test_remote_write_zstd():

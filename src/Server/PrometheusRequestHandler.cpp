@@ -42,6 +42,7 @@
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 #include <vector>
@@ -74,6 +75,14 @@ namespace TimeSeriesSetting
 
 namespace
 {
+    /// Reports a request target which `Poco::URI` can't parse (e.g. because of a malformed percent-escape) as a bad request.
+    /// The message of `Poco::URISyntaxException` isn't included: it can quote a part of the query string, and the query string
+    /// can contain credentials (the `user` and `password` parameters), while the exception is written to the server log.
+    [[noreturn]] void throwInvalidRequestURI(const HTTPServerRequest & request)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid request URI '{}'", maskSensitiveQueryParametersInURI(request.getURI()));
+    }
+
 #if USE_PROMETHEUS_PROTOBUFS
     /// Returns the fixed path segments that must follow the `/{database}/{table}` prefix
     /// for the endpoint that this handler serves with dynamic routing:
@@ -98,20 +107,24 @@ namespace
 
     /// Returns the raw (still percent-encoded) path of a request target. The target is normally in
     /// origin-form (`/path?query`), but a proxy may send it in absolute-form (`http://host/path?query`).
+    /// The query and the fragment are cut off first, so a URL passed as the value of a query parameter
+    /// (e.g. `?query_id=https://host/db/table/write`) can't be taken for the authority of the target.
     std::string_view getRawPath(std::string_view uri)
     {
-        size_t begin = 0;
-        size_t scheme_end = uri.find("://");
-        if (scheme_end != std::string_view::npos)
-        {
-            size_t authority_end = uri.find('/', scheme_end + 3);
-            if (authority_end == std::string_view::npos)
-                return {};
-            begin = authority_end;
-        }
+        uri = uri.substr(0, uri.find_first_of("?#"));
 
-        size_t end = uri.find_first_of("?#", begin);
-        return uri.substr(begin, (end == std::string_view::npos) ? std::string_view::npos : end - begin);
+        /// Origin-form.
+        if (uri.empty() || uri.starts_with('/'))
+            return uri;
+
+        /// Absolute-form: the path follows the authority, which follows the scheme at the beginning of the target.
+        size_t scheme_end = uri.find("://");
+        if (scheme_end == std::string_view::npos)
+            return uri;
+        size_t authority_end = uri.find('/', scheme_end + 3);
+        if (authority_end == std::string_view::npos)
+            return {};
+        return uri.substr(authority_end);
     }
 
     /// Splits a raw path into segments and only then percent-decodes each segment separately.
@@ -297,12 +310,12 @@ protected:
             else
                 params = std::make_unique<HTMLForm>(default_settings, request);
         }
-        catch (const Poco::URISyntaxException & e)
+        catch (const Poco::URISyntaxException &)
         {
             /// `Poco::URI` percent-decodes the path and the query, so a malformed percent-escape in the request target
             /// gets here. It's a client mistake, so it must be reported as a bad request (HTTP 400) rather than
             /// a server failure: remote-write senders keep retrying requests that fail with HTTP 5xx.
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid request URI '{}': {}", request.getURI(), e.message());
+            throwInvalidRequestURI(request);
         }
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
@@ -503,11 +516,20 @@ public:
             ? StorageID{resolveTableNameFromRequest(config(), request)}
             : getTimeSeriesTableID();
 
-        /// Check the `INSERT` privilege before looking the table up in the catalog. Neither `DatabaseCatalog::getTable`
-        /// nor reading the storage settings enforces RBAC, and the synthetic `INSERT` executed later would check it too
-        /// late: with dynamic routing an unauthorized caller could otherwise probe arbitrary table names and tell
+        /// With dynamic routing, check the `INSERT` privilege before looking the table up in the catalog. Neither
+        /// `DatabaseCatalog::getTable` nor reading the storage settings enforces RBAC, and the synthetic `INSERT` executed
+        /// later would check it too late: an unauthorized caller could otherwise probe arbitrary table names and tell
         /// `UNKNOWN_TABLE`, a wrong engine or a disabled opt-in setting apart from `ACCESS_DENIED`.
-        context->checkAccess(AccessType::INSERT, table_id);
+        /// Only the columns every remote-write request inserts are checked (a table opted into dynamic routing is of a version
+        /// whose samples column is `samples`), so grants on these columns are enough, like for the `INSERT` itself.
+        /// A handler with a fixed table doesn't need this check: the `INSERT` checks the columns it writes.
+        if (is_url_path_dynamic_routing)
+        {
+            context->checkAccess(
+                AccessType::INSERT,
+                table_id,
+                Strings{TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::Samples});
+        }
 
         auto table = DatabaseCatalog::instance().getTable(table_id, context);
         auto time_series_storage = storagePtrToTimeSeries(table);
@@ -950,7 +972,16 @@ private:
     Impl & getImpl(const HTTPServerRequest & request)
     {
         /// Get the decoded URL path (without the query string).
-        const String path = Poco::URI(request.getURI()).getPath();
+        /// This runs before `handleRequest`, so a malformed request target must be reported as a bad request here too.
+        String path;
+        try
+        {
+            path = Poco::URI(request.getURI()).getPath();
+        }
+        catch (const Poco::URISyntaxException &)
+        {
+            throwInvalidRequestURI(request);
+        }
 
         if (path.ends_with("/write"))
             return write_impl;
