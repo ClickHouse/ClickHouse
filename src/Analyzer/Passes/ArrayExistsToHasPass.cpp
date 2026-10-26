@@ -130,6 +130,11 @@ public:
         if (stringFamilyPairIsNotEqualityEquivalent(nested_type, constant_type))
             return;
 
+        /// `equals` propagates the NULL of a tuple member, so `arrayExists(x -> x = tuple(NULL::Nullable(UInt64)), a)`
+        /// never matches, while `has` treats the NULL member as a value and finds `(NULL)` in `a`.
+        if (tupleHasNullableMember(nested_type) || tupleHasNullableMember(constant_type))
+            return;
+
         /// A plain float is compared numerically by both `equals` and `has`, but a composite carrier
         /// of floats (`Tuple(Float64)`, `Variant(Float64)`, ...) is compared by `has` with the generic
         /// column comparison, which treats two NaNs as equal, while `equals` compares the nested

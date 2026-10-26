@@ -56,6 +56,14 @@ bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, cons
 /// `NOT IN` therefore changes the result and has to decline.
 bool containsFloat(const DataTypePtr & type);
 
+/// Whether the type is a `Tuple` (possibly nested in tuples or `Variant` alternatives) with a
+/// `Nullable` member. `equals` and `notEquals` on tuples propagate a member's NULL, so
+/// `tuple(NULL::Nullable(UInt64)) = tuple(NULL::Nullable(UInt64))` is NULL, while set membership
+/// and `has` treat it as an ordinary value, so `tuple(NULL::Nullable(UInt64)) IN (tuple(NULL))` is
+/// true. Arrays and maps are compared element-wise as values, so a NULL inside them does not
+/// propagate. A rewrite of a comparison into a set lookup has to decline for such a type.
+bool tupleHasNullableMember(const DataTypePtr & type);
+
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
 

@@ -239,6 +239,31 @@ bool containsFloat(const DataTypePtr & type)
     return isFloat(unwrapped);
 }
 
+bool tupleHasNullableMember(const DataTypePtr & type)
+{
+    auto unwrapped = removeNullable(removeLowCardinality(type));
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (removeLowCardinality(element)->isNullable() || tupleHasNullableMember(element))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(unwrapped.get()))
+    {
+        for (const auto & alternative : variant->getVariants())
+            if (tupleHasNullableMember(alternative))
+                return true;
+
+        return false;
+    }
+
+    return false;
+}
+
 bool isNameOfInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||

@@ -1133,7 +1133,14 @@ static void convertNotEqualsChainToNotIn(
             /// true, so the rewritten chain would contradict its own conjunct.
             if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
                 all_constants_convert_losslessly = false;
+
+            /// `notEquals` propagates the NULL of a tuple member, set membership treats it as a value.
+            if (tupleHasNullableMember(literal->getResultType()))
+                all_constants_convert_losslessly = false;
         }
+
+        if (tupleHasNullableMember(expr_type))
+            all_constants_convert_losslessly = false;
 
         /// `notEquals` compares floats numerically while the set is keyed on the raw bits:
         /// `-0.0 != 0.0` is false while `-0.0 NOT IN (0.0)` is true, and `nan != nan` is true
@@ -2786,7 +2793,16 @@ private:
                 /// false, so the rewritten chain would contradict its own operand.
                 if (stringFamilyPairIsNotEqualityEquivalent(expr_type, literal->getResultType()))
                     all_constants_convert_losslessly = false;
+
+                /// `equals` propagates the NULL of a tuple member, set membership treats it as a value:
+                /// `tuple(NULL::Nullable(UInt64)) = tuple(NULL::Nullable(UInt64))` is NULL, while
+                /// `tuple(NULL::Nullable(UInt64)) IN (tuple(NULL))` is true.
+                if (tupleHasNullableMember(literal->getResultType()))
+                    all_constants_convert_losslessly = false;
             }
+
+            if (tupleHasNullableMember(expr_type))
+                all_constants_convert_losslessly = false;
 
             /// `equals` compares floats numerically while the set is keyed on the raw bits:
             /// `-0.0 = 0.0` is true while `-0.0 IN (0.0)` is false, and `nan = nan` is false
