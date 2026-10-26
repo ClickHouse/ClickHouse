@@ -12,6 +12,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -543,6 +544,15 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     ClusterPtr cluster,
     StorageMetadataPtr storage_metadata_snapshot) const
 {
+    /// The objects of a table read over the replicas are not recorded into the query's
+    /// `QueryConsumedObjectSets`, so the consistency check of the query result cache must not fall back to a
+    /// fresh listing that could differ from what the replicas read. Fail closed for the table.
+    if (table && getStorageID().hasUUID())
+    {
+        if (auto consumed_object_sets = local_context->getQueryConsumedObjectSets())
+            consumed_object_sets->markPruned(getStorageID().uuid);
+    }
+
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),

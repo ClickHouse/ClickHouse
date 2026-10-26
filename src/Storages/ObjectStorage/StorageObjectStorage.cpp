@@ -886,6 +886,12 @@ StoragePtr StorageObjectStorage::getStorageForParallelReplicasRead(const Storage
     if (context->getViewSource())
         return nullptr;
 
+    /// The consistency check of the query result cache (or of `REFRESH ... IF CHANGED`) validates the result
+    /// against the objects the read consumed, which only a local read records. Read the table itself, so that
+    /// the result can still be cached.
+    if (context->getQueryConsumedObjectSets())
+        return nullptr;
+
     /// The replicas do not run the query as the current user when it is not the initial one (e.g. the
     /// definer of a `SQL SECURITY DEFINER` view body), so such a query reads the table itself.
     if (context->getUserName() != context->getClientInfo().initial_user)
