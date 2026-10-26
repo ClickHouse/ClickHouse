@@ -543,7 +543,8 @@ public:
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
         bool async_insert_,
-        size_t num_squashing_pipelines_)
+        size_t num_squashing_pipelines_,
+        bool deduplicate_blocks_in_view_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
         , source_id(source_id_)
@@ -558,6 +559,7 @@ public:
         , context(context_)
         , async_insert(async_insert_)
         , num_squashing_pipelines(num_squashing_pipelines_)
+        , deduplicate_blocks_in_view(deduplicate_blocks_in_view_)
     {
     }
 
@@ -605,6 +607,7 @@ private:
     bool async_insert = false;
     /// See `InsertDependenciesBuilder::getNumSquashesSharingViewsBudget`.
     size_t num_squashing_pipelines = 1;
+    bool deduplicate_blocks_in_view = false;
 
     struct State
     {
@@ -721,10 +724,18 @@ private:
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
         /// and two-level aggregation is triggered).
+        /// Deduplication of async inserts supports only one view block per source block
+        /// (see `DeduplicationInfo::setViewBlockNumber`), so in that case the whole view output
+        /// is squashed into one block: unreachable minimums make the squashing emit only on finish.
+        /// Below the minimums the result is the same single block anyway. The memory cap still
+        /// applies, so a view output above it is split (and rejected) instead of exhausting memory.
+        bool squash_into_single_block = async_insert && deduplicate_blocks_in_view;
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
-            settings[Setting::min_insert_block_size_rows],
-            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], num_squashing_pipelines),
+            squash_into_single_block ? std::numeric_limits<size_t>::max() : settings[Setting::min_insert_block_size_rows],
+            capInsertBlockSizeBytesToMemoryLimit(
+                squash_into_single_block ? std::numeric_limits<size_t>::max() : settings[Setting::min_insert_block_size_bytes],
+                num_squashing_pipelines),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1711,7 +1722,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             async_insert,
-            getNumSquashesSharingViewsBudget());
+            getNumSquashesSharingViewsBudget(),
+            deduplicate_blocks_in_dependent_materialized_views);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1727,7 +1739,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
             async_insert,
-            getNumSquashesSharingViewsBudget());
+            getNumSquashesSharingViewsBudget(),
+            deduplicate_blocks_in_dependent_materialized_views);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 

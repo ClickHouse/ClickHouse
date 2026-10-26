@@ -145,11 +145,11 @@ The `DuplicatedAsyncInserts` and `SelfDuplicatedAsyncInserts` events in [`system
 
 ### Asynchronous inserts and materialized views {#asynchronous-inserts-and-materialized-views}
 
-Deduplication of asynchronous inserts works together with dependent materialized views. The rule is simple: one block in, one block out. If the inner query of a view turns one input block into one output block, deduplication works. If the view emits a second block, ClickHouse throws a `NOT_IMPLEMENTED` exception.
+Deduplication of asynchronous inserts works together with dependent materialized views. The rule is: one block in, one block out. ClickHouse writes the output of a view for one flushed batch as a single block, whatever the inner query does, for example filtering, aggregation, `ARRAY JOIN`, or a `JOIN` that adds rows. The block size settings [`min_insert_block_size_rows`](/reference/settings/session-settings/min-insert#min_insert_block_size_rows) and [`min_insert_block_size_bytes`](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) don't split it.
 
-A view emits a second block when its output no longer fits in one. [`max_block_size`](/reference/settings/session-settings/max#max_block_size) sets how many rows fit. Column transformations, filtering, and aggregation never add rows, so they always stay in one block. A `JOIN` can add rows. It works while the result stays under `max_block_size`, and it fails above that.
+The limit is memory. The block can take only a share of the server memory limit, which is divided between all blocks the insert builds at the same time, for the target table and for every dependent view. If the output of a view for one batch is larger than that, ClickHouse throws a `NOT_IMPLEMENTED` exception instead of holding the whole output in memory.
 
-To insert through a view that emits more than one block, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
+To insert through such a view, make the batches smaller with [`async_insert_max_data_size`](/reference/settings/session-settings/async-insert#async_insert_max_data_size), set [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) to `0`, or use synchronous inserts.
 
 ## Insert deduplication with materialized views {#insert-deduplication-with-materialized-views}
 
