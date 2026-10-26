@@ -99,27 +99,34 @@ std::vector<ColumnSampling> columnsSampling(const Block & block)
             continue;
         }
 
-        if (column_with_type.type->getTypeId() == TypeIndex::Object)
-        {
-            sampling[i] = {ColumnSampling::Kind::JSON, nullptr};
-            continue;
-        }
-
         /// A `JSON` value nested in another type (`Array(JSON)`, a `Dynamic` or a `Variant` holding
         /// one) is serialized through the escaped or quoted serialization of `JSON`, both of which
         /// render it whole first, and so is an aggregate function state inside a `Dynamic`. The
         /// shared variant of a `Dynamic` can hold a value of any type, those included, which is
         /// only known after decoding it, so a `Dynamic` that uses it is not sampled either.
+        ///
+        /// The plain serialization of a top-level `JSON` writes the object as it goes, but it decodes
+        /// a value kept in the shared data of an object (the paths over `max_dynamic_paths`) whole
+        /// before writing it, so a `JSON` that uses its shared data - or holds a `Dynamic` that uses
+        /// its shared variant, or such an object nested deeper - is not sampled either.
+        const bool is_json = column_with_type.type->getTypeId() == TypeIndex::Object;
         bool has_aggregate_function_state = false;
         bool renders_whole_values = false;
         const auto check = [&](const IColumn & column)
         {
             if (typeid_cast<const ColumnAggregateFunction *>(&column))
+            {
                 has_aggregate_function_state = true;
-            else if (typeid_cast<const ColumnObject *>(&column))
-                renders_whole_values = true;
+            }
+            else if (const auto * object = typeid_cast<const ColumnObject *>(&column))
+            {
+                if (!is_json || !object->getSharedDataNestedColumn().getData().empty())
+                    renders_whole_values = true;
+            }
             else if (const auto * dynamic = typeid_cast<const ColumnDynamic *>(&column); dynamic && !dynamic->getSharedVariant().empty())
+            {
                 renders_whole_values = true;
+            }
         };
         check(*column_with_type.column);
         column_with_type.column->forEachSubcolumnRecursively(check);
@@ -128,6 +135,8 @@ std::vector<ColumnSampling> columnsSampling(const Block & block)
             sampling[i] = {ColumnSampling::Kind::Placeholder, "[aggregate function state]"};
         else if (renders_whole_values)
             sampling[i] = {ColumnSampling::Kind::Placeholder, "[value not sampled]"};
+        else if (is_json)
+            sampling[i] = {ColumnSampling::Kind::JSON, nullptr};
     }
     return sampling;
 }

@@ -7,6 +7,7 @@
 #include <Client/AI/QueryContextBuffer.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -362,6 +363,33 @@ TEST(QueryContextBuffer, SampleOfAHugeJSONIsBounded)
 
     const String short_text = short_buffer.format(0, false);
     EXPECT_NE(short_text.find("{\"a\":1}\t[value not sampled]\tafter"), String::npos) << short_text;
+}
+
+TEST(QueryContextBuffer, JSONWithSharedDataIsNotSampled)
+{
+    /// The plain serialization of `JSON` decodes a value of the shared data of the object (the paths
+    /// over `max_dynamic_paths`) whole before writing any of it, so a `JSON` column that uses its
+    /// shared data is not sampled. The columns after it are.
+    const auto type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto json = type->createColumn();
+    const String object = R"({"x":")" + String(1'000'000, 'x') + R"("})";
+    ReadBufferFromString in(object);
+    type->getDefaultSerialization()->deserializeWholeText(*json, in, FormatSettings{});
+    ASSERT_FALSE(assert_cast<const ColumnObject &>(*json).getSharedDataNestedColumn().getData().empty());
+
+    auto string = ColumnString::create();
+    string->insert(Field(String("after")));
+
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT j, 'after'", false);
+    buffer.addBlock(Block{
+        ColumnWithTypeAndName{std::move(json), type, "j"},
+        ColumnWithTypeAndName{std::move(string), std::make_shared<DataTypeString>(), "s"}});
+    buffer.finishQuery(0.1, false);
+
+    const String text = buffer.format(0, false);
+    EXPECT_NE(text.find("[value not sampled]\tafter"), String::npos) << text;
+    EXPECT_EQ(text.find("xxx"), String::npos) << text;
 }
 
 TEST(QueryContextBuffer, SampleOfALineAtTheLimitIsNotCut)
