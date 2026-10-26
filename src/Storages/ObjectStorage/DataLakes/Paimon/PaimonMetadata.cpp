@@ -36,6 +36,7 @@
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -1253,11 +1254,16 @@ void PaimonMetadata::checkDataFileSchema(
             in_file = fmt::format("field id {} is column '{}'", field_id, field_name);
             in_read_schema = fmt::format("column '{}'", same_id->name);
         }
-        else if (auto same_name = read_schema.fields_by_name_indexes.find(field_name);
-                 same_name != read_schema.fields_by_name_indexes.end() && read_schema.fields[same_name->second].id != field_id)
+        /// Case-insensitively: the Parquet and ORC readers can match column names that way.
+        else if (auto same_name = std::ranges::find_if(
+                     read_schema.fields,
+                     [&](const DataField & field) { return field.id != field_id && boost::iequals(field.name, field_name); });
+                 same_name != read_schema.fields.end())
         {
             in_file = fmt::format("column '{}' is field id {}", field_name, field_id);
-            in_read_schema = fmt::format("field id {}", read_schema.fields[same_name->second].id);
+            in_read_schema = same_name->name == field_name
+                ? fmt::format("field id {}", same_name->id)
+                : fmt::format("column '{}' is field id {}", same_name->name, same_name->id);
         }
         else
             continue;

@@ -138,7 +138,8 @@ def test_schema_evolution_drop_and_add_same_name(
 ):
     """After DROP COLUMN email + ADD COLUMN email, files written before the drop
     hold the dropped field under the same name, so reading them by name would
-    return the dropped values: the read must fail."""
+    return the dropped values: the read must fail. Names are compared
+    case-insensitively, as the Parquet reader can match them that way."""
     started_cluster = started_cluster_paimon_with_spark
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -191,6 +192,34 @@ def test_schema_evolution_drop_and_add_same_name(
     schema, data = get_schema_and_data(instance, table_expr, order_by="a")
     assert schema == [["a", "Int32"], ["email", "Nullable(String)"]]
     assert data == [["1", "\\N"], ["2", "\\N"], ["3", "carol@example.com"]]
+
+    # The same name in another case, under a new field id: the old files hold the dropped email values.
+    execute_spark_query(
+        started_cluster,
+        storage_type,
+        table_name,
+        f"ALTER TABLE {spark_table(table_name)} DROP COLUMN email",
+    )
+    execute_spark_query(
+        started_cluster,
+        storage_type,
+        table_name,
+        f"ALTER TABLE {spark_table(table_name)} ADD COLUMN EMAIL STRING",
+    )
+    execute_spark_query(
+        started_cluster,
+        storage_type,
+        table_name,
+        f"INSERT INTO {spark_table(table_name)} VALUES (4, 'dave@example.com')",
+    )
+    for settings in [
+        "",
+        " SETTINGS input_format_parquet_case_insensitive_column_matching = 1",
+    ]:
+        error = instance.query_and_get_error(f"SELECT * FROM {table_expr}{settings}")
+        assert "NOT_IMPLEMENTED" in error
+        assert "column 'email' is field id 2 in schema 2" in error
+        assert "but column 'EMAIL' is field id 3 in the current schema 4" in error
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
