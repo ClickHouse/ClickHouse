@@ -268,7 +268,7 @@ std::optional<size_t> Prefetcher::startPrefetchWithinLimit(
         for (size_t i = 0; i < ranges_to_read.size();)
         {
             auto [start, end] = ranges_to_read[i];
-            for (++i; i < ranges_to_read.size() && ranges_to_read[i].first < end + min_bytes_for_seek; ++i)
+            for (++i; i < ranges_to_read.size() && !gapAtLeast(end, ranges_to_read[i].first, min_bytes_for_seek); ++i)
                 end = std::max(end, ranges_to_read[i].second);
             bound += end - start;
         }
