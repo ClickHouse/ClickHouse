@@ -36,11 +36,13 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -10807,6 +10809,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
+/// The date part of a string that a conversion to `Date` or `Date32` reads, such as `toDate` or `CAST`. Like
+/// `ConvertThroughParsing::isAllRead`, they ignore what follows the date, without checking it, if it starts with a space
+/// or `T` and the string has the length of `YYYY-MM-DD hh:mm:ss`, optionally followed by a fraction of a second. So
+/// `toDate('2024-02-29 25:00:00')` is `2024-02-29`, while `toDate('2024-02-2/')` is an error.
+static std::string_view getDatePartOfDateText(std::string_view text)
+{
+    LocalDate date;
+    ReadBufferFromString in(text);
+    if (!tryReadDateText(date, in) || in.eof() || (*in.position() != ' ' && *in.position() != 'T'))
+        return text;
+
+    const size_t date_size = in.count();
+    if (text.size() == strlen("YYYY-MM-DD hh:mm:ss"))
+        return text.substr(0, date_size);
+    if (text.size() >= strlen("YYYY-MM-DD hh:mm:ss.x") && text[19] == '.'
+        && std::all_of(text.begin() + 20, text.end(), [](char c) { return isNumericASCII(c); }))
+        return text.substr(0, date_size);
+    return text;
+}
+
 /// Converts one field of a partition value to the type of the partition key column.
 ///
 /// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
@@ -10823,11 +10845,14 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
         return convertFieldToTypeOrThrow(value, *type);
 
+    /// A time of day after a date is ignored the same way as by `toDate`.
+    const String & text = value.safeGet<String>();
+    const std::string_view literal = which.isDateOrDate32() ? getDatePartOfDateText(text) : std::string_view(text);
+
     FormatSettings format_settings;
     format_settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
-    Field converted = convertFieldToTypeOrThrow(value, *type, nullptr, format_settings);
+    Field converted = convertFieldToTypeOrThrow(Field(literal), *type, nullptr, format_settings);
 
-    const String & literal = value.safeGet<String>();
     auto column = nested_type->createColumn();
     column->insert(converted);
     WriteBufferFromOwnString parsed_text;
@@ -10895,48 +10920,9 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     if (!spells_parsed_value)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Partition value '{}' is not a valid value of type {}: it is read as {}",
-                        literal, type->getName(), parsed_text.str());
+                        text, type->getName(), parsed_text.str());
 
     return converted;
-}
-
-/// Checks a string that a conversion turns into a date or a time the same way as a partition literal. A tuple is
-/// checked element by element.
-static void checkDateTimeConversionArgument(const Field & value, const DataTypePtr & type)
-{
-    if (value.getType() == Field::Types::String)
-    {
-        if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
-            convertPartitionFieldToType(value, type);
-    }
-    else if (value.getType() == Field::Types::Tuple)
-    {
-        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
-        const auto & elements = value.safeGet<Tuple>();
-        if (tuple_type && tuple_type->getElements().size() == elements.size())
-            for (size_t i = 0; i < elements.size(); ++i)
-                checkDateTimeConversionArgument(elements[i], tuple_type->getElement(i));
-    }
-}
-
-/// A conversion such as `CAST('2024-02-30', 'Date')` or `toDate(concat('2024-02-', '30'))` in a partition value is
-/// folded to `2024-03-01` before `convertPartitionFieldToType` sees it, so the string it converts is checked first.
-static void checkDateTimeConversionsInPartitionValue(const ASTPtr & ast, ContextPtr context)
-{
-    const auto * function = ast->as<ASTFunction>();
-    if (!function || !function->arguments)
-        return;
-
-    for (const auto & child : function->arguments->children)
-        checkDateTimeConversionsInPartitionValue(child, context);
-
-    static const std::unordered_set<std::string_view> date_time_conversions
-        = {"toDate", "toDate32", "toDateTime", "toDateTime32", "toDateTime64"};
-    if (function->arguments->children.empty() || (!isFunctionCast(function) && !date_time_conversions.contains(function->name)))
-        return;
-
-    const Field argument = evaluateConstantExpression(function->arguments->children[0], context).first;
-    checkDateTimeConversionArgument(argument, evaluateConstantExpression(ast, context).second);
 }
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
@@ -11037,8 +11023,6 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
                         partition_ast_fields_count, fields_count);
-
-    checkDateTimeConversionsInPartitionValue(partition_value_ast, local_context);
 
     Row partition_row(fields_count);
     if (fields_count == 0)
@@ -13391,8 +13375,8 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
     ISerialization::EnumerateStreamsSettings enumerate_settings;
     enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
     enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
-    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
-    enumerate_settings.enumerate_dynamic_streams = false;
+    /// Dynamic streams stay enumerated (the default), so the typed paths and the typed shared data of JSON take part in
+    /// the check.
 
     std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
