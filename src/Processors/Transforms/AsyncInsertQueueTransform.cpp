@@ -153,7 +153,9 @@ AsyncInsertQueueTransform::~AsyncInsertQueueTransform()
         }
         catch (...)
         {
-            tryLogCurrentException(logger);
+            /// A killed query reports its own exception, which the fallback pipeline only repeats.
+            const auto process_list_elem = context->getProcessListElementSafe();
+            tryLogCurrentException(logger, "", process_list_elem && process_list_elem->isKilled() ? LogsLevel::debug : LogsLevel::error);
         }
     }
 }
