@@ -1527,6 +1527,7 @@ def main():
                  ROOT / 'bazel/dependencies/clickhouse_capnproto.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_grpc.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_postgres.BUILD.bazel',
+                 ROOT / 'bazel/dependencies/clickhouse_rocksdb.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_vectorscan.BUILD.bazel'}
     maintained = {path: path.read_bytes() for path in read_only}
     from initial_migration.compact_build import Source

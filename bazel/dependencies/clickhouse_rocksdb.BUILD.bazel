@@ -320,10 +320,19 @@ ch_cc_library(
             "utilities/fault_injection*.h",
         ],
     ) + [
+        "include/rocksdb/utilities/ldb_cmd.h",
         "test_util/transaction_test_util.h",
         "utilities/cassandra/cassandra_options.h",
     ],
-    hdrs = glob(["include/**/*.h"]),
+    hdrs = glob(
+        ["include/**/*.h"],
+        exclude = [
+            "include/rocksdb/*_bench_tool.h",
+            "include/rocksdb/*_dump_tool.h",
+            "include/rocksdb/db_stress_tool.h",
+            "include/rocksdb/utilities/ldb_cmd.h",
+        ],
+    ),
     implementation_deps = [
         "@clickhouse_jemalloc//:_jemalloc",
         "@clickhouse_liburing//:_liburing",
