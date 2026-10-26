@@ -30,6 +30,7 @@ public:
     /// Whether the fsync of the parts inserted into the table should be deferred.
     /// The files are reopened by their path on the local filesystem, so it is only possible
     /// if the table is stored on local disks. The parts of tables with `UNIQUE KEY` are always synced inline.
+    /// With `group_fsync_before_insert_finish = 'auto'`, it is enabled only for non-replicated tables.
     static bool isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot);
 
     /// Adding a part that is already queued does nothing.

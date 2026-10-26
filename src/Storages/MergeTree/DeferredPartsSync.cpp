@@ -14,13 +14,18 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool fsync_after_insert;
-    extern const MergeTreeSettingsBool group_fsync_before_insert_finish;
+    extern const MergeTreeSettingsBoolAuto group_fsync_before_insert_finish;
 }
 
 bool DeferredPartsSync::isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot)
 {
     const auto settings = storage.getSettings();
-    if (!(*settings)[MergeTreeSetting::fsync_after_insert] || !(*settings)[MergeTreeSetting::group_fsync_before_insert_finish])
+    if (!(*settings)[MergeTreeSetting::fsync_after_insert])
+        return false;
+
+    /// With `auto`, only for non-replicated tables: another replica can deduplicate an insert against
+    /// a part that is committed but not yet synced here, and it has no local files to sync.
+    if (!(*settings)[MergeTreeSetting::group_fsync_before_insert_finish].valueOr(!storage.supportsReplication()))
         return false;
 
     /// `MergeTreeSink::commitUniqueKeyPart` commits the parts by its own path, so they keep the inline fsync.
