@@ -1,7 +1,9 @@
+-- Tags: no-parallel-replicas
 -- The filter expression `multiIf(v > 0, v, 0)` is rewritten to `if(v > 0, v, 0)` by `optimize_multiif_to_if`.
 -- The original form of the key wraps it only into the second key column, the rewritten form into the first one.
 -- Both must be used, so the leading key column constrains the read.
 
+SET explain_query_plan_default = 'legacy';
 SET optimize_multiif_to_if = 1, use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t_mixed_wrapping;
