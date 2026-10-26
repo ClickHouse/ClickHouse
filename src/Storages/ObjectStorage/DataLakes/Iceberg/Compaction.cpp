@@ -1099,6 +1099,11 @@ static bool writeMetadataFiles(
     ColumnsDescription columns_description = ColumnsDescription::fromNamesAndTypes(sample_block_->getNamesAndTypes());
     auto [metadata_object, metadata_object_str] = createEmptyMetadataFile(table_path, columns_description, nullptr, nullptr, context);
 
+    /// The rewritten files and their statistics use the field ids of the table's current schema.
+    for (const char * key : {Iceberg::f_schemas, Iceberg::f_current_schema_id, Iceberg::f_last_column_id})
+        if (plan.initial_metadata_object->has(key))
+            metadata_object->set(key, plan.initial_metadata_object->get(key));
+
     auto current_schema_id = metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
     Poco::JSON::Object::Ptr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);

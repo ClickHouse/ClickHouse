@@ -88,6 +88,19 @@ ALTER TABLE ${TABLE} ADD COLUMN c0 Nullable(Int32);
 OPTIMIZE TABLE ${TABLE};
 " 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
 
+# --- OPTIMIZE after DROP c0 before the first INSERT: c1 keeps field id 2, readable before and after a cache drop
+reset
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --allow_experimental_iceberg_compaction=1 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 Int32) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2, allow_experimental_iceberg_compaction=1;
+ALTER TABLE ${TABLE} DROP COLUMN c0;
+INSERT INTO ${TABLE} SELECT number FROM numbers(3);
+ALTER TABLE ${TABLE} DELETE WHERE c1 = 1;
+OPTIMIZE TABLE ${TABLE};
+SELECT arraySort(groupArray(c1)) FROM ${TABLE};
+"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
+${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(c1)) FROM ${TABLE}"
+
 # --- OPTIMIZE on a malformed table (current-schema-id resolves to no schema): rejected --------
 # getPlan builds ManifestFilePlan(current_schema) -> DataFileStatistics derefs schema_->size()
 # before the validate helper runs, so the null-schema guard must sit ahead of getPlan.
