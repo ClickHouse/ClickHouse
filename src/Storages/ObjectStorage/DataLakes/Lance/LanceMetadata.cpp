@@ -405,6 +405,10 @@ std::optional<LanceIdentifier> inputNodeToLanceIdentifier(
     if (it == physical_schema.end() || !input->result_type->equals(*it->second.type))
         return std::nullopt;
 
+    /// The predicate crosses the Rust boundary as a NUL-terminated C string.
+    if (input->result_name.contains('\0'))
+        return std::nullopt;
+
     return LanceIdentifier{
         .sql = quoteLanceIdentifier(input->result_name),
         .column = &it->second,
@@ -434,7 +438,14 @@ std::optional<String> fieldToLanceLiteral(
 
     const WhichDataType which(column.type);
     if (which.isString() && column.is_arrow_utf8)
-        return quoteLanceStringLiteral(field.safeGet<String>());
+    {
+        /// The predicate crosses the Rust boundary as a NUL-terminated C string, which would cut
+        /// a literal containing a zero byte, so such a literal is not pushed down.
+        const auto & value = field.safeGet<String>();
+        if (value.contains('\0'))
+            return std::nullopt;
+        return quoteLanceStringLiteral(value);
+    }
     if (which.isNativeInt())
     {
         /// The Lance parser reads a bare integer as `i64` and falls back to a floating-point literal,
