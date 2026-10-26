@@ -2432,3 +2432,87 @@ x86-64 native: 12 remote executions, 39,318 remote cache hits.
 [ARM64 workflow](https://app.buildbuddy.io/invocation/dd9a65ee-511e-4d76-bf98-67a0662ea6c3): all 12 targets built. Nine JSON files identified the actual executables and recorded 38 GoogleTest cases, 10 interval tests and 6 SQL cases (16 decimal boundary values). CRT action check: verified; HDFS: verified; DWYU did not run; no libraries were graded.
 
 ARM64 native: 11 remote executions, 39,365 remote cache hits.
+
+## 773c4ebfb
+
+At [773c4ebfb](https://github.com/dzbarsky/clickhouse/commit/773c4ebfb6d5de28a719e30685dd959c3a51abb8), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/5d95244ba7782b74139e364ab3b74715fe66f8d3).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949) | `//src:unit_tests_dbms` | `6c7a927df0328c38debc566680fa9b3c5bffe8f3a6225a66139e373e65152350` | 811968280 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35) | `//src:unit_tests_dbms` | `03a6e01f641d05d267e71bec7f73f876ad06c79e16d4a0352ba34ec75cb0a118` | 795060896 | Matches previous Bazel |
+
+[x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949): all 12 requested targets built. The nine original JSON files recorded 38 passing GoogleTest cases, 10 interval tests, and 6 registered SQL cases (16 decimal boundary values). The SQL and unit tests used the executables in the table. The SDK check and the CMake link order passed. The configured GNU link used the corrected glibc startup object.
+
+x86-64: no producer Action/Command, object or archive contents, or cache read was verified for the sampled libc++, XRay, libunwind and Skim actions. The action query exited successfully, but the verifier could not identify the four requested actions in the native configuration. After the native build passed, the hosted script restored the 83 fixture files and then stopped in write_dwyu_native_context when its Git tree check failed. All 48 DWYU owners remain ungraded on this CPU.
+
+x86-64 DWYU: 48 owners offered, 0 clean, 0 with findings and 48 ungraded. Independent HDFS action check: query unverified.
+
+x86-64: no verified comparison for the `base/argsToConfig.cpp` Action.
+
+[ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35): all 12 requested targets built. The nine original JSON files recorded 38 passing GoogleTest cases, 10 interval tests, and 6 registered SQL cases (16 decimal boundary values). The SQL and unit tests used the executables in the table. The SDK check and the CMake link order passed. The configured GNU link used the corrected glibc startup object.
+
+ARM64: no producer Action/Command, object or archive contents, or cache read was verified for the sampled libc++, XRay, libunwind and Skim actions. The action query exited successfully, but the verifier could not identify the four requested actions in the native configuration. After the native build passed, the hosted script restored the 83 fixture files and then stopped in write_dwyu_native_context when its Git tree check failed. All 48 DWYU owners remain ungraded on this CPU.
+
+ARM64 DWYU: 48 owners offered, 0 clean, 0 with findings and 48 ungraded. Independent HDFS action check: query unverified.
+
+ARM64: no verified comparison for the `base/argsToConfig.cpp` Action.
+
+<details><summary>DWYU report by target</summary>
+
+| Target | x86-64 | ARM64 |
+| --- | --- | --- |
+| `//programs/benchmark:clickhouse-benchmark-lib` | held | held |
+| `//programs/check-marks:clickhouse-check-marks-lib` | held | held |
+| `//programs/checksum-for-compressed-block:clickhouse-checksum-for-compressed-block-lib` | held | held |
+| `//programs/client:clickhouse-client-lib` | held | held |
+| `//programs/format:clickhouse-format-lib` | held | held |
+| `//programs/keeper-bench:clickhouse-keeper-bench-lib` | held | held |
+| `//programs/keeper-data-dumper:clickhouse-keeper-data-dumper-lib` | held | held |
+| `//programs/keeper-utils:clickhouse-keeper-utils-lib` | held | held |
+| `//programs/local:clickhouse-local-lib` | held | held |
+| `//programs/zookeeper-dump-tree:clickhouse-zookeeper-dump-tree-lib` | held | held |
+| `//programs/zookeeper-remove-by-list:clickhouse-zookeeper-remove-by-list-lib` | held | held |
+| `//programs:clickhouse__compile_0` | held | held |
+| `//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0` | held | held |
+| `//src/Common/Config:clickhouse_common_config` | held | held |
+| `//src/Common/ZooKeeper:clickhouse_common_zookeeper_base` | held | held |
+| `//src/Daemon:daemon` | held | held |
+| `//src/Dictionaries:clickhouse_dictionaries__compile_1` | held | held |
+| `//src/Functions/GatherUtils:clickhouse_functions_gatherutils` | held | held |
+| `//src/Functions/URL:clickhouse_functions_url__compile_1` | held | held |
+| `//src/Functions/array:clickhouse_functions_array__compile_0` | held | held |
+| `//src/Functions:clickhouse_functions_obj__compile_0` | held | held |
+| `//src/Functions:clickhouse_functions_obj__compile_1` | held | held |
+| `//src/Loggers:loggers` | held | held |
+| `//src/Storages/System:clickhouse_storages_system__compile_0` | held | held |
+| `//src/TableFunctions:clickhouse_table_functions` | held | held |
+| `//src:clickhouse_common_io__compile_3` | held | held |
+| `@clickhouse_abseil_cpp//:absl_algorithm` | held | held |
+| `@clickhouse_abseil_cpp//:absl_any` | held | held |
+| `@clickhouse_abseil_cpp//:absl_bits` | held | held |
+| `@clickhouse_abseil_cpp//:absl_cleanup_internal` | held | held |
+| `@clickhouse_abseil_cpp//:absl_compare` | held | held |
+| `@clickhouse_abseil_cpp//:absl_container_memory` | held | held |
+| `@clickhouse_abseil_cpp//:absl_has_ostream_operator` | held | held |
+| `@clickhouse_abseil_cpp//:absl_inlined_vector_internal` | held | held |
+| `@clickhouse_abseil_cpp//:absl_iterator_traits_internal` | held | held |
+| `@clickhouse_abseil_cpp//:absl_log_internal_check_impl` | held | held |
+| `@clickhouse_abseil_cpp//:absl_log_internal_config` | held | held |
+| `@clickhouse_abseil_cpp//:absl_memory` | held | held |
+| `@clickhouse_abseil_cpp//:absl_optional` | held | held |
+| `@clickhouse_abseil_cpp//:absl_overload` | held | held |
+| `@clickhouse_abseil_cpp//:absl_random_mocking_access` | held | held |
+| `@clickhouse_abseil_cpp//:absl_random_random` | held | held |
+| `@clickhouse_abseil_cpp//:absl_source_location` | held | held |
+| `@clickhouse_abseil_cpp//:absl_type_traits` | held | held |
+| `@clickhouse_abseil_cpp//:absl_utility` | held | held |
+| `@clickhouse_abseil_cpp//:absl_variant` | held | held |
+| `@clickhouse_abseil_cpp//:absl_weakly_mixed_integer` | held | held |
+| `@clickhouse_google_protobuf//:_libprotoc__compile_1` | held | held |
+
+</details>

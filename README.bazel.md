@@ -52,22 +52,22 @@ Native ARM64 CMake uses Linux 4.19.0 headers with ClickHouse backports. The
 advice definitions that ClickHouse uses. Both platforms patch glibc's `string.h`
 so Clang uses the libc++ overloads of `memchr` and `strchr`, as it does in the native
 CMake build. The glibc overloads declare these functions `noexcept`; selecting them
-changed code in ClickHouse, Boost.Asio, and ICU. The final ClickHouse link uses `Scrt1.o`, `crti.o`, and `crtn.o` from `@llvm//runtimes/glibc:pie_startup_objects`. It still uses the GCC objects `crtbeginS.o` and `crtendS.o` from the [pinned ClickHouse sysroot](https://github.com/ClickHouse/sysroot/tree/6dd29c222896e54de24e7af1b191c92e4cf2e229). Native Cargo builds and custom LLVM runtime compilations also use the pinned sysroot.
+changed code in ClickHouse, Boost.Asio, and ICU. The final ClickHouse link uses `Scrt1.o`, `crti.o`, and `crtn.o` from `@llvm//runtimes/glibc:pie_startup_objects`. It still uses the GCC objects `crtbeginS.o` and `crtendS.o` from the [pinned ClickHouse sysroot](https://github.com/ClickHouse/sysroot/tree/6dd29c222896e54de24e7af1b191c92e4cf2e229). The LLVM runtime compile rules declare the fetched glibc and Linux kernel headers. Native Cargo uses the pinned sysroot for linking.
 
 ## Binary comparison
 
-At [5d95244ba](https://github.com/dzbarsky/clickhouse/commit/5d95244ba7782b74139e364ab3b74715fe66f8d3), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the [preceding Bazel build](https://github.com/dzbarsky/clickhouse/commit/06cd225afedcba4133e9f551f86604fb9c7323d4).
+At [773c4ebfb](https://github.com/dzbarsky/clickhouse/commit/773c4ebfb6d5de28a719e30685dd959c3a51abb8), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/5d95244ba7782b74139e364ab3b74715fe66f8d3).
 
 | Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
 | --- | --- | --- | ---: | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/1fd50416-2f19-4a9b-bbdb-ca686e50cf1a) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
-| [x86-64](https://app.buildbuddy.io/invocation/1fd50416-2f19-4a9b-bbdb-ca686e50cf1a) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
-| [x86-64](https://app.buildbuddy.io/invocation/1fd50416-2f19-4a9b-bbdb-ca686e50cf1a) | `//src:unit_tests_dbms` | `6c7a927df0328c38debc566680fa9b3c5bffe8f3a6225a66139e373e65152350` | 811968280 | Matches previous Bazel |
-| [ARM64](https://app.buildbuddy.io/invocation/2aeeaab6-e87b-4986-8e83-6ef0062485e5) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
-| [ARM64](https://app.buildbuddy.io/invocation/2aeeaab6-e87b-4986-8e83-6ef0062485e5) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Differs from previous Bazel (216 bytes smaller) |
-| [ARM64](https://app.buildbuddy.io/invocation/2aeeaab6-e87b-4986-8e83-6ef0062485e5) | `//src:unit_tests_dbms` | `03a6e01f641d05d267e71bec7f73f876ad06c79e16d4a0352ba34ec75cb0a118` | 795060896 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/162927da-67af-45b5-914a-3a2d4f7e1949) | `//src:unit_tests_dbms` | `6c7a927df0328c38debc566680fa9b3c5bffe8f3a6225a66139e373e65152350` | 811968280 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/f2b2e0a2-53f1-4de2-a8bc-a4a4ce3fbf35) | `//src:unit_tests_dbms` | `03a6e01f641d05d267e71bec7f73f876ad06c79e16d4a0352ba34ec75cb0a118` | 795060896 | Matches previous Bazel |
 
-[Validation details](bazel/initial_migration/validation-history.md#5d95244ba).
+[Validation details](bazel/initial_migration/validation-history.md#773c4ebfb).
 
 To check a change against these references without downloading either ELF, run:
 
@@ -186,4 +186,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-[5d95244ba](https://github.com/dzbarsky/clickhouse/commit/5d95244ba7782b74139e364ab3b74715fe66f8d3): DWYU did not run on either CPU; no libraries were graded. [Validation details](bazel/initial_migration/validation-history.md#5d95244ba).
+[773c4ebfb](https://github.com/dzbarsky/clickhouse/commit/773c4ebfb6d5de28a719e30685dd959c3a51abb8): See the per-CPU DWYU results in the validation history. [Validation details](bazel/initial_migration/validation-history.md#773c4ebfb).
