@@ -633,7 +633,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 The go value of Nil represents a ClickHouse NULL. This can be used if a field is declared Nullable. At insert time, Nil can be passed for both the normal and Nullable version of a column. For the former, the default value for the type will be persisted, e.g., an empty string for string. For the nullable version, a NULL value will be stored in ClickHouse.
 
-At scan time, the user must pass a pointer to a type that supports nil, e.g., *string, in order to represent the nil value for a Nullable field. In the example below, col1, which is a Nullable(String), thus receives a **string. This allows nil to be represented.
+At scan time, the user must pass a pointer to a type that supports nil, e.g., *string, in order to represent the nil value for a Nullable field. In the example below, col1, which is a Nullable(String), thus receives a **string. This allows nil to be represented. Scanning a NULL into a destination that cannot represent nil, e.g., *int64, returns a "converting NULL to *int64 is unsupported" error. Types implementing `sql.Scanner` handle NULL through their own `Scan(nil)`.
 
 ```go
 if err = conn.Exec(ctx, `
