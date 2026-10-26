@@ -24,7 +24,6 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Formats/ParseError.h>
 #include <algorithm>
-#include <Functions/IFunction.h>
 
 
 namespace ProfileEvents

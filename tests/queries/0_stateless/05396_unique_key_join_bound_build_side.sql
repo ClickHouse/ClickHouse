@@ -2,6 +2,7 @@
 -- filtered `t_ub_dim` has no estimate, only a bound of 1000 rows, and its join with the aggregation keeps that bound.
 -- The bound is below the known 100000 rows of `t_ub_fact`, so the hash table is built from the join of the two and
 -- `t_ub_fact` is the probe side. Without the bound the table with the known size would be built.
+-- The query runs before the `EXPLAIN`, so the sizes of its hash tables would give the inputs estimates.
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
@@ -26,6 +27,7 @@ FROM (
     EXPLAIN estimates = 1, bounds = 1
     SELECT count() FROM t_ub_dim AS d, (SELECT k, avg(q) AS m FROM t_ub_fact GROUP BY k) AS a, t_ub_fact AS f
     WHERE d.c = '3' AND a.k = d.k AND f.k = d.k AND f.q < a.m
+    SETTINGS use_hash_table_stats_for_join_reordering = 0
 )
 WHERE explain LIKE '%Join (%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Aggregating (%';
 
