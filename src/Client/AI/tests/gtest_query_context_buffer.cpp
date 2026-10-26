@@ -314,7 +314,7 @@ TEST(QueryContextBuffer, SampleOfAHugeJSONIsBounded)
     /// a `JSON` value nested in another type is not sampled at all. The columns after it are.
     const auto type = DataTypeFactory::instance().get("JSON");
     auto json = type->createColumn();
-    const String object = "{\"x\":\"" + String(1'000'000, 'x') + "\"}";
+    const String object = R"({"x":")" + String(1'000'000, 'x') + R"("})";
     ReadBufferFromString in(object);
     type->getDefaultSerialization()->deserializeWholeText(*json, in, FormatSettings{});
 
@@ -343,7 +343,7 @@ TEST(QueryContextBuffer, SampleOfAHugeJSONIsBounded)
 
     /// A short object is sampled whole, and a nested one is not sampled.
     auto short_json = type->createColumn();
-    const String short_object = "{\"a\":1}";
+    const String short_object = R"({"a":1})";
     ReadBufferFromString short_in(short_object);
     type->getDefaultSerialization()->deserializeWholeText(*short_json, short_in, FormatSettings{});
     auto short_offsets = ColumnArray::ColumnOffsets::create();
