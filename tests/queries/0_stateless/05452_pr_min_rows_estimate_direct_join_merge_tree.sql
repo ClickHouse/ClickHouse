@@ -30,3 +30,23 @@ SELECT count() FROM dj_l AS t0 LEFT ANTI JOIN dj_r AS t1 ON t1.EventId = t0.Id;
 
 DROP TABLE dj_l;
 DROP TABLE dj_r;
+
+-- The filter-collection plan also runs for a `View`, even without parallel replicas. It must keep joins logical
+-- instead of forcing a physical algorithm: an inequality-only `ASOF JOIN` is supported by `full_sorting_merge`
+-- but not by `hash`.
+DROP TABLE IF EXISTS dj_v;
+DROP TABLE IF EXISTS dj_asof_l;
+DROP TABLE IF EXISTS dj_asof_r;
+
+CREATE TABLE dj_asof_l (t UInt32) ENGINE = Memory;
+CREATE TABLE dj_asof_r (t UInt32) ENGINE = Memory;
+INSERT INTO dj_asof_l VALUES (10), (20);
+INSERT INTO dj_asof_r VALUES (5), (15);
+CREATE VIEW dj_v AS SELECT * FROM dj_asof_l;
+
+SELECT dj_v.t, dj_asof_r.t FROM dj_v ASOF LEFT JOIN dj_asof_r ON dj_v.t >= dj_asof_r.t ORDER BY dj_v.t
+SETTINGS join_algorithm = 'full_sorting_merge', enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE dj_v;
+DROP TABLE dj_asof_l;
+DROP TABLE dj_asof_r;
