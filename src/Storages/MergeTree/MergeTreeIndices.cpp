@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -91,17 +90,16 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
     return index.expression->getRequiredColumnsWithTypes();
 }
 
-NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
+IsShadowingColumn IMergeTreeIndex::getMapSubcolumnShadowingCheck() const
 {
-    NameSet result;
     /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
     /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
-    /// key subcolumn is generated per key on demand, so it is absent here and stays parseable.
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    for (const auto & column : metadata_snapshot->getColumns().get(options))
-        if (looksLikeMapSubcolumnName(column.name))
-            result.insert(column.name);
-    return result;
+    /// key subcolumn is generated per key on demand, so it is not a regular subcolumn and stays parseable.
+    return [metadata = metadata_snapshot](const String & column_name)
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
+        return metadata->getColumns().tryGetColumn(options, column_name).has_value();
+    };
 }
 
 namespace
