@@ -29,8 +29,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -249,18 +247,8 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
             dropParallelReplicasCustomKey(*new_context);
     }
 
-    /// The body is read locally unless plan-based parallel replicas ship its already resolved plan, see `canUseParallelReplicasOnInitiator`.
-    /// Turn the other modes off in the body itself, after the definer's profile has been applied (it can enable them on its own),
-    /// so that the checks rejecting what parallel replicas do not support (`FINAL`, `JOIN` with a custom key, ...) do not fire
-    /// for a body that does not use them. A follower keeps task-based parallel replicas to read its part.
-    if (!new_context->getClientInfo().collaborate_with_initiator)
-    {
-        if (!new_context->getSettingsRef()[Setting::parallel_replicas_custom_key].value.empty())
-            dropParallelReplicasCustomKey(*new_context);
-
-        if (!(new_context->canUseTaskBasedParallelReplicas() && new_context->getSettingsRef()[Setting::parallel_replicas_plan_based]))
-            new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-    }
+    /// After the definer's profile has been applied: it can enable parallel replicas on its own.
+    new_context->restrictParallelReplicasInSQLSecurityOverriddenBody();
 
     /// The obsolete `allow_experimental_analyzer` is normalized in `executeQuery`, which this context
     /// does not go through: it starts from the global context and then takes the definer's profile,

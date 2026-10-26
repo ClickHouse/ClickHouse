@@ -7,3 +7,11 @@
 1	a
 1	c
 2	b
+--- parallel replicas turned on by the SETTINGS clause of the query of the view
+1	c
+2	b
+1	a
+1	c
+2	b
+1	c
+2	b

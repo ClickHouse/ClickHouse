@@ -2046,6 +2046,9 @@ public:
 
     bool isSQLSecurityOverriddenBody() const { return is_sql_security_overridden_body; }
     void setSQLSecurityOverriddenBody(bool value) { is_sql_security_overridden_body = value; }
+    /// Turns off in the body of a `SQL SECURITY DEFINER` / `NONE` view the parallel replicas modes that would hand its reads
+    /// to other replicas. Called once the settings of the body are applied, and again after each `SETTINGS` clause inside it.
+    void restrictParallelReplicasInSQLSecurityOverriddenBody();
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
