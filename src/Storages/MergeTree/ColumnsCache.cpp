@@ -670,6 +670,11 @@ void ColumnsCache::removeStaleEntries(const std::vector<Key> & keys, const std::
 
 void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
 {
+    /// `removeStaleEntries` copies the path of a file into a `PartIdentifier` under the mutex of a shard,
+    /// and an allocation over the global limit must not reach `autoResize`, which takes that mutex again.
+    OperationInThread operation;
+    /// A withdrawal must not stop halfway, with the index and the shards out of step, see `setMany`.
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
     /// The memory of the cache is the server's, see `setMany`.
     MemoryTrackerBlockerInThread not_charged_to_query_or_user;
 

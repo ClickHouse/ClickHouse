@@ -643,6 +643,46 @@ TEST(ColumnsCache, AllocationOverTheLimitUnderTheMutexOfAShardDoesNotDeadlock)
     EXPECT_EQ(cache.getAllEntriesMetadata().size(), 100u);
 }
 
+TEST(ColumnsCache, AllocationOverTheLimitWhileWithdrawingAnEntryDoesNotDeadlock)
+{
+    auto cache = makeCache();
+    /// A path of a `Parquet` file longer than the inline buffer of a string, so that withdrawing the entry
+    /// allocates under the mutex of its shard.
+    TestColumn c(UUIDHelpers::generateV4(), "/var/lib/clickhouse/user_files/a/rather/long/path/to/a/file.parquet", "col");
+    const auto generation = cache.getInvalidationGeneration(c.table_uuid);
+    auto withdrawn = makeEntry(c, 0, 0, 8);
+    EXPECT_GT(cache.setMany({withdrawn}, generation), 0u);
+    EXPECT_GT(cache.setMany({makeEntry(c, 1, 8, 16)}, generation), 0u);
+
+    auto * previous_cache = getMemoryReleasableCache();
+    /// Built before the limit is lowered: only the allocations of `removeEntries` are of interest.
+    const std::vector<ColumnsCache::MappedPtr> to_withdraw{withdrawn};
+    withdrawn.reset();
+
+    /// The resize takes the mutex of the shard as well: it must not run then. The withdrawal completes,
+    /// so that the index and the shards stay in step.
+    bool allocations_tracked = false;
+    std::thread([&]
+    {
+        GlobalMemoryLimitOfOneByte limit;
+        allocations_tracked = GlobalMemoryLimitOfOneByte::allocationsFail();
+        if (allocations_tracked)
+        {
+            /// `MemoryTracker` calls `autoResize` of this cache when an allocation exceeds the limit.
+            setMemoryReleasableCache(&cache);
+            cache.removeEntries(to_withdraw);
+            setMemoryReleasableCache(previous_cache);
+        }
+    }).join();
+
+    if (!allocations_tracked)
+        GTEST_SKIP() << "Allocations with operator new are not tracked in this build";
+
+    EXPECT_EQ(cache.count(), 1u);
+    EXPECT_EQ(getOne(cache, c, 0), nullptr);
+    EXPECT_NE(getOne(cache, c, 1), nullptr);
+}
+
 TEST(ColumnsCache, MemoryLimitDuringInsertionAndEvictionKeepsTheCacheConsistent)
 {
     /// Part names longer than the inline buffer of a string, so that the eviction callback allocates.
