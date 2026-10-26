@@ -8,6 +8,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/StringUtils.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -95,7 +96,7 @@ bool hasTopLevelPivot(IParser::Pos pos)
     int square_depth = 0;
     bool found = false;
 
-    while (pos->type != TokenType::EndOfStream && pos->type != TokenType::Semicolon)
+    while (pos.isValid() && pos->type != TokenType::Semicolon)
     {
         if (pos->type == TokenType::OpeningRoundBracket)
             ++round_depth;
@@ -154,7 +155,7 @@ bool hasTopLevelPivot(IParser::Pos pos)
     return found;
 }
 
-String qualifyPivotIdentifier(ASTPtr & node, const String & written_qualifier, const String & target_qualifier)
+void qualifyPivotIdentifier(ASTPtr & node, const String & written_qualifier, const String & target_qualifier)
 {
     auto & identifier = node->as<ASTIdentifier &>();
     String short_name = identifier.shortName();
@@ -171,10 +172,28 @@ String qualifyPivotIdentifier(ASTPtr & node, const String & written_qualifier, c
     }
 
     String alias = identifier.tryGetAlias();
-    node = make_intrusive<ASTIdentifier>(std::vector<String>{target_qualifier, short_name});
+    ASTs name_params;
+    name_params.reserve(node->children.size());
+    for (const auto & child : node->children)
+        name_params.push_back(child->clone());
+
+    node = make_intrusive<ASTIdentifier>(
+        std::vector<String>{target_qualifier, short_name}, false, std::move(name_params));
     if (!alias.empty())
         node->setAlias(alias);
-    return short_name;
+}
+
+/// The EXCEPT transformer uses source column names without their table qualifier.
+/// Preserve identifier parameters here as well so they are replaced before analysis.
+ASTPtr makeUnqualifiedPivotColumn(const ASTPtr & node)
+{
+    const auto & identifier = node->as<ASTIdentifier &>();
+    ASTs name_params;
+    name_params.reserve(node->children.size());
+    for (const auto & child : node->children)
+        name_params.push_back(child->clone());
+
+    return make_intrusive<ASTIdentifier>(std::vector<String>{identifier.shortName()}, false, std::move(name_params));
 }
 
 bool parsePivotBody(IParser::Pos & pos, PivotSpec & spec, Expected & expected)
@@ -219,8 +238,7 @@ bool collectPivotSourceColumns(
     ASTPtr & node,
     const String & written_qualifier,
     const String & target_qualifier,
-    std::vector<String> & columns,
-    std::unordered_set<String> & seen)
+    ASTs & columns)
 {
     if (!node)
         return true;
@@ -228,8 +246,12 @@ bool collectPivotSourceColumns(
     if (node->as<ASTSubquery>() || node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
         return false;
 
-    if (node->as<ASTAsterisk>() || node->as<ASTQualifiedAsterisk>())
-        return true;
+    if (node->as<ASTAsterisk>() || node->as<ASTQualifiedAsterisk>()
+        || node->as<ASTColumnsRegexpMatcher>() || node->as<ASTColumnsListMatcher>()
+        || node->as<ASTQualifiedColumnsRegexpMatcher>() || node->as<ASTQualifiedColumnsListMatcher>())
+        throw Exception(
+            ErrorCodes::SYNTAX_ERROR,
+            "PIVOT aggregate arguments cannot use asterisks or column matchers (except count(*))");
 
     if (auto * function = node->as<ASTFunction>())
     {
@@ -239,7 +261,7 @@ bool collectPivotSourceColumns(
         /// Parser-time PIVOT cannot resolve the outer SELECT scope. Treat identifiers in aggregate
         /// expressions as source columns so aliases cannot change the implicit grouping keys.
         for (auto & child : function->children)
-            if (!collectPivotSourceColumns(child, written_qualifier, target_qualifier, columns, seen))
+            if (!collectPivotSourceColumns(child, written_qualifier, target_qualifier, columns))
                 return false;
         return true;
     }
@@ -255,20 +277,19 @@ bool collectPivotSourceColumns(
                 "PIVOT currently supports simple source columns or columns qualified by the source name or alias; unsupported identifier {}",
                 identifier->name());
 
-        String name = qualifyPivotIdentifier(node, written_qualifier, target_qualifier);
-        if (seen.emplace(name).second)
-            columns.push_back(std::move(name));
+        qualifyPivotIdentifier(node, written_qualifier, target_qualifier);
+        columns.push_back(makeUnqualifiedPivotColumn(node));
         return true;
     }
 
     for (auto & child : node->children)
-        if (!collectPivotSourceColumns(child, written_qualifier, target_qualifier, columns, seen))
+        if (!collectPivotSourceColumns(child, written_qualifier, target_qualifier, columns))
             return false;
 
     return true;
 }
 
-ASTPtr makePivotAsterisk(const std::vector<String> & excluded_columns)
+ASTPtr makePivotAsterisk(const ASTs & excluded_columns)
 {
     auto asterisk = make_intrusive<ASTAsterisk>();
     if (excluded_columns.empty())
@@ -276,7 +297,7 @@ ASTPtr makePivotAsterisk(const std::vector<String> & excluded_columns)
 
     auto except = make_intrusive<ASTColumnsExceptTransformer>();
     for (const auto & column : excluded_columns)
-        except->children.push_back(make_intrusive<ASTIdentifier>(column));
+        except->children.push_back(column->clone());
 
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     transformers->children.push_back(except);
@@ -406,15 +427,16 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
     if (!pivot_column->as<ASTIdentifier>())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "PIVOT FOR expression must be a column identifier");
 
-    std::vector<String> excluded_columns;
+    ASTs excluded_columns;
     std::unordered_set<String> excluded_seen;
-    auto add_excluded = [&](String name)
+    auto add_excluded = [&](ASTPtr column)
     {
-        if (excluded_seen.emplace(name).second)
-            excluded_columns.push_back(std::move(name));
+        if (excluded_seen.emplace(column->formatForErrorMessage()).second)
+            excluded_columns.push_back(std::move(column));
     };
 
-    add_excluded(qualifyPivotIdentifier(pivot_column, written_qualifier, target_qualifier));
+    qualifyPivotIdentifier(pivot_column, written_qualifier, target_qualifier);
+    add_excluded(makeUnqualifiedPivotColumn(pivot_column));
 
     ASTs aggregates;
     aggregates.reserve(spec.aggregates.size());
@@ -422,7 +444,7 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
     for (const auto & original_aggregate : spec.aggregates)
     {
         ASTPtr aggregate = original_aggregate->clone();
-        const auto * function = aggregate->as<ASTFunction>();
+        auto * function = aggregate->as<ASTFunction>();
         if (!function)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "PIVOT aggregate expression must be a function call");
         if (function->isWindowFunction())
@@ -431,9 +453,17 @@ ASTPtr rewritePivot(ASTPtr source, const PivotSpec & spec, const String & result
         if (multiple_aggregates && aggregate->tryGetAlias().empty())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Each PIVOT aggregate requires an alias when more than one aggregate is specified");
 
-        std::vector<String> referenced_columns;
-        std::unordered_set<String> referenced_seen;
-        if (!collectPivotSourceColumns(aggregate, written_qualifier, target_qualifier, referenced_columns, referenced_seen))
+        /// count(*) is equivalent to count() and does not consume a named measure column.
+        if (equalsCaseInsensitive(function->name, "count")
+            && function->arguments && function->arguments->children.size() == 1)
+        {
+            const auto * asterisk = function->arguments->children.front()->as<ASTAsterisk>();
+            if (asterisk && !asterisk->transformers)
+                function->arguments->children.clear();
+        }
+
+        ASTs referenced_columns;
+        if (!collectPivotSourceColumns(aggregate, written_qualifier, target_qualifier, referenced_columns))
             throw Exception(ErrorCodes::SYNTAX_ERROR, "PIVOT aggregate expressions cannot contain subqueries or lambdas");
 
         for (auto & column : referenced_columns)

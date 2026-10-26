@@ -168,4 +168,31 @@ SELECT
     position(injected, '"is_pivot_rewrite":[]') > 0,
     formatQueryFromJSON(injected) = formatQueryFromJSON(ast);
 
+-- A table-expression lookahead must stop at max_query_size lexer errors, including for INSERT.
+SELECT isNull(formatQueryOrNull('INSERT INTO t SELECT * FROM numbers(1)'))
+SETTINGS max_query_size = 32;
+
+-- Expansion-only aggregate arguments cannot be resolved into implicit grouping exclusions.
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
+PIVOT (sum(COLUMNS('^v$')) FOR k IN ('a' AS a)); -- { serverError SYNTAX_ERROR }
+
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
+PIVOT (sum(* EXCEPT(k)) FOR k IN ('a' AS a)); -- { serverError SYNTAX_ERROR }
+
+-- Plain count(*) is still a supported aggregate with no measure column.
+SELECT a FROM (SELECT k FROM values('k String, v UInt64', ('a', 1), ('a', 2)))
+PIVOT (count(*) FOR k IN ('a' AS a));
+
+-- Identifier parameters must survive both aggregate qualification and implicit grouping exclusion.
+SET param_pivot_measure = 'v';
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
+PIVOT (sum({pivot_measure:Identifier}) FOR k IN ('a' AS a));
+
+SET param_pivot_key = 'k';
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
+PIVOT (sum({pivot_measure:Identifier}) FOR {pivot_key:Identifier} IN ('a' AS a));
+
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2)) AS s
+PIVOT (sum(s.{pivot_measure:Identifier}) FOR s.k IN ('a' AS a));
+
 DROP TABLE pivot_static;
