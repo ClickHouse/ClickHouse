@@ -912,6 +912,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             && !removeLowCardinality(map_value_type)->equals(*removeLowCardinality(type)))
             return false;
 
+        /// Even the lenient conversion throws `UNKNOWN_ELEMENT_OF_ENUM` instead of returning NULL when the
+        /// probe is not a valid value of an `Enum` set element type: the default `''` of a `String` map
+        /// value against an `Enum8('a' = 1, 'b' = 2)` set, although the stored values are valid. Probe an
+        /// `Enum` set only with the default of the same `Enum`, which is a valid value; otherwise decline.
+        if (anyInTypeTree(*set_element_type, [](const IDataType & element_type) { return isEnum(element_type); })
+            && !removeLowCardinalityAndNullable(map_value_type)->equals(*set_element_type))
+            return false;
+
         if (set_contains_default_of(type->createColumnConstWithDefaultValue(1), type)
             || set_contains_default_of(createMissingMapValueColumn(map_value_type), map_value_type))
             return false;
