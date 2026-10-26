@@ -85,6 +85,8 @@ DEPENDENCIES = {
     ('src/TableFunctions', 'headers'): (['//base:common'], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions__compile_1'): ([
+        ':aggregate_api', '//src/Common:assert_cast', '//src/Common:exception_api',
+        '//src/Parsers:headers', '//src/Parsers:parser_api', '//src:column_types',
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
     ], ['//src:headers'], []),

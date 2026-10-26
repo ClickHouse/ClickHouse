@@ -173,20 +173,9 @@ ch_cc_library(
         "//contrib/cityhash102:_cityhash",
         "//base:common",
         "//src/Common",
-        "//src/Parsers:headers",
         "@clickhouse_croaring//:_roaring",
-        "//src/Common:exception_api",
+        "//src:headers",
     ] + select({
-        "@platforms//cpu:x86_64": ["//src/Common:assert_cast"],
-        "@platforms//cpu:aarch64": [],
-        "//conditions:default": [],
-    }) + [":aggregate_api"] + select({
-        "@platforms//cpu:x86_64": [
-            "//src/Parsers:parser_api",
-            "//src:column_types",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + ["//src:headers"] + select({
         "@platforms//cpu:x86_64": [":headers"],
         "@platforms//cpu:aarch64": [],
     }),
