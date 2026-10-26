@@ -3830,6 +3830,32 @@
         }
       }
     },
+    "@@depend_on_what_you_use+//third_party:non_module_dependencies.bzl%non_module_dependencies": {
+      "general": {
+        "bzlTransitiveDigest": "QLcPvHmif8plkI3KDwLpa1ngHiLQVN94rvNtS5gN6uw=",
+        "usagesDigest": "D4Z2GQ/I91xb+DhxNdD3onYqg/41G9Tbptoq6nT3VJo=",
+        "recordedInputs": [
+          "REPO_MAPPING:depend_on_what_you_use+,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "boost.wave": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "sha256": "32344960683b0c1e7705d48fec88a2c6a22143d1e7619649fadd057e8eeac0c3",
+              "strip_prefix": "wave-44b4b6064f875f9a121a109a4d60c60ba74062f4",
+              "urls": [
+                "https://github.com/boostorg/wave/archive/44b4b6064f875f9a121a109a4d60c60ba74062f4.tar.gz"
+              ],
+              "build_file": "@@depend_on_what_you_use+//third_party/boost/wave:wave.BUILD",
+              "patches": [
+                "@@depend_on_what_you_use+//third_party/boost/wave:ignore_time_and_version.patch",
+                "@@depend_on_what_you_use+//third_party/boost/wave:allow_overwriting_all_macros.patch"
+              ]
+            }
+          }
+        }
+      }
+    },
     "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
       "general": {
         "bzlTransitiveDigest": "BsgERqYptkJeeC8wFaLj251IoTZTSy/58WA6kVp0q8I=",
