@@ -5315,13 +5315,17 @@ bool MutateTask::prepare()
     /// known here, so drop the fingerprint of such a part whenever the mutation does not recalculate TTL,
     /// and rewrite `ttl.txt` to persist that (it is hardlinked from the source part otherwise). The same
     /// applies when the mutation applies patch parts: they may update the columns of the current rows TTL
-    /// as well, and leave no outstanding patches for the fast path to notice.
+    /// as well, and leave no outstanding patches for the fast path to notice. Finally, a mutation that
+    /// rewrites all columns may remove rows (`DELETE`, or the materialization of a lightweight delete
+    /// mask): the copied bounds may then belong to rows that no longer exist, and shifting them would
+    /// keep an entirely expired part alive, so they must not be certified as exact any more.
     if (ctx->execute_ttl_type == ExecuteTTLType::NONE)
     {
         auto & ttl_infos = ctx->new_data_part->ttl_infos;
         const bool fingerprint_is_current = ctx->metadata_snapshot->hasRowsTTL()
             && ttl_infos.table_ttl_expression == getRowsTTLExpressionFingerprint(ctx->metadata_snapshot->getRowsTTL());
-        if (!ttl_infos.table_ttl_expression.empty() && (!fingerprint_is_current || alter_conversions->hasPatches()))
+        const bool may_remove_rows = ctx->mutating_pipeline_builder.initialized() && ctx->interpreter->isAffectingAllColumns();
+        if (!ttl_infos.table_ttl_expression.empty() && (!fingerprint_is_current || alter_conversions->hasPatches() || may_remove_rows))
         {
             ttl_infos.table_ttl_expression.clear();
             ttl_infos.table_ttl_timezone.clear();

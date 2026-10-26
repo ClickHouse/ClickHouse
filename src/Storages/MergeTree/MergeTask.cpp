@@ -828,6 +828,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// not materialized): the saved fingerprint still describes the old expression, and a later
     /// `MODIFY TTL` back to a shift of it would trust the bounds. The source columns of that old
     /// expression are not known here, so every physical column of the table is checked instead.
+    ///
+    /// The bounds must also stay exact: a stored maximum or minimum must belong to a row the part still
+    /// holds, or a later metadata-only `MATERIALIZE TTL` would shift the bound of a row that no longer
+    /// exists (and `TTLPartDropMergeSelector` would keep an entirely expired part until that bound).
+    /// The aggregated bounds describe all the rows of the source parts, so a merge that may remove or
+    /// combine rows - a non-`Ordinary` merging mode, deduplication, or a source part with lightweight
+    /// deleted rows - drops the provenance as well. If the merge recalculates the rows TTL afterwards,
+    /// `TTLDeleteAlgorithm` records the fingerprint again from the rows actually written.
     if (!global_ctx->new_data_part->ttl_infos.table_ttl_expression.empty())
     {
         const auto & metadata_snapshot = global_ctx->metadata_snapshot;
@@ -837,7 +845,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             ? metadata_snapshot->getRowsTTL().expression_source_columns
             : metadata_snapshot->getColumns().getAllPhysical();
 
-        bool rows_ttl_source_may_change = false;
+        bool rows_ttl_source_may_change = global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary
+            || global_ctx->deduplicate || global_ctx->cleanup;
         for (size_t i = 0; i < global_ctx->future_part->parts.size() && !rows_ttl_source_may_change; ++i)
         {
             const auto & part = global_ctx->future_part->parts[i];
@@ -845,7 +854,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 continue;
 
             const auto & conversions = global_ctx->alter_conversions[i];
-            if (conversions->hasPatches() || conversions->hasMutations() || !conversions->getRenameMap().empty())
+            if (part->hasLightweightDelete() || conversions->hasPatches() || conversions->hasMutations() || !conversions->getRenameMap().empty())
             {
                 rows_ttl_source_may_change = true;
                 break;
