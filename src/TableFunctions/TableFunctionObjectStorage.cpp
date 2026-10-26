@@ -2299,6 +2299,11 @@ deletion vectors therefore throws, even after `deletion-vectors.enabled` is turn
 A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
 it can be read again.
 
+Columns are matched to data files by name, not by Paimon field id, so **data files written before a column was renamed,
+or before a column was dropped and another one with the same name was added, cannot be read**: the result would contain
+`NULL` for the renamed column and the dropped column's values for the re-added one. Reading such a data file therefore
+throws. Adding and dropping columns is supported.
+
 ## Defining a named collection {#defining-a-named-collection}
 
 Here is an example of configuring a named collection for storing the URL and credentials:

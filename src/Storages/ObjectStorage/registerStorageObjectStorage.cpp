@@ -2129,6 +2129,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - The table engine is read-only; data modification is not supported.
 - Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
 - If the underlying Paimon table is dropped and recreated at the same object-storage path (e.g. via Flink or Spark), you must `DROP` and re-`CREATE` the corresponding ClickHouse table. ClickHouse detects the recreation by comparing the schema-0 creation timestamp and raises an error; the stale ClickHouse table cannot be used until it is recreated.
+- Columns are matched to data files by name, not by Paimon field id. Reading a data file written before a column was renamed, or before a column was dropped and another one with the same name was added, therefore throws: the result would contain `NULL` for the renamed column and the dropped column's values for the re-added one. Adding and dropping columns is supported.
 
 ## Aliases {#aliases}
 

@@ -30,8 +30,10 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
   until ClickHouse#113337 is fixed).
 - `test_partition_pruning.py` — INT/DATE/STRING/DECIMAL partitions, pruned
   file counts via `EngineFileLikeReadFiles`, path-escaped partition values.
-- `test_schema_evolution.py` — ADD/RENAME/DROP column across snapshots (pins
-  name-based resolution: pre-rename files read `NULL`).
+- `test_schema_evolution.py`: ADD/DROP COLUMN across snapshots read by name;
+  RENAME COLUMN and DROP + re-ADD under the same name raise `NOT_IMPLEMENTED`
+  (columns are matched by name, not field id); a caught-up incremental read
+  continues across a RENAME.
 - `test_snapshot_visibility.py` — new snapshots visible to table functions
   (per query) and engines (metadata refresh).
 - `test_metadata_cache.py` — hit/miss accounting, `SYSTEM DROP PAIMON
@@ -77,7 +79,7 @@ HDFS namenode run as sidecars for their modules. Shared helpers:
 | HA ingestion: replicas as competing consumers on one keeper path | Covered (`test_shared_watermark_competing_consumers`) |
 | GDPR deletes / corrections (Spark UPDATE/DELETE, copy-on-write) | Covered (`test_spark_mutations.py`) |
 | Table maintenance (compaction) | Covered (`test_compaction.py`) |
-| Schema changes on a live pipeline | Covered (`test_schema_evolution.py`) |
+| Schema changes on a live pipeline | **Partial**: ADD/DROP COLUMN covered; RENAME COLUMN and DROP + re-ADD under the same name raise an error, columns are matched by name, not field id (`test_schema_evolution.py`) |
 | CDC/upserts into primary-key tables | **Strict xfail** asserting correct merge semantics — flips when ClickHouse#113360 is fixed |
 | Readers serving while the writer commits | Covered (`test_concurrent_reads.py`; uploads happen in commit order, as real writers commit) |
 | Tables written by newer Paimon versions | Covered for 1.3.2 (`test_reader_compat.py`) |

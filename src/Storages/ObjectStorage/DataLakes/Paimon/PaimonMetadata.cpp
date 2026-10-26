@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <memory>
@@ -635,7 +636,7 @@ ObjectIterator PaimonMetadata::iterate(
                 "Its delta manifest contains compaction output (not incremental changes). "
                 "Consider using a non-COMPACT snapshot for accurate incremental semantics.",
                 target_snapshot_id);
-        data_files = collectDeltaFilesForSnapshot(target_state, partition_pruner);
+        data_files = collectDeltaFilesForSnapshot(target_state, *schema, partition_pruner);
     }
     /// 4.b Regular incremental mode
     else if (isIncrementalReadEnabled())
@@ -678,7 +679,7 @@ ObjectIterator PaimonMetadata::iterate(
         std::optional<PaimonSnapshotIdentity> last_consumed_identity;
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
         data_files = collectIncrementalDataFiles(
-            state, partition_pruner, max_consume_snapshots, committed_snapshot, last_consumed_snapshot_id, last_consumed_identity);
+            state, *schema, partition_pruner, max_consume_snapshots, committed_snapshot, last_consumed_snapshot_id, last_consumed_identity);
 
         if (last_consumed_snapshot_id)
         {
@@ -701,7 +702,7 @@ ObjectIterator PaimonMetadata::iterate(
     }
     else
     {
-        data_files = collectFullScanDataFiles(state, partition_pruner);
+        data_files = collectFullScanDataFiles(state, *schema, partition_pruner);
     }
 
     LOG_DEBUG(log, "Collected {} data files for snapshot_id={} (incremental={})",
@@ -968,6 +969,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
 
 Strings PaimonMetadata::collectIncrementalDataFiles(
     const PaimonTableStatePtr & state,
+    const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner,
     UInt64 max_consume_snapshots,
     const PaimonCommittedSnapshot & committed,
@@ -985,7 +987,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         /// First read should include full snapshot (base + delta) to build the initial watermark.
         LOG_INFO(log, "No committed snapshot found, performing initial full read (base+delta) for snapshot_id={}",
                  state->snapshot_id);
-        data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
+        data_files = collectDataFilesFromManifests({state}, read_schema, ManifestKind::Both, partition_pruner, true, true);
         last_consumed_snapshot_id = state->snapshot_id;
         last_consumed_identity = getSnapshotIdentity(*state);
     }
@@ -1086,7 +1088,7 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         }
 
         data_files = collectDataFilesFromManifests(
-            snapshots, ManifestKind::Delta, partition_pruner, true, true, committed_snapshot_id);
+            snapshots, read_schema, ManifestKind::Delta, partition_pruner, true, true, committed_snapshot_id);
         /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
         last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
         const auto & last_consumed_state = last_scanned_snapshot_id ? last_scanned_state : snapshots.back();
@@ -1132,6 +1134,7 @@ void PaimonMetadata::checkCursorSnapshotUnchanged(Int64 snapshot_id, const Paimo
 
 Strings PaimonMetadata::collectDataFilesFromManifests(
     const std::vector<PaimonTableStatePtr> & snapshots,
+    const PaimonTableSchema & read_schema,
     ManifestKind kind,
     const std::optional<PartitionPruner> & partition_pruner,
     bool deduplicate,
@@ -1142,7 +1145,7 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
         if (snapshot_state)
             checkNoDeletionVectors(*snapshot_state, incremental_cursor);
 
-    Strings data_files;
+    std::vector<std::pair<String, Int64>> data_files;
     std::unordered_set<String> seen_files;
     std::unordered_set<String> delete_files;
 
@@ -1184,8 +1187,8 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
                     continue;
                 }
 
-                data_files.emplace_back(std::move(file_path));
-                LOG_TEST(log, "{} data file: {}", type, data_files.back());
+                data_files.emplace_back(std::move(file_path), entry.file.schema_id);
+                LOG_TEST(log, "{} data file: {}", type, data_files.back().first);
             }
         }
     };
@@ -1204,26 +1207,84 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
             std::remove_if(
                 data_files.begin(),
                 data_files.end(),
-                [&](const String & path) { return delete_files.contains(path); }),
+                [&](const auto & data_file) { return delete_files.contains(data_file.first); }),
             data_files.end());
     }
 
-    return data_files;
+    Strings result;
+    result.reserve(data_files.size());
+    for (auto & [file_path, file_schema_id] : data_files)
+    {
+        checkDataFileSchema(file_path, file_schema_id, read_schema);
+        result.emplace_back(std::move(file_path));
+    }
+    return result;
+}
+
+void PaimonMetadata::checkDataFileSchema(const String & file_path, Int64 file_schema_id, const PaimonTableSchema & read_schema) const
+{
+    if (file_schema_id == read_schema.id)
+        return;
+    {
+        std::lock_guard lock(checked_file_schemas_mutex);
+        if (checked_file_schemas.contains({file_schema_id, read_schema.id}))
+            return;
+    }
+
+    /// Only ids and names are read: a type the reader does not support must not fail a file it can read.
+    auto file_schema_json = table_client->getTableSchemaJSON(
+        table_client->getTableSchemaInfoById(static_cast<Int32>(file_schema_id)));
+    const auto file_fields = file_schema_json->getArray("fields");
+    for (unsigned i = 0; i < file_fields->size(); ++i)
+    {
+        const auto file_field = file_fields->getObject(i);
+        const auto field_id = file_field->getValue<Int32>("id");
+        const auto field_name = file_field->getValue<String>("name");
+
+        String in_file;
+        String in_read_schema;
+        if (auto same_id = std::ranges::find(read_schema.fields, field_id, &DataField::id);
+            same_id != read_schema.fields.end() && same_id->name != field_name)
+        {
+            in_file = fmt::format("field id {} is column '{}'", field_id, field_name);
+            in_read_schema = fmt::format("column '{}'", same_id->name);
+        }
+        else if (auto same_name = read_schema.fields_by_name_indexes.find(field_name);
+                 same_name != read_schema.fields_by_name_indexes.end() && read_schema.fields[same_name->second].id != field_id)
+        {
+            in_file = fmt::format("column '{}' is field id {}", field_name, field_id);
+            in_read_schema = fmt::format("field id {}", read_schema.fields[same_name->second].id);
+        }
+        else
+            continue;
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Paimon data file '{}' is not supported: {} in schema {} the file was written with, but {} in the "
+            "current schema {}. Columns are matched to data files by name, not by field id, so the result would contain "
+            "wrong values.",
+            file_path, in_file, file_schema_id, in_read_schema, read_schema.id);
+    }
+
+    std::lock_guard lock(checked_file_schemas_mutex);
+    checked_file_schemas.emplace(file_schema_id, read_schema.id);
 }
 
 Strings PaimonMetadata::collectDeltaFilesForSnapshot(
     const PaimonTableStatePtr & state,
+    const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
 {
-    return collectDataFilesFromManifests({state}, ManifestKind::Delta, partition_pruner, false, false);
+    return collectDataFilesFromManifests({state}, read_schema, ManifestKind::Delta, partition_pruner, false, false);
 }
 
 Strings PaimonMetadata::collectFullScanDataFiles(
     const PaimonTableStatePtr & state,
+    const PaimonTableSchema & read_schema,
     const std::optional<PartitionPruner> & partition_pruner) const
 {
     /// Full scan: include base + delta, with dedup and tombstone handling.
-    return collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
+    return collectDataFilesFromManifests({state}, read_schema, ManifestKind::Both, partition_pruner, true, true);
 }
 
 }

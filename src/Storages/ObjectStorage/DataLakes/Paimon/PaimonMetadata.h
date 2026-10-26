@@ -6,6 +6,7 @@
 #include <atomic>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
@@ -100,6 +101,7 @@ private:
 
     Strings collectDataFilesFromManifests(
         const std::vector<PaimonTableStatePtr> & snapshots,
+        const PaimonTableSchema & read_schema,
         ManifestKind kind,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         bool deduplicate,
@@ -117,6 +119,9 @@ private:
 
     /// Throws if the snapshot's index manifest lists deletion vectors. Pass the cursor of an incremental read for its recovery hint.
     void checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor = {}) const;
+
+    /// Throws if a data file written with schema `file_schema_id` cannot be read by column name with `read_schema`.
+    void checkDataFileSchema(const String & file_path, Int64 file_schema_id, const PaimonTableSchema & read_schema) const;
 
     /// Load state for a specific snapshot ID
     PaimonTableStatePtr loadStateForSnapshot(Int64 snapshot_id) const;
@@ -156,6 +161,7 @@ private:
     /// `committed` is the watermark observed under the processing lock.
     Strings collectIncrementalDataFiles(
         const PaimonTableStatePtr & state,
+        const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner,
         UInt64 max_consume_snapshots,
         const PaimonCommittedSnapshot & committed,
@@ -168,11 +174,13 @@ private:
     /// Collect data files for a specific snapshot delta (session-level targeted read)
     Strings collectDeltaFilesForSnapshot(
         const PaimonTableStatePtr & state,
+        const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Collect data files for full scan
     Strings collectFullScanDataFiles(
         const PaimonTableStatePtr & state,
+        const PaimonTableSchema & read_schema,
         const std::optional<Paimon::PartitionPruner> & partition_pruner) const;
 
     /// Background refresh task entry
@@ -184,6 +192,10 @@ private:
 
     /// Update mutex: only held briefly during state replacement
     mutable std::mutex update_mutex;
+
+    /// (file schema id, read schema id) pairs `checkDataFileSchema` found compatible. A schema never changes once written.
+    mutable std::mutex checked_file_schemas_mutex;
+    mutable std::set<std::pair<Int64, Int64>> checked_file_schemas TSA_GUARDED_BY(checked_file_schemas_mutex);
 
     /// Persistent components: thread-safe or immutable
     PaimonPersistentComponents persistent_components;
