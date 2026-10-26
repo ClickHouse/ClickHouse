@@ -278,9 +278,13 @@ private:
 
     /// Files outside the table directory that `iceberg_delete_data_on_drop` deletes.
     /// A catalog purge also deletes the files of `DELETED` manifest entries, see `include_deleted_entries`.
-    std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(ContextPtr context, bool include_deleted_entries) const;
+    /// `check_before_read`, if set, is called with each manifest list and manifest before it is opened.
+    std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(
+        ContextPtr context, bool include_deleted_entries, const Iceberg::VisitPathFn & check_before_read) const;
     /// Same, but returns nothing when the files cannot be enumerated for a reason that retrying does not fix.
-    std::vector<Iceberg::ExternalFile> tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const;
+    /// An exception thrown by `check_before_read` is always rethrown.
+    std::vector<Iceberg::ExternalFile>
+    tryCollectExternalFilesToDeleteOnDrop(ContextPtr context, const Iceberg::VisitPathFn & check_before_read) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

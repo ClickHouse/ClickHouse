@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <functional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -34,7 +35,10 @@ struct SnapshotReferencedFiles
     std::unordered_set<IcebergPathFromMetadata> data_file_paths;
 };
 
+using VisitPathFn = std::function<void(const IcebergPathFromMetadata &)>;
+
 /// `include_deleted_entries` also collects the files of `DELETED` manifest entries, which a catalog purge deletes too.
+/// `check_before_read`, if set, is called with each manifest list and manifest before it is opened, and throws to deny reading it.
 SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const Poco::JSON::Array::Ptr & snapshots,
     ObjectStoragePtr object_storage,
@@ -43,7 +47,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     LoggerPtr log,
     Int32 current_schema_id,
     ExternalStorageCache & external_storages,
-    bool include_deleted_entries);
+    bool include_deleted_entries,
+    const VisitPathFn & check_before_read = {});
 
 struct ExternalFile
 {
@@ -65,6 +70,7 @@ struct ReachableFilesResult
 /// Use the latest head for `remove_orphan_files`, but the configured head for `drop`.
 /// `scan_metadata_log_history` adds surviving external references without making expired in-table files reachable.
 /// The returned root identifies the traversed state for TOCTOU checks.
+/// `check_before_read` is passed to `collectSnapshotReferencedFiles` for the snapshots of the head.
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
@@ -76,7 +82,8 @@ ReachableFilesResult collectReachableFiles(
     const String & table_identifier,
     bool scan_metadata_log_history,
     bool ignore_explicit_metadata_file_path,
-    bool include_deleted_entries);
+    bool include_deleted_entries,
+    const VisitPathFn & check_before_read = {});
 
 }
 

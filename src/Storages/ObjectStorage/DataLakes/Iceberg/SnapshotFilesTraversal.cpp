@@ -36,7 +36,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     LoggerPtr log,
     Int32 current_schema_id,
     ExternalStorageCache & external_storages,
-    bool include_deleted_entries)
+    bool include_deleted_entries,
+    const VisitPathFn & check_before_read)
 {
     SnapshotReferencedFiles files;
 
@@ -49,6 +50,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
         auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
         files.manifest_list_paths.insert(manifest_list_path);
 
+        if (check_before_read)
+            check_before_read(manifest_list_path);
         auto manifest_keys = getManifestList(
             object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
 
@@ -58,6 +61,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
             if (!files.manifest_paths.insert(manifest_entry.manifest_file_path).second)
                 continue;
 
+            if (check_before_read)
+                check_before_read(manifest_entry.manifest_file_path);
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, external_storages);
 
@@ -88,8 +93,6 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
 
 namespace
 {
-
-using VisitPathFn = std::function<void(const IcebergPathFromMetadata &)>;
 
 void collectStatisticsPaths(
     const Poco::JSON::Object::Ptr & metadata,
@@ -303,7 +306,8 @@ ReachableFilesResult collectReachableFiles(
     const String & table_identifier,
     bool scan_metadata_log_history,
     bool ignore_explicit_metadata_file_path,
-    bool include_deleted_entries)
+    bool include_deleted_entries,
+    const VisitPathFn & check_before_read)
 {
     /// A higher metadata version may be uncommitted; follow the catalog head.
     auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
@@ -360,7 +364,7 @@ ReachableFilesResult collectReachableFiles(
     if (snapshots && snapshots->size() > 0)
         snapshot_files = collectSnapshotReferencedFiles(
             snapshots, object_storage, persistent_table_components, context, log,
-            metadata->getValue<Int32>(f_current_schema_id), external_storages, include_deleted_entries);
+            metadata->getValue<Int32>(f_current_schema_id), external_storages, include_deleted_entries, check_before_read);
 
     if (scan_metadata_log_history)
     {

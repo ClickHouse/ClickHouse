@@ -2128,29 +2128,42 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDeleteOnDrop(ContextPtr context, bool include_deleted_entries) const
+std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDeleteOnDrop(
+    ContextPtr context, bool include_deleted_entries, const Iceberg::VisitPathFn & check_before_read) const
 {
     /// `drop` runs after the catalog entry is removed, so use the configured metadata head, not an uncommitted higher version.
     return Iceberg::collectReachableFiles(
         object_storage, persistent_components, getMetadataLookupSettings(), context, log, *external_storages,
         /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false,
-        /* ignore_explicit_metadata_file_path */ false, include_deleted_entries).external_files;
+        /* ignore_explicit_metadata_file_path */ false, include_deleted_entries, check_before_read).external_files;
 }
 
-std::vector<Iceberg::ExternalFile> IcebergMetadata::tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const
+std::vector<Iceberg::ExternalFile>
+IcebergMetadata::tryCollectExternalFilesToDeleteOnDrop(ContextPtr context, const Iceberg::VisitPathFn & check_before_read) const
 {
+    bool check_failed = false;
+    Iceberg::VisitPathFn tracked_check_before_read;
+    if (check_before_read)
+        tracked_check_before_read = [&](const Iceberg::IcebergPathFromMetadata & path)
+        {
+            check_failed = true;
+            check_before_read(path);
+            check_failed = false;
+        };
+
     try
     {
-        return collectExternalFilesToDeleteOnDrop(context, /* include_deleted_entries */ false);
+        return collectExternalFilesToDeleteOnDrop(context, /* include_deleted_entries */ false, tracked_check_before_read);
     }
     catch (const Exception & e)
     {
         /// Permanent path rejections, credential restrictions and missing metadata cannot succeed on retry;
-        /// rethrow only transient failures.
-        if (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::NOT_IMPLEMENTED
-            && e.code() != ErrorCodes::SUPPORT_IS_DISABLED && e.code() != ErrorCodes::PATH_ACCESS_DENIED
-            && e.code() != ErrorCodes::FILE_DOESNT_EXIST && e.code() != ErrorCodes::UNACCEPTABLE_URL
-            && e.code() != ErrorCodes::ACCESS_DENIED)
+        /// rethrow only transient failures and failures of `check_before_read`.
+        if (check_failed
+            || (e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::NOT_IMPLEMENTED
+                && e.code() != ErrorCodes::SUPPORT_IS_DISABLED && e.code() != ErrorCodes::PATH_ACCESS_DENIED
+                && e.code() != ErrorCodes::FILE_DOESNT_EXIST && e.code() != ErrorCodes::UNACCEPTABLE_URL
+                && e.code() != ErrorCodes::ACCESS_DENIED))
             throw;
 
         LOG_ERROR(
@@ -2194,23 +2207,29 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_p
     const auto resolve_context
         = withCredentialsPolicy(Context::getGlobalContextInstance(), allow_server_credentials, propagate_credentials);
 
-    /// The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
-    const auto external_files = catalog_purges_files
-        ? collectExternalFilesToDeleteOnDrop(resolve_context, /* include_deleted_entries */ true)
-        : tryCollectExternalFilesToDeleteOnDrop(resolve_context);
-
-    std::unordered_set<String> authorized;
-    for (const auto & file : external_files)
+    auto check_write_granted = [&](const Iceberg::IcebergPathFromMetadata & path)
     {
-        auto path = file.path.serialize();
         if (!isPathWriteGranted(
-                persistent_components.table_location, path, object_storage, query_context, persistent_components.path_resolver))
+                persistent_components.table_location, path.serialize(), object_storage, query_context,
+                persistent_components.path_resolver))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Not enough privileges to drop the Iceberg table: `iceberg_delete_data_on_drop` deletes the file '{}' "
                 "outside the table directory, which requires the `WRITE` grant on it",
-                file.path);
-        authorized.insert(std::move(path));
+                path);
+    };
+
+    /// `resolve_context` has the grants of the global context, so the manifests are authorized for the dropping user before
+    /// they are read. The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
+    const auto external_files = catalog_purges_files
+        ? collectExternalFilesToDeleteOnDrop(resolve_context, /* include_deleted_entries */ true, check_write_granted)
+        : tryCollectExternalFilesToDeleteOnDrop(resolve_context, check_write_granted);
+
+    std::unordered_set<String> authorized;
+    for (const auto & file : external_files)
+    {
+        check_write_granted(file.path);
+        authorized.insert(file.path.serialize());
     }
 
     std::lock_guard lock(external_files_drop_authorized_mutex);
@@ -2249,7 +2268,7 @@ void IcebergMetadata::drop(ContextPtr context)
     /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
     /// Only the files checked by `checkCanBeDropped` are deleted: the metadata may have changed since then.
     auto external_files = tryCollectExternalFilesToDeleteOnDrop(
-        withCredentialsPolicy(context, allow_server_credentials, propagate_credentials));
+        withCredentialsPolicy(context, allow_server_credentials, propagate_credentials), /* check_before_read */ {});
     size_t unauthorized_files
         = std::erase_if(external_files, [&](const auto & file) { return !authorized.contains(file.path.serialize()); });
     if (unauthorized_files)

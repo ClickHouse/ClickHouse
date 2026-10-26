@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import shutil
@@ -17,6 +18,7 @@ from .external_paths_utils import (
     _download_table_for_relocation,
     _external_data_files_in_another_bucket,
     _external_data_files_in_the_same_bucket,
+    _external_manifest_lists_in_another_bucket,
     _move_files_to_bucket,
     _rewrite_manifests_and_reupload,
     _rewrite_paths_to_local_uri,
@@ -158,6 +160,41 @@ def test_delete_data_on_drop_requires_write_grant_on_external_files(started_clus
     assert count_objects(f"{base_path}/") == 0
     assert count_objects(external_prefix) == 0
 
+    instance.query(f"DROP USER {user}")
+
+
+def test_delete_data_on_drop_checks_write_grant_before_reading_external_manifest_list(started_cluster):
+    # `DROP` reads the manifests with the server's grants, so a user without grants on an external manifest list
+    # must be denied before it is read. The manifest list is corrupted to detect whether it was parsed.
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_drop_external_manifest_list_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+    base_path, bucket, external_prefix = _external_manifest_lists_in_another_bucket(started_cluster, TABLE_NAME)
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n"
+
+    minio_client = started_cluster.minio_client
+    manifest_lists = {
+        obj.object_name: minio_client.get_object(bucket, obj.object_name).read()
+        for obj in minio_client.list_objects(bucket, prefix=external_prefix, recursive=True)
+    }
+    assert manifest_lists
+    for key in manifest_lists:
+        minio_client.put_object(bucket, key, io.BytesIO(b"not an avro file"), len(b"not an avro file"))
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT DROP TABLE ON {TABLE_NAME} TO {user}")
+
+    error = instance.query_and_get_error(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+    assert "Not enough privileges to drop the Iceberg table" in error, error
+
+    for key, content in manifest_lists.items():
+        minio_client.put_object(bucket, key, io.BytesIO(content), len(content))
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
     instance.query(f"DROP USER {user}")
 
 
