@@ -56,6 +56,10 @@ FROM remote('127.0.0.2', system.one);
 SELECT toString(materialize(CAST(toDecimal64(1, 18), 'Variant(Decimal(18, 18), String)'))), toString(materialize(toDecimal64(1, 18)::Dynamic))
 FROM remote('127.0.0.2', system.one);
 
+SELECT '-- partial aggregation results from two shards';
+SELECT toDecimal64(1, 18) AS c, count() FROM remote('127.0.0.{1,2}', system.one) GROUP BY c;
+SELECT count() FROM remote('127.0.0.{1,2}', currentDatabase(), t_05410) WHERE d64 = toDecimal64(1, 18) GROUP BY d64;
+
 SELECT '-- the bounds of the precision and of the native integer';
 SELECT toString(materialize(reinterpret(toInt64(999999999999999999), 'Decimal(18, 18)'))), toString(materialize(reinterpret(toInt64(1000000000000000000), 'Decimal(18, 18)'))),
     toString(materialize(reinterpret(toInt32(-2147483648), 'Decimal(9, 9)')))

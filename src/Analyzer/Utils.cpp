@@ -1798,8 +1798,7 @@ ASTPtr makeDecimalLiteralASTImpl(const Field & field, const IDataType & type)
         return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(decimalFieldToText(field)), make_intrusive<ASTLiteral>(type.getName()));
 
     auto native = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(toString(raw)), make_intrusive<ASTLiteral>(String(TypeName<NativeType>)));
-    auto value = makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
-    return makeASTFunction("_CAST", std::move(value), make_intrusive<ASTLiteral>(type.getName()));
+    return makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
 }
 
 ASTPtr makeDecimalLiteralAST(const Field & field, const IDataType & type)

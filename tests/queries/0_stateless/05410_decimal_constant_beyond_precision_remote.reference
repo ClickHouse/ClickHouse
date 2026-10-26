@@ -22,6 +22,9 @@ Decimal(18, 18)	Decimal(9, 9)	1.2
 5789604
 [1,0.5]	(1,1)	{'a':1}	1
 1	1
+-- partial aggregation results from two shards
+1	2
+2
 -- the bounds of the precision and of the native integer
 0.999999999999999999	1	-2.147483648
 5789604.4618658097711785492504343953926634992332820282019728792003956564819967
