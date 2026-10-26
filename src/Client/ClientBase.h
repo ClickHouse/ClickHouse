@@ -615,6 +615,9 @@ protected:
 
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
+    /// Makes the control characters in the output of a query the AI agent runs without asking the
+    /// user visible, see `initOutputFormat`. It wraps `std_out_wrapper`, and `out_file_buf` wraps it.
+    std::unique_ptr<WriteBuffer> sanitizing_out_buf;
     std::shared_ptr<IOutputFormat> output_format;
 
     /// The user could specify special file for server logs (stderr by default)
@@ -760,6 +763,8 @@ protected:
     /// Set while the AI agent runs a query through the normal query path, so the
     /// query context buffer can attribute the entry to the agent
     bool ai_running_query = false;
+    /// Set while that query is one of the read-only tool, which the user did not confirm.
+    bool ai_running_unconfirmed_query = false;
     /// Set when a confirmed agent query successfully changes `dialect`, so cleanup does not undo
     /// a real session setting change while removing the temporary ClickHouse-dialect pin.
     bool ai_running_query_changed_dialect = false;

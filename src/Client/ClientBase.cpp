@@ -21,6 +21,7 @@
 #include <Client/AI/AIConfiguration.h>
 #include <Client/AI/AIPrompts.h>
 #include <Client/AI/AIQueryValidation.h>
+#include <Client/AI/WriteBufferSanitizingTerminalOutput.h>
 #endif
 
 #include <Core/Block.h>
@@ -1276,6 +1277,25 @@ try
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
+#if USE_CLIENT_AI
+        /// The result of a query that the AI agent runs without asking the user is chosen by the
+        /// model, which the data it reads can prompt-inject, and every format writes the bytes of
+        /// a value to the terminal as they are - `RawBLOB` and `TSVRaw` without any escaping, and
+        /// even the `Pretty` formats keep `ESC`, so that the data can carry a visualization. So
+        /// the output of such a query goes through a buffer that makes every control character
+        /// visible (`INTO OUTFILE` is not allowed for it, so the output is the terminal or the
+        /// pager). The escape sequences of the formats themselves - colors and the redrawing of
+        /// the glued chunks of `Pretty` - would be made visible as well, so they are turned off
+        /// for the query; only on the client, where the output is formatted, so the server does
+        /// not see a changed setting, which a `readonly = 1` session would reject.
+        const bool sanitize_output = ai_running_unconfirmed_query && !select_into_file;
+        if (sanitize_output)
+        {
+            sanitizing_out_buf = std::make_unique<WriteBufferSanitizingTerminalOutput>(*out_buf);
+            out_buf = sanitizing_out_buf.get();
+        }
+#endif
+
         bool logs_into_stdout = server_logs_file == "-";
         bool extras_into_stdout = need_render_progress || logs_into_stdout;
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
@@ -1286,6 +1306,13 @@ try
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty && !select_into_file;
+#if USE_CLIENT_AI
+        if (sanitize_output)
+        {
+            format_settings.pretty.color = 0;
+            format_settings.pretty.glue_chunks = 0;
+        }
+#endif
 
         /// If the result is written to a terminal that does not support UTF-8 (e.g. with LANG=C),
         /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
@@ -1361,6 +1388,10 @@ catch (...)
     if (out_file_buf)
         out_file_buf->cancel();
     out_file_buf.reset();
+
+    if (sanitizing_out_buf)
+        sanitizing_out_buf->cancel();
+    sanitizing_out_buf.reset();
 
     if (std_out_wrapper)
         std_out_wrapper->cancel();
@@ -2511,6 +2542,16 @@ void ClientBase::resetOutput()
             out_file_buf->finalize();
     }
     out_file_buf.reset();
+
+    /// It wraps `std_out_wrapper` too, and `out_file_buf` wraps it.
+    if (sanitizing_out_buf)
+    {
+        if (sanitizing_out_buf->isCanceled())
+            sanitizing_out_buf.reset();
+        else
+            sanitizing_out_buf->finalize();
+    }
+    sanitizing_out_buf.reset();
 
     if (std_out_wrapper)
     {
@@ -5111,6 +5152,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
 
     ai_running_query_changed_dialect = false;
     ai_running_query = true;
+    ai_running_unconfirmed_query = readonly;
     /// The query is displayed exactly once, by `echoQueryForAI` (in the read-only branch above,
     /// or in the confirmation prompt for `run_query`). Suppress the echo of `executeMultiQuery`
     /// (on by default in interactive mode) so it is not shown twice.
@@ -5118,6 +5160,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     echo_queries = false;
     SCOPE_EXIT({
         ai_running_query = false;
+        ai_running_unconfirmed_query = false;
         echo_queries = saved_echo_queries;
     });
 
