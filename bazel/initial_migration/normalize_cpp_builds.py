@@ -74,7 +74,7 @@ def compile_defaults(call):
 def removable_default(name, value, call):
     if name in ("copts", "local_defines") and name in compile_defaults(call):
         return False  # An empty override must not inherit the macro's options.
-    if name == "alwayslink":
+    if name == "alwayslink" or (name == "llvm_headers" and call_name(call) == "ch_cc_library"):
         return isinstance(value, ast.Constant) and value.value is False
     return (name in EMPTY_CPP_DEFAULTS and isinstance(value, ast.List)
             and not value.elts)

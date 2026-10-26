@@ -24,7 +24,6 @@ ch_cc_library(
     ],
     includes = ["include"],
     language = "C",
-    llvm_headers = False,
     local_defines = AWS_CRT_DEFINES,
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )

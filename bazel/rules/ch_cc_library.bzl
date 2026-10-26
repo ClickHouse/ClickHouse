@@ -28,6 +28,15 @@ CLICKHOUSE_XRAY_FLAGS = [
 _CLICKHOUSE_CXX_WARNINGS = ["-Wall", "-Wextra"]
 CLICKHOUSE_CODE_FLAGS = CLICKHOUSE_XRAY_FLAGS + _CLICKHOUSE_CXX_WARNINGS
 
+def _for_arches(arches, values):
+    """Return values on enabled CPUs and the default platform."""
+    if all([arch in arches for arch in CLICKHOUSE_TARGET_FLAGS]):
+        return values
+    return select({
+        str(Label("@platforms//cpu:" + arch)): values if arch in arches else []
+        for arch in CLICKHOUSE_TARGET_FLAGS
+    } | {"//conditions:default": values})
+
 def ch_cc_library(
         name,
         hdrs = [],
@@ -75,26 +84,17 @@ def ch_cc_library(
     if clickhouse_code and language in ["C", "CXX"]:
         standard = "-std=gnu11" if language == "C" else "-std=c++23"
         defaults = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [standard]
-        code_flags = code_flags + select({
-            str(Label("@platforms//cpu:" + arch)): defaults if arch in arches else []
-            for arch in CLICKHOUSE_TARGET_FLAGS
-        } | {"//conditions:default": defaults})
+        code_flags = code_flags + _for_arches(arches, defaults)
     if llvm_headers:
         headers = [
             Label("@llvm-project//compiler-rt:headers"),
             Label("@llvm-project//libc:libc_headers"),
             Label("@llvm-project//libunwind:headers"),
         ]
-        kwargs["deps"] = select({
-            str(Label("@platforms//cpu:" + arch)): headers if arch in arches else []
-            for arch in CLICKHOUSE_TARGET_FLAGS
-        } | {"//conditions:default": headers}) + kwargs.get("deps", [])
+        kwargs["deps"] = _for_arches(arches, headers) + kwargs.get("deps", [])
     if link_runtime:
         runtime = [Label("@clickhouse_llvm_project//:cxx")]
-        kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + select({
-            str(Label("@platforms//cpu:" + arch)): runtime if arch in arches else []
-            for arch in CLICKHOUSE_TARGET_FLAGS
-        } | {"//conditions:default": runtime})
+        kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + _for_arches(arches, runtime)
     if language in ["C", "ASM"] and libcxx_headers:
         kwargs["implementation_deps"] = select({
             str(Label("@platforms//cpu:" + arch)): [Label("@clickhouse_llvm_project//:libcxx_config_headers")]

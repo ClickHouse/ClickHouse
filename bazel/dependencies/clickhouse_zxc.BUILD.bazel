@@ -1,3 +1,4 @@
+load("@clickhouse//bazel/dependencies:zxc.bzl", "zxc_cc_library")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -49,16 +50,7 @@ ch_cc_library(
     ],
 )
 
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "ZXC_FUNCTION_SUFFIX=_avx2",
-    "ZXC_STATIC_DEFINE",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-_GENERATED_TARGET_COMPATIBLE_WITH_0 = select({
+_ZXC_X86_ONLY = select({
     "@platforms//cpu:x86_64": [],
     "@platforms//cpu:aarch64": [
         "@platforms//:incompatible",
@@ -77,176 +69,71 @@ _ZXC_PRIVATE_HEADERS = [
     "src/lib/zxc_internal.h",
 ]
 
-_ZXC_COMPRESS_SRCS = [
-    "src/lib/zxc_compress.c",
-]
+_ZXC_COMPRESS_SRCS = ["src/lib/zxc_compress.c"] + _ZXC_PRIVATE_HEADERS
 
-_GENERATED_COPTS_1 = [
-    "-w",
-    "-std=gnu11",
-    "-mavx2",
-    "-mbmi",
-    "-mbmi2",
-    "-mlzcnt",
-]
-
-_ZXC_LOCAL_INCLUDES = [
-    "include",
-    "src/lib",
-    "src/lib/vendors",
-]
-
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_compress_avx2",
-    srcs = _ZXC_COMPRESS_SRCS + _ZXC_PRIVATE_HEADERS,
-    arches = [
-        "x86_64",
-    ],
-    copts = _GENERATED_COPTS_1,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = True,
+    srcs = _ZXC_COMPRESS_SRCS,
+    arches = ["x86_64"],
+    target_compatible_with = _ZXC_X86_ONLY,
+    variant = "avx2",
 )
 
-_GENERATED_LOCAL_DEFINES_1 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "ZXC_FUNCTION_SUFFIX=_avx512",
-    "ZXC_STATIC_DEFINE",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-_GENERATED_COPTS_2 = [
-    "-w",
-    "-std=gnu11",
-    "-mavx512f",
-    "-mavx512bw",
-    "-mavx512vbmi",
-    "-mavx512vbmi2",
-    "-mbmi",
-    "-mbmi2",
-    "-mlzcnt",
-]
-
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_compress_avx512",
-    srcs = _ZXC_COMPRESS_SRCS + _ZXC_PRIVATE_HEADERS,
-    arches = [
-        "x86_64",
-    ],
-    copts = _GENERATED_COPTS_2,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = True,
+    srcs = _ZXC_COMPRESS_SRCS,
+    arches = ["x86_64"],
+    target_compatible_with = _ZXC_X86_ONLY,
+    variant = "avx512",
 )
 
-_GENERATED_LOCAL_DEFINES_2 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "ZXC_FUNCTION_SUFFIX=_default",
-    "ZXC_STATIC_DEFINE",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_compress_default",
-    srcs = [
-        "src/lib/zxc_compress.c",
-    ] + _ZXC_PRIVATE_HEADERS,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    alwayslink = True,
+    srcs = _ZXC_COMPRESS_SRCS,
 )
 
-_ZXC_DECOMPRESS_SRCS = [
-    "src/lib/zxc_decompress.c",
-]
+_ZXC_DECOMPRESS_SRCS = ["src/lib/zxc_decompress.c"] + _ZXC_PRIVATE_HEADERS
 
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_decompress_avx2",
-    srcs = _ZXC_DECOMPRESS_SRCS + _ZXC_PRIVATE_HEADERS,
-    arches = [
-        "x86_64",
-    ],
-    copts = _GENERATED_COPTS_1,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = True,
+    srcs = _ZXC_DECOMPRESS_SRCS,
+    arches = ["x86_64"],
+    target_compatible_with = _ZXC_X86_ONLY,
+    variant = "avx2",
 )
 
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_decompress_avx512",
-    srcs = _ZXC_DECOMPRESS_SRCS + _ZXC_PRIVATE_HEADERS,
-    arches = [
-        "x86_64",
-    ],
-    copts = _GENERATED_COPTS_2,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = True,
+    srcs = _ZXC_DECOMPRESS_SRCS,
+    arches = ["x86_64"],
+    target_compatible_with = _ZXC_X86_ONLY,
+    variant = "avx512",
 )
 
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_decompress_default",
-    srcs = [
-        "src/lib/zxc_decompress.c",
-    ] + _ZXC_PRIVATE_HEADERS,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    alwayslink = True,
+    srcs = _ZXC_DECOMPRESS_SRCS,
 )
 
-_ZXC_HUFFMAN_SRCS = [
-    "src/lib/zxc_huffman.c",
-]
+_ZXC_HUFFMAN_SRCS = ["src/lib/zxc_huffman.c"] + _ZXC_PRIVATE_HEADERS + ["src/lib/zxc_pivco_tables.h"]
 
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_huffman_avx2",
-    srcs = _ZXC_HUFFMAN_SRCS + _ZXC_PRIVATE_HEADERS + ["src/lib/zxc_pivco_tables.h"],
-    arches = [
-        "x86_64",
-    ],
-    copts = _GENERATED_COPTS_1,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = True,
+    srcs = _ZXC_HUFFMAN_SRCS,
+    arches = ["x86_64"],
+    target_compatible_with = _ZXC_X86_ONLY,
+    variant = "avx2",
 )
 
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_huffman_avx512",
-    srcs = _ZXC_HUFFMAN_SRCS + _ZXC_PRIVATE_HEADERS + ["src/lib/zxc_pivco_tables.h"],
-    arches = [
-        "x86_64",
-    ],
-    copts = _GENERATED_COPTS_2,
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    target_compatible_with = _GENERATED_TARGET_COMPATIBLE_WITH_0,
-    alwayslink = True,
+    srcs = _ZXC_HUFFMAN_SRCS,
+    arches = ["x86_64"],
+    target_compatible_with = _ZXC_X86_ONLY,
+    variant = "avx512",
 )
 
-ch_cc_library(
+zxc_cc_library(
     name = "_zxc_huffman_default",
-    srcs = [
-        "src/lib/zxc_huffman.c",
-    ] + _ZXC_PRIVATE_HEADERS + ["src/lib/zxc_pivco_tables.h"],
-    language = "C",
-    local_defines = _GENERATED_LOCAL_DEFINES_2,
-    local_includes = _ZXC_LOCAL_INCLUDES,
-    alwayslink = True,
+    srcs = _ZXC_HUFFMAN_SRCS,
 )

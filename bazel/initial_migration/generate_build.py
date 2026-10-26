@@ -1458,14 +1458,17 @@ class Graph:
 
 
 def main():
-    # These overlays own Bazel declarations that CMake does not describe:
-    # Preserve the Abseil, Arrow/Parquet, and Google Cloud C++ public/private
-    # headers, msgpack_c_api, and Google Cloud C++'s protobuf and private dependencies.
+    # Keep the reviewed public/private headers, msgpack_c_api, the Google Cloud
+    # protobuf and private dependencies, and the ZXC per-instruction-set libraries.
     abseil = ROOT / 'bazel/dependencies/clickhouse_abseil_cpp.BUILD.bazel'
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
     google_cloud = ROOT / 'bazel/dependencies/clickhouse_google_cloud_cpp.BUILD.bazel'
-    read_only = {abseil, arrow, msgpack, google_cloud}
+    zxc = ROOT / 'bazel/dependencies/clickhouse_zxc.BUILD.bazel'
+    # PostgreSQL and Vectorscan own the headers installed by _CONFIGURED_FILES.
+    read_only = {abseil, arrow, msgpack, google_cloud, zxc,
+                 ROOT / 'bazel/dependencies/clickhouse_postgres.BUILD.bazel',
+                 ROOT / 'bazel/dependencies/clickhouse_vectorscan.BUILD.bazel'}
     maintained = {path: path.read_bytes() for path in read_only}
     from initial_migration.compact_build import Source
     arrow_targets = {kw.value.value for _, rule in Source(maintained[arrow].decode()).rules()
@@ -1798,10 +1801,6 @@ def main():
     # Fold remaining CPU choices only when target_compatible_with fixes the CPU.
     # Rule transfers can also leave adjacent literal lists or empty attributes.
     from initial_migration.compact_build import Source, intern_attributes, remove_unused_constants, simplify_list_expressions
-    include_dirs = {
-        "clickhouse_grpc.BUILD.bazel": "_GRPC_LOCAL_INCLUDES",
-        "clickhouse_zxc.BUILD.bazel": "_ZXC_LOCAL_INCLUDES",
-    }
     for path in sorted(selection_builds):
         before = path.read_text()
         after = before
@@ -1813,8 +1812,8 @@ def main():
             after = updated
         after = omit_compile_defaults(Source(drop_defaults(Source(after))))
         after = remove_parens(remove_unused_constants(Source(after)), key=source_list_key)
-        if include_name := include_dirs.get(path.name):
-            after = intern_attributes(Source(after), names={"local_includes": include_name})
+        if path.name == "clickhouse_grpc.BUILD.bazel":
+            after = intern_attributes(Source(after), names={"local_includes": "_GRPC_LOCAL_INCLUDES"})
         if after != before:
             path.write_text(after)
     publish_redis_sdk(ROOT)

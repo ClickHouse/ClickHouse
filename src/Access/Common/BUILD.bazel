@@ -31,7 +31,6 @@ ch_cc_library(
         "//src:io_string_buffers",
     ],
     link_runtime = True,
-    llvm_headers = False,
     local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
     deps = [
         "//src:core_types",

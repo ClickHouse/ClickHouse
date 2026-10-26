@@ -138,6 +138,103 @@ class PublicDeps:
         return witnesses if all(witnesses.values()) else None
 
 
+_LLVM_SOURCE_ONLY_COMPONENTS = {
+    '@clickhouse_llvm_project//:' + name for name in (
+        'LLVMBitstreamReader', 'LLVMCFGuard', 'LLVMCodeGenTypes', 'LLVMHipStdPar',
+        'LLVMIRPrinter', 'LLVMIRReader', 'LLVMSandboxIR',
+    )
+}
+
+
+def prune_llvm_link_deps(graph):
+    """Leave the LLVM archives on the later dependency that already supplies them."""
+    from initial_migration.measured_deps import editable_dependency_lists
+    from initial_migration.native_include_deps import explicit_list, rejects_cpu
+
+    components = set()
+    for label in _LLVM_SOURCE_ONLY_COMPONENTS:
+        _, kind, attrs = graph.rules.get(label, (None, None, {}))
+        if kind not in {'llvm_cc_library', 'ch_cc_library'} or not {'name', 'srcs'} <= attrs.keys():
+            continue
+        if attrs.keys() - {'name', 'srcs', 'copts', 'local_defines', 'implementation_deps'}:
+            continue
+        # No public headers, defines, includes, or dependencies; no private
+        # headers in srcs. Only accept literal .cpp files and .cpp globs.
+        srcs = attrs['srcs']
+        if isinstance(srcs, ast.Call) and getattr(srcs.func, 'id', '') == 'glob' and len(srcs.args) == 1 and not srcs.keywords:
+            srcs = srcs.args[0]
+        if isinstance(srcs, ast.List) and srcs.elts and all(
+                isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.endswith('.cpp')
+                and not n.value.startswith((':', '/', '@')) for n in srcs.elts):
+            components.add(label)
+
+    if components != _LLVM_SOURCE_ONLY_COMPONENTS:
+        return {}
+
+    def dominated(removed):
+        @cache
+        def linked(target, cpu):
+            pending, seen = [target], set()
+            while pending:
+                dep = pending.pop()
+                if dep in seen:
+                    continue
+                seen.add(dep)
+                doc, kind, attrs = graph.rules.get(dep, (None, None, {}))
+                if kind == 'alias':
+                    pending.extend(doc.labels(attrs.get('actual'), cpu))
+                elif kind in FORWARD | {'llvm_cc_library'}:
+                    pending.extend(doc.labels(attrs.get('deps'), cpu) - removed.get(dep, set()))
+                    pending.extend(doc.labels(attrs.get('implementation_deps'), cpu))
+            return seen & components
+
+        result = {}
+        for target, (doc, kind, attrs) in graph.rules.items():
+            deps = attrs.get('deps')
+            if doc.repo != '@clickhouse' or kind not in NATIVE | {'ch_cc_test'} or not explicit_list(deps, doc):
+                continue
+            candidates = set(components)
+            has_group = False
+            for cpu in (*ARCHES, 'default'):
+                if rejects_cpu(deps, doc, cpu):
+                    continue
+                direct = [doc.reference(v) for v in doc.values(deps, cpu)]
+                if components <= set(direct):
+                    has_group = True
+                # rules_cc also supplies quote includes for the external repo.
+                # Keep the first LLVM library that contributes those include roots.
+                earlier_llvm = False
+                for dep in direct:
+                    if dep in components:
+                        if not earlier_llvm:
+                            candidates.discard(dep)
+                    elif (dep.startswith('@clickhouse_llvm_project//:') and
+                          graph.rules.get(dep, (None, None))[1] in NATIVE | {'llvm_cc_library'}):
+                        earlier_llvm = True
+                # rules_cc visits deps + implementation_deps in reverse for the
+                # link. Removing an already-visited archive preserves its position.
+                later = set().union(*(linked(v, cpu) for v in doc.labels(attrs.get('implementation_deps'), cpu)))
+                for dep in reversed(direct):
+                    if dep in components:
+                        if dep not in later:
+                            candidates.discard(dep)
+                    else:
+                        later.update(linked(dep, cpu))
+            if has_group and candidates:
+                result[target] = candidates
+        return result
+
+    # Recheck the witnesses after all proposed direct edges are excluded.
+    # Edges skipped by editable_dependency_lists remain available to the linker.
+    proposed = dominated({})
+    edits = {}
+    for target, drop in dominated(proposed).items():
+        doc, _, attrs = graph.rules[target]
+        if changes := editable_dependency_lists(doc, attrs['deps'], drop, doc.reference):
+            edits.setdefault(doc, []).extend(changes)
+    return edits
+
+
 def prune_aggregate_deps(root, paths):
     """Preserve header and linker input order when pruning source-free ClickHouse compile groups."""
     from initial_migration.measured_deps import editable_dependency_lists
@@ -175,6 +272,12 @@ def prune_aggregate_deps(root, paths):
             if drop and (changes := editable_dependency_lists(doc, deps, drop, doc.reference)):
                 edits.setdefault(doc, []).extend(changes)
     for doc, changes in edits.items():
+        doc.path.write_text(doc.source.rewrite(changes))
+
+    # Use the remaining aggregate deps as witnesses, never the removed deps.
+    if edits:
+        docs = [Document(d.path, package=d.package) if d in edits else d for d in docs]
+    for doc, changes in prune_llvm_link_deps(Graph(docs)).items():
         doc.path.write_text(doc.source.rewrite(changes))
 
 

@@ -22,12 +22,16 @@ _VECTORSCAN_API_HEADERS = [
     "src/hs_common.h",
     "src/hs_compile.h",
     "src/hs_runtime.h",
+    "src/hs_version.h",
 ]
 
 _VECTORSCAN_LOCAL_INCLUDES = [
     "src",
     "include",
-]
+] + select({
+    "@platforms//cpu:x86_64": ["configured/amd64"],
+    "@platforms//cpu:aarch64": ["configured/aarch64"],
+})
 
 ch_cc_library(
     name = "_vectorscan__compile_0",
@@ -51,11 +55,11 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "src/util/arch/x86/cpuid_flags.c",
             "src/util/arch/x86/masked_move.c",
-            "@clickhouse//contrib/vectorscan-cmake:amd64/config.h",
+            "configured/amd64/config.h",
         ],
         "@platforms//cpu:aarch64": [
             "src/util/arch/arm/cpuid_flags.c",
-            "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
+            "configured/aarch64/config.h",
         ],
     }) + [
         "src/allocator.h",
@@ -193,14 +197,12 @@ ch_cc_library(
         "-std=gnu11",
         "-g1",
     ],
-    implementation_deps = ["@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers"],
     includes = [
         "src",
     ],
     language = "C",
     local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
-    deps = ["@clickhouse//contrib/vectorscan-cmake:headers"],
 )
 
 ch_cc_library(
@@ -367,11 +369,11 @@ ch_cc_library(
     ] + select({
         "@platforms//cpu:x86_64": [
             "src/util/supervector/arch/x86/impl.cpp",
-            "@clickhouse//contrib/vectorscan-cmake:amd64/config.h",
+            "configured/amd64/config.h",
         ],
         "@platforms//cpu:aarch64": [
             "src/util/supervector/arch/arm/impl.cpp",
-            "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
+            "configured/aarch64/config.h",
         ],
     }) + [
         "include/boost-patched/graph/dominator_tree.hpp",
@@ -626,8 +628,6 @@ ch_cc_library(
         ":_vectorscan__compile_0",
         "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_boost//:boost_config",
-        "@clickhouse//contrib/vectorscan-cmake:headers",
-        "@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers",
     ],
     local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
@@ -639,12 +639,12 @@ ch_cc_library(
         "@platforms//cpu:x86_64": [
             "@clickhouse//contrib/vectorscan-cmake:rageled_files/amd64/Parser.cpp",
             "@clickhouse//contrib/vectorscan-cmake:rageled_files/amd64/control_verbs.cpp",
-            "@clickhouse//contrib/vectorscan-cmake:amd64/config.h",
+            "configured/amd64/config.h",
         ],
         "@platforms//cpu:aarch64": [
             "@clickhouse//contrib/vectorscan-cmake:rageled_files/aarch64/Parser.cpp",
             "@clickhouse//contrib/vectorscan-cmake:rageled_files/aarch64/control_verbs.cpp",
-            "@clickhouse//contrib/vectorscan-cmake:aarch64/config.h",
+            "configured/aarch64/config.h",
         ],
     }) + [
         "src/parser/Component.h",
@@ -714,10 +714,7 @@ ch_cc_library(
             "-Wno-c++11-narrowing",
         ],
     }),
-    implementation_deps = [
-        "@clickhouse_boost//:boost_headers_no_openssl",
-        "@clickhouse//contrib/vectorscan-cmake:vectorscan_config_headers",
-    ],
+    implementation_deps = ["@clickhouse_boost//:boost_headers_no_openssl"],
     local_defines = _VECTORSCAN_LOCAL_DEFINES,
     local_includes = _VECTORSCAN_LOCAL_INCLUDES,
 )

@@ -34,7 +34,7 @@ OTHER_CC = {"cc_import", "cc_proto_library", "cc_shared_library",
 
 DECLARED_CC = NATIVE_CC | {
     "ch_cc_library", "ch_cc_binary", "ch_cc_test",
-    "poco_cc_library", "ch_grpc_cc_library", "llvm_cc_library",
+    "poco_cc_library", "ch_grpc_cc_library", "llvm_cc_library", "zxc_cc_library", "parquet_cc_binary",
 }
 FIXTURE_PACKAGE = "bazel/initial_migration/dwyu_regressions/"
 DWYU_ASPECT = "//bazel/rules:dwyu.bzl%"

@@ -8,7 +8,6 @@ ch_cc_library(
     srcs = ["docker-init.cpp"],
     clickhouse_code = True,
     link_runtime = True,
-    llvm_headers = False,
     local_defines = common_io_defines(),
     local_includes = ["."],
 )

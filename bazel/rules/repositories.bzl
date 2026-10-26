@@ -93,6 +93,16 @@ _CONFIGURED_FILES = {
     "clickhouse_libdivide": {
         "libdivide-config.h": Label("//contrib/libdivide-cmake:libdivide-config.h"),
     },
+    "clickhouse_postgres": {
+        "configured/private/pg_config.h": Label("//contrib/postgres-cmake:pg_config.h"),
+        "configured/private/pg_config_os.h": Label("//contrib/postgres-cmake:pg_config_os.h"),
+        "configured/private/pg_config_paths.h": Label("//contrib/postgres-cmake:pg_config_paths.h"),
+    },
+    "clickhouse_vectorscan": {
+        "configured/amd64/config.h": Label("//contrib/vectorscan-cmake:amd64/config.h"),
+        "configured/aarch64/config.h": Label("//contrib/vectorscan-cmake:aarch64/config.h"),
+        "src/hs_version.h": Label("//contrib/vectorscan-cmake:common/hs_version.h"),
+    },
     "clickhouse_sz3": {
         "include/SZ3/version.hpp": Label("//contrib/sz3-cmake:SZ3/version.hpp"),
     },

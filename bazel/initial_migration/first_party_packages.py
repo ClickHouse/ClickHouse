@@ -1034,6 +1034,10 @@ class Migration:
         for file in values:
             owner = self.file_package(file)
             suffix = PurePosixPath(file).suffix
+            # PostgreSQL and Vectorscan own the configuration headers supplied by repositories.bzl.
+            if (owner != current and owner in {'contrib/postgres-cmake', 'contrib/vectorscan-cmake'}
+                    and suffix == '.h' and field in {'hdrs', 'textual_hdrs', 'additional_compiler_inputs'}):
+                continue
             if field in {'hdrs', 'textual_hdrs'} and file.endswith((*CC_HEADER_SUFFIXES, *TEXTUAL)):
                 if owner != current:
                     self.header_packages.add(owner)

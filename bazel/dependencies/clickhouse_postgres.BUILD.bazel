@@ -61,6 +61,9 @@ ch_cc_library(
         "src/port/timingsafe_bcmp.c",
         "src/port/strlcat.c",
         "src/port/strlcpy.c",
+        "configured/private/pg_config.h",
+        "configured/private/pg_config_os.h",
+        "configured/private/pg_config_paths.h",
         "src/common/md5_int.h",
         "src/common/sha1_int.h",
         "src/common/sha2_int.h",
@@ -119,7 +122,6 @@ ch_cc_library(
     implementation_deps = [
         "@clickhouse_openssl//:crypto",
         "@clickhouse_openssl//:ssl",
-        "@clickhouse//contrib/postgres-cmake:headers",
     ],
     includes = [
         "src/include",
@@ -135,4 +137,5 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
+    local_includes = ["configured/private"],
 )

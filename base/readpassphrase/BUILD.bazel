@@ -16,6 +16,5 @@ ch_cc_library(
         ".",
     ],
     language = "C",
-    llvm_headers = False,
     local_defines = CXX_RUNTIME_DEFINES,
 )

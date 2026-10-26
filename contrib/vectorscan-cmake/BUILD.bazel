@@ -1,32 +1,11 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "aarch64/config.h",
     "amd64/config.h",
+    "common/hs_version.h",
     "rageled_files/aarch64/Parser.cpp",
     "rageled_files/aarch64/control_verbs.cpp",
     "rageled_files/amd64/Parser.cpp",
     "rageled_files/amd64/control_verbs.cpp",
 ])
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["common/**/*.h"]),
-    includes = [
-        "common",
-    ],
-)
-
-cc_library(
-    name = "vectorscan_config_headers",
-    hdrs = select({
-        "@platforms//cpu:x86_64": ["amd64/config.h"],
-        "@platforms//cpu:aarch64": ["aarch64/config.h"],
-    }),
-    includes = select({
-        "@platforms//cpu:x86_64": ["amd64"],
-        "@platforms//cpu:aarch64": ["aarch64"],
-    }),
-)

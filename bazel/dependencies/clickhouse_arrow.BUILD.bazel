@@ -1,8 +1,8 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_binary", "ch_cc_library")
+load("@clickhouse//bazel/dependencies:parquet_tools.bzl", "parquet_cc_binary")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:codegen_actions.bzl", "declare_codegen")
 load("@clickhouse//bazel/rules:codegen_rules.bzl", "ARROW_FLIGHT_CODEGEN_RULES")
-load("@clickhouse//bazel/rules:native_compile_options.bzl", "native_cxx_tool_copts")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -632,7 +632,7 @@ alias(
     actual = "@clickhouse_orc//:_orc",
 )
 
-_GENERATED_LOCAL_DEFINES_1 = [
+_PARQUET_DEFINES = [
     "ARROW_ENABLE_THREADING",
 ] + select({
     "@platforms//cpu:x86_64": [
@@ -719,7 +719,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     includes = ["cpp/src"],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = _PARQUET_DEFINES,
     deps = [
         ":_arrow",
         ":_arrow__compile_0",
@@ -728,150 +728,20 @@ ch_cc_library(
     ],
 )
 
-_GENERATED_LINKOPTS_0 = [
-    "--no-default-config",
-    "-fdiagnostics-color=always",
-    "-pipe",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "-march=x86-64-v3",
-        "-mpclmul",
-    ],
-    "@platforms//cpu:aarch64": [
-        "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-    ],
-}) + [
-    "-fasynchronous-unwind-tables",
-    "-fdebug-compilation-dir=.",
-    "-falign-functions=64",
-    "-falign-loops=32",
-    "-ffunction-sections",
-    "-fdata-sections",
-    "-faddrsig",
-] + select({
-    "@platforms//cpu:x86_64": [
-        "-mbranches-within-32B-boundaries",
-    ],
-    "@platforms//cpu:aarch64": [],
-}) + [
-    "-fstack-protector-strong",
-    "-fstack-clash-protection",
-    "-ffp-contract=off",
-    "-fno-math-errno",
-    "-fdiagnostics-absolute-paths",
-    "-fstrict-vtable-pointers",
-    "-fPIE",
-    "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-    "-w",
-    "-ffunction-sections",
-    "-fdata-sections",
-    "-faddrsig",
-    "-O3",
-    "-DNDEBUG",
-    "--no-default-config",
-    "-Wl,--no-export-dynamic",
-    "-Wl,--gc-sections",
-    "-Wl,--fatal-warnings",
-    "-Wl,--icf=safe",
-    "-Wl,--strip-debug",
-    "-Wl,--build-id=sha1",
-    "-Wl,-u,logf",
-    "-Wl,-u,powf",
-    "-Wl,-u,expf",
-    "-Wl,-u,exp2f",
-    "-Wl,-u,log2f",
-    "-Wl,-u,log",
-    "-Wl,-u,pow",
-    "-Wl,-u,exp",
-    "-Wl,-u,exp2",
-    "-Wl,-u,log2",
-    "-Wl,-u,lgammaf",
-    "-pie",
-    "-Wl,-pie",
-    "-fno-xray-link-deps",
-    "-Wl,-u,memcpy",
-    "-Wl,-u,memmove",
-    "-Wl,-u,memset",
-    "-Wl,-u,memcmp",
-    "-Wl,-z,now",
-    "-Wl,-z,relro",
-    "-Wl,-z,separate-code",
-    "-Wl,-z,keep-text-section-prefix",
-    "-Xlinker",
-    "--no-undefined",
-    "-lpthread",
-]
-
-_GENERATED_FEATURES_1 = [
-    "-static_link_cpp_runtimes",
-    "-fortify_source",
-    "-llvm_system_c_headers",
-]
-
-_PARQUET_COPTS = native_cxx_tool_copts("-std=c++23")
-
-ch_cc_binary(
+parquet_cc_binary(
     name = "parquet_dump_schema",
-    srcs = [
-        "cpp/tools/parquet/parquet_dump_schema.cc",
-    ],
-    copts = _PARQUET_COPTS,
-    features = _GENERATED_FEATURES_1,
-    linkopts = _GENERATED_LINKOPTS_0,
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_xray",
-        "@clickhouse_llvm_project//:libllvmlibc",
-        ":_arrow",
-        ":_parquet",
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
-        "@clickhouse//base/glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
-    ],
+    srcs = ["cpp/tools/parquet/parquet_dump_schema.cc"],
+    local_defines = _PARQUET_DEFINES,
 )
 
-ch_cc_binary(
+parquet_cc_binary(
     name = "parquet_reader",
-    srcs = [
-        "cpp/tools/parquet/parquet_reader.cc",
-    ],
-    copts = _PARQUET_COPTS,
-    features = _GENERATED_FEATURES_1,
-    linkopts = _GENERATED_LINKOPTS_0,
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_xray",
-        "@clickhouse_llvm_project//:libllvmlibc",
-        ":_arrow",
-        ":_parquet",
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
-        "@clickhouse//base/glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
-    ],
+    srcs = ["cpp/tools/parquet/parquet_reader.cc"],
+    local_defines = _PARQUET_DEFINES,
 )
 
-ch_cc_binary(
+parquet_cc_binary(
     name = "parquet_scan",
-    srcs = [
-        "cpp/tools/parquet/parquet_scan.cc",
-    ],
-    copts = _PARQUET_COPTS,
-    features = _GENERATED_FEATURES_1,
-    linkopts = _GENERATED_LINKOPTS_0,
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
-    deps = [
-        "@clickhouse_llvm_project//:clang_rt_xray",
-        "@clickhouse_llvm_project//:libllvmlibc",
-        ":_arrow",
-        ":_parquet",
-        "@clickhouse_zstd//:_zstd",
-        "@clickhouse_llvm_project//:cxx",
-        "@clickhouse_llvm_project//:cxxabi",
-        "@clickhouse//base/glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
-    ],
+    srcs = ["cpp/tools/parquet/parquet_scan.cc"],
+    local_defines = _PARQUET_DEFINES,
 )
