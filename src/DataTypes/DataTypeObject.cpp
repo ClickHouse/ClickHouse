@@ -3,6 +3,8 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
@@ -15,7 +17,8 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
-#include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
@@ -27,30 +30,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/ASTNameTypePair.h>
-#include <Formats/JSONExtractTree.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
-#include "config.h"
-
-#if USE_SIMDJSON
-#  include <Common/JSONParsers/SimdJSONParser.h>
-#endif
-#if USE_RAPIDJSON
-#  include <Common/JSONParsers/RapidJSONParser.h>
-#else
-#  include <Common/JSONParsers/DummyJSONParser.h>
-#endif
-
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_simdjson;
-}
 
 namespace ErrorCodes
 {
@@ -58,6 +42,37 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+/// `DateTime`-like types without an explicit timezone resolve the session timezone when their
+/// serialization is constructed (see `DataTypeDateTime::doGetSerialization`), so a cached `JSON`
+/// serialization containing them is only valid for the timezone it was built under.
+/// `Date` and `Date32` use calendar day numbers: their text serialization is timezone-independent
+/// even though their serializers hold a `DateLUTImpl` reference.
+bool isTimezoneDependent(const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::DateTime:
+            return !assert_cast<const DataTypeDateTime &>(type).hasExplicitTimeZone();
+        case TypeIndex::DateTime64:
+            return !assert_cast<const DataTypeDateTime64 &>(type).hasExplicitTimeZone();
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool hasTimezoneDependentSerialization(const IDataType & type)
+{
+    return anyInTypeTree(type, isTimezoneDependent);
+}
+
 }
 
 String DataTypeObject::getCombinedSubcolumnName(const String & key)
@@ -107,6 +122,8 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regexps_to_skip[i]);
         }
     }
+
+    has_timezone_dependent_typed_paths = std::ranges::any_of(typed_paths, [](const auto & path) { return hasTimezoneDependentSerialization(*path.second); });
 
     sorted_typed_paths.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
@@ -182,53 +199,52 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    /// Typed `DateTime` children without an explicit timezone capture the current session timezone;
+    /// resolving it costs a context lookup, so only schemas that contain such paths pay for it.
+    const DateLUTImpl * timezone = has_timezone_dependent_typed_paths ? &DateLUT::instance() : nullptr;
+    const bool is_default = settings == SerializationInfoSettings{};
+    {
+        std::lock_guard lock(serializations_mutex);
+        if (is_default && default_serialization && default_serialization_timezone == timezone)
+            return default_serialization;
+        if (!is_default && nondefault_serialization && nondefault_serialization_settings == settings
+            && nondefault_serialization_timezone == timezone)
+            return nondefault_serialization;
+    }
+
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types ? type->getSerialization(settings) : type->getDefaultSerialization();
+        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types
+            ? type->getSerialization(settings) : type->getDefaultSerialization();
 
-    SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
-        ? getDynamicType()->getSerialization(settings)
-        : getDynamicType()->getDefaultSerialization();
+    auto dynamic_type = getDynamicType();
+    auto dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
+        ? dynamic_type->getSerialization(settings) : dynamic_type->getDefaultSerialization();
 
-    switch (schema_format)
+    auto serialization = SerializationJSON::create(
+        typed_paths, typed_paths_serializations, paths_to_skip, path_regexps_to_skip,
+        dynamic_type, dynamic_serialization, max_dynamic_paths, settings);
+    if (!serialization->supportsPooling())
+        return serialization;
+
+    std::lock_guard lock(serializations_mutex);
+    if (is_default)
     {
-        case SchemaFormat::JSON:
-#if USE_SIMDJSON
-            auto context = CurrentThread::tryGetQueryContext();
-            if (!context)
-                context = Context::getGlobalContextInstance();
-            if (context->getSettingsRef()[Setting::allow_simdjson])
-                return SerializationJSON<SimdJSONParser>::create(
-                    typed_paths,
-                    typed_paths_serializations,
-                    paths_to_skip,
-                    path_regexps_to_skip,
-                    getDynamicType(),
-                    dynamic_serialization,
-                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
-#endif
-
-#if USE_RAPIDJSON
-            return SerializationJSON<RapidJSONParser>::create(
-                typed_paths,
-                typed_paths_serializations,
-                paths_to_skip,
-                path_regexps_to_skip,
-                getDynamicType(),
-                dynamic_serialization,
-                buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
-#else
-            return SerializationJSON<DummyJSONParser>::create(
-                typed_paths,
-                typed_paths_serializations,
-                paths_to_skip,
-                path_regexps_to_skip,
-                getDynamicType(),
-                dynamic_serialization,
-                buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
-#endif
+        if (!default_serialization || default_serialization_timezone != timezone)
+        {
+            default_serialization = std::move(serialization);
+            default_serialization_timezone = timezone;
+        }
+        return default_serialization;
     }
+    if (!nondefault_serialization || nondefault_serialization_settings != settings || nondefault_serialization_timezone != timezone)
+    {
+        nondefault_serialization = std::move(serialization);
+        nondefault_serialization_settings = settings;
+        nondefault_serialization_timezone = timezone;
+    }
+    return nondefault_serialization;
 }
 
 String DataTypeObject::getSchemaFormatString() const
