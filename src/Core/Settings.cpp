@@ -5206,6 +5206,14 @@ Use buffering before merging while reading in order of primary key. It increases
     DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
 Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
 )", 0) \
+    DECLARE(Bool, aggregation_in_order_split_by_primary_key_ranges, false, R"(
+Run an aggregation in order of the primary key (`optimize_aggregation_in_order`) as independent aggregations over primary-key ranges. The parts are split into as many ranges by the values of the aggregated primary-key prefix as there are reading threads (the same way `FINAL` splits parts into non-intersecting layers), each range is read in order and aggregated on its own thread, and the final merge of the streams is skipped because the ranges hold disjoint keys.
+
+Without this setting the streams of an in-order read cover consecutive key ranges of the parts and the final merge consumes them one after another, so the aggregation of a table with few parts runs on one thread. The granule on the border of two ranges is read twice and trimmed by a filter.
+
+Not applied to `FINAL`, `GROUPING SETS`, reverse order, or when reading with parallel replicas.
+)", 0, \
+        {"26.11", false, false, "New setting to run an aggregation in order of the primary key as independent aggregations over primary-key ranges."}) \
     DECLARE(UInt64, read_in_order_two_level_merge_threshold, 100, R"(
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 )", 0) \

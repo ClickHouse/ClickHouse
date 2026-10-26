@@ -1785,4 +1785,21 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::replaceTag(const
 }
 
 
+ColumnPtr ContextTimeSeriesTagsCollector::findIDsSharingTags(const String & query) const
+{
+    SharedLockGuard lock{mutex};
+    auto it = ids_sharing_tags_by_query.find(query);
+    if (it == ids_sharing_tags_by_query.end())
+        return nullptr;
+    return it->second;
+}
+
+
+void ContextTimeSeriesTagsCollector::storeIDsSharingTags(const String & query, ColumnPtr ids)
+{
+    std::lock_guard lock{mutex};
+    ids_sharing_tags_by_query.emplace(query, std::move(ids));
+}
+
+
 }

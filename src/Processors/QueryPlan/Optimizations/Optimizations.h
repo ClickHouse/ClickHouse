@@ -328,6 +328,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 bool optimizeLazyMaterialization3(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+/// Run an in-order aggregation over disjoint primary-key ranges of a `ReadFromMergeTree`, one range per
+/// stream, so that the streams aggregate in parallel and the final merge of the streams is skipped.
+void optimizeAggregationInOrderByLayers(QueryPlan::Node & root);
 void optimizeJoinByShards(QueryPlan::Node & root);
 /// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
 /// the reading is then gated on the build completion seal which delivers the filter for

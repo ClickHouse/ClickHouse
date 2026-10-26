@@ -1,0 +1,45 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Benchmarks the functions over range vectors (rate, increase, last_over_time, ...) over many series.
+        They aggregate the raw samples by id in the order of the samples table (id, timestamp), over one
+        primary key range per thread, before merging the ids of one set of tags.
+        A regression here is either a plan which no longer aggregates in order over primary key ranges
+        or a slower in-order read of the samples table.
+    -->
+
+    <create_query>
+        CREATE TABLE promql_in_order_ts ENGINE = TimeSeries
+    </create_query>
+
+    <!-- 16000 series of one metric, 3600 samples each at 15s: 57.6M rows in the samples table.
+         The samples share one 15-hour window, which keeps the default recent-samples target
+         (partitioned by 5-hour interval) under max_partitions_per_insert_block. -->
+    <fill_query>
+        INSERT INTO promql_in_order_ts (metric_name, tags, samples)
+        SELECT
+            'cpu_seconds_total',
+            map('instance', toString(number), 'mode', toString(number % 8)),
+            arrayMap(step -> (toDateTime64(1000000 + step * 15, 3), toFloat64(step) * 15), range(3600))
+        FROM numbers_mt(16000)
+    </fill_query>
+
+    <!-- Merge to one part per inner table. The fill above lands in several parts that each span every id,
+         so the two compared servers would otherwise merge a different number of streams in the in-order read. -->
+    <fill_query>OPTIMIZE TABLE promql_in_order_ts FINAL</fill_query>
+
+    <!-- sum over all series at every step -->
+    <query>SELECT * FROM prometheusQueryRange('promql_in_order_ts', 'sum(rate(cpu_seconds_total[1m]))', 1003600, 1054000, 300) SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <!-- grouped sum -->
+    <query>SELECT * FROM prometheusQueryRange('promql_in_order_ts', 'sum by (mode) (rate(cpu_seconds_total[1m]))', 1003600, 1054000, 300) SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <!-- no outer aggregation: the per-series grids are the result -->
+    <query>SELECT * FROM prometheusQueryRange('promql_in_order_ts', 'rate(cpu_seconds_total[1m])', 1003600, 1054000, 300) SETTINGS max_threads = 4 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_in_order_ts</drop_query>
+</test>

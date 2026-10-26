@@ -27,6 +27,9 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
+    if (config.mode == StorageTimeSeriesSelector::Mode::IDS_SHARING_TAGS)
+        return ColumnsDescription({{TimeSeriesColumnNames::ID, config.table_id_type}});
+
     return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.table_id_type},
         {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type},

@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
@@ -96,18 +97,21 @@ bool AggregatingInOrderTransform::isLimitPrefixBoundary(const Columns & key_colu
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
 
+/// Allocations below `max_untracked_memory` wait in the thread-local counter before they reach the tracker,
+/// and the states of one key interval often stay below it.
 static Int64 getCurrentMemoryUsage()
 {
     Int64 current_memory_usage = 0;
     if (auto * memory_tracker = CurrentThread::getMemoryTracker())
         current_memory_usage = memory_tracker->get();
+    if (CurrentThread::isInitialized())
+        current_memory_usage += CurrentThread::get().untracked_memory.load();
     return current_memory_usage;
 }
 
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
     const Columns & columns = chunk.getColumns();
-    Int64 initial_memory_usage = getCurrentMemoryUsage();
 
     size_t rows = chunk.getNumRows();
     if (rows == 0)
@@ -144,6 +148,18 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
     size_t key_end = 0;
     size_t key_begin = 0;
 
+    /// The memory taken by the aggregation states of this chunk. Only the state creation and the aggregation calls
+    /// are measured, because the columns prepared from the chunk are freed with it and a flush cuts the rest of the
+    /// chunk into a new one. The first state of a block is not measured: it allocates the first chunk of the arena,
+    /// a fixed cost a flush does not reduce.
+    Int64 current_memory_usage = 0;
+    auto measure_memory_usage = [&](auto && aggregate)
+    {
+        Int64 memory_usage_before = getCurrentMemoryUsage();
+        aggregate();
+        current_memory_usage = std::max<Int64>(current_memory_usage + getCurrentMemoryUsage() - memory_usage_before, 0);
+    };
+
     /// If we don't have a block we create it and fill with first key
     if (!cur_block_size)
     {
@@ -166,8 +182,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
         ++cur_block_size;
     }
-
-    Int64 current_memory_usage = 0;
 
     Aggregator::AggregateColumnsConstData aggregate_columns_data(params->params.aggregates_size);
     if (params->params.only_merge)
@@ -218,23 +232,24 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
         {
-            if (params->params.only_merge)
+            measure_memory_usage([&]
             {
-                if (group_by_key)
-                    params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
+                if (params->params.only_merge)
+                {
+                    if (group_by_key)
+                        params->aggregator.mergeOnBlockSmall(variants, key_begin, key_end, aggregate_columns_data, key_columns_raw);
+                    else
+                        params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data, is_cancelled);
+                }
                 else
-                    params->aggregator.mergeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_columns_data, is_cancelled);
-            }
-            else
-            {
-                if (group_by_key)
-                    params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
-                else
-                    params->aggregator.executeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_function_instructions.data());
-            }
+                {
+                    if (group_by_key)
+                        params->aggregator.executeOnBlockSmall(variants, key_begin, key_end, key_columns_raw, aggregate_function_instructions.data());
+                    else
+                        params->aggregator.executeOnIntervalWithoutKey(variants, key_begin, key_end, aggregate_function_instructions.data());
+                }
+            });
         }
-
-        current_memory_usage = std::max<Int64>(getCurrentMemoryUsage() - initial_memory_usage, 0);
 
         /// We finalize last key aggregation state if a new key found.
         if (key_end != rows)
@@ -281,7 +296,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (group_by_key)
                 params->aggregator.fillKeyColumnsWithSingleKey(key_columns, key_end, res_key_columns);
             else
-                params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns);
+                measure_memory_usage([&] { params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns); });
             ++cur_block_size;
         }
 
