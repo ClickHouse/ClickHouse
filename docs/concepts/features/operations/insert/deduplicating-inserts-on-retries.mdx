@@ -150,7 +150,6 @@ Deduplication of asynchronous inserts works together with dependent materialized
 The limit is memory. The whole output of a view for one batch is held in memory, so its size is roughly the size of the batch times the number of rows the view produces per input row. If it does not fit into the memory limits of the query and the server, the insert fails with a `MEMORY_LIMIT_EXCEEDED` exception. This matters mostly for views that multiply rows, for example an `ARRAY JOIN` over large arrays or a `JOIN` that matches many rows. For such a view, you can:
 
 - Make the batches smaller with [`async_insert_max_data_size`](/reference/settings/session-settings/async-insert#async_insert_max_data_size).
-- Raise the memory limit of the insert with [`max_memory_usage`](/reference/settings/session-settings/max-memory-usage#max_memory_usage).
 - Set [`deduplicate_blocks_in_dependent_materialized_views`](/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) to `0`. The view output is then split into blocks of the usual size, but a retried insert is inserted into the view targets again.
 - Use synchronous inserts, which deduplicate a view output of several blocks.
 
