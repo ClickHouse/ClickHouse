@@ -82,13 +82,13 @@ public:
     class Expired
     {
     public:
-        bool contains(const String & column) const
+        [[nodiscard]] bool contains(const String & column) const
         {
             auto it = runs->run_by_column.find(column);
             return it != runs->run_by_column.end() && it->second >= range_size;
         }
 
-        size_t size() const
+        [[nodiscard]] size_t size() const
         {
             return runs->sorted_runs.end() - std::ranges::lower_bound(runs->sorted_runs, range_size);
         }
@@ -138,7 +138,7 @@ public:
     }
 
     /// `range` has to be a non-empty sub-range of one of the ranges this was built from.
-    Expired get(PartsRangeView range) const
+    [[nodiscard]] Expired get(PartsRangeView range) const
     {
         chassert(!range.empty());
         auto it = runs_by_part.find(range.data());

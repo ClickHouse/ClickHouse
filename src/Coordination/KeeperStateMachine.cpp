@@ -2234,7 +2234,7 @@ struct StreamingSnapshotLoader : public ISnapshotLoader
         }
     }
 
-    uint64_t fileSize() const override { return file_size; }
+    [[nodiscard]] uint64_t fileSize() const override { return file_size; }
 
     void readChunk(uint64_t offset, uint64_t length, char * dst, LoggerPtr /*log_*/) override
     {
