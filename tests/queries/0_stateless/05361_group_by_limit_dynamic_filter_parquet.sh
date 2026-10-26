@@ -71,6 +71,11 @@ SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 INSERT INTO FUNCTION file('${DIR}/cache.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(1000)
 SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
 
+-- The smallest a is in the last row group, the smallest aU in the first.
+INSERT INTO FUNCTION file('${DIR}/names.parquet', Parquet)
+SELECT toUInt8((9 - intDiv(number, 100)) * 10 + number % 10) AS a, toInt8(intDiv(number, 100) * 10 + number % 10 - 100) AS aU FROM numbers(1000)
+SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
+
 INSERT INTO FUNCTION file('${DIR}/low.parquet', Parquet) SELECT if(number % 1000 = 7, 1 + number % 3, 0) AS k, number AS c FROM numbers(300000)
 SETTINGS max_block_size = 10000, output_format_parquet_row_group_size = 10000;
 
@@ -160,6 +165,9 @@ SET use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1;
 SELECT count(), sum(x), max(a) FROM (SELECT a, b, count() AS x FROM t_05361_cache GROUP BY a, b LIMIT 10);
 SELECT count(), sum(x), max(a) FROM (SELECT a, c, count() AS x FROM t_05361_cache GROUP BY a, c LIMIT 10);
 SELECT count(), sum(x), max(a) FROM (SELECT a, b, count() AS x FROM t_05361_cache GROUP BY a, b LIMIT 10);
+-- The entries of a key do not serve another key whose name and type spell the same text.
+SELECT groupArray(aU) FROM (SELECT aU, count() FROM file('${DIR}/names.parquet') GROUP BY aU ORDER BY aU LIMIT 3);
+SELECT groupArray(a) FROM (SELECT a, count() FROM file('${DIR}/names.parquet') GROUP BY a ORDER BY a LIMIT 3);
 SET use_query_condition_cache = 0;
 
 SELECT 'the boundary stops filtering when it drops almost nothing';

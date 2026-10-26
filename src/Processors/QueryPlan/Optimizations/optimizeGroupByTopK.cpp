@@ -98,10 +98,15 @@ static UInt64 groupByTopKConditionHash(
     const std::vector<int> & nulls_directions)
 {
     SipHash hash;
-    hash.update(std::string_view("group_by_top_k"));
-    hash.update(key_name);
-    const String type_name = key_type->getName();
-    hash.update(type_name);
+    /// Length-prefixed, so that adjacent strings cannot run together (`aU` `Int8` and `a` `UInt8`).
+    auto update_string = [&hash](std::string_view s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+    update_string("group_by_top_k");
+    update_string(key_name);
+    update_string(key_type->getName());
     hash.update(num_key_columns);
     hash.update(limit);
 
@@ -110,8 +115,8 @@ static UInt64 groupByTopKConditionHash(
     hash.update(aggregation_keys.size());
     for (const auto & aggregation_key : aggregation_keys)
     {
-        hash.update(aggregation_key);
-        hash.update(aggregation_input_header.getByName(aggregation_key).type->getName());
+        update_string(aggregation_key);
+        update_string(aggregation_input_header.getByName(aggregation_key).type->getName());
     }
 
     hash.update(path_expressions.size());

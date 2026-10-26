@@ -106,6 +106,8 @@ the query condition cache
 10	100	0
 10	500	4
 10	100	0
+[-100,-99,-98]
+[0,1,2]
 the boundary stops filtering when it drops almost nothing
 0	299700
 1	100
