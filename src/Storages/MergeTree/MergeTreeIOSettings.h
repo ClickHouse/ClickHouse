@@ -214,6 +214,7 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
+    float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     /// Limits for the amount of data buffered before writing a stripe of a Compact part.
     size_t compact_parts_max_bytes_to_buffer{};
