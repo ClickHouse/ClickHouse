@@ -125,6 +125,9 @@ namespace ProfileEvents
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
         void incrementSignalSafe(Event event, Count amount = 1);
+        /// Increments this instance and its parents except the global counters. For counts that have
+        /// already reached the global counters through another chain, so that they are not counted twice.
+        void incrementNoTraceExceptGlobal(Event event, Count amount);
 
         struct Snapshot
         {

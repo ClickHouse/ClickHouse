@@ -132,6 +132,21 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
     return thread_group->memory_tracker;
 }
 
+std::shared_ptr<ProfileEvents::Counters::Snapshot> getProfileEventsForPartLog(
+    const MergeListEntry * merge_entry, const ProfileEvents::Counters & counters_outside_thread_group)
+{
+    auto outside_snapshot = counters_outside_thread_group.getPartiallyAtomicSnapshot();
+    if (!merge_entry)
+        return std::make_shared<ProfileEvents::Counters::Snapshot>(std::move(outside_snapshot));
+
+    const auto group_snapshot = (*merge_entry)->thread_group->performance_counters.getPartiallyAtomicSnapshot();
+    /// Without a parent, so that the sum is not added to any other counters.
+    ProfileEvents::Counters sum(VariableContext::Process, nullptr);
+    for (ProfileEvents::Event i = ProfileEvents::Event(0); i < ProfileEvents::end(); ++i)
+        sum.incrementNoTrace(i, group_snapshot[i] + outside_snapshot[i]);
+    return std::make_shared<ProfileEvents::Counters::Snapshot>(sum.getPartiallyAtomicSnapshot());
+}
+
 MergeListElement::~MergeListElement()
 {
     /// The part produced goes to the table; also marks the caller for an `OPTIMIZE` merging inline.
