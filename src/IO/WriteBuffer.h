@@ -99,22 +99,25 @@ public:
         /// The comparison is unsigned as in `available`: for a constant `n` it is a single `cmp`.
         if (!closed && n <= available()) [[likely]]
         {
-            copyBytes(pos, from, n);
-            pos += n;
+            /// Zero bytes, common for empty strings, touch neither `memcpy` nor `pos`.
+            if (n != 0)
+                pos = copyBytes(pos, from, n);
             return;
         }
-        writeSlow(from, n);
+        pos = writeSlow(from, n);
     }
 
     void write(char x)
     {
         if (!closed && hasPendingData()) [[likely]]
         {
-            *pos = x;
-            ++pos;
+            /// The byte store may alias `pos`, so `++pos` would reload it.
+            Position to = pos;
+            *to = x;
+            pos = to + 1;
             return;
         }
-        writeSlow(x);
+        pos = writeSlow(x);
     }
 
     /// This method may be called before finalize() to tell there would not be any more data written.
@@ -185,18 +188,20 @@ private:
     [[noreturn]] NO_INLINE static void throwWriteToCanceledBuffer(int code);
 
     /// Flushes the buffer as many times as needed, and throws for a finalized or canceled buffer.
-    void writeSlow(const char * from, size_t n);
-    void writeSlow(char x);
+    /// Returns `pos` for the inlined `write` to assign, so the position stays in a register on every path.
+    [[nodiscard]] Position writeSlow(const char * from, size_t n);
+    [[nodiscard]] Position writeSlow(char x);
 
     /// A size known at compile time becomes plain moves. A run-time size is copied with `memcpy`, which keeps
     /// the inlined code small: a larger fast path changes how its callers are optimized (inlining, loop unswitching).
-    /// Zero bytes, which is common for empty strings and empty delimiters, does not call `memcpy` at all.
-    ALWAYS_INLINE static void copyBytes(char * __restrict to, const char * __restrict from, size_t n)
+    /// Returns `to + n`: the copy may alias `pos`, so the new position is computed from `to`, not reloaded.
+    ALWAYS_INLINE static Position copyBytes(char * __restrict to, const char * __restrict from, size_t n)
     {
         if (__builtin_constant_p(n))
             __builtin_memcpy(to, from, n);
-        else if (n != 0)
+        else
             memcpy(to, from, n);
+        return to + n;
     }
 
     int exception_level = std::uncaught_exceptions();

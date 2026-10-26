@@ -45,7 +45,7 @@ NO_INLINE void WriteBuffer::throwWriteToCanceledBuffer(int code)
     throw Exception{code, "Cannot write to canceled buffer"};
 }
 
-void WriteBuffer::writeSlow(const char * from, size_t n)
+WriteBuffer::Position WriteBuffer::writeSlow(const char * from, size_t n)
 {
     if (finalized)
         throwWriteToFinalizedBuffer();
@@ -66,9 +66,10 @@ void WriteBuffer::writeSlow(const char * from, size_t n)
         pos += bytes_to_copy;
         bytes_copied += bytes_to_copy;
     }
+    return pos;
 }
 
-void WriteBuffer::writeSlow(char x)
+WriteBuffer::Position WriteBuffer::writeSlow(char x)
 {
     if (finalized)
         throwWriteToFinalizedBuffer();
@@ -80,6 +81,7 @@ void WriteBuffer::writeSlow(char x)
     nextIfAtEnd();
     *pos = x;
     ++pos;
+    return pos;
 }
 
 void WriteBuffer::cancel() noexcept
