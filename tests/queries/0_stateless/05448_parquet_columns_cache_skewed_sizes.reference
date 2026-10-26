@@ -15,6 +15,14 @@ s	16	1048576
 [false,false,false,false,false,false,false]
 0	0	0	0	0	0	0
 0	0	0	0	0	0	0
+--- strings encoded with DELTA_BYTE_ARRAY without size statistics: not cached
+[false]
+65536	134217728
+65536	134217728
+--- short strings read as a wide FixedString: not cached
+[false]
+65536	7268979749752893985
+65536	7268979749752893985
 --- the long strings of a row group in one chunk, with size statistics
 [true]
 1048576	134217728
