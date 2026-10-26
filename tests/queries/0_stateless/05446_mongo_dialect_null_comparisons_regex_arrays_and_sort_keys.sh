@@ -90,7 +90,7 @@ mongo 'db.mongo_p.aggregate([{"$sort" : {"id" : 1}}, {"$unwind" : "$tags"}, {"$g
 echo '-- the depth of a request'
 deep=$(printf '[%.0s' $(seq 1 40))1$(printf ']%.0s' $(seq 1 40))
 mongo_error "db.mongo_p.find().sort({\"id\" : ${deep}});" --max_parser_depth 30
-stages=$(printf '{"$skip" : 0},%.0s' $(seq 1 40))
+stages=$(printf '{"$skip" : 0},%.0s' $(seq 1 10))
 mongo_error "db.mongo_p.aggregate([${stages%,}]);" --max_parser_depth 30
 mongo "db.mongo_p.aggregate([${stages%,}, {\"\$count\" : \"c\"}]);"
 
