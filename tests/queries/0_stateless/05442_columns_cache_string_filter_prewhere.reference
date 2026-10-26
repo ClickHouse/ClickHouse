@@ -15,7 +15,12 @@ wide_cached	1	0
 100	1088
 wide_no_writes	0	1
 100	1088
-compact	0	1
+compact_filtered	0	0
+1
+10000	0	128690	14307067333621248254
+10000	0	128690	14307067333621248254
+compact_full	0	0
+compact_full	1	0
 --- Parquet
 PREWHERE
 1

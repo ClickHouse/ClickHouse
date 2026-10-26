@@ -26,7 +26,8 @@ function events()
         SYSTEM FLUSH LOGS query_log;
         SELECT '$1', ProfileEvents['ColumnsCacheHits'] > 0, ProfileEvents['StringValueFilterValuesChecked'] > 0
         FROM system.query_log
-        WHERE log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_$1' AND type = 'QueryFinish' AND current_database = currentDatabase()"
+        WHERE log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}_$1' AND type = 'QueryFinish' AND current_database = currentDatabase()
+        ORDER BY event_time_microseconds"
 }
 
 echo "--- MergeTree"
@@ -69,14 +70,22 @@ $CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_wide_cached" -q
     SELECT count(), sum(length(s)) FROM t_wide WHERE s LIKE '%needle%' SETTINGS ${SETTINGS}, ${CACHE}"
 events wide_cached
 
-# Without writes to the cache, and for a compact part (which is never written to the cache), the filter is applied.
+# Without writes to the cache, the filter is applied.
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 $CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_wide_no_writes" -q "
     SELECT count(), sum(length(s)) FROM t_wide WHERE s LIKE '%needle%' SETTINGS ${SETTINGS}, ${CACHE}, enable_writes_to_columns_cache = 0"
 events wide_no_writes
-$CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_compact" -q "
-    SELECT count(), sum(length(s)) FROM t_compact WHERE s LIKE '%needle%' SETTINGS ${SETTINGS}, ${CACHE}"
-events compact
+
+# A compact part is written to the cache as well: the reader does not apply the scan-time filter to it.
+$CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_compact_filtered" -q "
+    SELECT count(), sum(length(s)) FROM t_compact WHERE s LIKE '%needle%' SETTINGS ${SETTINGS}, ${CACHE}, ${CACHE_LIMITS}"
+events compact_filtered
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_compact' AND column = 's'"
+for USE_CACHE in "use_columns_cache = 0" "${CACHE}"; do
+    $CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_compact_full" -q "
+        SELECT count(), countIf(empty(s)), sum(length(s)), groupBitXor(cityHash64(s)) FROM t_compact SETTINGS ${SETTINGS}, ${USE_CACHE}"
+done
+events compact_full
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE t_wide;
