@@ -13,6 +13,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/ResizeProcessor.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -530,6 +532,34 @@ size_t clampClusterFunctionNumStreams(UInt64 num_streams)
     /// 256 * cores is the ceiling max_threads gets in Context::setSetting; reuse it so a *Cluster
     /// read step never reserves/resizes a pipe vector for a pathological user-supplied value.
     return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
+}
+
+void resizeOutputAfterReading(Pipe & pipe, size_t resize_to, bool keep_streams, size_t min_streams_per_group)
+{
+    const size_t output_ports = pipe.numOutputPorts();
+    if (output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
+    else if (output_ports > 1 && !keep_streams)
+    {
+        /// One processor over many streams contends on its node lock, as for `Pipe::resize`.
+        size_t groups = min_streams_per_group ? output_ports / min_streams_per_group : 0;
+        if (groups < 2)
+            groups = 1;
+
+        pipe.transform([&](const OutputPortRawPtrs & ports)
+        {
+            Processors resizes;
+            for (size_t g = 0, next = 0; g < groups; ++g)
+            {
+                const size_t group_size = output_ports / groups + (g < output_ports % groups ? 1 : 0);
+                auto resize = std::make_shared<AffinityResizeProcessor>(pipe.getSharedHeader(), group_size);
+                for (auto & input : resize->getInputs())
+                    connect(*ports[next++], input);
+                resizes.emplace_back(std::move(resize));
+            }
+            return resizes;
+        });
+    }
 }
 
 std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromFormatInfo & info, const NameSet & required_names)
