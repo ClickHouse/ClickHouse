@@ -5,7 +5,7 @@ CREATE TABLE small (sid UInt64, name String) ENGINE = MergeTree ORDER BY sid;
 INSERT INTO big SELECT number, number FROM numbers(100000);
 INSERT INTO small SELECT number * 100, toString(number) FROM numbers(100);
 
-SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 -- The checks of serialized partials count one per build task: pin the eight read tasks.
 SET distributed_plan_default_reader_bucket_count = 8;

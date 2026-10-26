@@ -5,7 +5,7 @@ CREATE TABLE t_large (lid UInt64) ENGINE = MergeTree ORDER BY lid SETTINGS index
 INSERT INTO t_small SELECT number * 100 FROM numbers(100);
 INSERT INTO t_large SELECT number FROM numbers(1000000);
 
-SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_max_rows_to_broadcast = 0;
 -- The checks of serialized partials count one per build task: pin the eight read tasks.
 SET distributed_plan_default_reader_bucket_count = 8;

@@ -61,7 +61,7 @@ The cache currently applies to wide parts only: data in compact parts is not rea
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 
-The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a whole column of one row group, keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A column of a row group is written to the cache only when all rows of the row group are read, before any filter is applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
+The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a chunk of 65536 rows of a column of one row group (the last chunk of a row group can be shorter), keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A row group that uses the cache is read in these chunks, whatever the block size settings. A chunk is written to the cache as it is decoded, without a copy, if all its rows were read before any filter was applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A column of a row group is served from the cache when all its chunks are there, so the chunks of a column that cannot all be written are taken back out of the cache. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
 
 ## use_concurrency_control {#use_concurrency_control}
 
@@ -192,6 +192,8 @@ Possible values:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "Enables cache of parquet file metadata."}]}]}/>
 
 If turned on, parquet format may utilize the parquet metadata cache.
+
+For the `File` table engine and the `file` table function, a read with a filter also keeps the min/max statistics of the filter columns in the cache, and a later query skips a file without opening it if these statistics show that no row group of the file can match its filter. Errors that only opening such a file would raise (for example, a selected column missing from the file with `input_format_parquet_allow_missing_columns` disabled) then depend on whether the cache holds its statistics. Disabling this setting also disables keeping the statistics and skipping files.
 
 Possible values:
 

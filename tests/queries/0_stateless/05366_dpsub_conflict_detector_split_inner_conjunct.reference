@@ -1,0 +1,6 @@
+-- LEFT JOIN
+1	0	0	1
+-- FULL JOIN
+1	0	0	1
+-- LEFT JOIN, join_use_nulls = 1
+1	\N	0	1
