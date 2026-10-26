@@ -13,7 +13,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 from helpers.test_tools import TSV, assert_eq_with_retry
 from google.protobuf.internal.encoder import _VarintBytes
 from helpers.kafka import message_with_repeated_pb2
@@ -2507,17 +2506,19 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
         """)
 
 
-# TODO(antaljanosbenjamin): find another way to make insertion fail
 @pytest.mark.parametrize(
-    "create_query_generator",
+    "create_query_generator, log_line",
     [
-        k.generate_old_create_table_query,
-        # k.generate_new_create_table_query,
+        (k.generate_new_create_table_query, "Saved offset 22"),
+        (k.generate_old_create_table_query, "Committed offset 22"),
     ],
 )
-def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_generator):
+def test_kafka_no_holes_when_write_suffix_failed(
+    kafka_cluster, create_query_generator, log_line
+):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
+    definer = f"{kafka_table}_definer"
 
     admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "no_holes_when_write_suffix_failed" + k.get_topic_postfix(
@@ -2547,23 +2548,29 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
             CREATE TABLE test.{kafka_table}_view (key UInt64, value String)
                 ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/{topic_name}', 'node1')
                 ORDER BY key;
+
+            CREATE USER {definer} SETTINGS insert_keeper_fault_injection_probability = 1;
+            GRANT SELECT ON test.{kafka_table} TO {definer};
+            GRANT INSERT ON test.{kafka_table}_view TO {definer};
+
+            CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view
+                DEFINER = {definer} SQL SECURITY DEFINER
+                AS SELECT * FROM test.{kafka_table};
         """)
 
-        with PartitionManager() as pm:
-            # The consumer starts with the materialized view, so every push writes its part
-            # while Keeper is unreachable and fails at commit.
-            pm.drop_instance_zk_connections(instance)
-            instance.query(f"""
-                CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
-                    SELECT * FROM test.{kafka_table};
-            """)
-            instance.wait_for_log_line(
-                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout|Table is in readonly mode)"
-                f".*while pushing to view test.{kafka_table}_consumer",
-                timeout=60,
-            )
+        # The push runs as the definer, so it fails at its first Keeper request. No push can
+        # succeed before the setting is switched off, so a written part proves that the failure
+        # came after the write.
+        instance.wait_for_log_line(
+            f"Fault injection before operation.*while pushing to view test.{kafka_table}_consumer",
+            timeout=60,
+        )
+        assert instance.contains_in_log(f"{kafka_table}_view.*Wrote block with")
+        instance.query(
+            f"ALTER USER {definer} SETTINGS insert_keeper_fault_injection_probability = 0"
+        )
 
-        instance.wait_for_log_line(f"{kafka_table}.*Committed offset 22")
+        instance.wait_for_log_line(f"{kafka_table}.*{log_line}")
 
         result = instance.query(
             f"SELECT count(), uniqExact(key), max(key) FROM test.{kafka_table}_view"
@@ -2575,6 +2582,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;
             DROP TABLE test.{kafka_table}_view SYNC;
+            DROP USER {definer};
         """)
 
         assert TSV(result) == TSV("22\t22\t22")
