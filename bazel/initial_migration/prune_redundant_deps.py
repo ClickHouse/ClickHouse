@@ -42,10 +42,18 @@ class PublicDeps:
         self.graph = Graph(docs)
         # Store only public deps (and alias actual), never implementation_deps.
         self.edges = {
-            target: {cpu: set(self.graph.dependencies(target, cpu)) for cpu in arches}
+            target: {cpu: {self.explicit(dep) for dep in self.graph.dependencies(target, cpu)} for cpu in arches}
             for target, (_, kind, _) in self.graph.rules.items() if kind in FORWARD
         }
         self.order, self.cycles = self.dependencies_first()
+
+    def explicit(self, target):
+        # Resolve //pkg/sub only when //pkg/sub:sub is a known rule.
+        if ':' not in target and (pkg := target.partition('//')[2]):
+            full = target + ':' + pkg.rsplit('/', 1)[-1]
+            if full in self.graph.rules:
+                return full
+        return target
 
     def dependencies_first(self):
         # Tarjan SCCs on the union of both supported configurations. Even a
@@ -84,7 +92,7 @@ class PublicDeps:
     def cc_endpoint(self, target, cpu):
         seen, pending = set(), [target]
         while pending:
-            current = pending.pop()
+            current = self.explicit(pending.pop())
             if current in seen or current in self.cycles:
                 return False
             seen.add(current)
@@ -107,10 +115,7 @@ class PublicDeps:
     def reachable(self, target, cpu, proof, *, linking=False):
         result, pending = set(), [target]
         while pending:
-            current = pending.pop()
-            # For example, @clickhouse//src/Common links //src/Common:Common.
-            if linking and ':' not in current and (package := current.partition('//')[2]):
-                current += ':' + package.rsplit('/', 1)[-1]
+            current = self.explicit(pending.pop())
             if current in result:
                 continue
             if proof and not self.cc_endpoint(current, cpu):
@@ -405,7 +410,7 @@ class Reduction:
                 if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
                     retained.append(source.text(item))
                     continue
-                dep = label(item.value, doc.repo)
+                dep = self.public.explicit(label(item.value, doc.repo))
                 witnesses = self.public.alternative(target, dep, arches)
                 if witnesses is None:
                     retained.append(source.text(item))
