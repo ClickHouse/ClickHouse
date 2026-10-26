@@ -363,8 +363,8 @@ static Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_n
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
-    const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl)
-    : filepath(filepath_), structure(dict_struct), context(context_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
+    const String & filepath_, const DictionaryStructure & dict_struct, ContextPtr context_, bool created_from_ddl_)
+    : filepath(filepath_), structure(dict_struct), context(context_), created_from_ddl(created_from_ddl_), logger(getLogger(kYAMLRegExpTreeDictionarySource))
 {
     key_name = (*structure.key)[0].name;
 
@@ -392,11 +392,14 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
             }
         }
 
-        if (!context->isUserFilesPath(filepath_))
-        {
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath_);
-        }
+        checkFilePath();
     }
+}
+
+void YAMLRegExpTreeDictionarySource::checkFilePath() const
+{
+    if (created_from_ddl && !context->isUserFilesPath(filepath))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath);
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other)
@@ -404,6 +407,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
     , key_name(other.key_name)
     , structure(other.structure)
     , context(Context::createCopy(other.context))
+    , created_from_ddl(other.created_from_ddl)
     , logger(other.logger)
     , last_modification(other.last_modification)
 {
@@ -412,6 +416,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
+    /// Also checks the path, see `checkFilePath`.
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
@@ -438,6 +443,7 @@ String YAMLRegExpTreeDictionarySource::toString() const
 
 Poco::Timestamp YAMLRegExpTreeDictionarySource::getLastModification() const
 {
+    checkFilePath();
     return FS::getModificationTimestamp(filepath);
 }
 

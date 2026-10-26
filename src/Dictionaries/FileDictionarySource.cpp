@@ -34,11 +34,12 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, ContextPtr context_, bool created_from_ddl)
+    Block & sample_block_, ContextPtr context_, bool created_from_ddl_)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
     , context(context_)
+    , created_from_ddl(created_from_ddl_)
 {
     /// DDL-created `file` dictionaries are required to live under `user_files_path`.
     /// `loadAll` reads them via `ReadBufferFromFile`, which only works on the local
@@ -64,9 +65,15 @@ FileDictionarySource::FileDictionarySource(
             }
         }
 
-        if (!context->isUserFilesPath(filepath))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
+        checkFilePath();
     }
+}
+
+
+void FileDictionarySource::checkFilePath() const
+{
+    if (created_from_ddl && !context->isUserFilesPath(filepath))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
 }
 
 
@@ -75,6 +82,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
     , format{other.format}
     , sample_block{other.sample_block}
     , context(Context::createCopy(other.context))
+    , created_from_ddl(other.created_from_ddl)
     , last_modification{other.last_modification}
 {
 }
@@ -83,6 +91,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 BlockIO FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
+    checkFilePath();
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto source = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr));
@@ -102,6 +111,7 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
+    checkFilePath();
     return FS::getModificationTimestamp(filepath);
 }
 

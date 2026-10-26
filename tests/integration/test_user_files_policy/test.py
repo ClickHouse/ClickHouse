@@ -1781,3 +1781,56 @@ def test_local_filesystem_database_write_needs_write_grant():
         node_local.query("DROP DATABASE IF EXISTS fsdb_write")
         node_local.query(f"DROP USER IF EXISTS {user}")
         node_local.exec_in_container(["bash", "-c", "rm -rf /test_user_files_disk1/fsdb_write"])
+
+
+def test_local_file_dictionary_reload_rechecks_path():
+    """A DDL-created `FILE` dictionary is checked against the policy at every load, not only on
+    creation: a reload opens the path again, and an in-root symlink could have been retargeted
+    outside the disk root since then."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "mkdir -p /tmp/dict_reload_outside && printf '1\\tsecret\\n' > /tmp/dict_reload_outside/secret.tsv && "
+            "printf '1\\tsafe\\n' > /test_user_files_disk1/dict_reload_safe.tsv && "
+            "ln -snf /test_user_files_disk1/dict_reload_safe.tsv /test_user_files_disk1/dict_reload_live.tsv",
+        ]
+    )
+    node_local.query("DROP DICTIONARY IF EXISTS dict_reload")
+    try:
+        node_local.query(
+            "CREATE DICTIONARY dict_reload (id UInt64, value String) PRIMARY KEY id "
+            "SOURCE(FILE(PATH '/test_user_files_disk1/dict_reload_live.tsv' FORMAT 'TabSeparated')) "
+            "LAYOUT(FLAT()) LIFETIME(0)"
+        )
+        assert node_local.query("SELECT dictGet('dict_reload', 'value', toUInt64(1))").strip() == "safe"
+
+        node_local.exec_in_container(
+            ["bash", "-c", "ln -snf /tmp/dict_reload_outside/secret.tsv /test_user_files_disk1/dict_reload_live.tsv"]
+        )
+        err = node_local.query_and_get_error("SYSTEM RELOAD DICTIONARY dict_reload")
+        assert "PATH_ACCESS_DENIED" in err, err
+        assert node_local.query("SELECT dictGet('dict_reload', 'value', toUInt64(1))").strip() == "safe"
+    finally:
+        node_local.query("DROP DICTIONARY IF EXISTS dict_reload")
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /tmp/dict_reload_outside /test_user_files_disk1/dict_reload_safe.tsv /test_user_files_disk1/dict_reload_live.tsv",
+            ]
+        )
+
+
+def test_s3_brace_alternative_outside_prefix_rejected():
+    """Every path the `{a,b,c}` groups expand to is validated before a disk operation: an absolute
+    or escaping alternative would otherwise be joined with the key prefix of `s3_plain` into a key
+    outside of it."""
+    node_s3.query("INSERT INTO FUNCTION file('brace_inside.csv', 'CSV', 'x UInt64') SELECT 1")
+    assert (
+        node_s3.query("SELECT * FROM file('{brace_inside,missing}.csv', 'CSV', 'x UInt64')").strip()
+        == "1"
+    )
+    for pattern in ["{/private/secret.csv,missing}", "{../secret,missing}.csv"]:
+        err = node_s3.query_and_get_error(f"SELECT * FROM file('{pattern}', 'CSV', 'x String')")
+        assert "DATABASE_ACCESS_DENIED" in err, err
