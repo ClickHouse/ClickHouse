@@ -225,7 +225,7 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     /// (e.g. the RHS of `IN`/`notIn`, where casts are suppressed): a bare decimal in the set would be parsed
     /// as `Float64` on the shard and round, so an `OR`-to-`IN` rewrite over high-scale `Decimal` values could
     /// filter on rounded constants.
-    if (typeNeedsExactLiteralSerialization(*constant_value_type))
+    if (constantNeedsExactLiteralSerialization(*constant_value.getColumn(), *constant_value_type))
     {
         auto exact_ast = columnConstantToExactLiteralAST(
             constant_value.getColumn(), 0, constant_value_type, options.date_time_constants_as_numbers);

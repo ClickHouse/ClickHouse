@@ -22,19 +22,24 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/validateColumnType.h>
 
+#include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
@@ -43,6 +48,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
@@ -1598,7 +1604,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32:
         {
-            /// `Date`/`Date32` text is unambiguous, so it round-trips exactly.
+            /// `Date`/`Date32` text is unambiguous, so it round-trips exactly within the range of the type.
             WriteBufferFromOwnString buf;
             data_type->getDefaultSerialization()->serializeText(*column, row, buf, {});
             return Field(buf.str());
@@ -1740,22 +1746,107 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false, false, date_time_as_numbers);
 }
 
+namespace
+{
+
+bool isInexactLiteralType(const IDataType & type)
+{
+    WhichDataType which(type);
+    return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic() || which.isQBit();
+}
+
+}
+
 /// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
 /// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
 /// does not keep the active member type), a `Dynamic` whose value's type is not visible in the type, or a
 /// `QBit`, whose `Field` is its internal tuple of bit planes.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
-    return anyInTypeTree(type, [](const IDataType & nested)
-    {
-        WhichDataType which(nested);
-        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic()
-            || which.isQBit();
-    });
+    return anyInTypeTree(type, isInexactLiteralType);
 }
 
 namespace
 {
+
+/// Arithmetic can take a `Date32` or `Time` past the range of its type, where its literal saturates.
+bool isRangeLimitedLiteralType(const IDataType & type)
+{
+    WhichDataType which(type);
+    return which.isDate32() || which.isTime();
+}
+
+bool typeMayNeedExactLiteralSerialization(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & nested) { return isInexactLiteralType(nested) || isRangeLimitedLiteralType(nested); });
+}
+
+bool isDateOrTimeValueOutOfRange(const IColumn & column, size_t row, const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Date32:
+        {
+            const Int32 day = assert_cast<const ColumnInt32 &>(column).getElement(row);
+            return day < DATE_LUT_MIN_EXTEND_DAY_NUM || day > DATE_LUT_MAX_EXTEND_DAY_NUM;
+        }
+        case TypeIndex::Time:
+        {
+            const Int32 seconds = assert_cast<const ColumnInt32 &>(column).getElement(row);
+            return seconds < -MAX_TIME_TIMESTAMP || seconds > MAX_TIME_TIMESTAMP;
+        }
+        case TypeIndex::Time64:
+        {
+            const Int64 ticks = assert_cast<const ColumnDecimal<Time64> &>(column).getElement(row).value;
+            const Int64 max_ticks = maxTicksForTime64(assert_cast<const DataTypeTime64 &>(type).getScaleMultiplier().value);
+            return ticks < -max_ticks || ticks > max_ticks;
+        }
+        default:
+            return false;
+    }
+}
+
+bool hasDateOrTimeOutOfRange(const IColumn & column, const IDataType & type)
+{
+    checkStackSize();
+
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(&column))
+        return hasDateOrTimeOutOfRange(const_column->getDataColumn(), type);
+
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Date32:
+        case TypeIndex::Time:
+            for (size_t i = 0; i < column.size(); ++i)
+                if (isDateOrTimeValueOutOfRange(column, i, type))
+                    return true;
+            return false;
+        case TypeIndex::Nullable:
+            return hasDateOrTimeOutOfRange(
+                assert_cast<const ColumnNullable &>(column).getNestedColumn(), *assert_cast<const DataTypeNullable &>(type).getNestedType());
+        case TypeIndex::LowCardinality:
+            return hasDateOrTimeOutOfRange(
+                *assert_cast<const ColumnLowCardinality &>(column).getDictionary().getNestedColumn(),
+                *assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType());
+        case TypeIndex::Array:
+            return hasDateOrTimeOutOfRange(
+                assert_cast<const ColumnArray &>(column).getData(), *assert_cast<const DataTypeArray &>(type).getNestedType());
+        case TypeIndex::Map:
+            return hasDateOrTimeOutOfRange(
+                assert_cast<const ColumnMap &>(column).getNestedColumn(), *assert_cast<const DataTypeMap &>(type).getNestedType());
+        case TypeIndex::Tuple:
+        {
+            const auto & element_types = assert_cast<const DataTypeTuple &>(type).getElements();
+            const auto & element_columns = assert_cast<const ColumnTuple &>(column).getColumns();
+            for (size_t i = 0; i != element_types.size(); ++i)
+                if (hasDateOrTimeOutOfRange(*element_columns[i], *element_types[i]))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
 
 UInt32 decimalFieldScale(const Field & field)
 {
@@ -1827,13 +1918,20 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
     return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(text), make_intrusive<ASTLiteral>(carrier_type_name));
 }
 
+/// A conversion to `Date32`/`Time`/`Time64` saturates past the range of the type, and `plus` does not.
+ASTPtr makeOffsetCastAST(ASTPtr base, Int64 offset, const String & type_name)
+{
+    return makeASTFunction(
+        "_CAST", makeASTFunction("plus", std::move(base), make_intrusive<ASTLiteral>(offset)), make_intrusive<ASTLiteral>(type_name));
+}
+
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
     /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
     checkStackSize();
 
     /// Subtrees the default literal path already serializes exactly are left unchanged.
-    if (!typeNeedsExactLiteralSerialization(*type))
+    if (!typeMayNeedExactLiteralSerialization(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
 
     if (isColumnConst(*column))
@@ -1876,13 +1974,47 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction("_CAST", std::move(array), make_intrusive<ASTLiteral>(type->getName()));
         }
         case TypeIndex::DateTime64:
+        {
+            /// Reinterpreting the raw ticks round-trips every value; a cast from a number or text saturates out of range.
+            /// The outer `_CAST` makes the receiver name the constant like the initiator.
+            const Int64 ticks = (*column)[row].safeGet<DecimalField<DateTime64>>().getValue().value;
+            auto ticks_ast
+                = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(std::to_string(ticks)), make_intrusive<ASTLiteral>("Int64"));
+            auto value = makeASTFunction("reinterpret", std::move(ticks_ast), make_intrusive<ASTLiteral>(type->getName()));
+            return makeASTFunction("_CAST", std::move(value), make_intrusive<ASTLiteral>(type->getName()));
+        }
         case TypeIndex::Time64:
-            /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
-            /// ticks via the carrier and cast back to the original type. Local date-time text would be
-            /// ambiguous across DST overlaps in non-UTC time zones (two UTC instants format alike, and
-            /// parsing picks one side), and a bare numeric literal would round through Float64.
-            return makeASTFunction(
-                "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
+        {
+            /// Exact decimal ticks via the carrier: a bare numeric literal would round through Float64.
+            if (!isDateOrTimeValueOutOfRange(*column, row, *type))
+                return makeASTFunction(
+                    "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
+            /// The part below one second is in range, and `plus` adds whole seconds.
+            const auto & time64_type = assert_cast<const DataTypeTime64 &>(*type);
+            const Int64 ticks = assert_cast<const ColumnDecimal<Time64> &>(*column).getElement(row).value;
+            const Int64 multiplier = time64_type.getScaleMultiplier().value;
+            auto fraction = makeASTFunction(
+                "_CAST", makeExactDecimalCarrierAST(Field(DecimalField<Decimal64>(Decimal64(ticks % multiplier), time64_type.getScale()))),
+                make_intrusive<ASTLiteral>(type->getName()));
+            return makeOffsetCastAST(std::move(fraction), ticks / multiplier, type->getName());
+        }
+        case TypeIndex::Date32:
+        case TypeIndex::Time:
+        {
+            /// Every leaf names its type, so an array of in-range and out-of-range values has one element type.
+            if (!isDateOrTimeValueOutOfRange(*column, row, *type))
+                return makeCastToTypeNameAST(
+                    make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers)), type->getName());
+            auto zero = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(UInt64(0)), make_intrusive<ASTLiteral>(type->getName()));
+            return makeOffsetCastAST(std::move(zero), assert_cast<const ColumnInt32 &>(*column).getElement(row), type->getName());
+        }
+        case TypeIndex::LowCardinality:
+        {
+            const auto & low_cardinality_column = assert_cast<const ColumnLowCardinality &>(*column);
+            return columnConstantToExactLiteralASTImpl(
+                low_cardinality_column.getDictionary().getNestedColumn(), low_cardinality_column.getIndexes().getUInt(row),
+                assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), date_time_as_numbers);
+        }
         case TypeIndex::Array:
         {
             const auto & array_column = assert_cast<const ColumnArray &>(*column);
@@ -2010,6 +2142,12 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
     }
 }
 
+}
+
+bool constantNeedsExactLiteralSerialization(const IColumn & column, const IDataType & type)
+{
+    return typeNeedsExactLiteralSerialization(type)
+        || (anyInTypeTree(type, isRangeLimitedLiteralType) && hasDateOrTimeOutOfRange(column, type));
 }
 
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
