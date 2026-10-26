@@ -47,18 +47,18 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-At [4bf06a7b2](https://github.com/dzbarsky/clickhouse/commit/4bf06a7b23234ef806c1160fde55cec7fb1f2f8d), the stripped and normalized ClickHouse executable matched native CMake on both CPUs. The raw ClickHouse and DBMS unit-test executables matched the previous Bazel builds on both CPUs. The table records SHA-256 digests and byte counts from Bazel output metadata.
+At [d6515b94f](https://github.com/dzbarsky/clickhouse/commit/d6515b94fdee2bd98a92b68cc1a02dd4ff04703b), the stripped and normalized ClickHouse executable matched native CMake on both CPUs. The raw ClickHouse and DBMS unit-test executables matched the previous Bazel builds on both CPUs. The table records SHA-256 digests and byte counts from Bazel output metadata.
 
 | Native Bazel build | ELF | SHA-256 | Bytes |
 | --- | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/12560d4e-fbb0-402f-9fec-1ef7d312c8e2) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [x86-64](https://app.buildbuddy.io/invocation/12560d4e-fbb0-402f-9fec-1ef7d312c8e2) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
-| [x86-64](https://app.buildbuddy.io/invocation/12560d4e-fbb0-402f-9fec-1ef7d312c8e2) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
-| [ARM64](https://app.buildbuddy.io/invocation/52dd43b6-2d88-45a1-94b8-6de9943e987f) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
-| [ARM64](https://app.buildbuddy.io/invocation/52dd43b6-2d88-45a1-94b8-6de9943e987f) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
-| [ARM64](https://app.buildbuddy.io/invocation/52dd43b6-2d88-45a1-94b8-6de9943e987f) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+| [x86-64](https://app.buildbuddy.io/invocation/929293c1-031f-452c-947e-012a19f06e51) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/929293c1-031f-452c-947e-012a19f06e51) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/929293c1-031f-452c-947e-012a19f06e51) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/a12ad5b4-df18-4c0c-80e2-67269e05729e) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/a12ad5b4-df18-4c0c-80e2-67269e05729e) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/a12ad5b4-df18-4c0c-80e2-67269e05729e) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
 
-All 12 native targets produced their outputs on each CPU, including nine validation JSON reports. [Validation details](bazel/initial_migration/validation-history.md#4bf06a7b2).
+All 12 native targets produced their outputs on each CPU, including nine validation JSON reports. [Validation details](bazel/initial_migration/validation-history.md#d6515b94f).
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-[4bf06a7b2](https://github.com/dzbarsky/clickhouse/commit/4bf06a7b23234ef806c1160fde55cec7fb1f2f8d): [x86-64 DWYU](https://app.buildbuddy.io/invocation/8007b0a7-7b54-434a-8e9b-939ebd9fe859): 28/28 original reports, 19 clean, 1 with declaration findings, 8 with only unresolved link use; [ARM64 DWYU](https://app.buildbuddy.io/invocation/6dccea07-614c-4ef3-9424-e5fff0abd313): 26/26 original reports, 17 clean, 1 with declaration findings, 8 with only unresolved link use. The census contains 658 targets. [Validation details](bazel/initial_migration/validation-history.md#4bf06a7b2).
+[d6515b94f](https://github.com/dzbarsky/clickhouse/commit/d6515b94fdee2bd98a92b68cc1a02dd4ff04703b): [x86-64 DWYU](https://app.buildbuddy.io/invocation/6f5a19a5-d95a-489f-9327-7fb48c25544b): 33/33 original reports, 21 compiled libraries clean, 3 header-only libraries clean, 0 with declaration findings, 9 with only unresolved link use; [ARM64 DWYU](https://app.buildbuddy.io/invocation/20ab314d-33f5-4826-9e15-ba688f39b3b2): 35/35 original reports, 22 compiled libraries clean, 3 header-only libraries clean, 0 with declaration findings, 10 with only unresolved link use. The census contains 658 targets. [Validation details](bazel/initial_migration/validation-history.md#d6515b94f).
