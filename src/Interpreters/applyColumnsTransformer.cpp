@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <unordered_set>
 
 namespace DB
 {
@@ -57,6 +58,70 @@ ASTPtr tryReplaceIdentifierRoot(const IAST & ast, const ASTPtr & replacement, co
     return result;
 }
 
+void collectIdentifierRoots(const IAST & ast, std::unordered_set<String> & roots)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+        roots.insert(identifier->name_parts.front());
+    for (const auto & child : ast.children)
+        collectIdentifierRoots(*child, roots);
+}
+
+/// Renames the references to the lambda parameter `from` inside `ast`, including the roots of compound
+/// identifiers like `from.id`, but not inside nested lambdas that declare their own `from`.
+void renameLambdaParameterReferences(ASTPtr & ast, const String & from, const String & to)
+{
+    if (!ast)
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (identifier->name_parts.front() != from)
+            return;
+        auto name_parts = identifier->name_parts;
+        name_parts.front() = to;
+        auto renamed = make_intrusive<ASTIdentifier>(std::move(name_parts));
+        renamed->alias = identifier->alias;
+        ast = std::move(renamed);
+        return;
+    }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (function->arguments && function->arguments->children.size() == 2 && !lambdaArgumentShadowsName(*function, from))
+            renameLambdaParameterReferences(function->arguments->children[1], from, to);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        renameLambdaParameterReferences(child, from, to);
+}
+
+/// Before an expression is substituted into the body of the nested `lambda`, renames the parameters of that
+/// lambda which have the same names as the identifiers of the substituted expression. Otherwise the parameters
+/// would capture them: substituting `a` for `x` in `a -> x` must give `a_1 -> a`, not `a -> a`.
+void renameLambdaParametersCapturing(ASTFunction & lambda, const std::unordered_set<String> & replacement_roots)
+{
+    auto & parameters = lambda.arguments->children[0]->as<ASTFunction &>().arguments->children;
+    for (auto & parameter : parameters)
+    {
+        const String parameter_name = parameter->as<ASTIdentifier &>().name();
+        if (!replacement_roots.contains(parameter_name))
+            continue;
+
+        std::unordered_set<String> used_names = replacement_roots;
+        collectIdentifierRoots(*lambda.arguments->children[1], used_names);
+        for (const auto & other_parameter : parameters)
+            used_names.insert(other_parameter->as<ASTIdentifier &>().name());
+
+        String new_name;
+        for (size_t i = 1; new_name.empty() || used_names.contains(new_name); ++i)
+            new_name = parameter_name + "_" + std::to_string(i);
+
+        renameLambdaParameterReferences(lambda.arguments->children[1], parameter_name, new_name);
+        parameter = make_intrusive<ASTIdentifier>(new_name);
+    }
+}
+
 void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const String & lambda_arg, bool is_masked = false)
 {
     if (!ast)
@@ -81,11 +146,14 @@ void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const Strin
         if (!function->arguments || function->arguments->children.size() != 2)
             return;
 
-        replaceLambdaArgument(
-            function->arguments->children[1],
-            replacement,
-            lambda_arg,
-            is_masked || lambdaArgumentShadowsName(*function, lambda_arg));
+        const bool is_masked_inside = is_masked || lambdaArgumentShadowsName(*function, lambda_arg);
+        if (!is_masked_inside)
+        {
+            std::unordered_set<String> replacement_roots;
+            collectIdentifierRoots(*replacement, replacement_roots);
+            renameLambdaParametersCapturing(*function, replacement_roots);
+        }
+        replaceLambdaArgument(function->arguments->children[1], replacement, lambda_arg, is_masked_inside);
         return;
     }
 
@@ -227,11 +295,14 @@ void replaceColumnReferences(ASTPtr & ast, const ASTPtr & replacement, const Str
         if (!function->arguments || function->arguments->children.size() != 2)
             return;
 
-        replaceColumnReferences(
-            function->arguments->children[1],
-            replacement,
-            name,
-            is_masked || lambdaArgumentShadowsName(*function, name));
+        const bool is_masked_inside = is_masked || lambdaArgumentShadowsName(*function, name);
+        if (!is_masked_inside)
+        {
+            std::unordered_set<String> replacement_roots;
+            collectIdentifierRoots(*replacement, replacement_roots);
+            renameLambdaParametersCapturing(*function, replacement_roots);
+        }
+        replaceColumnReferences(function->arguments->children[1], replacement, name, is_masked_inside);
         return;
     }
 
