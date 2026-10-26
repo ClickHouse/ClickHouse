@@ -204,8 +204,11 @@ String StorageMaterializedPostgreSQL::getNestedTableName() const
 
 StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 {
-    if (nested_table_id.has_value())
-        return nested_table_id.value();
+    {
+        std::lock_guard lock(nested_table_id_mutex);
+        if (nested_table_id.has_value())
+            return nested_table_id.value();
+    }
 
     auto table_id = getStorageID();
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -231,6 +234,7 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructur
 
         auto nested_storage = DatabaseCatalog::instance().getTable(tmp_nested_table_id, nested_context);
         /// Save storage_id with correct uuid.
+        std::lock_guard lock(nested_table_id_mutex);
         nested_table_id = nested_storage->getStorageID();
     }
     catch (...)
@@ -251,7 +255,10 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
-    nested_table_id = nested_storage->getStorageID();
+    {
+        std::lock_guard lock(nested_table_id_mutex);
+        nested_table_id = nested_storage->getStorageID();
+    }
     auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
     setInMemoryMetadata(*nested_metadata);
     has_nested.store(true);

@@ -11,7 +11,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <base/defines.h>
 #include <memory>
+#include <mutex>
 
 
 namespace DB
@@ -204,8 +206,10 @@ private:
     ContextMutablePtr nested_context;
 
     /// Save nested storageID to be able to fetch it. It is set once nested is created and will be
-    /// updated only when nested is reloaded or renamed.
-    std::optional<StorageID> nested_table_id;
+    /// updated only when nested is reloaded or renamed. It is guarded by a mutex, because it is replaced
+    /// when an incomplete nested table is loaded again from a new snapshot, while concurrent queries may read it.
+    mutable std::mutex nested_table_id_mutex;
+    std::optional<StorageID> nested_table_id TSA_GUARDED_BY(nested_table_id_mutex);
 
     /// Needed only for the case of single MaterializedPostgreSQL storage - in order to make
     /// delayed storage forwarding into replication handler.
