@@ -5,6 +5,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
@@ -21,6 +22,11 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char mt_mutate_task_pause_before_rename_part[];
 }
 
 
@@ -121,6 +127,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 #endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
+
+                FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_rename_part);
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
 
