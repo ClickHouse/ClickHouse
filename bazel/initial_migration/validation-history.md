@@ -2626,3 +2626,40 @@ Both native binaries passed the five CLI checks. Both unit-test binaries passed 
 x86-64: all seven GET requests against the native ClickHouse and Keeper handlers returned HTTP 200 with the expected content and headers.
 
 ARM64: all seven GET requests against the native ClickHouse and Keeper handlers returned HTTP 200 with the expected content and headers.
+
+## 2b07927bd
+
+At [2b07927bd](https://github.com/dzbarsky/clickhouse/commit/2b07927bd6b66163d37cba6cf90b372a4defdc29), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/2389f9c4bedf8a914e34cecb84ec8a7357380cea).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/785b7ca9-639e-47b7-ae47-ab2c98575056) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/785b7ca9-639e-47b7-ae47-ab2c98575056) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/785b7ca9-639e-47b7-ae47-ab2c98575056) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/9dcbfac9-9d14-4041-a584-912dd230c102) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/9dcbfac9-9d14-4041-a584-912dd230c102) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/9dcbfac9-9d14-4041-a584-912dd230c102) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Matches previous Bazel |
+
+[x86-64](https://app.buildbuddy.io/invocation/785b7ca9-639e-47b7-ae47-ab2c98575056): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,788 operands; its response file was `c3f9fbefae3856f97e6f88c648ce153b46c0464aba58fc3de1ee119cbe42e333`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+x86-64 [DWYU](https://app.buildbuddy.io/invocation/910a0097-a2ad-4bfc-81fb-bf4abd387a58): timed out. Of 29 targets offered, 0 were clean, 0 had findings, and 29 were ungraded. The DWYU reader reported: DWYU timed out before collecting reports. Before the timeout, Bazel emitted report files for `//src/AggregateFunctions:aggregate_api`, `//src/Common:exception_api`, `//src/Loggers:headers`, `//src:core_types`. They did not establish an owner grade.
+
+[ARM64](https://app.buildbuddy.io/invocation/9dcbfac9-9d14-4041-a584-912dd230c102): all 12 targets built. Nine status files verified the SDKs, link inputs and runtime tests. The unit link used 16,701 operands; its response file was `04b4d7bdbf78104c6728b33fcde7805f9c4e145d08002bbda999da883802d365`. The existing tests passed (38 GoogleTest cases, 10 interval cases and 6 registered SQL cases). `StorageMongoDB.ConfigurationCreatesDriverInstanceFirst` passed in a fresh process. The JSONPath range/star query returned `[0, 1, 4, 0, -1, -4]`; the FrequencyHolder charset/language query returned `WINDOWS-1252` and `de`.
+
+ARM64 [DWYU](https://app.buildbuddy.io/invocation/b1098410-396b-4b3f-a1ed-af18ffe79a2d): timed out. Of 27 targets offered, 0 were clean, 0 had findings, and 27 were ungraded. The DWYU reader reported: DWYU timed out before collecting reports.
+
+On both CPUs, `ZooKeeperTest.ListRequestWireRoundTrip` passed. The lower- and uppercase `SHOW TABLES FROM information_schema` queries each returned the 20 rows in [01161_information_schema.reference](../../tests/queries/0_stateless/01161_information_schema.reference). Both ClickHouse local invocations from [05316_local_sync_logger_without_channels](../../tests/queries/0_stateless/05316_local_sync_logger_without_channels.sh) passed with `--logger.async=0`; the trace run logged `SELECT 1`.
+
+This build removed unused include directories from 18 program libraries, moved the ICU converter implementation headers to `srcs`, assigned the public parser headers to `clickhouse_parsers`, and changed DWYU to recognize the owners of directly linked objects.
+
+On each CPU, the native ClickHouse link took `Scrt1.o`, `crti.o`, `crtn.o`, `crtbeginS.o` and `crtendS.o` directly from their declared providers. The native build recorded each input’s SHA-256. The grouped unit-test link arguments were unchanged.
+
+x86-64 Clang startup directories, relative to the Bazel execution root: glibc `bazel-out/k8-opt/bin/external/llvm++glibc+glibc_2.31/native/x86_64/`; GCC `external/+contrib+clickhouse_sysroot/linux-x86_64/lib/gcc/x86_64-linux-gnu/9/`.
+
+x86-64: all five CLI checks and seven HTTP GET checks passed.
+
+ARM64 Clang startup directories, relative to the Bazel execution root: glibc `bazel-out/k8-opt/bin/external/llvm++glibc+glibc_2.28/native/aarch64/`; GCC `external/+contrib+clickhouse_sysroot/linux-aarch64/lib/gcc/aarch64-linux-gnu/8.3.0/`.
+
+ARM64: all five CLI checks and seven HTTP GET checks passed.
+
+The two native unit-test binaries passed `AlterCommentOnly.CommentOnlyModifyColumn`, `TreeHashCompleteness.ColumnDeclarationCloneAndJSONRoundTripHashEqual`, `LiteralTokenMap.GrowsBeyondInlineCapacity`. Both ClickHouse binaries produced the full 4,934-byte reference output for [00436_convert_charset.sql](../../tests/queries/0_stateless/00436_convert_charset.sql).
