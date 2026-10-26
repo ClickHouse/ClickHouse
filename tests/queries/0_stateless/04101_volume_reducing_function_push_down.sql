@@ -1,7 +1,6 @@
 -- The plan-shape assertions below describe the step layout produced by the Analyzer.
 -- `query_plan_merge_expressions` is pinned because the pass needs the expression and the
 -- row-carrying step it is pushed below to be adjacent, which is what merging produces.
-SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_merge_expressions = 1;
 SET query_plan_max_step_description_length = 10000;

@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_has_to_in = 0;
 SET optimize_functions_to_subcolumns = 1;
 

@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM DROP QUERY CACHE"
 QUERY_ID="${CLICKHOUSE_DATABASE}_query_cache_partial_result_on_cancel"
 
 # One row per block, 0.1 s per row: the query runs for about 10 s unless it is cancelled.
-$CLICKHOUSE_CLIENT --query_id="$QUERY_ID" --partial_result_on_first_cancel=1 --max_block_size=1 --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT --query_id="$QUERY_ID" --partial_result_on_first_cancel=1 --max_block_size=1 -q "
     SELECT sum(s) FROM (SELECT sleepEachRow(0.1) AS s, number FROM numbers(100) SETTINGS use_query_cache = 1) FORMAT Null" &
 pid=$!
 
