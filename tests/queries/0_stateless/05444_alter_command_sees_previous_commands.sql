@@ -97,3 +97,39 @@ INSERT INTO t_alter_previous_commands_readd VALUES (1, [42]);
 ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`; -- { serverError NOT_IMPLEMENTED }
 SELECT id, `n.a` FROM t_alter_previous_commands_readd;
 DROP TABLE t_alter_previous_commands_readd;
+
+-- A column renamed and then dropped by the same ALTER is dropped under the name the part stores it, so a column of
+-- that name added again starts empty in a wide part instead of reading the data of the dropped column.
+CREATE TABLE t_alter_previous_commands_renamed (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_renamed VALUES (1, 42);
+ALTER TABLE t_alter_previous_commands_renamed RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN r UInt32 DEFAULT 7 SETTINGS alter_sync = 2;
+SELECT id, r FROM t_alter_previous_commands_renamed;
+SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_renamed' AND active AND column IN ('q', 'r');
+OPTIMIZE TABLE t_alter_previous_commands_renamed FINAL;
+SELECT id, r FROM t_alter_previous_commands_renamed;
+DROP TABLE t_alter_previous_commands_renamed;
+
+CREATE TABLE t_alter_previous_commands_renamed (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_renamed VALUES (1, 42);
+ALTER TABLE t_alter_previous_commands_renamed RENAME COLUMN q TO r, DROP COLUMN IF EXISTS r, ADD COLUMN IF NOT EXISTS r UInt32 DEFAULT 7 SETTINGS alter_sync = 2;
+SELECT id, r FROM t_alter_previous_commands_renamed;
+DROP TABLE t_alter_previous_commands_renamed;
+
+CREATE TABLE t_alter_previous_commands_renamed (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_renamed VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_renamed RENAME COLUMN `n.a` TO `n.c`, DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.c` Array(UInt32) SETTINGS alter_sync = 2;
+SELECT id, `n.c` FROM t_alter_previous_commands_renamed;
+DROP TABLE t_alter_previous_commands_renamed;
+
+-- The drop takes the place of the rename, so a column renamed to the freed name is not dropped with it.
+CREATE TABLE t_alter_previous_commands_renamed (id UInt64, q UInt32, p UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_renamed VALUES (1, 42, 5);
+ALTER TABLE t_alter_previous_commands_renamed RENAME COLUMN q TO r, RENAME COLUMN p TO q, DROP COLUMN r SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_renamed;
+DROP TABLE t_alter_previous_commands_renamed;
+
+CREATE TABLE t_alter_previous_commands_renamed (id UInt64, q UInt32, p UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_renamed VALUES (1, 42, 5);
+ALTER TABLE t_alter_previous_commands_renamed RENAME COLUMN q TO r, RENAME COLUMN p TO q, DROP COLUMN q SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_renamed;
+DROP TABLE t_alter_previous_commands_renamed;
