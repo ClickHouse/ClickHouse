@@ -316,6 +316,7 @@ static struct InitFiu
     ONCE(backup_fail_reading_archive_size) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
     PAUSEABLE_ONCE(backup_pause_after_lock_file_creation) \
+    ONCE(backup_cancel_after_lock_file_creation) \
     PAUSEABLE(backup_pause_before_reading_file_contents) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \

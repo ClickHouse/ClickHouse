@@ -65,6 +65,7 @@ namespace FailPoints
     extern const char backup_fail_reading_archive_size[];
     extern const char backup_pause_before_lock_file_creation[];
     extern const char backup_pause_after_lock_file_creation[];
+    extern const char backup_cancel_after_lock_file_creation[];
 }
 
 namespace ErrorCodes
@@ -1191,6 +1192,12 @@ void BackupImpl::createLockFile()
         }
     }
 
+    fiu_do_on(FailPoints::backup_cancel_after_lock_file_creation,
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_context->killCurrentQuery();
+    });
+
     if (writer->fileExists(completed_file))
     {
         tryRemoveOwnLockFile();
@@ -1276,6 +1283,9 @@ bool BackupImpl::tryRemoveOwnLockFile() noexcept
         return false;
     try
     {
+        /// If construction fails, no backup object remains to clean up the lock.
+        /// Cancellation must not prevent the ownership check or removal.
+        ThreadStatus::QueryCancellationBlocker cleanup;
         own_lock_cleanup_result = removeLockFile();
     }
     catch (...)
