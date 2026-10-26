@@ -604,6 +604,36 @@ private:
 };
 }
 
+DataTypePtr ColumnInDataset::getType() const
+{
+    if (subcolumn_name.empty())
+        return type_in_storage;
+    return type_in_storage->getSubcolumnType(subcolumn_name);
+}
+
+std::optional<ColumnInDataset> tryResolveColumnInDataset(const String & name, const NamesAndTypesList & columns)
+{
+    /// A top-level column may have a dot in its name, so an exact match goes first.
+    for (const auto & column : columns)
+    {
+        if (column.name == name)
+            return ColumnInDataset{.name_in_storage = column.name, .type_in_storage = column.type, .subcolumn_name = {}};
+    }
+
+    for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+    {
+        const std::string_view prefix(name.data(), dot);
+        const String subcolumn_name = name.substr(dot + 1);
+        for (const auto & column : columns)
+        {
+            if (column.name == prefix && column.type->tryGetSubcolumnType(subcolumn_name))
+                return ColumnInDataset{.name_in_storage = column.name, .type_in_storage = column.type, .subcolumn_name = subcolumn_name};
+        }
+    }
+
+    return std::nullopt;
+}
+
 BatchSource::BatchSource(
     const Block & output_header,
     Block physical_header_,
@@ -622,6 +652,21 @@ BatchSource::BatchSource(
 {
     if (!coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance BatchSource requires a scan coordinator");
+
+    /// The dataset is read by top-level columns, which may include columns needed only by a residual
+    /// filter. The output has the requested columns and subcolumns, followed by the virtual columns.
+    const auto physical_columns = physical_header.getNamesAndTypesList();
+    for (const auto & column : output_header)
+    {
+        if (requested_virtual_columns.contains(column.name))
+            continue;
+
+        const auto resolved = tryResolveColumnInDataset(column.name, physical_columns);
+        if (!resolved)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Requested column '{}' is not read from the `Lance` dataset", column.name);
+
+        output_columns.push_back({physical_header.getPositionByName(resolved->name_in_storage), resolved->subcolumn_name});
+    }
 }
 
 void BatchSource::onCancel() noexcept
@@ -694,6 +739,22 @@ Chunk BatchSource::generate()
             ProfileEvents::increment(ProfileEvents::LanceArrowFieldMappingsBuilt);
         ProfileEvents::increment(ProfileEvents::LanceArrowConvertMicroseconds, convert_watch.elapsedMicroseconds());
         validateRecordBatchNullability(*record_batch, physical_header);
+
+        const size_t num_rows = chunk.getNumRows();
+        auto physical_columns = chunk.detachColumns();
+        Columns columns;
+        columns.reserve(output_columns.size());
+        for (const auto & output_column : output_columns)
+        {
+            const auto & physical_column = physical_columns.at(output_column.physical_position);
+            if (output_column.subcolumn_name.empty())
+                columns.push_back(physical_column);
+            else
+                columns.push_back(physical_header.getByPosition(output_column.physical_position).type->getSubcolumn(
+                    output_column.subcolumn_name, physical_column));
+        }
+        chunk.setColumns(std::move(columns), num_rows);
+
         addVirtualColumns(chunk, requested_virtual_columns, virtual_values, context, format_settings);
         return chunk;
     }

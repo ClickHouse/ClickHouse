@@ -1198,48 +1198,53 @@ Pipe LanceMetadata::makeReadPipe(
     }
 
     const bool effective_need_only_count = need_only_count && predicate_pushdown.is_complete;
-    Names scan_projection = read_from_format_info.requested_columns.getNames();
-    if (effective_need_only_count)
-        scan_projection.clear();
+
+    /// `Lance` reads top-level columns: a subcolumn is read with its column, and `Lance::BatchSource`
+    /// extracts it. Projecting a subcolumn by name would not work for the subcolumns that only exist in
+    /// ClickHouse, such as `a.size0`.
+    NamesAndTypesList columns_to_read;
+    std::unordered_set<String> names_to_read;
+    const auto add_column_to_read = [&](const String & column_name, const DataTypePtr & column_type)
+    {
+        if (names_to_read.emplace(column_name).second)
+            columns_to_read.emplace_back(column_name, column_type);
+    };
+    if (!effective_need_only_count)
+    {
+        for (const auto & column : read_from_format_info.requested_columns)
+            add_column_to_read(column.getNameInStorage(), column.getTypeInStorage());
+    }
 
     const auto residual_physical_columns = collectResidualPhysicalColumns(
         format_filter_info, requested_virtual_columns, predicate_pushdown.is_complete);
-    std::unordered_set<String> projected_names(scan_projection.begin(), scan_projection.end());
-    for (const auto & column : residual_physical_columns)
-    {
-        if (projected_names.emplace(column.name).second)
-            scan_projection.push_back(column.name);
-    }
-
     if (!residual_physical_columns.empty())
     {
         if (!pinned_physical_columns)
             pinned_physical_columns = dataset.tableSchema(snapshot, local_context, cancel_handle);
-        std::unordered_map<String, DataTypePtr> physical_types;
-        physical_types.reserve(pinned_physical_columns->size());
-        for (const auto & column : *pinned_physical_columns)
-            physical_types.emplace(column.name, column.type);
         for (const auto & column : residual_physical_columns)
         {
-            const auto it = physical_types.find(column.name);
-            if (it == physical_types.end())
+            const auto resolved = Lance::tryResolveColumnInDataset(column.name, *pinned_physical_columns);
+            if (!resolved)
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Residual `Lance` predicate requires missing physical column '{}'",
                     column.name);
             }
-            if (!it->second->equals(*column.type))
+            const auto resolved_type = resolved->getType();
+            if (!resolved_type->equals(*column.type))
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Residual `Lance` predicate requires column '{}' with type '{}', but the pinned dataset schema has type '{}'",
                     column.name,
                     column.type->getName(),
-                    it->second->getName());
+                    resolved_type->getName());
             }
+            add_column_to_read(resolved->name_in_storage, resolved->type_in_storage);
         }
     }
+    const Names scan_projection = columns_to_read.getNames();
     const bool use_row_count_source = scan_projection.empty() && residual_physical_columns.empty();
 
     std::optional<UInt64> scan_limit;
@@ -1332,25 +1337,9 @@ Pipe LanceMetadata::makeReadPipe(
     }
 
     ColumnsWithTypeAndName physical_columns;
-    physical_columns.reserve(scan_projection.size());
-    std::unordered_map<String, DataTypePtr> projected_types;
-    projected_types.reserve(read_from_format_info.requested_columns.size() + residual_physical_columns.size());
-    for (const auto & column : read_from_format_info.requested_columns)
-        projected_types.emplace(column.name, column.type);
-    for (const auto & column : residual_physical_columns)
-        projected_types.emplace(column.name, column.type);
-    for (const auto & column_name : scan_projection)
-    {
-        const auto it = projected_types.find(column_name);
-        if (it == projected_types.end())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "No ClickHouse type is available for projected `Lance` column '{}'",
-                column_name);
-        }
-        physical_columns.emplace_back(it->second->createColumn(), it->second, column_name);
-    }
+    physical_columns.reserve(columns_to_read.size());
+    for (const auto & column : columns_to_read)
+        physical_columns.emplace_back(column.type->createColumn(), column.type, column.name);
     Block physical_header(std::move(physical_columns));
 
     auto coordinator = Lance::ScanCoordinator::create(std::move(dataset), scan_description, std::move(cancellation));

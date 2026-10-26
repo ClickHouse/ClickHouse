@@ -134,6 +134,21 @@ private:
     Scan::Stats reported_current_metrics;
 };
 
+/// A column of a ClickHouse header that is read from a top-level column of a `Lance` dataset: the
+/// column itself or one of its subcolumns, such as `t.x` of a tuple or `a.size0` of an array.
+struct ColumnInDataset
+{
+    String name_in_storage;
+    DataTypePtr type_in_storage;
+    /// Empty for the whole column.
+    String subcolumn_name;
+
+    DataTypePtr getType() const;
+};
+
+/// Finds the column among the top-level `columns` of a dataset that `name` refers to.
+std::optional<ColumnInDataset> tryResolveColumnInDataset(const String & name, const NamesAndTypesList & columns);
+
 struct ReadVirtualValues
 {
     String path;
@@ -160,6 +175,15 @@ protected:
     void onCancel() noexcept override;
 
 private:
+    struct OutputColumn
+    {
+        size_t physical_position = 0;
+        /// Empty for the whole column.
+        String subcolumn_name;
+    };
+
+    /// The physical columns of the output header, taken from the columns of `physical_header`.
+    std::vector<OutputColumn> output_columns;
     Block physical_header;
     std::shared_ptr<ScanCoordinator> coordinator;
     NamesAndTypesList requested_virtual_columns;
