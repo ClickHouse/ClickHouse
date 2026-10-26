@@ -7,6 +7,8 @@
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2, parallel_replicas_local_plan = 1,
     parallel_replicas_index_analysis_only_on_coordinator = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas';
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
 -- The conversion runs on a two-level table only. A single-stream read keeps the thresholds only with a
 -- non-zero external threshold (never reached here), and an adaptive table goes two-level once frozen.
 SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
