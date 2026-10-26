@@ -193,7 +193,7 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
         readStringBinary(key, ctx.in);
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity);
+    deserializeAggregateDescriptionsWithoutArguments(aggregates, ctx.in, ctx.max_type_complexity, ctx.input_headers.front().get());
 
     const auto & query_settings = ctx.context->getSettingsRef();
 

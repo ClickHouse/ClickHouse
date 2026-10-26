@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Parsers/NullsAction.h>
@@ -210,6 +211,39 @@ void serializeAggregateDescriptions(
     }
 }
 
+namespace
+{
+
+void takeStateVariantsFromInput(
+    DataTypes & argument_types, const Names & argument_names, const String & column_name, const Block & input_header)
+{
+    const auto find_unique = [&](const String & name) -> const ColumnWithTypeAndName *
+    {
+        if (std::ranges::count(input_header, name, &ColumnWithTypeAndName::name) != 1)
+            return nullptr;
+        return &input_header.getByName(name);
+    };
+
+    DataTypes state_argument_types;
+    if (const auto * state_column = find_unique(column_name))
+        if (const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(state_column->type.get()))
+            state_argument_types = state_type->getArgumentsDataTypes();
+
+    for (size_t i = 0; i < argument_types.size(); ++i)
+    {
+        DataTypePtr input_type;
+        if (const auto * argument_column = i < argument_names.size() ? find_unique(argument_names[i]) : nullptr)
+            input_type = argument_column->type;
+        else if (state_argument_types.size() == argument_types.size())
+            input_type = state_argument_types[i];
+
+        if (input_type && differsOnlyByAggregateStateVariant(input_type, argument_types[i]))
+            argument_types[i] = input_type;
+    }
+}
+
+}
+
 void deserializeAggregateDescriptions(
     AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header)
 {
@@ -230,14 +264,10 @@ void deserializeAggregateDescriptions(
         for (auto & arg_name : aggregate.argument_names)
         {
             readStringBinary(arg_name, in);
-            auto & argument_type = argument_types.emplace_back(decodeDataType(in, max_type_complexity));
-            if (input_header && std::ranges::count(*input_header, arg_name, &ColumnWithTypeAndName::name) == 1)
-            {
-                const auto & column_type = input_header->getByName(arg_name).type;
-                if (differsOnlyByAggregateStateVariant(column_type, argument_type))
-                    argument_type = column_type;
-            }
+            argument_types.emplace_back(decodeDataType(in, max_type_complexity));
         }
+        if (input_header)
+            takeStateVariantsFromInput(argument_types, aggregate.argument_names, aggregate.column_name, *input_header);
 
         String function_name;
         readStringBinary(function_name, in);
@@ -280,7 +310,8 @@ void serializeAggregateDescriptionsWithoutArguments(
     }
 }
 
-void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity)
+void deserializeAggregateDescriptionsWithoutArguments(
+    AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header)
 {
     UInt64 num_aggregates = 0;
     readVarUInt(num_aggregates, in);
@@ -298,6 +329,9 @@ void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & ag
         argument_types.reserve(num_args);
         for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
             argument_types.emplace_back(decodeDataType(in, max_type_complexity));
+
+        if (input_header)
+            takeStateVariantsFromInput(argument_types, {}, aggregate.column_name, *input_header);
 
         UInt64 num_params = 0;
         readVarUInt(num_params, in);

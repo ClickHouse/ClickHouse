@@ -33,7 +33,8 @@ using AggregateDescriptions = std::vector<AggregateDescription>;
 
 void serializeAggregateDescriptions(
     const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
-/// An argument that differs from its only column in `input_header` just by the aggregate state variant takes the column's type.
+/// An argument type that differs from the input just by the aggregate state variant takes the input's:
+/// its own column in `input_header`, or the argument of the aggregate's state column when the input holds states.
 void deserializeAggregateDescriptions(
     AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header = nullptr);
 
@@ -43,6 +44,7 @@ void deserializeAggregateDescriptions(
 /// function from them and leaves the argument names empty, mirroring the writer's state.
 void serializeAggregateDescriptionsWithoutArguments(
     const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key = false, const Block * input_header = nullptr);
-void deserializeAggregateDescriptionsWithoutArguments(AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity);
+void deserializeAggregateDescriptionsWithoutArguments(
+    AggregateDescriptions & aggregates, ReadBuffer & in, size_t max_type_complexity, const Block * input_header = nullptr);
 
 }
