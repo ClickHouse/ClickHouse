@@ -412,6 +412,13 @@ so actual chunk sizes range from `target/2` to `1.5 * target`.
 Smaller values reduce peak memory during merges of JSON columns with many unique paths at the cost of more chunks.
 )", 0, \
         {"26.9", 8192, 8192, "New setting"}) \
+    DECLARE(MergeTreeObjectTypedSharedDataSerializationVersion, object_typed_shared_data_serialization_version, "v1", R"(
+Serialization version of the typed shared data inside JSON data type: the structure that stores the typed paths declared `SHARED` in a part together, in a constant number of files, instead of a separate set of files per path.
+
+Possible values:
+- `v1` - for each granule the data of every `SHARED` path in path order, with the start of every path's data recorded in a marks stream, so that a read of some paths decodes only them.
+)", 0, \
+        {"26.11", "v1", "v1", "New setting"}) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.
 
