@@ -35,7 +35,7 @@ SETTINGS table_disk = true, refresh_parts_interval = 1,
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO writer VALUES ('Hello')";
 
-while true
+while clickhouse_test_time_left
 do
     ${CLICKHOUSE_CLIENT} --query "SELECT * FROM reader" | grep -F 'Hello' && break;
     sleep 0.1;
