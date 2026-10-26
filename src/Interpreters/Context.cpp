@@ -9162,12 +9162,12 @@ void Context::setInputInitializer(InputInitializer && initializer)
 }
 
 
-void Context::initializeInput(const StoragePtr & input_storage)
+void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
 
-    input_initializer_callback(shared_from_this(), input_storage);
+    input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
     input_initializer_callback = {};
 }
