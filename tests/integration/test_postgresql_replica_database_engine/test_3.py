@@ -3785,6 +3785,40 @@ def test_attach_keeps_snapshot_position_of_bootstrapped_table_across_retry(
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_resolves_unqualified_table_through_search_path(started_cluster):
+    # Without `materialized_postgresql_schema`, an unqualified table name is resolved through the `search_path`
+    # of the replication role, so the source table may live outside `public`. The publication check on
+    # attach must resolve it the same way, instead of refusing a valid replica as unpublished.
+    schema = "search_path_schema"
+    table = "search_path_table"
+    mat_db = "search_path_database"
+    cursor = pg_manager.get_db_cursor()
+    create_postgres_schema(cursor, schema)
+    cursor.execute(f"CREATE TABLE {schema}.{table} (key integer PRIMARY KEY, value integer)")
+    cursor.execute(f"INSERT INTO {schema}.{table} SELECT i, i FROM generate_series(0, 9) AS i")
+    cursor.execute(
+        f"ALTER ROLE postgres IN DATABASE postgres_database SET search_path = {schema}, public"
+    )
+    try:
+        pg_manager.create_materialized_db(
+            ip=started_cluster.postgres_ip,
+            port=started_cluster.postgres_port,
+            materialized_database=mat_db,
+            settings=[f"materialized_postgresql_tables_list = '{table}'"],
+        )
+        assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db}.{table}", "10")
+
+        instance.restart_clickhouse()
+        cursor = pg_manager.get_db_cursor()
+        cursor.execute(f"INSERT INTO {schema}.{table} SELECT i, i FROM generate_series(10, 19) AS i")
+        assert_eq_with_retry(instance, f"SELECT count() FROM {mat_db}.{table}", "20")
+    finally:
+        pg_manager.drop_materialized_db(mat_db)
+        cursor = pg_manager.get_db_cursor()
+        cursor.execute("ALTER ROLE postgres IN DATABASE postgres_database RESET search_path")
+        cursor.execute(f"DROP SCHEMA {schema} CASCADE")
+
+
 def test_attach_table_reuses_existing_publication_membership(started_cluster):
     # `ATTACH TABLE` of a table that is already in the publication must not issue a duplicate
     # `ALTER PUBLICATION ... ADD TABLE`, which PostgreSQL rejects.

@@ -334,7 +334,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
         {
             boost::trim(element);
             if (columns && !element.empty())
-                configured_column_lists[getNormalizedSchemaAndTableName(element)] = std::move(*columns);
+                configured_column_lists[element] = std::move(*columns);
             element.clear();
             columns.reset();
         };
@@ -407,10 +407,23 @@ std::pair<String, String> PostgreSQLReplicationHandler::getSchemaAndTableName(co
 }
 
 
-std::pair<String, String> PostgreSQLReplicationHandler::getNormalizedSchemaAndTableName(const String & table_name) const
+std::pair<String, String> PostgreSQLReplicationHandler::resolveSchemaAndTableName(pqxx::nontransaction & tx, const String & table_name) const
 {
     auto [schema, table] = getSchemaAndTableName(table_name);
-    return std::make_pair(isDefaultPostgreSQLSchema(schema) ? "public" : schema, table);
+    if (!schema.empty())
+        return std::make_pair(schema, table);
+
+    /// An unqualified name is resolved through the `search_path` of the connection, the same way as by the snapshot
+    /// and by `fetchPostgreSQLTableStructure`, so the default schema is not necessarily `public`.
+    pqxx::result result{tx.exec(fmt::format(
+        "SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = to_regclass({})",
+        quoteStringPostgreSQL(doubleQuoteStringPostgreSQL(table))))};
+
+    /// A table that does not exist is left without a schema: it is not published either.
+    if (result.empty())
+        return std::make_pair(String{}, table);
+
+    return std::make_pair(result[0][0].as<String>(), table);
 }
 
 
@@ -853,7 +866,7 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
     for (const auto & [table_name, storage] : materialized_storages)
     {
         if (has_configured_tables_list || storage->tryGetNested())
-            expected.insert(getNormalizedSchemaAndTableName(table_name));
+            expected.insert(resolveSchemaAndTableName(tx, table_name));
     }
 
     const auto published = fetchPublishedTablePairs(tx);
@@ -865,7 +878,7 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
             continue;
         if (!missing.empty())
             missing += ", ";
-        missing += schema + '.' + table;
+        missing += schema.empty() ? table : schema + '.' + table;
     }
 
     if (!missing.empty())
@@ -1043,10 +1056,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
             if (!published)
                 published = fetchPublishedTablePairs(tx);
-            if (published->contains(getNormalizedSchemaAndTableName(table_name)))
+            const auto resolved_table = resolveSchemaAndTableName(tx, table_name);
+            if (published->contains(resolved_table))
             {
                 removeTableFromPublication(tx, table_name);
-                published->erase(getNormalizedSchemaAndTableName(table_name));
+                published->erase(resolved_table);
             }
         }
 
@@ -1081,7 +1095,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             {
                 if (!published)
                     published = fetchPublishedTablePairs(tx);
-                if (published->contains(getNormalizedSchemaAndTableName(table_name)))
+                if (published->contains(resolveSchemaAndTableName(tx, table_name)))
                 {
                     tables_without_nested.emplace_back(table_name, materialized_storage);
                     continue;
@@ -1582,7 +1596,7 @@ bool PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & 
             doubleQuoteWithSchema(table_name), definition_conflict);
 
     const auto published = fetchPublishedTablePairs(ntx);
-    const auto table = getNormalizedSchemaAndTableName(table_name);
+    const auto table = resolveSchemaAndTableName(ntx, table_name);
 
     const String colliding = collidingForeignPublishedTables({table}, published);
     if (!colliding.empty())
@@ -2097,8 +2111,7 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublished
     std::set<std::pair<String, String>> tables;
     for (const auto & row : result)
     {
-        const auto schema = row[0].as<std::string>();
-        tables.emplace(isDefaultPostgreSQLSchema(schema) ? "public" : schema, row[1].as<std::string>());
+        tables.emplace(row[0].as<std::string>(), row[1].as<std::string>());
     }
     return tables;
 }
@@ -2143,10 +2156,14 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
     for (const auto & row : column_lists)
         published_column_lists[{row[0].as<String>(), row[1].as<String>()}].insert(row[2].as<String>());
 
+    std::map<std::pair<String, String>, std::set<String>> resolved_column_lists;
+    for (const auto & [table_name, columns] : configured_column_lists)
+        resolved_column_lists.emplace(resolveSchemaAndTableName(tx, table_name), columns);
+
     for (const auto & [table, columns] : published_column_lists)
     {
-        auto it = configured_column_lists.find(table);
-        if (it == configured_column_lists.end() || it->second != columns)
+        auto it = resolved_column_lists.find(table);
+        if (it == resolved_column_lists.end() || it->second != columns)
             return fmt::format(
                 "publication {} applies a column list to the published table {}.{} that "
                 "`materialized_postgresql_tables_list` does not request", name, table.first, table.second);
@@ -2155,7 +2172,7 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
     /// The reverse: a table restricted to a subset of columns is published with all columns. The consumer would
     /// skip the table after its first `Relation` message, which carries more columns than the nested table.
     const auto published_tables = fetchPublishedTablePairs(tx);
-    for (const auto & [table, columns] : configured_column_lists)
+    for (const auto & [table, columns] : resolved_column_lists)
     {
         if (published_tables.contains(table) && !published_column_lists.contains(table))
             return fmt::format(
@@ -2276,7 +2293,7 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         auto snapshot_positions = loadSnapshotPositions();
         {
             pqxx::nontransaction tx(replication_connection.getRef());
-            const bool already_published = fetchPublishedTablePairs(tx).contains(getNormalizedSchemaAndTableName(postgres_table_name));
+            const bool already_published = fetchPublishedTablePairs(tx).contains(resolveSchemaAndTableName(tx, postgres_table_name));
             snapshot_positions[postgres_table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = !already_published};
             saveSnapshotPositions(snapshot_positions);
 

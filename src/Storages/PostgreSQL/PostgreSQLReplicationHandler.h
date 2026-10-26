@@ -97,8 +97,7 @@ private:
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
-    /// The (schema, table) pairs the publication currently publishes, with the default schema reported as
-    /// "public", so that they can be compared with getNormalizedSchemaAndTableName.
+    /// The (schema, table) pairs the publication currently publishes, to be compared with resolveSchemaAndTableName.
     std::set<std::pair<String, String>> fetchPublishedTablePairs(pqxx::nontransaction & tx) const;
 
     /// An existing publication may only be resumed through when its definition matches what ClickHouse creates:
@@ -144,8 +143,9 @@ private:
 
     std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
 
-    /// getSchemaAndTableName with the default schema normalized to "public", as in `pg_publication_tables`.
-    std::pair<String, String> getNormalizedSchemaAndTableName(const String & table_name) const;
+    /// getSchemaAndTableName with an unspecified schema resolved through the `search_path` of the connection,
+    /// as in `pg_publication_tables`. The schema is left empty for a table that does not exist.
+    std::pair<String, String> resolveSchemaAndTableName(pqxx::nontransaction & tx, const String & table_name) const;
 
     /// In the single-schema modes the replication consumer identifies relations by their bare name, so a published
     /// table from another schema with the same bare name as a replicated table would have its changes applied
@@ -246,9 +246,9 @@ private:
     const String legacy_replication_slot;
     const String legacy_publication_name;
 
-    /// The column subsets `materialized_postgresql_tables_list` requests (`table(col1, col2)`), by (schema, table)
-    /// with the default schema normalized to "public". The publication is created with exactly these column lists.
-    std::map<std::pair<String, String>, std::set<String>> configured_column_lists;
+    /// The column subsets `materialized_postgresql_tables_list` requests (`table(col1, col2)`), by the table name as
+    /// written there (see resolveSchemaAndTableName). The publication is created with exactly these column lists.
+    std::map<String, std::set<String>> configured_column_lists;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
