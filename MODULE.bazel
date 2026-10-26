@@ -1,6 +1,7 @@
 module(name = "clickhouse")
 
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "binutils", version = "2.47")
 bazel_dep(name = "llvm", version = "0.8.26")
 bazel_dep(name = "lz4", version = "1.10.0.bcr.2")
 bazel_dep(name = "nasm", version = "2.16.03.bcr.4")
@@ -71,7 +72,10 @@ single_version_override(
 single_version_override(
     module_name = "llvm",
     patch_strip = 1,
-    patches = ["//bazel/patches:llvm-clickhouse-runtime.patch"],
+    patches = [
+        "//bazel/patches:llvm-clickhouse-runtime.patch",
+        "//bazel/patches:llvm-glibc-pie-startup.patch",
+    ],
 )
 
 # Resolve path dependencies that belong to nested vendored Cargo workspaces.

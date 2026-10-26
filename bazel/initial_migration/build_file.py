@@ -1536,19 +1536,26 @@ def dependency_inputs(builds, owners):
     })
     build('contrib/chdig').rule('filegroup', 'cargo_manifest', {'srcs': ['Cargo.toml']})
     build('contrib/openssl').rule('filegroup', 'headers', {'srcs': Glob(['include/**'])})
-    for arch in ARCHES:
-        directory = 'linux-' + arch
-        build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_link_files', {
-            'srcs': Glob([directory + '/**'], (directory + '/**/include/**', directory + '/**/share/**')),
-        })
-        build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_compile_files', {
-            'srcs': Glob([directory + '/**'], (directory + '/**/share/**',)),
-        })
     build('contrib/sysroot').rule('filegroup', 'linux_compile_files', {
-        'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_compile_files'] for arch in ARCHES}),
+        'srcs': select({
+            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/**'], ('linux-' + arch + '/**/share/**',))
+            for arch in ARCHES
+        }),
     })
+    # The ClickHouse PIE links these glibc libraries and GCC startup objects.
+    glibc_libraries = ('ld-linux-*.so.*', 'libc.so*', 'libc_nonshared.a', 'libdl.so*',
+                       'libm.so*', 'libpthread.so*', 'librt.so*')
     build('contrib/sysroot').rule('filegroup', 'linux_link_files', {
-        'srcs': select({'@platforms//cpu:' + arch: [':linux_' + arch + '_link_files'] for arch in ARCHES}),
+        'srcs': select({
+            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/**/' + name for name in glibc_libraries])
+            for arch in ARCHES
+        }),
+    })
+    build('contrib/sysroot').rule('filegroup', 'gcc_pie_startup_objects', {
+        'srcs': select({
+            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/lib/gcc/**/crt*S.o'])
+            for arch in ARCHES
+        }),
     })
     build('contrib/sysroot').rule('filegroup', 'linux_math_library', {
         'srcs': select({

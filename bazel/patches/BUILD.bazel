@@ -13,6 +13,7 @@ exports_files([
     "llvm-clickhouse-llvm-dsymutil-corefoundation.patch",
     "llvm-clickhouse-llvm-profdata-multicall.patch",
     "llvm-clickhouse-runtime.patch",
+    "llvm-glibc-pie-startup.patch",
     "librdkafka-config-include.patch",
     "mongo-bsoncxx-enum-compatibility.patch",
     "msgpack-version-include.patch",

@@ -107,6 +107,7 @@ glibc.patch(
     patches = ["//bazel/patches:glibc-string-cxx-prototypes.patch"],
 )
 use_repo(glibc, "glibc")
+inject_repo(glibc, "binutils")
 
 kernel_headers = use_extension("@llvm//kernel/extension:kernel_headers.bzl", "kernel_headers")
 kernel_headers.patch(

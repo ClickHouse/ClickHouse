@@ -49,6 +49,18 @@ def _objects(ranges, libraries):
         files.extend(objects[start:end])
     return files
 
+def _stage_pie_startup(ctx):
+    objects = ctx.files._glibc_startup + ctx.files._gcc_startup
+    names = sorted([obj.basename for obj in objects])
+    if names != ["Scrt1.o", "crtbeginS.o", "crtendS.o", "crti.o", "crtn.o"]:
+        fail("Expected the five glibc and GCC PIE startup objects, got {}".format(names))
+    staged = []
+    for obj in objects:
+        out = ctx.actions.declare_file(ctx.label.name + ".crt/" + obj.basename)
+        ctx.actions.symlink(output = out, target_file = obj)
+        staged.append(out)
+    return staged
+
 def _cmake_link_impl(ctx):
     plan = _CMAKE_LINKS[ctx.attr.arch]
     if len(ctx.attr.refs) != len(plan["expected_objects"]):
@@ -130,11 +142,12 @@ def _cmake_link_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name)
 
     # Only relative Bazel artifact names are used for filesystem access.
-    gcc_root = ctx.attr._sysroot.label.workspace_root + "/linux-" + ctx.attr.arch
+    sysroot = "{}/linux-{}/{}-linux-gnu/libc".format(ctx.attr._sysroot.label.workspace_root, ctx.attr.arch, ctx.attr.arch)
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
-    inputs = []
+    startup = _stage_pie_startup(ctx)
+    inputs = list(startup)
     for operand in plan["sequence"]:
         kind = operand[0]
         if kind == "archive":
@@ -148,9 +161,10 @@ def _cmake_link_impl(ctx):
         elif kind == "arg":
             args.add(operand[1])
         elif kind == "gcc":
-            args.add("--gcc-toolchain=" + gcc_root)
+            # Clang reads Scrt1.o, crti.o, crtbeginS.o, crtendS.o and crtn.o from -B.
+            args.add("-B" + startup[0].dirname + "/")
         elif kind == "sysroot":
-            args.add("--sysroot=" + gcc_root + "/" + ctx.attr.arch + "-linux-gnu/libc")
+            args.add("--sysroot=" + sysroot)
         elif kind == "lld":
             args.add("--ld-path=" + ctx.executable._lld.path)
         else:
@@ -178,6 +192,8 @@ _cmake_link = rule(
         "arch": attr.string(values = ["x86_64", "aarch64"], mandatory = True),
         "cargo_archives": attr.bool(mandatory = True),
         "refs": attr.label_list(mandatory = True, providers = [CcInfo]),
+        "_glibc_startup": attr.label(default = "@llvm//runtimes/glibc:pie_startup_objects"),
+        "_gcc_startup": attr.label(default = "@clickhouse_sysroot//:gcc_pie_startup_objects"),
         "_sysroot": attr.label(default = "@clickhouse_sysroot//:linux_link_files"),
         "_lld": attr.label(default = "@llvm//tools:ld.lld", executable = True, cfg = "exec"),
     },

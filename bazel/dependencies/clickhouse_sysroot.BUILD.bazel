@@ -1,44 +1,42 @@
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
-    name = "linux_x86_64_link_files",
-    srcs = glob(
-        ["linux-x86_64/**"],
-        exclude = ["linux-x86_64/**/include/**"],
-    ),
-)
-
-filegroup(
-    name = "linux_aarch64_link_files",
-    srcs = glob(
-        ["linux-aarch64/**"],
-        exclude = ["linux-aarch64/**/include/**"],
-    ),
+    name = "linux_compile_files",
+    srcs = select({
+        "@platforms//cpu:x86_64": glob(["linux-x86_64/**"]),
+        "@platforms//cpu:aarch64": glob(["linux-aarch64/**"]),
+    }),
 )
 
 filegroup(
     name = "linux_link_files",
     srcs = select({
-        "@platforms//cpu:x86_64": [":linux_x86_64_link_files"],
-        "@platforms//cpu:aarch64": [":linux_aarch64_link_files"],
+        "@platforms//cpu:x86_64": glob([
+            "linux-x86_64/**/ld-linux-*.so.*",
+            "linux-x86_64/**/libc.so*",
+            "linux-x86_64/**/libc_nonshared.a",
+            "linux-x86_64/**/libdl.so*",
+            "linux-x86_64/**/libm.so*",
+            "linux-x86_64/**/libpthread.so*",
+            "linux-x86_64/**/librt.so*",
+        ]),
+        "@platforms//cpu:aarch64": glob([
+            "linux-aarch64/**/ld-linux-*.so.*",
+            "linux-aarch64/**/libc.so*",
+            "linux-aarch64/**/libc_nonshared.a",
+            "linux-aarch64/**/libdl.so*",
+            "linux-aarch64/**/libm.so*",
+            "linux-aarch64/**/libpthread.so*",
+            "linux-aarch64/**/librt.so*",
+        ]),
     }),
 )
 
 filegroup(
-    name = "linux_x86_64_compile_files",
-    srcs = glob(["linux-x86_64/**"]),
-)
-
-filegroup(
-    name = "linux_aarch64_compile_files",
-    srcs = glob(["linux-aarch64/**"]),
-)
-
-filegroup(
-    name = "linux_compile_files",
+    name = "gcc_pie_startup_objects",
     srcs = select({
-        "@platforms//cpu:x86_64": [":linux_x86_64_compile_files"],
-        "@platforms//cpu:aarch64": [":linux_aarch64_compile_files"],
+        "@platforms//cpu:x86_64": glob(["linux-x86_64/lib/gcc/**/crt*S.o"]),
+        "@platforms//cpu:aarch64": glob(["linux-aarch64/lib/gcc/**/crt*S.o"]),
     }),
 )
 
