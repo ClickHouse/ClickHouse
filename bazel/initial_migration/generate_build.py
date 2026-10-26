@@ -80,6 +80,7 @@ FIRST_PARTY_HEADER_DEPS = {
         "@clickhouse_aws//:_aws__compile_0", "@lz4//:lz4",
     ],
     ("programs/benchmark", "clickhouse-benchmark-lib", "implementation_deps"): [
+        ("//src/AggregateFunctions:clickhouse_aggregate_functions", "//programs/client:clickhouse-client-lib"),
         "//src/Parsers:parser_api", AGGREGATE_HEADERS,
         ("//src:dbms", "//programs/client:clickhouse-client-lib"),
         ("@clickhouse_boost//:_boost_program_options", "//programs/client:clickhouse-client-lib"),
@@ -96,6 +97,7 @@ FIRST_PARTY_HEADER_DEPS = {
     **{("programs/" + name, f"clickhouse-{name}-lib", "implementation_deps"): ["//src:headers"]
         for name in ("keeper-converter", "keeper-utils", "packed-io")},
     ("programs/local", "clickhouse-local-lib", "implementation_deps"): [
+        ("//src/AggregateFunctions:clickhouse_aggregate_functions", "//programs/server:clickhouse-server-lib"),
         "//src/Functions:headers", "//src/Parsers:headers", FUNCTION_REGISTRATION, SYSTEM_TABLE_REGISTRATION, AGGREGATE_HEADERS,
     ],
     ("programs/server", "clickhouse-server-lib", "implementation_deps"): [
@@ -1870,7 +1872,10 @@ def main():
     prune_aggregate_deps(ROOT, build_paths | selection_builds | read_only)
     privatize_headerless_deps(ROOT, [
         ("programs", "clickhouse__compile_0"),
+        ("programs/client", "clickhouse-client-lib"),
+        ("programs/disks", "clickhouse-disks-lib"),
         ("programs/format", "clickhouse-format-lib"),
+        ("programs/server", "clickhouse-server-lib"),
         ("src/Common", "clickhouse_new_delete"),
         ("src/Common/ZooKeeper", "clickhouse_common_zookeeper_no_log"),
         ("src/Functions/URL", "clickhouse_functions_url__compile_0"),

@@ -45,6 +45,7 @@ ch_cc_library(
     additional_compiler_inputs = ["//bazel:gen/embedded/programs/server/embedded.xml"],
     clickhouse_code = True,
     implementation_deps = [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "//src/Common:memory_tracking_api",
         "//src:core_types",
         "//base:common",
@@ -87,5 +88,4 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    deps = ["//src/AggregateFunctions:clickhouse_aggregate_functions"],
 )

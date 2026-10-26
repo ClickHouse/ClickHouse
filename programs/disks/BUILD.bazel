@@ -33,6 +33,9 @@ ch_cc_library(
     ] + glob(["**/*.h"]),
     clickhouse_code = True,
     implementation_deps = [
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
+        "//src/Dictionaries:clickhouse_dictionaries",
+        "//src/TableFunctions:clickhouse_table_functions",
         "//bazel:clickhouse_config_headers",
         "//base/poco/Foundation:_poco_foundation",
         "//base/poco/Util:_poco_util",
@@ -56,10 +59,5 @@ ch_cc_library(
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
-    ],
-    deps = [
-        "//src/AggregateFunctions:clickhouse_aggregate_functions",
-        "//src/Dictionaries:clickhouse_dictionaries",
-        "//src/TableFunctions:clickhouse_table_functions",
     ],
 )

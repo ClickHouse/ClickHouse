@@ -19,6 +19,7 @@ ch_cc_library(
         "//src/AggregateFunctions:headers",
         "//src/Parsers:clickhouse_parsers",
         "//programs/client:clickhouse-client-lib",
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "//src:dbms",
         "@clickhouse_boost//:_boost_program_options",
         "//src/Common:current_metrics",

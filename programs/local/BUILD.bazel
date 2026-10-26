@@ -11,6 +11,7 @@ ch_cc_library(
     clickhouse_code = True,
     implementation_deps = [
         "//programs/server:clickhouse-server-lib",
+        "//src/AggregateFunctions:clickhouse_aggregate_functions",
         "//src/Loggers:headers",
         "//src/Common:memory_tracking_api",
         "//base:common",

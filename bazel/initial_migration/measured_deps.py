@@ -76,6 +76,7 @@ DEPENDENCIES = {
     ('contrib/libmetrohash', '_metrohash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('contrib/murmurhash', '_murmurhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
+    ('programs/client', 'clickhouse-client-lib'): (['//src/Dictionaries:clickhouse_dictionaries'], [], []),
     ('programs/keeper', 'clickhouse-keeper-lib'): ([], ['//src/Dictionaries:clickhouse_dictionaries'], []),
     ('src/Daemon', 'headers'): (['//base/poco/XML:_poco_xml'], [], []),
     ('src/Dictionaries', 'headers'): (
