@@ -1079,8 +1079,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
          {},
          false)},
     {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
-    {"iceberg_delete_manifest_decode_concurrency",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
     {"iceberg_expire_default_min_snapshots_to_keep",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
@@ -2201,9 +2199,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "shrink_over_allocated_columns_min_waste_bytes"};
     /// NonZeroUInt64 row-count settings — must not receive 0
     DB::Strings nonzero_rows_values
-        = {"iceberg_file_entries_queue_size",
-           "iceberg_manifest_decode_concurrency",
-           "max_insert_block_size_rows",
+        = {"max_insert_block_size_rows",
            "merge_tree_min_read_task_size"};
     DB::Strings max_rows_values
         = {"adaptive_aggregator_freeze_threshold",
