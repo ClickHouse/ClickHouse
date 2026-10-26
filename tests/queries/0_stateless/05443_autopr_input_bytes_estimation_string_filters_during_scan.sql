@@ -97,6 +97,13 @@ SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_1';
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_2';
 
+-- The rows served from the columns cache are not read from the part, so the estimate is taken from a sample of
+-- the columns then, and the second query reads nothing from disk.
+SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, log_comment='columns_cache_1';
+SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
+    columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, log_comment='columns_cache_2';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -125,6 +132,20 @@ SELECT
     sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'cache_1') > 0
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'cache_%') AND (type = 'QueryFinish');
+
+SELECT
+    read_cached < read / 10,
+    hits > 0,
+    greatest(estimate, read) / least(estimate, read) < 1.3
+FROM (
+    SELECT
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], log_comment = 'columns_cache_2') AS estimate,
+        sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'columns_cache_1') AS read,
+        sumIf(ProfileEvents['ReadCompressedBytes'], log_comment = 'columns_cache_2') AS read_cached,
+        sumIf(ProfileEvents['ColumnsCacheHits'], log_comment = 'columns_cache_2') AS hits
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'columns_cache_%') AND (type = 'QueryFinish')
+);
 
 DROP TABLE t_wide;
 DROP TABLE t_compact;

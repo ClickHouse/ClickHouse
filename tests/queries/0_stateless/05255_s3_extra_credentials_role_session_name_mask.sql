@@ -54,7 +54,6 @@ CREATE DATABASE db_05255_rsn ENGINE = Backup('', S3('url_dbrsn', 'ak', 'SEKRIT_S
 
 -- The query-tree surface (EXPLAIN QUERY TREE) must hide the same value while keeping role_arn.
 -- run_passes = 0 keeps the table function unresolved, so the collection and the storage are not touched.
-SET enable_analyzer = 1;
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/05255qt', 'Parquet', extra_credentials(role_arn = 'visible_role_arn', role_session_name = 'SEKRIT_QTRSN'));
 
 SYSTEM FLUSH LOGS query_log;

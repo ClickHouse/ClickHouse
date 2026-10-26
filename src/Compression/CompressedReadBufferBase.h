@@ -40,6 +40,8 @@ protected:
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     bool external_data;
 
+    UInt64 statistics_hint = 0;
+
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
     /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer()
@@ -79,6 +81,9 @@ public:
     /// The total compressed size, with the headers and the checksums, of the blocks this buffer has decompressed or
     /// taken decompressed from a cache. A block is counted every time it is loaded, e.g. again after a seek away from it.
     size_t getCompressedBytesOfBlocksRead() const { return compressed_bytes_of_blocks_read; }
+
+    /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
+    void setStatisticsHint(UInt64 hint) { statistics_hint = hint; }
 
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
