@@ -71,6 +71,9 @@ public:
     /// adjacent positions, the sizes add up to the size of the file.
     size_t getCompressedBytesOfGranulePositions(size_t mark, size_t begin_position, size_t end_position, size_t positions);
 
+    /// The offset of the compressed block the data at `position` of the granule `mark` begins in.
+    size_t getCompressedOffsetOfGranulePosition(size_t mark, size_t position, size_t positions);
+
     /// Announces the new map if the buffer exists.
     void updateReadRequestMap(MarkRangesPtr request_map_);
 

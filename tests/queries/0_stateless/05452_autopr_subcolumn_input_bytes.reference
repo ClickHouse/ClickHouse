@@ -8,6 +8,8 @@
 1
 1
 1
+compact	1
+wide	1
 05452_skew_compact_prewhere	1
 05452_skew_compact_primary_key	1
 05452_skew_wide_prewhere	1

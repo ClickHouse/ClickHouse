@@ -738,39 +738,55 @@ void MergeTreeReaderCompact::serveRowsFromColumnsCache(
             granules_from_columns_cache.emplace_back(pos, mark);
 }
 
+std::vector<size_t> MergeTreeReaderCompact::getPositionsInMarks(size_t pos) const
+{
+    const size_t column_position = *column_positions[pos];
+    if (!has_substream_marks)
+        return {column_position};
+
+    const auto & name_and_type = columns_to_read[pos];
+    std::vector<size_t> positions;
+    if (!name_and_type.isSubcolumn())
+    {
+        for (size_t position = columns_substreams.getFirstSubstreamPosition(column_position);
+             position <= columns_substreams.getLastSubstreamPosition(column_position); ++position)
+            positions.push_back(position);
+        return positions;
+    }
+
+    /// A subcolumn is read from its own substreams, see `readData`.
+    serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            return;
+        if (auto position = columns_substreams.tryGetSubstreamPosition(column_position, name_and_type, substream_path, storage_settings))
+            positions.push_back(*position);
+    });
+    std::ranges::sort(positions);
+    positions.erase(std::unique(positions.begin(), positions.end()), positions.end());
+    return positions;
+}
+
 size_t MergeTreeReaderCompact::takeCompressedBytesOfColumnsCacheHits(MergeTreeReaderStream & stream)
 {
     const size_t positions = has_substream_marks ? columns_substreams.getTotalSubstreams() : data_part_info_for_read->getColumns().size();
     size_t bytes = 0;
     for (const auto & [pos, mark] : granules_from_columns_cache)
     {
-        const size_t column_position = *column_positions[pos];
-        const auto & name_and_type = columns_to_read[pos];
-        if (!has_substream_marks)
-        {
-            bytes += stream.getCompressedBytesOfGranulePositions(mark, column_position, column_position + 1, positions);
-        }
-        else if (!name_and_type.isSubcolumn())
-        {
-            bytes += stream.getCompressedBytesOfGranulePositions(mark,
-                columns_substreams.getFirstSubstreamPosition(column_position), columns_substreams.getLastSubstreamPosition(column_position) + 1, positions);
-        }
-        else
-        {
-            /// A subcolumn is read from its own substreams, see `readData`.
-            std::unordered_set<size_t> substream_positions;
-            serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
-            {
-                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                    return;
-                if (auto substream_position = columns_substreams.tryGetSubstreamPosition(column_position, name_and_type, substream_path, storage_settings))
-                    substream_positions.insert(*substream_position);
-            });
-            for (const size_t substream_position : substream_positions)
-                bytes += stream.getCompressedBytesOfGranulePositions(mark, substream_position, substream_position + 1, positions);
-        }
+        /// A block that a column read from the part loaded is not loaded again: without
+        /// `compress_per_column_in_compact_parts`, the columns of a granule share their blocks.
+        std::unordered_set<size_t> blocks_loaded;
+        if (auto it = columns_read_from_part_in_granules.find(mark); it != columns_read_from_part_in_granules.end())
+            for (const size_t read_pos : it->second)
+                for (const size_t position : getPositionsInMarks(read_pos))
+                    blocks_loaded.insert(stream.getCompressedOffsetOfGranulePosition(mark, position, positions));
+
+        for (const size_t position : getPositionsInMarks(pos))
+            if (!blocks_loaded.contains(stream.getCompressedOffsetOfGranulePosition(mark, position, positions)))
+                bytes += stream.getCompressedBytesOfGranulePositions(mark, position, position + 1, positions);
     }
     granules_from_columns_cache.clear();
+    columns_read_from_part_in_granules.clear();
     return bytes;
 }
 
@@ -882,6 +898,15 @@ size_t MergeTreeReaderCompact::readGranulesWithColumnsCache(
 
         if (any_from_disk)
             readGranule(mark, granule_rows, res_columns, &columns_mask);
+
+        if (count_compressed_bytes_of_columns_cache_hits && any_from_disk
+            && (served_columns || std::ranges::any_of(all_served, [](bool served) { return served; })))
+        {
+            auto & read_from_part = columns_read_from_part_in_granules[mark];
+            for (size_t pos = 0; pos < num_columns; ++pos)
+                if (columns_mask[pos])
+                    read_from_part.push_back(pos);
+        }
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {

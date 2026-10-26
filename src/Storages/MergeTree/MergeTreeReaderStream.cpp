@@ -335,20 +335,25 @@ size_t MergeTreeReaderStream::getCompressedBytesOfBlocksRead() const
     return compressed_data_buffer ? compressed_data_buffer->getCompressedBytesOfBlocksRead() : 0;
 }
 
-size_t MergeTreeReaderStream::getCompressedBytesOfGranulePositions(size_t mark, size_t begin_position, size_t end_position, size_t positions)
+size_t MergeTreeReaderStream::getCompressedOffsetOfGranulePosition(size_t mark, size_t position, size_t positions)
 {
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
         return 0;
 
     loadMarks();
-    auto offset = [&](size_t position)
+    /// The position after the last one of a granule is the first one of the next granule.
+    if (position == positions)
     {
-        /// The position after the last one of a granule is the first one of the next granule.
-        const size_t at_mark = position == positions ? mark + 1 : mark;
-        return at_mark < marks_count ? marks_getter->getMark(at_mark, position == positions ? 0 : position).offset_in_compressed_file : file_size;
-    };
-    return offset(end_position) - offset(begin_position);
+        ++mark;
+        position = 0;
+    }
+    return mark < marks_count ? marks_getter->getMark(mark, position).offset_in_compressed_file : file_size;
+}
+
+size_t MergeTreeReaderStream::getCompressedBytesOfGranulePositions(size_t mark, size_t begin_position, size_t end_position, size_t positions)
+{
+    return getCompressedOffsetOfGranulePosition(mark, end_position, positions) - getCompressedOffsetOfGranulePosition(mark, begin_position, positions);
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

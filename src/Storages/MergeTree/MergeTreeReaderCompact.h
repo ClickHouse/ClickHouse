@@ -63,6 +63,11 @@ protected:
     /// `takeCompressedBytesRead` was called. Only with `countCompressedBytesOfColumnsCacheHits`.
     bool count_compressed_bytes_of_columns_cache_hits = false;
     std::vector<std::pair<size_t, size_t>> granules_from_columns_cache;
+    /// The columns read from the part in the granules that also have columns served from the cache, by granule.
+    std::unordered_map<size_t, std::vector<size_t>> columns_read_from_part_in_granules;
+
+    /// The positions in the marks that the column at `pos` of `columns_to_read` is read from.
+    std::vector<size_t> getPositionsInMarks(size_t pos) const;
 
     /// The compressed size of the data reading `granules_from_columns_cache` from the part would load. Resets them.
     size_t takeCompressedBytesOfColumnsCacheHits(MergeTreeReaderStream & stream);

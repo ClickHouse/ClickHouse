@@ -184,9 +184,30 @@ SELECT s FROM t_skew_wide WHERE key < 1000 FORMAT Null SETTINGS log_comment = '0
 SELECT s FROM t_skew_compact PREWHERE flag = 1 FORMAT Null SETTINGS log_comment = '05452_skew_compact_prewhere';
 SELECT s FROM t_skew_compact WHERE key < 1000 FORMAT Null SETTINGS log_comment = '05452_skew_compact_primary_key';
 
+-- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
+SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_1';
+SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_2';
+SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_1';
+SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_2';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
+
+SELECT part_type, min(input_bytes) > 0 AND max(input_bytes) <= min(input_bytes) * 1.25 AS cache_priced_as_part
+FROM
+(
+    SELECT extract(log_comment, '05452_cache_(\\w+)_\\d') AS part_type, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+        AND log_comment LIKE '05452\\_cache\\_%' AND type = 'QueryFinish'
+)
+GROUP BY part_type
+ORDER BY part_type;
 
 WITH
     (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
