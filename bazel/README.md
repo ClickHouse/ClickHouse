@@ -114,9 +114,11 @@ emitting `expand_template`, `copy_file`, or `write_file` rules. The port does
 not check these configured headers into `bazel/config`. The empty ICU source
 used by CMake's library declaration is omitted; ICU's actual sources remain.
 
-ARM64 Vectorscan also uses the pinned sysroot's `asm/hwcap.h`, which supplies
-the capability bits needed for its runtime CPU checks. Its remaining libc
-and kernel headers come from hermetic-llvm.
+On ARM64, Vectorscan tests `HWCAP2_SVE2` and includes `asm/hwcap.h` only
+if `sys/auxv.h` does not define that bit. The LLVM toolchain's
+[glibc 2.28 headers](patches/glibc-2.28-aarch64-hwcap2-madvise.patch) and
+[Linux 4.19.325 headers](patches/linux-4.19.325-arm64-hwcap2-madvise.patch)
+both define it.
 
 ## Initial migration and validation
 
@@ -166,12 +168,13 @@ originally requested all five flags. Other warning exceptions remain in
 `copts`. NASM, Cargo, custom runtime actions, and executable code generators
 keep their own compiler flags.
 
-`ch_cc_library` also supplies the pinned ClickHouse sysroot and GCC
-toolchain, source-file prefix maps, and the three standard native features.
-The defaults describe C++ on both supported CPUs. Only C, assembly,
-single-CPU groups, and the few libc groups that omit libc++ headers need
-explicit overrides. Prefix maps still apply in the CMake comparison
-configurations: `__FILE__` and embedded file names survive stripping.
+The [target platforms](BUILD.bazel) select the LLVM toolchain's glibc and
+Linux headers for compilation. [`ch_cc_library`](rules/ch_cc_library.bzl)
+applies source file prefix maps by default because `__FILE__` and embedded
+file names survive stripping. With `link_runtime = True`, it adds libc++ to
+`implementation_deps`. See [Linux headers and link inputs](../README.bazel.md#linux-headers-and-link-inputs)
+for the glibc versions and the ClickHouse sysroot files used by the final
+link and Cargo.
 
 When a CMake library has one native compile group, the generated
 `ch_cc_library` carries its public name and ordered dependencies directly.

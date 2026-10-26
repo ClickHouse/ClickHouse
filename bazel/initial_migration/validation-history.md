@@ -2726,3 +2726,30 @@ On x86-64 the AggregateFunctions report no longer lists the five dependencies th
 The AggregateFunctions compile target now keeps its private dependencies in `implementation_deps`. `//src/Parsers:clickhouse_parsers` exports `ASTCreateWasmFunctionQuery.h` and gets `UserDefinedWebAssembly.h` from `//src/Functions:wasm_udf_api`. The Functions headers get `ExternalDictionariesLoader.h` from `//src:external_dictionaries_loader`; five libraries that use it only from C++ source files declare it in `implementation_deps`. The Arrow IPC rule lists its six generated headers in the same BUILD file as the library that exports them.
 
 The ICU common library moved five break-iterator headers from `hdrs` to `srcs`. On both CPUs, the shipping ClickHouse binary ran the [Chinese word-break query](../../tests/queries/0_stateless/04509_icu_tokenizer.sql#L16) and returned `['北京','欢迎','你']`, matching the [expected output](../../tests/queries/0_stateless/04509_icu_tokenizer.reference#L16). Both unit-test binaries also passed `CrossTabPhiSquaredWindowData.SerializeDeserializeRoundTrip`.
+
+## c1d2686f3
+
+At [c1d2686f3](https://github.com/dzbarsky/clickhouse/commit/c1d2686f3255a001b680670b8cf04158a6dc17d2), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/9ee3644c77322e4d75ae2589ff2da690018d1dbe).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/1cb65da1-0283-4f27-acd0-cf9a45aac7e2) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/1cb65da1-0283-4f27-acd0-cf9a45aac7e2) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/1cb65da1-0283-4f27-acd0-cf9a45aac7e2) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/3f006ae0-2609-4dd4-ad47-9ef1d937a2e6) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/3f006ae0-2609-4dd4-ad47-9ef1d937a2e6) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/3f006ae0-2609-4dd4-ad47-9ef1d937a2e6) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Matches previous Bazel |
+
+Both native builds produced all 12 requested targets. Both CPUs passed all 20 named runtime checks.
+
+The Cap’n Proto `_capnp` and `_kj` libraries no longer export headers for code ClickHouse does not build. Thrift excludes `TSSLServerSocket.h`, and RocksDB removes six tool entry-point headers from `_rocksdb`. The AggregateFunctionUniq compile target drops six redundant dependency declarations on x86-64 and three on ARM64.
+
+On each CPU, the shipping ClickHouse binary encoded and decoded a nested row with a generated Cap’n Proto schema ([query](../../tests/queries/0_stateless/02920_capnp_protobuf_auto_schema_nested.sh), [expected row](../../tests/queries/0_stateless/02920_capnp_protobuf_auto_schema_nested.reference#L52)). The native unit-test binary passed [`Parquet.WriteWideIntegersAsStandardDecimals`](../../src/Processors/tests/gtest_write_parquet_page_index.cpp#L220), which reads Parquet page headers with Thrift. The shipping binary also confirmed that inserting 10,000 rows with the same EmbeddedRocksDB key leaves one row ([query](../../tests/queries/0_stateless/01504_rocksdb.sql#L20), [expected output](../../tests/queries/0_stateless/01504_rocksdb.reference#L1)).
+
+x86-64 [DWYU](https://app.buildbuddy.io/invocation/92eb9142-1c69-4f5a-89e3-d14e734c21f2): 2 clean (`//src/Functions/array:headers`, `//src/Functions:cast_api`); 2 ungraded (`//src/AggregateFunctions:clickhouse_aggregate_functions__compile_1`, `//src/Functions:clickhouse_functions_obj__compile_2`).
+
+ARM64 [DWYU](https://app.buildbuddy.io/invocation/fa29a3e9-2849-4825-a85b-d8a1fc57bf26): 2 clean (`//src/Functions/array:headers`, `//src/Functions:cast_api`); 2 ungraded (`//src/Common/benchmarks:orc_string_dictionary_objects`, `//src/Functions/array:clickhouse_functions_array__compile_1`).
+
+The x86-64 AggregateFunctions report lists 15 unverified link dependencies, compared with 21 in the [preceding build](#9ee3644c7). The analyzer reported no actionable finding and exited with status 1.
+
+The first builds of this source ([x86-64](https://app.buildbuddy.io/invocation/6d299b22-77f6-42f5-ae98-62ec67172e51) and [ARM64](https://app.buildbuddy.io/invocation/7003dd14-99f2-41e7-b323-c96d4fbefd7b)) also matched the native CMake hashes, but completed only 11 of 12 targets and ran no DWYU reports. The RocksDB query returned `1` on both CPUs. RocksDB also wrote an `io_uring` diagnostic to process stdout, so the fixture’s stdout comparison failed. The successful builds above read the SQL result from a fresh output file and recorded process stdout and stderr separately.
