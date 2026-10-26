@@ -448,6 +448,134 @@ UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UIn
     return std::min<UInt64>(bound, std::max<UInt64>(1, roundToRowCount(surviving)));
 }
 
+static const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
+Float64 estimatePredicateSelectivity(
+    const ActionsDAG::Node * predicate,
+    const std::unordered_map<String, ColumnStats> & column_stats,
+    const std::function<bool(const String &, const String &)> & are_equal,
+    bool & used_default)
+{
+    const auto * node = skipAliases(predicate);
+    /// A constant filter column: the planner removes an always-false filter, so assume true.
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return 1.0;
+    used_default = true;
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return DEFAULT_UNKNOWN_SELECTIVITY;
+
+    const String & name = node->function_base->getName();
+
+    /// A default in any argument makes the whole predicate a guess; each child reports on its own.
+    const auto child_selectivity = [&](const ActionsDAG::Node * child)
+    {
+        bool child_used_default = false;
+        const Float64 selectivity = estimatePredicateSelectivity(child, column_stats, are_equal, child_used_default);
+        used_default |= child_used_default;
+        return selectivity;
+    };
+    if (name == "and")
+    {
+        used_default = false;
+        Float64 selectivity = 1.0;
+        for (const auto * child : node->children)
+            selectivity *= child_selectivity(child);
+        return selectivity;
+    }
+    if (name == "or")
+    {
+        used_default = false;
+        Float64 none_passes = 1.0;
+        for (const auto * child : node->children)
+            none_passes *= 1.0 - child_selectivity(child);
+        return 1.0 - none_passes;
+    }
+    if (name == "not" && node->children.size() == 1)
+    {
+        used_default = false;
+        return 1.0 - estimatePredicateSelectivity(node->children.front(), column_stats, are_equal, used_default);
+    }
+
+    /// A runtime join filter repeats the join selectivity, which the join estimate carries.
+    if (name == "__applyFilter")
+    {
+        used_default = false;
+        return 1.0;
+    }
+    if (name == "like" || name == "ilike")
+        return DEFAULT_LIKE_SELECTIVITY;
+    if (name == "notLike" || name == "notILike")
+        return 1.0 - DEFAULT_LIKE_SELECTIVITY;
+    if (name == "isNull")
+        return DEFAULT_EQUALITY_SELECTIVITY;
+    if (name == "isNotNull")
+        return 1.0 - DEFAULT_EQUALITY_SELECTIVITY;
+
+    const bool is_equals = name == "equals";
+    const bool is_not_equals = name == "notEquals";
+    const bool is_range = name == "less" || name == "greater" || name == "lessOrEquals" || name == "greaterOrEquals";
+    if ((is_equals || is_not_equals || is_range) && node->children.size() == 2)
+    {
+        if (is_range)
+            return DEFAULT_RANGE_SELECTIVITY;
+
+        const auto * left = skipAliases(node->children[0]);
+        const auto * right = skipAliases(node->children[1]);
+        const bool left_is_constant = left->column && isColumnConst(*left->column);
+        const bool right_is_constant = right->column && isColumnConst(*right->column);
+
+        /// An NDV that rows without statistics could double is as good as unknown.
+        auto column_ndv = [&](const ActionsDAG::Node * side) -> UInt64
+        {
+            auto it = column_stats.find(side->result_name);
+            if (it == column_stats.end() || it->second.hasImpreciseDistinctValues())
+                return 0;
+            return it->second.num_distinct_values;
+        };
+        auto has_imprecise_ndv = [&](const ActionsDAG::Node * side)
+        {
+            auto it = column_stats.find(side->result_name);
+            return it != column_stats.end() && it->second.hasImpreciseDistinctValues();
+        };
+
+        Float64 equal_selectivity = DEFAULT_EQUALITY_SELECTIVITY;
+        if (!left_is_constant && !right_is_constant)
+        {
+            /// Two columns. An equality the plan below already enforces (e.g. the keys of an
+            /// inner join under this filter) holds on every row; otherwise the join-equality
+            /// formula 1 / max(NDV) applies.
+            if (are_equal(left->result_name, right->result_name))
+            {
+                equal_selectivity = 1.0;
+                used_default = false;
+            }
+            else if (UInt64 max_ndv = std::max(column_ndv(left), column_ndv(right));
+                     max_ndv && !has_imprecise_ndv(left) && !has_imprecise_ndv(right))
+            {
+                equal_selectivity = 1.0 / Float64(max_ndv);
+                used_default = false;
+            }
+        }
+        else
+        {
+            const auto * column_side = left_is_constant ? right : left;
+            if (UInt64 ndv = column_ndv(column_side))
+            {
+                equal_selectivity = 1.0 / Float64(ndv);
+                used_default = false;
+            }
+        }
+        return is_equals ? equal_selectivity : 1.0 - equal_selectivity;
+    }
+
+    return DEFAULT_UNKNOWN_SELECTIVITY;
+}
+
 void limitColumnStats(std::unordered_map<String, ColumnStats> & column_stats, std::optional<UInt64> rows)
 {
     for (auto & [_, stats] : column_stats)

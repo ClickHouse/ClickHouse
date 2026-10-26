@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -146,6 +147,23 @@ UInt64 keyDomain(const RelationStats & relation, const String & column);
 /// the column's `distinct_values` are spread evenly over the rows: a value survives when any of its
 /// rows does. Zero when the NDV is unknown; never above `rows_after`.
 UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UInt64 rows_after);
+
+/// Selectivity factors for predicates without usable statistics; the same values that
+/// `ConditionSelectivityEstimator` uses for the reads.
+constexpr Float64 DEFAULT_EQUALITY_SELECTIVITY = 0.01;
+constexpr Float64 DEFAULT_RANGE_SELECTIVITY = 0.33;
+constexpr Float64 DEFAULT_UNKNOWN_SELECTIVITY = 0.33;
+constexpr Float64 DEFAULT_LIKE_SELECTIVITY = 0.1;
+
+/// The fraction of rows that pass `predicate`, from the distinct values in `column_stats`; they carry no
+/// value ranges here, so an equality uses 1/NDV and everything else the default factors. `are_equal` tells
+/// whether the plan below already makes two columns equal on every row, as the keys of an inner join do.
+/// `used_default` is set when a default factor stood in for a predicate the statistics could not estimate.
+Float64 estimatePredicateSelectivity(
+    const ActionsDAG::Node * predicate,
+    const std::unordered_map<String, ColumnStats> & column_stats,
+    const std::function<bool(const String &, const String &)> & are_equal,
+    bool & used_default);
 
 /// Column statistics of the rows a limit keeps, at most `rows` of them when the limit bounds the rows: a
 /// column has at most as many values as rows. The kept rows are not a value-uniform sample (a TopN keeps

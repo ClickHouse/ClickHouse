@@ -367,6 +367,36 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 }
 
 RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport);
+
+/// The rows of an optimized join that pass a filter above it, from the column statistics of the join. The
+/// two sides of an equality key of an inner join are equal on every row it returns.
+void applyFilterAboveJoin(RelationStats & stats, const JoinStepLogical & join_step, const ActionsDAG::Node * filter)
+{
+    stats.imprecise_estimate = true;
+    if (!stats.estimated_rows)
+        return;
+
+    std::vector<std::pair<String, String>> equal_columns;
+    const auto & join_operator = join_step.getJoinOperator();
+    if (join_operator.kind == JoinKind::Inner)
+        for (const auto & condition : join_operator.expression)
+            if (auto [op, left, right] = condition.asBinaryPredicate(); op == JoinConditionOperator::Equals && left && right)
+                equal_columns.emplace_back(left.getColumnName(), right.getColumnName());
+    const auto are_equal = [&](const String & first, const String & second)
+    {
+        return std::ranges::any_of(equal_columns, [&](const auto & pair)
+            { return (pair.first == first && pair.second == second) || (pair.first == second && pair.second == first); });
+    };
+
+    bool used_default = false;
+    const Float64 selectivity = estimatePredicateSelectivity(filter, stats.column_stats, are_equal, used_default);
+    const UInt64 rows_before = *stats.estimated_rows;
+    /// A selectivity that rounds to zero rows does not prove the result empty.
+    stats.estimated_rows = std::max<UInt64>(1, roundToRowCount(Float64(rows_before) * selectivity));
+    stats.estimate_from_defaults |= used_default;
+    for (auto & [_, column_stats] : stats.column_stats)
+        column_stats.num_distinct_values = distinctValuesAfterFilter(column_stats.num_distinct_values, rows_before, *stats.estimated_rows);
+}
 }
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
@@ -619,16 +649,24 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
         /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
         /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
         /// to keep the parent from appending a second estimate to it.
-        /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
-        /// a storage read with a filter it cannot use, the row count is then unknown; the bound still holds.
-        return RelationStats{
-            .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
+        RelationStats stats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
             .max_rows = join_step->getResultRowsUpperBound(),
             .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName(),
-            .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
+            .imprecise_estimate = join_step->hasImpreciseEstimate(),
             .estimate_from_defaults = join_step->isEstimateFromDefaults(),
             .composite = true};
+        /// As for a read under a filter the index does not use, the transport gets no estimate: a guess would
+        /// override the exact limit from the settings.
+        if (filter && for_runtime_filter_transport)
+        {
+            stats.estimated_rows = {};
+            stats.imprecise_estimate = true;
+        }
+        else if (filter)
+            applyFilterAboveJoin(stats, *join_step, filter);
+        return stats;
     }
 
     /// The plan of the chosen join order stands for the graph.

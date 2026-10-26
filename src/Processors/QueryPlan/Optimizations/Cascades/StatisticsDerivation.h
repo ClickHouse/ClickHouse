@@ -11,9 +11,9 @@
 namespace DB
 {
 
-/// The TRUE fraction of a filter expression, estimated from the input column NDVs and
-/// equivalence classes. `used_default` is set when a default factor stood in for a predicate the
-/// statistics could not estimate. Exposed for testing.
+/// The TRUE fraction of a filter expression, estimated from the input column NDVs and equivalence
+/// classes (see `QueryPlanOptimizations::estimatePredicateSelectivity`). `used_default` is set when a
+/// default factor stood in for a predicate the statistics could not estimate. Exposed for testing.
 Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const ExpressionStatistics & input_statistics, bool & used_default);
 Float64 estimatePredicateSelectivity(const ActionsDAG::Node * node, const ExpressionStatistics & input_statistics);
 

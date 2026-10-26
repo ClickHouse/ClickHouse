@@ -52,6 +52,10 @@ struct JoinKeyEstimate
     bool probe_keys_within_preserved_side = false;
     std::optional<double> left_within_fraction = {};
     std::optional<double> right_within_fraction = {};
+    /// With `probe_keys_within_preserved_side`, the share of the key domain the other side's values
+    /// take: the fraction an anti join uses.
+    std::optional<double> left_domain_fraction = {};
+    std::optional<double> right_domain_fraction = {};
     /// Smallest share of a side's key values the other side also has, see `keyContainment`; known
     /// when both NDVs come from statistics, since a row count says nothing about shared values.
     std::optional<double> left_match_fraction;
@@ -79,6 +83,12 @@ struct JoinKeyEstimate
         }
         if (!left.from_statistics || !right.from_statistics)
             return;
+        if (probe_keys_within_preserved_side && domain_distinct_values >= std::max(left.from_statistics, right.from_statistics))
+        {
+            const double domain = static_cast<double>(domain_distinct_values);
+            left_domain_fraction = std::min(left_domain_fraction.value_or(1.0), static_cast<double>(right.from_statistics) / domain);
+            right_domain_fraction = std::min(right_domain_fraction.value_or(1.0), static_cast<double>(left.from_statistics) / domain);
+        }
         left_match_fraction = std::min(left_match_fraction.value_or(1.0),
             QueryPlanOptimizations::keyContainment(left.from_statistics, right.from_statistics, domain_distinct_values).value_or(1.0));
         right_match_fraction = std::min(right_match_fraction.value_or(1.0),
@@ -463,9 +473,12 @@ inline std::optional<UInt64> estimateJoinCardinality(
         /// Fraction of preserved rows with a match: the share of the preserved key values the other
         /// side has when that key's NDV is known, else the other side's rows per key value, capped at 1.
         const auto & within_fraction = preserve_left ? keys.left_within_fraction : keys.right_within_fraction;
+        const auto & domain_fraction = preserve_left ? keys.left_domain_fraction : keys.right_domain_fraction;
         const auto & known_fraction = (strictness == JoinStrictness::Semi && within_fraction)
             ? within_fraction
-            : (preserve_left ? keys.left_match_fraction : keys.right_match_fraction);
+            : ((strictness == JoinStrictness::Anti && domain_fraction)
+                ? domain_fraction
+                : (preserve_left ? keys.left_match_fraction : keys.right_match_fraction));
         const double rows_per_key = keys.from_statistics ? keys.statistics_selectivity : keys.selectivity;
         const double match_fraction = known_fraction.value_or(std::min(1.0, rows_per_key * other));
         const double kept = (strictness == JoinStrictness::Semi)
