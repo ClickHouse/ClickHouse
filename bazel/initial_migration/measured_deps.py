@@ -52,10 +52,13 @@ DEPENDENCIES = {
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_libhdfs3', '_hdfs3__compile_0'): ([], ['@clickhouse_google_protobuf//:_libprotobuf'], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
-    ('src', 'headers'): (['@clickhouse_double_conversion//:_double-conversion'], [], []),
+    ('src', 'headers'): ([
+        '@clickhouse_double_conversion//:_double-conversion',
+        '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
+    ], [], []),
     ('src', 'clickhouse_source_headers'): ([
-        '//base:common', '//src/Common', '//src/Parsers:headers', '@clickhouse_mongo_cxx_driver//:_bsoncxx',
-        ARRAY_LENGTH,
+        '//base:common', '//src/Common', '//src/Parsers:headers',
+        '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx', ARRAY_LENGTH,
     ], [], []),
     ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP], [], []),
@@ -95,6 +98,7 @@ DEPENDENCIES = {
     ], [], []),
     **{('src/Common', name): (['//src:headers'], [], [])
        for name in ('clickhouse_malloc', 'clickhouse_new_delete')},
+    ('src/Common', 'Common'): (['@clickhouse_mongo_cxx_driver//:_mongocxx'], [], []),
     ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], ['//src/Common'], []),
     ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
     ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt', '@clickhouse_boost//:_boost_context'], [], []),

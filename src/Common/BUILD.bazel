@@ -462,7 +462,6 @@ ch_cc_library(
         "//bazel:clickhouse_config_headers",
         "//base/poco/Net:_poco_net",
         "@clickhouse_libssh//:_ssh",
-        "@clickhouse_mongo_cxx_driver//:_mongocxx",
         "//base/poco/Foundation:_poco_foundation",
         "@clickhouse_fmtlib//:_fmt",
         "@clickhouse_rapidjson//:rapidjson",
