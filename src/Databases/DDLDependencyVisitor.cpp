@@ -1,6 +1,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Analyzer/Identifier.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
 #include <Storages/StorageMaterializedView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -314,6 +316,9 @@ namespace
         /// (for example, CREATE VIEW).
         void visitTableExpression(const ASTTableExpression & expr)
         {
+            if (expr.table_function)
+                visitParameterizedViewCall(*expr.table_function);
+
             if (!expr.database_and_table_name)
                 return;
 
@@ -336,6 +341,21 @@ namespace
             }
 
             dependencies.emplace(qualified_name);
+        }
+
+        /// Like in the analyzer, a table function which is not registered is a call of a parameterized view,
+        /// e.g. `pv(id = 1)` or `db.pv(id = 1)`.
+        void visitParameterizedViewCall(const IAST & table_function)
+        {
+            const auto * function = table_function.as<ASTFunction>();
+            if (!function || TableFunctionFactory::instance().isTableFunctionName(function->name))
+                return;
+
+            Identifier identifier{function->name};
+            if (identifier.getPartsSize() == 1)
+                dependencies.emplace(QualifiedTableName{current_database, identifier[0]});
+            else if (identifier.getPartsSize() == 2)
+                dependencies.emplace(QualifiedTableName{identifier[0], identifier[1]});
         }
 
     public:
