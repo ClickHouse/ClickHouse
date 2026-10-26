@@ -30,10 +30,12 @@ guide):
    its output. The working tree is restored afterwards; the failure message
    names the exact command to run.
 
-3. Homepage links. English and localized homepages must render the canonical
-   `/docs` mount during server-side rendering. Localized links must also use the
-   page's locale before hydration. This keeps middle-click, copied links, and
-   no-JavaScript clients on the final published destination.
+3. Homepage links. English and localized homepage anchors must use
+   root-relative hrefs without the `/docs` mount, because Mintlify adds the
+   deployment's base path to them when it renders the link. Click handlers
+   navigate to the canonical `/docs` destination. Localized links must also use
+   the page's locale before hydration. This keeps middle-click, copied links,
+   and no-JavaScript clients on the final published destination.
 
 4. Install-page Cloud banner parity. The English and localized install pages
    must render the same recommended Cloud banner, attributed signup link, and
@@ -602,7 +604,7 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         r"export const QuickstartPill = \(\{ children \}\) => \{"
         r".*?const path = ['\"](?P<path>[^'\"]+)['\"];"
         r".*?const href = withDocsBase\(path\);"
-        r".*?href=\{href\}",
+        r".*?href=\{path\}",
         re.DOTALL,
     )
     helper = re.compile(
@@ -629,7 +631,7 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         r"['\"]/resources/support-center/knowledge-base/setup-installation/"
         r"set-up-clickhouse-documentation-mcp-server['\"]\);"
         r".*?const href = withDocsBase\(path\);"
-        r".*?href=\{href\}",
+        r".*?href=\{path\}",
         re.DOTALL,
     )
     docs_base_helper = (
@@ -655,14 +657,15 @@ def check_localized_homepage_links(docs_root: Path) -> list:
         "const assetBase = typeof window === 'undefined' || "
         "window.location.pathname.startsWith('/docs') ? '/docs' : '';": 3,
         "const resolvedHref = withDocsBase(href);": 1,
-        "href={resolvedHref}": 2,
-        "href={withDocsBase(link.href)}": 1,
+        "href={href}": 2,
+        "href={path}": 3,
+        "href={link.href}": 1,
         "onClick={(event) => navigateTo(event, resolvedHref)}": 2,
         "onClick={(event) => navigateTo(event, "
         "withDocsBase(link.href))}": 1,
         "onClick={(event) => navigateTo(event, href)}": 3,
-        "const href = withDocsBase(localizeHref('/integrations/home'));": 1,
-        "const href = withDocsBase(path);": 2,
+        "const path = localizeHref('/integrations/home');": 1,
+        "const href = withDocsBase(path);": 3,
     }
     cloud_link = 'localizeHref("/get-started/setup/cloud")'
     errors = []
@@ -687,7 +690,7 @@ def check_localized_homepage_links(docs_root: Path) -> list:
             if source.count(marker) != count:
                 errors.append(
                     f"{name}: expected {count} occurrence(s) of {marker!r} "
-                    "so rendered homepage anchors include `/docs`"
+                    "so Mintlify adds `/docs` to rendered homepage anchors exactly once"
                 )
 
         expected_path = "/get-started/setup/cloud"

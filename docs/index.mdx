@@ -64,7 +64,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
         <>
             {links && links.length > 0 && href && (
                 <a
-                    href={resolvedHref}
+                    href={href}
                     onClick={(event) => navigateTo(event, resolvedHref)}
                     className="absolute inset-0 z-0 rounded-lg"
                     aria-label={title}
@@ -110,7 +110,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
                 <ul className="mt-6 list-none p-0 relative z-10">
                     {links.map((link, index) => (
                         <li key={index} className={index > 0 ? 'mt-2' : 'mt-0'}>
-                            <a href={withDocsBase(link.href)} onClick={(event) => navigateTo(event, withDocsBase(link.href))} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
+                            <a href={link.href} onClick={(event) => navigateTo(event, withDocsBase(link.href))} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
                                 <span className="truncate min-w-0">{link.label}</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0${link.external ? ' ch-external-arrow' : ''}`}>
                                     <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -146,16 +146,17 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
         return <div className={fullClassName} data-galaxy-event={galaxyEvent}>{content}</div>;
     }
 
-    return <a className={fullClassName} href={resolvedHref} data-galaxy-event={galaxyEvent} onClick={(event) => navigateTo(event, resolvedHref)}>{content}</a>;
+    return <a className={fullClassName} href={href} data-galaxy-event={galaxyEvent} onClick={(event) => navigateTo(event, resolvedHref)}>{content}</a>;
 };
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = withDocsBase(localizeHref('/integrations/home'));
+    const path = localizeHref('/integrations/home');
+    const href = withDocsBase(path);
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
-            href={href}
+            href={path}
             data-galaxy-event="docs.home.integrations"
             onClick={(event) => navigateTo(event, href)}
         >
@@ -199,7 +200,7 @@ export const McpLink = ({ children }) => {
     const href = withDocsBase(path);
     return (
         <a
-            href={href}
+            href={path}
             data-galaxy-event="docs.home.mcp-server"
             onClick={(event) => navigateTo(event, href)}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
@@ -223,7 +224,7 @@ export const QuickstartPill = ({ children }) => {
     return (
         <a
             className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
-            href={href}
+            href={path}
             data-galaxy-event="docs.home.quickstart-cloud"
             onClick={(event) => navigateTo(event, href)}
         >
