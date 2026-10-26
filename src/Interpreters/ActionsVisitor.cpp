@@ -775,7 +775,7 @@ void ScopeStack::addFunction(
 
     {
         auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
-        bool node_has_secret = FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets();
+        bool node_has_secret = findSecretArguments(node).hasSecrets();
         bool child_has_secret = std::any_of(
             node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
         mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);

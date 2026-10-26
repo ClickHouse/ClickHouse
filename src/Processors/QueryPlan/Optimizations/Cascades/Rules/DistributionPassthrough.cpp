@@ -28,7 +28,7 @@ static const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
     return nullptr;
 }
 
-/// Implementation rule for stateless per-row steps. Propagates distribution to the
+/// Implementation rule for the steps of `isDistributionPassthroughStep`. Propagates distribution to the
 /// input and creates speculative multi-node variants at each candidate node count.
 /// Also creates sorted passthrough variants that delegate sorting to the child group,
 /// so the sort can be placed below the passthrough step when that is cheaper.

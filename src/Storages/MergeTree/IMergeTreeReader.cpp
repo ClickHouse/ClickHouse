@@ -7,6 +7,9 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
+#endif
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
@@ -16,6 +19,10 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeObject.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
@@ -197,10 +204,13 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     chassert(columns.size() == getColumns().size());
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
-    if (!loaded_part_info)
+    bool is_borrowed = false;
+#if CLICKHOUSE_CLOUD
+    is_borrowed = typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()) != nullptr;
+#endif
+    if (!loaded_part_info && !is_borrowed)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
-    const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
@@ -234,8 +244,10 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
+        else if (loaded_part_info)
+            field = getFieldForConstVirtualColumn(it->name, *loaded_part_info->getDataPart());
         else
-            field = getFieldForConstVirtualColumn(it->name, *data_part);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual column {} is not supported for this part", it->name);
 
         columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }
@@ -476,7 +488,49 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     auto subcolumn_name = required_column.getSubcolumnName();
 
     if (alter_conversions->isColumnRenamed(name_in_storage))
+    {
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+    }
+    else if (!subcolumn_name.empty() && isNested(required_column.getTypeInStorage()))
+    {
+        /** A leaf of a Nested column is requested as a subcolumn of its parent (`n.z` becomes the
+          * subcolumn `z` of `n`, see `Nested::convertToSubcolumns`), while a pending rename of that
+          * leaf is recorded under the flattened name `n.z`. The lookup above asks for the parent and
+          * misses it, so the part is searched for a column that only exists there under its old name
+          * and the values are read as defaults while the mutation is pending.
+          */
+        /// The leaf name may itself contain dots (`n.b.c` is the leaf `b.c` of `n`, see `Nested::splitName`),
+        /// and it may be followed by a real subcolumn of the leaf (`.size0`, `.null`), so the leaf is found
+        /// among the elements of the Nested type in the current metadata. The longest matching element wins:
+        /// the leaves `x` and `x.y` may coexist, and a read of `x.y` must not be taken for the subcolumn `y`
+        /// of the leaf `x`, which could have a pending rename of its own.
+        const auto & nested_names = typeid_cast<const DataTypeNestedCustomName &>(*required_column.getTypeInStorage()->getCustomName()).getNames();
+
+        std::optional<size_t> leaf_length;
+        for (const auto & element_name : nested_names)
+        {
+            bool is_prefix = subcolumn_name.starts_with(element_name)
+                && (subcolumn_name.size() == element_name.size() || subcolumn_name[element_name.size()] == '.');
+
+            if (is_prefix && (!leaf_length || element_name.size() > *leaf_length))
+                leaf_length = element_name.size();
+        }
+
+        if (leaf_length)
+        {
+            auto leaf_name = Nested::concatenateName(name_in_storage, subcolumn_name.substr(0, *leaf_length));
+
+            if (alter_conversions->isColumnRenamed(leaf_name))
+            {
+                /// A rename cannot move a leaf to another Nested column, so the parent stays the same.
+                auto old_leaf_split = Nested::splitName(alter_conversions->getColumnOldName(leaf_name));
+                auto leaf_subcolumn_name = *leaf_length < subcolumn_name.size() ? subcolumn_name.substr(*leaf_length + 1) : String{};
+
+                name_in_storage = old_leaf_split.first;
+                subcolumn_name = Nested::concatenateName(old_leaf_split.second, leaf_subcolumn_name);
+            }
+        }
+    }
 
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
@@ -512,6 +566,14 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String
 
 SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const
 {
+    /// Take a static subcolumn's serialization from the part instead of composing it from the column's
+    /// serialization below (a walk over all the column's substreams).
+    if (column_in_part.isSubcolumn())
+    {
+        if (auto serialization = data_part_info_for_read->tryGetSubcolumnSerialization(column_in_part.getNameInStorage(), column_in_part.getSubcolumnName()))
+            return serialization->supportsPooling() ? serialization : nullptr;
+    }
+
     auto serialization_in_part = data_part_info_for_read->tryGetSerialization(column_in_part.getNameInStorage());
     if (!serialization_in_part)
         return nullptr;
@@ -590,11 +652,199 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
 
 bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const
 {
+    /// A hit means the subcolumn is present; a miss is inconclusive (a dynamic path is never in the
+    /// part's subcolumns), so fall back to resolving it against the column's serialization.
+    if (data_part_info_for_read->tryGetSubcolumnSerialization(name_in_part, subcolumn_name))
+        return true;
+
     /// Resolved against the serialization the part holds for the column, when there is one, instead of building one.
     if (auto serialization_in_part = data_part_info_for_read->tryGetSerialization(name_in_part))
         return type_in_part.tryGetSubcolumnType(subcolumn_name, serialization_in_part) != nullptr;
 
     return type_in_part.hasSubcolumn(subcolumn_name);
+}
+
+void IMergeTreeReader::initColumnsCache(bool can_read)
+{
+    requested_column_names.reserve(getColumns().size());
+    for (const auto & column : getColumns())
+        requested_column_names.push_back(column.name);
+
+    /// `columns_cache` is null when the cache is disabled or sized zero, see `getColumnsCacheIfEnabled`.
+    const bool cache_possible = columns_cache
+        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
+
+    columns_cache_reads_possible = cache_possible && settings.enable_columns_cache_reads && can_read;
+    columns_cache_writes_possible = cache_possible && settings.enable_columns_cache_writes;
+
+    if (!columns_cache_reads_possible && !columns_cache_writes_possible)
+        return;
+
+    stripes = ColumnsCacheStripes::forPart(data_part_info_for_read->getIndexGranularity());
+    columns_cache_part_name = getColumnsCachePartName(data_part_info_for_read->getPartName(), data_part_info_for_read->getParentPartName());
+
+    column_identities.reserve(requested_column_names.size());
+    for (const auto & name : requested_column_names)
+        column_identities.push_back(getColumnsCacheColumnIdentity(
+            data_part_info_for_read->getTableUUID(), columns_cache_part_name, name, settings.columns_cache_schema_identity));
+
+    /// Capture the invalidation generation once, before anything is read, so that any
+    /// invalidation racing with this reader is observed. It is passed to `setMany` by every
+    /// deferred write of the reader: the write is dropped if the table was invalidated or the
+    /// whole cache dropped after this point. It is not refreshed when a later mark range
+    /// starts, otherwise a reader that began before `SYSTEM DROP COLUMNS CACHE` would
+    /// repopulate the cache from its next range. The schema token of the cache keys is not
+    /// taken from here but from the metadata snapshot of the query
+    /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
+    /// schema this read actually uses, see `getColumnsCacheColumnIdentity`.
+    if (columns_cache_writes_possible)
+        cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
+}
+
+bool IMergeTreeReader::canWriteToColumnsCache() const
+{
+    /// The query-wide estimate gate can disable cache writes while reads
+    /// are already in flight: the estimate is accumulated as read
+    /// pools build their tasks, and another pool of the same query may
+    /// exceed the budget after this reader started. Consult the shared flag
+    /// before writing so the estimate budget applies to the whole query.
+    if (settings.columns_cache_writes_disabled
+        && settings.columns_cache_writes_disabled->load(std::memory_order_relaxed))
+        return false;
+
+    /// The per-query runtime budget only grows during the query, so once it is exhausted the
+    /// rest of the read is not worth copying either. 0 means half of the size limit the cache has
+    /// now, which `autoResize` lowers under memory pressure, so it is resolved on every check.
+    const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
+    if (bytes_written)
+    {
+        const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache != 0
+            ? settings.columns_cache_max_bytes_to_write_to_cache
+            : columns_cache->maxSizeInBytes() / 2;
+        if (bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+            return false;
+    }
+
+    return true;
+}
+
+bool IMergeTreeReader::admitStripeToColumnsCache(size_t stripe)
+{
+    if (!stripe_admission || stripe_admission->first != stripe)
+        stripe_admission.emplace(stripe, columns_cache->shouldAdmit());
+    return stripe_admission->second;
+}
+
+void IMergeTreeReader::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column)
+{
+    auto entry = makeColumnsCacheEntry();
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        entry->part_name = columns_cache_part_name;
+        entry->column_name = requested_column_names[pos];
+    }
+    entry->table_uuid = data_part_info_for_read->getTableUUID();
+    entry->schema_identity = settings.columns_cache_schema_identity;
+    entry->first_mark = first_mark;
+    entry->end_mark = end_mark;
+    entry->row_begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(first_mark);
+    entry->rows = column->size();
+    entry->key = ColumnsCacheKey{column_identities[pos], stripes.stripeOf(first_mark)};
+    entry->column = std::move(column);
+
+    pending_entries.push_back(std::move(entry));
+}
+
+void IMergeTreeReader::flushPendingColumnsCacheWrites()
+{
+    if (pending_entries.empty())
+        return;
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    entries.swap(pending_entries);
+
+    /// The budget is an advisory soft threshold, not a hard cap: the entries that cross it are
+    /// stored in full and charged afterwards, so the total written may overshoot by up to the
+    /// entries of one call (and slightly more under concurrency).
+    /// This matches columns_cache_max_bytes_to_write_to_cache's docs.
+    if (!canWriteToColumnsCache())
+        return;
+
+    /// Charge the budget only for entries that were actually inserted: a write that is rejected
+    /// as stale or does not stay resident must not consume the budget, otherwise a query could
+    /// exhaust the cap and skip later real inserts even though those bytes were never written.
+    const size_t bytes_admitted = columns_cache->setMany(entries, cache_table_generation);
+    if (bytes_admitted && settings.columns_cache_bytes_written_so_far)
+        settings.columns_cache_bytes_written_so_far->fetch_add(bytes_admitted, std::memory_order_relaxed);
+}
+
+IColumn::MutablePtr & IMergeTreeReader::takeColumnForAppending(MutableColumns & res_columns, Columns & shared_columns, size_t pos)
+{
+    if (shared_columns[pos])
+        res_columns[pos] = IColumn::mutate(std::move(shared_columns[pos]));
+    return res_columns[pos];
+}
+
+void IMergeTreeReader::serveRowsFromColumnsCacheEntry(
+    const ColumnsCacheEntry & entry, size_t pos, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns) const
+{
+    const IColumn & cached_column = *entry.column;
+    if (row_begin < entry.row_begin || entry.row_begin + cached_column.size() < row_begin + rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Columns cache entry of column {} of part {} holds rows [{}, {}), but rows [{}, {}) are requested",
+            requested_column_names[pos], columns_cache_part_name,
+            entry.row_begin, entry.row_begin + cached_column.size(), row_begin, row_begin + rows);
+    const size_t offset = row_begin - entry.row_begin;
+
+    if (!res_columns[pos] && !shared_columns[pos])
+    {
+        /// The first rows of the result column are the cached rows, so that the column keeps
+        /// the structure the part gives it and a freshly created column would not have: the
+        /// dynamic paths of a `JSON` column and the variants of a `Dynamic` column come from
+        /// the prefix of the part, the value of a column stored as a single value per part is
+        /// in the data, and a part with sparse serialization produces a `ColumnSparse`.
+        /// Downstream behavior depends on all of these: some aggregate functions (for example
+        /// `groupConcat`) have a sparse fast path that processes non-defaults first and all
+        /// defaults at the end, while the full path preserves the natural row order.
+        ///
+        /// Rows that are the whole entry are the cached column itself, shared with the cache;
+        /// other rows are a copy, which the read may go on to modify.
+        if (offset == 0 && rows == cached_column.size())
+            shared_columns[pos] = entry.column;
+        else
+            res_columns[pos] = IColumn::mutate(cached_column.cut(offset, rows));
+        return;
+    }
+
+    auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
+
+    /// The result column already has its structure, from the granules before this one - read
+    /// from the part or served from the cache, both of the same part. If the entry was written
+    /// under different settings and holds a `ColumnSparse` while the result is a full column,
+    /// insert from a full copy of the range so that `insertRangeFrom` is type-compatible.
+    const bool cached_is_sparse = typeid_cast<const ColumnSparse *>(&cached_column) != nullptr;
+    const bool dst_is_sparse = typeid_cast<const ColumnSparse *>(column.get()) != nullptr;
+    if (cached_is_sparse && !dst_is_sparse)
+    {
+        auto full = cached_column.cut(offset, rows)->convertToFullColumnIfSparse();
+        column->insertRangeFrom(*full, 0, rows);
+    }
+    else
+    {
+        /// The copy is what keeps the cached column immutable: the result column is mutated
+        /// by the read in progress.
+        column->insertRangeFrom(cached_column, offset, rows);
+    }
+}
+
+bool IMergeTreeReader::isColumnNotCacheable(const NameAndTypePair & column)
+{
+    if (!column.isSubcolumn())
+        return false;
+
+    const auto & subcolumn_name = column.getSubcolumnName();
+    const std::string_view special_name = DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION;
+    return subcolumn_name == special_name || subcolumn_name.ends_with(fmt::format(".{}", special_name));
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
@@ -618,6 +868,23 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+
+            /** A column a pending mutation drops is not read from the part: the readers skip it and the
+              * value comes from the current metadata - the column's default, in the requested type - so
+              * the type the part carries says nothing about what is in `res_columns`. Converting from
+              * that type builds the conversion for the part's type and hands it a column of another
+              * one, which raises `Illegal column ... of first argument of function ...`.
+              *
+              * That is reachable whenever the dropped name is taken by a new column of a different type
+              * before the drop's mutation has rewritten the part:
+              *
+              *     ALTER TABLE t DROP COLUMN c;               -- c UInt64 still in the part
+              *     ALTER TABLE t ADD COLUMN c UInt32;         -- new column, absent from the part
+              *     SELECT c FROM t;                           -- read as UInt32, not converted from UInt64
+              */
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
+
             const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
@@ -826,14 +1093,15 @@ MergeTreeReaderPtr createMergeTreeReader(
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules)
 {
+    const auto & index = index_read_task.index;
     if (index.index->index.type == "text")
     {
         auto it = index_granules.find(index.index->index.name);
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+        return createMergeTreeReaderTextIndex(main_reader, index_read_task, columns_to_read, it != index_granules.end() ? it->second : nullptr);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
