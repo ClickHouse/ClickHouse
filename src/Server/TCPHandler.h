@@ -311,6 +311,7 @@ private:
     InitialAllRangesAnnouncementResponse receiveAllRangesAnnouncementResponse(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     void processCancel(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void killQueryIfStoppedByClient(QueryState & state);
     void processQuery(std::shared_ptr<QueryState> & state);
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();

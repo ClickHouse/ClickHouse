@@ -1005,7 +1005,15 @@ void TCPHandler::runImpl()
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
                     }
 
-                    executor.execute();
+                    try
+                    {
+                        executor.execute();
+                    }
+                    catch (...)
+                    {
+                        killQueryIfStoppedByClient(*query_state);
+                        throw;
+                    }
                 }
 
                 query_state->io.onFinish();
@@ -1724,6 +1732,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         }
         catch (...)
         {
+            killQueryIfStoppedByClient(state);
             executor.cancel();
             throw;
         }
@@ -3174,6 +3183,20 @@ void TCPHandler::processCancel(QueryState & state)
     state.stop_query = true;
 
     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+}
+
+void TCPHandler::killQueryIfStoppedByClient(QueryState & state)
+{
+    {
+        std::lock_guard lock(*callback_mutex);
+        if (!state.stop_query)
+            return;
+    }
+
+    /// Cancelling the executor waits for its threads, and some code they run checks only the process list entry (e.g. `sleep`).
+    /// The client's exception is passed, so that it is the one the query fails with.
+    if (auto process_list_element = state.query_context->getProcessListElementSafe())
+        process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::current_exception());
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
