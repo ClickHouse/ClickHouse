@@ -111,7 +111,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.
+    QueryResultDetails * result_details = nullptr    /// If not null, filled with the details of the result.
 );
 
 /// Schedules the query on the background query pool. The returned future becomes ready once the query

@@ -53,3 +53,29 @@ num_columns=0 num_params=0
 --- prepare: SELECT * FROM table_that_does_not_exist
 error: UNKNOWN_TABLE
 reset: error: Unknown prepared statement
+--- prepare: SELECT toFixedString('x', assumeNotNull((SELECT id FROM t ORDER BY id LIMIT 1))) AS x
+num_columns=1 num_params=0
+name=x org_name=x schema= table= org_table= type=254 length=1
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT CAST(1, assumeNotNull((SELECT 'UInt16' FROM t LIMIT 1))) AS x
+num_columns=1 num_params=0
+name=x org_name=x schema= table= org_table= type=2 length=5
+execute: 1 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT repeat('abcdefghij', 500000) AS x SETTINGS max_memory_usage = 1000000
+error: MEMORY_LIMIT_EXCEEDED
+--- query: SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- prepare: SELECT id FROM (SELECT id FROM t) ORDER BY id
+num_columns=1 num_params=0
+name=id org_name=id schema= table= org_table= type=8 length=20
+execute: 3 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT (SELECT s FROM (SELECT s FROM t) LIMIT 1) AS x
+error: ACCESS_DENIED
+--- prepare: SELECT s FROM t
+error: ACCESS_DENIED

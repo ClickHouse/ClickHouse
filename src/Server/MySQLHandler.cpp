@@ -8,7 +8,6 @@
 #include <Access/Authentication.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/User.h>
-#include <Analyzer/getResultColumnOrigins.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -26,14 +25,8 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
-#include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -78,17 +71,12 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsDialect dialect;
-    extern const SettingsBool enable_global_with_statement;
-    extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool implicit_select;
-    extern const SettingsSetOperationMode intersect_default_mode;
-    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
-    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace ServerSetting
@@ -1001,6 +989,7 @@ Block MySQLHandler::describePreparedStatement(const String & statement, ResultCo
     if (settings[Setting::dialect] != Dialect::clickhouse)
         return {};
 
+    /// Only queries returning a result set are described, and they must not be executed here.
     const char * begin = query.data();
     const char * end = begin + query.size();
     ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -1009,24 +998,16 @@ Block MySQLHandler::describePreparedStatement(const String & statement, ResultCo
     if (!ast->as<ASTSelectWithUnionQuery>() && !ast->as<ASTSelectQuery>() && !ast->as<ASTSelectIntersectExceptQuery>())
         return {};
 
-    /// Prepare the AST the same way `executeQuery` does, as far as it matters for the result header.
-    InterpreterSetQuery::applySettingsFromQuery(ast, query_context);
-    normalizeDivision(*ast, query_context);
-    if (settings[Setting::enable_global_with_statement])
-        ApplyWithGlobalVisitor::visit(ast, settings[Setting::max_expanded_ast_elements]);
-    {
-        SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-        SelectIntersectExceptQueryVisitor{data}.visit(ast);
-    }
-    {
-        NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-        NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-    }
+    /// Build the query the same way its execution does (with the settings, the access checks, the limits and an entry
+    /// in the process list), but don't run it: only the header of its result is needed here.
+    QueryResultDetails result_details;
+    BlockIO io = executeQuery(query, query_context, QueryFlags{.collect_result_column_origins = true}, QueryProcessingStage::Complete, &result_details).second;
+    Block header = io.pipeline.getHeader();
+    result_column_origins = std::move(result_details.result_column_origins);
 
-    /// Analyze without executing anything (in particular, scalar subqueries), but with the access checks of the execution.
-    InterpreterSelectQueryAnalyzer interpreter(ast, query_context, SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
-    Block header = *interpreter.getSampleBlock();
-    result_column_origins = getResultColumnOrigins(interpreter.getQueryTree());
+    /// The pipeline is reset before `onFinish`, so nothing is written into the query result cache.
+    io.resetPipeline(/*cancel=*/ true);
+    io.onFinish();
     return header;
 }
 

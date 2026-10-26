@@ -106,7 +106,7 @@ def parse_column_definition(payload):
     )
 
 
-def connect():
+def connect(user=CLICKHOUSE_USER):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(30)
     sock.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT_MYSQL))
@@ -123,7 +123,7 @@ def connect():
     payload += struct.pack("<I", 0xFFFFFF)  # max_packet_size
     payload += bytes([33])  # character_set (utf8_general_ci)
     payload += b"\x00" * 23  # reserved
-    payload += CLICKHOUSE_USER.encode() + b"\x00"
+    payload += user.encode() + b"\x00"
     payload += bytes([0])  # empty auth_response (no password)
     payload += CLICKHOUSE_DATABASE.encode() + b"\x00"
     payload += b"mysql_native_password\x00"
@@ -171,7 +171,9 @@ def prepare(sock, text):
     send_command(sock, COM_STMT_PREPARE, text.encode())
     response = read_packet(sock)
     if is_err(response):
-        print(f"error: {'UNKNOWN_TABLE' if 'UNKNOWN_TABLE' in err_message(response) else err_message(response)}")
+        message = err_message(response)
+        known_errors = ["UNKNOWN_TABLE", "ACCESS_DENIED", "MEMORY_LIMIT_EXCEEDED"]
+        print(f"error: {next((error for error in known_errors if error in message), message)}")
         return None, None
 
     statement_id, num_columns, num_params = struct.unpack_from("<IHH", response, 1)
@@ -270,6 +272,42 @@ def main():
 
         # Resetting a statement that does not exist is an error.
         reset(sock, 1000000)
+
+        # Scalar subqueries are evaluated at prepare time, so a type depending on their value is described correctly.
+        for text in [
+            "SELECT toFixedString('x', assumeNotNull((SELECT id FROM t ORDER BY id LIMIT 1))) AS x",
+            "SELECT CAST(1, assumeNotNull((SELECT 'UInt16' FROM t LIMIT 1))) AS x",
+        ]:
+            statement_id, columns = prepare(sock, text)
+            execute(sock, statement_id, columns)
+            close(sock, statement_id)
+
+        # The limits of the query apply at prepare time.
+        prepare(sock, "SELECT repeat('abcdefghij', 500000) AS x SETTINGS max_memory_usage = 1000000")
+
+        # A result served from the query result cache is described in the same way.
+        query_metadata(sock, "SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600")
+        query_metadata(sock, "SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600")
+
+        # Preparation checks the access rights as the execution does, also inside subqueries.
+        user = f"user_{CLICKHOUSE_DATABASE}"
+        query(sock, f"DROP USER IF EXISTS {user}")
+        query(sock, f"CREATE USER {user} IDENTIFIED WITH no_password")
+        query(sock, f"GRANT SELECT(id) ON {CLICKHOUSE_DATABASE}.t TO {user}")
+        user_sock = connect(user)
+        try:
+            for text in [
+                "SELECT id FROM (SELECT id FROM t) ORDER BY id",
+                "SELECT (SELECT s FROM (SELECT s FROM t) LIMIT 1) AS x",
+                "SELECT s FROM t",
+            ]:
+                statement_id, columns = prepare(user_sock, text)
+                if statement_id is not None:
+                    execute(user_sock, statement_id, columns)
+                    close(user_sock, statement_id)
+        finally:
+            user_sock.close()
+            query(sock, f"DROP USER {user}")
 
         query(sock, "DROP TABLE t")
         query(sock, "DROP TABLE types")
