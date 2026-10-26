@@ -13,7 +13,7 @@ ClickHouse можно легко интегрировать в инфрастр�
   ## Создание SQL-дампов
 </div>
 
-Данные можно экспортировать в формате SQL с помощью [SQLInsert](/ru/reference/formats/SQLInsert). ClickHouse запишет данные в виде `INSERT INTO <table name> VALUES(...` и будет использовать параметр [`output_format_sql_insert_table_name`](/ru/reference/settings/formats#output_format_sql_insert_table_name) в качестве имени таблицы:
+Данные можно экспортировать в формате SQL с помощью [SQLInsert](/ru/reference/formats/SQLInsert). ClickHouse запишет данные в виде `INSERT INTO <table name> VALUES(...` и будет использовать параметр [`output_format_sql_insert_table_name`](/ru/reference/settings/formats/output-format#output_format_sql_insert_table_name) в качестве имени таблицы:
 
 ```sql
 SET output_format_sql_insert_table_name = 'some_table';
@@ -22,7 +22,7 @@ INTO OUTFILE 'dump.sql'
 FORMAT SQLInsert
 ```
 
-Имена столбцов можно не указывать, отключив параметр [`output_format_sql_insert_include_column_names`](/ru/reference/settings/formats#output_format_sql_insert_include_column_names):
+Имена столбцов можно не указывать, отключив параметр [`output_format_sql_insert_include_column_names`](/ru/reference/settings/formats/output-format#output_format_sql_insert_include_column_names):
 
 ```sql
 SET output_format_sql_insert_include_column_names = 0
@@ -36,7 +36,7 @@ mysql some_db < dump.sql
 
 Мы предполагаем, что таблица `some_table` существует в базе данных MySQL `some_db`.
 
-В некоторых СУБД могут быть ограничения на количество значений, которые можно обработать в рамках одного батча. По умолчанию ClickHouse создает батчи по 65k значений, но это можно изменить с помощью опции [`output_format_sql_insert_max_batch_size`](/ru/reference/settings/formats#output_format_sql_insert_max_batch_size):
+В некоторых СУБД могут быть ограничения на количество значений, которые можно обработать в рамках одного батча. По умолчанию ClickHouse создает батчи по 65k значений, но это можно изменить с помощью опции [`output_format_sql_insert_max_batch_size`](/ru/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size):
 
 ```sql
 SET output_format_sql_insert_max_batch_size = 1000;
@@ -78,7 +78,7 @@ LIMIT 5
 └────────────────────────────────┴────────────┴──────┘
 ```
 
-По умолчанию ClickHouse пропускает неизвестные столбцы (это управляется параметром [input&#95;format&#95;skip&#95;unknown&#95;fields](/ru/reference/settings/formats#input_format_skip_unknown_fields)) и обрабатывает данные для первой таблицы, найденной в дампе (если в один файл выгружено несколько таблиц). DDL-операторы будут пропущены. Чтобы загрузить данные из дампа MySQL в таблицу (файл [mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql)):
+По умолчанию ClickHouse пропускает неизвестные столбцы (это управляется параметром [input&#95;format&#95;skip&#95;unknown&#95;fields](/ru/reference/settings/formats/input-format#input_format_skip_unknown_fields)) и обрабатывает данные для первой таблицы, найденной в дампе (если в один файл выгружено несколько таблиц). DDL-операторы будут пропущены. Чтобы загрузить данные из дампа MySQL в таблицу (файл [mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql)):
 
 ```sql
 INSERT INTO some_data

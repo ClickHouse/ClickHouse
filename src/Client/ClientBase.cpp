@@ -3,6 +3,7 @@
 
 #include <Client/ClientBase.h>
 #include <Client/ClientBaseHelpers.h>
+#include <Client/ClientSlashCommands.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
@@ -38,6 +39,7 @@
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
+#include <Common/quoteString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Columns/ColumnString.h>
@@ -46,6 +48,8 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ASTFromJSON.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
@@ -62,11 +66,14 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/LogsQLLexer.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
@@ -91,12 +98,15 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFile.h>
 
 #include <Access/AccessControl.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -132,6 +142,10 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsBool send_table_structure_on_insert_with_inline_data;
     extern const SettingsDialect dialect;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
+    extern const SettingsString input_format;
+    extern const SettingsString default_format;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -148,10 +162,19 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool enable_trino_dialect;
+    extern const SettingsBool enable_json_ast_dialect;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
+    extern const SettingsBool enable_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsSnappyMode snappy_mode;
@@ -181,6 +204,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_APPEND_TO_FILE;
 }
 
 }
@@ -189,12 +213,47 @@ namespace ProfileEvents
 {
     extern const Event UserTimeMicroseconds;
     extern const Event SystemTimeMicroseconds;
+    extern const Event ThrottlerSleepMicroseconds;
+    extern const Event SchedulerIOReadWaitMicroseconds;
+    extern const Event SchedulerIOWriteWaitMicroseconds;
 }
 
 namespace
 {
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
+
+/// The console output of the client. If the reader of the output goes away, as `head` does in
+/// `clickhouse-local -q '...' | head -1`, the write fails with `EPIPE` (`SIGPIPE` is blocked).
+/// The buffer remembers that, so the client can stop quietly, like `cat` and other tools do.
+/// It is done here and not in `WriteBufferFromFileDescriptor`, because only the client's own
+/// stdout is special: a broken pipe anywhere else (e.g. a pipe to a child process) is an error.
+class WriteBufferToStdout : public DB::WriteBufferFromFileDescriptor
+{
+public:
+    WriteBufferToStdout(int fd_, std::atomic<bool> & stdout_is_broken_)
+        : DB::WriteBufferFromFileDescriptor(fd_)
+        , stdout_is_broken(stdout_is_broken_)
+    {
+    }
+
+private:
+    std::atomic<bool> & stdout_is_broken;
+
+    void nextImpl() override
+    {
+        try
+        {
+            DB::WriteBufferFromFileDescriptor::nextImpl();
+        }
+        catch (const DB::ErrnoException & e)
+        {
+            if (e.getErrno() == EPIPE)
+                stdout_is_broken = true;
+            throw;
+        }
+    }
+};
 
 /// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
 bool hasStreamingTableExpression(const DB::IAST & ast)
@@ -220,6 +279,29 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
                 fs::remove(tmp_file);
         }
     }
+}
+
+/// Whether the argument of the interactive `\d` command is the name of a table, as in `\d hits`,
+/// rather than a continuation of the `SHOW TABLES` query that a bare `\d` expands to, as in
+/// `\d FROM system` or `\d NOT LIKE 'hits%'`. A table named after one of these clauses has to be
+/// quoted, which is also what tells it apart from the clause.
+bool isTableNameArgument(std::string_view argument)
+{
+    static constexpr auto show_tables_clauses = std::to_array<std::string_view>(
+        {"FROM", "IN", "NOT", "LIKE", "ILIKE", "WHERE", "LIMIT", "INTO", "FORMAT", "SETTINGS", "PARALLEL"});
+
+    while (!argument.empty() && isWhitespaceASCII(argument.front()))
+        argument.remove_prefix(1);
+
+    /// An unquoted name begins an identifier, a quoted one starts with a backtick or a double
+    /// quote. Anything else is not a name: no argument at all, or the `;` of a bare command.
+    if (argument.empty()
+        || !(isValidIdentifierBegin(argument.front()) || argument.front() == '`' || argument.front() == '"'))
+        return false;
+
+    const std::string_view first_word(argument.begin(), std::ranges::find_if(argument, isWhitespaceASCII));
+
+    return std::ranges::none_of(show_tables_clauses, [&](std::string_view clause) { return boost::iequals(first_word, clause); });
 }
 
 void performAtomicRename(const DB::ASTPtr & parsed_query, const String & out_file)
@@ -397,7 +479,7 @@ public:
     using Exception::Exception;
 
     LocalFormatError * clone() const override { return new LocalFormatError(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 /// Wrapper for write buffer to execute callback before flush.
@@ -455,7 +537,7 @@ ClientBase::ClientBase(
     , cmd_settings(std::make_unique<Settings>())
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
-    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
+    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferToStdout>>(out_fd_, stdout_is_broken))
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
@@ -468,7 +550,7 @@ ClientBase::ClientBase(
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
 }
 
-ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
+ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements, const char * raw_query_begin)
 {
     std::unique_ptr<IParserBase> parser;
     ASTPtr res;
@@ -479,47 +561,232 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         max_length = settings[Setting::max_query_size];
 
     const Dialect dialect = settings[Setting::dialect];
+    /// The Trino parser handles every `SET` form itself (including `SET SESSION` and `SET ROLE`),
+    /// and the LogsQL parser has its own `SET` escape that keeps word filters such as `set error`,
+    /// so they do not take the escape.
+    const bool is_set_escape = dialect != Dialect::clickhouse && dialect != Dialect::trino && dialect != Dialect::logsql
+        && isClickHouseJSONSetEscape(
+            pos, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-    else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-    else if (dialect == Dialect::promql)
-        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-    else if (dialect == Dialect::polyglot)
-        parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
-    else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
-    if (is_interactive || ignore_error)
+    /// A plain `SET` query is an escape hatch from every non-ClickHouse dialect. Parse it
+    /// with `ParserQuery` so users can switch back to another dialect.
+    if (dialect == Dialect::clickhouse_json && !is_set_escape)
     {
-        String message;
+        if (!settings[Setting::enable_json_ast_dialect])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Support for clickhouse_json dialect is disabled "
+                "(turn on setting 'enable_json_ast_dialect')");
+
+        if (max_length != 0 && static_cast<size_t>(end - pos) > max_length)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
         try
         {
-            if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            /// In multiquery mode `end` points to the end of the whole script, not the end of
+            /// the current statement, so we must not feed the entire remainder to the JSON parser
+            /// (it would choke on the trailing `;` and subsequent statements with "excess input").
+            /// Scan for exactly one balanced top-level JSON object starting at `pos`, parse only
+            /// that substring, and advance `pos` to just past it so the usual `;` handling and the
+            /// following statements are processed normally.
+            const char * json_end = end;
+            if (allow_multi_statements)
+            {
+                const char * p = pos;
+
+                /// Bound every byte we walk before the per-statement size guard (which only runs once
+                /// `json_end` is known in multiquery mode) by `max_query_size`, starting with the
+                /// leading-whitespace skip: an input that is a huge run of whitespace before the JSON
+                /// would otherwise be walked in full here.
+                const size_t scan_max_query_size = settings[Setting::max_query_size];
+
+                /// Skip leading whitespace before the JSON value.
+                while (p < end && isWhitespaceASCII(*p))
+                {
+                    if (scan_max_query_size != 0 && static_cast<size_t>(p - pos) > scan_max_query_size)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "Max query size exceeded (can be increased with the `max_query_size` setting)");
+                    ++p;
+                }
+
+                if (p < end && *p == '{')
+                {
+                    size_t depth = 0;
+                    bool in_string = false;
+                    bool escaped = false;
+                    const char * q = p;
+                    /// Bound the JSON-object scan by `max_query_size` too, for the same reason.
+                    for (; q < end; ++q)
+                    {
+                        if (scan_max_query_size != 0 && static_cast<size_t>(q - p) > scan_max_query_size)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Max query size exceeded (can be increased with the `max_query_size` setting)");
+                        const char c = *q;
+                        if (in_string)
+                        {
+                            if (escaped)
+                                escaped = false;
+                            else if (c == '\\')
+                                escaped = true;
+                            else if (c == '"')
+                                in_string = false;
+                        }
+                        else if (c == '"')
+                        {
+                            in_string = true;
+                        }
+                        else if (c == '{')
+                        {
+                            ++depth;
+                        }
+                        else if (c == '}')
+                        {
+                            --depth;
+                            if (depth == 0)
+                            {
+                                ++q;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (depth == 0)
+                    {
+                        json_end = q;
+
+                        /// Require the next significant token after the balanced JSON object to be a
+                        /// statement delimiter (`;`) or the end of input. Without this, multiquery
+                        /// input like `<json ast> garbage;` would deserialize and send the JSON prefix
+                        /// and only fail on `garbage` in the next iteration, whereas the SQL path
+                        /// rejects the same shape as excessive input before executing the prefix.
+                        Tokens after_json_tokens(json_end, end, settings[Setting::max_query_size]);
+                        IParser::Pos after_json_iterator(
+                            after_json_tokens,
+                            static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+                            static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
+                        /// Require the next significant token to be `;` or end of input. Compare the
+                        /// token type directly rather than via `isValid()`, which is false for both
+                        /// `EndOfStream` and lexer-error tokens — so a trailing invalid token (e.g.
+                        /// `<json ast> #`) would otherwise slip through and execute the prefix.
+                        if (after_json_iterator->type != TokenType::Semicolon
+                            && after_json_iterator->type != TokenType::EndOfStream)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Excessive input after the JSON AST object: expected end of query or ';' "
+                                "during clickhouse_json deserialization");
+                    }
+                }
+            }
             else
-                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            {
+                /// Single-statement mode: the balanced-object scanner above does not run, so a trailing
+                /// `;` delimiter would otherwise reach `Poco::JSON::Parser` and be rejected as excess
+                /// input. Strip one optional trailing `;` (and surrounding whitespace) before parsing,
+                /// mirroring the SQL path and the server `executeQuery` clickhouse_json branch.
+                while (json_end > pos && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > pos && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > pos && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+            }
+
+            /// In multiquery mode `max_length` is 0 above, so the early guard is skipped even
+            /// though this branch scans and deserializes the JSON client-side. Enforce
+            /// `max_query_size` against the actual JSON slice now that its end is known, so the
+            /// JSON path matches the single-statement, server, and `clickhouse-local` paths.
+            if (const size_t max_query_size = settings[Setting::max_query_size];
+                max_query_size != 0 && static_cast<size_t>(json_end - pos) > max_query_size)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
+            res = IAST::createFromJSON(String(pos, json_end),
+                settings[Setting::max_ast_depth],
+                settings[Setting::max_ast_elements]);
+
+            /// `createFromJSON` enforces depth/element limits via counters during construction,
+            /// but some `readJSON` implementations build extra AST nodes (e.g. `ASTIdentifier`
+            /// children from strings) that bypass those counters. Re-check the assembled AST,
+            /// mirroring the server path (`checkASTSizeLimits` in `executeQuery`).
+            if (settings[Setting::max_ast_depth])
+                res->checkDepth(settings[Setting::max_ast_depth]);
+            if (settings[Setting::max_ast_elements])
+                res->checkSize(settings[Setting::max_ast_elements]);
+
+            pos = json_end;
         }
         catch (const Exception & e)
         {
-            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception.reset(e.clone());
-            return nullptr;
+            if (is_interactive || ignore_error)
+            {
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+                return nullptr;
+            }
+            throw;
         }
-
-        if (!res)
-        {
-            error_stream << std::endl << message << std::endl << std::endl;
-            return nullptr;
-        }
+    }
+    else if (dialect == Dialect::kusto && !is_set_escape)
+    {
+        /// KQL is lexically a different language, so it does not go through the SQL
+        /// tokenizer at all. Any failure is thrown; the interactive path below already
+        /// reports a thrown exception the same way it reports a returned message.
+        /// A plain `SET` query is still parsed with `ParserQuery` below, as in every other dialect.
+        res = parseKQLQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
     else
     {
-        if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        if (is_set_escape)
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        else if (dialect == Dialect::prql)
+            parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else if (dialect == Dialect::promql)
+            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+        else if (dialect == Dialect::polyglot)
+            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+        else if (dialect == Dialect::logsql)
+            parser = std::make_unique<ParserLogsQLQuery>(
+                settings[Setting::logsql_database], settings[Setting::logsql_table],
+                settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
+                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::enable_logsql_dialect], settings[Setting::max_parser_depth],
+                settings[Setting::max_query_size]);
+        else if (dialect == Dialect::trino)
+            parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::enable_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+        if (is_interactive || ignore_error)
+        {
+            String message;
+            try
+            {
+                if (dialect == Dialect::logsql)
+                    res = tryParseLogsQLQuery(*parser, pos, end, message, nullptr, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                else
+                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            }
+            catch (const Exception & e)
+            {
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+                return nullptr;
+            }
+
+            if (!res)
+            {
+                error_stream << std::endl << message << std::endl << std::endl;
+                return nullptr;
+            }
+        }
+        else
+        {
+            if (dialect == Dialect::logsql)
+                res = parseLogsQLQueryAndMovePosition(*parser, pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else
+                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
     }
 
     return res;
@@ -696,8 +963,44 @@ void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 {
     have_error = true;
+    connection_needs_resynchronization = true;
     server_exception = std::move(e);
     resetOutput();
+}
+
+
+void ClientBase::resynchronizeConnectionAfterError()
+{
+    connection_needs_resynchronization = false;
+    if (!connection->checkConnected(connection_parameters.timeouts))
+        connect();
+}
+
+
+void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_query)
+{
+    /// The query exchange starts here. If it does not complete cleanly, the protocol may be
+    /// desynchronized, and a session that continues after the error has to resynchronize the
+    /// connection with a round trip. The flag is cleared on the clean completion of the exchange
+    /// (see `onEndOfStream` and the callers).
+    connection_needs_resynchronization = true;
+    try
+    {
+        send_query();
+    }
+    catch (...)
+    {
+        /// `sendQuery` can also fail during its local preflight - for example, on the validation
+        /// of `network_compression_method` - before the first byte of the query packet has been
+        /// written. Such a failure leaves the protocol in sync, and resynchronizing it with a
+        /// round trip could time out on a slow server and silently reconnect away the session
+        /// state. A failure after `Connection::sendQuery` has started writing always disconnects
+        /// the connection (see the `SCOPE_EXIT` there), so a connection that is still alive
+        /// means that nothing has been sent.
+        if (connection->isConnected())
+            connection_needs_resynchronization = false;
+        throw;
+    }
 }
 
 
@@ -742,18 +1045,25 @@ try
             underlying_buf = std_out.get();
         }
 
+        /// The data written to stdout can mix with the progress only if it is displayed on the terminal,
+        /// either directly or through a pager. Otherwise (e.g., stdout is redirected to a pipe or a file),
+        /// clearing the progress on every flush only makes it flicker.
+        const bool output_goes_to_terminal = stdout_is_a_tty || !pager.empty();
+
         /// Use the flush callback wrapper to prevent progress flickering
         std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
             underlying_buf,
-            [this]()
+            [this, output_goes_to_terminal]()
             {
                 /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                bool output_may_mix_with_progress = output_goes_to_terminal && (!select_into_file || select_into_file_and_stdout);
+
+                if (need_render_progress && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_indication.clearProgressOutput(*tty_buf, lock);
                 }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+                if (need_render_progress_table && tty_buf && output_may_mix_with_progress)
                 {
                     std::unique_lock lock(tty_mutex);
                     progress_table.clearTableOutput(*tty_buf, lock);
@@ -766,6 +1076,11 @@ try
         select_into_file = false;
         select_into_file_and_stdout = false;
         String current_format = default_output_format;
+        bool has_format_clause = false;
+        /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
+        /// format, it must not be overridden by the `default_format` setting fallback below.
+        bool outfile_format_from_extension = false;
+        String non_empty_appended_file;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -809,8 +1124,12 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
+                auto file_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+                if ((flags & O_APPEND) && file_buf->size() > 0)
+                    non_empty_appended_file = out_file;
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
+                    std::move(file_buf),
                     compression_method,
                     static_cast<int>(compression_level),
                     /*zstd_window_log=*/ 0,
@@ -821,7 +1140,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                        std::make_shared<WriteBufferToStdout>(stdout_fd, stdout_is_broken)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -830,6 +1149,7 @@ try
             }
             if (query_with_output->format_ast != nullptr)
             {
+                has_format_clause = true;
                 if (has_vertical_output_suffix)
                     throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format_ast->as<ASTIdentifier &>();
@@ -843,8 +1163,33 @@ try
             {
                 auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
                 if (format_name)
+                {
                     current_format = *format_name;
+                    outfile_format_from_extension = true;
+                }
             }
+        }
+
+        /// Mirror the server-side output-format precedence (`resolveOutputFormatName`): an explicit
+        /// `output_format` / `format` setting wins over the query `FORMAT` clause, and a
+        /// `default_format` setting is the fallback when the query has neither a `FORMAT` clause nor
+        /// an override. Without this, these settings (set via an in-query `SETTINGS` clause) were
+        /// ignored by the native client, which formatted from its own `default_output_format`.
+        {
+            const auto & format_settings_ref = client_context->getSettingsRef();
+            if (!format_settings_ref[Setting::output_format].value.empty())
+                current_format = format_settings_ref[Setting::output_format];
+            else if (!format_settings_ref[Setting::format].value.empty())
+                current_format = format_settings_ref[Setting::format];
+            /// ... only when the client itself was not given an explicit output format. `--output-format`,
+            /// `--format` and `--vertical` all set `is_default_format = false` (the last via
+            /// `default_output_format = "Vertical"`), and such an explicit choice must win over the
+            /// `default_format` *setting* — e.g. the display default the local client now seeds as a
+            /// setting. Without this guard, `clickhouse-local --vertical` is silently overridden by that
+            /// setting and prints TSV instead of Vertical.
+            else if (is_default_format && !has_format_clause && !outfile_format_from_extension
+                && !format_settings_ref[Setting::default_format].value.empty())
+                current_format = format_settings_ref[Setting::default_format];
         }
 
         if (has_vertical_output_suffix)
@@ -859,7 +1204,7 @@ try
                 out_buf, default_output_compression_method, 3, 0, client_context->getSettingsRef()[Setting::snappy_mode]);
 
         auto format_settings = getFormatSettings(client_context);
-        format_settings.is_writing_to_terminal = stdout_is_a_tty;
+        format_settings.is_writing_to_terminal = stdout_is_a_tty && !select_into_file;
 
         /// If the result is written to a terminal that does not support UTF-8 (e.g. with LANG=C),
         /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
@@ -881,6 +1226,14 @@ try
             format_settings.pretty.squash_max_wait_ms = 0;
         }
 
+        if (!non_empty_appended_file.empty()
+            && !FormatFactory::instance().checkIfFormatSupportAppend(current_format, client_context, format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to file {} because the {} format doesn't support appends. "
+                "Use TRUNCATE instead of APPEND, or write into a new file",
+                non_empty_appended_file, current_format);
+
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
         /// It may increase code complexity significantly.
@@ -890,6 +1243,10 @@ try
         else
             output_format = client_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
+
+        /// The file already starts with the prefix of the format, e.g. the header of `CSVWithNames`.
+        if (!non_empty_appended_file.empty())
+            output_format->doNotWritePrefix();
 
         output_format->setAutoFlush();
 
@@ -1016,6 +1373,32 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
+    /// `format` / `output_format` / `input_format` may have been set in the client config file
+    /// (or a named connection) rather than passed on the command line. Mirror the configured
+    /// values into `cmd_settings` so the corresponding settings ship with every query the client
+    /// runs, matching the `--format`/`-f` CLI behavior.
+    /// The mirrored values must reach not only `cmd_settings` (which ships with each query) but also the
+    /// already-created `global_context` / `client_context`: this method runs from `processConfig`, after
+    /// `processOptions` has copied `cmd_settings` into those contexts, and the native client's INSERT
+    /// readers consult `client_context`'s `input_format` when parsing client-side data. Without applying
+    /// to the live contexts a config / named-connection `input-format=CSV` would be ignored, while the
+    /// equivalent `--input-format CSV` (which is on `cmd_settings` before the contexts are created) works.
+    auto mirror_format_setting = [&](const char * config_key, std::string_view setting_name)
+    {
+        if (getClientConfiguration().has(config_key) && !cmd_settings->isChanged(setting_name))
+        {
+            const String value = getClientConfiguration().getString(config_key);
+            cmd_settings->set(setting_name, value);
+            if (global_context)
+                global_context->setSetting(setting_name, value);
+            if (client_context)
+                client_context->setSetting(setting_name, value);
+        }
+    };
+    mirror_format_setting("format", mappedFormatOptionSetting());
+    mirror_format_setting("output-format", "output_format");
+    mirror_format_setting("input-format", "input_format");
+
     if (getClientConfiguration().has("output-format"))
     {
         default_output_format = getClientConfiguration().getString("output-format");
@@ -1035,7 +1418,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     {
         std::optional<String> format_from_file_name = FormatFactory::instance().tryGetFormatFromFileDescriptor(stdout_fd);
         if (format_from_file_name)
+        {
             default_output_format = *format_from_file_name;
+            /// A format autodetected from the output file (e.g. stdout redirected to `x.jsonl.gz`) is an
+            /// explicit format choice, like `--output-format`; the `default_format` setting must not
+            /// override it in the per-query resolution below.
+            is_default_format = false;
+        }
         else
             default_output_format = "TSV";
     }
@@ -1300,13 +1689,75 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
+void ClientBase::pinOutboundDialect(const String & outbound_query)
+{
+    if (current_query_is_set_escape && !current_query_parsed_as_json_dialect)
+    {
+        /// The client parsed this SQL `SET` escape with `ParserQuery` while the session used
+        /// another dialect. Make the server parse the same SQL before the setting takes effect.
+        client_context->setSetting("dialect", String("clickhouse"));
+        return;
+    }
+
+    if (!current_query_parsed_as_json_dialect)
+    {
+        /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
+        /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`,
+        /// `SETTINGS enable_logsql_dialect = ...`) has already
+        /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
+        /// not change how this very query text is parsed on the other side - it only applies to the
+        /// statements that follow it. Only a value the query itself changed is restored (the others are
+        /// empty, see `processParsedSingleQuery`), so settings the user never touched are not forced onto
+        /// the server: a `dialect` the server pushed from the user's profile stays as the server set it.
+        if (current_query_parse_dialect)
+            client_context->setSetting("dialect", *current_query_parse_dialect);
+        if (current_query_parse_json_ast_gate)
+            client_context->setSetting("enable_json_ast_dialect", *current_query_parse_json_ast_gate);
+        if (current_query_parse_trino_gate)
+            client_context->setSetting("enable_trino_dialect", *current_query_parse_trino_gate);
+        if (current_query_parse_logsql_gate)
+            client_context->setSetting("enable_logsql_dialect", *current_query_parse_logsql_gate);
+        return;
+    }
+
+    /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
+    /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
+    /// the original JSON body starts with `{` (after optional leading whitespace), whereas a client-side
+    /// AST->SQL rewrite (`formatWithSecretsOneLine` for old-server query parameters or
+    /// `allow_merge_tree_settings`) and the `SET` escape produce SQL. Pin the transport dialect so the
+    /// server parses the text the same way the client did.
+    size_t i = 0;
+    while (i < outbound_query.size() && isWhitespaceASCII(outbound_query[i]))
+        ++i;
+    const bool outbound_is_json = i < outbound_query.size() && outbound_query[i] == '{';
+
+    if (outbound_is_json)
+    {
+        /// Keep the JSON body parsed as JSON even if a JSON `SET dialect = ...` or
+        /// `SET enable_json_ast_dialect = 0` in this very query already changed the session
+        /// settings on the client side. The SET still takes effect for subsequent queries (it is applied
+        /// to the server session and re-applied to the client context after this query completes).
+        client_context->setSetting("dialect", String("clickhouse_json"));
+        client_context->setSetting("enable_json_ast_dialect", true);
+    }
+    else
+    {
+        /// The client serialized the AST back to SQL; tell the server to parse SQL, not JSON.
+        client_context->setSetting("dialect", String("clickhouse"));
+    }
+}
+
 std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
 {
     const Settings & settings = client_context->getSettingsRef();
     if (!settings.hasSettingsChangedByCompatibility())
         return {};
     Settings result = settings;
-    result.resetSettingsChangedByCompatibility();
+    /// Keep the derived values but clear their `changed` flags: `Connection::sendQuery` picks the
+    /// client-side network codec from the values (so `compatibility` rolls back the codec of the
+    /// compressed packets this client sends), while only changed settings are serialized (so the
+    /// server re-derives them from `compatibility` itself and honors its own constraints).
+    result.markSettingsChangedByCompatibilityAsUnchanged();
     return result;
 }
 
@@ -1448,6 +1899,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
 
+    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
+    /// before sending so the server parses it the same way the client did. Must run before
+    /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
+    /// included in the settings sent to the server.
+    pinOutboundDialect(query);
+
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
 
@@ -1466,17 +1923,23 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
-                connection->sendQuery(
-                    connection_parameters.timeouts,
-                    query,
-                    query_parameters,
-                    client_context->getCurrentQueryId(),
-                    query_processing_stage,
-                    settings_to_send,
-                    &client_context->getClientInfo(),
-                    true,
-                    {},
-                    [&](const Progress & progress) { onProgress(progress); });
+                /// A failure before this point is purely local and leaves the connection in
+                /// sync. The flag is cleared on the successful completion of the query
+                /// (see `processParsedSingleQuery`).
+                armResynchronizationAndSendQuery([&]
+                {
+                    connection->sendQuery(
+                        connection_parameters.timeouts,
+                        query,
+                        query_parameters,
+                        client_context->getCurrentQueryId(),
+                        query_processing_stage,
+                        settings_to_send,
+                        &client_context->getClientInfo(),
+                        true,
+                        {},
+                        [&](const Progress & progress) { onProgress(progress); });
+                });
 
                 if (send_external_tables)
                     sendExternalTables(parsed_query);
@@ -1590,6 +2053,25 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
                         cancelQuery();
                     }
+                }
+            }
+
+            /// The output format may write in a background thread (squashing in `Pretty` formats). If that
+            /// write has failed (for example, the output pipe is broken), stop now: the query may have
+            /// produced all of its output already, and the next write would happen only at its end.
+            /// Handle it like any other local format error: cancel the query on the server and keep
+            /// receiving packets until the end, otherwise the query keeps running on the server.
+            if (output_format && !local_format_error)
+            {
+                try
+                {
+                    output_format->checkBackgroundError();
+                }
+                catch (...)
+                {
+                    local_format_error = std::make_exception_ptr(
+                        LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
+                    sendCancel(local_format_error);
                 }
             }
 
@@ -1716,6 +2198,17 @@ void ClientBase::onTimezoneUpdate(const String & tz)
 
 void ClientBase::onEndOfStream()
 {
+    /// `EndOfStream` terminates the query exchange with the protocol in sync, whatever happens
+    /// below or afterwards. This also covers the failures that are recovered by draining the
+    /// exchange: a `LocalFormatError` in the middle of a result (`receiveResult` sends `Cancel`
+    /// and keeps receiving until the end of the stream) and a client-side failure while sending
+    /// the data of an `INSERT` (`processInsertQuery` sends `Cancel` and calls
+    /// `receiveEndOfQueryForInsert`). Such a session must not resynchronize the connection with
+    /// a round trip: a `Pong` that does not arrive within `sync_request_timeout` is
+    /// indistinguishable from a closed connection, and the client would silently reconnect,
+    /// losing its temporary tables, current database and session settings.
+    connection_needs_resynchronization = false;
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -1774,6 +2267,9 @@ void ClientBase::onProfileEvents(Block & block)
 
         std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
+        std::string_view scheduler_io_read_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOReadWaitMicroseconds);
+        std::string_view scheduler_io_write_wait_name = ProfileEvents::getName(ProfileEvents::SchedulerIOWriteWaitMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -1794,17 +2290,31 @@ void ClientBase::onProfileEvents(Block & block)
             if (value < 0)
                 continue;
 
+            /// These are `INCREMENT` rows, and the server may coalesce several queued
+            /// snapshots of the same remote host into one packet, so sum them up:
+            /// keeping only the last delta would understate the CPU time relative to
+            /// the "waited" figure below, which covers the whole interval.
             if (event_name == user_time_name)
-                thread_times[host_name].user_ms = value;
+                thread_times[host_name].user_ms += value;
             else if (event_name == system_time_name)
-                thread_times[host_name].system_ms = value;
+                thread_times[host_name].system_ms += value;
+            /// Time the query spent blocked in throttlers or waiting for the IO scheduler
+            /// (workload resource requests), summed up into a single "waited" figure.
+            else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
+                thread_times[host_name].waited_us += value;
+            /// The rows below are `GAUGE` snapshots and can also come in several rows for one host:
+            /// from several queued snapshots of one source, or from several shards on one server.
+            /// Summing would multiply one source's usage by the number of coalesced snapshots,
+            /// and the packet carries no per-source identifier to tell the two cases apart, so
+            /// keep the gauge semantics and take the maximum. For several shards on one host this
+            /// shows the usage of the largest one.
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name].memory_usage = value;
+                thread_times[host_name].memory_usage = std::max(thread_times[host_name].memory_usage, static_cast<UInt64>(value));
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
-                thread_times[host_name].peak_memory_usage = value;
+                thread_times[host_name].peak_memory_usage = std::max(thread_times[host_name].peak_memory_usage, value);
             /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
             else if (event_name == "TemporaryDataOnDiskUsage")
-                thread_times[host_name].temp_data_on_disk_usage = value;
+                thread_times[host_name].temp_data_on_disk_usage = std::max(thread_times[host_name].temp_data_on_disk_usage, static_cast<UInt64>(value));
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
@@ -1861,10 +2371,28 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    if (need_render_progress_table && tty_buf)
+    auto handle_exception = [this]
     {
-        std::unique_lock lock(tty_mutex);
-        progress_table.clearTableOutput(*tty_buf, lock);
+        if (!have_error)
+        {
+            client_exception
+                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+            have_error = true;
+        }
+    };
+
+    try
+    {
+        if (need_render_progress_table && tty_buf)
+        {
+            std::unique_lock lock(tty_mutex);
+            progress_table.clearTableOutput(*tty_buf, lock);
+        }
+    }
+    catch (...)
+    {
+        /// The terminal may be gone, e.g. a closed session of the client embedded into the server.
+        handle_exception();
     }
 
     /// Order is important: format, compression, file
@@ -1878,12 +2406,7 @@ void ClientBase::resetOutput()
     {
         /// We need to make sure we continue resetting output_format (will stop threads on parallel output)
         /// as well as cleaning other output related setup
-        if (!have_error)
-        {
-            client_exception
-                = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
-            have_error = true;
-        }
+        handle_exception();
     }
 
     output_format.reset();
@@ -1962,9 +2485,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onTimezoneUpdate(packet.server_timezone);
                 break;
 
+            /// A subquery executed while the server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are informational here.
+            case Protocol::Server::Progress:
+                onProgress(packet.progress);
+                break;
+
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
+                    "Progress or ProfileEvents, got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -2042,21 +2576,31 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
+    /// before sending so the server parses it the same way the client did.
+    /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
+    /// `dialect` is included in the settings sent to the server.
+    pinOutboundDialect(query);
+
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send
         = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
 
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        query,
-        query_parameters,
-        client_context->getCurrentQueryId(),
-        query_processing_stage,
-        settings_to_send,
-        &client_context->getClientInfo(),
-        true,
-        {},
-        [&](const Progress & progress) { onProgress(progress); });
+    /// The query exchange starts here - see the comment at the same place of `processOrdinaryQuery`.
+    armResynchronizationAndSendQuery([&]
+    {
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            query_parameters,
+            client_context->getCurrentQueryId(),
+            query_processing_stage,
+            settings_to_send,
+            &client_context->getClientInfo(),
+            true,
+            {},
+            [&](const Progress & progress) { onProgress(progress); });
+    });
 
     try
     {
@@ -2076,7 +2620,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQueryForInsert();
+            receiveEndOfQueryForInsert(parsed_query);
         }
     }
     catch (...)
@@ -2087,7 +2631,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         try
         {
             if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert();
+                receiveEndOfQueryForInsert(parsed_query);
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2155,6 +2699,12 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         String current_format = parsed_insert_query->format;
         if (current_format.empty())
             current_format = FormatFactory::instance().getFormatFromFileName(in_file);
+        /// `input_format` / `format` settings override the FORMAT for input (mirrors
+        /// `getSourceFromASTInsertQuery`).
+        if (const auto & s = client_context->getSettingsRef(); !s[Setting::input_format].value.empty())
+            current_format = s[Setting::input_format];
+        else if (!s[Setting::format].value.empty())
+            current_format = s[Setting::format];
 
         /// Create temporary storage file, to support globs and parallel reading
         /// StorageFile doesn't support ephemeral/materialized/alias columns.
@@ -2272,6 +2822,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 
     const Settings & settings = client_context->getSettingsRef();
 
+    /// `input_format` / `format` settings override the FORMAT for input (mirrors
+    /// `getSourceFromASTInsertQuery` on the server), so `--input-format` / an in-query
+    /// `SETTINGS input_format = ...` take effect on the native client's INSERT-with-data path.
+    if (!settings[Setting::input_format].value.empty())
+        current_format = settings[Setting::input_format];
+    else if (!settings[Setting::format].value.empty())
+        current_format = settings[Setting::format];
+
     /// Setting value from cmd arg overrides one from config.
     size_t insert_format_max_block_size_rows = settings[Setting::max_insert_block_size].changed
         ? settings[Setting::max_insert_block_size]
@@ -2379,14 +2937,20 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
 }
 
 
-/// Process Log packets, used when inserting data by blocks
+/// Process Log packets, used when inserting data by blocks.
+/// Also process the result of INSERT ... RETURNING, which is sent by the server while it receives the data.
 void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
     while (packet_type && (*packet_type == Protocol::Server::Log
             || *packet_type == Protocol::Server::ProfileEvents
-            || *packet_type == Protocol::Server::TimezoneUpdate))
+            || *packet_type == Protocol::Server::TimezoneUpdate
+            || *packet_type == Protocol::Server::Data
+            || *packet_type == Protocol::Server::Totals
+            || *packet_type == Protocol::Server::Extremes
+            || *packet_type == Protocol::Server::ProfileInfo
+            || *packet_type == Protocol::Server::Progress))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -2394,8 +2958,8 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 }
 
 
-/// Process Log packets, exit when receive Exception or EndOfStream
-bool ClientBase::receiveEndOfQueryForInsert()
+/// Process Log packets and the result of INSERT ... RETURNING, exit when receive Exception or EndOfStream
+bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 {
     while (true)
     {
@@ -2403,6 +2967,22 @@ bool ClientBase::receiveEndOfQueryForInsert()
 
         switch (packet.type)
         {
+            case Protocol::Server::Data:
+                onData(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::Totals:
+                onTotals(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::Extremes:
+                onExtremes(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::ProfileInfo:
+                onProfileInfo(packet.profile_info);
+                break;
+
             case Protocol::Server::EndOfStream:
                 onEndOfStream();
                 return true;
@@ -2432,7 +3012,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, Totals, Extremes or ProfileInfo. Got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -2554,14 +3134,46 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
+        /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
+        /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
+        /// transport dialect is pinned to match the outbound text in `pinOutboundDialect`.
+        current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+        current_query_is_set_escape = !current_query_parsed_as_json_dialect
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::trino
+            && client_context->getSettingsRef()[Setting::dialect] != Dialect::logsql
+            && parsed_query->as<ASTSetQuery>();
+        const Field parse_dialect = client_context->getSettingsRef().get("dialect");
+        const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
+        const Field parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
+        const Field parse_logsql_gate = client_context->getSettingsRef().get("enable_logsql_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
-        connection->setFormatSettings(getFormatSettings(client_context));
+        /// Remember only the values this query's own `SETTINGS` clause changed: those are pinned back for
+        /// the outbound query. A setting the query left alone is not pinned, so what
+        /// `applySettingsFromServerIfNeeded` applies below (e.g. the user's profile `dialect`) is sent as is.
+        const auto changed_by_query = [&](const String & name, const Field & parse_value) -> std::optional<Field>
+        {
+            if (client_context->getSettingsRef().get(name) == parse_value)
+                return std::nullopt;
+            return parse_value;
+        };
+        current_query_parse_dialect = changed_by_query("dialect", parse_dialect);
+        current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
+        current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
+        current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
 
-        if (!connection->checkConnected(connection_parameters.timeouts))
+        /// Deliberately without a round trip: this runs before every query. The only case that needs
+        /// the stronger check is a session that continues after a failed query - the protocol can be
+        /// desynchronized then, and the server can be closing the connection without the client
+        /// having noticed it yet.
+        if (connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+        else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
@@ -2623,7 +3235,12 @@ void ClientBase::processParsedSingleQuery(
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
         {
-            if (input_function && insert->format.empty())
+            /// The reader format for `input()` can come from the query `FORMAT` clause or from the
+            /// `input_format` / `format` settings (mirrors `getSourceFromASTInsertQuery`); only reject
+            /// when none of them is set.
+            if (input_function && insert->format.empty()
+                && client_context->getSettingsRef()[Setting::input_format].value.empty()
+                && client_context->getSettingsRef()[Setting::format].value.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
             processInsertQuery(query, parsed_query);
@@ -2635,6 +3252,10 @@ void ClientBase::processParsedSingleQuery(
     /// Do not change context (current DB, settings) in case of an exception.
     if (!have_error)
     {
+        /// The query exchange has completed cleanly, so the protocol is in sync
+        /// (the flag was armed when the query was sent).
+        connection_needs_resynchronization = false;
+
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
@@ -2657,15 +3278,33 @@ void ClientBase::processParsedSingleQuery(
 
             client_context->addQueryParameters(NameToNameMap{set_query->query_parameters.begin(), set_query->query_parameters.end()});
         }
-        if (const auto * use_query = parsed_query->as<ASTUseQuery>())
+        if (parsed_query->as<ASTUseQuery>())
         {
-            const String & new_database = use_query->getDatabase();
+            /// `USE {db:Identifier}` keeps the database name in a query parameter, so the parsed AST
+            /// carries an empty name until the parameters are substituted (which the server does when
+            /// it executes the query). Substitute them on the client side as well, otherwise the
+            /// client would remember an empty default database and silently reset the current database
+            /// when it has to re-establish a lost connection.
+            ASTPtr use_query = parsed_query->clone();
+            ReplaceQueryParameterVisitor(client_context->getQueryParameters()).visit(use_query);
+            const String new_database = use_query->as<ASTUseQuery &>().getDatabase();
+
             /// If the client initiates the reconnection, it takes the settings from the config.
             /// TODO: Revisit
             default_database = new_database;
             getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
+            /// `database` can also travel as a per-query setting (e.g. when `--database` or a
+            /// config/named-connection database was mirrored into the settings packet that ships with
+            /// every query). Keep it in sync with the interactive `USE`; otherwise the stale value
+            /// would keep being sent and override the database just selected. Only update it when it
+            /// was actually set, so we don't introduce a sticky `database` setting for clients that
+            /// rely solely on the connection's default database.
+            if (cmd_settings->isChanged("database"))
+                cmd_settings->set("database", new_database);
+            if (client_context->getSettingsRef().isChanged("database"))
+                client_context->setSetting("database", new_database);
         }
     }
 
@@ -2741,10 +3380,17 @@ void ClientBase::processParsedSingleQuery(
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
     /// The default lives here (not in the CLI option) so that a value from the
     /// client config file is not clobbered when the flag is omitted.
+    ///
+    /// The threshold is checked against the client's own clock rather than
+    /// `elapsedSeconds`, which prefers the server-reported time. The server-reported time only
+    /// advances when a `Progress` packet arrives, and no final `Progress` packet is sent when a query
+    /// fails, so on the error path it is stale by an unbounded amount - enough to skip the chime for a
+    /// query that clearly ran past the threshold. The wall-clock time the user waited for is also what
+    /// the chime is about.
     UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
-        && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
+        && progress_indication.clientElapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
     {
         error_stream << '\x07';
         error_stream.flush();
@@ -2762,6 +3408,8 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 
     if (this_query_begin >= all_queries_end)
         return MultiQueryProcessingStage::QUERIES_END;
+
+    const char * raw_query_begin = this_query_begin;
 
     // Remove leading empty newlines and other whitespace, because they
     // are annoying to filter in the query log. This is mostly relevant for
@@ -2785,7 +3433,23 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         Tokens tokens(this_query_begin, all_queries_end);
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-        if (!token_iterator.isValid())
+        bool only_comments_left = !token_iterator.isValid();
+        if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+        {
+            /// LogsQL queries may start with tokens which the ClickHouse lexer considers erroneous,
+            /// e.g. `~"regexp"` or `!error`, so additionally check the end of the input
+            /// with the lexer of the dialect itself (it also knows about `# ...` comments).
+            only_comments_left = token_iterator->isEnd();
+            try
+            {
+                only_comments_left = only_comments_left || LogsQLLexer(this_query_begin, all_queries_end).isEnd();
+            }
+            catch (const Exception &) // NOLINT(bugprone-empty-catch)
+            {
+                /// Malformed input (e.g. an unterminated string): let the parser report it properly.
+            }
+        }
+        if (only_comments_left)
             return MultiQueryProcessingStage::QUERIES_END;
     }
 
@@ -2794,7 +3458,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         parsed_query = parseQuery(this_query_end, all_queries_end,
             client_context->getSettingsRef(),
-            /*allow_multi_statements=*/ true);
+            /*allow_multi_statements=*/ true, raw_query_begin);
     }
     catch (const Exception & e)
     {
@@ -2806,11 +3470,32 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (ignore_error)
         {
-            Tokens tokens(this_query_begin, all_queries_end);
-            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-            while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                ++token_iterator;
-            this_query_begin = token_iterator->end;
+            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+            {
+                /// The ClickHouse lexer stops at the first LogsQL-only token (`~`, `!`, ...)
+                /// as at an erroneous one, which would resume parsing in the middle of the
+                /// failed statement. Skip to the next ';' with the lexer of the dialect itself.
+                try
+                {
+                    LogsQLLexer logsql_lexer(this_query_begin, all_queries_end);
+                    while (!logsql_lexer.isEnd() && !logsql_lexer.isKeyword(";"))
+                        logsql_lexer.nextToken();
+                    this_query_begin = logsql_lexer.isEnd() ? all_queries_end : logsql_lexer.backupState().current;
+                }
+                catch (const Exception &)
+                {
+                    /// Malformed input (e.g. an unterminated string): nothing more can be lexed.
+                    this_query_begin = all_queries_end;
+                }
+            }
+            else
+            {
+                Tokens tokens(this_query_begin, all_queries_end);
+                IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                    ++token_iterator;
+                this_query_begin = token_iterator->end;
+            }
 
             /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
             /// matches the state a successful query would leave behind. Otherwise stale
@@ -3025,6 +3710,25 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 is_first = false;
                 have_error |= buzz_house;
                 error_code = buzz_house ? ErrorCodes::SYNTAX_ERROR : error_code;
+
+                /// The AST fuzzer feeds whole test files to one session, often several files in
+                /// a row, so a statement that does not parse is expected rather than a finding -
+                /// e.g. SQL DDL of the next file read under a `dialect = 'kusto'` a previous file
+                /// left behind. Skip the statement and keep fuzzing (the per-query parse in
+                /// `processWithASTFuzzer` tolerates syntax errors the same way).
+                if (query_fuzzer_runs && !buzz_house)
+                {
+                    unsigned max_parser_depth = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_depth]);
+                    unsigned max_parser_backtracks = static_cast<unsigned>(client_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    Tokens tokens(this_query_begin, all_queries_end);
+                    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                    while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                        ++token_iterator;
+                    this_query_begin = token_iterator->end;
+                    current_exception.reset();
+                    continue;
+                }
+
                 this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
 
                 // Try to find test hint for syntax error. We don't know where
@@ -3119,6 +3823,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported without throwing (see onReceiveExceptionFromServer()).
+                    // `connection_needs_resynchronization` is not set here: it is armed when the
+                    // query exchange starts (see `processOrdinaryQuery`, `processInsertQuery`),
+                    // so a purely local failure before anything has been sent to the server does
+                    // not force a round trip - and a possible reconnection that would lose the
+                    // session state - before the next query.
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
@@ -3227,7 +3936,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     }
                 }
 
-                // If the error is expected, force reconnect and ignore it.
+                // If the error is expected, reconnect if needed and ignore it. Only an error of a
+                // query whose exchange with the server has actually started can desynchronize the
+                // protocol; a purely local error leaves the connection in sync.
                 if (have_error && error_matches_hint)
                 {
                     client_exception.reset();
@@ -3236,8 +3947,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     have_error = false;
                     error_code = 0;
 
-                    if (!connection->checkConnected(connection_parameters.timeouts))
-                        connect();
+                    if (connection_needs_resynchronization)
+                        resynchronizeConnectionAfterError();
                 }
 
                 // For INSERTs with inline data: use the end of inline data as
@@ -3269,6 +3980,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
+                if (have_error && stdout_is_broken)
+                    return false;
                 if (have_error && (buzz_house || !ignore_error))
                     return buzz_house || is_interactive;
 
@@ -3291,6 +4004,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
     /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
     /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    /// The `/`-form is also offered by the completion of the line editor - keep the `/`-commands
+    /// dispatched here in sync with `clientSlashCommands`.
     if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
         && (is_interactive || supportsLocalMetaCommands()))
     {
@@ -3363,6 +4078,8 @@ bool ClientBase::processQueryText(const String & text)
     /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
     /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
     /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    /// The `/`-forms are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
     if (is_interactive || supportsLocalMetaCommands())
     {
         for (const std::string_view prefix : {"help", "/help", "man", "/man"})
@@ -3372,6 +4089,49 @@ bool ClientBase::processQueryText(const String & text)
             if (trimmed_input.size() > prefix.size() && boost::istarts_with(trimmed_input, prefix)
                 && isWhitespaceASCII(trimmed_input[prefix.size()]))
                 return processHelpCommand(trimmed_input.substr(prefix.size()));
+        }
+    }
+
+    /// Client-side `/dialect <name>` command (also `/lang`, `/language`) - equivalent to `SET dialect = '<name>'`.
+    /// A `SET` query is not always expressible in the current dialect: after `SET dialect = 'kusto'` the input
+    /// is parsed with the Kusto parser, so a regular `SET dialect = 'clickhouse'` cannot be used to switch back.
+    /// Without an argument, prints the current dialect.
+    /// Interactive only: a noninteractive script gets the whole input parsed as SQL, and the dialect
+    /// for it is selected with the `--dialect` option or a `SET dialect = ...` statement.
+    /// The commands are also offered by the completion of the line editor - keep them in sync with
+    /// `clientSlashCommands`.
+    if (is_interactive)
+    {
+        for (const std::string_view prefix : {"/dialect", "/language", "/lang"})
+        {
+            std::optional<String> dialect_name;
+            if (boost::iequals(trimmed_input, prefix))
+                dialect_name.emplace();
+            else if (trimmed_input.size() > prefix.size() && boost::istarts_with(trimmed_input, prefix)
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+                dialect_name = trim(trimmed_input.substr(prefix.size()), [](char c) { return isWhitespaceASCII(c); });
+
+            if (!dialect_name)
+                continue;
+
+            if (dialect_name->empty())
+            {
+                output_stream << "Current dialect: " << client_context->getSettingsRef()[Setting::dialect].toString() << std::endl;
+                return true;
+            }
+
+            /// Allow `/dialect 'kusto'` in addition to `/dialect kusto`.
+            if (dialect_name->size() >= 2 && (dialect_name->front() == '\'' || dialect_name->front() == '"')
+                && dialect_name->back() == dialect_name->front())
+                dialect_name = dialect_name->substr(1, dialect_name->size() - 2);
+
+            /// Execute the equivalent SQL through the normal query path. Besides validating the
+            /// value, this lets the server enforce query-setting constraints. The normal `SET`
+            /// bookkeeping persists the setting only after a successful exchange, so a rejected
+            /// command leaves the prompt and the parser on the previous dialect, and the user
+            /// retries at the next prompt.
+            processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name));
+            return true;
         }
     }
 
@@ -3423,6 +4183,19 @@ bool ClientBase::processQueryText(const String & text)
     }
 #endif
 
+    /// A mistake in the name of a `/`-command would otherwise be parsed as SQL and reported as a
+    /// syntax error at the `/`, which tells the user nothing about the command they meant. Gated
+    /// like the commands themselves, so batch `clickhouse-client` still treats the input as SQL.
+    /// In noninteractive `clickhouse-local` the interactive-only commands (`/dialect`, ...) are rejected
+    /// with an explicit message and are not suggested for a misspelled name. Like the commands themselves,
+    /// this applies only when the whole input is the command: inside a multi-statement script the text
+    /// goes to `executeMultiQuery` and is parsed in the current dialect.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        if (auto slash_command_error = diagnoseClientSlashCommand(trimmed_input, is_interactive))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", *slash_command_error);
+    }
+
     if (query_fuzzer_runs)
     {
         processWithASTFuzzer(text);
@@ -3435,7 +4208,43 @@ bool ClientBase::processQueryText(const String & text)
 
 String ClientBase::getPrompt() const
 {
-    return prompt;
+    String pattern = prompt;
+
+    /// A non-default dialect is shown in parentheses, after the server display name if the prompt
+    /// contains it, e.g. `clickhouse-cloud (polyglot) :) `.
+    String dialect_indicator;
+    if (client_context)
+    {
+        if (const Dialect dialect = client_context->getSettingsRef()[Setting::dialect]; dialect != Dialect::clickhouse)
+            dialect_indicator = "(" + client_context->getSettingsRef()[Setting::dialect].toString() + ")";
+    }
+
+    const bool has_display_name = pattern.contains("{display_name}");
+
+    String display_name = server_display_name;
+    if (has_display_name && !dialect_indicator.empty())
+    {
+        if (!display_name.empty())
+            display_name += ' ';
+        display_name += dialect_indicator;
+    }
+
+    boost::replace_all(pattern, "{display_name}", display_name);
+
+    /// A custom prompt does not have to contain the display name (e.g. `--prompt '{user}@{host}'`),
+    /// but the active dialect still has to be visible - append it before the trailing smiley, if any.
+    if (!has_display_name && !dialect_indicator.empty())
+    {
+        static constexpr std::string_view smiley = ":) ";
+        if (pattern.ends_with(smiley))
+            pattern = pattern.substr(0, pattern.size() - smiley.size()) + dialect_indicator + " " + String(smiley);
+        else if (pattern.empty())
+            pattern = dialect_indicator;
+        else
+            pattern += " " + dialect_indicator;
+    }
+
+    return appendSmileyIfNeeded(pattern);
 }
 
 
@@ -3587,19 +4396,35 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         std::string result;
 
+        /// Only the compression knobs: the rest of the session settings must not leak into this
+        /// client-issued helper query. See `networkCompressionSettings`.
+        const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
+        /// This is a complete query exchange on the shared connection, so it follows the same
+        /// resynchronization discipline as the regular queries: recover from a previous failed
+        /// exchange first, arm the flag for the time of the exchange (so that a transport or
+        /// client failure here does not leave the connection silently desynchronized for the
+        /// next query), and clear it when the exchange terminates in a protocol-consistent way -
+        /// with `EndOfStream` or with a server exception.
+        if (connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+
         /// Send the query
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query,
-            {},  /// query_parameters
-            "",  /// query_id
-            QueryProcessingStage::Complete,
-            nullptr,  /// settings
-            nullptr,  /// client_info
-            false,    /// with_pending_data
-            {},       /// external_roles
-            {}        /// external_data
-        );
+        armResynchronizationAndSendQuery([&]
+        {
+            connection->sendQuery(
+                connection_parameters.timeouts,
+                query,
+                {},  /// query_parameters
+                "",  /// query_id
+                QueryProcessingStage::Complete,
+                &compression_settings,  /// settings (so the network codec honors `network_compression_method`)
+                nullptr,  /// client_info
+                false,    /// with_pending_data
+                {},       /// external_roles
+                {}        /// external_data
+            );
+        });
 
         /// Receive and process results
         while (true)
@@ -3623,10 +4448,18 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                     break;
 
                 case Protocol::Server::EndOfStream:
+                    connection_needs_resynchronization = false;
                     return result;
 
                 case Protocol::Server::Exception:
-                    /// Return empty string on exception
+                    /// Return empty string on exception. The exchange is complete at this point:
+                    /// the query was sent with the terminating empty block (`with_pending_data`
+                    /// is false), and a server exception is the last packet of the exchange - the
+                    /// server drains the data it has not read yet and preserves the connection.
+                    /// The flag is cleared so that the next query of the session does not go
+                    /// through the round-trip resynchronization: its ping could time out on a
+                    /// slow server and silently reconnect away the session state.
+                    connection_needs_resynchronization = false;
                     return "";
 
                 case Protocol::Server::Progress:
@@ -3654,18 +4487,30 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
     const NameToNameMap query_parameters_for_help{{"word", word}};
 
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        query,
-        query_parameters_for_help,
-        "", /// query_id
-        QueryProcessingStage::Complete,
-        nullptr, /// settings
-        &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
-        false, /// with_pending_data
-        {}, /// external_roles
-        {} /// process_progress_callback
-    );
+    /// Only the compression knobs: the rest of the session settings must not leak into this
+    /// client-issued helper query. See `networkCompressionSettings`.
+    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
+    /// See the comment in `executeQueryForSingleString`: this exchange follows the same
+    /// resynchronization discipline as the regular queries.
+    if (connection_needs_resynchronization)
+        resynchronizeConnectionAfterError();
+
+    armResynchronizationAndSendQuery([&]
+    {
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            query_parameters_for_help,
+            "", /// query_id
+            QueryProcessingStage::Complete,
+            &compression_settings, /// settings (so the network codec honors `network_compression_method`)
+            &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
+            false, /// with_pending_data
+            {}, /// external_roles
+            {} /// process_progress_callback
+        );
+    });
 
     Blocks blocks;
     while (true)
@@ -3679,9 +4524,17 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
                     blocks.push_back(std::move(packet.block));
                 continue;
 
-            case Protocol::Server::EndOfStream: return blocks.empty() ? Block{} : concatenateBlocks(blocks);
+            case Protocol::Server::EndOfStream:
+                connection_needs_resynchronization = false;
+                return blocks.empty() ? Block{} : concatenateBlocks(blocks);
 
-            case Protocol::Server::Exception: packet.exception->rethrow(); break; /// unreachable: `rethrow` always throws
+            case Protocol::Server::Exception:
+                /// A server exception terminates the exchange with the protocol in sync (see the
+                /// comment in `executeQueryForSingleString`), so the next query of the session
+                /// must not pay for it with a round-trip resynchronization.
+                connection_needs_resynchronization = false;
+                packet.exception->rethrow();
+                break; /// unreachable: `rethrow` always throws
 
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -3929,12 +4782,12 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        ("format,f", po::value<std::string>(), "Default input and output format. In clickhouse-client only the default output format.")
+        ("format,f", po::value<std::string>(), "Default input and output format (maps to the generic `format` setting). In clickhouse-client only the default output format (maps to `output_format`). Use --input-format / --output-format to set only one direction.")
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
-        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight (hints need color). The suggestion hints also need the suggestions, so --disable_suggestion turns those off, while the client's /-commands are a static list and stay hinted. Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -3988,7 +4841,15 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("query_id"))
         getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
     if (options.contains("database"))
-        getClientConfiguration().setString("database", options["database"].as<std::string>());
+    {
+        const auto & db = options["database"].as<std::string>();
+        getClientConfiguration().setString("database", db);
+        /// Mirror the value into the `database` setting so it's also sent with every query
+        /// (this is what `?database=` does over HTTP). `Settings::addToProgramOptions` skips
+        /// registering the `database` setting as its own CLI option because the client-side
+        /// `--database,d` declaration above already owns that name; this is the bridge.
+        cmd_settings->set("database", db);
+    }
     if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.contains("queries-file"))
@@ -4002,9 +4863,26 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
-        getClientConfiguration().setString("format", options["format"].as<std::string>());
+    {
+        const auto & fmt = options["format"].as<std::string>();
+        getClientConfiguration().setString("format", fmt);
+        /// Mirror to the corresponding setting (same rationale as `--database` above):
+        /// the bidirectional `format` in `clickhouse-local`, the output-only `output_format`
+        /// in `clickhouse-client` (see `mappedFormatOptionSetting`).
+        cmd_settings->set(mappedFormatOptionSetting(), fmt);
+    }
     if (options.contains("output-format"))
-        getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
+    {
+        const auto & fmt = options["output-format"].as<std::string>();
+        getClientConfiguration().setString("output-format", fmt);
+        cmd_settings->set("output_format", fmt);
+    }
+    if (options.contains("input-format"))
+    {
+        const auto & fmt = options["input-format"].as<std::string>();
+        getClientConfiguration().setString("input-format", fmt);
+        cmd_settings->set("input_format", fmt);
+    }
     if (options.contains("vertical"))
         getClientConfiguration().setBool("vertical", true);
     if (options.contains("stacktrace"))
@@ -4098,6 +4976,18 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
         getClientConfiguration().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.contains("oauth-client-secret"))
+        getClientConfiguration().setString("oauth-client-secret", options["oauth-client-secret"].as<std::string>());
+    if (options.contains("oauth-client-auth"))
+        getClientConfiguration().setString("oauth-client-auth", options["oauth-client-auth"].as<std::string>());
+    if (options.contains("oauth-audience"))
+        getClientConfiguration().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+    if (options.contains("oauth-scope"))
+        getClientConfiguration().setString("oauth-scope", options["oauth-scope"].as<std::string>());
+    if (options.contains("oauth-device-uri"))
+        getClientConfiguration().setString("oauth-device-uri", options["oauth-device-uri"].as<std::string>());
+    if (options.contains("oauth-token-uri"))
+        getClientConfiguration().setString("oauth-token-uri", options["oauth-token-uri"].as<std::string>());
 
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
@@ -4253,7 +5143,25 @@ void ClientBase::runInteractive()
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
-        if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
+        if (isEmbeeddedClient())
+        {
+            /// The embedded client runs inside the server process, and its session was authenticated
+            /// externally, e.g. by an SSH key, so a separate connection for loading suggestions cannot
+            /// be created: there are no credentials to authenticate it with. (A `LocalConnection`
+            /// created from a bare context would try the `default` user with an empty password.)
+            /// Load suggestions synchronously through the main connection: it is idle at this point,
+            /// and the embedded client always waits for suggestions to load anyway.
+            /// This is a query exchange on the shared connection. Keep the same
+            /// resynchronization discipline as the fallback below, because `load`
+            /// reports failures rather than propagating them.
+            if (connection_needs_resynchronization)
+                resynchronizeConnectionAfterError();
+            connection_needs_resynchronization = true;
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
+            if (suggest->lastExchangeEndedInSync())
+                connection_needs_resynchronization = false;
+        }
+        else if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
         else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
@@ -4276,13 +5184,13 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
+    ReplxxLineReader::Highlighter highlight_callback{};
 
     if (ConfigHelper::getBool(getClientConfiguration(), "highlight", true))
     {
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos, bool & last_is_delimiter)
         {
-            highlight(query, colors, *client_context, pos, rainbow_parentheses);
+            highlight(query, colors, *client_context, pos, rainbow_parentheses, &last_is_delimiter);
         };
     }
 
@@ -4332,12 +5240,14 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting.
-        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
-        /// turns off autocompletion entirely, including the hints.
+        /// Hints need color, so they are enabled only together with highlighting. Client slash
+        /// commands have a static list and can therefore remain hinted when suggestions are off.
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
-            && !getClientConfiguration().getBool("disable_suggestion", false),
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
+        /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
+        /// `processQueryText`, so offer them here.
+        .enable_slash_commands = true,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
@@ -4366,11 +5276,22 @@ void ClientBase::runInteractive()
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr->enableBracketedPaste();
 
-    static const std::initializer_list<std::pair<String, String>> backslash_aliases =
+    /// The `psql`-style commands. `\d` follows `psql` in expanding to a listing of the tables when
+    /// it is used without an argument and to a description of a table when a table name is given.
+    struct BackslashAlias
+    {
+        std::string_view command;
+        std::string_view query;
+        /// The query to use when the argument is the name of a table; empty if the command has no
+        /// such form and the argument always continues `query`.
+        std::string_view query_for_table;
+    };
+
+    static const std::initializer_list<BackslashAlias> backslash_aliases =
         {
-            { "\\l", "SHOW DATABASES" },
-            { "\\d", "SHOW TABLES" },
-            { "\\c", "USE" },
+            { "\\l", "SHOW DATABASES", {} },
+            { "\\d", "SHOW TABLES", "DESCRIBE TABLE" },
+            { "\\c", "USE", {} },
         };
 
     static const std::initializer_list<String> repeat_last_input_aliases =
@@ -4399,6 +5320,13 @@ void ClientBase::runInteractive()
                 next_query_to_prepopulate.clear();
             }
 
+            if (on_waiting_for_query_input)
+                on_waiting_for_query_input(true);
+            SCOPE_EXIT_SAFE({
+                if (on_waiting_for_query_input)
+                    on_waiting_for_query_input(false);
+            });
+
             input = lr->readLine(getPrompt(), ":-] ");
         }
 
@@ -4416,18 +5344,20 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
-        for (const auto & [alias, command] : backslash_aliases)
+        for (const auto & [command, query, query_for_table] : backslash_aliases)
         {
-            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            auto it = std::search(input.begin(), input.end(), command.begin(), command.end());
             if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
             {
-                it += alias.size();
-                if (it == input.end() || isWhitespaceASCII(*it))
+                it += command.size();
+                if (it == input.end() || isWhitespaceASCII(*it) || *it == ';')
                 {
-                    String new_input = command;
-                    // append the rest of input to the command
+                    const std::string_view argument(it, input.end());
+
+                    String new_input{!query_for_table.empty() && isTableNameArgument(argument) ? query_for_table : query};
+                    // append the rest of input to the query
                     // for parameters support, e.g. \c db_name -> USE db_name
-                    new_input.append(it, input.end());
+                    new_input.append(argument);
                     input = std::move(new_input);
                     break;
                 }
@@ -4447,7 +5377,23 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+            /// This is a query exchange on the shared connection, so it follows the same
+            /// resynchronization discipline as the regular queries (see the comment in
+            /// `executeQueryForSingleString`): a failed query of this session may have left the
+            /// protocol desynchronized, and the flag has to stay armed for the time of the
+            /// exchange, because `load` swallows its failures - including a transport failure in
+            /// the middle of the exchange, which the next query of the session would otherwise
+            /// run into. The flag is cleared when the exchange ended with the protocol in sync -
+            /// with `EndOfStream` or with a server exception, which is the terminal packet of
+            /// the exchange, just like in the `help` exchanges. After a mid-exchange transport
+            /// or client failure it stays armed, and the next query resynchronizes the
+            /// connection with a round trip.
+            if (connection_needs_resynchronization)
+                resynchronizeConnectionAfterError();
+            connection_needs_resynchronization = true;
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo(), client_context->getSettingsRef(), error_stream);
+            if (suggest->lastExchangeEndedInSync())
+                connection_needs_resynchronization = false;
         }
 
         try
@@ -4466,14 +5412,15 @@ void ClientBase::runInteractive()
             client_exception.reset(e.clone());
         }
 
-        if (client_exception)
+        if (client_exception && connection_needs_resynchronization)
         {
             /// client_exception may have been set above or elsewhere.
-            /// Client-side exception during query execution can result in the loss of
-            /// sync in the connection protocol.
-            /// So we reconnect and allow to enter the next query.
-            if (!connection->checkConnected(connection_parameters.timeouts))
-                connect();
+            /// A client-side exception in the middle of a query exchange results in the loss of
+            /// sync in the connection protocol, so we reconnect and allow to enter the next query.
+            /// An exception before anything has been sent to the server (the flag is not armed
+            /// then) leaves the connection in sync, and a reconnection would only lose the
+            /// session state.
+            resynchronizeConnectionAfterError();
         }
     }
     while (true);

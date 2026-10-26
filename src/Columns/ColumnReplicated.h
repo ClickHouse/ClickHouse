@@ -9,7 +9,6 @@ class Collator;
 namespace DB
 {
 
-
 /** Column for replicated representation.
  *  It stores original column and indexes in this column.
  *  Used to perform lazy column replication.
@@ -76,6 +75,7 @@ public:
     Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return nested_column->supportsGetDataAt(); }
 
     ColumnPtr convertToFullColumnIfReplicated() const override;
 
@@ -84,7 +84,6 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else
@@ -218,7 +217,6 @@ private:
     static std::atomic<UInt64> global_id_counter;
 };
 
-ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.

@@ -1,10 +1,12 @@
+#include <algorithm>
+#include <array>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/castTypeToEither.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
-#include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
 #if defined(__BMI2__)
@@ -20,11 +22,88 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-#define EXTRACT_VECTOR(INDEX) \
-    const ColumnPtr & col##INDEX = non_const_arguments[(INDEX) + vectorStartIndex].column;
+namespace
+{
 
-#define EXPAND(IDX, ...) \
-    (mask ? expand(mask.read(IDX, i), __VA_ARGS__) : __VA_ARGS__)
+template <typename F, UInt64 ratio>
+void expandInPlace(UInt64 * __restrict data, size_t rows)
+{
+    for (size_t i = 0; i < rows; ++i)
+        data[i] = F::expand(ratio, data[i]);
+}
+
+/// Writes encoded argument `idx`, widened to UInt64 and range-expanded, to `dst`.
+template <typename F>
+void fillArgument(
+    const IColumn & column,
+    const FunctionSpaceFillingCurveEncode::RangeMask & mask,
+    const std::array<UInt64, 8> & ratios,
+    size_t idx,
+    size_t rows,
+    UInt64 * __restrict dst)
+{
+    bool is_native = castTypeToEither<ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64>(
+        &column,
+        [&](const auto & col)
+        {
+            const auto * src = col.getData().data();
+            for (size_t i = 0; i < rows; ++i)
+                dst[i] = src[i];
+            return true;
+        });
+    if (!is_native)
+        for (size_t i = 0; i < rows; ++i)
+            dst[i] = column.getUInt(i);
+
+    if (!mask)
+        return;
+
+    if (!mask.is_const)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            dst[i] = F::expand(mask.read(idx, i), dst[i]);
+        return;
+    }
+
+    switch (ratios[idx])
+    {
+        case 2: expandInPlace<F, 2>(dst, rows); break;
+        case 3: expandInPlace<F, 3>(dst, rows); break;
+        case 4: expandInPlace<F, 4>(dst, rows); break;
+        case 5: expandInPlace<F, 5>(dst, rows); break;
+        case 6: expandInPlace<F, 6>(dst, rows); break;
+        case 7: expandInPlace<F, 7>(dst, rows); break;
+        case 8: expandInPlace<F, 8>(dst, rows); break;
+        default: break;
+    }
+}
+
+/// The column's own data if it is `UInt64` and needs no expansion, otherwise `buffer` filled by `fillArgument`.
+template <typename F>
+const UInt64 * resolveArgument(
+    const IColumn & column,
+    const FunctionSpaceFillingCurveEncode::RangeMask & mask,
+    const std::array<UInt64, 8> & ratios,
+    size_t idx,
+    size_t rows,
+    PaddedPODArray<UInt64> & buffer)
+{
+    const bool needs_expansion = mask && !(mask.is_const && ratios[idx] == 1);
+    if (!needs_expansion)
+        if (const auto * col = typeid_cast<const ColumnUInt64 *>(&column))
+            return col->getData().data();
+
+    buffer.resize(rows);
+    fillArgument<F>(column, mask, ratios, idx, rows, buffer.data());
+    return buffer.data();
+}
+
+}
+
+#define EXTRACT_VECTOR(INDEX) \
+    PaddedPODArray<UInt64> buffer##INDEX; \
+    const UInt64 * span##INDEX = resolveArgument<FunctionMortonEncode>( \
+        *non_const_arguments[(INDEX) + vectorStartIndex].column, mask, mask_ratios, (INDEX), input_rows_count, buffer##INDEX);
 
 #define EXECUTE() \
     size_t nd = arguments.size(); \
@@ -52,69 +131,72 @@ namespace ErrorCodes
     for (auto & argument : non_const_arguments) \
         argument.column = argument.column->convertToFullColumnIfConst(); \
      \
+    std::array<UInt64, 8> mask_ratios{}; \
+    if (mask && mask.is_const) \
+        for (size_t mask_idx = 0; mask_idx < std::min<size_t>(nd, mask_ratios.size()); ++mask_idx) \
+            mask_ratios[mask_idx] = mask.read(mask_idx, 0); \
+     \
     auto col_res = ColumnUInt64::create(); \
     ColumnUInt64::Container & vec_res = col_res->getData(); \
     vec_res.resize(input_rows_count); \
      \
-    EXTRACT_VECTOR(0) \
     if (nd == 1) \
     { \
-        for (size_t i = 0; i < input_rows_count; i++) \
-        { \
-            vec_res[i] = EXPAND(0, col0->getUInt(i)); \
-        } \
+        fillArgument<FunctionMortonEncode>( \
+            *non_const_arguments[vectorStartIndex].column, mask, mask_ratios, 0, input_rows_count, vec_res.data()); \
         return col_res; \
     } \
      \
+    EXTRACT_VECTOR(0) \
     EXTRACT_VECTOR(1) \
     ENCODE(2, \
-           MASK(2, 0, col0->getUInt(i)), \
-           MASK(2, 1, col1->getUInt(i))) \
+           MASK(2, 0, span0[i]), \
+           MASK(2, 1, span1[i])) \
     EXTRACT_VECTOR(2) \
     ENCODE(3, \
-           MASK(3, 0, col0->getUInt(i)), \
-           MASK(3, 1, col1->getUInt(i)), \
-           MASK(3, 2, col2->getUInt(i))) \
+           MASK(3, 0, span0[i]), \
+           MASK(3, 1, span1[i]), \
+           MASK(3, 2, span2[i])) \
     EXTRACT_VECTOR(3) \
     ENCODE(4, \
-           MASK(4, 0, col0->getUInt(i)), \
-           MASK(4, 1, col1->getUInt(i)), \
-           MASK(4, 2, col2->getUInt(i)), \
-           MASK(4, 3, col3->getUInt(i))) \
+           MASK(4, 0, span0[i]), \
+           MASK(4, 1, span1[i]), \
+           MASK(4, 2, span2[i]), \
+           MASK(4, 3, span3[i])) \
     EXTRACT_VECTOR(4) \
     ENCODE(5, \
-           MASK(5, 0, col0->getUInt(i)), \
-           MASK(5, 1, col1->getUInt(i)), \
-           MASK(5, 2, col2->getUInt(i)), \
-           MASK(5, 3, col3->getUInt(i)), \
-           MASK(5, 4, col4->getUInt(i))) \
+           MASK(5, 0, span0[i]), \
+           MASK(5, 1, span1[i]), \
+           MASK(5, 2, span2[i]), \
+           MASK(5, 3, span3[i]), \
+           MASK(5, 4, span4[i])) \
     EXTRACT_VECTOR(5) \
     ENCODE(6, \
-           MASK(6, 0, col0->getUInt(i)), \
-           MASK(6, 1, col1->getUInt(i)), \
-           MASK(6, 2, col2->getUInt(i)), \
-           MASK(6, 3, col3->getUInt(i)), \
-           MASK(6, 4, col4->getUInt(i)), \
-           MASK(6, 5, col5->getUInt(i))) \
+           MASK(6, 0, span0[i]), \
+           MASK(6, 1, span1[i]), \
+           MASK(6, 2, span2[i]), \
+           MASK(6, 3, span3[i]), \
+           MASK(6, 4, span4[i]), \
+           MASK(6, 5, span5[i])) \
     EXTRACT_VECTOR(6) \
     ENCODE(7, \
-           MASK(7, 0, col0->getUInt(i)), \
-           MASK(7, 1, col1->getUInt(i)), \
-           MASK(7, 2, col2->getUInt(i)), \
-           MASK(7, 3, col3->getUInt(i)), \
-           MASK(7, 4, col4->getUInt(i)), \
-           MASK(7, 5, col5->getUInt(i)), \
-           MASK(7, 6, col6->getUInt(i))) \
+           MASK(7, 0, span0[i]), \
+           MASK(7, 1, span1[i]), \
+           MASK(7, 2, span2[i]), \
+           MASK(7, 3, span3[i]), \
+           MASK(7, 4, span4[i]), \
+           MASK(7, 5, span5[i]), \
+           MASK(7, 6, span6[i])) \
     EXTRACT_VECTOR(7) \
     ENCODE(8, \
-           MASK(8, 0, col0->getUInt(i)), \
-           MASK(8, 1, col1->getUInt(i)), \
-           MASK(8, 2, col2->getUInt(i)), \
-           MASK(8, 3, col3->getUInt(i)), \
-           MASK(8, 4, col4->getUInt(i)), \
-           MASK(8, 5, col5->getUInt(i)), \
-           MASK(8, 6, col6->getUInt(i)), \
-           MASK(8, 7, col7->getUInt(i))) \
+           MASK(8, 0, span0[i]), \
+           MASK(8, 1, span1[i]), \
+           MASK(8, 2, span2[i]), \
+           MASK(8, 3, span3[i]), \
+           MASK(8, 4, span4[i]), \
+           MASK(8, 5, span5[i]), \
+           MASK(8, 6, span6[i]), \
+           MASK(8, 7, span7[i])) \
      \
     throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, \
                     "Illegal number of UInt arguments of function {}, max: 8", \
@@ -125,15 +207,16 @@ namespace ErrorCodes
 #define ENCODE(ND, ...) \
     if (nd == (ND)) \
     { \
+        UInt64 * res = vec_res.data(); \
         for (size_t i = 0; i < input_rows_count; i++) \
         {               \
-            vec_res[i] = MortonND_##ND##D_Enc.Encode(__VA_ARGS__); \
+            res[i] = MortonND_##ND##D_Enc.Encode(__VA_ARGS__); \
         } \
         return col_res; \
     }
 
 #define MASK(ND, IDX, ...) \
-    (EXPAND(IDX, __VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
+    ((__VA_ARGS__) & MortonND_##ND##D_Enc.InputMask())
 
 constexpr auto MortonND_2D_Enc = mortonnd::MortonNDLutEncoder<2, 32, 8>();
 constexpr auto MortonND_3D_Enc = mortonnd::MortonNDLutEncoder<3, 21, 8>();
@@ -156,7 +239,7 @@ public:
         return name;
     }
 
-    static UInt64 expand(UInt64 ratio, UInt64 value)
+    static ALWAYS_INLINE UInt64 expand(UInt64 ratio, UInt64 value)
     {
         switch (ratio) // NOLINT(bugprone-switch-missing-default-case)
         {
@@ -194,15 +277,16 @@ public:
 #define ENCODE(ND, ...) \
     if (nd == (ND)) \
     { \
+        UInt64 * res = vec_res.data(); \
         for (size_t i = 0; i < input_rows_count; i++) \
         {               \
-            vec_res[i] = MortonND_##ND##D::Encode(__VA_ARGS__); \
+            res[i] = MortonND_##ND##D::Encode(__VA_ARGS__); \
         } \
         return col_res; \
     }
 
 #define MASK(ND, IDX, ...) \
-    (EXPAND(IDX, __VA_ARGS__))
+    (__VA_ARGS__)
 
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
@@ -226,7 +310,7 @@ public:
         return name;
     }
 
-    static UInt64 expand(UInt64 ratio, UInt64 value)
+    static ALWAYS_INLINE UInt64 expand(UInt64 ratio, UInt64 value)
     {
         switch (ratio)
         {
@@ -264,7 +348,6 @@ public:
 #undef ENCODE
 #undef MASK
 #undef EXTRACT_VECTOR
-#undef EXPAND
 #undef EXECUTE
 
 REGISTER_FUNCTION(MortonEncode)
@@ -282,8 +365,8 @@ Accepts up to 8 unsigned integers as arguments and produces a `UInt64` code.
 
 **Expanded mode**
 
-Accepts a range mask ([Tuple](../data-types/tuple.md)) as the first argument and
-up to 8 [unsigned integers](../data-types/int-uint.md) as other arguments.
+Accepts a range mask ([Tuple](/reference/data-types/tuple)) as the first argument and
+up to 8 [unsigned integers](/reference/data-types/int-uint) as other arguments.
 
 Each number in the mask configures the amount of range expansion:
 * 1 - no expansion

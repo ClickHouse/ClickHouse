@@ -17,6 +17,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>
+#include <algorithm>
 #include <memory>
 #include <Common/HashTable/Hash.h>
 
@@ -60,7 +61,7 @@ public:
         /// Store ptr to dictionary to be sure it won't be deleted.
         ColumnPtr dictionary_holder;
         /// Hashes for dictionary keys.
-        const UInt64 * saved_hash = nullptr;
+        std::span<const UInt64> saved_hash;
     };
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
@@ -91,10 +92,11 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     };
 
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
-    using EmplaceResult = columns_hashing_impl::EmplaceResultImpl<Mapped>;
+    using EmplaceResult = typename Base::EmplaceResult;
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
+    static constexpr bool has_cheap_key_holder = Base::has_cheap_key_holder;
     static constexpr bool has_pre_computed_hashes = Base::has_pre_computed_hashes;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
@@ -106,14 +108,24 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     const IColumn * positions = nullptr;
     size_t size_of_index_type = 0;
 
-    /// saved hash is from current column or from cache.
-    const UInt64 * saved_hash = nullptr;
+    /// saved hash is from current column or from cache. Dictionary positions outside it have no
+    /// saved hash and are hashed from the key.
+    std::span<const UInt64> saved_hash;
     /// Hold dictionary in case saved_hash is from cache to be sure it won't be deleted.
     ColumnPtr dictionary_holder;
 
     /// Cache AggregateDataPtr for current column in order to decrease the number of hash table usages.
     columns_hashing_impl::MappedCache<Mapped> mapped_cache;
     PaddedPODArray<VisitValue> visit_cache;
+
+    PaddedPODArray<UInt64> filled_visit_cache_indexes;
+
+    ALWAYS_INLINE void setVisited(size_t index, VisitValue value)
+    {
+        if (visit_cache[index] == VisitValue::Empty)
+            filled_visit_cache_indexes.push_back(index);
+        visit_cache[index] = value;
+    }
 
     /// If initialized column is nullable.
     bool is_nullable = false;
@@ -127,8 +139,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         return *low_cardinality_column;
     }
 
+    /// The range is not forwarded to the base: the base is built over the dictionary's nested column,
+    /// whose rows are dictionary entries rather than block rows.
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, RowRange /*rows*/ = {})
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
@@ -189,11 +203,23 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if constexpr (has_mapped)
             mapped_cache.resize(key_columns[0]->size());
 
-        VisitValue empty(VisitValue::Empty);
-        visit_cache.assign(key_columns[0]->size(), empty);
+        visit_cache.assign(key_columns[0]->size(), VisitValue::Empty);
 
         size_of_index_type = column->getSizeOfIndexType();
         positions = column->getIndexesPtr().get();
+    }
+
+    ALWAYS_INLINE void resetCache()
+    {
+        Base::resetCache();
+
+        if (filled_visit_cache_indexes.size() > visit_cache.size() / 4)
+            std::fill(visit_cache.begin(), visit_cache.end(), VisitValue::Empty);
+        else
+            for (UInt64 index : filled_visit_cache_indexes)
+                visit_cache[index] = VisitValue::Empty;
+
+        filled_visit_cache_indexes.clear();
     }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -214,6 +240,16 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         return Base::getKeyHolder(getIndexAt(row), pool);
     }
 
+    /// Resolves the source row through the dictionary before exposing the base method's padded key bytes.
+    /// Like `getKeyHolder`, it does not handle the `NULL` sentinel at dictionary index 0: the caller must
+    /// check `isNullAt` first. The adaptive aggregator, which uses it, rejects `LowCardinality` keys in
+    /// `adaptiveAggregatorRejectionReason`.
+    std::string_view getKeyBytes(size_t row) const
+        requires requires (const Base & base) { base.getKeyBytes(row); }
+    {
+        return Base::getKeyBytes(getIndexAt(row));
+    }
+
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
     {
@@ -221,7 +257,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if (is_nullable && row == 0)
         {
-            visit_cache[row] = VisitValue::Found;
+            setVisited(row, VisitValue::Found);
             bool has_null_key = data.hasNullKeyData();
             data.hasNullKeyData() = true;
 
@@ -240,15 +276,16 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         auto key_holder = getKeyHolder(row_, pool);
+        auto key = keyHolderGetKey(key_holder);
 
         bool inserted = false;
         typename Data::LookupResult it;
-        if (saved_hash)
+        if (row < saved_hash.size())
             data.emplace(key_holder, it, inserted, saved_hash[row]);
         else
             data.emplace(key_holder, it, inserted);
 
-        visit_cache[row] = VisitValue::Found;
+        setVisited(row, VisitValue::Found);
 
         if constexpr (has_mapped)
         {
@@ -258,7 +295,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 new (&mapped) Mapped();
             }
             mapped_cache[row] = mapped;
-            return EmplaceResult(mapped, mapped_cache[row], inserted);
+            return EmplaceResult(mapped, mapped_cache[row], inserted, std::move(key));
         }
         else
             return EmplaceResult(inserted);
@@ -296,13 +333,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         auto key_holder = getKeyHolder(row_, pool);
 
         typename Data::LookupResult it;
-        if (saved_hash)
+        if (row < saved_hash.size())
             it = data.find(keyHolderGetKey(key_holder), saved_hash[row]);
         else
             it = data.find(keyHolderGetKey(key_holder));
 
         bool found = it;
-        visit_cache[row] = found ? VisitValue::Found : VisitValue::NotFound;
+        setVisited(row, found ? VisitValue::Found : VisitValue::NotFound);
 
         if constexpr (has_mapped)
         {
@@ -325,7 +362,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
     {
         row = getIndexAt(row);
-        if (saved_hash)
+        if (row < saved_hash.size())
             return saved_hash[row];
 
         return Base::getHash(data, row, pool);
@@ -353,6 +390,8 @@ struct HashMethodSerialized
 {
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+    using EmplaceResult = typename Base::EmplaceResult;
+    using FindResult = typename Base::FindResult;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -360,6 +399,13 @@ struct HashMethodSerialized
     }
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// `getKeyHolder` serializes every key column for the row. With `prealloc = false` that means a
+    /// fresh `serializeKeysToPoolContiguous` into the arena; with `prealloc = true` and batch
+    /// serialization disabled it means a per-row heap allocation plus the same serialization. This is
+    /// the dominant cost of the aggregation, so `Aggregator` must not pay it twice per row to
+    /// prefetch. When the keys *are* batch-serialized upfront this method prefetches on its own,
+    /// using `precomputed_hashes` below, which needs no second `getKeyHolder` call.
+    static constexpr bool has_cheap_key_holder = false;
     static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;
@@ -371,13 +417,42 @@ struct HashMethodSerialized
     size_t total_size = 0;
     bool use_batch_serialize = false;
     IColumn::SerializationSettings serialization_settings;
-    PaddedPODArray<char> serialized_buffer;
-    std::vector<std::string_view> serialized_keys;
+    /// With batch serialization, the keys of a block are serialized (and their hashes are computed) gradually, in chunks of
+    /// consecutive rows that fit in the CPU cache, right before they are used. If all the keys of a big block are serialized
+    /// and hashed in advance, every pass goes over several megabytes of temporary data per thread, and with many threads
+    /// it does not fit in the cache. Every row is serialized once, and the keys stay valid until the end of the block.
+    mutable PaddedPODArray<char> serialized_buffer;
+    /// The serialized key of each row in `serialized_buffer`, filled for the serialized rows.
+    mutable PaddedPODArray<std::string_view> serialized_keys;
+    /// The keys of the rows below this one are serialized.
+    mutable size_t serialized_rows = 0;
+    mutable size_t serialized_bytes = 0;
+    size_t max_bytes_in_chunk = 0;
+    /// The positions to serialize the rows of the current chunk into.
+    mutable PODArray<char *> memories;
 
-    /// Per-row canonical hashes computed from `serialized_keys` using the hash table's hash function.
-    /// Filled lazily on the first emplace/find call (because we need access to `Data::hash`).
+    /// Dense cache of aggregate state pointers keyed by the linearized positions of the
+    /// `LowCardinality` dictionaries. It is enabled when every key is a non-nullable
+    /// `LowCardinality` column and the product of the dictionary sizes is small, so that a repeated
+    /// key tuple skips serializing and hashing the key entirely. The hash table still stores the
+    /// serialized key values, so the output, merge and spill paths are not affected.
+    static constexpr size_t lc_cache_max_size = 1 << 16;
+    using LcCacheValue = std::conditional_t<std::is_void_v<Mapped>, char *, Mapped>;
+    bool lc_cache_enabled = false;
+    std::vector<size_t> lc_strides;
+    ColumnRawPtrs lc_index_columns;
+    std::vector<LcCacheValue> lc_cache;
+    /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
+    /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
+    /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
+    mutable PaddedPODArray<char> serialize_scratch;
+
+    /// Per-row canonical hashes of the serialized keys computed using the hash table's hash function.
+    /// Filled lazily, chunk by chunk, starting from the first emplace/find call (because we need access to `Data::hash`).
     /// Only used when `can_precompute_hashes` is true.
     PaddedPODArray<size_t> precomputed_hashes;
+    /// The hashes of the rows below this one are computed.
+    size_t hashed_rows = 0;
     /// `precomputed_hashes_initialized` starts `true` by default so the hot path skips the lazy-init
     /// gate when precomputation is statically disabled. It is set to `false` in the constructor only
     /// when we actually plan to precompute hashes (and is flipped back to `true` after the first call).
@@ -386,7 +461,8 @@ struct HashMethodSerialized
 
     /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
     /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
-    /// Checked lazily on the first emplace/find call.
+    /// Holds the raw setting; `minBytesForPrefetch` adjusts it for the cell size on the first
+    /// emplace/find call, once `Data` is known. Checked there as well.
     size_t min_bytes_for_prefetch = 0;
 
     std::unique_ptr<PrefetchingHelper> prefetching;
@@ -398,7 +474,7 @@ struct HashMethodSerialized
     /// (e.g. `executeOnBlockSmall` with non-zero `row_begin`).
     size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context, RowRange /*rows*/ = {})
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
         const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
@@ -423,6 +499,12 @@ struct HashMethodSerialized
             }
         }
 
+        if constexpr (!nullable && Base::has_mapped)
+        {
+            if (!hash_serialized_context->settings.simple_count)
+                initLowCardinalityCache();
+        }
+
         if constexpr (prealloc)
         {
             null_maps.resize(keys_size, nullptr);
@@ -438,26 +520,8 @@ struct HashMethodSerialized
             if (use_batch_serialize)
             {
                 serialized_buffer.resize(total_size);
-
-                const size_t rows = row_sizes.size();
-                char * memory = serialized_buffer.data();
-                VectorWithMemoryTracking<char *> memories(rows);
-                serialized_keys.resize(rows);
-                for (size_t i = 0; i < row_sizes.size(); ++i)
-                {
-                    memories[i] = memory;
-                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
-
-                    memory += row_sizes[i];
-                }
-
-                for (size_t i = 0; i < keys_size; ++i)
-                {
-                    if constexpr (nullable)
-                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
-                    else
-                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
-                }
+                serialized_keys.resize(row_sizes.size());
+                max_bytes_in_chunk = std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024);
             }
         }
 
@@ -480,28 +544,192 @@ struct HashMethodSerialized
         }
     }
 
-    /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
+    /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
+    /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
+    void initLowCardinalityCache()
+    {
+        if (keys_size < 2)
+            return;
+
+        std::vector<size_t> dict_sizes;
+        dict_sizes.reserve(keys_size);
+        size_t product = 1;
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
+            if (!low_cardinality || low_cardinality->getDictionary().nestedColumnIsNullable())
+                return;
+
+            const size_t dict_size = low_cardinality->getDictionary().size();
+            if (dict_size == 0 || product > lc_cache_max_size / dict_size)
+                return;
+
+            product *= dict_size;
+            dict_sizes.push_back(dict_size);
+            lc_index_columns.push_back(low_cardinality->getIndexesPtr().get());
+        }
+
+        lc_strides.assign(keys_size, 1);
+        for (size_t i = keys_size - 1; i > 0; --i)
+            lc_strides[i - 1] = lc_strides[i] * dict_sizes[i];
+
+        lc_cache.assign(product, nullptr);
+        lc_cache_enabled = true;
+    }
+
+    ALWAYS_INLINE size_t getLowCardinalityPosition(size_t row) const
+    {
+        size_t position = 0;
+        for (size_t i = 0; i < lc_index_columns.size(); ++i)
+            position += lc_index_columns[i]->getUInt(row) * lc_strides[i];
+        return position;
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (Base::has_mapped)
+        {
+            if (lc_cache_enabled)
+            {
+                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                if (cached != nullptr)
+                    return EmplaceResult(cached, cached, false);
+
+                auto result = Base::emplaceKey(data, row, pool);
+                if (!result.isInserted())
+                    cached = result.getMapped();
+                return result;
+            }
+        }
+        return Base::emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (Base::has_mapped)
+        {
+            if (lc_cache_enabled)
+            {
+                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                if (cached != nullptr)
+                    return FindResult(&cached, true, 0);
+            }
+        }
+        return Base::findKey(data, row, pool);
+    }
+
+    /// Prepares the computation of per-row canonical hashes of the serialized keys using `Data::hash`.
     /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
     /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
     /// + prefetch path when the hash table is small enough to fit in caches. Matches
-    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    /// `Aggregator::executeImpl`'s `prefetch` gate, cell-size correction included.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
-        requires(prealloc)
+        requires prealloc
     {
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        /// This method prefetches on its own instead of going through `Aggregator`'s gate, so it has
+        /// to apply the same cell-size correction the gate does - see `minBytesForPrefetch`. Without
+        /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
+        /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
+        const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
         {
             can_precompute_hashes = false;
             return;
         }
 
-        const size_t rows = serialized_keys.size();
-        precomputed_hashes.resize(rows);
-        for (size_t i = 0; i < rows; ++i)
-            precomputed_hashes[i] = data.hash(serialized_keys[i]);
+        /// The hashes are computed together with the serialization of the keys, see `getPrecomputedHash`.
+        precomputed_hashes.resize(row_sizes.size());
+        /// The keys of the rows below the first one may be not serialized, see `skipRowsBefore`.
+        hashed_rows = std::max(hashed_rows, first_row);
+    }
+
+    /// The rows below this one are not requested anymore, so they are not serialized and hashed.
+    /// Called when the rows of the block are processed starting from the middle of it, so that the first chunk
+    /// does not start from row 0 (e.g. the remainder of a block after an adaptive aggregation split).
+    void skipRowsBefore(size_t row)
+    {
+        serialized_rows = std::max(serialized_rows, row);
+        hashed_rows = std::max(hashed_rows, row);
+    }
+
+    /// Serializes the next chunk of keys, which ends after the row.
+    void serializeNextChunk(size_t row) const
+        requires prealloc
+    {
+        /// Besides the serialized key, each row takes its `std::string_view`, its hash and a pointer in `memories`.
+        static constexpr size_t bytes_per_row = sizeof(std::string_view) + sizeof(size_t) + sizeof(char *);
+        const size_t begin = serialized_rows;
+        const size_t rows = row_sizes.size();
+
+        /// The chunk is assembled in a single pass over the rows: it is on the hot path of aggregation.
+        memories.resize(rows - begin);
+        const UInt64 * sizes = row_sizes.data();
+        std::string_view * keys = serialized_keys.data();
+        char ** chunk_memories = memories.data();
+        char * memory = serialized_buffer.data() + serialized_bytes;
+        size_t chunk_bytes = 0;
+        size_t end = begin;
+        for (; end < rows; ++end)
+        {
+            const size_t size = sizes[end];
+            chunk_bytes += size + bytes_per_row;
+            if (end > row && chunk_bytes > max_bytes_in_chunk)
+                break;
+            keys[end] = std::string_view(memory, size);
+            chunk_memories[end - begin] = memory;
+            memory += size;
+        }
+        serialized_bytes = memory - serialized_buffer.data();
+        memories.resize(end - begin);
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            if constexpr (nullable)
+                key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, begin, null_maps[i], &serialization_settings);
+            else
+                key_columns[i]->batchSerializeValueIntoMemory(memories, begin, &serialization_settings);
+        }
+
+        serialized_rows = end;
+    }
+
+    ALWAYS_INLINE std::string_view getSerializedKey(size_t row) const
+        requires prealloc
+    {
+        if (row >= serialized_rows) [[unlikely]]
+            serializeNextChunk(row);
+        return serialized_keys[row];
+    }
+
+    /// The hash of the serialized key of the row with the hash function of the hash table.
+    template <typename Data>
+    ALWAYS_INLINE size_t getPrecomputedHash(const Data & data, size_t row)
+        requires prealloc
+    {
+        if (row >= hashed_rows) [[unlikely]]
+        {
+            if (row >= serialized_rows)
+                serializeNextChunk(row);
+            for (; hashed_rows < serialized_rows; ++hashed_rows)
+                precomputed_hashes[hashed_rows] = data.hash(getSerializedKey(hashed_rows));
+        }
+        return precomputed_hashes[row];
+    }
+
+    /// Prefetch the cell of the hash table for a row ahead.
+    template <typename Data>
+    ALWAYS_INLINE void prefetchByPrecomputedHash(Data & data, size_t row)
+        requires prealloc
+    {
+        if (row < row_sizes.size())
+            data.prefetchByHash(getPrecomputedHash(data, row));
     }
 
     bool shouldUseBatchSerialize() const
@@ -520,15 +748,19 @@ struct HashMethodSerialized
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
+    /// Batch serialization retains every key for the block. The other paths reuse scratch or roll back
+    /// the key's arena allocation on discard, so their views cannot be retained between rows.
+    bool keyViewsAreBlockStable() const { return use_batch_serialize; }
+
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
-    requires(prealloc)
+    requires prealloc
     {
         if (use_batch_serialize)
-            return ArenaKeyHolder{serialized_keys[row], pool};
+            return ArenaKeyHolder{getSerializedKey(row), pool};
         else
         {
-            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
-            char * memory = holder.get();
+            serialize_scratch.resize(row_sizes[row]);
+            char * memory = serialize_scratch.data();
             std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
@@ -538,7 +770,7 @@ struct HashMethodSerialized
                     memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
-            return ArenaKeyHolder{key, pool, std::move(holder)};
+            return ArenaKeyHolder{key, pool};
         }
     }
 

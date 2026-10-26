@@ -2,13 +2,14 @@ import argparse
 import os
 import platform
 import sys
+import tempfile
 from pathlib import Path
 
 repo_path = Path(__file__).resolve().parent.parent.parent
 repo_path_normalized = str(repo_path)
 sys.path.append(str(repo_path / "ci"))
 
-from ci.defs.defs import ToolSet, chcache_secret
+from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
@@ -18,8 +19,11 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
-temp_dir = f"{current_directory}/ci/tmp/"
+temp_dir = Path(current_directory) / "ci" / "tmp"
 build_dir_normalized = str(repo_path / "ci" / "tmp" / "fast_build")
+
+# Must match SQL_STACKTRACES_LOG and C_STACKTRACES_LOG in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
 
 
 def clone_submodules():
@@ -38,6 +42,7 @@ def clone_submodules():
         "contrib/lz4",
         "contrib/zstd",
         "contrib/zxc",
+        "contrib/gdeflate",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
@@ -60,6 +65,9 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/heks",
+        "contrib/sql-console",
+        "contrib/optimized-routines",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
@@ -133,14 +141,6 @@ class JobStages(metaclass=MetaClasses.WithIter):
     TEST = "test"
 
 
-def _load_darwin_skip_tests():
-    skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
-    return tuple(
-        line
-        for line in skip_file.read_text().splitlines()
-        if line.strip() and not line.lstrip().startswith("#"))
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
     parser.add_argument(
@@ -160,8 +160,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if platform.system() == "Darwin":
-        args.skip = list(_load_darwin_skip_tests()) + args.skip
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
@@ -178,11 +176,16 @@ def main():
     clickhouse_se_stripped_path = Path(f"{build_dir}/programs/self-extracting/clickhouse-stripped")
 
     for path in [
-        Path(temp_dir) / "clickhouse",
+        temp_dir / "clickhouse",
         clickhouse_bin_path,
         Path(current_directory) / "clickhouse",
     ]:
         if path.is_file():
+            if platform.system() == "Darwin" and path == temp_dir / "clickhouse":
+                # The macOS self-extracting binary replaces itself in place, unlocked, on its first run.
+                private_path = Path(tempfile.mkdtemp(prefix="clickhouse-", dir=temp_dir)) / path.name
+                path.rename(private_path)
+                path = private_path
             clickhouse_bin_path = path
             print(f"NOTE: clickhouse binary is found [{clickhouse_bin_path}] - skip the build")
 
@@ -214,7 +217,7 @@ def main():
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
@@ -222,7 +225,7 @@ def main():
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -231,13 +234,6 @@ def main():
             print("NOTE: Using custom AWS credentials for sccache")
         else:
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
-    else:
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
@@ -286,16 +282,17 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats")
+        Shell.check("sccache --show-stats", verbose=True)
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
                 command=f"command time -v cmake --build {build_dir_normalized} --"
                 " clickhouse-bundle clickhouse-stripped lexer_test",
+                info_extractor=Result.cpp_build_info_extractor,
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats")
-        Shell.check("sccache --show-stats")
+        Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
+        Shell.check("sccache --show-stats", verbose=True)
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
@@ -344,9 +341,20 @@ def main():
         ch_config_dir=f"{temp_dir}/etc/clickhouse-server",
         ch_var_lib_dir=f"{temp_dir}/var/lib/clickhouse",
     )
+    # `fast_test_command` below prefixes `cd {temp_dir}`, so clients spawned by
+    # tests inherit that directory rather than the repository root this job runs
+    # from, and dump their cores there.
+    CH.client_core_path = str(temp_dir)
     CH.install_configs()
 
     attach_debug = False
+
+    # Not under `res`: a server-start failure reaches the attach below without
+    # running any test, so the clear has to happen even then.
+    if JobStages.TEST in stages:
+        for stacktrace_log in STACKTRACE_LOGS:
+            (temp_dir / stacktrace_log).unlink(missing_ok=True)
+
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Start ClickHouse Server"
@@ -371,8 +379,7 @@ def main():
         os.environ["CLICKHOUSE_DISKS_FILES"] = f"{temp_dir}/var/lib/clickhouse/disks"
         os.makedirs(os.environ["CLICKHOUSE_DISKS_FILES"], exist_ok=True)
 
-        # Fast test runs lightweight SQL tests that are not CPU-bound,
-        # so we can use more parallelism than the default cpu_count/2.
+        # The fast tests are not CPU-bound, so use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
 
         fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --timeout 60 --jobs {nproc_fast}"
@@ -405,6 +412,13 @@ def main():
         attach_files.append(clickhouse_upload_path)
     if attach_debug:
         attach_files.extend(CH.prepare_logs(info=info, all=True))
+        # clickhouse-test runs with cwd=temp_dir, so the full server stacktrace
+        # dumps it writes on a timeout / hung check land here. Attach them so
+        # the report links the full dumps (stdout keeps only a trimmed preview).
+        for stacktrace_log in STACKTRACE_LOGS:
+            path = temp_dir / stacktrace_log
+            if path.exists():
+                attach_files.append(path)
 
     CH.terminate(force=True)
 

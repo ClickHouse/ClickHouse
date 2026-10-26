@@ -1,0 +1,18 @@
+-- fixture
+al_1	Alias
+al_2	Alias
+al_3	Alias
+al_4	Alias
+al_5	Alias
+al_6	Alias
+al_7	Alias
+al_8	Alias
+j	Join
+-- truncate all tables: the target is emptied by its own entry
+0
+-- an alias is not a data holder: truncating only the aliases truncates nothing
+300
+-- an alias to a missing table no longer fails the whole statement
+0
+-- the statement names one database, so a target in another one keeps its rows
+300

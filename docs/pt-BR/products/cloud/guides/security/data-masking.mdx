@@ -480,10 +480,10 @@ ORDER BY user_id ASC
 ```
 
 <div id="use-query-masking-rules">
-  ## Use regras de mascaramento de consultas para dados de log
+  ## Use Query masking rules para dados de log
 </div>
 
-Para usuários do ClickHouse OSS que desejam mascarar especificamente dados de log, é possível usar [query masking rules](/pt-BR/reference/settings/server-settings/settings#query_masking_rules) (mascaramento de logs) para mascarar dados.
+Para usuários do ClickHouse OSS que desejam mascarar especificamente dados de log, é possível usar [Query masking rules](/pt-BR/reference/settings/server-settings/settings/query#query_masking_rules) (mascaramento de logs) para mascarar dados.
 
 Para isso, você pode definir regras de mascaramento baseadas em expressões regulares na configuração do servidor.
 Essas regras são aplicadas às consultas e a todas as mensagens de log antes de serem armazenadas nos logs do servidor ou em tabelas de sistema (como `system.query_log`, `system.text_log` e `system.processes`).

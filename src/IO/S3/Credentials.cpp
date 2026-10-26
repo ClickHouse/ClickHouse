@@ -57,6 +57,8 @@ namespace S3
 #    include <aws/core/http/HttpClientFactory.h>
 
 #    include <aws/core/utils/HashingUtils.h>
+#    include <aws/core/utils/StringUtils.h>
+#    include <aws/core/utils/memory/stl/AWSStringStream.h>
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
@@ -75,7 +77,6 @@ namespace S3
 #    include <Poco/Net/HTTPClientSession.h>
 #    include <Poco/Net/HTTPRequest.h>
 #    include <Poco/Net/HTTPResponse.h>
-#    include <Poco/StreamCopier.h>
 
 namespace ProfileEvents
 {
@@ -453,12 +454,12 @@ String getAvailabilityZoneOrException(bool is_zone_id)
         token_request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_HEADER, AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
         token_request.setContentLength(0);
 
-        token_session.sendRequest(token_request);
+        sendHTTPRequest(token_session, token_request)->finalize();
 
         Poco::Net::HTTPResponse token_response;
-        std::istream & token_rs = token_session.receiveResponse(token_response);
+        auto token_body = receiveHTTPResponse(token_session, token_response);
         if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-            Poco::StreamCopier::copyToString(token_rs, token_str);
+            readStringUntilEOF(token_str, *token_body);
         else
             LOG_WARNING(
                 logger,
@@ -474,14 +475,14 @@ String getAvailabilityZoneOrException(bool is_zone_id)
 
     if (!token_str.empty())
         request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, token_str);
-    session.sendRequest(request);
+    sendHTTPRequest(session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session.receiveResponse(response);
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     return response_data;
 }
 }
@@ -508,12 +509,12 @@ static String getGCPAvailabilityZoneOrException()
     Poco::Net::HTTPResponse response;
     request.set("Metadata-Flavor", "Google");
 
-    session.sendRequest(request);
-    std::istream & rs = session.receiveResponse(response);
+    sendHTTPRequest(session, request)->finalize();
+    auto response_body = receiveHTTPResponse(session, response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::GCP_ERROR, "Failed to get GCP availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
-    Poco::StreamCopier::copyToString(rs, response_data);
+    readStringUntilEOF(response_data, *response_body);
     Strings zone_info;
     boost::split(zone_info, response_data, boost::is_any_of("/"));
     /// We expect GCP returns a string as "projects/123456789/zones/us-central1a".
@@ -1106,11 +1107,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
-            /// See MakeDefaultHTTPResourceClientConfiguration().
-            /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
-            /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
-            aws_client_configuration.maxConnections = 2;
-
             /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
             /// in the future.
             aws_client_configuration.proxyHost = "";
@@ -1144,23 +1140,32 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     }
 }
 
-AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
-    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_)), external_id(std::move(external_id_))
+AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_)
+    : role_arn(std::move(role_arn_))
+    , role_session_name(std::move(role_session_name_))
+    , external_id(std::move(external_id_))
+    , policy(std::move(policy_))
 {
 }
 
 Aws::Http::HeaderValueCollection AssumeRoleRequest::GetHeaders() const
 {
-    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::AMZN_XML_CONTENT_TYPE)}};
+    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::FORM_CONTENT_TYPE)}};
 }
 
-void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
+Aws::String AssumeRoleRequest::SerializePayload() const
 {
-    uri.AddQueryStringParameter("RoleArn", role_arn);
-    uri.AddQueryStringParameter("RoleSessionName", role_session_name);
+    Aws::StringStream ss;
+    ss << "Action=AssumeRole&Version=2011-06-15";
+    ss << "&RoleArn=" << Aws::Utils::StringUtils::URLEncode(role_arn.c_str());
+    ss << "&RoleSessionName=" << Aws::Utils::StringUtils::URLEncode(role_session_name.c_str());
     /// ExternalId is optional; STS rejects an empty value, so only send it when configured.
     if (!external_id.empty())
-        uri.AddQueryStringParameter("ExternalId", external_id);
+        ss << "&ExternalId=" << Aws::Utils::StringUtils::URLEncode(external_id.c_str());
+    /// Policy is optional.
+    if (!policy.empty())
+        ss << "&Policy=" << Aws::Utils::StringUtils::URLEncode(policy.c_str());
+    return ss.str();
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -1234,9 +1239,36 @@ AWSAssumeRoleClient::AWSAssumeRoleClient(
     if (client_configuration.region != "aws-global")
         endpoint_str += client_configuration.region + ".";
 
-    endpoint_str += "amazonaws.com?Action=AssumeRole&Version=2011-06-15";
+    endpoint_str += "amazonaws.com";
 
     endpoint.SetURL(endpoint_str);
+}
+
+std::shared_ptr<AWSAssumeRoleClient> AWSAssumeRoleClient::create(
+    const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+    const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+    const std::string & sts_endpoint_override)
+{
+    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
+    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
+    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
+    auto sts_client_configuration = client_configuration;
+
+    /// At most 3 retries.
+    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
+    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<unsigned int>(3));
+    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
+
+    /// Keep the caller's timeouts only if they are set and within the caps.
+    static constexpr auto connect_cap_ms = static_cast<decltype(sts_client_configuration.connectTimeoutMs)>(DEFAULT_CONNECT_TIMEOUT_MS);
+    static constexpr auto request_cap_ms
+        = static_cast<decltype(sts_client_configuration.requestTimeoutMs)>(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS);
+    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > connect_cap_ms)
+        sts_client_configuration.connectTimeoutMs = connect_cap_ms;
+    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > request_cap_ms)
+        sts_client_configuration.requestTimeoutMs = request_cap_ms;
+
+    return std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
 }
 
 AssumeRoleOutcome AWSAssumeRoleClient::assumeRole(const AssumeRoleRequest & request) const
@@ -1264,19 +1296,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
-    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
-    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
-    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
-    auto sts_client_configuration = client_configuration;
-    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
-    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
-    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
-    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > 1000)
-        sts_client_configuration.connectTimeoutMs = 1000;
-    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > 10000)
-        sts_client_configuration.requestTimeoutMs = 10000;
-
-    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
+    auto client = AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_endpoint_override);
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
@@ -1324,7 +1344,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
-    AssumeRoleRequest request(role_arn, session_name, external_id);
+    AssumeRoleRequest request(role_arn, session_name, external_id, /* policy_ */ "");
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
@@ -1345,6 +1365,20 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     LOG_TRACE(logger, "Successfully retrieved credentials");
 }
 
+/// Actionable tail of the "server-managed credentials refused" messages. In ClickHouse Cloud the
+/// setting is fixed by a profile constraint and cannot be enabled per query, so the Cloud build points
+/// to the supported access method (an IAM role) instead of naming a setting the user cannot change.
+#if CLICKHOUSE_CLOUD
+#define S3_SERVER_CREDENTIALS_HINT \
+    "Grant access through an IAM role passed as extra_credentials(role_arn = '...'), or provide explicit " \
+    "credentials (use NOSIGN for public buckets). See " \
+    "https://clickhouse.com/docs/products/cloud/guides/data-sources/accessing-s3-data-securely"
+#else
+#define S3_SERVER_CREDENTIALS_HINT \
+    "Provide explicit credentials, use NOSIGN for public buckets, grant access through an IAM role passed " \
+    "as extra_credentials(role_arn = '...'), or enable the setting `s3_allow_server_credentials_in_user_queries`."
+#endif
+
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const DB::S3::PocoHTTPClientConfiguration & configuration,
     const Aws::Auth::AWSCredentials & credentials,
@@ -1356,10 +1390,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     /// metadata load, via `anonymous_fallback_for_server_credentials`). Treated like `no_sign_request` below.
     bool force_anonymous_fallback = false;
 
-    /// For S3 access originating from user SQL, refuse every server-managed credential source. Explicit
-    /// credentials (optionally with a `role_arn`, which then assumes the role using the user's own keys) and
-    /// NOSIGN are still allowed. A server-configured `role_arn` is stripped by the storage/backup layers
-    /// before this point, so any `role_arn` reaching here was supplied by the query or named collection.
+    /// For S3 access originating from user SQL, refuse the server-managed credential sources. Explicit
+    /// credentials, NOSIGN, and `role_arn`-based STS assume-role are still allowed. A server-configured
+    /// `role_arn` is stripped by the storage/backup layers before this point, so any `role_arn` reaching
+    /// here was supplied by the query or named collection.
     if (credentials_configuration.forbid_implicit_credentials)
     {
         /// Only a complete key pair counts as explicit user credentials.
@@ -1373,10 +1407,12 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             && !configuration.google_adc_client_secret.empty()
             && !configuration.google_adc_refresh_token.empty();
 
-        /// Refuse only when a server-managed mechanism is explicitly requested. Otherwise the request is sent
-        /// unsigned (the provider chain below adds no implicit provider), keeping public-bucket access working.
-        const bool wants_server_credentials
-            = credentials_configuration.use_environment_credentials || !credentials_configuration.role_arn.empty();
+        /// `role_arn`-based STS assume-role stays allowed even under the restriction: the target role must
+        /// explicitly trust the identity the server runs under, and only the assumed role's credentials ever
+        /// sign the query's S3 requests, so the server's own credentials are not exposed to the query. This
+        /// is the documented way to grant ClickHouse Cloud access to a private bucket.
+        const bool uses_sts_assume_role = !credentials_configuration.role_arn.empty() && !uses_gcp_oauth
+            && !credentials_configuration.no_sign_request;
 
         if (uses_gcp_oauth)
         {
@@ -1390,22 +1426,33 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                         "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
                         "explicit Google Application Default Credentials triple (google_adc_client_id, "
                         "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
-                        "token from the server's GCP metadata service. Enable the setting "
-                        "`s3_allow_server_credentials_in_user_queries` to allow it.");
+                        "token from the server's GCP metadata service. " S3_SERVER_CREDENTIALS_HINT);
             }
         }
-        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials && wants_server_credentials)
+        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials)
         {
-            if (credentials_configuration.anonymous_fallback_for_server_credentials)
-                force_anonymous_fallback = true;
-            else
-                throw DB::Exception(
-                    DB::ErrorCodes::ACCESS_DENIED,
-                    "S3 access from user queries is not allowed to use server-managed credentials "
-                    "(environment variables, instance metadata, IRSA, instance profile, AWS config files, "
-                    "or role_arn-based STS assume-role). "
-                    "Provide explicit credentials, use NOSIGN, or enable the setting "
-                    "`s3_allow_server_credentials_in_user_queries`.");
+            if (uses_sts_assume_role)
+            {
+                /// The STS AssumeRole call itself must be signed with the server's ambient credentials, so let
+                /// the provider chain resolve them. The chain only serves as the base of the assume-role
+                /// provider added below; the resulting client signs S3 requests with the assumed role.
+                credentials_configuration.forbid_implicit_credentials = false;
+                credentials_configuration.use_environment_credentials = true;
+            }
+            else if (credentials_configuration.use_environment_credentials)
+            {
+                /// Refuse only when a server-managed mechanism is explicitly requested. Otherwise the request
+                /// is sent unsigned (the provider chain below adds no implicit provider), keeping public-bucket
+                /// access working.
+                if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                    force_anonymous_fallback = true;
+                else
+                    throw DB::Exception(
+                        DB::ErrorCodes::ACCESS_DENIED,
+                        "S3 access from user queries is not allowed to use the server's own credentials "
+                        "(environment variables, instance metadata, IRSA, instance profile, or AWS config files). "
+                        S3_SERVER_CREDENTIALS_HINT);
+            }
         }
 
         if (force_anonymous_fallback)
@@ -1417,7 +1464,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                 "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
         /// Belt and suspenders: never let the provider chain fall back to the server's environment credentials.
-        credentials_configuration.use_environment_credentials = false;
+        if (credentials_configuration.forbid_implicit_credentials)
+            credentials_configuration.use_environment_credentials = false;
     }
 
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -1451,6 +1499,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
 
     return credentials_provider;
 }
+
+#undef S3_SERVER_CREDENTIALS_HINT
 
 }
 

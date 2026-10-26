@@ -24,7 +24,7 @@ for max_threads in 1 7; do
     for max_insert_threads in 1 4; do
         echo "max_threads: $max_threads max_insert_threads: $max_insert_threads"
 
-        QUERY_ID="03652_query_id_$RANDOM"
+        QUERY_ID="${CLICKHOUSE_DATABASE}_03652_${max_threads}_${max_insert_threads}_$($CLICKHOUSE_CLIENT -q 'SELECT lower(hex(generateUUIDv4()))')"
         SETTINGS="--query_id=$QUERY_ID "
         SETTINGS="$SETTINGS --max_threads=$max_threads "
         SETTINGS="$SETTINGS --max_insert_threads=$max_insert_threads "

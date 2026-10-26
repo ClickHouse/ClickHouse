@@ -23,6 +23,9 @@ You can also use `[]`.
 []
 ```
 
+The array constructor syntax of the SQL standard, PostgreSQL, and Trino is supported too: `ARRAY[1, 2]` is the same as `[1, 2]`.
+The data type can also be written as `ARRAY(T)`.
+
 Example of creating an array:
 
 ```sql
@@ -47,7 +50,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 
 ## Working with Data Types {#working-with-data-types}
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/reference/data-types/nullable) or literal [NULL](/reference/settings/formats#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/reference/data-types/nullable) or literal [NULL](/reference/settings/formats/input-format#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
 
 If ClickHouse couldn't determine the data type, it generates an exception. For instance, this happens when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 

@@ -1,5 +1,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 
+#include "config.h"
+
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
@@ -21,6 +23,11 @@
 
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
+
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
 
 
 namespace DB
@@ -77,6 +84,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool type_is_object_storage = false;
     bool has_explicit_non_s3_object_storage_type = false;
     bool has_include = false;
+    bool has_substituted_value = false;
     bool has_indirect_auth_field = false;
     bool has_access_key_id = false;
     bool has_secret_access_key = false;
@@ -116,8 +124,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected a list of key=value arguments");
 
         auto function_args = function_args_expr->children;
-        if (function_args.empty())
-            throwBadConfiguration("expected a non-empty list of key=value arguments");
+        if (function_args.size() < 2)
+            throwBadConfiguration("expected key=value arguments");
 
         auto * key_identifier = function_args[0]->as<ASTIdentifier>();
         if (!key_identifier)
@@ -134,6 +142,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         auto value_str = convertFieldToString(value->as<ASTLiteral>()->value);
 
         const bool indirect = is_indirect_value(value_str);
+        has_substituted_value |= indirect;
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
 
@@ -249,6 +258,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     if (info)
     {
         info->has_include = has_include;
+        info->has_substituted_value = has_substituted_value;
         info->ast_has_explicit_key_pair = has_explicit_credentials;
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
@@ -283,8 +293,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                 "A dynamic S3 disk created from user SQL must provide a complete explicit "
                 "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
                 "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
-                "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
-                "`s3_allow_server_credentials_in_user_queries` to allow it.");
+                "and no `include`. It may not fall back to the server's own credentials."
+#if !CLICKHOUSE_CLOUD
+                " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+                );
     }
 
     return xml_document;
@@ -450,7 +463,141 @@ void validateResolvedS3DiskCredentials(
             "in the SQL definition (a complete `access_key_id`/`secret_access_key` pair, `no_sign_request`, or "
             "`use_environment_credentials = 0`; or, for `http_client = gcp_oauth`, a complete explicit Google ADC "
             "triple). It may not take the S3 type or credentials from the included configuration, which could "
-            "resolve the server's own credentials. Enable `s3_allow_server_credentials_in_user_queries` to allow it.");
+            "resolve the server's own credentials."
+#if !CLICKHOUSE_CLOUD
+            " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+            );
+}
+
+#if USE_AZURE_BLOB_STORAGE
+namespace
+{
+
+/// The Azure backends of a dynamic disk, at the same prefixes `registerDiskObjectStorage` passes to the object storage factory.
+std::vector<String> getAzureDiskPrefixes(const Poco::Util::AbstractConfiguration & config)
+{
+    std::vector<String> prefixes{""};
+    if (config.has(".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(".locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back(".locations." + location);
+    }
+
+    std::erase_if(prefixes, [&](const String & prefix)
+    {
+        const String type = config.has(prefix + ".object_storage_type")
+            ? config.getString(prefix + ".object_storage_type")
+            : config.getString(prefix + ".type", "");
+        return !type.starts_with("azure");
+    });
+    return prefixes;
+}
+
+AzureBlobStorage::ConnectionParams getAzureDiskConnectionParams(
+    const Poco::Util::AbstractConfiguration & config, const String & prefix, bool anonymous_fallback)
+{
+    return AzureBlobStorage::ConnectionParams
+    {
+        .endpoint = AzureBlobStorage::processEndpoint(config, prefix),
+        .auth_method = AzureBlobStorage::getAuthMethod(config, prefix),
+        .client_options = {},
+        .forbid_implicit_credentials = true,
+        .anonymous_fallback_for_server_credentials = anonymous_fallback,
+        .follows_session_restriction = false,
+    };
+}
+
+}
+#endif
+
+bool azureDiskUsesServerIdentity([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
+{
+#if USE_AZURE_BLOB_STORAGE
+    for (const auto & prefix : getAzureDiskPrefixes(config))
+        if (getAzureDiskConnectionParams(config, prefix, /*anonymous_fallback=*/ true).checkOrDropServerManagedCredentials())
+            return true;
+#endif
+    return false;
+}
+
+bool hasAzureServerCredentialsMarker(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.getBool("." + String(AZURE_SERVER_CREDENTIALS_MARKER), false);
+}
+
+#if USE_AZURE_BLOB_STORAGE
+/// The connection of a disk created from user SQL, possibly behind wrappers, that authenticates with the server's own
+/// identity. A disk from the server configuration may use it, so the walk stops there.
+static std::shared_ptr<const AzureBlobStorage::ConnectionParams> getCustomDiskServerIdentity(DiskPtr disk)
+{
+    for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
+    {
+        auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(disk.get());
+        if (!object_storage_disk)
+            continue;
+
+        const auto object_storage = object_storage_disk->getObjectStorage();
+        if (object_storage->getType() != ObjectStorageType::Azure)
+            return nullptr;
+
+        auto params = object_storage->getAzureBlobStorageConnectionParams();
+        return params->usesServerManagedCredentials() && !params->forbid_implicit_credentials ? params : nullptr;
+    }
+    return nullptr;
+}
+#endif
+
+void validateResolvedAzureDiskCredentials(
+    [[maybe_unused]] Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] ContextPtr context,
+    [[maybe_unused]] bool is_loading_from_existing_metadata,
+    [[maybe_unused]] bool for_system_database)
+{
+#if USE_AZURE_BLOB_STORAGE
+    /// A `system` table disk is server-internal infrastructure, exempt like an S3 one.
+    const bool system_table_disk_allowed = for_system_database
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_allow_server_credentials_for_system_table_disks];
+
+    /// A wrapper such as `encrypted` or `cache` may name a disk another session created, which is reused as it is.
+    if (!is_loading_from_existing_metadata && !system_table_disk_allowed && context->shouldRestrictUserQueryS3Credentials())
+    {
+        const String wrapped_disk = config.getString(".disk", "");
+        const auto disks = context->getDisksMap();
+        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end())
+        {
+            if (const auto params = getCustomDiskServerIdentity(it->second))
+            {
+                auto restricted = *params;
+                restricted.forbid_implicit_credentials = true;
+                restricted.anonymous_fallback_for_server_credentials = false;
+                restricted.checkOrDropServerManagedCredentials();
+            }
+        }
+    }
+
+    /// Only an Azure disk: the other disk types reject keys they do not know, e.g. a `cache` disk.
+    const auto prefixes = getAzureDiskPrefixes(config);
+    if (prefixes.empty())
+        return;
+
+    /// The marker is written only by the server, for a disk created with the opt-in, and honored only on reload.
+    const bool server_credentials_allowed = (is_loading_from_existing_metadata && hasAzureServerCredentialsMarker(config))
+        || system_table_disk_allowed;
+
+    /// Written over the resolved configuration, so the object storage factory can trust it.
+    config.setBool(AZURE_SERVER_CREDENTIALS_MARKER, server_credentials_allowed);
+
+    if (server_credentials_allowed || !context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    const bool anonymous_fallback = is_loading_from_existing_metadata
+        && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted];
+    for (const auto & prefix : prefixes)
+        getAzureDiskConnectionParams(config, prefix, anonymous_fallback).checkOrDropServerManagedCredentials();
+#endif
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

@@ -186,6 +186,51 @@ TEST(ColumnSparse, Filter)
     }
 }
 
+TEST(ColumnSparse, Expand)
+{
+    auto test_case = [&](size_t n, size_t k, bool inverted)
+    {
+        auto [sparse_src, full_src] = createColumns(n, k);
+
+        /// A mask of twice the size with exactly n bytes set, one for each row, at random positions.
+        IColumn::Filter mask(n * 2, 0);
+        std::vector<size_t> positions(n * 2);
+        std::iota(positions.begin(), positions.end(), 0);
+        std::shuffle(positions.begin(), positions.end(), rng);
+        positions.resize(n);
+        for (size_t position : positions)
+            mask[position] = 1;
+
+        if (inverted)
+            for (auto & byte : mask)
+                byte = !byte;
+
+        auto sparse = IColumn::mutate(std::move(sparse_src));
+        auto full = IColumn::mutate(std::move(full_src));
+        sparse->expand(mask, inverted);
+        full->expand(mask, inverted);
+
+        if (!checkEquals(*sparse, *full))
+        {
+            DUMP_COLUMN(sparse);
+            DUMP_COLUMN(full);
+            throw Exception(error_code, "Expanded columns are unequal");
+        }
+    };
+
+    try
+    {
+        for (size_t n = 0; n < MAX_ROWS; n += 1 + n / 2)
+            for (size_t ratio : sparse_ratios)
+                for (bool inverted : {false, true})
+                    test_case(n, ratio, inverted);
+    }
+    catch (const Exception & e)
+    {
+        FAIL() << e.displayText();
+    }
+}
+
 TEST(ColumnSparse, Permute)
 {
     auto test_case = [&](size_t n, size_t k, size_t limit)
@@ -327,6 +372,54 @@ TEST(ColumnSparse, GetPermutation)
     {
         FAIL() << e.displayText();
     }
+}
+
+TEST(ColumnSparse, Index)
+{
+    auto values = ColumnUInt64::create();
+    auto offsets = ColumnUInt64::create();
+    auto full = ColumnUInt64::create();
+
+    values->insertValue(0);
+    values->insertValue(10);
+    values->insertValue(20);
+    values->insertValue(30);
+
+    offsets->insertValue(1);
+    offsets->insertValue(4);
+    offsets->insertValue(6);
+
+    full->insertValue(0);
+    full->insertValue(10);
+    full->insertValue(0);
+    full->insertValue(0);
+    full->insertValue(20);
+    full->insertValue(0);
+    full->insertValue(30);
+    full->insertValue(0);
+
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), full->size());
+
+    auto test_case = [&](std::initializer_list<UInt64> index_values, size_t limit)
+    {
+        auto indexes = ColumnUInt64::create();
+        for (UInt64 index : index_values)
+            indexes->insertValue(index);
+
+        auto sparse_result = sparse->index(*indexes, limit);
+        auto full_result = full->index(*indexes, limit);
+
+        ASSERT_TRUE(checkEquals(*sparse_result->convertToFullColumnIfSparse(), *full_result));
+    };
+
+    /// Exercise the binary-search path with repeated default and non-default rows.
+    test_case({4, 4, 2, 2, 0}, 5);
+
+    /// Check that a run continuing past the requested limit is truncated.
+    test_case({4, 4, 4, 1, 0}, 3);
+
+    /// Exercise the linear path with repeated and unique rows.
+    test_case({4, 4, 4, 1, 0, 6, 6, 2}, 8);
 }
 
 #undef DUMP_COLUMN

@@ -1,0 +1,19 @@
+Count-only value staging under constant pressure
+1
+General aggregates under constant pressure
+1
+String keys under constant pressure
+1
+Long string keys and a string argument under pressure
+1
+Partial pressure mixes spilled and in-memory records
+1
+Frozen tables of growing states spill as ordinary parts
+1
+Learning tables spill exactly
+1
+Sparsely populated buckets under pressure
+1
+1
+Analytic guard under pressure
+30000	449985000	7199940000	120000

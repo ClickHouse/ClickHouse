@@ -20,6 +20,9 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
+    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+    std::vector<UInt64> getRowGroupOffsets() const override { return row_group_offsets; }
+
 private:
     struct MemoryToken
     {
@@ -94,6 +97,7 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
@@ -115,8 +119,12 @@ private:
     size_t staging_bytes = 0;
 
     Parquet::WriteOptions options;
+    /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
+    Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
+    std::unordered_map<String, size_t> column_sizes_on_disk;
+    std::vector<UInt64> row_group_offsets;
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;

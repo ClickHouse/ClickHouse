@@ -22,25 +22,15 @@ SELECT amount + 1 FROM realtimebuff__fuzz_20 t1 ORDER BY ALL;
 SELECT sum(amount) = 100 FROM realtimebuff__fuzz_19 ORDER BY ALL; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT sum(amount) = 100 FROM realtimebuff__fuzz_20 ORDER BY ALL; -- { serverError CANNOT_CONVERT_TYPE }
 
-SELECT amount FROM realtimebuff__fuzz_19 t1
-JOIN (SELECT number :: UInt32 AS amount FROM numbers(3) ) t2 ON t1.amount = t2.amount
-ORDER BY ALL
-SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT amount FROM realtimebuff__fuzz_19 t1
 JOIN (SELECT number :: UInt32 AS amount FROM numbers(3) ) t2 ON t1.amount = t2.amount
-ORDER BY ALL
-SETTINGS enable_analyzer = 1;
+ORDER BY ALL;
+
 
 SELECT amount FROM realtimebuff__fuzz_19 t1
 JOIN (SELECT number :: UInt32 AS amount FROM numbers(300) ) t2 ON t1.amount = t2.amount
-ORDER BY ALL
-SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
-
-SELECT amount FROM realtimebuff__fuzz_19 t1
-JOIN (SELECT number :: UInt32 AS amount FROM numbers(300) ) t2 ON t1.amount = t2.amount
-ORDER BY ALL
-SETTINGS enable_analyzer = 1;
+ORDER BY ALL;
 
 SELECT t2.amount + 1 FROM (SELECT number :: UInt32 AS amount FROM numbers(300) ) t1
 JOIN realtimebuff__fuzz_19 t2 USING (amount)

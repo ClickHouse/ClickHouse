@@ -21,15 +21,22 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
+
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionContainsColumnMatcher.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -82,6 +89,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
@@ -330,7 +338,8 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        if (context.getClientInfo().distributed_depth > 0)
+            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -371,7 +380,7 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     const auto & query_node_typed = query_node->as<const QueryNode &>();
 
     std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTreeNode());
 
     while (!join_tree_nodes_to_process.empty())
     {
@@ -407,8 +416,8 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode());
                 break;
             }
             default:
@@ -450,7 +459,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTreeNode().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -465,7 +474,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpressionNode().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -479,8 +488,8 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpressionNode().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpressionNode().get());
                 break;
             }
             default:
@@ -499,7 +508,7 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
 {
     const auto & query_node_typed = query_node->as<const QueryNode &>();
-    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTreeNode().get());
 }
 
 
@@ -516,11 +525,11 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const TableExpressionNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
-    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    IQueryTreeNode::ReplacementMap replacement_map;
 
     for (const auto & table_expression : table_nodes)
     {
@@ -547,7 +556,10 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
                 result_replacement_map->emplace(table_expression, dummy_table_node);
 
             dummy_table_node->setAlias(table_expression->getAlias());
-            replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+            if (table_node)
+                replacement_map.emplace(table_node, std::move(dummy_table_node));
+            else
+                replacement_map.emplace(table_function_node, std::move(dummy_table_node));
         }
     }
 
@@ -565,13 +577,129 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     return select_query_info;
 }
 
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter)
+NameSet checkAccessRights(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & column_names,
+    const ContextPtr & query_context)
 {
-    const auto & query_context = planner_context->getQueryContext();
+    /// StorageDummy is created on preliminary stage, ignore access check for it.
+    if (typeid_cast<const StorageDummy *>(storage.get()))
+        return {};
 
+    if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
+        return {};
+
+    if (column_names.empty())
+    {
+        NameSet accessible_columns;
+        /** For a trivial queries like "SELECT count() FROM table", "SELECT 1 FROM table" access is granted if at least
+          * one table column is accessible.
+          */
+        auto access = query_context->getAccess();
+        const auto * alias = storage->as<StorageAlias>();
+        NameSet chain_granted;
+        if (alias)
+        {
+            Names all_columns;
+            all_columns.reserve(storage_snapshot->metadata->getColumns().size());
+            for (const auto & column : storage_snapshot->metadata->getColumns())
+                all_columns.push_back(column.name);
+            chain_granted = alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, all_columns);
+        }
+        for (const auto & column : storage_snapshot->metadata->getColumns())
+        {
+            /// An `Alias` also requires access to the selected column of its target table.
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+                && (!alias || chain_granted.contains(column.name)))
+                accessible_columns.insert(column.name);
+        }
+
+        if (accessible_columns.empty())
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+                query_context->getUserName(),
+                storage_id.getFullTableName());
+        }
+        return accessible_columns;
+    }
+
+    // In case of cross-replication we don't know what database is used for the table.
+    // `storage_id.hasDatabase()` can return false only on the initiator node.
+    // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
+    if (storage_id.hasDatabase())
+        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    return {};
+}
+
+NameSet collectReferencedColumnNames(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression)
+{
+    NameSet column_names;
+    traverseQueryTree(
+        node,
+        [](const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+        {
+            /// Don't go inside an ALIAS column expression: a grant on the alias name is sufficient.
+            const auto * column_node = parent->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression())
+                return true;
+            const auto & column_source = column_node->getColumnSourceOrNull();
+            return !(column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE);
+        },
+        [&](const QueryTreeNodePtr & current)
+        {
+            const auto * column_node = current->as<ColumnNode>();
+            if (column_node && column_node->getColumnSourceOrNull().get() == table_expression.get())
+                column_names.insert(column_node->getColumnName());
+        });
+    return column_names;
+}
+
+static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tree,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & query_context)
+{
+    StoragePtr storage;
+    StorageID storage_id = StorageID::createEmpty();
+    StorageSnapshotPtr storage_snapshot;
+
+    if (const auto * table_node = table_expression->as<TableNode>())
+    {
+        storage = table_node->getStorage();
+        storage_id = table_node->getStorageID();
+        storage_snapshot = table_node->getStorageSnapshot();
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        /// A parameterized view is resolved as a `TableFunctionNode` wrapping a real `StorageView`, see
+        /// `prepareBuildQueryPlanForTableExpression`. Regular table functions are checked in `ITableFunction::execute`.
+        if (!table_function_node->isParameterizedView())
+            return;
+
+        storage = table_function_node->getStorage();
+        storage_id = table_function_node->getStorageID();
+        storage_snapshot = table_function_node->getStorageSnapshot();
+    }
+    else
+    {
+        return;
+    }
+
+    NameSet column_names = collectReferencedColumnNames(filter_query_tree, table_expression);
+    if (column_names.empty())
+        return;
+
+    checkAccessRights(storage, storage_id, storage_snapshot, Names(column_names.begin(), column_names.end()), query_context);
+}
+
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context,
+        bool check_access_rights)
+{
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
     /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that
     /// buildQueryTree produces a FunctionNode at the top level instead of
@@ -590,10 +718,56 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
             make_intrusive<ASTLiteral>(Field(UInt8(0))));
     }
 
+    /// The expression is a predicate (or, for `parallel_replicas_custom_key`, a key) over the rows of a single table
+    /// expression, not a projection, so a column matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would
+    /// only ever expand into the argument list of a function such as `ignore(*)`. Reject it deliberately, with a
+    /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope. The
+    /// check descends into SQL UDF bodies, and skips subqueries, e.g. `x IN (SELECT * FROM allowed)`, which resolve
+    /// against their own tables.
+    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
+            "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",
+            matcher->formatForErrorMessage(),
+            filter_expression->formatForErrorMessage());
+
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
+
+    if (check_access_rights)
+        checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
+
+    /// The inner query of an ordinary view reads the table itself, not the inserted block.
+    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+        replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
+
+    return filter_query_tree;
+}
+
+FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter,
+        bool check_access_rights)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    auto filter_query_tree = buildFilterQueryTree(std::move(filter_expression), table_expression, query_context, check_access_rights);
+
+    return buildFilterInfo(
+        std::move(filter_query_tree),
+        table_expression,
+        planner_context,
+        std::move(table_expression_required_names_without_filter));
+}
+
+FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
+        const TableExpressionNodePtr & table_expression,
+        PlannerContextPtr & planner_context,
+        NameSet table_expression_required_names_without_filter)
+{
+    const auto & query_context = planner_context->getQueryContext();
 
     /// Optimize logical expressions in the filter, e.g. convert OR-chains of
     /// equalities into IN (important for row policies that produce many
@@ -601,14 +775,6 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
     LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
     logical_expression_optimizer_pass.run(filter_query_tree, query_context);
 
-    return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
-}
-
-FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter)
-{
     if (table_expression_required_names_without_filter.empty())
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);

@@ -4,7 +4,8 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/StreamCopier.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -18,30 +19,19 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
 }
 
-GCPOAuthToken fetchGCPOAuthToken(
-    const std::string & client_id,
-    const std::string & client_secret,
-    const std::string & refresh_token,
+namespace
+{
+
+GCPOAuthToken postTokenRequest(
+    const std::string & token_endpoint,
+    const std::string & body,
     const ConnectionTimeouts & timeouts,
     HTTPConnectionGroupType group)
 {
-    static constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-
-    Poco::URI url(GOOGLE_OAUTH2_TOKEN_ENDPOINT);
-
-    std::string encoded_client_id;
-    std::string encoded_client_secret;
-    std::string encoded_refresh_token;
-    Poco::URI::encode(client_id, "", encoded_client_id);
-    Poco::URI::encode(client_secret, "", encoded_client_secret);
-    Poco::URI::encode(refresh_token, "", encoded_refresh_token);
-
-    String body = fmt::format(
-        "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
-        encoded_client_id, encoded_client_secret, encoded_refresh_token);
+    Poco::URI url(token_endpoint);
 
     auto log = getLogger("GCPOAuth");
-    LOG_DEBUG(log, "Requesting GCP bearer token via OAuth2 refresh token flow");
+    LOG_DEBUG(log, "Requesting GCP bearer token from {}", url.getHost());
 
     HTTPSessionPtr session;
     std::exception_ptr last_exception;
@@ -69,14 +59,15 @@ GCPOAuthToken fetchGCPOAuthToken(
     request.setContentLength(body.size());
     request.set("Accept", "application/json");
 
-    std::ostream & os = session->sendRequest(request);
-    os << body;
+    auto request_body = sendHTTPRequest(*session, request);
+    writeString(body, *request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto response_body = receiveHTTPResponse(*session, response);
 
     String token_json_raw;
-    Poco::StreamCopier::copyToString(rs, token_json_raw);
+    readStringUntilEOF(token_json_raw, *response_body);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(
@@ -102,10 +93,57 @@ GCPOAuthToken fetchGCPOAuthToken(
 
     GCPOAuthToken result;
     result.access_token = object->getValue<String>("access_token");
+    checkGCPOAuthAccessToken(result.access_token);
     if (object->has("expires_in"))
         result.expires_in = object->getValue<Int64>("expires_in");
 
     return result;
+}
+
+}
+
+void checkGCPOAuthAccessToken(const std::string & access_token)
+{
+    if (access_token.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP access token contains CR or LF");
+}
+
+GCPOAuthToken fetchGCPOAuthToken(
+    const std::string & client_id,
+    const std::string & client_secret,
+    const std::string & refresh_token,
+    const ConnectionTimeouts & timeouts,
+    HTTPConnectionGroupType group,
+    const std::string & token_endpoint)
+{
+    std::string encoded_client_id;
+    std::string encoded_client_secret;
+    std::string encoded_refresh_token;
+    Poco::URI::encode(client_id, "", encoded_client_id);
+    Poco::URI::encode(client_secret, "", encoded_client_secret);
+    Poco::URI::encode(refresh_token, "", encoded_refresh_token);
+
+    String body = fmt::format(
+        "grant_type=refresh_token&client_id={}&client_secret={}&refresh_token={}",
+        encoded_client_id, encoded_client_secret, encoded_refresh_token);
+
+    return postTokenRequest(token_endpoint, body, timeouts, group);
+}
+
+GCPOAuthToken fetchGCPOAuthTokenWithJWTAssertion(
+    const std::string & assertion,
+    const std::string & token_endpoint,
+    const ConnectionTimeouts & timeouts,
+    HTTPConnectionGroupType group)
+{
+    std::string encoded_assertion;
+    Poco::URI::encode(assertion, "", encoded_assertion);
+
+    String body = fmt::format(
+        "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion={}",
+        encoded_assertion);
+
+    return postTokenRequest(token_endpoint, body, timeouts, group);
 }
 
 }

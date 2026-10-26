@@ -14,8 +14,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/FunctionSignature.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -27,6 +29,7 @@
 
 #include <cstdlib>
 #include <memory>
+#include <algorithm>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -50,6 +53,7 @@ extern const SettingsBool use_variant_default_implementation_for_comparisons;
 
 namespace ErrorCodes
 {
+extern const int BAD_FUNCTION_SIGNATURE;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
@@ -66,6 +70,31 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
         if (!isColumnConst(*arg.column))
             return false;
     return true;
+}
+
+/// Whether any of the `Nullable` arguments actually holds a NULL among the first `input_rows_count`
+/// rows. Cheaper than building the combined null map of all arguments, and it is all that is needed
+/// to decide whether the null rows have to be filtered out before execution.
+bool anyArgumentHasNullRows(const ColumnsWithTypeAndName & args, size_t input_rows_count)
+{
+    for (const auto & arg : args)
+    {
+        if (!arg.type->isNullable())
+            continue;
+
+        if (isColumnConst(*arg.column))
+        {
+            if (arg.column->onlyNull())
+                return true;
+            continue;
+        }
+
+        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+        if (!memoryIsZero(null_map.data(), 0, input_rows_count))
+            return true;
+    }
+
+    return false;
 }
 
 /// If the single-dictionary fast path applies (exactly one full LowCardinality argument and every
@@ -136,6 +165,11 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
 
 }
 
+bool IExecutableFunction::isNullPropagating(const DataTypePtr & result_type) const
+{
+    return useDefaultImplementationForNulls() && isNullableOrLowCardinalityNullable(result_type);
+}
+
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -191,6 +225,82 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
 }
 
 
+namespace
+{
+
+/// `createBlockWithNestedColumns` only strips the null map, it does not touch the values under it, so
+/// the nested value of a null slot is whatever happened to be stored there. For a `Nullable(Enum)`
+/// that value is usually not a member of the type: both `INSERT ... VALUES (NULL)` and the padding of
+/// non-joined rows in a `LEFT JOIN` leave a raw 0 there, and 0 is a declared value only if the enum
+/// happens to define it. A function that reads the nested column of such an argument - `like`,
+/// `match`, anything that turns an `Enum` into its name - is then handed a code that does not exist
+/// and throws `UNKNOWN_ELEMENT_OF_ENUM` for a row whose result is NULL anyway.
+///
+/// Normalize the null slots to the default of the nested type, which for an `Enum` is a declared
+/// value. With `only_enums` the other argument types are left alone, which is what the paths that
+/// discard the values of null rows afterwards want; the path that has to produce `f(default(input))`
+/// for a null row (see below) passes false and normalizes everything.
+///
+/// `only_enums` is deliberately not "every type whose payload some function might reject". An `Enum`
+/// payload is outside the domain of its own type - no valid `Enum` column can hold it - so
+/// `createBlockWithNestedColumns` hands the function a malformed column, and installing the type's
+/// default repairs a type invariant. A `String` or a number under a null map, in contrast, is a well
+/// formed value of its type, and a function that rejects it - `match` handed an invalid regular
+/// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
+/// non-null row. Installing the type default there would only swap one arbitrary value for another,
+/// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
+/// even a `countBytesInFilter`. The fix for that family is to stop evaluating the discarded rows,
+/// which is what the short-circuit branch below already does when
+/// `short_circuit_function_evaluation_for_nulls_threshold` lets it;
+/// see https://github.com/ClickHouse/ClickHouse/issues/119614.
+void patchNullSlots(
+    const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enums)
+{
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        if (!args[i].type->isNullable())
+            continue;
+        if (only_enums && !isEnum(removeNullable(args[i].type)))
+            continue;
+
+        const auto & nested_type = nested_args[i].type;
+
+        if (isColumnConst(*args[i].column))
+        {
+            if (args[i].column->onlyNull())
+                nested_args[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
+            continue;
+        }
+
+        const auto & null_map = assert_cast<const ColumnNullable &>(*args[i].column).getNullMapData();
+
+        bool has_any_null = false;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map[row])
+            {
+                has_any_null = true;
+                break;
+            }
+        }
+        if (!has_any_null)
+            continue;
+
+        auto patched = nested_type->createColumn();
+        patched->reserve(input_rows_count);
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            if (null_map[row])
+                nested_type->insertDefaultInto(*patched);
+            else
+                patched->insertFrom(*nested_args[i].column, row);
+        }
+        nested_args[i].column = std::move(patched);
+    }
+}
+
+}
+
 ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -217,6 +327,22 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
+        /// A `Nullable`-typed argument may still be wrapped in `ColumnReplicated` when the function
+        /// opted out of the default implementation for replicated columns (e.g. `arrayElement`).
+        for (const auto & arg : args)
+        {
+            if (arg.type->isNullable() && typeid_cast<const ColumnReplicated *>(arg.column.get()))
+            {
+                ColumnsWithTypeAndName materialized_args = args;
+                for (auto & materialized_arg : materialized_args)
+                {
+                    if (materialized_arg.type->isNullable())
+                        materialized_arg.column = materialized_arg.column->convertToFullColumnIfReplicated();
+                }
+                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run);
+            }
+        }
+
         const bool result_is_nullable = result_type->isNullable();
 
         if (!result_is_nullable)
@@ -229,50 +355,23 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             /// produces a Nullable column whose nested data still contains `'x'`, so running the
             /// function on it would return `f('x')` instead of the desired `f('')`.
             ColumnsWithTypeAndName patched_columns = createBlockWithNestedColumns(args);
+            patchNullSlots(args, patched_columns, input_rows_count, /*only_enums=*/ false);
             auto temporary_result_type = removeNullable(result_type);
-
-            for (size_t i = 0; i < args.size(); ++i)
-            {
-                if (!args[i].type->isNullable())
-                    continue;
-                const auto & nested_type = patched_columns[i].type;
-
-                if (isColumnConst(*args[i].column))
-                {
-                    if (args[i].column->onlyNull())
-                        patched_columns[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
-                    continue;
-                }
-
-                const auto & nullable = assert_cast<const ColumnNullable &>(*args[i].column);
-                const auto & null_map = nullable.getNullMapData();
-
-                bool has_any_null = false;
-                for (size_t r = 0; r < input_rows_count; ++r)
-                {
-                    if (null_map[r])
-                    {
-                        has_any_null = true;
-                        break;
-                    }
-                }
-                if (!has_any_null)
-                    continue;
-
-                auto patched = nested_type->createColumn();
-                patched->reserve(input_rows_count);
-                for (size_t r = 0; r < input_rows_count; ++r)
-                {
-                    if (null_map[r])
-                        patched->insertDefault();
-                    else
-                        patched->insertFrom(*patched_columns[i].column, r);
-                }
-                patched_columns[i].column = std::move(patched);
-            }
 
             return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
         }
+
+        /// A function that declines execution on default arguments must not be executed on the rows
+        /// behind a NULL either. `createBlockWithNestedColumns` does not overwrite those rows, so the
+        /// nested column keeps whatever it holds there - for a column that was built as `Nullable`
+        /// from the start that is the type's default value - and a function that throws on it fails
+        /// on entirely valid data, e.g. `parseDateTime` over a `Nullable(String)` containing a NULL.
+        /// The result for those rows is masked out by [[wrapInNullable]] anyway, so filter them out
+        /// before executing instead. This is only needed when the input really contains a NULL: an
+        /// argument that is `Nullable` but has no NULL in it keeps every regular path, including the
+        /// numeric fast path below.
+        const bool must_filter_null_rows
+            = !canBeExecutedOnDefaultArguments() && anyArgumentHasNullRows(args, input_rows_count);
 
         bool all_columns_constant = true;
         bool all_numeric_types = true;
@@ -302,11 +401,12 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumn();
         }
 
-        if (all_columns_constant || all_numeric_types)
+        if (all_columns_constant || (all_numeric_types && !must_filter_null_rows))
         {
             /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
             /// That's why we add a fast path for this case.
             ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+            patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
             auto temporary_result_type = removeNullable(result_type);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
@@ -349,10 +449,13 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         }
 
         double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
-        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && result_null_map
-            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
+        bool should_short_circuit = result_null_map && rows_with_nulls > 0
+            && (must_filter_null_rows
+                || (short_circuit_function_evaluation_for_nulls
+                    && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold));
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
+        patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
         auto temporary_result_type = removeNullable(result_type);
 
         if (!should_short_circuit)
@@ -463,6 +566,18 @@ IExecutableFunction::IExecutableFunction()
     }
 }
 
+bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const
+{
+    if (!isDeterministicInScopeOfQuery())
+        return false;
+
+    /// A lambda argument is as deterministic as its body: `arrayMap(i -> rand64(i), ...)` must run per output row.
+    return std::ranges::all_of(arguments, [](const auto & argument)
+    {
+        return allColumnFunctions(*argument.column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+    });
+}
+
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -483,8 +598,10 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             /// fast path (and resizes the constants to the dictionary size); it returns nullptr and
             /// leaves the arguments intact when the assumption no longer holds, and we fall back to
             /// full materialization.
-            ColumnPtr indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
-                columns_without_low_cardinality, can_be_executed_on_default_arguments);
+            ColumnPtr indexes;
+            if (isDeterministicInScopeOfQuery())
+                indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+                    columns_without_low_cardinality, can_be_executed_on_default_arguments);
 
             /// Fast path: the row count comes from the (resized) nested dictionary column. Fallback:
             /// the constants keep their original row counts, so it is the original input_rows_count,
@@ -598,7 +715,7 @@ ColumnPtr IExecutableFunction::execute(
         }
 
         auto arguments_without_replicated = arguments;
-        if (has_full_columns || !common_replicated_indexes)
+        if (has_full_columns || !common_replicated_indexes || !isCallDeterministicInScopeOfQuery(arguments))
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
@@ -675,7 +792,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0)
+        if (num_sparse_columns == 1 && num_full_columns == 0 && isCallDeterministicInScopeOfQuery(arguments))
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;
@@ -755,11 +872,21 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
 
     if (number_of_arguments != expected_number_of_arguments)
         throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            getWrongNumberOfArgumentsErrorCode(number_of_arguments),
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
             number_of_arguments,
             expected_number_of_arguments);
+}
+
+int IFunctionOverloadResolver::getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const
+{
+    return ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+int IFunction::getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const
+{
+    return ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -774,8 +901,12 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
         for (ColumnWithTypeAndName & arg : args_without_low_cardinality)
         {
-            bool is_const = arg.column && isColumnConst(*arg.column);
-            if (is_const)
+            /// A Set-typed argument always becomes a constant column in the plan (`ColumnSet` is
+            /// always wrapped in `ColumnConst`); during analysis the set from a subquery is not
+            /// built yet and has no column, so without this it would count as a full column and
+            /// the same expression would get a different type than with a literal set.
+            bool is_const = (arg.column && isColumnConst(*arg.column)) || WhichDataType(arg.type).isSet();
+            if (is_const && arg.column)
                 arg.column = arg.column->convertToFullColumnIfLowCardinality();
 
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
@@ -829,12 +960,19 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     {
         checkNumberOfArguments(arguments.size());
 
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i != arguments.size(); ++i)
         {
-            if (isVariant(arg.type))
+            const auto & type = arguments[i].type;
+            if (isVariant(type))
             {
+                /// A custom-named `Variant` (e.g. `Geometry`) can be excluded separately, so a function
+                /// handles it directly and keeps the custom name, while ordinary `Variant` inputs still go
+                /// through the adaptor. Keep scanning: another argument may still need the adaptor.
+                if (type->hasCustomName() && !useDefaultImplementationForVariantWithCustomName(type))
+                    continue;
+
                 ColumnsWithTypeAndName args_copy = arguments;
-                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
+                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy), i);
                 break;
             }
         }
@@ -904,9 +1042,128 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "buildImpl is not implemented for {}", getName());
 }
 
+namespace
+{
+    /// Parse and cache function signatures globally.
+    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments, bool types_only = false, bool propagate_nullability = false, int wrong_arity_error_code = ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH)
+    {
+        static std::mutex cache_mutex;
+        static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+        /// Parsing *and* applying a signature resolves its internal type and aggregate-function
+        /// names through `DataTypeFactory` / `AggregateFunctionFactory`, which record them in
+        /// `query_log.used_data_type_families` / `used_aggregate_functions` via
+        /// `Context::addQueryFactoriesInfo`. These names come from the signature text, not from the
+        /// user's query (e.g. parsing resolves a literal `UInt8`, and evaluating `bitmapBuild`'s
+        /// return type resolves `AggregateFunction('groupBitmap', T)`), so suppress factory-usage
+        /// tracking for the whole parse + check — otherwise analyzing a converted function pollutes
+        /// the user-facing factory attribution (`01656_test_query_log_factories_info`). User-written
+        /// types and aggregates are resolved on other paths (CAST, DDL, the analyzer's aggregate
+        /// resolution) and keep being recorded.
+        Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
+
+        std::shared_ptr<FunctionSignature> sig;
+        {
+            std::lock_guard lock(cache_mutex);
+            auto it = cache.find(signature_str);
+            if (it == cache.end())
+            {
+                sig = std::make_shared<FunctionSignature>(signature_str);
+                cache.emplace(signature_str, sig);
+            }
+            else
+                sig = it->second;
+        }
+
+        /// See IFunction::signaturePropagatesNullability: apply the signature to the arguments with
+        /// the outer Nullable removed and re-wrap the result, instead of letting the signature match
+        /// Nullable literally.
+        if (propagate_nullability)
+        {
+            const NullPresence null_presence = getNullPresense(arguments);
+            if (null_presence.has_null_constant)
+                return makeNullable(std::make_shared<DataTypeNothing>());
+            if (null_presence.has_nullable)
+            {
+                const ColumnsWithTypeAndName nested_columns = createBlockWithNestedColumns(arguments);
+                return makeNullable(applyFunctionSignature(signature_str, function_name, nested_columns, types_only, /*propagate_nullability=*/false, wrong_arity_error_code));
+            }
+        }
+
+        std::string reason;
+        DataTypePtr result = sig->check(arguments, reason, types_only);
+        if (!result)
+        {
+            /// Surface the legacy arity code (`NUMBER_OF_ARGUMENTS_DOESNT_MATCH` by default,
+            /// or whatever the function's `getWrongNumberOfArgumentsErrorCode` selects) when every
+            /// alternative failed for arity reasons only. The DSL phrases arity
+            /// problems with one of three exact prefixes ("too few arguments...",
+            /// "too many arguments...", "number of arguments..."); type problems
+            /// never start with those words. So: if the reason contains any of
+            /// those phrases *and* nothing that looks like a type mismatch
+            /// (a matcher's "value provided as Nth argument ... has type X that is not Y" prefix),
+            /// we're confident this is an arity-only failure. This keeps the arity
+            /// diagnostics of a function unchanged after it adopts a declarative signature.
+            const bool mentions_arity =
+                reason.contains("too few arguments")
+                || reason.contains("too many arguments")
+                || reason.contains("number of arguments");
+            /// `has type ` and `must be of type ` are produced by the type-matcher
+            /// `ArgumentDescription` wrapper for every type-mismatch; arity-only
+            /// reasons never include them. `doesn't match` appears in the
+            /// outer alternatives wrapper (`Variant ... doesn't match because ...`)
+            /// even for pure-arity failures, so we cannot use it as the type-marker.
+            const bool mentions_type_mismatch =
+                reason.contains(" has type ")
+                || reason.contains("must be of type ");
+            /// `ArgumentDescription::match` produces "must be ..., but it is not constant"
+            /// when the only problem is that a `const` matcher position received a
+            /// non-constant column. Map that to the legacy `ILLEGAL_COLUMN` so existing
+            /// `serverError ILLEGAL_COLUMN` test annotations keep working.
+            const bool mentions_non_const = reason.contains("but it is not constant");
+
+            /// Authoritative arity signal: when the call has more or fewer arguments than
+            /// *any* alternative of the signature can accept, this is unambiguously an
+            /// arity error regardless of which per-alternative reason the matcher reported
+            /// (a too-many-arguments alternative and a type-mismatch alternative can both
+            /// appear in the combined reason for a multi-`OR` signature). The string
+            /// heuristic below still handles in-range arity problems the bounds can't see,
+            /// such as a parity requirement (`caseWithExpression`: `4 + n * 2`).
+            const bool argument_count_out_of_range = !sig->isArgumentCountInRange(arguments.size());
+
+            int code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
+            if (argument_count_out_of_range || (mentions_arity && !mentions_type_mismatch && !mentions_non_const))
+                code = wrong_arity_error_code;
+            else if (mentions_non_const && !mentions_type_mismatch)
+                code = ErrorCodes::ILLEGAL_COLUMN;
+
+            throw Exception(code,
+                "Arguments of function {} do not match its signature ({}): {}",
+                function_name, signature_str, reason);
+        }
+        return result;
+    }
+}
+
+DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    if (auto signature_str = getSignatureString(); !signature_str.empty())
+        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability(), getWrongNumberOfArgumentsErrorCode(arguments.size()));
+
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
+}
+
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+bool IFunction::isNullPropagating(const DataTypePtr & result_type) const
+{
+    return useDefaultImplementationForNulls() && isNullableOrLowCardinalityNullable(result_type);
 }
 
 IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
@@ -919,9 +1176,50 @@ FieldIntervalPtr IFunction::getPreimage(const IDataType & /*type*/, const Field 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
 }
 
-DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & /*arguments*/) const
+DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    /// Several call sites (e.g. EXISTS decorrelation, MergeTree text-index pruning that
+    /// constructs a synthetic `like` call) reach the function through the `DataTypes`
+    /// overload directly, without column-level information. Honor the declarative
+    /// signature here too — the `ColumnsWithTypeAndName` overload already does so —
+    /// so functions that only declare `getSignatureString` keep working on this path.
+    if (auto signature_str = getSignatureString(); !signature_str.empty())
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        try
+        {
+            return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true, signaturePropagatesNullability(), getWrongNumberOfArgumentsErrorCode(arguments.size()));
+        }
+        catch (const Exception & e)
+        {
+            /// A documentation-only signature can spell a result type the DSL cannot construct
+            /// from argument types alone — e.g. `(const String) -> Any` for `getSetting`, where
+            /// the result type is the dynamic type of the setting's value. On this column-less
+            /// path such a return-side `Any` is an uncaptured variable, and the signature engine
+            /// reports it as `BAD_FUNCTION_SIGNATURE`. The authoritative resolver of these
+            /// functions lives in their `ColumnsWithTypeAndName` override, so fall back to the
+            /// legacy behavior of this entry point instead of surfacing an internal error.
+            /// Genuine mismatches of the arguments against the signature are thrown with
+            /// user-facing codes and propagate.
+            if (e.code() != ErrorCodes::BAD_FUNCTION_SIGNATURE)
+                throw;
+        }
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+DataTypePtr IFunction::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    if (auto signature_str = getSignatureString(); !signature_str.empty())
+        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability(), getWrongNumberOfArgumentsErrorCode(arguments.size()));
+
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
 }
 
 void IFunction::getLambdaArgumentTypes(DataTypes & /*arguments*/) const

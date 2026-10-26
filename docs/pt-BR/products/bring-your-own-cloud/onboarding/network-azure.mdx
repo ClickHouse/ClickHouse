@@ -1,0 +1,198 @@
+---
+title: 'Configuração de rede privada do BYOC no Azure'
+slug: /cloud/reference/byoc/onboarding/network-azure
+sidebarTitle: 'Configuração de rede privada no Azure'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'vnet peering', 'private link']
+description: 'Configure o emparelhamento de VNet ou o Private Link para BYOC no Azure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O ClickHouse BYOC no Azure oferece duas opções de conectividade privada: [emparelhamento de rede virtual do Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) e [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview). Ambas mantêm o tráfego na infraestrutura de backbone do Azure, de modo que ele nunca trafega pela internet pública.
+
+<div id="common-prerequisites">
+  ## Pré-requisitos
+</div>
+
+Etapas comuns necessárias para o emparelhamento de VNet e o Private Link.
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### Habilite o balanceador de carga privado para o ClickHouse BYOC
+</div>
+
+No console do ClickHouse Cloud, habilite o **balanceador de carga privado** para sua infraestrutura BYOC. Ambas as opções de conexão passam por esse balanceador de carga interno; portanto, nenhuma funciona até que ele seja habilitado.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC: habilitar balanceador de carga privado" border />
+
+Anote o **nome falado** da infraestrutura. O ClickHouse implanta sua infraestrutura BYOC em sua própria assinatura do Azure, em um grupo de recursos gerenciado chamado `clickhouse-cloud-<spoken-name>-default`. Esse grupo de recursos é onde você encontrará a VNet do BYOC nas etapas abaixo.
+
+<div id="azure-vnet-peering">
+  ## Configurar o emparelhamento de VNet
+</div>
+
+Antes de começar, familiarize-se com o [emparelhamento de Rede Virtual do Azure](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) e seus [requisitos e restrições](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#requirements-and-constraints). O ClickHouse BYOC usa um balanceador de carga privado para permitir a conectividade de rede com os serviços do ClickHouse por meio do emparelhamento.
+
+<Note>
+  As etapas de exemplo se aplicam a um cenário simples: uma das suas VNets emparelhada diretamente com a VNet do BYOC. Para cenários avançados, como topologias hub-and-spoke ou conectividade on-premises, são necessários alguns ajustes — consulte [Limitações](#vnet-peering-limitations).
+</Note>
+
+<div id="vnet-peering-prerequisites">
+  ### Pré-requisitos adicionais para emparelhamento
+</div>
+
+**Espaços de endereços não sobrepostos.** Redes virtuais emparelhadas não podem ter intervalos de endereços IP sobrepostos. Compare o espaço de endereços da sua VNet com o da VNet BYOC, exibido na página **Overview** da VNet BYOC no portal do Azure. Se houver sobreposição, use Private Link.
+
+**Permissões.** A criação de um emparelhamento exige as permissões `Microsoft.Network/virtualNetworks/virtualNetworkPeerings/write` e `Microsoft.Network/virtualNetworks/peer/action` em *ambas* as redes virtuais. A função interna **Colaborador de Rede** as inclui. Consulte as [permissões de emparelhamento de rede virtual](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#permissions).
+
+<Steps>
+  <Step title="Crie o emparelhamento a partir da rede virtual BYOC" id="step-1-create-peering-from-byoc-vnet">
+    1. Entre no [portal do Azure](https://portal.azure.com) e alterne para a **assinatura BYOC**.
+    2. Pesquise por **Redes virtuais** e selecione a VNet do BYOC, localizada no grupo de recursos `clickhouse-cloud-<spoken-name>-default`.
+    3. Em **Configurações**, selecione **Emparelhamentos** e depois **+ Adicionar**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC Criar emparelhamento de VNet" border />
+
+    4. Preencha as duas partes do emparelhamento:
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC configurar emparelhamento de VNet" border />
+
+    5. Clique em **Adicionar**.
+  </Step>
+
+  <Step title="Crie o emparelhamento inverso, caso ele não tenha sido criado automaticamente" id="step-2-create-reverse-peering">
+    O emparelhamento do Azure consiste em duas partes, uma em cada direção, e o tráfego só flui quando ambas existem. Se o portal criou as duas partes na etapa anterior, pule esta etapa.
+
+    Se você criou apenas a parte do BYOC — porque sua VNet está em outra assinatura ou tenant — o estado dela será **Iniciado**. Crie a parte correspondente na sua VNet:
+
+    1. Alterne para a assinatura proprietária da sua VNet e entre com uma conta que tenha a função **Colaborador de Rede** nela.
+    2. Selecione sua VNet e depois **Emparelhamentos** → **+ Adicionar**.
+    3. Selecione **Eu sei a ID do meu recurso**, cole o **ID de recurso da VNet do BYOC** e escolha o **Diretório** proprietário da assinatura BYOC. Se solicitado, selecione **Autenticar**.
+    4. Selecione **Adicionar**.
+  </Step>
+
+  <Step title="Verifique se as duas partes estão conectadas" id="step-3-verify-peering">
+    Abra **Emparelhamentos** em qualquer uma das redes virtuais. O **Status do emparelhamento** deve mostrar **Conectado** nos dois lados. Uma parte que permanece como **Iniciada** indica que a correspondente está ausente; uma parte que mostra **Desconectado** indica que a correspondente foi excluída.
+
+    Não é necessário alterar a tabela de rotas. O Azure instala automaticamente rotas do sistema para o espaço de endereços das redes em emparelhamento nos dois lados. Você pode confirmar isso em qualquer interface de rede da sua VNet, em **Rotas efetivas**, onde o espaço de endereços do BYOC aparece com o tipo de próximo salto **Emparelhamento de VNet**.
+
+    <Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC Verificar emparelhamento de VNet" border />
+  </Step>
+
+  <Step title="Permita o acesso da VNet em emparelhamento pelo grupo de segurança de rede" id="step-4-allow-address-space-through-nsg">
+    As sub-redes do BYOC são protegidas por um [grupo de segurança de rede](https://learn.microsoft.com/azure/virtual-network/network-security-groups-overview) gerenciado pelo ClickHouse, que, por padrão, bloqueia o tráfego interno da VNet. Como a [tag de serviço `VirtualNetwork`](https://learn.microsoft.com/azure/virtual-network/service-tags-overview#available-service-tags) abrange o espaço de endereços das VNets em emparelhamento, o tráfego que chega pelo emparelhamento é descartado até que seja adicionada uma regra de entrada permitindo esse tráfego.
+
+    Entre em contato com o suporte do ClickHouse para solicitar a adição de regras de entrada que incluam os intervalos CIDR da sua VNet em emparelhamento. Sem esta etapa, o emparelhamento aparece como **Conectado**, mas as conexões expiram por tempo limite.
+  </Step>
+
+  <Step title="Acesse o serviço ClickHouse via emparelhamento" id="step-5-access-ch-service-via-peering">
+    Para acessar o ClickHouse de forma privada, um balanceador de carga privado e um endpoint são provisionados para proporcionar conectividade segura a partir da sua VNet em emparelhamento. O endpoint privado segue o formato do endpoint público, com o sufixo `-private`. Por exemplo:
+
+    * **Endpoint público**: `h5ju65kv87.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+    * **Endpoint privado**: `h5ju65kv87-private.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+  </Step>
+</Steps>
+
+<div id="vnet-peering-limitations">
+  ### Limitações
+</div>
+
+**O emparelhamento não é transitivo.** Somente a VNet emparelhada diretamente com a VNet do BYOC pode acessar seus serviços. Clientes em uma VNet spoke atrás de um hub ou clientes on-premises que chegam via ExpressRoute ou gateway de VPN não são abrangidos por um único emparelhamento. Essas topologias exigem configurações adicionais, como **Permitir tráfego encaminhado** e trânsito de gateway — consulte [gateways e conectividade on-premises](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview#gateways-and-on-premises-connectivity) — ou use o Private Link.
+
+**O emparelhamento entre regiões funciona, mas custa mais.** Um emparelhamento entre VNets em regiões diferentes é um emparelhamento global. Ele acessa o ClickHouse normalmente — o balanceador de carga privado do BYOC é um balanceador de carga interno SKU Standard, e a restrição do Azure para acessar front-ends de balanceadores de carga por meio de um emparelhamento global se aplica apenas a balanceadores de carga SKU Basic. O custo adicional é a latência de ida e volta e a [cobrança por transferência de dados entre regiões](https://azure.microsoft.com/pricing/details/virtual-network). Prefira um emparelhamento na mesma região para workloads sensíveis à latência. Se um emparelhamento entre regiões mostrar **Conectado**, mas as conexões continuarem falhando, a região não é a causa — o motivo mais comum é a ausência de uma regra de grupo de segurança de rede de entrada para seu espaço de endereços. Nesse caso, entre em contato com o suporte do ClickHouse.
+
+**Alterações no espaço de endereços exigem uma ressincronização.** Se você redimensionar o espaço de endereços da sua VNet após criar o emparelhamento, [sincronize o emparelhamento](https://learn.microsoft.com/azure/virtual-network/update-virtual-network-peering-address-space) para que os novos intervalos sejam anunciados e entre em contato com o suporte do ClickHouse para estender a regra de grupo de segurança de rede de entrada de modo a abrangê-los.
+
+**O tráfego de emparelhamento é cobrado.** O Azure cobra pelo tráfego de entrada e saída em um emparelhamento. Consulte [Preços de rede virtual](https://azure.microsoft.com/pricing/details/virtual-network).
+
+<div id="delete-vnet-peering">
+  ### Excluir o emparelhamento
+</div>
+
+Exclua o emparelhamento de qualquer um dos lados. A exclusão de uma das partes desconecta o vínculo e deixa a outra no estado **Desconectado**. Portanto, exclua ambas as partes para concluir a limpeza. Consulte [excluir um emparelhamento](https://learn.microsoft.com/azure/virtual-network/virtual-network-manage-peering#delete-a-peering).
+
+<div id="setup-privatelink">
+  ## Configure o Private Link
+</div>
+
+O Azure Private Link oferece uma conexão segura e privada com seus serviços ClickHouse BYOC. Todo o tráfego permanece na rede Azure, garantindo que nunca transite pela internet pública.
+
+<Steps>
+  <Step title="Habilite o Private Link no console do ClickHouse" id="step-1-enable-private-link">
+    <Note>
+      Certifique-se de que o **balanceador de carga privado** esteja ativado como pré-requisito.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="Ativar o PrivateLink do BYOC" border />
+  </Step>
+
+  <Step title={<>Obtenha o <code>Service name</code> do endpoint</>} id="step-2-obtain-endpoint-service-name">
+    1. No console do ClickHouse Cloud, acesse a página Settings do serviço ao qual você deseja se conectar via Private Link.
+    2. Clique em &quot;Set up private endpoint&quot;.
+    3. No flyout exibido, copie os valores de `Service name` (o alias do serviço Private Link) e `DNS name` — você os usará nas próximas etapas. (Pode levar algum tempo para que os valores sejam gerados após a ativação do Private Link.)
+       <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="Endpoints privados" border />
+  </Step>
+
+  <Step title="Crie um endpoint privado na sua rede" id="step-3-create-endpoint">
+    1. Abra seu próprio **Azure Portal** (ou seja, a assinatura do Azure em que sua aplicação cliente está) → **Network Foundation** → **Private endpoints** → **Create**.
+    2. Na aba **Basics**, escolha a assinatura, o grupo de recursos, o nome e a região do endpoint privado. A região deve ser a mesma da VNet da qual sua aplicação cliente se conecta.
+       <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Criar endpoint privado - Básico" border />
+    3. Na aba **Resource**, selecione **Connect to an Azure resource by resource ID or alias** e informe o `Service name` obtido na etapa anterior.
+       <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Seleção de recurso do endpoint privado" border />
+    4. Na aba **Virtual Network**, escolha a rede virtual e a sub-rede em que o endpoint privado será criado. Opcionalmente, associe um grupo de segurança de aplicativos para filtrar o tráfego destinado ao endpoint privado.
+       <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Seleção de rede virtual do endpoint privado" border />
+    5. Continue pelas abas restantes e clique em **Create**. O **Connection status** do endpoint privado criado permanecerá como **Pending** até que você adicione o `Resource ID` dele à allow list do serviço ClickHouse nas próximas etapas.
+    6. Abra a interface de rede associada ao endpoint privado e copie o **Private IPv4 address** — você o usará na etapa de configuração do DNS.
+       <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Endereço IP do endpoint privado" border />
+  </Step>
+
+  <Step title={<>Adicione o <code>Resource ID</code> do Private Endpoint à lista de permissões do serviço ClickHouse</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    Para obter o Resource ID do endpoint privado, abra no Azure Portal o endpoint privado criado anteriormente, clique em **JSON View** e copie o campo `id` de nível superior (o **Resource ID** exibido na parte superior da visualização, no formato `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). Não use os campos `id` aninhados no objeto `properties`:
+
+    <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Resource ID do Private Endpoint" border />
+
+    1. No ClickHouse Cloud console, acesse a página Settings do serviço ao qual deseja se conectar via Private Link.
+    2. Clique em &quot;Configurar endpoint privado&quot;.
+    3. No flyout aberto, insira o `Resource ID` obtido acima no campo `Endpoint ID` e, opcionalmente, adicione uma descrição.
+    4. Clique em &quot;Criar endpoint&quot;.
+
+    <Note>
+      Para permitir o acesso de uma conexão Private Link existente, use o menu suspenso de endpoints existentes.
+      O menu suspenso exibirá as conexões Private Link existentes com serviços na mesma infraestrutura.
+    </Note>
+
+    <Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="Filtro de Private Endpoints" border />
+
+    <Note>
+      Não é necessária aprovação manual no Azure Portal — assim que o `Resource ID` for adicionado à lista de permissões, a conexão do endpoint será aprovada automaticamente, e seu `LinkID` será adicionado automaticamente à `AuthorizationPolicy` do Istio para o serviço ClickHouse. O **Status da conexão** do endpoint privado na sua assinatura será alterado para **Aprovado**.
+    </Note>
+  </Step>
+
+  <Step title="Defina o DNS privado do endpoint" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      Há várias formas de configurar o DNS. Configure-o de acordo com seu caso de uso específico.
+    </Note>
+
+    Você precisa apontar todos os subdomínios (curinga) do &quot;DNS name&quot; (tudo o que vem após o ID do serviço, por exemplo, `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`) para o endereço IP do endpoint privado. Isso garante que os serviços/componentes na sua VNet possam resolvê-lo corretamente. Uma configuração típica com o DNS Privado do Azure:
+
+    1. [Crie uma zona DNS Privado](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal) com o nome do &quot;DNS name&quot; sem o ID de serviço inicial, por exemplo, `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`.
+    2. Na zona, crie um conjunto de registros curinga: em **Nome**, informe `*` e, em **Endereço IP**, insira o endereço IP do endpoint privado copiado anteriormente.
+    3. [Vincule a zona DNS Privado à sua rede virtual](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal#link-the-virtual-network) para que os clientes na VNet possam resolver a zona.
+
+    Verifique a configuração de DNS em um host dentro da VNet — o &quot;DNS name&quot; deve ser resolvido para o IP do endpoint privado:
+
+    ```bash
+    nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
+    ```
+  </Step>
+
+  <Step title="Acesse uma instância por meio do Private Link" id="step-6-connect-via-privatelink">
+    1. No console do ClickHouse Cloud, acesse a página Settings do serviço.
+    2. Clique em &quot;Configurar endpoint privado&quot;.
+    3. No flyout aberto, copie o `DNS name`.
+       <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="Nome DNS do Private Endpoint" border />
+       <Note>
+         O acesso aos serviços do ClickHouse via Private Link é controlado pela **Istio Authorization Policy** no nível do serviço, gerenciada pelo ClickHouse em sua infraestrutura BYOC.
+       </Note>
+  </Step>
+</Steps>

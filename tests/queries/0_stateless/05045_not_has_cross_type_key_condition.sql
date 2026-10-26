@@ -1,0 +1,91 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
+SET explain_query_plan_default = 'legacy';
+SET optimize_rewrite_has_to_in = 0;
+
+-- { echo }
+
+-- `has` compares the array element with the key value as raw `Field`s, while the set index casts
+-- the element to the key type. A `DateTime` stores seconds and a `Date` stores days, so
+-- `has([toDateTime(...)], date_key)` is false at runtime, while the cast maps the element onto the
+-- matching `Date`. No set atom must be built, or `notHas` would prune the day the element names.
+DROP TABLE IF EXISTS test_not_has_date;
+CREATE TABLE test_not_has_date (d Date) ENGINE = MergeTree
+ORDER BY d
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_date VALUES ('2026-01-09'), ('2026-01-10'), ('2026-01-11');
+
+SELECT count() FROM test_not_has_date WHERE notHas([toDateTime('2026-01-10 12:34:56', 'UTC')], d);
+SELECT count() FROM test_not_has_date WHERE notHas([toDateTime('2026-01-10 12:34:56', 'UTC')], d) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_not_has_date WHERE has([toDateTime('2026-01-10 12:34:56', 'UTC')], d);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_date WHERE notHas([toDateTime('2026-01-10 12:34:56', 'UTC')], d)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- The same element carried by a `Dynamic` array reaches the rule through the types the constant
+-- column actually holds, so it is declined as well.
+SELECT count() FROM test_not_has_date WHERE notHas(CAST([toDateTime('2026-01-10 12:34:56', 'UTC')], 'Array(Dynamic)'), d);
+SELECT count() FROM test_not_has_date WHERE notHas(CAST([toDateTime('2026-01-10 12:34:56', 'UTC')], 'Array(Dynamic)'), d) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_date WHERE notHas(CAST([toDateTime('2026-01-10 12:34:56', 'UTC')], 'Array(Dynamic)'), d)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- An element of the exact key type keeps the exact set atom and prunes, both bare and inside
+-- `Dynamic`.
+SELECT count() FROM test_not_has_date WHERE notHas([toDate('2026-01-10')], d);
+SELECT count() FROM test_not_has_date WHERE notHas([toDate('2026-01-10')], d) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_date WHERE notHas([toDate('2026-01-10')], d)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+SELECT count() FROM test_not_has_date WHERE notHas(CAST([toDate('2026-01-10')], 'Array(Dynamic)'), d);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_date WHERE notHas(CAST([toDate('2026-01-10')], 'Array(Dynamic)'), d)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_date;
+
+-- `IPv4` has its own `Field` encoding distinct from `UInt32`: the raw comparison is not even
+-- defined and throws once the filter executes, while the cast would map the element onto the
+-- numerically equal key value. No set atom must be built from such a pair.
+DROP TABLE IF EXISTS test_not_has_uint32;
+CREATE TABLE test_not_has_uint32 (x UInt32) ENGINE = MergeTree
+ORDER BY x
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_uint32 VALUES (16909059), (16909060), (16909061);
+
+SELECT count() FROM test_not_has_uint32 WHERE notHas([toIPv4('1.2.3.4')], x); -- { serverError BAD_TYPE_OF_FIELD }
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_uint32 WHERE notHas([toIPv4('1.2.3.4')], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- The reverse pair is declined for the same reason.
+DROP TABLE IF EXISTS test_not_has_ipv4;
+CREATE TABLE test_not_has_ipv4 (ip IPv4) ENGINE = MergeTree
+ORDER BY ip
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_ipv4 VALUES ('1.2.3.3'), ('1.2.3.4'), ('1.2.3.5');
+
+SELECT count() FROM test_not_has_ipv4 WHERE notHas([toUInt32(16909060)], ip); -- { serverError BAD_TYPE_OF_FIELD }
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_ipv4 WHERE notHas([toUInt32(16909060)], ip)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- An `IPv4` element against an `IPv4` key keeps the exact set atom.
+SELECT count() FROM test_not_has_ipv4 WHERE notHas([toIPv4('1.2.3.4')], ip);
+SELECT count() FROM test_not_has_ipv4 WHERE notHas([toIPv4('1.2.3.4')], ip) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_ipv4 WHERE notHas([toIPv4('1.2.3.4')], ip)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_uint32;
+DROP TABLE test_not_has_ipv4;
+
+-- A `DateTime64` element next to a `DateTime` key happens to compare semantically at runtime (the
+-- `Field` carries the decimal scale), but the pair does not prove that a subsecond element and the
+-- cast agree, so the whitelist declines it: only the pruning is given up, the results stay equal.
+DROP TABLE IF EXISTS test_not_has_dt;
+CREATE TABLE test_not_has_dt (t DateTime('UTC')) ENGINE = MergeTree
+ORDER BY t
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_dt VALUES ('2026-01-10 12:34:55'), ('2026-01-10 12:34:56'), ('2026-01-10 12:34:57');
+
+SELECT count() FROM test_not_has_dt WHERE notHas([toDateTime64('2026-01-10 12:34:56', 3, 'UTC')], t);
+SELECT count() FROM test_not_has_dt WHERE notHas([toDateTime64('2026-01-10 12:34:56', 3, 'UTC')], t) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_dt WHERE notHas([toDateTime64('2026-01-10 12:34:56', 3, 'UTC')], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- An element of the exact key type keeps the exact set atom.
+SELECT count() FROM test_not_has_dt WHERE notHas([toDateTime('2026-01-10 12:34:56', 'UTC')], t);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_dt WHERE notHas([toDateTime('2026-01-10 12:34:56', 'UTC')], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_dt;

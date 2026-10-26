@@ -18,18 +18,18 @@ SUS="allow_suspicious_variant_types = 1"
 
 # Empty result with 128 alternatives: only the schema is written, but it must still be rejected.
 echo "--- empty Arrow, Variant(128): rejected ---"
-${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V128})') AS v FROM numbers(0) FORMAT Arrow SETTINGS output_format_arrow_use_native_writer = 1, ${SUS}" 2>&1 1>/dev/null | grep -oF "Native Arrow IPC writer does not support a Variant with 128 alternatives" | head -1
+${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V128})') AS v FROM numbers(0) FORMAT Arrow SETTINGS ${SUS}" 2>&1 1>/dev/null | grep -oF "Native Arrow IPC writer does not support a Variant with 128 alternatives" | head -1
 
 echo "--- empty ArrowStream, Variant(128): rejected ---"
-${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V128})') AS v FROM numbers(0) FORMAT ArrowStream SETTINGS output_format_arrow_use_native_writer = 1, ${SUS}" 2>&1 1>/dev/null | grep -oF "Native Arrow IPC writer does not support a Variant with 128 alternatives" | head -1
+${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V128})') AS v FROM numbers(0) FORMAT ArrowStream SETTINGS ${SUS}" 2>&1 1>/dev/null | grep -oF "Native Arrow IPC writer does not support a Variant with 128 alternatives" | head -1
 
 # Non-empty result with 128 alternatives: rejected at the encoder too.
 echo "--- non-empty Arrow, Variant(128): rejected ---"
-${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V128})') AS v FROM numbers(3) FORMAT Arrow SETTINGS output_format_arrow_use_native_writer = 1, ${SUS}" 2>&1 1>/dev/null | grep -oF "Native Arrow IPC writer does not support a Variant with 128 alternatives" | head -1
+${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V128})') AS v FROM numbers(3) FORMAT Arrow SETTINGS ${SUS}" 2>&1 1>/dev/null | grep -oF "Native Arrow IPC writer does not support a Variant with 128 alternatives" | head -1
 
 # 127 alternatives is the maximum and must be written successfully (boundary), for both empty and non-empty.
 echo "--- empty ArrowStream, Variant(127): accepted ---"
-${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V127})') AS v FROM numbers(0) FORMAT ArrowStream SETTINGS output_format_arrow_use_native_writer = 1, ${SUS}" > /dev/null 2>&1 && echo "OK" || echo "FAIL"
+${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V127})') AS v FROM numbers(0) FORMAT ArrowStream SETTINGS ${SUS}" > /dev/null 2>&1 && echo "OK" || echo "FAIL"
 
 echo "--- non-empty ArrowStream, Variant(127): accepted ---"
-${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V127})') AS v FROM numbers(3) FORMAT ArrowStream SETTINGS output_format_arrow_use_native_writer = 1, ${SUS}" > /dev/null 2>&1 && echo "OK" || echo "FAIL"
+${CLICKHOUSE_LOCAL} --query "SELECT CAST(NULL, 'Variant(${V127})') AS v FROM numbers(3) FORMAT ArrowStream SETTINGS ${SUS}" > /dev/null 2>&1 && echo "OK" || echo "FAIL"

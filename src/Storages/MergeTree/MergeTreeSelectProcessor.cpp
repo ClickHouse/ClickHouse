@@ -9,6 +9,7 @@
 #include <city.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PredicateStatisticsLog.h>
@@ -24,18 +25,30 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace
 {
+
+/// Identifies which replica a span belongs to: the callbacks of the initiator-local replica run
+/// on the initiator, so the host of the span alone is not enough.
+struct ReplicaSpanIdentity
+{
+    size_t replica_num = 0;
+    size_t replicas_count = 0;
+    String stream_id;
+};
 
 template <typename Func>
 struct TelemetryWrapper
 {
-    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_)
-        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_))
+    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_, ReplicaSpanIdentity identity_)
+        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_)), identity(std::move(identity_))
     {
     }
 
@@ -43,6 +56,13 @@ struct TelemetryWrapper
     auto operator()(Args &&... args)
     {
         DB::OpenTelemetry::SpanHolder span(span_name);
+        /// Attributes are built only for a traced query.
+        if (span.isTraceEnabled())
+        {
+            span.addAttribute("clickhouse.replica_num", identity.replica_num);
+            span.addAttribute("clickhouse.replicas_count", identity.replicas_count);
+            span.addAttributeIfNotEmpty("clickhouse.stream_id", identity.stream_id);
+        }
         DB::ProfileEventTimeIncrement<DB::Time::Microseconds> increment(event);
         return callback(std::forward<Args>(args)...);
     }
@@ -51,6 +71,7 @@ private:
     Func callback;
     ProfileEvents::Event event;
     std::string span_name;
+    ReplicaSpanIdentity identity;
 };
 
 }
@@ -85,18 +106,24 @@ ParallelReadingExtension::ParallelReadingExtension(
     , total_nodes_count(total_nodes_count_)
     , stream_id(std::move(stream_id_))
 {
+    ReplicaSpanIdentity identity{.replica_num = number_of_current_replica, .replicas_count = total_nodes_count, .stream_id = stream_id};
+
     all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
-        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
+        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement", identity};
 
     callback = TelemetryWrapper<MergeTreeReadTaskCallback>{
-        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
+        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest", std::move(identity)};
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
-    CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
+    CoordinationMode mode,
+    RangesInDataPartsDescription description,
+    size_t mark_segment_size,
+    size_t min_marks_per_request,
+    bool wants_analyzed_ranges) const
 {
     return all_callback(InitialAllRangesAnnouncement{
-        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
+        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id, wants_analyzed_ranges});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
@@ -124,17 +151,40 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     chassert(index_reader_pool);
 }
 
+void MergeTreeIndexBuildContext::addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges)
+{
+    auto & part_ranges = read_ranges.at(part_index).ranges;
+    if (parts_with_analyzed_ranges.insert(part_index).second)
+        part_ranges.clear();
+
+    part_ranges.insert(part_ranges.end(), ranges.begin(), ranges.end());
+    std::sort(part_ranges.begin(), part_ranges.end());
+
+    /// Merge adjacent ranges, as `optimizeRanges` in `RangesInPatchParts.cpp` does.
+    MarkRanges merged;
+    for (const auto & range : part_ranges)
+    {
+        if (!merged.empty() && merged.back().end >= range.begin)
+            merged.back().end = std::max(merged.back().end, range.end);
+        else
+            merged.push_back(range);
+    }
+    part_ranges = std::move(merged);
+}
+
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
-    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
-    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
+    const size_t part_index = task.getInfo().part_index_in_query;
+    const auto & skip_input = read_ranges.at(part_index);
+    auto it = projection_read_ranges.find(part_index);
     static RangesInDataParts empty_parts_ranges;
     const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
-    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
+    auto & remaining_marks = part_remaining_marks.at(part_index).value;
 
     auto storage_snapshot = task.getMainReader().getStorageSnapshot();
     const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
-    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
+        part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -143,9 +193,41 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
     if (part_last_task)
-        index_reader_pool->clear(task.getInfo().data_part);
+        index_reader_pool->clear(part_index);
 
     return index_read_result;
+}
+
+/// A mark that the primary key skips against the top-K threshold has all its rows beyond the threshold, so the
+/// `__topKFilter` would have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not
+/// match the PREWHERE either, and the query condition cache entry of the PREWHERE is salted with the top-K plan
+/// (see `MergeTreeSelectProcessor::read`), so it is only reused by the same plan over the same parts.
+static bool prewhereFiltersByTopKThreshold(const PrewhereInfoPtr & prewhere_info, const MergeTreeReaderSettings & reader_settings)
+{
+    if (!prewhere_info || !reader_settings.query_condition_cache_top_k_salt)
+        return false;
+
+    const ActionsDAG::Node * output = nullptr;
+    for (const auto * node : prewhere_info->prewhere_actions.getOutputs())
+    {
+        if (node->result_name == prewhere_info->prewhere_column_name)
+        {
+            output = node;
+            break;
+        }
+    }
+    if (!output || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+        return false;
+
+    auto is_top_k_filter = [](const ActionsDAG::Node * node)
+    {
+        return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter";
+    };
+    if (is_top_k_filter(output))
+        return true;
+    if (output->type != ActionsDAG::ActionType::FUNCTION || output->function_base->getName() != "and")
+        return false;
+    return std::ranges::any_of(output->children, is_top_k_filter);
 }
 
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
@@ -171,12 +253,88 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
           reader_settings_.force_short_circuit_execution,
+          reader_settings_.read_ahead_prewhere_columns,
           columns_))
     , reader_settings(reader_settings_)
+    , prewhere_filters_by_top_k_threshold(prewhereFiltersByTopKThreshold(prewhere_info, reader_settings))
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
+    for (const auto & step : prewhere_actions.steps)
+        if (step->actions)
+            set_spillables.add(step->actions->getActionsDAG());
+
+    /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
+    /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
+    /// that is non-deterministic only because of folded current-time constants (e.g.
+    /// `time >= now() - INTERVAL 10 DAY`) is cached under the hash of the deterministic condition
+    /// derived by rounding the constants onto a time grid (issue #115504). Since this is a write
+    /// side, the rounding must *strengthen* the condition: "PREWHERE matched no rows of this granule"
+    /// then implies "the derived condition matches no rows of this granule". The consult side in
+    /// MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache probes the weakened variant.
+    if (prewhere_info && reader_settings.use_query_condition_cache)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (VirtualColumnUtils::isDeterministic(output))
+                {
+                    prewhere_condition_for_query_condition_cache.emplace(
+                        queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
+                        prewhere_info->prewhere_actions.getNames()[0]);
+                    break;
+                }
+
+                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
+                /// granules it drops depend on the running threshold. They can still be
+                /// recorded: for a fixed plan and data the threshold only tightens, so a
+                /// granule with no surviving rows has no row that could have reached the
+                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
+                /// WHERE write path in `updateQueryConditionCache` and the consult in
+                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+                /// and post-PREWHERE predicate ever reuses it. The consult side salts every
+                /// non-deterministic PREWHERE of a TopK read, so do the same here, also for a
+                /// condition involving the current time. The latter never contains `__topKFilter`
+                /// (see `deriveDeterministicTimeCondition`), so its granule drops do not depend on
+                /// the running threshold.
+                const auto & top_k_salt = reader_settings.query_condition_cache_top_k_salt;
+                std::optional<std::pair<UInt64, String>> condition;
+                if (top_k_salt && VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+                {
+                    condition.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
+                }
+                else if (reader_settings.use_query_condition_cache_for_time_conditions)
+                {
+                    if (auto derived = deriveDeterministicTimeCondition(
+                            output,
+                            TimeConditionRounding::Strengthen,
+                            reader_settings.query_condition_cache_time_condition_grid_factor,
+                            time(nullptr)))
+                        condition.emplace(derived->hash, derived->condition);
+                }
+
+                if (condition && top_k_salt)
+                {
+                    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+                    /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
+                    /// `unsigned long long`).
+                    size_t condition_hash = queryConditionCacheHash(condition->first, reader_settings.query_condition_cache_settings_salt);
+                    boost::hash_combine(condition_hash, *top_k_salt);
+                    prewhere_condition_for_query_condition_cache.emplace(condition_hash, std::move(condition->second));
+                }
+                else if (condition)
+                {
+                    prewhere_condition_for_query_condition_cache.emplace(
+                        queryConditionCacheHash(condition->first, reader_settings.query_condition_cache_settings_salt),
+                        std::move(condition->second));
+                }
+                break;
+            }
+        }
+    }
+
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -193,6 +351,74 @@ String MergeTreeSelectProcessor::getName() const
     return fmt::format("MergeTreeSelect(pool: {}, algorithm: {})", pool->getName(), algorithm->getName());
 }
 
+/// Inserts the steps that read the virtual columns of indexes, each right before the first step that uses them,
+/// so that an index is read only for the rows that passed the preceding steps. Columns that no step uses are read last.
+/// Those must be separate steps, one per index, because index readers cannot read physical columns from table.
+static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & index_read_tasks, const ExpressionActionsSettings & actions_settings)
+{
+    if (index_read_tasks.empty())
+        return;
+
+    /// Virtual column of an index -> position of the first step that uses it.
+    /// Columns that no step uses are read after the last step.
+    std::unordered_map<String, size_t> first_step_using_column;
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+            first_step_using_column.emplace(column.name, steps.size());
+    }
+
+    for (size_t i = 0; i < steps.size(); ++i)
+    {
+        Names required_columns = steps[i]->actions
+            ? steps[i]->actions->getActionsDAG().getRequiredColumnsNames()
+            : Names{steps[i]->filter_column_name};
+
+        for (const auto & name : required_columns)
+        {
+            if (auto it = first_step_using_column.find(name); it != first_step_using_column.end())
+                it->second = std::min(it->second, i);
+        }
+    }
+
+    /// Position of the first step that uses the columns -> columns to read, one element per index read task.
+    std::vector<std::vector<NamesAndTypesList>> columns_to_read_by_step(steps.size() + 1, std::vector<NamesAndTypesList>(index_read_tasks.size()));
+
+    size_t task_idx = 0;
+    for (const auto & [_, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+        {
+            size_t first_step_pos = first_step_using_column.at(column.name);
+            columns_to_read_by_step[first_step_pos][task_idx].emplace_back(column.name, column.type);
+        }
+
+        ++task_idx;
+    }
+
+    PrewhereExprSteps result;
+
+    for (size_t i = 0; i <= steps.size(); ++i)
+    {
+        for (const auto & columns : columns_to_read_by_step[i])
+        {
+            if (columns.empty())
+                continue;
+
+            auto index_read_step = std::make_shared<PrewhereExprStep>();
+            index_read_step->type = PrewhereExprStep::None;
+            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(columns), actions_settings);
+            index_read_step->perform_alter_conversions = true;
+            result.push_back(std::move(index_read_step));
+        }
+
+        if (i < steps.size())
+            result.push_back(std::move(steps[i]));
+    }
+
+    steps = std::move(result);
+}
+
 PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
@@ -200,6 +426,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
     bool force_short_circuit_execution,
+    bool read_ahead_prewhere_columns,
     const ColumnsDescription * columns)
 {
     PrewhereExprInfo prewhere_actions;
@@ -221,19 +448,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
     }
 
-    /// Add steps for reading virtual columns for indexes.
-    /// Those must be separate steps, because index readers
-    /// cannot read physical columns from table.
-    for (const auto & [_, index_task] : index_read_tasks)
-    {
-        auto index_read_step = std::make_shared<PrewhereExprStep>();
-        index_read_step->type = PrewhereExprStep::None;
-        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.columns), actions_settings);
-        prewhere_actions.steps.emplace_back(std::move(index_read_step));
-    }
-
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_read_tasks)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -250,6 +466,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(prewhere_step)));
     }
 
+    addIndexReadSteps(prewhere_actions.steps, index_read_tasks, actions_settings);
     return prewhere_actions;
 }
 
@@ -263,6 +480,11 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
     auto res = task_algorithm.readFromTask(current_task);
 
+    /// Loaded after the PREWHERE of the block ran, so a block filtered without the rows equal to the threshold is never recorded.
+    const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
+    const bool record_in_query_condition_cache = reader_settings.use_query_condition_cache
+        && (!rows_equal_to_threshold_dropped || !rows_equal_to_threshold_dropped->load(std::memory_order_relaxed));
+
     if (res.row_count)
     {
         /// Reorder the columns according to result_header
@@ -275,12 +497,14 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
         }
 
         auto chunk = Chunk(ordered_columns, res.row_count);
-        const auto & data_part = current_task.getInfo().data_part;
+        const auto & data_part_info = current_task.getInfo().data_part_info;
 
         if (add_part_level)
-            chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
+            chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part_info->getPartInfo().level));
 
-        if (reader_settings.use_query_condition_cache)
+        /// QueryConditionCache is keyed by the storage UUID, which is only available from a
+        /// concrete part; borrowed parts (stateless worker) skip it.
+        if (record_in_query_condition_cache && data_part_info->getDataPart())
         {
             /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
@@ -289,23 +513,29 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             if (!current_task.appliesMutationsBeforePrewhere())
             {
                 String part_name
-                    = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
+                    = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
                 chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
-                    data_part->storage.getStorageID().uuid,
+                    /// QueryConditionCache is a coordinator feature; concrete part present here.
+                    data_part_info->getDataPart()->storage.getStorageID().uuid,
                     part_name,
-                    data_part->index_granularity->getMarksCount(),
-                    data_part->index_granularity->hasFinalMark(),
+                    data_part_info->getIndexGranularity().getMarksCount(),
+                    data_part_info->getIndexGranularity().hasFinalMark(),
                     res.read_mark_ranges));
             }
 
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty()
-                && !current_task.readersChainCanSkipMarksBeforePrewhere()
+            if (prewhere_info
+                && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                 && !current_task.appliesMutationsBeforePrewhere()
                 && !row_level_filter)
-                current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+            {
+                if (!res.unmatched_mark_ranges.empty())
+                    current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
+                if (!res.query_condition_cache_attributable_marks.empty())
+                    current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
+            }
         }
 
         return ChunkAndProgress{
@@ -322,11 +552,15 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
     /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
     /// PREWHERE predicate and read by a later query without that policy.
-    if (reader_settings.use_query_condition_cache && prewhere_info
-        && !current_task.readersChainCanSkipMarksBeforePrewhere()
+    if (record_in_query_condition_cache && prewhere_info
+        && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)
+    {
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
+        /// Not `read_mark_ranges`: the steps after the attribution boundary may be what emptied them.
+        current_task.addQueryConditionCacheAttributableMarks(res.query_condition_cache_attributable_marks);
+    }
 
     return {Chunk(), res.num_read_rows, res.num_read_bytes, false, std::move(res.read_mark_ranges)};
 }
@@ -345,8 +579,8 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     if (!virtual_row_conversions || read_mark_ranges.empty())
         return {};
 
-    const auto & data_part = current_task.getInfo().data_part;
-    const auto & index = data_part->getIndex();
+    const auto & data_part_info = current_task.getInfo().data_part_info;
+    const auto & index = data_part_info->getIndexPtr();
 
     /// Forward order: the source will next produce data starting at back().end.
     /// Reverse order: MergeTreeInReverseOrderSelectAlgorithm returns chunks in reverse.
@@ -381,7 +615,7 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
         empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
 
     Chunk chunk(std::move(empty_columns), 0);
-    auto part_level = data_part->info.level;
+    auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
 
     return {std::move(chunk), 0, 0, false, {}};
@@ -411,35 +645,39 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
                 /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
                 if (reader_settings.use_query_condition_cache && task && prewhere_info
-                    && !task->readersChainCanSkipMarksBeforePrewhere()
+                    && !task->readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                     && !task->appliesMutationsBeforePrewhere()
-                    && !row_level_filter)
+                    && !row_level_filter
+                    /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
+                    && task->getInfo().data_part_info->getDataPart())
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+                    const auto & data_part_info = task->getInfo().data_part_info;
+                    auto write_to_query_condition_cache = [&](UInt64 condition_hash, const String & condition, const MarkRanges & marks)
                     {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
+                        String part_name = data_part_info->isProjectionPart()
+                            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                            : data_part_info->getPartName();
+                        Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+                            /// QueryConditionCache is a coordinator feature; concrete part present here.
+                            data_part_info->getDataPart()->storage.getStorageID().uuid,
+                            part_name,
+                            condition_hash,
+                            condition,
+                            marks,
+                            data_part_info->getIndexGranularity().getMarksCount(),
+                            data_part_info->getIndexGranularity().hasFinalMark());
+                    };
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            auto data_part = task->getInfo().data_part;
+                    if (prewhere_condition_for_query_condition_cache)
+                        write_to_query_condition_cache(
+                            prewhere_condition_for_query_condition_cache->first,
+                            prewhere_condition_for_query_condition_cache->second,
+                            task->getPrewhereUnmatchedMarks());
 
-                            String part_name = data_part->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                : data_part->name;
-                            query_condition_cache->write(
-                                data_part->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount(),
-                                data_part->index_granularity->hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    /// An empty write would still create an entry.
+                    const auto & attribution = prewhere_info->query_condition_cache_attribution;
+                    if (attribution && !task->getQueryConditionCacheAttributableMarks().empty())
+                        write_to_query_condition_cache(attribution->key, attribution->condition, task->getQueryConditionCacheAttributableMarks());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());
@@ -448,9 +686,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task)
                 break;
 
-            if (storage_id.empty())
+            /// QueryConditionCache needs the concrete part's storage id; skip for borrowed parts.
+            if (storage_id.empty() && task->getInfo().data_part_info->getDataPart())
             {
-                storage_id = task->getInfo().data_part->storage.getStorageID();
+                storage_id = task->getInfo().data_part_info->getDataPart()->storage.getStorageID();
                 prewhere_step_offset = task->getInfo().mutation_steps.size();
             }
         }

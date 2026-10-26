@@ -26,7 +26,7 @@ With the infrastructure provided by cloud providers, EMQX Cloud serves dozens of
 
 * You're familiar with the [MQTT protocol](https://mqtt.org/), which is designed as an extremely lightweight publish/subscribe messaging transport protocol.
 * You're using EMQX or EMQX Cloud for real-time message processing engine, powering event streaming for IoT devices at massive scale.
-* You have prepared a Clickhouse Cloud instance to persist device data.
+* You have prepared a ClickHouse Cloud instance to persist device data.
 * We're using [MQTT X](https://mqttx.app/)  as an MQTT client testing tool to connect the deployment of EMQX Cloud to publish MQTT data. Or other methods connecting to the MQTT broker will do the job as well.
 
 ## Get your ClickHouse Cloud service {#get-your-clickhouse-cloudservice}
@@ -43,7 +43,7 @@ Then you need to save your username and password for future use.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_3.webp" size="sm" border alt="ClickHouse Cloud Credentials screen showing username and password" />
 
-After that, you will get a running Click house instance. Click "Connect" to get the instance connection address of Clickhouse Cloud.
+After that, you will get a running ClickHouse instance. Click "Connect" to get the instance connection address of ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="ClickHouse Cloud Running Instance dashboard with connection options" />
 
@@ -186,7 +186,7 @@ INSERT INTO temp_hum (client_id, timestamp, topic, temp, hum) VALUES ('${client_
 
 <Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_action.webp" size="md" border alt="EMQX Cloud Data Integration Rule Action Setup with SQL template" />
 
-This is a template for inserting data into Clickhouse, you can see the variables are used here.
+This is a template for inserting data into ClickHouse, you can see the variables are used here.
 
 ### View rules details {#view-rules-details}
 

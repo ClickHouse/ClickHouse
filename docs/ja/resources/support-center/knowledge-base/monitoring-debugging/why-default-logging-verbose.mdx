@@ -24,7 +24,7 @@ ClickHouse の開発者は、何か問題が起きたときに、`trace` によ�
   ## ログレベルを変更する
 </div>
 
-使用可能な各ログレベルについては、[こちら](/ja/reference/settings/server-settings/settings#logger)を参照してください。
+使用可能な各ログレベルについては、[こちら](/ja/reference/settings/server-settings/settings/other#logger)を参照してください。
 
 ログレベルを変更するには、ClickHouse server の設定ファイル (`/etc/clickhouse-server/config.xml`) を編集する必要があります。
 
@@ -33,9 +33,9 @@ ClickHouse の開発者は、何か問題が起きたときに、`trace` によ�
 ```
 <clickhouse>
     <logger>
-        {/* 使用可能なレベル [1]:
+        {/* Possible levels [1]:
 
-          - none (ログを無効にする)
+          - none (turns off logging)
           - fatal
           - critical
           - error
@@ -44,10 +44,10 @@ ClickHouse の開発者は、何か問題が起きたときに、`trace` によ�
           - information
           - debug
           - trace
-          - test (本番環境での使用不可)
+          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
         <level>trace</level>
-... 設定ファイルの残りの部分
+... Rest of the configuration file
 </clickhouse>
 ```

@@ -3,43 +3,83 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+
 namespace DB
 {
 
+class QueryStatus;
+
+/// Tracks AI-function quota usage for one query. A single instance is shared by every AI function
+/// call in the query context (owned by the query `Context`) and updated concurrently from the
+/// pipeline threads, so the counters are guarded by `mutex`. It is per query-execution context: a
+/// distributed query has one per shard/fragment (each makes its own `Context`), so the limits bound
+/// each server independently rather than the query globally.
+///
+/// The API-call limit is a hard cap within a context, while token limits are best effort (we only
+/// know the usage after the call returns).
+///
+/// `checkQuotas` and `recordApiCall` also throw once the query is killed or exceeds
+/// `max_execution_time`, so no new request is dispatched for it.
 class AIQuotaTracker
 {
 public:
     AIQuotaTracker(
         UInt64 max_input_tokens_, UInt64 max_output_tokens_,
-        UInt64 max_api_calls_, bool throw_on_quota_exceeded_)
+        UInt64 max_api_calls_, bool throw_on_quota_exceeded_,
+        std::weak_ptr<QueryStatus> query_status_)
         : max_input_tokens(max_input_tokens_)
         , max_output_tokens(max_output_tokens_)
         , max_api_calls(max_api_calls_)
         , throw_on_quota_exceeded(throw_on_quota_exceeded_)
+        , query_status(std::move(query_status_))
     {}
 
-    /// Check all quotas, return true if any quota is met or exceeded, false otherwise. Should be called before issuing API call.
+    /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
+    /// exceeded, false otherwise. Lets a caller skip building and submitting a request that
+    /// `recordApiCall` would refuse anyway. The API-call limit is enforced separately by `recordApiCall`.
     bool checkQuotas();
 
-    /// Count one outbound API call against the request quota. Should be called before each provider request
-    /// (including retries), so a misbehaving endpoint can't bypass `ai_function_max_api_calls_per_query`.
-    void recordAttempt();
+    /// Count one outbound API call against the request quota, only while under the limit. Should be
+    /// called before each provider request (including retries), so a misbehaving
+    /// endpoint can't bypass `ai_function_max_api_calls_per_query`. Returns true if the call is within
+    /// the limit (the caller may dispatch), false once the per-query API-call limit is reached or any
+    /// quota is already exhausted (so no new request starts after the token budget is known-spent);
+    /// throws when `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
+    bool recordApiCall();
 
-    /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
-    /// so this is kept separate from `recordAttempt` and called only after the response is parsed.
+    /// Record token usage reported by a response, including one whose body was rejected as malformed: the
+    /// provider billed for it either way. Kept separate from `recordApiCall`, which counts the request itself.
     void recordTokens(UInt64 in_tokens, UInt64 out_tokens);
 
+    /// Throws if the query was killed or exceeded its time limit.
+    void throwIfCancelled() const;
+
+    /// Whether the query was killed or exceeded its time limit. Does not throw.
+    bool isCancelled() const;
 
 private:
     const UInt64 max_input_tokens;
     const UInt64 max_output_tokens;
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
+    const std::weak_ptr<QueryStatus> query_status;
 
-    bool quota_exceeded = false;
-    UInt64 input_tokens = 0;
-    UInt64 output_tokens = 0;
-    UInt64 api_calls = 0;
+    /// Sticky: used to check for requests submitted by a cancelled query (may outlive its `QueryStatus`).
+    mutable std::atomic<bool> cancelled = false;
+
+    std::mutex mutex;
+    bool quota_exceeded TSA_GUARDED_BY(mutex) = false;
+    UInt64 input_tokens TSA_GUARDED_BY(mutex) = 0;
+    UInt64 output_tokens TSA_GUARDED_BY(mutex) = 0;
+    UInt64 api_calls TSA_GUARDED_BY(mutex) = 0;
+
+    /// The sticky-flag + token-limit check, assuming `mutex` is held. Sets the sticky flag (or throws,
+    /// per `throw_on_quota_exceeded`) when a token quota is met. Shared by `checkQuotas` and
+    /// `recordApiCall` so a call is never started once a quota is known-exhausted.
+    bool quotasExceededLocked() TSA_REQUIRES(mutex);
 };
 
 }

@@ -2,7 +2,6 @@
 
 #include <string_view>
 #include <unordered_set>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
@@ -197,33 +196,66 @@ private:
         }
 
         ParserCompoundIdentifier compound_identifier_parser;
+        ParserDataType type_parser;
         ASTPtr identifier;
-        if (!compound_identifier_parser.parse(pos, identifier, expected))
-            return false;
+        ASTPtr type;
 
-        /// some_parameter=N
-        if (pos->type == TokenType::Equals)
+        /// `path Type` with the first word as the path wins when it ends the argument, since a path may be named
+        /// `shared` (older servers wrote it unquoted) or `SHARED`, as in `shared DOUBLE PRECISION`; otherwise SHARED
+        /// is the keyword of `SHARED some.path Type`.
+        bool shared = false;
+        Pos begin = pos;
+        bool has_identifier = compound_identifier_parser.parse(pos, identifier, expected);
+        Pos after_identifier = pos;
+        bool has_type = has_identifier && type_parser.parse(pos, type, expected);
+        Pos after_type = pos;
+        bool plain_path = has_type && (pos->type == TokenType::Comma || pos->type == TokenType::ClosingRoundBracket);
+        if (!plain_path)
         {
-            ++pos;
-            ASTPtr number;
-            ParserNumber number_parser;
-            if (!number_parser.parse(pos, number, expected))
-                return false;
-
-            argument->parameter = makeASTOperator("equals", identifier, number);
-            argument->children.push_back(argument->parameter);
-            node = argument;
-            return true;
+            pos = begin;
+            ASTPtr shared_identifier;
+            ASTPtr shared_type;
+            if (ParserKeyword(Keyword::SHARED).ignore(pos) && compound_identifier_parser.parse(pos, shared_identifier, expected)
+                && type_parser.parse(pos, shared_type, expected))
+            {
+                shared = true;
+                identifier = std::move(shared_identifier);
+                type = std::move(shared_type);
+            }
         }
 
-        ParserDataType type_parser;
-        ASTPtr type;
-        if (!type_parser.parse(pos, type, expected))
-            return false;
+        if (!shared && !plain_path)
+        {
+            /// The first reading stands: parsing the type again from the same position would double the work of
+            /// every nesting level of a malformed type.
+            if (!has_identifier)
+                return false;
+            pos = after_identifier;
+
+            /// some_parameter=N
+            if (pos->type == TokenType::Equals)
+            {
+                ++pos;
+                ASTPtr number;
+                ParserNumber number_parser;
+                if (!number_parser.parse(pos, number, expected))
+                    return false;
+
+                argument->parameter = makeASTOperator("equals", identifier, number);
+                argument->children.push_back(argument->parameter);
+                node = argument;
+                return true;
+            }
+
+            if (!has_type)
+                return false;
+            pos = after_type;
+        }
 
         auto name_and_type = make_intrusive<ASTObjectTypedPathArgument>();
         name_and_type->path = getIdentifierName(identifier);
         name_and_type->type = type;
+        name_and_type->shared = shared;
         name_and_type->children.push_back(name_and_type->type);
         argument->path_with_type = name_and_type;
         argument->children.push_back(argument->path_with_type);
@@ -262,8 +294,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// column attribute rather than type name.
     {
         String n = type_name;
-        boost::to_upper(n);
-        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC")
+        toUpperASCII(n);
+        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC"
+            || n == "SETTINGS" || n == "STATISTICS")
         {
             expected.add(pos, "type name");
             return false;
@@ -329,6 +362,16 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!type_name_suffix.empty())
         type_name = type_name_upper + " " + type_name_suffix;
 
+    /// The SQL standard, PostgreSQL and Trino spell the composite types case-insensitively,
+    /// e.g. ARRAY(INTEGER), MAP(VARCHAR, BIGINT).
+    if (pos->type == TokenType::OpeningRoundBracket)
+    {
+        if (type_name_upper == "ARRAY")
+            type_name = "Array";
+        else if (type_name_upper == "MAP")
+            type_name = "Map";
+    }
+
     /// skip trailing comma in types, e.g. Tuple(Int, String,)
     if (pos->type == TokenType::Comma)
     {
@@ -364,9 +407,25 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Handle Tuple types specially - parse directly into ASTTupleDataType
     /// to avoid creating ASTNameTypePair nodes for each named element.
-    if (type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket)
+    ///
+    /// `Tuple()` is the one form this fast path rejects and the generic argument parser below
+    /// accepts, so detect an empty argument list up front and leave it to the generic parser. For
+    /// every other argument list this fast path is authoritative: the generic parser applies exactly
+    /// the same element parsers (`ParserNameTypePair` is `ParserIdentifier` followed by
+    /// `ParserDataType`), so it stops at the same token and fails the same way. Falling through on
+    /// failure used to parse the argument list a second time, which doubled the work at every
+    /// nesting level - a malformed `Tuple(Tuple(...))` of depth N cost 2^N and exhausted
+    /// `max_parser_backtracks` instead of reporting a syntax error.
+    bool use_tuple_fast_path = type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket;
+    if (use_tuple_fast_path)
     {
-        auto saved_pos = pos;
+        auto after_bracket = pos;
+        ++after_bracket;
+        use_tuple_fast_path = after_bracket->type != TokenType::ClosingRoundBracket;
+    }
+
+    if (use_tuple_fast_path)
+    {
         ++pos;
 
         auto tuple_node = make_intrusive<ASTTupleDataType>();
@@ -439,8 +498,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         }
 
-        /// Fall back to generic parser
-        pos = saved_pos;
+        return false;
     }
 
     auto data_type_node = make_intrusive<ASTDataType>();
@@ -484,7 +542,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             DynamicArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (boost::to_lower_copy(type_name) == "json")
+        else if (equalsCaseInsensitive(type_name, "json"))
         {
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);

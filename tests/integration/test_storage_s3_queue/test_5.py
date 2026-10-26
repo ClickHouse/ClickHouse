@@ -17,7 +17,7 @@ from helpers.s3_queue_common import (
 from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +66,7 @@ def started_cluster():
                 "configs/s3queue_log.xml",
                 "configs/remote_servers.xml",
                 "configs/disable_streaming.xml",
+                "configs/plain_rewritable_disk.xml",
             ],
             user_configs=[
                 "configs/users.xml",
@@ -247,6 +248,92 @@ def test_filtering_files(started_cluster, mode):
     ) or node1.contains_in_log(
         f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
     )
+
+
+@pytest.mark.parametrize("mode", ["exclusive", "unordered"])
+def test_filtering_files_multinode(started_cluster, mode):
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+    nodes = [node1, node2]
+
+    table_name = f"test_replicated_{mode}_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 100
+
+    for i, node in enumerate(nodes):
+        node.query("DROP DATABASE IF EXISTS r")
+        node.query(
+            f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node{i+1}')"
+        )
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            mode,
+            files_path if mode != "exclusive" else f"{files_path}{{replica}}",
+            additional_settings={
+                "keeper_path": keeper_path,
+                "polling_min_timeout_ms": 100,
+                "polling_max_timeout_ms": 100,
+                "polling_backoff_ms": 0,
+            },
+            database_name="r",
+        )
+
+    chunk = files_to_generate//len(nodes)
+    for i in range(len(nodes)):
+        files_path_node = f"{files_path}node{i+1}" if mode == "exclusive" else files_path
+        files = [(f"{files_path_node}/test_{i}.csv", i) for i in range(i*chunk, i*chunk + chunk)]
+        generate_random_files(
+            started_cluster,
+            files_path_node,
+            chunk,
+            start_ind=i*chunk,
+            row_num=1,
+            files=files,
+        )
+
+    incorrect_values = [
+        ["failed", 1, 1],
+    ]
+    incorrect_values_csv = (
+        "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
+    ).encode()
+
+    failed_files = []
+    for i in range(len(nodes)):
+        files_path_node = f"{files_path}node{i+1}" if mode == "exclusive" else files_path
+        failed_files.append(f"{files_path_node}/testz_fff.csv")
+
+    for failed_file in failed_files:
+        put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
+
+    for node in nodes:
+        create_mv(node, f"r.{table_name}", dst_table_name)
+
+    def get_count():
+        query = f"SELECT count() FROM default.{dst_table_name}"
+        return sum(int(node.query(query)) for node in nodes)
+
+    expected_rows = files_to_generate
+    for _ in range(20):
+        if expected_rows == get_count():
+            break
+        time.sleep(1)
+    assert expected_rows == get_count()
+
+    if mode == "exclusive":
+        log_line = lambda failed_file: f"StorageObjectStorageQueue({keeper_path}): File {failed_file} failed to process and will not be retried"
+    else:
+        log_line = lambda failed_file: f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+
+    skips = [node.contains_in_log(log_line(failed_files[i])) for i, node in enumerate(nodes)]
+    if mode == "exclusive":
+        assert all(skips)
+    else:
+        assert any(skips)
 
 
 def test_ordered_start_after_avoids_deep_relisting(started_cluster):
@@ -1099,7 +1186,7 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
 def test_mv_settings(started_cluster, mode, limit):
     node = started_cluster.instances["instance"]
@@ -1294,6 +1381,137 @@ def test_failed_startup(started_cluster):
     )
 
     assert len(zk.get(f"{keeper_path}")) > 0
+
+
+LOGICAL_ERROR_MARKER = "Logical error: 'Files metadata is empty'"
+
+
+def assert_reports_table_is_dropped(node, table_name, database_name="default"):
+    """Every user-facing entry point that needs the queue metadata must report
+    TABLE_IS_DROPPED, and none of them may abort the server."""
+    qualified = f"{database_name}.{table_name}"
+    for query in (
+        f"SELECT count() FROM {qualified} SETTINGS stream_like_engine_allow_direct_select=1",
+        f"SYSTEM FLUSH OBJECT STORAGE QUEUE {qualified} PATH 'x'",
+        f"ALTER TABLE {qualified} MODIFY SETTING polling_min_timeout_ms=555",
+    ):
+        error = node.query_and_get_error(query)
+        assert "TABLE_IS_DROPPED" in error, f"{query} -> {error}"
+
+    assert node.query("SELECT 1") == "1\n"
+    # A query-level error alone is satisfied by many unrelated failures, so pin the
+    # absence of the abort itself. The table name is unique per invocation, and the
+    # log is shared, so match the marker together with it.
+    assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
+    assert not node.contains_in_log("Received signal Segmentation fault")
+
+
+def test_select_after_failed_startup(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_select_after_failed_startup_{generate_random_string()}"
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_startup")
+    try:
+        assert "Failed to startup" in create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            f"{table_name}_data",
+            format="column1 UInt32, column2 String",
+            expect_error=True,
+            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_startup")
+
+    # startup() reset the metadata handle, but nothing rolled the catalog entry back.
+    assert (
+        node.query(f"SELECT count() FROM system.tables WHERE name = '{table_name}'")
+        == "1\n"
+    )
+
+    assert_reports_table_is_dropped(node, table_name)
+
+
+def test_select_after_failed_drop(started_cluster):
+    node = started_cluster.instances["instance"]
+    suffix = generate_random_string()
+    table_name = f"test_select_after_failed_drop_{suffix}"
+    database_name = f"db_{table_name}"
+
+    node.query(
+        f"CREATE DATABASE {database_name} ENGINE = Atomic SETTINGS disk = 'plain_rw'"
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        f"{table_name}_data",
+        format="column1 UInt32, column2 String",
+        database_name=database_name,
+        additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+    )
+
+    # DROP shuts the table down before the database detaches it, so a failure in
+    # between leaves the table attached with its metadata handle already gone.
+    node.query(
+        "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_create"
+    )
+    try:
+        assert "FAULT_INJECTED" in node.query_and_get_error(
+            f"DROP TABLE {database_name}.{table_name}"
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_create"
+        )
+
+    assert (
+        node.query(
+            f"SELECT count() FROM system.tables "
+            f"WHERE database = '{database_name}' AND name = '{table_name}'"
+        )
+        == "1\n"
+    )
+
+    assert_reports_table_is_dropped(node, table_name, database_name)
+
+
+def test_select_racing_drop(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    for i in range(10):
+        table_name = f"test_select_racing_drop_{generate_random_string()}"
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            f"{table_name}_data",
+            format="column1 UInt32, column2 String",
+            additional_settings={"keeper_path": f"/clickhouse/test_{table_name}"},
+        )
+
+        # DROP shuts the storage down without waiting for readers, so it can drop the
+        # metadata handle while this SELECT is still building its query plan. The
+        # subquery sleeps for 3 seconds, so the DROP lands while the plan is still open.
+        select = node.get_query_request(
+            f"SELECT count() FROM {table_name} "
+            f"WHERE column1 > (SELECT sum(sleepEachRow(0.2)) FROM numbers(15)) "
+            f"SETTINGS stream_like_engine_allow_direct_select=1"
+        )
+        time.sleep(1.2)
+        node.query(f"DROP TABLE {table_name} SYNC")
+
+        # Also accepting a clean result would make this arm pass against the unfixed
+        # server: a SELECT that finished first never reads the dropped metadata.
+        _, error = select.get_answer_and_error()
+        assert "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
+
+        assert node.query("SELECT 1") == "1\n"
+        assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
 
 
 def test_create_or_replace_table(started_cluster):

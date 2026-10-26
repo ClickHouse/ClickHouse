@@ -217,17 +217,20 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
 
 void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    if (auto it = metadata_storage.iterateDirectory(path); it->isValid())
-        throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty", path);
-
-    /// Plain object storage has no directory marker objects, so nothing else to remove.
+    if (metadata_storage.iterateDirectory(path)->isValid())
+        throw Exception(ErrorCodes::CANNOT_RMDIR, "Cannot remove non-empty directory {} on {}", path, object_storage->getName());
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
-    /// TODO: Implement recursive listing.
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
-        unlinkFile(it->path(), /*if_exists=*/true, /*should_remove_objects=*/true);
+    {
+        const auto & child = it->path();
+        if (metadata_storage.existsFile(child))
+            unlinkFile(child, /*if_exists=*/true, /*should_remove_objects=*/true);
+        else
+            removeRecursive(child, should_remove_objects);
+    }
 }
 
 ObjectStorageKey MetadataStorageFromPlainObjectStorageTransaction::generateObjectKeyForPath(const std::string & path)

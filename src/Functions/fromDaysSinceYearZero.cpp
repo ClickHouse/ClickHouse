@@ -51,13 +51,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{{"days", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}};
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<typename Traits::ReturnDataType>();
+        return "(NativeInteger) -> " + typename Traits::ReturnDataType{}.getName();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -113,7 +109,7 @@ REGISTER_FUNCTION(FromDaysSinceYearZero)
     FunctionDocumentation::Description description_fromDaysSinceYearZero = R"(
 For a given number of days elapsed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero), returns the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar).
 
-The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [Date](../data-types/date.md) type.
+The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [Date](/reference/data-types/date) type.
     )";
     FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero = R"(
 fromDaysSinceYearZero(days)
@@ -143,7 +139,7 @@ fromDaysSinceYearZero(toDaysSinceYearZero(toDate('2023-09-08'))) AS date2
 
     FunctionDocumentation::Description description_fromDaysSinceYearZero32 = R"(
 For a given number of days elapsed since [1 January 0000](https://en.wikipedia.org/wiki/Year_zero), returns the corresponding date in the [proleptic Gregorian calendar defined by ISO 8601](https://en.wikipedia.org/wiki/Gregorian_calendar#Proleptic_Gregorian_calendar).
-The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [`Date32`](../data-types/date32.md) type.
+The calculation is the same as in MySQL's `FROM_DAYS()` function. The result is undefined if it cannot be represented within the bounds of the [`Date32`](/reference/data-types/date32) type.
     )";
     FunctionDocumentation::Syntax syntax_fromDaysSinceYearZero32 = R"(
 fromDaysSinceYearZero32(days)

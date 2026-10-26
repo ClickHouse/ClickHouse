@@ -2,6 +2,8 @@
 #include <IO/WriteHelpers.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -77,6 +79,23 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");
     factory.registerFileExtension("md", "Markdown");
+
+    /// The header column names are written verbatim (through `writeEscapedString`, which escapes the
+    /// control characters but does not validate UTF-8), so a name that is not valid UTF-8 makes the
+    /// output not valid UTF-8 either. The values are written through `serializeTextMarkdown`, which
+    /// falls back to the `Escaped` serializations for most types, so the `TSV` `NULL` representation
+    /// and the `Bool` representations are written verbatim too (see
+    /// `settingsLiteralsMayProduceRawBytes`). The text framings reject or base64-encode the output in
+    /// these cases (see `checkIfOutputFormatMayProduceRawBytes`). `Markdown` does not write the data
+    /// type names.
+    for (const auto * name : {"Markdown", "MD"})
+        factory.registerOutputFormatMayProduceRawBytesChecker(
+            name,
+            [](const FormatSettings & settings, const Block & header)
+            {
+                return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
+                    || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::Escaped);
+            });
 
     factory.setDocumentation("MD", Documentation{
         .description = "An alias for the `Markdown` format. See the `Markdown` entry for the full documentation.",
