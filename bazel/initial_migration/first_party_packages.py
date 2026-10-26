@@ -261,7 +261,6 @@ DBMS_PUBLIC_HEADERS = {
     "Disks/DiskObjectStorage/MetadataStorages/Memory": ("*.h",),
     "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable": ("PlainRewritable*.h",),
     "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata": ("*.h",),
-    "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions": ("*.h",),
     "Disks/DiskObjectStorage/ObjectStorages/Web": ("WebObjectStorage.h",),
     "Disks/IO": ("CachedOnDiskWriteBufferFromFile.h",),
     "Formats": ("FormatParserSharedResources.h", "FormatSchemaInfo.h", "ProtobufSchemas.h"),
@@ -286,9 +285,7 @@ DBMS_PUBLIC_HEADERS = {
     "Processors/Formats/Impl": (
         "ArrowGeoTypes.h", "CHColumnToArrowColumn.h", "JSONEachRowRowInputFormat.h",
     ),
-    "Processors/Formats/Impl/Parquet": (
-        "Decoding.h", "Prefetcher.h", "ReadCommon.h", "Reader.h", "ThriftUtil.h", "Write.h",
-    ),
+    "Processors/Formats/Impl/Parquet": ("Reader.h",),
     "Processors/Merges": ("DistinctSortedTransform.h", "IMergingTransform.h"),
     "Processors/Merges/Algorithms": (
         "DistinctSortedAlgorithm.h", "MergingSortedAlgorithm.h", "RowFilterInfo.h",
@@ -494,8 +491,11 @@ def declare_dbms_private_headers(rows, files):
     ]))
     declare_compiled_headers(rows, files, ("dbms__compile_0", "dbms_embedded"), server_headers, field="srcs")
     private_globs = expr(
-        'glob(["Backups/BackupCoordinationReplicated*.h", "Interpreters/HashJoin/*.h"], exclude=['
-        '"Interpreters/HashJoin/HashJoin.h", "Interpreters/HashJoin/ScatteredBlock.h"])'
+        'glob(["Backups/BackupCoordinationReplicated*.h", '
+        '"Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/*.h", '
+        '"Interpreters/HashJoin/*.h", "Processors/Formats/Impl/Parquet/*.h"], exclude=['
+        '"Interpreters/HashJoin/HashJoin.h", "Interpreters/HashJoin/ScatteredBlock.h", '
+        '"Processors/Formats/Impl/Parquet/Reader.h"])'
     )
     dbms_headers = ast.BinOp(left=private_globs, op=ast.Add(), right=list_expr([
         "Access/resolveSetting.h",
