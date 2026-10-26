@@ -14,7 +14,7 @@ DATA_DIR=$CUR_DIR/data_avro
 for file in alltypes_plain alltypes_plain.bzip2 alltypes_plain.xz
 do
     echo "$file"
-    $CLICKHOUSE_LOCAL --input-format Avro --output-format TSV -q "SELECT * FROM table ORDER BY id" < "$DATA_DIR/$file.avro"
+    $CLICKHOUSE_LOCAL --session_timezone UTC --input-format Avro --output-format TSV -q "SELECT * FROM table ORDER BY id" < "$DATA_DIR/$file.avro"
 done
 
 # Round trip, with several blocks.
