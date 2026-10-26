@@ -344,7 +344,16 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
     /// instantiates the custom disk. Without `lazy_load_tables` the table is loaded right after the metadata
     /// scan, which creates the same disk anyway, so it costs nothing. With `lazy_load_tables` it would create
     /// the disk (and fail on an unavailable `include` or `from_zk`) for a table that is otherwise deferred
-    /// until first access, so nullptr is returned instead and the flag is not looked for.
+    /// until first access, so nullptr is returned instead and the flag is not looked for. The same is done for
+    /// a reference by name to a custom disk (with the `disk` setting or the implicit storage policy of the disk):
+    /// the disk may be defined inline by another table, which is deferred too, so it does not exist yet.
+    auto is_configured_disk = [&](const String & disk_name)
+    {
+        auto disks = getContext()->getDisksMap();
+        auto it = disks.find(disk_name);
+        return it != disks.end() && !it->second->isCustomDisk();
+    };
+
     if (create_query.storage)
     {
         if (auto * query_settings = create_query.storage->settings)
@@ -369,11 +378,20 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
                         /* for_system_database = */ getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
                     return getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
                 }
-                return getContext()->getStoragePolicyFromDisk(disk_setting->safeGet<String>());
+                const auto & disk_name = disk_setting->safeGet<String>();
+                if (!create_custom_disk && !is_configured_disk(disk_name))
+                    return nullptr;
+                return getContext()->getStoragePolicyFromDisk(disk_name);
             }
 
             if (const Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-                return getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+            {
+                const auto & policy_name = policy_setting->safeGet<String>();
+                if (!create_custom_disk && policy_name.starts_with(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX)
+                    && !is_configured_disk(policy_name.substr(strlen(StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX))))
+                    return nullptr;
+                return getContext()->getStoragePolicy(policy_name);
+            }
         }
     }
 
@@ -405,7 +423,8 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         return;
 
     /// Get table's storage policy
-    /// A table on an inline `disk(...)` definition in a database with `lazy_load_tables` is not looked at:
+    /// A table on an inline `disk(...)` definition or on a custom disk referenced by name in a database with
+    /// `lazy_load_tables` is not looked at:
     /// the second phase reports the flag if the table is ever loaded eagerly with it.
     CustomDiskRegistrationPtr custom_disk_registration;
     auto policy = getStoragePolicyFromCreateQuery(
@@ -963,8 +982,8 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
             lazy_replicated_create_queries.erase(it);
         }
 
-        /// The first phase does not resolve an inline `disk(...)` definition with `lazy_load_tables`, so it never
-        /// converts such a table.
+        /// The first phase does not resolve an inline `disk(...)` definition or a reference to a custom disk with
+        /// `lazy_load_tables`, so it never converts such a table.
         CustomDiskRegistrationPtr custom_disk_registration;
         storage_policy = getStoragePolicyFromCreateQuery(
             create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false, custom_disk_registration);
