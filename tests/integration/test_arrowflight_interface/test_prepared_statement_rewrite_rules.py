@@ -41,11 +41,13 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_create_prepared_statement_does_not_execute_rewrite_rules():
+def test_rewrite_rules_cannot_make_schema_inference_side_effecting():
     """Creating a prepared statement only validates syntax and infers the result schema; it must
     not apply query rewrite rules. Otherwise a REWRITE rule could turn the parsed SELECT into a
     side-effecting statement (here a DROP) and `executeQuery` would execute it during schema
-    inference, even though preparing a statement must have no side effects."""
+    inference, even though preparing a statement must have no side effects. `GetSchema` and
+    `GetFlightInfo` apply the rules, but must reject a rewrite into a statement without a result
+    before executing it."""
     node.query("DROP RULE rr_prepare_positive", ignore_error=True)
     node.query("DROP RULE rr_prepare_drop", ignore_error=True)
     node.query("DROP TABLE IF EXISTS default.rr_prepare_victim SYNC")
@@ -80,6 +82,17 @@ def test_create_prepared_statement_does_not_execute_rewrite_rules():
         stmt.close()
 
         # The rule was not applied during schema inference, so the table still exists.
+        assert node.query("EXISTS TABLE default.rr_prepare_victim").strip() == "1"
+
+        # `GetSchema` and `GetFlightInfo` do apply the rules to the SQL the client submitted, but
+        # their query must return rows, so a rewrite into a statement without a result is rejected
+        # before the interpreter runs, not after the table is dropped.
+        with pytest.raises(Exception, match="does not return rows"):
+            client.get_schema("SELECT 987654321")
+        assert node.query("EXISTS TABLE default.rr_prepare_victim").strip() == "1"
+
+        with pytest.raises(Exception, match="does not return rows"):
+            client.execute("SELECT 987654321")
         assert node.query("EXISTS TABLE default.rr_prepare_victim").strip() == "1"
     finally:
         node.query("DROP RULE rr_prepare_drop", ignore_error=True)
