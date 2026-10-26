@@ -714,6 +714,8 @@ void LocalConnection::sendCancel()
 
 bool LocalConnection::pullBlock(Block & block)
 {
+    chassert(state);
+
     if (state->executor)
         return state->executor->pull(block, query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
 
@@ -722,6 +724,8 @@ bool LocalConnection::pullBlock(Block & block)
 
 void LocalConnection::finishQuery()
 {
+    chassert(state);
+
     next_packet_type = Protocol::Server::EndOfStream;
 
     if (state->executor)
