@@ -359,8 +359,7 @@ void attachQuantizeSerializationIfNeeded(ColumnDescription & column);
 /// Restore the Quantized(...) subcolumns on columns parsed from a part's columns.txt.
 void attachQuantizeSerializations(NamesAndTypesList & columns, const ColumnsDescription & metadata);
 
-/// Returns `type` without the serialization a `Quantized(...)` codec attached anywhere in it.
-/// The type object itself is not modified.
+/// Returns `type` without the serialization a `Quantized(...)` codec attached anywhere in it; `type` is not modified.
 DataTypePtr removeQuantizeSerializations(const DataTypePtr & type);
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
