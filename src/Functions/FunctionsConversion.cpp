@@ -1,6 +1,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/iota.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -533,6 +534,36 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
 
                     return true;
                 }
+                /// IPv4/IPv6 are not DataTypeNumber, so without this arm the accurate casts fall through
+                /// below and never examine the value, unlike the plain CAST of the same pair.
+                else if constexpr (
+                    (std::is_same_v<RightDataType, DataTypeIPv4>
+                        && is_any_of<LeftDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64>)
+                    || (std::is_same_v<RightDataType, DataTypeIPv6> && std::is_same_v<LeftDataType, DataTypeUInt128>))
+                {
+                    if (cast_type == CastType::accurate)
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments,
+                            result_type,
+                            input_rows_count,
+                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                            settings,
+                            AccurateConvertStrategyAdditions());
+                    }
+                    else
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments,
+                            result_type,
+                            input_rows_count,
+                            BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                            settings,
+                            AccurateOrNullConvertStrategyAdditions());
+                    }
+
+                    return true;
+                }
             }
             else if constexpr (IsDataTypeStringOrFixedString<LeftDataType>)
             {
@@ -668,7 +699,14 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
     UInt32 scale = to_type->getScale();
 
     WhichDataType which(type_index);
-    bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
+    /// A 128- or 256-bit integer is a count of whole seconds like every other integer, and `ConvertImpl` routes it
+    /// through the same overflow-aware transforms as the native widths, so the `CAST` / `accurateCast*` surface to
+    /// `DateTime64` and `Time64` admits it too. Otherwise `CAST(toUInt128(1), 'DateTime64(3)')` is rejected while
+    /// `toDateTime64(toUInt128(1), 3)` succeeds, and `accurateCastOrNull` / `accurateCastOrDefault` report a
+    /// representable value as NULL / the default. The plain `Decimal` targets keep their native-integer admission.
+    static constexpr bool to_date_time = std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>;
+    bool ok = which.isNativeInt() || which.isNativeUInt() || (to_date_time && (which.isInt() || which.isUInt()))
+        || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
         || which.isTime() || which.isTime64() || which.isStringOrFixedString();
     if (!ok)
     {
@@ -688,6 +726,10 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
             using Types = std::decay_t<decltype(types)>;
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
+
+            /// `DateTime64` and `Time64` are `Decimal` carriers, so tell a plain `Decimal` source apart from them.
+            static constexpr bool left_is_plain_decimal
+                = IsDataTypeDecimal<LeftDataType> && !IsDataTypeDateOrDateTimeOrTime<LeftDataType>;
 
             if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !(std::is_same_v<DataTypeDateTime64, RightDataType> || std::is_same_v<DataTypeTime64, RightDataType>))
             {
@@ -710,51 +752,76 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
-                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
+            else if constexpr ((IsDataTypeNumber<LeftDataType> || left_is_plain_decimal || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)
+                && (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>))
             {
-                if (cast_type == CastType::accurate)
+                /// These are the conversions handled by this wrapper that can overflow the target: the whole-seconds
+                /// value of the source does not always fit the `Int64` ticks of the target (a scale-9 `DateTime64`
+                /// ends at 2262-04-11, and `Time64` holds at most 999:59:59), so `date_time_overflow_behavior` has to
+                /// reach the transform - unlike the other branches here, which cannot lose a value and therefore use
+                /// the default mode.
+                if constexpr (IsDataTypeNumber<LeftDataType> || left_is_plain_decimal
+                    || (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
+                    || (std::is_same_v<LeftDataType, DataTypeDateTime64> && std::is_same_v<RightDataType, DataTypeDateTime64>)
+                    || (std::is_same_v<LeftDataType, DataTypeDateTime64> && std::is_same_v<RightDataType, DataTypeTime64>)
+                    || std::is_same_v<LeftDataType, DataTypeTime64>)
                 {
-                    AccurateConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
-                }
-                else if (cast_type == CastType::accurateOrNull)
-                {
-                    AccurateOrNullConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
-                }
-                else
-                {
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                    /// `accurateCast` rejects an unrepresentable value regardless of the overflow mode, and
+                    /// `accurateCastOrNull` reports it as NULL, so neither of them may reach the mode-specific
+                    /// transform, which would throw or clamp: the accurate additions check the range up front.
+                    /// `Date32` is the only whole-day or whole-second source that can overflow the target - the
+                    /// others stay inside the representable window of every scale - so it needs the same treatment.
+                    /// A `DateTime64` source needs it as well: widening the scale of a value outside the target's
+                    /// window (a scale-0 value in the year 2299 has no scale-9 representation) overflows the ticks.
+                    /// A plain `Decimal` source is a count of seconds just like a number, only with a fractional
+                    /// part, so it belongs to the same family: `CAST('10500000000.1' AS Decimal64(1))` has no
+                    /// scale-9 `DateTime64` representation either.
+                    /// A `Time64` source needs it for the same reason as a `DateTime64` one - widening the scale of
+                    /// a large value overflows the ticks - and it is also the path that keeps an accurate `Time64`
+                    /// cast parameterized by the target scale.
+                    /// `DateTime64` to `Time64` projects the value to the seconds of the local day, which always fits,
+                    /// but a reduction of the scale drops a part of the fraction, and an accurate cast must reject
+                    /// such a lossy conversion instead of truncating it like `CAST` does.
+                    if (cast_type == CastType::accurate)
+                    {
+                        AccurateConvertStrategyAdditions additions;
+                        additions.scale = scale;
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+
+                        return true;
+                    }
+                    else if (cast_type == CastType::accurateOrNull)
+                    {
+                        AccurateOrNullConvertStrategyAdditions additions;
+                        additions.scale = scale;
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
+
+                        return true;
+                    }
                 }
 
-                return true;
-            }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
-            {
-                /// The only conversion handled by this wrapper that can overflow the target: the whole-seconds value
-                /// of a `Date32` day does not always fit the `Int64` ticks of a high-precision `DateTime64` (a scale-9
-                /// one ends at 2262-04-11), so `date_time_overflow_behavior` has to reach the transform - unlike the
-                /// other branches here, which cannot lose a value and therefore use the default mode.
+                /// The remaining date and time sources cannot lose a value, so the overflow mode is irrelevant
+                /// for them; still, keep `accurateCastOrNull` out of the `throw` mode, which reports an
+                /// unrepresentable value as an exception instead of NULL.
+                if (cast_type != CastType::accurateOrNull)
+                {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
     case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
         result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
             arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
         break;
-                switch (settings.date_time_overflow_behavior)
-                {
-                    GENERATE_OVERFLOW_MODE_CASE(Throw)
-                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
-                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
-                }
+                    switch (settings.date_time_overflow_behavior)
+                    {
+                        GENERATE_OVERFLOW_MODE_CASE(Throw)
+                        GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                        GENERATE_OVERFLOW_MODE_CASE(Saturate)
+                    }
 #undef GENERATE_OVERFLOW_MODE_CASE
 
-                return true;
+                    return true;
+                }
             }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
             {
@@ -912,10 +979,62 @@ bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
     return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
 }
 
+bool isGeometryToMultiGeometry(const IDataType & from, const IDataType & to)
+{
+    const auto * from_name = from.getCustomName();
+    const auto * to_name = to.getCustomName();
+    if (!from_name || !to_name)
+        return false;
+
+    const String from_geometry = from_name->getName();
+    const String to_geometry = to_name->getName();
+    return (from_geometry == "Point" && to_geometry == "MultiPoint")
+        || (from_geometry == "LineString" && to_geometry == "MultiLineString")
+        || (from_geometry == "Polygon" && to_geometry == "MultiPolygon");
+}
+
+bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataType & to)
+{
+    if (isGeometryToMultiGeometry(from, to))
+        return true;
+
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+        return isGeometryToMultiGeometryUnderArrays(*from_nullable->getNestedType(), to);
+
+    /// Some alternative is promoted, and every other one already has the depth of `to`.
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(&from))
+    {
+        bool has_promoted_alternative = false;
+        for (const auto & alternative : from_variant->getVariants())
+        {
+            if (isGeometryToMultiGeometryUnderArrays(*alternative, to))
+                has_promoted_alternative = true;
+            else if (!canHaveSameNumberOfDimensions(*alternative, to))
+                return false;
+        }
+        return has_promoted_alternative;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    return from_array && to_array && isGeometryToMultiGeometryUnderArrays(*from_array->getNestedType(), *to_array->getNestedType());
+}
+
 }
 
 FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
 {
+    /// A single geometry becomes a collection of one element.
+    if (isGeometryToMultiGeometry(*from_type_untyped, to_type))
+    {
+        return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+        {
+            auto offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
+            iota(offsets->getData().data(), input_rows_count, ColumnArray::Offset(1));
+            return ColumnArray::create(arguments.front().column, std::move(offsets));
+        };
+    }
+
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
     {
@@ -967,7 +1086,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array)
+    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array && !isGeometryToMultiGeometryUnderArrays(*from_type, to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
@@ -1923,6 +2042,11 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
+    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+        return createIdentityWrapper(from_type);
+
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
@@ -2123,15 +2247,11 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             /// Create wrapper only if we support conversion from variant to the resulting type.
             wrapper = createWrapperIfCanConvert(variant_type, to_type);
         }
-        else
-        {
-            wrapper = prepareUnpackDictionaries(variant_type, to_type);
-        }
         variant_wrappers.push_back(wrapper);
     }
 
     bool keep_nullable = settings.cast_keep_nullable;
-    return [variant_wrappers, variant_types, to_type, keep_nullable]
+    return [this, variant_wrappers, variant_types, to_type, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -2149,7 +2269,15 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             ColumnPtr cast_variant;
             /// Check if we have wrapper for this variant.
             if (variant_wrapper)
+            {
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+            }
+            else if (cast_type != CastType::accurateOrNull && !variant_col->empty())
+            {
+                /// The conversion is prepared only for a variant with values, so a variant that cannot be
+                /// converted fails the conversion only if the column contains values of it.
+                cast_variant = prepareUnpackDictionaries(variant_types[i], to_type)(variant, result_type, nullptr, variant_col->size());
+            }
             cast_variant_columns.push_back(std::move(cast_variant));
         }
 
@@ -2384,6 +2512,9 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         }
         else
         {
+            /// Types without values are not converted, so they cannot fail the conversion.
+            if (args[0].column->empty())
+                return nullptr;
             wrapper = prepareUnpackDictionaries(args[0].type, result_type);
         }
 

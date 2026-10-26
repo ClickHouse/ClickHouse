@@ -1,0 +1,31 @@
+-- type name and parser
+JSON(a UInt32, SHARED b String, SHARED REGEXP \'^c\', SHARED REGEXP \'^z\')
+JSON(SHARED REGEXP String, SHARED REGEXP \'^c\')	r
+CREATE TABLE f\n(\n    `j` JSON(SHARED REGEXP String, SHARED a UInt32, SHARED REGEXP \'^c\')\n)\nENGINE = Memory
+-- binary type encoding
+3000	3001	3002	3002
+30028008200101610103000001025E63
+JSON(a UInt32, SHARED b String, SHARED REGEXP \'^c\')	x
+-- least supertype
+Array(JSON(SHARED a UInt32, b UInt32, SHARED REGEXP \'^y\'))
+-- conversions
+1	2	['c']
+JSON(SHARED a UInt32, SHARED REGEXP \'^c\')	1	2
+1	2	['c']
+-- MergeTree
+0	0	0	0	0	1
+1	1	2	3	4	1
+2	2	4	6	8	1
+3	3	6	9	12	1
+0	0	0	0	0	1
+1	1	2	3	4	1
+2	2	4	6	8	1
+3	3	6	9	12	1
+0	0	0	0	0
+1	1	2	3	4
+2	2	4	6	8
+3	3	6	9	12
+0	0	0	0	0
+1	1	2	3	4
+2	2	4	6	8
+3	3	6	9	12

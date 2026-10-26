@@ -88,6 +88,12 @@ GTEST_TEST(LeastSuperTypeTest, JSONSharedRegexpIntersection)
     const auto type = getLeastSupertype(DataTypes{
         typeFromString("JSON(SHARED REGEXP 'a', SHARED REGEXP 'b')"), typeFromString("JSON(SHARED REGEXP 'b')")});
     EXPECT_EQ(type->getName(), "JSON(SHARED REGEXP 'b')");
+
+    /// The SHARED marks of typed paths and the SHARED REGEXP rules are intersected independently.
+    const auto both = getLeastSupertype(DataTypes{
+        typeFromString("JSON(SHARED a UInt32, SHARED b UInt32, SHARED REGEXP 'a', SHARED REGEXP 'b')"),
+        typeFromString("JSON(SHARED a UInt32, b UInt32, SHARED REGEXP 'b')")});
+    EXPECT_EQ(both->getName(), "JSON(SHARED a UInt32, b UInt32, SHARED REGEXP 'b')");
 }
 
 class MostSubtypeTest : public TypeTest {};

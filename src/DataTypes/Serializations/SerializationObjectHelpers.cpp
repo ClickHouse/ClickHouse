@@ -5,6 +5,7 @@
 #include <Columns/ColumnObject.h>
 #include <Common/SipHash.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 
 
 namespace DB
@@ -427,6 +428,49 @@ void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of paths indexes: {}", indexes_type->getName());
     }
+}
+
+void writeMarkDelta(const MarkInCompressedFile & mark, size_t previous_compressed_offset, WriteBuffer & buf)
+{
+    if (mark.offset_in_compressed_file < previous_compressed_offset)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Compressed offset of a mark {} is less than the previous one {}",
+            mark.offset_in_compressed_file,
+            previous_compressed_offset);
+
+    writeVarUInt(mark.offset_in_compressed_file - previous_compressed_offset, buf);
+    writeVarUInt(mark.offset_in_decompressed_block, buf);
+}
+
+MarkInCompressedFile readMarkDelta(size_t previous_compressed_offset, ReadBuffer & buf)
+{
+    MarkInCompressedFile mark{};
+    size_t delta = 0;
+    readVarUInt(delta, buf);
+    mark.offset_in_compressed_file = previous_compressed_offset + delta;
+    readVarUInt(mark.offset_in_decompressed_block, buf);
+    return mark;
+}
+
+
+ISerialization::SerializeBinaryBulkSettings getObjectPathDataSerializationSettings(
+    const ISerialization::SerializeBinaryBulkSettings & settings, MergeTreeObjectSharedDataSerializationVersion nested_shared_data_version)
+{
+    ISerialization::SerializeBinaryBulkSettings path_settings;
+    path_settings.data_part_type = MergeTreeDataPartType::Compact;
+    path_settings.position_independent_encoding = true;
+    path_settings.low_cardinality_max_dictionary_size = 0;
+    path_settings.use_specialized_prefixes_and_suffixes_substreams = true;
+    path_settings.use_compact_variant_discriminators_serialization = true;
+    path_settings.dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V3;
+    path_settings.object_serialization_version = MergeTreeObjectSerializationVersion::V3;
+    path_settings.object_shared_data_serialization_version = nested_shared_data_version;
+    path_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
+    path_settings.object_typed_shared_data_serialization_version = settings.object_typed_shared_data_serialization_version;
+    path_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::NONE;
+    path_settings.min_compress_block_size = settings.min_compress_block_size;
+    return path_settings;
 }
 
 }

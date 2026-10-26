@@ -137,6 +137,9 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, SHARED REGEXP '^a', SHARED REGEXP 'z')"));
     check(DataTypeFactory::instance().get("Array(Tuple(j JSON(SHARED REGEXP '^nested[.]'), n UInt64))"));
+    check(DataTypeFactory::instance().get("JSON(SHARED a UInt32, b String, SHARED c.d Array(UInt8))"));
+    check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, SHARED a UInt32, b String, SKIP s, SKIP REGEXP '^z', SHARED REGEXP '^c', SHARED REGEXP 'x')"));
+    check(DataTypeFactory::instance().get("JSON(SHARED REGEXP String, SHARED REGEXP '^c')"));
 }
 
 GTEST_TEST(DataTypesBinaryEncoding, JSONSharedRegexpVersioning)
@@ -147,7 +150,16 @@ GTEST_TEST(DataTypesBinaryEncoding, JSONSharedRegexpVersioning)
     const String expected_v0{"\x30\x00\x80\x08\x20\x00\x00\x00", 8};
     EXPECT_EQ(without_rules, expected_v0);
     ASSERT_GE(with_rules.size(), 2);
-    EXPECT_EQ(static_cast<UInt8>(with_rules[1]), 1);
+    EXPECT_EQ(static_cast<UInt8>(with_rules[1]), 2);
+
+    /// Version 1 stays the encoding of SHARED typed paths without rules. Version 2 keeps their flags byte
+    /// after the path name and writes the rules after the path regexps to skip.
+    const auto shared_paths_without_rules = encodeDataType(DataTypeFactory::instance().get("JSON(SHARED a UInt32)"));
+    const String expected_v1{"\x30\x01\x80\x08\x20\x01\x01" "a" "\x01\x03\x00\x00", 12};
+    EXPECT_EQ(shared_paths_without_rules, expected_v1);
+    const auto shared_paths_with_rules = encodeDataType(DataTypeFactory::instance().get("JSON(SHARED a UInt32, SHARED REGEXP '^c')"));
+    const String expected_v2{"\x30\x02\x80\x08\x20\x01\x01" "a" "\x01\x03\x00\x00\x01\x02" "^c", 16};
+    EXPECT_EQ(shared_paths_with_rules, expected_v2);
 
     /// Version 0 is promised for every rule-free JSON, not only the bare default one.
     const auto typed_paths_without_rules = encodeDataType(DataTypeFactory::instance().get(
@@ -156,11 +168,11 @@ GTEST_TEST(DataTypesBinaryEncoding, JSONSharedRegexpVersioning)
     EXPECT_EQ(static_cast<UInt8>(typed_paths_without_rules[1]), 0);
 }
 
-GTEST_TEST(DataTypesBinaryEncoding, RejectsMalformedJSONSharedRegexpV1)
+GTEST_TEST(DataTypesBinaryEncoding, RejectsMalformedJSONSharedRegexpV2)
 {
     WriteBufferFromOwnString out;
     writeBinary(static_cast<UInt8>(BinaryTypeIndex::JSON), out);
-    writeBinary(UInt8(1), out);
+    writeBinary(UInt8(2), out);
     writeVarUInt(1024, out);
     writeBinary(UInt8(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES), out);
     writeVarUInt(0, out); /// typed paths

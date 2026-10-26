@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-parallel-replicas
 # - no-fasttest: needs Iceberg (USE_AVRO)
 # - no-parallel: other tests drop the query condition cache, which would remove the entries checked here
+# - no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 # TopN dynamic filtering is not applied to the files of an Iceberg table sorted by an identity partition
 # column (the partition value comes from the manifest, not from the file). Such files are read as without
-# TopN, so they must keep using the query condition cache: populate it, and consult it even with
-# `use_query_condition_cache_for_top_k = 0`, which only concerns the reads that apply the filter.
+# TopN, so they must keep using the query condition cache: populate it, and consult it. With
+# `use_query_condition_cache_for_top_k = 0`, a TopN read neither consults nor populates the cache at all,
+# also for such files, as for `File` and `MergeTree`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
