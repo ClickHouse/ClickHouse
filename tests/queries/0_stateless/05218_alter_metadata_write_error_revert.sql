@@ -27,6 +27,10 @@ INSERT INTO t_revert (x, z) VALUES (1, 1);
 -- fails after the fast paths already published the change in memory.
 DROP DICTIONARY d_revert SETTINGS check_table_dependencies = 0;
 
+-- The max_query_size pre-check validates the same CREATE query and would fail both ALTERs
+-- before they reach the fast paths.
+SET max_query_size = 0;
+
 ALTER TABLE t_revert COMMENT COLUMN z 'c3'; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE t_revert MODIFY SETTING min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0; -- { serverError BAD_ARGUMENTS }
 INSERT INTO t_revert (x, z) VALUES (2, 2);
