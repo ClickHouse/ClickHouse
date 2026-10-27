@@ -2,6 +2,8 @@ load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:ch_grpc_cc_library.bzl", "google_cloud_grpc_libraries")
 load(":google/cloud/google_cloud_cpp_common.bzl", "google_cloud_cpp_common_hdrs", "google_cloud_cpp_common_srcs")
+load(":google/cloud/google_cloud_cpp_grpc_utils.bzl", "google_cloud_cpp_grpc_utils_srcs")
+load(":google/cloud/google_cloud_cpp_rest_internal.bzl", "google_cloud_cpp_rest_internal_srcs")
 load(":google/cloud/storage/google_cloud_cpp_storage.bzl", "google_cloud_cpp_storage_hdrs", "google_cloud_cpp_storage_srcs")
 
 package(default_visibility = ["//visibility:public"])
@@ -138,30 +140,7 @@ ch_cc_library(
 
 ch_cc_library(
     name = "google_cloud_cpp_grpc_utils",
-    srcs = [
-        "google/cloud/completion_queue.cc",
-        "google/cloud/connection_options.cc",
-        "google/cloud/grpc_error_delegate.cc",
-        "google/cloud/grpc_options.cc",
-        "google/cloud/internal/async_connection_ready.cc",
-        "google/cloud/internal/async_polling_loop.cc",
-        "google/cloud/internal/background_threads_impl.cc",
-        "google/cloud/internal/debug_string_protobuf.cc",
-        "google/cloud/internal/debug_string_status.cc",
-        "google/cloud/internal/default_completion_queue_impl.cc",
-        "google/cloud/internal/extract_long_running_result.cc",
-    ] + glob(
-        ["google/cloud/internal/grpc_*.cc"],
-        exclude = ["**/*_test.cc"],
-    ) + [
-        "google/cloud/internal/log_wrapper.cc",
-        "google/cloud/internal/minimal_iam_credentials_stub.cc",
-        "google/cloud/internal/populate_grpc_options.cc",
-        "google/cloud/internal/streaming_read_rpc.cc",
-        "google/cloud/internal/streaming_write_rpc_impl.cc",
-        "google/cloud/internal/time_utils.cc",
-        "google/cloud/internal/unified_grpc_credentials.cc",
-    ],
+    srcs = ["google/cloud/" + src for src in google_cloud_cpp_grpc_utils_srcs],
     hdrs = [
         "google/cloud/async_operation.h",
         "google/cloud/async_streaming_read_write_rpc.h",
@@ -239,32 +218,10 @@ ch_cc_library(
 ch_cc_library(
     name = "google_cloud_cpp_rest_internal",
     srcs = [
-        "google/cloud/internal/binary_data_as_debug_string.cc",
-        "google/cloud/internal/external_account_source_format.cc",
-        "google/cloud/internal/external_account_token_source_aws.cc",
-        "google/cloud/internal/external_account_token_source_file.cc",
-        "google/cloud/internal/external_account_token_source_url.cc",
-        "google/cloud/internal/json_parsing.cc",
-        "google/cloud/internal/make_jwt_assertion.cc",
-    ] + glob(
-        ["google/cloud/internal/oauth2_*.cc"],
-        exclude = ["**/*_test.cc"],
-    ) + [
-        "google/cloud/internal/openssl/parse_service_account_p12_file.cc",
-        "google/cloud/internal/openssl/sign_using_sha256.cc",
-        "google/cloud/internal/populate_rest_options.cc",
-        "google/cloud/internal/rest_carrier.cc",
-        "google/cloud/internal/rest_context.cc",
-        "google/cloud/internal/rest_lro_helpers.cc",
-        "google/cloud/internal/rest_opentelemetry.cc",
-        "google/cloud/internal/rest_parse_json_error.cc",
-        "google/cloud/internal/rest_request.cc",
-        "google/cloud/internal/rest_response.cc",
-        "google/cloud/internal/rest_set_metadata.cc",
-        "google/cloud/internal/tracing_http_payload.cc",
-        "google/cloud/internal/tracing_rest_client.cc",
-        "google/cloud/internal/tracing_rest_response.cc",
-        "google/cloud/internal/unified_rest_credentials.cc",
+        "google/cloud/" + src
+        for src in google_cloud_cpp_rest_internal_srcs
+        if not src.startswith(("internal/curl_", "internal/win32/"))
+    ] + [
         "@clickhouse//contrib:google-cloud-cpp-cmake/poco_rest_client.cc",
         "google/cloud/internal/external_account_source_format.h",
         "google/cloud/internal/external_account_token_source_aws.h",
