@@ -10,3 +10,8 @@ the table definition is in the backup
 0
 the same selection with the data keeps requiring the rights
 1
+a metadata-only explicit selection combined with a wildcard keeps the implicit-selection skip
+1
+1
+the table definition is in the backup
+0

@@ -1064,15 +1064,19 @@ bool BackupEntriesCollector::DatabaseInfo::isTableSelectedByAnyElement(const Str
     return false;
 }
 
-bool BackupEntriesCollector::isTableExplicitlySelectedForBackup(const QualifiedTableName & table_name) const
+bool BackupEntriesCollector::isTableDataExplicitlySelectedForBackup(const QualifiedTableName & table_name) const
 {
     auto it = database_infos.find(table_name.database);
     if (it == database_infos.end())
         return false;
 
     /// `DatabaseInfo::tables` holds only the tables named by TABLE elements; a DATABASE or ALL
-    /// element selecting the table records itself in `all_tables_elements` instead.
-    return it->second.tables.contains(table_name.table);
+    /// element selecting the table records itself in `all_tables_elements` instead. An explicit
+    /// element excluding the table's data (`EXCEPT DATA FROM TABLE`) asks only for the table's
+    /// definition, so it does not make the data selection explicit; the data of such a table is
+    /// being backed up because a wildcard element asked for it.
+    auto table_it = it->second.tables.find(table_name.table);
+    return (table_it != it->second.tables.end()) && !table_it->second.isDataExcluded();
 }
 
 bool BackupEntriesCollector::isTableDataExcluded(const QualifiedTableName & table_name) const

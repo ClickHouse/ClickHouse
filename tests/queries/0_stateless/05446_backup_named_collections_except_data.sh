@@ -63,6 +63,18 @@ run_backup wildcard_denied "
     BACKUP DATABASE system ${except_tables_clause}
 " "backup_named_collections = 1" 2>&1 | grep -m1 -c "ACCESS_DENIED"
 
+# The wildcard element asks for the table's data, so the export runs, and the explicit element asks
+# only for the table's definition, so it must not turn the implicit-selection default (skip the
+# export with a warning for a user without the rights) into a hard requirement of the rights.
+echo "a metadata-only explicit selection combined with a wildcard keeps the implicit-selection skip"
+output=$(run_backup mixed "
+    BACKUP TABLE system.named_collections EXCEPT DATA FROM TABLE system.named_collections,
+    DATABASE system ${except_tables_clause}
+" 2>&1)
+echo "${output}" | grep -c "BACKUP_CREATED"
+echo "${output}" | grep -m1 -c "Not exporting the named collections"
+check_backup_contents mixed
+
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP USER ${backup_user};
 DROP NAMED COLLECTION ${collection};

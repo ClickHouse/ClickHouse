@@ -82,7 +82,11 @@ void backupNamedCollections(BackupEntriesCollector & backup_entries_collector, c
     /// `displaySecretsInShowAndSelect` (the former alone does not allow reading the values back).
     const AccessFlags show_values_rights = AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS} | AccessFlags{AccessType::SHOW_NAMED_COLLECTIONS_SECRETS};
 
-    const bool explicitly_selected = backup_entries_collector.isTableExplicitlySelectedForBackup(
+    /// A TABLE element excluding the table's data does not count as an explicit selection: such a
+    /// backup reaches this function only because a wildcard element asked for the data, so the
+    /// implicit-selection default below applies, the same way the initiating host of a `BACKUP ON
+    /// CLUSTER` query classifies the elements (see `explicitSelectionExportsSystemNamedCollections`).
+    const bool explicitly_selected = backup_entries_collector.isTableDataExplicitlySelectedForBackup(
         QualifiedTableName{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"});
 
     if (!backup_named_collections.has_value())
