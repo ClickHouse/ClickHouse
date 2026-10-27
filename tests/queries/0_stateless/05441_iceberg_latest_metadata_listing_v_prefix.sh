@@ -96,20 +96,24 @@ copy_table()
 P4="${PREFIX}/uuid_named"
 copy_table "${P4}" "00001-${UUID_A}.metadata.json" "00002-${UUID_B}.metadata.json"
 $CLIENT --use_iceberg_metadata_files_cache=0 --query "
-    SELECT 'uuid-named', count() FROM icebergS3(s3_conn, filename = '${P4}')"
+    SELECT 'uuid-named', count() FROM icebergS3(s3_conn, filename = '${P4}')
+    SETTINGS optimize_trivial_count_query = 0"
 
 # Without `iceberg_list_only_v_prefixed_metadata_files` (the default) or ranking by `last-updated-ms`,
 # every file is a candidate: the `<N>-<uuid>` file committed last is selected.
 P6="${PREFIX}/by_last_updated_ms"
 copy_table "${P6}" v1.metadata.json "00002-${UUID_B}.metadata.json"
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "
-    SELECT 'default', count() FROM icebergS3(s3_conn, filename = '${P6}')"
+    SELECT 'default', count() FROM icebergS3(s3_conn, filename = '${P6}')
+    SETTINGS optimize_trivial_count_query = 0"
 $CLIENT --use_iceberg_metadata_files_cache=0 --query "
-    SELECT 'v file only', count() FROM icebergS3(s3_conn, filename = '${P6}');
+    SELECT 'v file only', count() FROM icebergS3(s3_conn, filename = '${P6}')
+    SETTINGS optimize_trivial_count_query = 0;
     SELECT 'all files', count() FROM icebergS3(s3_conn, filename = '${P6}')
-    SETTINGS iceberg_list_only_v_prefixed_metadata_files = 0;
+    SETTINGS optimize_trivial_count_query = 0, iceberg_list_only_v_prefixed_metadata_files = 0;
     SELECT 'by last-updated-ms', count()
-    FROM icebergS3(s3_conn, filename = '${P6}', SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1);"
+    FROM icebergS3(s3_conn, filename = '${P6}', SETTINGS iceberg_recent_metadata_file_by_last_updated_ms_field = 1)
+    SETTINGS optimize_trivial_count_query = 0;"
 
 # DROP PARTITION resolves like INSERT: a directory holding both namings is refused and left as it is.
 P5="${PREFIX}/drop_partition"
