@@ -82,7 +82,7 @@ Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
     return requestCredentialSecrets(request);
 }
 
-/// The first byte of a `Content-Range: bytes <first>-<last>/<length>` value, `std::nullopt` if the value is not one.
+/// The `<first>` of a `Content-Range` value starting with `bytes <first>-`, `std::nullopt` if it does not start so.
 std::optional<size_t> parseContentRangeStart(std::string_view content_range)
 {
     constexpr std::string_view unit = "bytes ";
@@ -800,7 +800,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             return is_canceled;
         };
 
-    /// A 206 response may carry only a part of the requested range (RFC 9110, 15.3.7): then the rest is requested again.
+    /// A 206 response may carry only a part of the requested range (RFC 9110, 15.3.7).
     while (n > 0 && !is_canceled && offset < file_size)
     {
         doWithRetries(
