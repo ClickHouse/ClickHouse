@@ -2470,6 +2470,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (command.first || !command.after_column.empty())
                 all_columns.modifyColumnOrder(column_name, command.after_column, command.first);
 
+            /// Later commands also see whether the column is an ALIAS, which has no subcolumns to modify, as in `prepare`.
+            if (command.default_expression || command.to_remove == AlterCommand::RemoveProperty::ALIAS)
+                all_columns.modify(column_name, [&](ColumnDescription & column)
+                {
+                    column.default_desc.kind = command.default_expression ? command.default_kind : ColumnDefaultKind::Default;
+                });
+
             if (command.isRemovingProperty())
             {
                 if (!column_default && command.to_remove == AlterCommand::RemoveProperty::DEFAULT)

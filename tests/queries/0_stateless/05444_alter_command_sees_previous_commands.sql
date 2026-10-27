@@ -37,6 +37,11 @@ SELECT name, type, default_kind, compression_codec FROM system.columns WHERE dat
 SELECT position(create_table_query, 'CODEC') FROM system.tables WHERE database = currentDatabase() AND name = 't_alter_previous_commands_alias';
 DROP TABLE t_alter_previous_commands_alias;
 
+-- A column that the statement turns from an ALIAS into a stored column has subcolumns for the later commands, which are validated.
+CREATE TABLE t_alter_previous_commands_alias (id UInt64, p Tuple(a UInt32) ALIAS tuple(toUInt32(id))) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_alter_previous_commands_alias MODIFY COLUMN p DEFAULT tuple(toUInt32(id)), MODIFY COLUMN IF EXISTS `p.a` CODEC(LZ4) SETTINGS enable_subcolumn_codecs = 0; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE t_alter_previous_commands_alias;
+
 -- The placement of a column (FIRST / AFTER) decides which columns DROP COLUMN of a Nested group removes: `n.b` placed
 -- after `n.a` is dropped together with `n`, so the following DROP COLUMN `n.b` finds no such column.
 CREATE TABLE t_alter_previous_commands_nested (`n.a` Array(UInt32), id UInt64) ENGINE = MergeTree ORDER BY id;
