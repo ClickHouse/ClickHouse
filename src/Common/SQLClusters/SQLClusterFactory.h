@@ -30,6 +30,11 @@ public:
     void alterFromSQL(const ASTAlterSQLClusterQuery & query);
     void dropFromSQL(const ASTDropSQLClusterQuery & query);
 
+    /// Rebuild a SQL cluster from its stored `CREATE` statement so replica locality is recomputed
+    /// after `SYSTEM DROP DNS CACHE`. Does not take the factory mutex: callers may already hold
+    /// `Context::clusters_mutex` (factory mutex is always taken first).
+    static ClusterPtr rematerialize(const Cluster & cluster, ContextPtr context);
+
 private:
     SQLClusterFactory() = default;
 

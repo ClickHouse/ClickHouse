@@ -5,6 +5,8 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ParserSQLClusterQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/sleep.h>
 
@@ -17,12 +19,19 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace ErrorCodes
 {
     extern const int CLUSTER_ALREADY_EXISTS;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int BAD_ARGUMENTS;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -271,6 +280,29 @@ ClusterPtr SQLClusterFactory::materializeCluster(
         std::move(create_statement));
 }
 
+ClusterPtr SQLClusterFactory::rematerialize(const Cluster & cluster, ContextPtr context)
+{
+    if (cluster.getSourceId() != Cluster::SourceId::SQL)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rematerialize a non-SQL cluster");
+
+    const auto & create_query = cluster.getSQLCreateQuery();
+    if (create_query.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "SQL cluster `{}` has no stored CREATE statement", cluster.getName());
+
+    const auto & settings = context->getSettingsRef();
+    ParserCreateSQLClusterQuery parser;
+    const auto ast = parseQuery(
+        parser,
+        create_query,
+        "SQL cluster " + cluster.getName(),
+        /*max_query_size=*/0,
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks]);
+
+    return materializeCluster(ast->as<const ASTCreateSQLClusterQuery &>(), context, create_query);
+}
+
 SQLClusterFactory & SQLClusterFactory::instance()
 {
     static SQLClusterFactory factory;
@@ -323,18 +355,17 @@ void SQLClusterFactory::reloadFromStorage()
 {
     auto context = Context::getGlobalContextInstance()->getGlobalContext();
     const auto clusters = metadata_storage->getAll();
+
+    std::unordered_set<String> snapshot_names;
+    snapshot_names.reserve(clusters.size());
+    for (const auto & [cluster_name, _] : clusters)
+        snapshot_names.insert(cluster_name);
+
+    /// Materialize first: a throw must not clear `stored_cluster_names` for clusters still in `Context`.
+    std::vector<std::pair<String, ClusterPtr>> materialized;
+    materialized.reserve(clusters.size());
     std::unordered_set<String> new_stored_cluster_names;
     new_stored_cluster_names.reserve(clusters.size());
-    for (const auto & [cluster_name, _] : clusters)
-        new_stored_cluster_names.insert(cluster_name);
-
-    for (const auto & cluster_name : stored_cluster_names)
-    {
-        if (!new_stored_cluster_names.contains(cluster_name))
-            context->removeSQLCluster(cluster_name);
-    }
-
-    const auto previous_cluster_names = std::exchange(stored_cluster_names, {});
 
     for (const auto & [cluster_name, create_query] : clusters)
     {
@@ -344,19 +375,37 @@ void SQLClusterFactory::reloadFromStorage()
         {
             LOG_ERROR(log, "Not loading SQL cluster `{}`: a cluster with the same name already exists (source: {})",
                 cluster_name, Cluster::formatSourceIdForSystemTable(existing->getSourceId()));
-
-            /// A discovered or a `Replicated` database cluster lives outside the map of static clusters,
-            /// so the previously loaded SQL cluster is still there and must be removed.
-            if (existing->getSourceId() != Cluster::SourceId::CONFIG && previous_cluster_names.contains(cluster_name))
-                context->removeSQLCluster(cluster_name);
             continue;
         }
 
         auto create_statement = create_query.formatWithSecretsOneLine();
-        auto cluster = materializeCluster(create_query, context, std::move(create_statement));
-        context->setCluster(cluster_name, cluster);
-        stored_cluster_names.insert(cluster_name);
+        materialized.emplace_back(cluster_name, materializeCluster(create_query, context, std::move(create_statement)));
+        new_stored_cluster_names.insert(cluster_name);
     }
+
+    for (const auto & cluster_name : stored_cluster_names)
+    {
+        if (new_stored_cluster_names.contains(cluster_name))
+            continue;
+
+        /// Dropped from metadata, or skipped because another source owns the name.
+        /// `DISCOVERY` / `REPLICATED_DATABASE` clusters live outside the static map, so a previously
+        /// loaded SQL cluster with the same name is still there and must be removed. `CONFIG` clusters
+        /// share that map and must survive (`removeSQLCluster` also refuses them).
+        if (snapshot_names.contains(cluster_name))
+        {
+            auto existing = context->tryGetCluster(cluster_name);
+            if (!existing || existing->getSourceId() == Cluster::SourceId::CONFIG)
+                continue;
+        }
+
+        context->removeSQLCluster(cluster_name);
+    }
+
+    for (auto & [cluster_name, cluster] : materialized)
+        context->setCluster(cluster_name, cluster);
+
+    stored_cluster_names = std::move(new_stored_cluster_names);
 
     /// Advance the loaded version only now that the new snapshot has been fully read and applied,
     /// so a reload that throws above does not skip the failed version on the next `waitUpdate`.

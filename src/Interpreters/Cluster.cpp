@@ -1177,8 +1177,8 @@ String Cluster::getCreateStatement(bool show_secrets) const
     const auto ast = parseQuery(
         parser,
         create_query,
-        "",
-        0,
+        "SQL cluster " + name,
+        /*max_query_size=*/0,
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 

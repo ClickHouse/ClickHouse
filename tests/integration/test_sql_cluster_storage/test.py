@@ -321,6 +321,60 @@ def test_keeper_storage_encrypted(cluster):
     )
 
 
+def test_keeper_drop_removes_stale_cluster_when_reload_cannot_materialize(cluster):
+    """A reload that cannot materialize a shared definition must still track the installed cluster.
+
+    Replica B loads `c`. Replica A then stores a definition B cannot construct (`secure = 1` with
+    no `port`, and B has no `tcp_port_secure`). If tracking were cleared before that throw, A's
+    subsequent `DROP CLUSTER` would leave B serving the deleted topology (and its secret) forever,
+    and `DROP CLUSTER IF EXISTS` on B could not repair it.
+    """
+    keeper_path = KEEPER_METADATA_PATHS["cluster_metadata_keeper.xml"]
+    install_metadata_storage(
+        cluster,
+        "cluster_metadata_keeper.xml",
+        keeper_metadata_path=keeper_path,
+    )
+
+    node_a = cluster.instances["clickhouse1"]
+    node_b = cluster.instances["clickhouse2"]
+    name = "reload_fail_cluster"
+    count_query = f"SELECT count() FROM system.clusters WHERE cluster = '{name}'"
+    topology_query = (
+        f"SELECT host_name, port FROM system.clusters WHERE cluster = '{name}' "
+        "ORDER BY replica_num FORMAT TSV"
+    )
+
+    node_a.query(f"DROP CLUSTER IF EXISTS {name}")
+    try:
+        node_a.query(f"CREATE CLUSTER {name} (SHARD (REPLICA (host = 'clickhouse1', port = 9000)))")
+        assert_eq_with_retry(node_b, count_query, "1\n")
+        assert node_b.query(topology_query).strip() == "clickhouse1\t9000"
+
+        # Same shape as `ALTER` on a replica that has `tcp_port_secure` while B does not:
+        # `secure = 1` with no `port` makes `Cluster::Address` look up `tcp_port_secure`, which
+        # is absent here, so `materializeCluster` throws `NO_ELEMENTS_IN_CONFIG`.
+        zk = cluster.get_kazoo_client("zoo1")
+        unmaterializable = (
+            f"CREATE CLUSTER {name} (SHARD (REPLICA (host = 'clickhouse1', secure = 1)))"
+        )
+        zk.set(f"{keeper_path}/{name}.sql", unmaterializable.encode())
+        root_data, _ = zk.get(keeper_path)
+        zk.set(keeper_path, root_data)
+
+        node_b.wait_for_log_line("Port is not specified in cluster configuration")
+        assert node_b.query(topology_query).strip() == "clickhouse1\t9000"
+
+        node_a.query(f"DROP CLUSTER {name}")
+        assert_eq_with_retry(node_b, count_query, "0\n")
+
+        node_b.query(f"DROP CLUSTER IF EXISTS {name}")
+        assert node_b.query(count_query).strip() == "0"
+    finally:
+        node_a.query(f"DROP CLUSTER IF EXISTS {name}")
+        node_b.query(f"DROP CLUSTER IF EXISTS {name}")
+
+
 def test_keeper_drop_keeps_config_cluster_with_same_name(cluster):
     """A SQL cluster created on one node is skipped on a node which has a configured cluster with the same name.
     `DROP CLUSTER` on that node removes the shared metadata but must keep its configured cluster."""
@@ -401,3 +455,87 @@ def test_create_query_secrets_require_grant(cluster):
     finally:
         node.query(f"DROP CLUSTER IF EXISTS {name}")
         node.query(f"DROP USER IF EXISTS {user}")
+
+
+def rewrite_hosts_alias(node, alias, ip):
+    """Rewrite `/etc/hosts` in place: the file is bind-mounted, so `sed -i` fails with EBUSY."""
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"grep -v -w '{alias}' /etc/hosts > /tmp/hosts && "
+            f"echo '{ip} {alias}' >> /tmp/hosts && "
+            "cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+        ],
+        user="root",
+    )
+
+
+def remove_hosts_alias(node, alias):
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"grep -v -w '{alias}' /etc/hosts > /tmp/hosts && "
+            "cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+        ],
+        user="root",
+    )
+
+
+def test_sql_cluster_locality_recomputed_after_drop_dns_cache(cluster):
+    """A SQL replica whose hostname moves from loopback to a remote IP must stop being local
+    after `SYSTEM DROP DNS CACHE`. Local metadata has no periodic reload that would hide a
+    stale `ClusterPtr` copied across the DNS rebuild."""
+    install_metadata_storage(
+        cluster,
+        "cluster_metadata_local.xml",
+        local_metadata_path=LOCAL_METADATA_PATHS["cluster_metadata_local.xml"],
+    )
+
+    node = cluster.instances["clickhouse1"]
+    peer = cluster.instances["clickhouse2"]
+    name = "dns_locality_cluster"
+    alias = "sql_cluster_dns_host"
+    table = "dns_locality_t"
+    dist = "dns_locality_d"
+
+    def is_local():
+        return node.query(
+            f"SELECT is_local FROM system.clusters WHERE cluster = '{name}'"
+        ).strip()
+
+    try:
+        rewrite_hosts_alias(node, alias, "127.0.0.1")
+        node.query("SYSTEM DROP DNS CACHE")
+        node.query(f"DROP CLUSTER IF EXISTS {name}")
+        node.query(f"CREATE CLUSTER {name} (SHARD (host = '{alias}', port = 9000))")
+        assert is_local() == "1"
+
+        for instance in (node, peer):
+            instance.query(f"DROP TABLE IF EXISTS {table}")
+            instance.query(f"CREATE TABLE {table} (x UInt8) ENGINE = Memory")
+        node.query(f"DROP TABLE IF EXISTS {dist}")
+        node.query(
+            f"CREATE TABLE {dist} AS {table} ENGINE = Distributed({name}, default, {table})"
+        )
+
+        rewrite_hosts_alias(node, alias, peer.ip_address)
+        assert is_local() == "1", "DNS cache should keep the replica local until it is dropped"
+
+        node.query("SYSTEM DROP DNS CACHE")
+        assert is_local() == "0"
+
+        node.query(
+            f"INSERT INTO {dist} SETTINGS prefer_localhost_replica = 1, "
+            "distributed_foreground_insert = 1 VALUES (1)"
+        )
+        assert node.query(f"SELECT count() FROM {table}").strip() == "0"
+        assert peer.query(f"SELECT count() FROM {table}").strip() == "1"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {dist}")
+        for instance in (node, peer):
+            instance.query(f"DROP TABLE IF EXISTS {table}")
+        node.query(f"DROP CLUSTER IF EXISTS {name}")
+        remove_hosts_alias(node, alias)
+        node.query("SYSTEM DROP DNS CACHE")

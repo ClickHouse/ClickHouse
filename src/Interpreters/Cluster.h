@@ -356,6 +356,8 @@ public:
 
     String getCreateStatement(bool show_secrets) const;
 
+    const String & getSQLCreateQuery() const { return create_query; }
+
     /// Identifies the shard NUMBERING rather than the cluster: two clusters share it only when a shard
     /// number denotes the same shard in both. Deriving a cluster keeps the name but may renumber the
     /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.

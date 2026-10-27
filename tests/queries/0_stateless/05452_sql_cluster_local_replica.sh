@@ -22,11 +22,19 @@ $CLICKHOUSE_CLIENT -q "
     SELECT shard_num, is_local, port = ${CLICKHOUSE_PORT_TCP} FROM system.clusters WHERE cluster = '${cluster}' ORDER BY shard_num;
 "
 
+# `SYSTEM DROP DNS CACHE` rematerializes SQL clusters; `127.0.0.1` must stay local.
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM DROP DNS CACHE;
+    SELECT shard_num, is_local, port = ${CLICKHOUSE_PORT_TCP} FROM system.clusters WHERE cluster = '${cluster}' ORDER BY shard_num;
+"
+
 # An insert into a `Distributed` table goes directly into the local shards instead of the background queue.
+# Pin `prefer_localhost_replica`: CI randomizes it, and with 0 `writeAsyncImpl` queues both
+# local shards, so the counts race the background flush (`distributed_foreground_insert = 0`).
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_local (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE t_dist AS t_local ENGINE = Distributed(${cluster}, currentDatabase(), t_local, x);
-    INSERT INTO t_dist SETTINGS distributed_foreground_insert = 0 SELECT number FROM numbers(10);
+    INSERT INTO t_dist SETTINGS distributed_foreground_insert = 0, prefer_localhost_replica = 1 SELECT number FROM numbers(10);
     SELECT count() FROM t_local;
     SELECT count() FROM t_dist SETTINGS prefer_localhost_replica = 1;
     DROP TABLE t_dist;
