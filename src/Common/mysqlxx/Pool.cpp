@@ -90,6 +90,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_params.ca_pem = get_ssl_param("ssl_ca_pem");
         ssl_params.cert_pem = get_ssl_param("ssl_cert_pem");
         ssl_params.key_pem = get_ssl_param("ssl_key_pem");
+        ssl_params.key_passphrase = get_ssl_param("ssl_key_passphrase");
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
@@ -117,6 +118,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_params.ca_pem = cfg.getString(config_name + ".ssl_ca_pem", "");
         ssl_params.cert_pem = cfg.getString(config_name + ".ssl_cert_pem", "");
         ssl_params.key_pem = cfg.getString(config_name + ".ssl_key_pem", "");
+        ssl_params.key_passphrase = cfg.getString(config_name + ".ssl_key_passphrase", "");
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
@@ -327,7 +329,8 @@ void Pool::Entry::forceConnected() const
                 pool->rw_timeout,
                 pool->enable_local_infile,
                 pool->opt_reconnect,
-                pool->enable_compression);
+                pool->enable_compression,
+                pool->ssl_params.key_passphrase.c_str());
         }
         catch (mysqlxx::ConnectionFailed &)
         {
@@ -404,7 +407,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             rw_timeout,
             enable_local_infile,
             opt_reconnect,
-            enable_compression);
+            enable_compression,
+            ssl_params.key_passphrase.c_str());
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
