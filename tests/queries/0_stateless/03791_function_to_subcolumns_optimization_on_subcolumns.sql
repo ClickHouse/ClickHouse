@@ -1,4 +1,3 @@
-SET enable_analyzer=1;
 SET optimize_functions_to_subcolumns=1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Tuple(x Array(UInt64)));

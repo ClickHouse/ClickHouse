@@ -164,6 +164,27 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+bool isIOErrorException(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+    catch (const ErrnoException & e)
+    {
+        return e.getErrno() == EIO;
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        return e.code() == std::errc::io_error;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is not an I/O error.
+        return false;
+    }
+}
+
 bool shouldReportBrokenPart(std::exception_ptr exception_ptr)
 {
     FailPointInjection::pauseFailPoint(FailPoints::merge_tree_reader_pause_before_report_broken);
@@ -233,7 +254,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
-            if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            const auto exception = std::current_exception();
+            if (CurrentThread::isQueryCancellationException(exception) || isIOErrorException(exception))
                 throw;
 
             throw Exception(

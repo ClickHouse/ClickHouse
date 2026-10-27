@@ -393,14 +393,14 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
 # -falign-loops applies only to non-LTO builds; ThinLTO builds pass the loop alignment to the linker below.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+# Sanitizer builds are not benchmarked, and the padding counts against the 2 GiB reach of x86-64 code.
+if (NOT SANITIZE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -411,7 +411,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     endif ()
 endif()
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 AND NOT SANITIZE)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
@@ -445,6 +445,13 @@ endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+
+# Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
+# to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
+# llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+if (USE_MUSL)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
+endif ()
 
 # Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
 # computed result - `errno` is the only observable difference and ClickHouse never reads it

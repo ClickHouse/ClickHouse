@@ -27,6 +27,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char mt_mutation_pause_after_part_rename[];
+    extern const char mt_mutate_task_pause_before_rename_part[];
 }
 
 
@@ -127,6 +128,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 #endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
+
+                FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_rename_part);
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
 

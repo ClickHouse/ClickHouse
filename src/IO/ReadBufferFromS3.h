@@ -113,6 +113,8 @@ public:
 
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
+
 private:
     void checkIfNotCancelled() const;
 
