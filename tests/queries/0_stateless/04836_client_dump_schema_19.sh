@@ -3,9 +3,9 @@
 # Tag no-darwin: the `FileLog` engine is Linux-only.
 
 # --dump-schema leaves the source as it was. In clickhouse-local, loading the metadata starts every table, but the dump
-# must not refresh a refreshable materialized view, run a pending mutation or TTL merge, or stream a `FileLog` into its
-# view. A database-less reference must not make the dump list the tables of an omitted `Remote` database either: that
-# queries the server the database points to.
+# must not refresh a refreshable materialized view, run a pending mutation or TTL merge, stream a `FileLog` into its view,
+# or send the blocks that a `Distributed` table has queued. A database-less reference must not make the dump list the
+# tables of an omitted `Remote` database either: that queries the server the database points to.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -50,23 +50,23 @@ CREATE MATERIALIZED VIEW d.log_mv TO d.log_dst AS SELECT x FROM d.log;
 # Written after the run that created the FileLog table, so only a later run can stream it.
 echo '{"x": 1}' > "$LOCAL_PATH/filelog/a.jsonl"
 
-# Every directory and file of the data path with its size, except the `status` file that each run rewrites.
+# Every directory and file of the data path `$1` with its size, except the `status` file that each run rewrites.
 snapshot()
 {
-    find "$LOCAL_PATH" -mindepth 1 ! -name status \( -type d -printf 'd %P\n' -o -type f -printf 'f %P %s\n' \) | LC_ALL=C sort
+    find "$1" -mindepth 1 ! -name status \( -type d -printf 'd %P\n' -o -type f -printf 'f %P %s\n' \) | LC_ALL=C sort
 }
 # The second dump also has `query_log` configured, whose table would be written into the data path.
 QUERY_LOG_CONFIG="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_query_log.xml"
 echo '<clickhouse><query_log><database>system</database><table>query_log</table>
 <flush_interval_milliseconds>100</flush_interval_milliseconds></query_log></clickhouse>' > "$QUERY_LOG_CONFIG"
-BEFORE=$(snapshot)
+BEFORE=$(snapshot "$LOCAL_PATH")
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --dump-schema=d > "$LOCAL_DUMP_FILE" 2>"$ERR_FILE" \
     || echo "FAIL: dump failed: $(cat "$ERR_FILE")"
 $CLICKHOUSE_LOCAL --config-file "$QUERY_LOG_CONFIG" --log_queries=1 --path "$LOCAL_PATH" --dump-schema=d \
     > "$LOCAL_DUMP_FILE" 2>"$ERR_FILE" || echo "FAIL: dump with query_log failed: $(cat "$ERR_FILE")"
 echo "refreshable view dumped: $(grep -c '^CREATE MATERIALIZED VIEW d\.rmv ' "$LOCAL_DUMP_FILE")"
 echo "FileLog view dumped: $(grep -c '^CREATE MATERIALIZED VIEW d\.log_mv ' "$LOCAL_DUMP_FILE")"
-AFTER=$(snapshot)
+AFTER=$(snapshot "$LOCAL_PATH")
 if [ "$BEFORE" = "$AFTER" ]; then
     echo 'data path unchanged by the dumps'
 else
@@ -82,6 +82,38 @@ SELECT 'mutated rows after a plain run', sum(y) FROM d.mut;
 "
 cd "$CUR_DIR" || exit 1
 rm -rf "$LOCAL_PATH" "$LOCAL_DUMP_FILE" "$QUERY_LOG_CONFIG" "$ERR_FILE"
+
+echo '--- clickhouse-local: a dump does not send the blocks that a Distributed table has queued ---'
+DIST_PATH="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dist"
+DIST_DUMP_FILE="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dist.sql"
+DIST_CONFIG="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_dist.xml"
+rm -rf "$DIST_PATH"
+# The shard is the server of the test, which clickhouse-local would take for itself on the port of its own `tcp_port`.
+echo "<clickhouse><tcp_port>$((CLICKHOUSE_PORT_TCP + 1))</tcp_port><remote_servers><test_server><shard><replica>
+<host>${CLICKHOUSE_HOST}</host><port>${CLICKHOUSE_PORT_TCP}</port></replica></shard></test_server></remote_servers></clickhouse>" \
+    > "$DIST_CONFIG"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE dist_dst (x UInt64) ENGINE = MergeTree ORDER BY x"
+# Sends are stopped, and the table does not flush when it is shut down, so the block stays queued for the next run.
+$CLICKHOUSE_LOCAL --config-file "$DIST_CONFIG" --path "$DIST_PATH" --multiquery --query "
+CREATE DATABASE d;
+CREATE TABLE d.dist (x UInt64) ENGINE = Distributed(test_server, '${DB}', dist_dst, x) SETTINGS flush_on_detach = 0;
+SYSTEM STOP DISTRIBUTED SENDS d.dist;
+INSERT INTO d.dist SETTINGS distributed_foreground_insert = 0 VALUES (1), (2);
+"
+BEFORE=$(snapshot "$DIST_PATH")
+$CLICKHOUSE_LOCAL --config-file "$DIST_CONFIG" --path "$DIST_PATH" --dump-schema=d > "$DIST_DUMP_FILE" 2>"$ERR_FILE" \
+    || echo "FAIL: dump failed: $(cat "$ERR_FILE")"
+echo "Distributed table dumped: $(grep -c '^CREATE TABLE d\.dist ' "$DIST_DUMP_FILE")"
+AFTER=$(snapshot "$DIST_PATH")
+if [ "$BEFORE" = "$AFTER" ]; then
+    echo 'data path unchanged by the dump'
+else
+    echo 'FAIL: the dump changed the data path:'
+    diff <(echo "$BEFORE") <(echo "$AFTER")
+fi
+echo "rows the shard received: $($CLICKHOUSE_CLIENT --query 'SELECT count() FROM dist_dst')"
+$CLICKHOUSE_CLIENT --query "DROP TABLE dist_dst"
+rm -rf "$DIST_PATH" "$DIST_DUMP_FILE" "$DIST_CONFIG" "$ERR_FILE"
 
 echo '--- an omitted Remote database is not listed for a database-less reference ---'
 REMOTE_SOURCE_DB="${DB}_fx_source"

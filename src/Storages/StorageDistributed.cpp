@@ -121,6 +121,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
@@ -194,6 +195,11 @@ namespace Setting
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace DistributedSetting
@@ -1794,17 +1800,27 @@ void StorageDistributed::initializeFromDisk()
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_INIT);
 
-    for (const DiskPtr & disk : disks)
+    /// A queue starts sending its files as soon as it is created, and removes each one it has sent, and the preparation of the
+    /// directories creates, removes and renames some. With `load_tables_readonly` none of it happens: no queue exists to send
+    /// anything, also when the table is shut down. Only the numbers of the files are read, so that an `INSERT` does not reuse one.
+    const bool start_directory_queues = !getContext()->getServerSettings()[ServerSetting::load_tables_readonly];
+    if (start_directory_queues)
     {
-        runner.enqueueAndKeepTrack([this, disk_to_init = disk]
+        for (const DiskPtr & disk : disks)
         {
-            initializeDirectoryQueuesForDisk(disk_to_init);
-        });
+            runner.enqueueAndKeepTrack([this, disk_to_init = disk]
+            {
+                initializeDirectoryQueuesForDisk(disk_to_init);
+            });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
 
     for (size_t i = 0; i < paths.size(); ++i)
     {
+        /// Only the queues create the directory of the table.
+        if (!start_directory_queues && !fs::exists(paths[i]))
+            continue;
         /// Passing paths and last_increment are reference is fine since they are created before runner and will outlive it
         runner.enqueueAndKeepTrack([&paths, &last_increment, i]
         {

@@ -4,6 +4,10 @@ FileLog view dumped: 1
 data path unchanged by the dumps
 rows in the target of the refreshable view: 0
 mutated rows after a plain run	5
+--- clickhouse-local: a dump does not send the blocks that a Distributed table has queued ---
+Distributed table dumped: 1
+data path unchanged by the dump
+rows the shard received: 0
 --- an omitted Remote database is not listed for a database-less reference ---
 database-less reader dumped: 1
 Remote database named for the database-less reader: 1

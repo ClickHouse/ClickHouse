@@ -1467,7 +1467,7 @@ Disables `INSERT`, `ALTER`, and `DELETE` queries so read-only replicas do not cr
 Writes to external storage through engines such as `S3`, `DataLake`, `MySQL`, `PostgreSQL`, and `Kafka` remain allowed. Background streaming from `Kafka`, `RabbitMQ`, `NATS`, and `S3Queue` tables into attached materialized views is disabled because it produces `MergeTree` parts and merge work on this replica.
 )", 0) \
     DECLARE(Bool, load_tables_readonly, false, R"(
-Loads the tables without starting the background work that changes their data or sends it to other servers. Every non-replicated `MergeTree` table is read-only, whatever its own `table_readonly` setting says, so no merge, mutation, TTL, move or cleanup runs.
+Loads the tables without starting the background work that changes their data or sends it to other servers. Every non-replicated `MergeTree` table is read-only, whatever its own `table_readonly` setting says, so no merge, mutation, TTL, move or cleanup runs. A `Distributed` table does not start sending the blocks of asynchronous `INSERT` queries that wait in its directories, also not when it is shut down, and does not prepare those directories either.
 
 The stored definitions of the tables are not changed. `clickhouse-local --dump-schema` sets it, together with `disable_insertion_and_mutation`, to read a data path without changing it.
 )", 0) \
