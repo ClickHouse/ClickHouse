@@ -21,7 +21,7 @@
 #    pass their arguments through FIFOs;
 #  - what `socket` of a packet socket does, in both of its spellings, joined by a comma: `AF_PACKET`,
 #    and the obsolete `AF_INET` of the type `SOCK_PACKET`, which the kernel turns into `AF_PACKET`.
-#    The policy refuses both with `EAFNOSUPPORT`, whatever the mode. Without a filter the kernel
+#    An enforcing policy refuses both with `EAFNOSUPPORT`, whatever its configured action. Without a filter the kernel
 #    makes the socket (`0`) for a process with `CAP_NET_RAW`, and answers `EPERM` otherwise;
 #  - the same two through `socketpair`. Without a filter the kernel answers `EOPNOTSUPP`, because
 #    packet sockets do not pair, or `EPERM` without `CAP_NET_RAW`;
@@ -95,6 +95,7 @@ def socket_fields():
     for name, make in [
         ("AF_UNIX", lambda: socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)),
         ("AF_INET", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM)),
+        ("AF_INET6", lambda: socket.socket(socket.AF_INET6, socket.SOCK_STREAM)),
         ("AF_NETLINK", lambda: socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 0)),
         (
             "AF_UNIX_pair",

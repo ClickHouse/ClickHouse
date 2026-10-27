@@ -337,7 +337,7 @@ constexpr UInt32 denied_mknod_file_types[] = {S_IFCHR, S_IFBLK};
 /// the network interfaces and for the TCP socket metrics. A socket of any other family - each of
 /// them a protocol implementation of its own in the kernel - is refused with `EAFNOSUPPORT`, the
 /// answer of a kernel built without that family, so that code which tries one carries on without
-/// it, whatever the mode. `socketpair` is checked as well, because the kernel makes both sockets of
+/// it, whatever the configured action. `socketpair` is checked as well, because the kernel makes both sockets of
 /// a pair before it asks the family whether it can pair them. The obsolete socket type
 /// `SOCK_PACKET` is refused in the same way, whatever the family: the kernel turns an `AF_INET`
 /// socket of that type into an `AF_PACKET` one, after the filter has seen the call.
