@@ -5419,9 +5419,14 @@ void dumpDatabaseSchema(
              "transfer_overflow_mode", "distinct_overflow_mode"})
         if (internal_settings.get(mode) != Field(String("throw")))
             internal_settings.set(mode, String("throw"));
-    for (const auto * row_limit : {"limit", "offset"})
-        if (internal_settings.get(row_limit) != Field(0.0))
-            internal_settings.set(row_limit, Field(0.0));
+    /// The settings that reshape the result of a SELECT apply to every query of the session, the dump's own catalog reads
+    /// too: `executeQueryImpl` wraps such a query for the query-construction ones, so a `filter` leaves an object out of the
+    /// dump silently, and an output format `Null` sends no rows at all. The dump resets them for its own queries.
+    const Settings default_settings;
+    for (const auto * name : {"limit", "offset", "page", "select", "filter", "order", "sort", "additional_result_filter",
+             "additional_table_filters", "format", "output_format", "default_format"})
+        if (internal_settings.get(name) != default_settings.get(name))
+            internal_settings.set(name, default_settings.get(name));
     auto dump_context = Context::createCopy(context);
     dump_context->setSettings(internal_settings);
     context = dump_context;
