@@ -7,7 +7,6 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
-#include <Interpreters/Context_fwd.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 
@@ -221,11 +220,9 @@ public:
     /// any user can call any function. `hasFunctionsRequiringGrant` is lock-free and false
     /// when the list is empty, so the function-resolution path pays nothing in the default case.
     static bool hasFunctionsRequiringGrant() noexcept;
+    /// Pass the name the function is registered under: the configured list is resolved with
+    /// `IFactoryWithAliases::resolveNameOrAlias`, and so must be the name of the call.
     static bool functionRequiresGrant(std::string_view function_name);
-    /// No-op when the list is empty or `context` is null. Call only after the function was found,
-    /// and pass the name the function is registered under: both the configured list and the callers
-    /// resolve aliases with `IFactoryWithAliases::resolveNameOrAlias` before matching.
-    static void checkFunctionGrant(const ContextPtr & context, std::string_view function_name);
     /// Rewrites the names in `FUNCTION ON <name>` elements to the name the function is registered
     /// under, so that `GRANT FUNCTION ON HEX` or `GRANT FUNCTION ON isASCII` matches the check for
     /// `hex` or `isValidASCII`. Unknown names, e.g. of a user defined function created later, are kept.

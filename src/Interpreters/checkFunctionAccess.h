@@ -10,6 +10,7 @@ namespace DB
 /// Enforces `GRANT FUNCTION ON <name>` for the functions listed in
 /// `access_control_improvements.functions_requiring_grant`. No-op when that list is empty,
 /// which is the default, so the ordinary resolution path pays a single relaxed atomic load.
+/// The result of a query that calls such a function is not written to the query result cache.
 ///
 /// Call these ONLY where an identifier is already committed to a real function call.
 /// They must never be called from `tryGet`-style helpers: analyzer code uses those as

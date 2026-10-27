@@ -21,14 +21,12 @@
 #include <Access/resolveEffectiveSettings.h>
 #include <Access/resolveSetting.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Access/Common/AccessType.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Common/Exception.h>
@@ -1295,14 +1293,6 @@ void AccessControl::canonicalizeFunctionNames(AccessRightsElements & elements)
             element.parameter = FunctionFactory::instance().resolveNameOrAlias(element.parameter);
         }
     }
-}
-
-void AccessControl::checkFunctionGrant(const ContextPtr & context, std::string_view function_name)
-{
-    if (!hasFunctionsRequiringGrant() || !context)
-        return;
-    if (functionRequiresGrant(function_name))
-        context->checkAccess(AccessType::FUNCTION, function_name);
 }
 
 bool AccessControl::functionRequiresGrant(std::string_view function_name)
