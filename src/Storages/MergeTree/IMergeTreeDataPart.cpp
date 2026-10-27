@@ -167,6 +167,7 @@ namespace FailPoints
 {
     extern const char remove_merge_tree_part_delay[];
     extern const char merge_tree_load_statistics_throw[];
+    extern const char load_projection_before_metadata_read[];
 }
 
 namespace
@@ -1754,7 +1755,11 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     catch (...)
     {
         /// Don't scare people with broken part error if it's retryable.
-        if (!isRetryableException(std::current_exception()))
+        const auto exception = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception))
+            throw;
+
+        if (!isRetryableException(exception))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
@@ -1867,6 +1872,7 @@ void IMergeTreeDataPart::loadProjections(
 
                 try
                 {
+                    FailPointInjection::pauseFailPoint(FailPoints::load_projection_before_metadata_read);
                     if (only_metadata)
                     {
                         /// The metadata-only path does not go through `loadColumnsChecksumsIndexes`, so
@@ -1879,7 +1885,8 @@ void IMergeTreeDataPart::loadProjections(
                 }
                 catch (...)
                 {
-                    if (isRetryableException(std::current_exception()))
+                    const auto exception = std::current_exception();
+                    if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                         throw;
 
                     auto message = getCurrentExceptionMessage(true);

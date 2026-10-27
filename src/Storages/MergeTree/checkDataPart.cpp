@@ -64,6 +64,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char check_data_part_before_projection_read[];
+    extern const char check_data_part_before_serialization_read[];
     extern const char merge_tree_reader_pause_before_report_broken[];
 }
 
@@ -226,11 +227,15 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         try
         {
+            FailPointInjection::pauseFailPoint(FailPoints::check_data_part_before_serialization_read);
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
             serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
+            if (CurrentThread::isQueryCancellationException(std::current_exception()))
+                throw;
+
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",

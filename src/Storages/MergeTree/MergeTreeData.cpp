@@ -420,6 +420,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+    extern const char load_data_part_before_metadata_read[];
     extern const char merge_tree_drop_all_data_pause_before_removing_parts[];
     extern const char claim_inject_stale_part_dir[];
     /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
@@ -2946,6 +2947,9 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     }
     catch (...)
     {
+        if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            throw;
+
         LOG_DEBUG(log, "Failed to load unexpected data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         if (!state.part)
         {
@@ -3028,7 +3032,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     {
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
-        if (isRetryableException(std::current_exception()))
+        const auto exception = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
             throw;
 
         LOG_DEBUG(log, "Failed to load data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
@@ -3038,13 +3043,15 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     try
     {
+        FailPointInjection::pauseFailPoint(FailPoints::load_data_part_before_metadata_read);
         res.part->loadColumnsChecksumsIndexes(require_part_metadata, !part_disk_ptr->isReadOnly());
     }
     catch (...)
     {
         /// Don't count the part as broken if there was a retryalbe error
         /// during loading, such as "not enough memory" or network error.
-        if (isRetryableException(std::current_exception()))
+        const auto exception = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
             throw;
 
         mark_broken();
@@ -3072,7 +3079,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     }
     catch (...)
     {
-        if (isRetryableException(std::current_exception()))
+        const auto exception = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
             throw;
 
         mark_broken();

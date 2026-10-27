@@ -96,6 +96,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(s3_read_before_get_object) \
     PAUSEABLE_ONCE(s3_read_before_retry) \
     PAUSEABLE_ONCE(check_data_part_before_projection_read) \
+    PAUSEABLE_ONCE(check_data_part_before_serialization_read) \
+    PAUSEABLE_ONCE(load_data_part_before_metadata_read) \
+    PAUSEABLE_ONCE(load_projection_before_metadata_read) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(file_top_k_query_condition_cache_inject_file_change) \
