@@ -52,8 +52,14 @@ def write_table(local_root):
     return metadata, add
 
 
-def write_deletion_vector_commit(local_root):
+def write_deletion_vector_commit(local_root, add_first=False):
     _, add = write_table(local_root)
+    file_actions = [
+        {"remove": {"path": add["path"], "deletionTimestamp": add["modificationTime"], "dataChange": True}},
+        {"add": {**add, "deletionVector": DELETION_VECTOR}},
+    ]
+    if add_first:
+        file_actions.reverse()
     actions = [
         {
             "protocol": {
@@ -63,10 +69,27 @@ def write_deletion_vector_commit(local_root):
                 "writerFeatures": ["deletionVectors"],
             }
         },
-        {"remove": {"path": add["path"], "deletionTimestamp": add["modificationTime"], "dataChange": True}},
-        {"add": {**add, "deletionVector": DELETION_VECTOR}},
+        *file_actions,
     ]
     with open(os.path.join(local_root, "_delta_log", "00000000000000000001.json"), "w") as log:
+        log.write("\n".join(json.dumps(action) for action in actions) + "\n")
+
+
+def write_column_mapping_table(local_root):
+    write_table(local_root)
+    log_path = os.path.join(local_root, "_delta_log", "00000000000000000000.json")
+    with open(log_path) as log:
+        actions = [json.loads(line) for line in log if line.strip()]
+    for action in actions:
+        if "metaData" in action:
+            metadata = action["metaData"]
+            schema = json.loads(metadata["schemaString"])
+            for field in schema["fields"]:
+                field["metadata"]["delta.columnMapping.id"] = 1
+                field["metadata"]["delta.columnMapping.physicalName"] = "col-value"
+            metadata["schemaString"] = json.dumps(schema)
+            metadata["configuration"] = {**metadata.get("configuration", {}), "delta.columnMapping.mode": "name"}
+    with open(log_path, "w") as log:
         log.write("\n".join(json.dumps(action) for action in actions) + "\n")
 
 
@@ -146,7 +169,9 @@ def started_cluster():
         for name, writer in (
             ("table", write_table),
             ("dv_json", write_deletion_vector_commit),
+            ("dv_json_add_first", lambda root: write_deletion_vector_commit(root, add_first=True)),
             ("dv_checkpoint", write_deletion_vector_checkpoint),
+            ("column_mapping", write_column_mapping_table),
         ):
             local_table = os.path.join(cluster.instances_dir, f"unity_gcs_{name}")
             writer(local_table)
@@ -210,10 +235,29 @@ def test_gcp_oauth_falls_back_from_delta_kernel(started_cluster):
     assert result == "1\n2\n3\n"
 
 
-@pytest.mark.parametrize("collection", ["gcs_delta_dv_json", "gcs_delta_dv_checkpoint"])
+@pytest.mark.parametrize(
+    "collection", ["gcs_delta_dv_json", "gcs_delta_dv_json_add_first", "gcs_delta_dv_checkpoint"]
+)
 def test_native_reader_rejects_deletion_vectors(started_cluster, collection):
     error = node.query_and_get_error(
         f"SELECT value FROM deltaLake({collection})",
         settings={"allow_delta_kernel_rs": 1},
     )
     assert "Reading Delta Lake files with deletion vectors is not supported without Delta Kernel" in error
+
+
+def test_bearer_authentication_rejects_column_mapping(started_cluster):
+    has_delta_kernel = (
+        node.query(
+            "SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_DELTA_KERNEL_RS'"
+        ).strip()
+        == "1"
+    )
+    if not has_delta_kernel:
+        pytest.skip("Requires Delta Kernel")
+
+    error = node.query_and_get_error(
+        "SELECT * FROM deltaLake(gcs_delta_column_mapping)",
+        settings={"allow_delta_kernel_rs": 1},
+    )
+    assert "Reading Delta Lake tables with column mapping is not supported with bearer authentication" in error

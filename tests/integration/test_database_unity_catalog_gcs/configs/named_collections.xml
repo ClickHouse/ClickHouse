@@ -18,5 +18,17 @@
             <service_account>default</service_account>
             <metadata_service>resolver</metadata_service>
         </gcs_delta_dv_checkpoint>
+        <gcs_delta_dv_json_add_first>
+            <url>http://resolver:8080/bucket/dv_json_add_first</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>default</service_account>
+            <metadata_service>resolver</metadata_service>
+        </gcs_delta_dv_json_add_first>
+        <gcs_delta_column_mapping>
+            <url>http://resolver:8080/bucket/column_mapping</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>default</service_account>
+            <metadata_service>resolver</metadata_service>
+        </gcs_delta_column_mapping>
     </named_collections>
 </clickhouse>
