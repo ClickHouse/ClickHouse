@@ -604,6 +604,13 @@ bool foldsMarkerIntoCondition(const AggregateDescription & aggregate)
     return aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty();
 }
 
+/// The `nothing` placeholders of aggregates over only-NULL arguments ignore every row, restored ones included.
+bool ignoresInputRows(const AggregateDescription & aggregate)
+{
+    const auto & name = aggregate.function->getName();
+    return name == "nothing" || name == "nothingNull" || name == "nothingUInt64";
+}
+
 /// The factory builds the -If form with the same handling of Nullable arguments as for a user
 /// query; wrapping an already Null-adapted function by hand breaks on Nullable arguments.
 AggregateFunctionPtr getAggregateFunctionWithMarker(const AggregateDescription & aggregate)
@@ -631,7 +638,7 @@ bool canRestoreEmptyGroups(const DecorrelationContext & context, const Aggregato
     return context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS
         && std::ranges::all_of(params.aggregates, [](const AggregateDescription & aggregate)
         {
-            return foldsMarkerIntoCondition(aggregate)
+            return foldsMarkerIntoCondition(aggregate) || ignoresInputRows(aggregate)
                 || getAggregateFunctionWithMarker(aggregate)->getResultType()->equals(*aggregate.function->getResultType());
         });
 }
@@ -1194,6 +1201,9 @@ QueryPlan decorrelateQueryPlan(
             for (size_t aggregate_index = 0; aggregate_index < new_aggregates.size(); ++aggregate_index)
             {
                 auto & aggregate = new_aggregates[aggregate_index];
+                if (ignoresInputRows(aggregate))
+                    continue;
+
                 if (foldsMarkerIntoCondition(aggregate))
                 {
                     const auto & filter_type = aggregate.function->getArgumentTypes().back();

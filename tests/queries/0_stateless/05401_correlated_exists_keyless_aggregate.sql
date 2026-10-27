@@ -88,6 +88,15 @@ INNER JOIN LATERAL (
 ORDER BY o.number
 SETTINGS allow_experimental_lateral_join = 1;
 
+SELECT '-- a parametric aggregate over a NULL argument';
+SELECT o.number, EXISTS (SELECT uniqUpTo(5)(NULL) AS u FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING u = 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, l.u, l.c
+FROM numbers(2) AS o
+INNER JOIN LATERAL (SELECT uniqUpTo(5)(NULL) AS u, count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1;
+
 SELECT '-- layouts of the decorrelated plan';
 SELECT
     o.number,
