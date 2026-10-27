@@ -151,7 +151,10 @@ namespace StreamingExchangeProtocol
     /// Apply configured socket buffer sizes; zero leaves TCP autotuning enabled.
     void applySocketBufferSizes(Poco::Net::StreamSocket & socket);
 
-    /// Set buffer sizes during startup or config reload.
+    /// `setsockopt` takes `int`. Throw before the value is published.
+    void validateSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
+
+    /// Publish buffer sizes for new connections. The caller has already validated them.
     void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
 
     struct SocketBufferSizes

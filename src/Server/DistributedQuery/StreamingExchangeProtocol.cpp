@@ -371,11 +371,19 @@ void applySocketBufferSizes(Poco::Net::StreamSocket & socket)
         socket.setReceiveBufferSize(static_cast<int>(rcvbuf));
 }
 
-void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
+void validateSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
 {
     if (sndbuf > static_cast<UInt64>(INT_MAX) || rcvbuf > static_cast<UInt64>(INT_MAX))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`streaming_exchange_sndbuf` and `streaming_exchange_rcvbuf` must not exceed {}", INT_MAX);
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`streaming_exchange_sndbuf` and `streaming_exchange_rcvbuf` must not exceed {}",
+            INT_MAX);
+    }
+}
+
+void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
+{
     socket_sndbuf.store(sndbuf, std::memory_order_relaxed);
     socket_rcvbuf.store(rcvbuf, std::memory_order_relaxed);
 }

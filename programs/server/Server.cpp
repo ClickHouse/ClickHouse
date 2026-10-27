@@ -2682,6 +2682,15 @@ try
             validatePrometheusConstantLabels(
                 *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
+            /// `setsockopt` takes `int`. Reject before `config().replace`: `ConfigReloader` does not roll back.
+            {
+                ServerSettings reload_server_settings;
+                reload_server_settings.loadSettingsFromConfig(*reload_config);
+                StreamingExchangeProtocol::validateSocketBufferSizes(
+                    reload_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                    reload_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;

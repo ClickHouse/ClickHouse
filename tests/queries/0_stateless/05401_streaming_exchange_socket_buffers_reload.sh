@@ -53,6 +53,22 @@ reload_config
 echo "explicit"
 show_settings
 
+# Above INT_MAX. The reload must fail before publishing, so the explicit values stay.
+cat > "$config" <<EOF
+<clickhouse>
+    <streaming_exchange_sndbuf>4294967296</streaming_exchange_sndbuf>
+    <streaming_exchange_rcvbuf>131072</streaming_exchange_rcvbuf>
+</clickhouse>
+EOF
+echo "rejected"
+output=$($CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" 2>&1 || true)
+if [[ "$output" == *"must not exceed"* ]]; then
+    echo "yes"
+else
+    echo "no"
+fi
+show_settings
+
 rm -f "$config"
 reload_config
 

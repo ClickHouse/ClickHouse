@@ -3,7 +3,6 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
-#include <climits>
 #include <condition_variable>
 #include <csignal>
 #include <filesystem>
@@ -1280,34 +1279,6 @@ TEST(StreamingExchangeTransport, ConfiguredBuffersReachNewConnections)
         EXPECT_EQ(socket.sndbuf, kernel_defaults.sndbuf);
         EXPECT_EQ(socket.rcvbuf, kernel_defaults.rcvbuf);
     }
-}
-
-TEST(StreamingExchangeTransport, BufferSizesAboveIntMaxAreRejected)
-{
-    const RestoreBufferSizes restore;
-
-    StreamingExchangeProtocol::setSocketBufferSizes(65536, 32768);
-    const auto published = StreamingExchangeProtocol::getSocketBufferSizes();
-    ASSERT_EQ(published.sndbuf, 65536u);
-    ASSERT_EQ(published.rcvbuf, 32768u);
-
-    /// 2^32 narrowed to int becomes 0: an explicit setsockopt that locks the buffer at the kernel
-    /// minimum. Reject the invalid configuration rather than silently retaining stale values.
-    EXPECT_THROW(StreamingExchangeProtocol::setSocketBufferSizes(4294967296, 32768), Exception);
-    auto after = StreamingExchangeProtocol::getSocketBufferSizes();
-    EXPECT_EQ(after.sndbuf, published.sndbuf);
-    EXPECT_EQ(after.rcvbuf, published.rcvbuf);
-
-    EXPECT_THROW(StreamingExchangeProtocol::setSocketBufferSizes(65536, 4294967296), Exception);
-    after = StreamingExchangeProtocol::getSocketBufferSizes();
-    EXPECT_EQ(after.sndbuf, published.sndbuf);
-    EXPECT_EQ(after.rcvbuf, published.rcvbuf);
-
-    /// INT_MAX itself stays accepted.
-    StreamingExchangeProtocol::setSocketBufferSizes(INT_MAX, INT_MAX);
-    after = StreamingExchangeProtocol::getSocketBufferSizes();
-    EXPECT_EQ(after.sndbuf, static_cast<UInt64>(INT_MAX));
-    EXPECT_EQ(after.rcvbuf, static_cast<UInt64>(INT_MAX));
 }
 
 namespace
