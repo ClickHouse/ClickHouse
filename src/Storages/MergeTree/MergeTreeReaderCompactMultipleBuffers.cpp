@@ -196,6 +196,8 @@ try
     /// read, e.g. a point query does not walk all marks of a big part.
     /// The granules of a column are compared by the mark of its first substream: with substream marks, the marks
     /// of all substreams of one column of one granule are adjacent in both layouts.
+    /// Every granule to read is compared with the next one, and the first granule of a range also with the previous
+    /// one: otherwise a range of only the last granule of a stripe would not be recognized as striped.
     size_t num_columns = data_part_info_for_read->getColumns().size();
     bool is_striped = false;
     if (has_columns_in_part && marks_count >= 2 && num_columns >= 2)
@@ -204,7 +206,7 @@ try
         marks_getter = marks_loader->loadMarks();
         for (const auto & range : all_mark_ranges)
         {
-            for (size_t mark = range.begin; mark < range.end && mark + 1 < marks_count && !is_striped; ++mark)
+            for (size_t mark = range.begin > 0 ? range.begin - 1 : 0; mark < range.end && mark + 1 < marks_count && !is_striped; ++mark)
                 is_striped = marks_getter->getMark(mark + 1, 0) < marks_getter->getMark(mark, second_column_position);
             if (is_striped)
                 break;
