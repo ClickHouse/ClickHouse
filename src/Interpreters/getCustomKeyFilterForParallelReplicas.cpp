@@ -100,6 +100,43 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
     return false;
 }
 
+/// Drop the table qualifier (`t.a`) or the database and table qualifiers (`db.t.a`) from identifiers
+/// that name an `ALIAS` column of the table, so that `ReplaceAliasByExpressionMatcher`, which matches
+/// the identifier as written, expands them too. The planner resolves such an identifier to the alias
+/// expression regardless of the qualifier.
+void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns)
+{
+    checkStackSize();
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const auto & parts = identifier->name_parts;
+        if (parts.size() < 2 || columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()))
+            return;
+
+        for (size_t num_qualifiers = 1; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
+        {
+            String unqualified_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.end(), "."));
+            if (columns.hasAlias(unqualified_name))
+            {
+                auto unqualified_identifier = make_intrusive<ASTIdentifier>(unqualified_name);
+                unqualified_identifier->setAlias(identifier->tryGetAlias());
+                ast = std::move(unqualified_identifier);
+                return;
+            }
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+    {
+        auto * old_ptr = child.get();
+        removeQualifiersFromAliasColumnIdentifiers(child, columns);
+        if (child.get() != old_ptr)
+            ast->updatePointerToChild(old_ptr, child.get());
+    }
+}
+
 }
 
 ASTPtr getCustomKeyFilterForParallelReplica(
@@ -121,6 +158,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     {
         using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
         ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
+        removeQualifiersFromAliasColumnIdentifiers(expanded_custom_key_ast, columns);
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
         /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
