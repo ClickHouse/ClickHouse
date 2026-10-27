@@ -22,3 +22,10 @@ lazy materialization, inner disabled, outer enabled
 lazy materialization, inner enabled, outer disabled
 1	1000
 1	1000
+aggregate projection, inner disabled, outer enabled
+10
+aggregate projection, inner enabled, outer disabled
+10
+aggregate projection, filter output is constant
+05398_projection_inner_disabled	0
+05398_projection_inner_enabled	1

@@ -113,3 +113,50 @@ SETTINGS optimize_constant_columns_after_filter = 0, optimize_move_to_prewhere =
     query_plan_optimize_lazy_materialization = 1;
 
 DROP TABLE t_filter_const_subquery_settings_lazy;
+
+-- The aggregate projection replaces the filter above its read. The aggregation materializes the keys,
+-- so check the size of the filter output instead: constant `x` takes less than 16 bytes per row.
+DROP TABLE IF EXISTS t_filter_const_subquery_settings_projection;
+CREATE TABLE t_filter_const_subquery_settings_projection
+(
+    x UInt64, y UInt64, v UInt64,
+    PROJECTION p (SELECT x, y, sum(v) GROUP BY x, y)
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_filter_const_subquery_settings_projection SELECT number % 10, number % 100, 1 FROM numbers(100000);
+
+SELECT 'aggregate projection, inner disabled, outer enabled';
+SELECT count() FROM
+(
+    SELECT x, y, sum(v) FROM t_filter_const_subquery_settings_projection
+    WHERE x = 1 GROUP BY x, y
+    SETTINGS optimize_constant_columns_after_filter = 0
+)
+SETTINGS optimize_constant_columns_after_filter = 1, force_optimize_projection = 1, optimize_move_to_prewhere = 0,
+    query_plan_optimize_prewhere = 0, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
+    query_plan_remove_unused_columns = 0, log_processors_profiles = 1, log_comment = '05398_projection_inner_disabled';
+
+SELECT 'aggregate projection, inner enabled, outer disabled';
+SELECT count() FROM
+(
+    SELECT x, y, sum(v) FROM t_filter_const_subquery_settings_projection
+    WHERE x = 1 GROUP BY x, y
+    SETTINGS optimize_constant_columns_after_filter = 1
+)
+SETTINGS optimize_constant_columns_after_filter = 0, force_optimize_projection = 1, optimize_move_to_prewhere = 0,
+    query_plan_optimize_prewhere = 0, query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0,
+    query_plan_remove_unused_columns = 0, log_processors_profiles = 1, log_comment = '05398_projection_inner_enabled';
+
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
+
+SELECT 'aggregate projection, filter output is constant';
+SELECT q.log_comment, sum(p.output_bytes) < 16 * sum(p.output_rows)
+FROM system.processors_profile_log AS p
+INNER JOIN system.query_log AS q ON p.query_id = q.query_id
+WHERE q.current_database = currentDatabase() AND q.type = 'QueryFinish' AND q.event_date >= yesterday()
+    AND q.log_comment IN ('05398_projection_inner_disabled', '05398_projection_inner_enabled')
+    AND p.event_date >= yesterday() AND p.name = 'FilterTransform'
+GROUP BY q.log_comment
+ORDER BY q.log_comment;
+
+DROP TABLE t_filter_const_subquery_settings_projection;
