@@ -263,10 +263,10 @@ def test_predefined_query_handler():
             method="POST",
             params=session_params,
             headers={"Content-Type": "text/plain"},
-            data=" UNION ALL SELECT 'extra'".encode("utf8"),
+            data=" UNION ALL SELECT 1+1".encode("utf8"),
         )
         assert res_session.status_code == 200, res_session.content
-        assert res_session.content == b"Welcome,  UNION ALL SELECT 'extra'\n"
+        assert res_session.content == b"Welcome,  UNION ALL SELECT 1+1\n"
 
         cluster.instance.http_request(
             "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
