@@ -1,0 +1,13 @@
+1	100000
+2	hello
+--- schema inference ---
+n	Int32					
+v	Dynamic					
+--- input_format_parquet_detect_variant_by_structure = 0 ---
+n	Int32					
+v	Tuple(value String, metadata String)					
+1	5	3
+2	6	3
+--- explicit Dynamic bypasses the setting ---
+1	100000
+2	hello

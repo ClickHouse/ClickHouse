@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 
 #include <algorithm>
@@ -27,7 +28,9 @@ namespace DB
 {
 
 class ASTExpressionList;
+class ASTColumns;
 class ASTFunction;
+class ASTIdentifier;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -43,6 +46,15 @@ struct ASTTableJoin;
 struct ASTWindowDefinition;
 
 class SettingsChanges;
+
+/// All aggregate-function combinator suffixes ClickHouse recognises (see
+/// `AggregateFunctionCombinatorFactory`). Shared between the fuzzer — which
+/// applies the subset it can build valid arguments for — and
+/// `QueryOracleChecker`, which strips suffixes to recognise the base aggregate
+/// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
+/// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
+/// `sumif` is not), so these stay PascalCase.
+const Strings & aggregateCombinatorSuffixes();
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -65,6 +77,11 @@ public:
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
+
+    /// When true, reduce probability of structure-destroying mutations
+    /// (removing GROUP BY, WHERE, converting to EXPLAIN) to preserve
+    /// query structure for oracle correctness testing.
+    bool oracle_mode = false;
 
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
@@ -181,6 +198,15 @@ private:
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
 
+    // Depth of SELECT-query nesting while fuzzing (1 = inside the outermost
+    // `ASTSelectQuery`). Unlike `current_ast_depth`, this counts only SELECT
+    // nodes, so the oracle-mode guards can reliably recognise the topmost
+    // query — a plain SELECT is wrapped in `ASTSelectWithUnionQuery` and an
+    // expression list, putting the real top-level SELECT at AST depth 3.
+    // Maintained by a `ScopedIncrement` in the `ASTSelectQuery` branch of
+    // `fuzz`, which spans the recursion into the SELECT's children.
+    size_t current_select_nesting = 0;
+
     // Used to track added tables in join clauses
     uint32_t alias_counter = 0;
 
@@ -234,6 +260,7 @@ private:
     NameToNameMap last_query_parameters;
     /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
     uint32_t param_counter = 0;
+    static constexpr uint32_t max_query_parameters = 10;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
@@ -248,6 +275,9 @@ private:
     /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
     /// occasionally qualified with a known table name.
     ASTPtr makeFuzzedVirtualColumn();
+    /// Builds the string literal naming a data part that `OPTIMIZE ... DRY RUN PARTS` and the
+    /// `PART` forms of `ALTER` take.
+    ASTPtr makeFuzzedPartName();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     /// Fuzz every element of a type list in place. Returns true if any element changed.
@@ -274,11 +304,12 @@ private:
     /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters. A source
     /// limit, when given, is what an unfired randomization keeps.
     DataTypePtr makeRandomObject(
-        std::unordered_map<String, DataTypePtr> typed_paths = {},
+        DataTypeObject::TypedPathsMap typed_paths = {},
         std::unordered_set<String> paths_to_skip = {},
         std::vector<String> path_regexps_to_skip = {},
         std::optional<size_t> source_max_dynamic_paths = std::nullopt,
-        std::optional<size_t> source_max_dynamic_types = std::nullopt);
+        std::optional<size_t> source_max_dynamic_types = std::nullopt,
+        std::unordered_set<String> shared_typed_paths = {});
     /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
     /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
     DataTypePtr makeAggregateFunctionType(
@@ -298,8 +329,8 @@ private:
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
-    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy);
-    void fuzzTableStorage(ASTStorage & storage);
+    void fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_incremental);
+    void fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
@@ -333,10 +364,14 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzProxyDatabaseEngine(ASTStorage & storage);
+    void fuzzStorageDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
+    String makeFuzzedLikePattern();
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);
+    void callTableAsParameterizedView(ASTTableExpression & table);
     void wrapTableAsMerge(ASTTableExpression & table);
     void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
@@ -358,6 +393,9 @@ private:
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
     String generateParamValue();
+    ASTPtr makeQueryParameter(const String & type, const String & value);
+    ASTPtr makeLimitExpression(const Field & value);
+    ASTPtr makeParameterizedIdentifier(const ASTIdentifier & ident);
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);

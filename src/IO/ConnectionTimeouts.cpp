@@ -20,6 +20,10 @@ namespace Setting
     extern const SettingsSeconds http_connection_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsUInt64 distributed_cache_connect_timeout_ms;
+    extern const SettingsUInt64 distributed_cache_send_timeout_ms;
+    extern const SettingsUInt64 distributed_cache_receive_timeout_ms;
+    extern const SettingsUInt64 distributed_cache_tcp_keep_alive_timeout_ms;
 }
 
 namespace ServerSetting
@@ -84,6 +88,17 @@ ConnectionTimeouts ConnectionTimeouts::getFetchPartHTTPTimeouts(const ServerSett
 
     return timeouts;
 }
+
+#if ENABLE_DISTRIBUTED_CACHE
+ConnectionTimeouts ConnectionTimeouts::getDistributedCacheTimeouts(const Settings & settings)
+{
+    return ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(settings[Setting::distributed_cache_connect_timeout_ms] * 1000))
+        .withSendTimeout(Poco::Timespan(settings[Setting::distributed_cache_send_timeout_ms] * 1000))
+        .withReceiveTimeout(Poco::Timespan(settings[Setting::distributed_cache_receive_timeout_ms] * 1000))
+        .withTCPKeepAliveTimeout(Poco::Timespan(settings[Setting::distributed_cache_tcp_keep_alive_timeout_ms] * 1000));
+}
+#endif
 
 class TimeoutsForFirstAttempt
 {

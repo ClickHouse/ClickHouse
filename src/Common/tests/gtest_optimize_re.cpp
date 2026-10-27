@@ -29,8 +29,13 @@ TEST(OptimizeRE, analyze)
     test_f("[Ff]|XYZ", "", {"", "XYZ"});
     test_f("XYZ|[Ff]", "", {"XYZ", ""});
     test_f("XYZ|ABC|[Ff]", "", {"XYZ", "ABC", ""});
-    test_f("(?-s)bob", "bob", {}, false, true, true);
-    test_f("(?s)bob", "bob", {}, false, true, true);
+    /// A flag group is not a capture group, neither on its own nor when it scopes a group.
+    test_f("(?-s)bob", "bob", {}, false, false, true);
+    test_f("(?s)bob", "bob", {}, false, false, true);
+    test_f("(?i:bob)x", "", {}, false, false, false);
+    /// A capture nested in a non-capturing group, or one preceding it, is still a capture.
+    test_f("(?i:(b))x", "", {}, false, true, false);
+    test_f("(a)(?:b)c", "abc", {}, false, true, true);
     test_f("(?ssss", "");
     test_f("[asdf]ss(?:ss)ss", "ssssss");
     test_f("abc(de)fg", "abcdefg", {}, false, true, true);
@@ -60,7 +65,8 @@ TEST(OptimizeRE, analyze)
     test_f(R"([Bb]ai[Dd]u[Ss]pider(?:-[A-Za-z]{1,30})(?:-[A-Za-z]{1,30}|)|bingbot|\bYeti(?:-[a-z]{1,30}|)|Catchpoint(?: bot|)|[Cc]harlotte|Daumoa(?:-feedfetcher|)|(?:[a-zA-Z]{1,30}-|)Googlebot(?:-[a-zA-Z]{1,30}|))", "", {"pider-", "bingbot", "Yeti-", "Yeti", "Catchpoint bot", "Catchpoint", "harlotte", "Daumoa-feedfetcher", "Daumoa", "-Googlebot", "Googlebot"});
     test_f("abc|(:?xx|yy|zz|x?)def", "", {"abc", "def"});
     test_f("abc|(:?xx|yy|zz|x?){1,2}def", "", {"abc", "def"});
-    test_f(R"(\\A(?:(?:[-0-9_a-z]+(?:\\.[-0-9_a-z]+)*)/k8s1)\\z)", "/k8s1");
+    /// `\\z` is a literal backslash followed by `z`, so it belongs to the required substring.
+    test_f(R"(\\A(?:(?:[-0-9_a-z]+(?:\\.[-0-9_a-z]+)*)/k8s1)\\z)", R"(/k8s1\z)");
     test_f("[a-zA-Z]+(?P<num>\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?<num>\\d+)", "", {}, false, true, false);
     test_f("[a-zA-Z]+(?'num'\\d+)", "", {}, false, true, false);
@@ -126,9 +132,19 @@ TEST(OptimizeRE, anchoredLiteral)
     test_f("^(abc)$", Kind::General);
     test_f("a$b", Kind::General);                   /// `$` in the middle is an assertion, not an anchor
     test_f("a^b", Kind::General);
-    test_f("^ab\\d", Kind::General);                /// an escape which is not an escaped metacharacter
+    test_f("^ab\\d", Kind::General);                /// an escaped alphanumeric is a special sequence
     test_f("^ab\\", Kind::General);                 /// a dangling escape
     test_f("^\\Qa.c\\E$", Kind::General);
+
+    /// `RE2::QuoteMeta` escapes every non-alphanumeric byte, not only the metacharacters re2 needs escaped.
+    test_f("^a\\%b", Kind::Prefix, "a%b");
+    test_f("^a\\ b$", Kind::Exact, "a b");
+    test_f("^a\\:b", Kind::Prefix, "a:b");
+    test_f("a\\,b$", Kind::Suffix, "a,b");
+    test_f("^a\\@b", Kind::Prefix, "a@b");
+    test_f("^a\\_b", Kind::Prefix, "a_b");
+    test_f("^a\\\\b", Kind::Prefix, "a\\b");
+    test_f("^a\\x41b", Kind::General);            /// a hex escape stays a special sequence
 }
 
 TEST(OptimizeRE, anchoredLiteralIsCaseSensitiveOnly)
@@ -146,4 +162,33 @@ TEST(OptimizeRE, anchoredLiteralIsCaseSensitiveOnly)
     EXPECT_NE(case_insensitive.getRE2(), nullptr);
     EXPECT_TRUE(case_insensitive.match("ABCdef", 6));
     EXPECT_FALSE(case_insensitive.match("xABCdef", 7));
+}
+
+TEST(OptimizeRE, searchRequiredSubstringAcceptsEverythingMatchAccepts)
+{
+    /// A caller may skip `match` for a subject where `searchRequiredSubstring` does not find the literal,
+    /// whatever the pattern's kind or case sensitivity.
+    auto search_finds = [](const DB::OptimizedRegularExpression & regexp, std::string_view subject)
+    {
+        const auto * data = reinterpret_cast<const UInt8 *>(subject.data());
+        const bool found = data + subject.size() != regexp.searchRequiredSubstring(data, subject.size());
+        if (regexp.match(subject.data(), subject.size()))
+            EXPECT_TRUE(found) << subject;
+        return found;
+    };
+
+    for (int options : {0, static_cast<int>(DB::OptimizedRegularExpression::RE_CASELESS)})
+    {
+        for (const auto * pattern : {"^abc", "abc$", "^abc$", "abc", "abc.*d"})
+        {
+            const DB::OptimizedRegularExpression regexp(pattern, options);
+            ASSERT_EQ(regexp.getRequiredSubstring(), "abc") << pattern;
+
+            EXPECT_TRUE(search_finds(regexp, "abcd")) << pattern;
+            EXPECT_TRUE(search_finds(regexp, "xxabcd")) << pattern;
+            EXPECT_EQ(search_finds(regexp, "ABCd"), options == DB::OptimizedRegularExpression::RE_CASELESS) << pattern;
+            EXPECT_FALSE(search_finds(regexp, "abd")) << pattern;
+            EXPECT_FALSE(search_finds(regexp, "ab")) << pattern;
+        }
+    }
 }

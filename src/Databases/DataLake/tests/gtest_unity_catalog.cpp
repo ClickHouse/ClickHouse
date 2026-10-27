@@ -169,8 +169,10 @@ public:
 
     ICatalog::CredentialsRefreshCallback getRefreshCallback()
     {
+        TableMetadata metadata;
+        metadata.setTableUUID("11111111-2222-3333-4444-555555555555");
         return static_cast<ICatalog *>(catalog.get())->getCredentialsConfigurationCallback(
-            DB::StorageID("database", "table", DB::UUIDHelpers::generateV4()));
+            DB::StorageID("database", "table"), metadata);
     }
 
 private:

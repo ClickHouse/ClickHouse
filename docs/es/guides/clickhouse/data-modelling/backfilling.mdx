@@ -24,16 +24,16 @@ Por ejemplo, el subconjunto abarca un único día, `2024-12-17`, y está disponi
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
 ┌────count()─┐
-│ 2039988137 │ -- 2,04 mil millones
+│ 2039988137 │ -- 2.04 billion
 └────────────┘
 
-1 fila en el conjunto. Transcurrido: 32,726 s. Se procesaron 2,04 mil millones de filas, 170,05 KB (62,34 millones de filas/s., 5,20 KB/s.)
-Uso máximo de memoria: 239,50 MiB.
+1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
+Peak memory usage: 239.50 MiB.
 ```
 
 El conjunto de datos completo de este bucket contiene más de 320 GB de archivos Parquet. En los ejemplos siguientes, seleccionamos intencionadamente subconjuntos mediante patrones glob.
@@ -41,7 +41,7 @@ El conjunto de datos completo de este bucket contiene más de 320 GB de archivos
 Suponemos que el usuario consume un flujo de estos datos, por ejemplo, desde Kafka o almacenamiento de objetos, correspondiente a los datos posteriores a esta fecha. El esquema de estos datos se muestra a continuación:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -90,7 +90,7 @@ Recomendamos cargar los datos históricos desde almacenamiento de objetos. Siemp
   ## Uso de tablas duplicadas y vistas
 </div>
 
-En todos los escenarios, nos apoyamos en el concepto de &quot;tablas y vistas duplicadas&quot;. Estas tablas y vistas son copias de las utilizadas para los datos de streaming en vivo y permiten realizar el backfill de forma aislada, con un mecanismo sencillo de recuperación ante posibles fallos. Por ejemplo, disponemos de la siguiente tabla principal `pypi` y vista materializada, que calcula el número de descargas por proyecto de Python:
+En todos los escenarios, nos apoyamos en el concepto de &quot;tablas y vistas duplicadas&quot;. Estas tablas y vistas son copias de las utilizadas para los datos de streaming en vivo y permiten realizar la carga histórica de forma aislada, con un mecanismo sencillo de recuperación ante posibles fallos. Por ejemplo, disponemos de la siguiente tabla principal `pypi` y vista materializada, que calcula el número de descargas por proyecto de Python:
 
 ```sql
 CREATE TABLE pypi
@@ -127,7 +127,7 @@ Rellenamos la tabla principal y la vista asociada con un subconjunto de los dato
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -141,7 +141,7 @@ SELECT count() FROM pypi
 
 ```response
 ┌──count()─┐
-│ 20612750 │ -- 20,61 millones
+│ 20612750 │ -- 20.61 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -154,16 +154,16 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   20612750 │ -- 20,61 millones
+│   20612750 │ -- 20.61 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
 Peak memory usage: 682.38 KiB.
 ```
 
-Supongamos que deseamos cargar otro subset `{101..200}`. Aunque podríamos insertar directamente en `pypi`, podemos realizar este backfill de forma aislada creando duplicate tables.
+Supongamos que deseamos cargar otro subset `{101..200}`. Aunque podríamos insertar directamente en `pypi`, podemos realizar esta carga histórica de forma aislada creando tablas duplicadas.
 
-Si el backfill falla, no habremos afectado nuestras tablas principales y podremos simplemente hacer [truncate](/es/concepts/features/operations/delete/truncate) en las tablas duplicadas y repetir el proceso.
+Si la carga histórica falla, no habremos afectado nuestras tablas principales y podremos simplemente hacer [truncate](/es/concepts/features/operations/delete/truncate) en las tablas duplicadas y repetir el proceso.
 
 Para crear nuevas copias de estas vistas, podemos usar la cláusula `CREATE TABLE AS` con el sufijo `_v2`:
 
@@ -184,7 +184,7 @@ Poblamos esta tabla con nuestro 2.º subconjunto de aproximadamente el mismo tam
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -199,7 +199,7 @@ FROM pypi_v2
 
 ```response
 ┌──count()─┐
-│ 20400020 │ -- 20,40 millones
+│ 20400020 │ -- 20.40 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -212,7 +212,7 @@ FROM pypi_downloads_v2
 
 ```response
 ┌─sum(count)─┐
-│   20400020 │ -- 20,40 millones
+│   20400020 │ -- 20.40 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
@@ -254,7 +254,7 @@ FROM pypi
 
 ```response
 ┌──count()─┐
-│ 41012770 │ -- 41,01 millones
+│ 41012770 │ -- 41.01 million
 └──────────┘
 
 1 row in set. Elapsed: 0.003 sec.
@@ -267,7 +267,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   41012770 │ -- 41.01 millones
+│   41012770 │ -- 41.01 million
 └────────────┘
 
 1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
@@ -288,12 +288,12 @@ Las inserciones más grandes, es decir, con más filas, implican que se necesite
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
---continuar hasta cargar todos los archivos O realizar la llamada MOVE PARTITION
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
+--continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
@@ -304,7 +304,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-
   ## Escenario 1: Carga histórica de datos con ingestión de datos existente
 </div>
 
-En este escenario, asumimos que los datos que se van a rellenar con datos históricos no están en un bucket aislado y que, por lo tanto, es necesario aplicar un filtro. Los datos ya se están insertando y se puede identificar una marca de tiempo o una columna monotónicamente creciente a partir de la cual es necesario recuperar los datos históricos.
+En este escenario, asumimos que los datos para la carga histórica no están en un bucket aislado y que, por lo tanto, es necesario aplicar un filtro. Los datos ya se están insertando y se puede identificar una marca de tiempo o una columna monotónicamente creciente a partir de la cual es necesario recuperar los datos históricos.
 
 Este proceso sigue los siguientes pasos:
 
@@ -330,7 +330,7 @@ FROM pypi
 Peak memory usage: 227.84 MiB.
 ```
 
-De lo anterior, sabemos que necesitamos cargar datos anteriores a `2024-12-17 09:00:00`. Siguiendo el proceso anterior, creamos tablas y vistas duplicadas y cargamos el subconjunto mediante un filtro sobre el timestamp.
+De lo anterior, sabemos que necesitamos cargar datos anteriores a `2024-12-17 09:00:00`. Siguiendo el proceso anterior, creamos tablas y vistas duplicadas y cargamos el subconjunto mediante un filtro sobre la marca de tiempo.
 
 ```sql
 CREATE TABLE pypi_v2 AS pypi
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
@@ -352,7 +352,7 @@ WHERE timestamp < '2024-12-17 09:00:00'
 ```
 
 <Note>
-  Filtrar por columnas timestamp en Parquet puede ser muy eficiente. ClickHouse solo leerá la columna timestamp para identificar los rangos completos de datos que deben cargarse, minimizando el tráfico de red. Los índices de Parquet, como min-max, también pueden ser aprovechados por el motor de consultas de ClickHouse.
+  Filtrar por columnas de marca de tiempo en Parquet puede ser muy eficiente. ClickHouse solo leerá la columna de marca de tiempo para identificar los rangos completos de datos que deben cargarse, minimizando el tráfico de red. Los índices de Parquet, como min-max, también pueden ser aprovechados por el motor de consultas de ClickHouse.
 </Note>
 
 Una vez completada esta inserción, podemos mover las particiones asociadas.
@@ -529,7 +529,7 @@ Observe que el uso de memoria aquí es de `639.47 MiB`.
 Varios factores determinarán el rendimiento y los recursos utilizados en el escenario anterior. Antes de intentar ajustar la configuración, recomendamos que los lectores comprendan los mecanismos de inserción documentados en detalle en la sección [Using Threads for Reads](/es/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) de la [guía Optimizing for S3 Insert and Read Performance](/es/integrations/connectors/data-ingestion/AWS/performance). En resumen:
 
 * **Paralelismo de lectura** - El número de hilos utilizados para leer. Se controla mediante [`max_threads`](/es/reference/settings/session-settings/max-threads#max_threads). En ClickHouse Cloud, esto lo determina el tamaño de la instancia y, de forma predeterminada, corresponde al número de vCPU. Aumentar este valor puede mejorar el rendimiento de lectura a costa de un mayor uso de memoria.
-* **Paralelismo de inserción** - El número de hilos de inserción utilizados para insertar datos. Se controla mediante [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). **Nota**: este valor está limitado por `max_threads`, por lo que el paralelismo de inserción efectivo es `min(max_insert_threads, max_threads)`. En ClickHouse Cloud, esto viene determinado por el tamaño de la instancia (entre 2 y 4) y, en OSS, se establece en 1. Aumentar este valor puede mejorar el rendimiento a costa de un mayor uso de memoria.
+* **Paralelismo de inserción** - El número de hilos de inserción utilizados para insertar datos. Se controla mediante [`max_insert_threads`](/es/reference/settings/session-settings/max-insert#max_insert_threads). Para valores positivos, el paralelismo de inserción efectivo es `min(max_insert_threads, max_threads)`. Un valor de `0` se determina automáticamente según el número de núcleos de CPU y puede reducirse bajo presión de memoria mediante [`max_insert_threads_min_free_memory_per_thread`](/es/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread). En ClickHouse Cloud, el valor predeterminado lo determina el tamaño de la instancia: `1` para nodos con 8 GiB de memoria, `2` para nodos con 16 GiB y `4` para nodos más grandes. En OSS, desde la versión 26.8, el valor predeterminado es `0`. Aumentar este valor puede mejorar el rendimiento a costa de un mayor uso de memoria.
 * **Tamaño del bloque de inserción** - los datos se procesan en un bucle en el que se extraen, se analizan y se agrupan en bloques de inserción en memoria según la [clave de partición](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Estos bloques se ordenan, optimizan, comprimen y se escriben en el almacenamiento como nuevas [partes de datos](/es/concepts/core-concepts/parts). El tamaño del bloque de inserción, controlado por los ajustes [`min_insert_block_size_rows`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_rows) y [`min_insert_block_size_bytes`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (sin comprimir), afecta al uso de memoria y a la E/S de disco. Los bloques más grandes usan más memoria, pero crean menos partes, lo que reduce la E/S y las fusiones en segundo plano. Estos ajustes representan umbrales mínimos (el primero que se alcance desencadena un vaciado).
 * **Tamaño de bloque de la vista materializada** - además del mecanismo descrito anteriormente para la inserción principal, antes de insertarse en las vistas materializadas, los bloques también se compactan para que el procesamiento sea más eficiente. El tamaño de estos bloques lo determinan los ajustes [`min_insert_block_size_bytes_for_materialized_views`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) y [`min_insert_block_size_rows_for_materialized_views`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views). Los bloques más grandes permiten un procesamiento más eficiente, a costa de un mayor uso de memoria. De forma predeterminada, estos ajustes toman, respectivamente, los valores de los ajustes de la tabla de origen [`min_insert_block_size_rows`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_rows) y [`min_insert_block_size_bytes`](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes).
 

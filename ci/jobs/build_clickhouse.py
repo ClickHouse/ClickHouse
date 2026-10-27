@@ -1,9 +1,14 @@
 import argparse
+import hashlib
+import json
 import os
 import shutil
+import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet
+from ci.jobs.scripts import clang_tidy_changed_files
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts import relocation_headroom
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -38,6 +43,7 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.ARM_DARWIN: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/darwin/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/aarch64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=/cctools/bin/aarch64-apple-darwin-ranlib -DLINKER_NAME=/cctools/bin/aarch64-apple-darwin-ld",
     BuildTypes.ARM_V80COMPAT: f"cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DNO_ARMV81_OR_HIGHER=1 -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_FREEBSD: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/freebsd/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
+    BuildTypes.AMD_ILLUMOS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DSPLIT_DEBUG_SYMBOLS=ON -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/sunos/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.PPC64LE: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-ppc64le.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_COMPAT: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DX86_ARCH_LEVEL=1",
     BuildTypes.AMD_MUSL: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64-musl.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
@@ -51,17 +57,36 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.ARM_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=1",  # TODO: fix build with -DSANITIZE_COVERAGE=1
 }
 
-# sccache-warmup builds (MasterCI only) reuse the cmake configuration of the
-# matching release build verbatim - the rest of their special handling (skip
-# the official-build flag, strip debug symbols like a PR build, compile without
-# linking, do not package) is keyed off PR_CACHE_WARMUP_BUILD_TYPES below.
-PR_CACHE_WARMUP_TO_RELEASE = {
-    BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP: BuildTypes.AMD_RELEASE,
-    BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP: BuildTypes.ARM_RELEASE,
+# The performance reference builds (MasterCI only) build master exactly like a
+# PR build of their release build type: the same cmake configuration, the PR
+# options of `flavor_cmake_options` and the same PGO/BOLT. They compile every
+# object, link only the server binary and are not packaged.
+PERFORMANCE_REFERENCE_TO_RELEASE = {
+    BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.AMD_RELEASE,
+    BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.ARM_RELEASE,
 }
-PR_CACHE_WARMUP_BUILD_TYPES = set(PR_CACHE_WARMUP_TO_RELEASE)
-for _warmup_type, _release_type in PR_CACHE_WARMUP_TO_RELEASE.items():
-    BUILD_TYPE_TO_CMAKE[_warmup_type] = BUILD_TYPE_TO_CMAKE[_release_type]
+for _reference_type, _release_type in PERFORMANCE_REFERENCE_TO_RELEASE.items():
+    BUILD_TYPE_TO_CMAKE[_reference_type] = BUILD_TYPE_TO_CMAKE[_release_type]
+
+
+def flavor_cmake_options(cmake_cmd, official, is_private):
+    """The cmake options in which an official build differs from a PR build of the same build type."""
+    if official:
+        return " -DCLICKHOUSE_OFFICIAL_BUILD=1"
+    # Without debug info the ThinLTO link is much faster. Private PR builds keep
+    # it to allow deploying to staging.
+    if not is_private and "ENABLE_THINLTO=1" in cmake_cmd:
+        return " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
+    return ""
+
+# The limited clang-tidy check (merge queue) uses the full tidy build's cmake
+# configuration verbatim - that is what makes the diagnostics it reports the same
+# ones the full check would report. It differs only in what happens in place of
+# the build: see the `ARM_TIDY_CHANGED_FILES` branch below and
+# ci/jobs/scripts/clang_tidy_changed_files.py.
+BUILD_TYPE_TO_CMAKE[BuildTypes.ARM_TIDY_CHANGED_FILES] = BUILD_TYPE_TO_CMAKE[
+    BuildTypes.ARM_TIDY
+]
 
 # Only the release builds are packaged: their packages are what gets published, and what
 # the `Install packages` and `Compatibility check` jobs install. The debug, sanitizer and
@@ -100,13 +125,108 @@ def parse_args():
         help="Build `clickhouse-examples` in addition to the regular targets",
         action="store_true",
     )
+    parser.add_argument(
+        "--shard",
+        help="Build only the `i`-th of `N` shards of the object files, given as `i/N` (clang-tidy builds only)",
+        default=None,
+    )
     return parser.parse_args()
 
 
-def run_shell(name, command, **kwargs):
+def parse_shard(shard):
+    index, count = (int(x) for x in shard.split("/"))
+    assert 1 <= index <= count, f"Invalid shard [{shard}]"
+    return index, count
+
+
+def get_tidy_shard_targets(index, count):
+    """Return the object files of the `index`-th of `count` shards.
+
+    Tidy builds use dummy compiler and linker launchers (see `cmake/clang_tidy.cmake`),
+    so each object file is an independent clang-tidy invocation and nothing is linked.
+    The object files are split by a stable hash of their path, so a file stays in the same
+    shard across runs. Third-party code under `contrib/` is not checked, so it is skipped;
+    whatever an object file needs (generated headers, `protoc`) is still built by ninja
+    as its dependency.
+    """
+    output = subprocess.run(
+        ["ninja", "-C", build_dir, "-t", "targets", "all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    # A few targets are listed with absolute paths, so look at every path component.
+    objects = [
+        target
+        for target in (line.split(":", 1)[0] for line in output.splitlines())
+        if target.endswith(".o") and "contrib" not in target.split("/")
+    ]
+    assert objects, "No object file targets found"
+    selected = [
+        o
+        for o in objects
+        if int(hashlib.md5(o.encode()).hexdigest(), 16) % count == index - 1
+    ]
+    print(f"Shard {index}/{count}: {len(selected)} of {len(objects)} object files")
+    return selected
+
+
+def build_tidy_shard(index, count):
+    # The targets are passed as an argument list, not through a shell, so ninja gets
+    # every target name verbatim.
+    targets = get_tidy_shard_targets(index, count)
+    process = subprocess.Popen(
+        ["time", "-v", "ninja", "-k0", *targets],
+        cwd=build_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+    )
+    # `Result.from_commands_run` captures only what a Python callable prints, so pass
+    # the output through `print` to keep the clang-tidy diagnostics in the result info.
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    return process.wait() == 0
+
+
+def run_shell_with_output(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
+    kwargs["verbose"] = True
     Shell.check(command, **kwargs)
     print(f"\n<<<< {name}\n")
+
+
+def warn_on_low_sccache_hit_rate(info):
+    """Post a non-blocking workflow warning when the sccache hit rate is below 40% (issue #46502)."""
+    exit_code, stats, stderr = Shell.get_res_stdout_stderr(
+        "sccache --show-stats --stats-format json", verbose=False
+    )
+    if exit_code != 0 or not stats:
+        info.add_workflow_warning(
+            f"sccache stats unavailable ({stderr or 'no output'}) - the compiler cache may be broken or missing"
+        )
+        return
+    # Best-effort observability: an unexpected stats blob (unparseable, or a
+    # future sccache renaming these fields) must never fail an already-green build.
+    try:
+        counts = json.loads(stats)["stats"]
+        hits = sum(counts["cache_hits"]["counts"].values())
+        misses = sum(counts["cache_misses"]["counts"].values())
+    except (json.JSONDecodeError, KeyError, AttributeError, TypeError) as e:
+        print(f"WARNING: could not parse sccache stats, skipping hit-rate check: {e}")
+        return
+    total = hits + misses
+    if total == 0:
+        info.add_workflow_warning(
+            "sccache recorded no compilations - the compiler cache may not be in use"
+        )
+        return
+    hit_rate = 100 * hits / total
+    if hit_rate < 40:
+        info.add_workflow_warning(
+            f"Low sccache hit rate {hit_rate:.1f}% ({hits}/{total} compilations cached) - the compiler cache may be degraded or stale"
+        )
 
 
 def setup_build_caches_env(info):
@@ -120,14 +240,14 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -142,7 +262,7 @@ def setup_build_caches_env(info):
         # anyway, will be terminated once the build is finished
         os.environ["CTCACHE_LOG_LEVEL"] = "debug"
         os.environ["CTCACHE_DIR"] = f"{temp_dir}/ccache/clang-tidy-cache"
-        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
         # PR builds run on untrusted runners without S3 write access; only
         # master/release builds (pr_number == 0) are allowed to write entries.
@@ -171,52 +291,44 @@ def main():
     ), f"--build_type option is invalid [{build_type}]"
     assert not args.build_examples or build_type in (
         BuildTypes.ARM_RELEASE,
-        BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+        BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
     ), "--build-examples is only supported for ARM release builds"
+
+    shard = parse_shard(args.shard) if args.shard else None
+    assert not shard or build_type in (
+        BuildTypes.AMD_TIDY,
+        BuildTypes.ARM_TIDY,
+    ), "--shard is only supported for clang-tidy builds"
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
     if args.build_examples:
         cmake_cmd += " -DENABLE_EXAMPLES=1"
     info = Info()
 
-    # Cache-warmup build (MasterCI): compile with the PR release build's cmake
-    # flags (no official-build flag, debug symbols stripped, no PGO/BOLT) so the
-    # object files it compiles share sccache keys with PR builds, while keeping
-    # the shared sccache read-write (master, pr_number == 0).
-    cache_warmup = build_type in PR_CACHE_WARMUP_BUILD_TYPES
+    # A performance reference build is a master build, so it writes to the shared
+    # sccache (pr_number == 0) and PR builds get cache hits from it.
+    reference_build = build_type in PERFORMANCE_REFERENCE_TO_RELEASE
     assert not (
-        cache_warmup and info.pr_number > 0
-    ), "sccache-warmup builds are only meant to run on master/release (pr_number == 0)"
+        reference_build and info.pr_number > 0
+    ), "performance reference builds are only meant to run on master/release (pr_number == 0)"
 
     setup_build_caches_env(info)
-
-    # The cache-warmup build must match PR compiler flags, so it skips the
-    # official-build flag (PR builds do not set it).
-    if info.pr_number == 0 and not cache_warmup:
-        cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
 
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
+    cmake_cmd += flavor_cmake_options(
+        cmake_cmd,
+        official=info.pr_number == 0 and not reference_build,
+        is_private=is_private,
+    )
 
-    # When building with LTO removing debug symbols makes linking much faster
-    # In PRs we disable them to save time and space, but keep them for official builds (master, pr_number = 0)
-    # We keep them in private to allow deploying to staging from PRs
-    # The cache-warmup build mirrors the PR build, so it disables them too.
-    if (
-        not is_private
-        and (info.pr_number != 0 or cache_warmup)
-        and "ENABLE_THINLTO=1" in cmake_cmd
-    ):
-        cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
-
-    # PGO/BOLT profile integration for release builds. The sccache-warmup builds
-    # are deliberately excluded: they exist only to populate the shared compiler
-    # cache, and PGO/BOLT belong to the real release builds.
+    # PGO/BOLT profile integration for release builds.
     pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
     bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
-    use_pgo = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
-    use_bolt = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+    release_type = PERFORMANCE_REFERENCE_TO_RELEASE.get(build_type, build_type)
+    use_pgo = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
@@ -246,7 +358,8 @@ def main():
 
         def do_checkout():
             res = Shell.check(
-                f"mkdir -p {build_dir} && git submodule sync && git submodule init"
+                f"mkdir -p {build_dir} && git submodule sync && git submodule init",
+                strict=True,
             )
 
             if os.path.isdir(".git/modules/contrib") and os.listdir(
@@ -266,11 +379,13 @@ def main():
                     command=f"xargs --max-procs={min(Utils.cpu_count(), 20)} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch --",
                     stdin_str="\0".join(submodules) + "\0",
                     retries=3,
+                    strict=True,
                 )
             else:
                 res = res and Shell.check(
                     "contrib/update-submodules.sh --max-procs 10",
                     retries=3,
+                    strict=True,
                 )
             return res
 
@@ -282,7 +397,8 @@ def main():
         # Validate `.gitmodules` (no recursive submodules, valid URLs, name == path).
         # Run it only in the arm_tidy build to avoid adding overhead to every build
         # and to the style check (which does not have submodules available).
-        if res and build_type == BuildTypes.ARM_TIDY:
+        # A sharded tidy build runs it in the first shard only.
+        if res and build_type == BuildTypes.ARM_TIDY and (not shard or shard[0] == 1):
             results.append(
                 Result.from_commands_run(
                     name="Check Submodules",
@@ -325,13 +441,13 @@ def main():
                 f"ln -sf /build/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         # The sccache server sometimes fails to start because of issues with S3.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
         cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
@@ -378,6 +494,27 @@ def main():
     # Activate FIPS-permissive config for OpenSSL
     os.environ["OPENSSL_CONF"] = "/etc/ssl/openssl.cnf"
 
+    # The limited clang-tidy check has no build of its own: instead of compiling
+    # the tree it generates only the sources the affected translation units are
+    # built against and runs clang-tidy on those translation units. Everything
+    # after this point - packaging, the unit tests, the profile upload - belongs
+    # to a real build, so the job is completed here. Its verdict depends on the
+    # change's set of files as well as on the checkout, and the cache digest
+    # captures only the latter: two changes can produce the same merged tree with
+    # different files to analyze and report, so the result is not cached.
+    if build_type == BuildTypes.ARM_TIDY_CHANGED_FILES:
+        if res and JobStages.BUILD in stages:
+            results.append(
+                clang_tidy_changed_files.run(
+                    changed_files=clang_tidy_changed_files.changed_files_from_ci(info),
+                    repo_dir=repo_path_normalized,
+                    build_dir=build_dir_normalized,
+                    temp_dir=temp_dir,
+                )
+            )
+        Result.create_from(results=results).complete_job(do_not_cache=True)
+        return
+
     files = []
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
@@ -391,6 +528,8 @@ def main():
             # target keeps the whole tree - dbms, functions, programs and the `OS_WASM`
             # platform arms - building for this target.
             targets = "clickhouse"
+        elif reference_build:
+            targets = "clickhouse-self-extracting"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
@@ -403,18 +542,19 @@ def main():
         else:
             targets = "clickhouse-bundle"
 
-        if cache_warmup:
-            # Warm sccache by compiling every translation unit but skip linking
-            # the final binaries. sccache caches per-TU compilation; the
-            # ThinLTO/PGO link step produces nothing cacheable yet dominates a
-            # release build's wall time, so there is no reason to run it here.
-            # Build every object-file target ninja knows about; ninja pulls in
-            # the generated headers each object depends on. xargs batches the
-            # list to stay within the command-line length limit.
+        if reference_build:
+            # Warm sccache by compiling every object-file target ninja knows
+            # about; ninja pulls in the generated headers each object depends
+            # on. xargs batches the list to stay within the command-line length
+            # limit. Then link only the server binary, the reference of the PR
+            # performance comparison (ci/jobs/performance_tests.py).
             build_command = (
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
+                f" && command time -v ninja {targets}"
             )
+        elif shard:
+            build_command = lambda: build_tidy_shard(*shard)
         else:
             build_command = f"command time -v ninja {targets}"
 
@@ -424,6 +564,7 @@ def main():
                 name="Build ClickHouse",
                 command=build_command,
                 workdir=build_dir_normalized,
+                info_extractor=Result.cpp_build_info_extractor,
             )
         )
 
@@ -443,8 +584,9 @@ def main():
             if retry_cmake.is_ok():
                 retry_build = Result.from_commands_run(
                     name="Build ClickHouse (retry without PGO)",
-                    command=f"command time -v ninja {targets}",
+                    command=build_command,
                     workdir=build_dir_normalized,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
                 if retry_build.is_ok():
                     retry_build.set_info(
@@ -458,18 +600,26 @@ def main():
             else:
                 results.append(retry_cmake)
 
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
+        # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
+        if not reference_build and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
+            warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
-            run_shell(
+            run_shell_with_output(
                 "clang-tidy-cache.log stats",
                 f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                 f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
             )
-        run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
+            # Per-file clang-tidy durations (start and end of every ninja edge). The entries
+            # of this build follow the ones pre-seeded from the toolchain.
+            ninja_log = "./ci/tmp/ninja_log.txt"
+            Shell.check(f"cp {build_dir}/.ninja_log {ninja_log}")
+            files.append(ninja_log)
+        run_shell_with_output("Output programs", f"ls -l {build_dir}/programs/")
         Shell.check("pwd")
         res = results[-1].is_ok()
 
@@ -518,6 +668,9 @@ def main():
                     status=Result.Status.OK,
                     info="BOLT post-processing failed (best-effort), using PGO-only binary",
                 )
+
+        if res and build_type == BuildTypes.AMD_MSAN:
+            results.append(relocation_headroom.check(build_dir, info))
 
         # The point of `Build (wasm64)` is a `clickhouse local` that runs, not one that
         # merely links: execute queries under Node.js, covering the advertised surface -
@@ -593,7 +746,13 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, files=files).complete_job()
+    # A failed relocation headroom check fails the job without dropping the jobs that use its artifacts.
+    headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(
+        r.is_ok() for r in results if r.name != relocation_headroom.NAME
+    )
+    Result.create_from(results=results, files=files).complete_job(
+        do_not_block_pipeline_on_failure=headroom_only, do_not_cache=any(r.do_not_cache() for r in results)
+    )
 
 
 if __name__ == "__main__":

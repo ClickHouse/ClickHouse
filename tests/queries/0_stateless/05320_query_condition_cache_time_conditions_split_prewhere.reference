@@ -1,0 +1,3 @@
+only the time condition is in PREWHERE: 1
+entries: 1, hits: 1
+same result as without the cache: 1

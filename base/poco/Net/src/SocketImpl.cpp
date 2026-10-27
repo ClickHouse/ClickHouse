@@ -84,13 +84,26 @@ SocketImpl* SocketImpl::acceptConnection(SocketAddress& clientAddr)
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&buffer);
 	poco_socklen_t saLen = sizeof(buffer);
 	poco_socket_t sd;
+	// Accepted sockets must not be inherited by processes the server starts.
 	do
 	{
+#ifdef SOCK_CLOEXEC
+		sd = ::accept4(_sockfd, pSA, &saLen, SOCK_CLOEXEC);
+#else
 		sd = ::accept(_sockfd, pSA, &saLen);
+#endif
 	}
 	while (sd == POCO_INVALID_SOCKET && lastError() == POCO_EINTR);
 	if (sd != POCO_INVALID_SOCKET)
 	{
+#ifndef SOCK_CLOEXEC
+		if (::fcntl(sd, F_SETFD, FD_CLOEXEC) == -1)
+		{
+			int err = lastError();
+			poco_closesocket(sd);
+			error(err); // will throw
+		}
+#endif
 		clientAddr = SocketAddress(pSA, saLen);
 		return new StreamSocketImpl(sd);
 	}
@@ -497,6 +510,12 @@ bool SocketImpl::secure() const
 
 
 bool SocketImpl::supportsExternalPolling() const
+{
+	return true;
+}
+
+
+bool SocketImpl::supportsNonBlocking() const
 {
 	return true;
 }

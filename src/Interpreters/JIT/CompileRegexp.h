@@ -12,9 +12,9 @@ namespace DB
   *
   * The pattern is first parsed into a `RegexpJIT::RegexpProgram` (see `Common/RegexpJIT/RegexpProgram.h`);
   * if it falls into the supported subset it is compiled with LLVM (`CHJIT`) into a per-string matcher.
-  * Callers that get a null matcher (unsupported pattern, JIT disabled, or below the compile count
-  * threshold) must fall back to the general RE2 engine. The compiled matcher produces results that
-  * are bit-for-bit identical to RE2 for the supported subset.
+  * Callers that get a null matcher (unsupported pattern, JIT disabled, no compiled-expression cache,
+  * or below the compile count threshold) must fall back to the general RE2 engine. The compiled matcher
+  * produces results that are bit-for-bit identical to RE2 for the supported subset.
   *
   * The header intentionally exposes no LLVM types, so it can be included from `src/Functions`.
   */
@@ -48,9 +48,10 @@ struct RegexpJITMatcher
 };
 
 /// Get a JIT matcher for `pattern` with the given flags, compiling and caching it on demand.
-/// Returns an empty handle (`func == nullptr`) if the pattern is not in the supported subset, if
-/// the embedded compiler is disabled, or if the pattern has been seen fewer than
-/// `min_count_to_compile` times (so that rarely-used patterns are not compiled).
+/// Returns an empty handle (`func == nullptr`) if the pattern is not in the supported subset, if the
+/// embedded compiler is disabled, if the process has no compiled-expression cache to retain the
+/// compiled matcher, or if the pattern has been seen fewer than `min_count_to_compile` times (so that
+/// rarely-used patterns are not compiled).
 RegexpJITMatcher getRegexpJITMatcher(
     const std::string & pattern, bool case_insensitive, bool dot_all, size_t min_count_to_compile);
 

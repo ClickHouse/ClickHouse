@@ -201,14 +201,23 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         }
     }
 
-    /// In case of recovery it is possible that some of files will be
-    /// missing (or even broken), if server had been restarted abnormally
-    /// (between unlink(*.bin) and unlink(current_batch.txt)).
+    /// Files are removed in order, so a missing prefix was already processed
+    /// before an abnormal shutdown. Keep the surviving suffix in its persisted order.
     ///
-    /// But we should not throw in this case since current_batch_file_path
-    /// since there there is nothing we can do about it, the deduplication will
-    /// be broken anyway hence the info about this batch should be removed
-    /// anyway, and the batch should be started from scratch.
+    /// A quarantined twin in the broken directory does not prove that the files listed
+    /// before it were sent: older servers skipped files that failed with a transient
+    /// error and went on with the next one, so a batch written by such a server can
+    /// hold an unsent file in front of a quarantined one. Never finalize a file that
+    /// still exists here. Resending it may duplicate rows, deleting it loses them.
+    auto first_existing_file = files.begin();
+    while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
+    {
+        LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", *first_existing_file);
+        ++first_existing_file;
+    }
+    files.erase(files.begin(), first_existing_file);
+
+    /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
         if (!fs::exists(file))
@@ -312,54 +321,83 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & settings_changes)
 {
     size_t broken_files = 0;
+    size_t processed_files = 0;
 
-    for (const auto & file : files)
+    auto finalize_processed_files = [&] -> bool
     {
-        OpenTelemetry::TracingContextHolderPtr trace_context;
+        /// Every completed iteration sent or quarantined one file, so these entries form a prefix.
+        if (!processed_files)
+            return false;
 
-        try
+        files.erase(files.begin(), files.begin() + processed_files);
+        return true;
+    };
+
+    try
+    {
+        for (const auto & file : files)
         {
-            ReadBufferFromFile in(file);
-            const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
+            OpenTelemetry::TracingContextHolderPtr trace_context;
 
-            Settings insert_settings = *distributed_header.insert_settings;
-            insert_settings.applyChanges(settings_changes);
-
-            // This function is called in a separated thread, so we set up the trace context from the file
-            trace_context = distributed_header.createTracingContextHolder(
-                __PRETTY_FUNCTION__,
-                parent.storage.getContext()->getOpenTelemetrySpanLog());
-
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-            auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
-            auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
-            auto connection = std::move(result.entry);
-            bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-
-            RemoteInserter remote(*connection, timeouts,
-                distributed_header.insert_query,
-                insert_settings,
-                distributed_header.client_info);
-            remote.initialize();
-
-            writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
-            remote.onFinish();
-        }
-        catch (Exception & e)
-        {
-            trace_context->root_span.addAttribute(std::current_exception());
-
-            if (isDistributedSendBroken(e.code(), e.isRemoteException()))
+            try
             {
+                ReadBufferFromFile in(file);
+                const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
+
+                Settings insert_settings = *distributed_header.insert_settings;
+                insert_settings.applyChanges(settings_changes);
+
+                // This function is called in a separated thread, so we set up the trace context from the file
+                trace_context = distributed_header.createTracingContextHolder(
+                    __PRETTY_FUNCTION__,
+                    parent.storage.getContext()->getOpenTelemetrySpanLog());
+
+                auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
+                auto results = parent.pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName());
+                auto result = parent.pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+                auto connection = std::move(result.entry);
+                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+
+                RemoteInserter remote(*connection, timeouts,
+                    distributed_header.insert_query,
+                    insert_settings,
+                    distributed_header.client_info);
+                remote.initialize();
+
+                writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
+                remote.onFinish();
+
+                auto dir_sync_guard = parent.getDirectorySyncGuard(parent.relative_path);
+                parent.markAsSend(file);
+                ++processed_files;
+            }
+            catch (Exception & e)
+            {
+                if (trace_context)
+                    trace_context->root_span.addAttribute(std::current_exception());
+
+                if (!isDistributedSendBroken(e.code(), e.isRemoteException()))
+                    throw;
+
                 parent.markAsBroken(file);
                 ++broken_files;
+                ++processed_files;
             }
         }
     }
+    catch (...)
+    {
+        if (finalize_processed_files())
+            serialize();
+        throw;
+    }
 
+    finalize_processed_files();
     if (broken_files)
+    {
         throw Exception(ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES,
             "Failed to send {} files", broken_files);
+    }
 }
 
 }

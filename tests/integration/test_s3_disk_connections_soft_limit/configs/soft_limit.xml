@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Reached as soon as the group holds a single connection, so that every read from the disk
+         is done under connection pressure and cuts its requests to one buffer fill. -->
+    <disk_connections_soft_limit>1</disk_connections_soft_limit>
+</clickhouse>

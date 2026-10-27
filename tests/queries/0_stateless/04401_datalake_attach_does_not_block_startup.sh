@@ -41,7 +41,7 @@ ${CLICKHOUSE_LOCAL} --path "${WORKDIR}" --query "CHECK DATABASE baddb" 2>&1 | gr
 
 # CREATE with a malformed auth_header must still be rejected up front.
 ${CLICKHOUSE_LOCAL} --query "
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 CREATE DATABASE baddb_create
 ENGINE = DataLakeCatalog('http://localhost:8181/v1')
 SETTINGS catalog_type = 'rest', auth_header = 'malformed_without_colon', warehouse = 'demo';

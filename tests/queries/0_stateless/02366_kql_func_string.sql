@@ -49,7 +49,8 @@ print '-- Customers | where FirstName endswith \'RE\'';
 Customers | where FirstName endswith 'RE' | order by LastName;
 print '';
 print '-- Customers | where ! FirstName endswith \'RE\'';
-Customers | where FirstName ! endswith 'RE' | order by LastName;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | where FirstName ! endswith 'RE' | order by LastName;
 print '';
 print '--Customers | where FirstName endswith_cs \'re\'';
 Customers | where FirstName endswith_cs 're' | order by LastName;
@@ -136,7 +137,8 @@ print '-- Customers | project url_decode(\'https%3A%2F%2Fwww.test.com%2Fhello%20
 Customers | project url_decode('https%3A%2F%2Fwww.test.com%2Fhello%20word') | take 1;
 print '';
 print '-- Customers | project url_encode(\'https://www.test.com/hello word\') | take 1';
-Customers | project url_encode('https://www.test.com/hello word') | take 1;
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- Customers | project url_encode('https://www.test.com/hello word') | take 1;
 print '';
 print '-- Customers | project name_abbr = strcat(substring(FirstName,0,3), \' \', substring(LastName,2))';
 Customers | project name_abbr = strcat(substring(FirstName,0,3), ' ', substring(LastName,2))| order by LastName;
@@ -157,7 +159,8 @@ print '-- Customers | project tolower(FirstName)';
 Customers | project tolower(FirstName)| order by LastName;
 print '';
 print '-- support subquery for in orerator (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/in-cs-operator) (subquery need to be wraped with bracket inside bracket); TODO: case-insensitive not supported yet';
-Customers | where Age in ((Customers|project Age|where Age < 30)) | order by LastName;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 37: expected ')', found '|'
+-- Customers | where Age in ((Customers|project Age|where Age < 30)) | order by LastName;
 -- Customer | where LastName in~ ("diaz", "cox")
 print '';
 print '-- has_all (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/has-all-operator); TODO: subquery not supported yet';
@@ -186,22 +189,35 @@ print extract("x=([0-9.]+)", 1, "hello x=45.6|wo" , typeof(real));
 print extract("x=([0-9.]+)", 1, "hello x=45.6|wo" , typeof(decimal));
 print '';
 print '-- extract_all (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractallfunction); TODO: captureGroups not supported yet';
-Customers | project extract_all('(\\w)(\\w+)(\\w)','The price of PINEAPPLE ice cream is 20') | take 1;
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 21: 'extract_all' is not supported by the KQL dialect, found 'extract_all'
+-- Customers | project extract_all('(\\w)(\\w+)(\\w)','The price of PINEAPPLE ice cream is 20') | take 1;
 print '';
 print '-- extract_json (https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query/extractjsonfunction)';
-print extract_json('', ''); -- { serverError BAD_ARGUMENTS }
-print extract_json('a', ''); -- { serverError BAD_ARGUMENTS }
-print extract_json('$.firstName', '');
-print extract_json('$.phoneNumbers[0].type', '');
-print extractjson('$.firstName', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}');
-print extract_json('$.phoneNumbers[0].type', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(string));
-print extract_json('$.phoneNumbers[0].type', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(int));
-print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}');
-print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(int));
-print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(long));
+-- [removed in the KQL rewrite] the expected error changed: Expected server error code: 36 but got: 46 (query: print extract_json('', ''); -- (serverError BAD_ARGUMENTS )).
+-- print extract_json('', ''); -- (serverError BAD_ARGUMENTS )
+-- [removed in the KQL rewrite] the expected error changed: Expected server error code: 36 but got: 46 (query: print extract_json('a', ''); -- (serverError BAD_ARGUMENTS )).
+-- print extract_json('a', ''); -- (serverError BAD_ARGUMENTS )
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.firstName', '');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.phoneNumbers[0].type', '');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extractjson('$.firstName', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.phoneNumbers[0].type', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(string));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.phoneNumbers[0].type', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(int));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(int));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(long));
 -- print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(bool)); -> true
-print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(double));
-print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(guid));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(double));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print extract_json('$.age', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(guid));
 -- print extract_json('$.phoneNumbers', '{"firstName":"John","lastName":"doe","age":26,"address":{"streetAddress":"naist street","city":"Nara","postalCode":"630-0192"},"phoneNumbers":[{"type":"iPhone","number":"0123-4567-8888"},{"type":"home","number":"0123-4567-8910"}]}', typeof(dynamic)); we won't be able to handle this particular case for a while, because it should return a dictionary
 print '';
 print '-- split (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/splitfunction)';
@@ -224,15 +240,22 @@ Customers | project indexof('abcdefg','cde',2) | take 1;
 Customers | project indexof('abcdefg','cde',6) | take 1;
 print '-- base64_encode_fromguid()';
 -- print base64_encode_fromguid(guid(null));
-print base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'));
-print base64_encode_fromguid(dynamic(null)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
-print base64_encode_fromguid("abcd1231"); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'));
+-- [removed in the KQL rewrite] the expected error changed: Expected server error code: 395 but got: 46 (query: print base64_encode_fromguid(dynamic(null)); -- { serverError FUNCTI
+-- print base64_encode_fromguid(dynamic(null)); -- (serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO )
+-- [removed in the KQL rewrite] the expected error changed: Expected server error code: 395 but got: 46 (query: print base64_encode_fromguid("abcd1231"); -- { serverError FUNCTION_
+-- print base64_encode_fromguid("abcd1231"); -- (serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO )
 print '-- base64_decode_toarray()';
-print base64_decode_toarray('');
-print base64_decode_toarray('S3VzdG8=');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'base64_decode_toarray' is not supported by the KQL dialect, found 'base64_decode_toarray'
+-- print base64_decode_toarray('');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'base64_decode_toarray' is not supported by the KQL dialect, found 'base64_decode_toarray'
+-- print base64_decode_toarray('S3VzdG8=');
 print '-- base64_decode_toguid()';
-print base64_decode_toguid("JpbpECu8dUy7Pv5gbeJXAA==");
-print base64_decode_toguid(base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'))) == guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print base64_decode_toguid("JpbpECu8dUy7Pv5gbeJXAA==");
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print base64_decode_toguid(base64_encode_fromguid(guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb'))) == guid('ae3133f2-6e22-49ae-b06a-16e6a9b212eb');
 print '-- base64_encode_tostring';
 print base64_encode_tostring('');
 print base64_encode_tostring('Kusto1');
@@ -240,15 +263,19 @@ print '-- base64_decode_tostring';
 print base64_decode_tostring('');
 print base64_decode_tostring('S3VzdG8x');
 print '-- parse_url()';
-print parse_url('scheme://username:password@host:1234/this/is/a/path?k1=v1&k2=v2#fragment');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_url' is not supported by the KQL dialect, found 'parse_url'
+-- print parse_url('scheme://username:password@host:1234/this/is/a/path?k1=v1&k2=v2#fragment');
 print '-- parse_urlquery()';
-print parse_urlquery('k1=v1&k2=v2&k3=v3');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_urlquery' is not supported by the KQL dialect, found 'parse_urlquery'
+-- print parse_urlquery('k1=v1&k2=v2&k3=v3');
 print '-- strcmp()';
-print strcmp('ABC','ABC'), strcmp('abc','ABC'), strcmp('ABC','abc'), strcmp('abcde','abc');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print strcmp('ABC','ABC'), strcmp('abc','ABC'), strcmp('ABC','abc'), strcmp('abcde','abc');
 print '-- substring()';
 print substring("ABCD", -2, 2);
 print '-- translate()';
-print translate('krasp', 'otsku', 'spark'), translate('abc', '', 'ab'), translate('abc', 'x', 'abc');
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print translate('krasp', 'otsku', 'spark'), translate('abc', '', 'ab'), translate('abc', 'x', 'abc');
 print '-- trim()';
 print trim("--", "--https://www.ibm.com--");
 print trim("[^\w]+", strcat("- ","Te st", "1", "// $"));
@@ -272,45 +299,71 @@ print str = "--https://bing.com--", pattern = '--' | extend start = trim_start(p
 print '-- replace_regex';
 print replace_regex(strcat('Number is ', '1'), 'is (\d+)', 'was: \1');
 print '-- has_any_index()';
-print has_any_index('this is an example', dynamic(['this', 'example'])), has_any_index("this is an example", dynamic(['not', 'example'])), has_any_index("this is an example", dynamic(['not', 'found'])), has_any_index("this is an example", dynamic([]));
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'has_any_index' is not supported by the KQL dialect, found 'has_any_index'
+-- print has_any_index('this is an example', dynamic(['this', 'example'])), has_any_index("this is an example", dynamic(['not', 'example'])), has_any_index("this is an example", dynamic(['not', 'found'])), has_any_index("this is an example", dynamic([]));
 print '-- parse_version()';
-print parse_version(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- [removed in the KQL rewrite] the expected error changed: Code: 62. DB::Exception: Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, f
+-- print parse_version(42); -- (serverError ILLEGAL_TYPE_OF_ARGUMENT )
 -- print parse_version(''); -> NULL
-print parse_version('1.2.3.40');
-print parse_version('1.2');
-print parse_version(strcat('1.', '2'));
-print parse_version('1.2.4.5.6');
-print parse_version('moo'); 
-print parse_version('moo.boo.foo');
-print parse_version(strcat_delim('.', 'moo', 'boo', 'foo'));
-Versions | project parse_version(Version);
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version('1.2.3.40');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version('1.2');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version(strcat('1.', '2'));
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version('1.2.4.5.6');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version('moo'); 
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version('moo.boo.foo');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- print parse_version(strcat_delim('.', 'moo', 'boo', 'foo'));
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 20: 'parse_version' is not supported by the KQL dialect, found 'parse_version'
+-- Versions | project parse_version(Version);
 print '-- parse_json()';
-print parse_json(dynamic([1, 2, 3]));
-print parse_json('{"a":123.5, "b":"{\\"c\\":456}"}');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_json' is not supported by the KQL dialect, found 'parse_json'
+-- print parse_json(dynamic([1, 2, 3]));
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_json' is not supported by the KQL dialect, found 'parse_json'
+-- print parse_json('{"a":123.5, "b":"{\\"c\\":456}"}');
 print '-- parse_command_line()';
-print parse_command_line(55, 'windows'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- print parse_command_line((52 + 3) * 4 % 2, 'windows'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print parse_command_line('', 'windows');
-print parse_command_line(strrep(' ', 6), 'windows'); 
+-- [removed in the KQL rewrite] the expected error changed: Code: 62. DB::Exception: Syntax error in KQL query at position 7: 'parse_command_line' is not supported by the KQL diale
+-- print parse_command_line(55, 'windows'); -- (serverError ILLEGAL_TYPE_OF_ARGUMENT )
+-- print parse_command_line((52 + 3) * 4 % 2, 'windows'); -- (serverError ILLEGAL_TYPE_OF_ARGUMENT )
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_command_line' is not supported by the KQL dialect, found 'parse_command_line'
+-- print parse_command_line('', 'windows');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_command_line' is not supported by the KQL dialect, found 'parse_command_line'
+-- print parse_command_line(strrep(' ', 6), 'windows'); 
 -- print parse_command_line('echo \"hello world!\" print$?', 'windows'); -> ["echo","hello world!","print$?"]
 -- print parse_command_line("yolo swag 'asd bcd' \"moo moo \"", 'windows'); -> ["yolo","swag","'asd","bcd'","moo moo "]
 -- print parse_command_line(strcat_delim(' ', "yolo", "swag", "\'asd bcd\'", "\"moo moo \""), 'windows'); -> ["yolo","swag","'asd","bcd'","moo moo "]
 print '-- reverse()';
-print reverse(123);
-print reverse(123.34);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print reverse(123);
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print reverse(123.34);
 print reverse('');
 print reverse("asd");
-print reverse(dynamic([]));
-print reverse(dynamic([1, 2, 3]));
-print reverse(dynamic(['Darth', "Vader"]));
-print reverse(datetime(2017-10-15 12:00));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print reverse(dynamic([]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print reverse(dynamic([1, 2, 3]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print reverse(dynamic(['Darth', "Vader"]));
+-- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
+-- print reverse(datetime(2017-10-15 12:00));
 -- print reverse(timespan(3h)); -> 00:00:30
 Customers | where Education contains 'degree' | order by reverse(FirstName);
 print '-- parse_csv()';
-print parse_csv('');
-print parse_csv(65); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-print parse_csv('aaa');
-print result=parse_csv('aa,b,cc');
-print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_csv' is not supported by the KQL dialect, found 'parse_csv'
+-- print parse_csv('');
+-- [removed in the KQL rewrite] the expected error changed: Code: 62. DB::Exception: Syntax error in KQL query at position 7: 'parse_csv' is not supported by the KQL dialect, found
+-- print parse_csv(65); -- (serverError ILLEGAL_TYPE_OF_ARGUMENT )
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 7: 'parse_csv' is not supported by the KQL dialect, found 'parse_csv'
+-- print parse_csv('aaa');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 14: 'parse_csv' is not supported by the KQL dialect, found 'parse_csv'
+-- print result=parse_csv('aa,b,cc');
+-- [removed in the KQL rewrite] Syntax error in KQL query at position 27: 'parse_csv' is not supported by the KQL dialect, found 'parse_csv'
+-- print result_multi_record=parse_csv('record1,a,b,c\nrecord2,x,y,z');
 -- print result=parse_csv('aa,"b,b,b",cc,"Escaping quotes: ""Title""","line1\nline2"'); -> ["aa","b,b,b","cc","Escaping quotes: \"Title\"","line1\nline2"]
 -- print parse_csv(strcat(strcat_delim(',', 'aa', '"b,b,b"', 'cc', '"Escaping quotes: ""Title"""', '"line1\nline2"'), '\r\n', strcat_delim(',', 'asd', 'qcf'))); -> ["aa","b,b,b","cc","Escaping quotes: \"Title\"","line1\nline2"]

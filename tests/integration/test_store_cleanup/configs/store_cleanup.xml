@@ -3,6 +3,24 @@
     <database_catalog_unused_dir_rm_timeout_sec>60</database_catalog_unused_dir_rm_timeout_sec>
     <database_catalog_unused_dir_cleanup_period_sec>1</database_catalog_unused_dir_cleanup_period_sec>
 
+    <storage_configuration>
+        <disks>
+            <default></default>
+            <encrypted_disk_inner>
+                <type>encrypted</type>
+                <disk>default</disk>
+                <path>encrypted_inner/</path>
+                <key>1234567812345678</key>
+            </encrypted_disk_inner>
+            <encrypted_disk>
+                <type>encrypted</type>
+                <disk>encrypted_disk_inner</disk>
+                <path>encrypted_outer/</path>
+                <key>8765432187654321</key>
+            </encrypted_disk>
+        </disks>
+    </storage_configuration>
+
     <!-- We don't really need [Zoo]Keeper for this test.
     And it makes sense to have at least one test with TestKeeper. -->
     <zookeeper>

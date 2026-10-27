@@ -174,7 +174,7 @@ void benchmarkSerialize(benchmark::State & state, const std::vector<StatisticsTy
     String data;
     data.reserve(bytes);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         data.clear();
         WriteBufferFromString buffer(data);
@@ -196,7 +196,7 @@ void benchmarkBuild(benchmark::State & state, const std::vector<StatisticsType> 
     auto column = makeColumn(kind, benchmark_rows);
     const auto column_bytes = column->byteSize();
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         auto statistics = makeStatistics(types, data_type);
         statistics->build(column);

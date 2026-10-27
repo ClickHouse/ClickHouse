@@ -1,0 +1,23 @@
+<clickhouse>
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+            <verificationMode>none</verificationMode>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+        </server>
+        <client>
+            <!-- server.crt is its own trust anchor, so the Keeper certificate presented by node1
+                 both validates as a chain and names node1 in its subjectAltName. -->
+            <caConfig>/etc/clickhouse-server/config.d/server.crt</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <verificationMode>relaxed</verificationMode>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>

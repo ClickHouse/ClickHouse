@@ -1,0 +1,12 @@
+nondeterministic plan
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(__table2.x, 100_UInt8), equals(modulo(wasm_disj_nondet(__table1.k), 2_UInt8), 0_UInt8)), and(equals(__table1.a, 2_UInt8), equals(__table2.x, 200_UInt8))) (removed)
+Prewhere filter column: or(equals(__table1.a, 1_UInt8), equals(__table1.a, 2_UInt8)) (removed)
+Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+deterministic plan
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(__table2.x, 100_UInt8), equals(modulo(wasm_disj_det(__table1.k), 2_UInt8), 0_UInt8)), and(equals(__table1.a, 2_UInt8), equals(__table2.x, 200_UInt8))) (removed)
+Filter column: or(and(equals(__table1.a, 1_UInt8), equals(modulo(wasm_disj_det(__table1.k), 2_UInt8), 0_UInt8)), equals(__table1.a, 2_UInt8)) (removed)
+Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+results
+500
+500
+500

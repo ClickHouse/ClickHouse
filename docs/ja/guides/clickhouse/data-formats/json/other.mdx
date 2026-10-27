@@ -46,8 +46,8 @@ INSERT INTO people FORMAT JSONEachRow
 ```
 
 ```response
-OK.
-結果セットに 1 行あります。経過時間: 0.002 秒。
+Ok.
+1 row in set. Elapsed: 0.002 sec.
 ```
 
 `tags` カラムを選択すると、JSON が文字列として挿入されていることを確認できます:
@@ -94,7 +94,7 @@ ENGINE = MergeTree ORDER BY ()
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response
@@ -582,7 +582,7 @@ SELECT clientip, status, size, `request.method` FROM http WHERE has(request.meth
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -600,7 +600,7 @@ FORMAT PrettyJSONEachRow
 ```
 
 ```response
-1行 in set. Elapsed: 0.312 sec.
+1 row in set. Elapsed: 0.312 sec.
 ```
 
 JSON の制約と入力フォーマットを踏まえ、次のクエリを使用してこのサンプルデータセットを挿入します。ここでは、`flatten_nested=0` を設定します。
@@ -610,7 +610,7 @@ JSON の制約と入力フォーマットを踏まえ、次のクエリを使用
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
 'JSONEachRow');
 ```
 
@@ -657,7 +657,7 @@ ENGINE = MergeTree  ORDER BY tuple();
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -668,7 +668,7 @@ Row 1:
 keys:   ['@timestamp','clientip','request','status','size']
 values: ['893964617','40.135.0.0','{"method":"GET","path":"/images/hm_bg.jpg","version":"HTTP/1.0"}','200','24736']
 
-1 rows in set. Elapsed: 0.416 sec.
+1 row in set. Elapsed: 0.416 sec.
 ```
 
 request カラムが、文字列として表現されたネスト構造のままであることに注目してください。ルートには任意の新しいキーを追加できます。JSON 自体にも任意の違いがあって構いません。ローカルテーブルに挿入するには、次を実行します。
@@ -678,7 +678,7 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
 ```
 
 ```response

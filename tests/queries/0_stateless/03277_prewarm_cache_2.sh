@@ -64,12 +64,18 @@ $CLICKHOUSE_CLIENT --query "
 
     SYSTEM FLUSH LOGS query_log;
 
+    -- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
     SELECT
-        ProfileEvents['LoadedMarksFiles'],
-        ProfileEvents['LoadedPrimaryIndexFiles']
+        sum(ProfileEvents['LoadedMarksFiles']),
+        sum(ProfileEvents['LoadedPrimaryIndexFiles'])
     FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache_rmt_1%'
-    ORDER BY event_time_microseconds;
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
+    (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND query LIKE 'SELECT count() FROM t_prewarm_cache_rmt_1%'
+    )
+    GROUP BY initial_query_id
+    ORDER BY min(event_time_microseconds);
 
     DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 "

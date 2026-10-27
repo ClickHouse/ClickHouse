@@ -28,6 +28,11 @@ UUID ServerUUID::get()
     return server_uuid;
 }
 
+UUID ServerUUID::tryGet()
+{
+    return server_uuid;
+}
+
 void ServerUUID::load(const fs::path & server_uuid_file, Poco::Logger * log)
 {
     server_uuid = loadServerUUID(server_uuid_file, log);

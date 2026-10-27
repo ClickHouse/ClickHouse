@@ -22,6 +22,7 @@ struct ServerSettingsImpl;
 
 /// List of available types supported in ServerSettings object
 #define SERVER_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, AsynchronousMetricsKeyValuesMode) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, GroupArrayActionWhenLimitReached) \
@@ -33,6 +34,7 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, UInt64Auto) \
+    M(CLASS_NAME, SeccompMode) \
 
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)

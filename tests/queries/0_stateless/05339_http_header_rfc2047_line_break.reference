@@ -1,0 +1,18 @@
+-- Q-encoded CRLF
+contains CR, LF or NUL
+400
+-- Q-encoded LF
+contains CR, LF or NUL
+400
+-- B-encoded CRLF
+contains CR, LF or NUL
+400
+-- Q-encoded NUL
+contains CR, LF or NUL
+400
+-- Encoded word in the middle of the value
+contains CR, LF or NUL
+400
+-- Other encoded words are still decoded
+café au lait
+café

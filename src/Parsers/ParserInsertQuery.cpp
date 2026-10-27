@@ -13,8 +13,6 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 
@@ -63,6 +61,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_from(Keyword::FROM);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_returning(Keyword::RETURNING);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p(true);
@@ -79,6 +78,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
+    ASTPtr returning;
     ASTPtr table_function;
     ASTPtr settings_ast;
     ASTPtr partition_by_expr;
@@ -160,6 +160,18 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 pos = before_lparen;
             }
         }
+    }
+
+    /// RETURNING (SELECT ...) - a query to run on top of the inserted data.
+    /// It goes before the data, because everything after VALUES or FORMAT is parsed as data.
+    if (s_returning.ignore(pos, expected))
+    {
+        if (!s_lparen.ignore(pos, expected))
+            return false;
+        if (!ParserSelectWithUnionQuery().parse(pos, returning, expected))
+            return false;
+        if (!s_rparen.ignore(pos, expected))
+            return false;
     }
 
     /// Check if file is a source of data.
@@ -353,6 +365,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
+    query->returning = returning;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
@@ -361,6 +374,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (returning)
+        query->children.push_back(returning);
     if (settings_ast)
         query->children.push_back(settings_ast);
 
@@ -378,14 +393,11 @@ bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         || ParserCompoundIdentifier().parse(pos, node, expected);
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserInsertQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementInsert(StatementFactory & factory)
-{
-    factory.registerStatement("INSERT INTO",
+    documentation["INSERT INTO"] =
     {
         .description = R"DOCS_MD(
 Inserts data into a table.
@@ -550,6 +562,41 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
+## Returning the Inserted Data {#returning-the-inserted-data}
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] VALUES ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] FORMAT format_name data_set
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ... [FROM table] ...) [SETTINGS ...] SELECT ...
+INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] ...
+```
+
+The `RETURNING` clause specifies a `SELECT` query, which runs on top of the inserted data, and the query returns its result.
+In the `RETURNING` query, the table where the data is inserted contains only the inserted blocks, after the columns omitted in the `INSERT` are filled with their default values.
+The `RETURNING` query without `FROM` reads the inserted data as well; this is the way to refer to the data inserted into a table function.
+It is useful to get the values of the columns calculated on insertion, or to calculate statistics of the inserted data, e.g.:
+
+```sql
+CREATE TABLE events (id UUID DEFAULT generateUUIDv4(), message String) ENGINE = MergeTree ORDER BY message;
+
+INSERT INTO events (message) RETURNING (SELECT id, message) VALUES ('Hello'), ('World');
+```
+
+```text
+┌─id───────────────────────────────────┬─message─┐
+│ 8b3e9f0a-5a8c-4b9b-9f4c-3e2d1c0b9a8f │ Hello   │
+│ 0d6c1f2e-7b3a-4c5d-8e9f-1a2b3c4d5e6f │ World   │
+└──────────────────────────────────────┴─────────┘
+```
+
+The `RETURNING` query reads the stream of the inserted blocks, as it is sent to the table, so it doesn't take into account deduplication, merges, or other transformations of the data inside the table engine.
+The result is streamed while the data is being inserted.
+The table can be read only once in the `RETURNING` query. The `RETURNING` query requires the `SELECT` privilege for the table.
+
+When the data is sent separately from the query by `clickhouse-client` (e.g., from stdin or with `FROM INFILE`), the client receives the result while it is sending the data.
+It requires a client of a version that supports `RETURNING`; other interfaces, such as the MySQL and PostgreSQL protocols, support the data only inside the query.
+The `async_insert` setting is ignored for queries with `RETURNING`.
+
 ## Inserting Data from a File {#inserting-data-from-a-file}
 
 **Syntax**
@@ -560,7 +607,7 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION
 
 Use the syntax above to insert data from a file, or files, stored on the **client** side. `file_name` and `type` are string literals. Input file [format](/reference/formats/index) must be set in the `FORMAT` clause.
 
-Compressed files are supported. The compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Compressed files are supported. The compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default).
 
 This functionality is available in the [command-line client](/concepts/features/interfaces/client) and [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local).
 
@@ -687,10 +734,13 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name data_set
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] SELECT ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] RETURNING (SELECT ...) [SETTINGS ...] {VALUES ... | FORMAT format_name data_set | SELECT ...}
 INSERT INTO [TABLE] FUNCTION table_func(...) [(c1, c2, c3)] [SETTINGS ...] SELECT ...
 )",
         .related = {"SELECT", "FORMAT", "CREATE TABLE", "UPDATE", "DELETE"},
-    });
+    };
+
+    return documentation;
 }
 
 }

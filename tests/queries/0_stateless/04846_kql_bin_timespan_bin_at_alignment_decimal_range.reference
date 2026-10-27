@@ -1,0 +1,27 @@
+-- bin and two-argument floor over timespans --
+1209600000000000
+1209600000000000
+7200000000000
+-86400000000000
+3600000000000
+true
+-- bin_at over timespans --
+-43200000000000
+-43200000000000
+-1555200000000000
+5400000000000
+true
+-- datetime bin_at with the fixed point after the value --
+2017-05-14 12:00:00.0000000
+2017-05-13 12:00:00.0000000
+2017-05-16 12:00:00.0000000
+2026-08-01 12:30:00.0000000
+true
+-- exact decimal range counting --
+3
+0.6
+4
+3
+-- wildcards in project-away and project-keep are rejected --
+2	3
+3

@@ -16,6 +16,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -438,6 +439,10 @@ public:
         if (configs == new_configs)
             return;
 
+        /// The reader has not collected any configuration yet, so there is nothing to apply.
+        if (!new_configs)
+            return;
+
         /// The following check prevents a race when two threads are trying to update configuration
         /// at almost the same time:
         /// 1) first thread reads a configuration (for example as a part of periodic updates)
@@ -490,7 +495,7 @@ public:
             if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
-                if (!isObjectLazy(*config))
+                if (automatic_loading_enabled && !isObjectLazy(*config))
                 {
                     LOG_TRACE(log, "Will load '{}' because it is not loaded lazily.", name);
                     startLoading(info);
@@ -525,13 +530,23 @@ public:
 
         always_load_everything = enable;
 
+        if (enable && automatic_loading_enabled)
+            startLoadingNotLazy();
+    }
+
+    /// Sets whether the objects which are not loaded lazily start loading on their own, when they are added
+    /// to the configuration. When disabled, the objects are registered and can be found, but they are loaded
+    /// only when requested explicitly. When enabled again, the loading of such objects is started.
+    void enableAutomaticLoading(bool enable)
+    {
+        std::lock_guard lock{mutex};
+        if (automatic_loading_enabled == enable)
+            return;
+
+        automatic_loading_enabled = enable;
+
         if (enable)
-        {
-            /// Start loading all the objects which were not loaded yet and are not configured to load lazily.
-            for (auto & [name, info] : infos)
-                if (!info.triedToLoad() && !isObjectLazy(*info.config))
-                    startLoading(info);
-        }
+            startLoadingNotLazy();
     }
 
     /// Sets whether the objects should be loaded asynchronously, each loading in a new thread (from the thread pool).
@@ -737,7 +752,7 @@ public:
                         if (!should_update_flag)
                         {
                             info.next_update_time = calculateNextUpdateTime(info.object, info.error_count);
-                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, to_string(info.next_update_time));
+                            LOG_TRACE(log, "Object '{}' not modified, will not reload. Next update at {}", info.name, describeUpdateTime(info.next_update_time));
                             continue;
                         }
 
@@ -758,11 +773,18 @@ public:
         }
     }
 
-private:
-
     bool isObjectLazy(const ObjectConfig & config) const
     {
-        return external_loader.isObjectLazy(*config.config, config.key_in_config).value_or(!always_load_everything);
+        return external_loader.getObjectLazyLoadOverride(*config.config, config.key_in_config).value_or(!always_load_everything);
+    }
+
+private:
+    /// Starts loading all the objects which were not loaded yet and are not configured to load lazily.
+    void startLoadingNotLazy()
+    {
+        for (auto & [name, info] : infos)
+            if (!info.triedToLoad() && !isObjectLazy(*info.config))
+                startLoading(info);
     }
 
     struct Info
@@ -1068,6 +1090,10 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
+        /// The blocker below covers this thread only, not the pipeline threads of the loading query.
+        if (thread_group)
+            thread_group = ThreadGroup::createWithoutQueryMemoryTracker(std::move(thread_group));
+
         ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
@@ -1233,7 +1259,7 @@ private:
             info->last_successful_update_time = current_time;
         info->state_id = info->loading_id;
         info->next_update_time = next_update_time;
-        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, to_string(next_update_time));
+        LOG_TRACE(log, "Next update time for '{}' was set to {}", info->name, describeUpdateTime(next_update_time));
     }
 
     /// Removes the references to the loading thread from the maps.
@@ -1251,6 +1277,16 @@ private:
         /// (We can't put the loading thread back to the thread pool immediately here because at this point
         /// the loading thread is about to finish but it's not finished yet right now.)
         recently_finished_loadings.push_back(loading_id);
+    }
+
+    /// `TimePoint::max()` is the "no automatic update is scheduled" sentinel; rendering it as a
+    /// timestamp prints a date in the year 294247, which reads like a scheduling bug rather than
+    /// like "never". Spell it out instead.
+    static String describeUpdateTime(TimePoint time)
+    {
+        if (time == TimePoint::max())
+            return "never";
+        return to_string(time);
     }
 
     /// Calculate next update time for loaded_object. Can be called without mutex locking,
@@ -1303,7 +1339,8 @@ private:
     std::condition_variable event;
     ObjectConfigsPtr configs;
     std::unordered_map<String, Info> infos;
-    bool always_load_everything = false;
+    std::atomic<bool> always_load_everything = false;
+    std::atomic<bool> automatic_loading_enabled = true;
     std::atomic<bool> enable_async_loading = false;
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
     std::vector<size_t> recently_finished_loadings;
@@ -1447,6 +1484,11 @@ void ExternalLoader::enableAlwaysLoadEverything(bool enable)
     loading_dispatcher->enableAlwaysLoadEverything(enable);
 }
 
+void ExternalLoader::enableAutomaticLoading(bool enable)
+{
+    loading_dispatcher->enableAutomaticLoading(enable);
+}
+
 void ExternalLoader::enableAsyncLoading(bool enable)
 {
     loading_dispatcher->enableAsyncLoading(enable);
@@ -1482,6 +1524,11 @@ template <typename ReturnType, typename>
 ReturnType ExternalLoader::getLoadResults(const FilterByNameFunction & filter) const
 {
     return loading_dispatcher->getLoadResults<ReturnType>(filter);
+}
+
+bool ExternalLoader::isObjectLazy(const ObjectConfig & config) const
+{
+    return loading_dispatcher->isObjectLazy(config);
 }
 
 ExternalLoader::Loadables ExternalLoader::getLoadedObjects() const

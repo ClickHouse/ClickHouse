@@ -167,7 +167,7 @@ void FileChecker::repair()
     }
 }
 
-void FileChecker::save(WriteBuffer & buffer, const Map & map_to_save) const
+void FileChecker::save(WriteBuffer & buffer, const Map & map_to_save)
 {
     /// So complex JSON structure - for compatibility with the old format.
     writeCString("{\"clickhouse\":{", buffer);

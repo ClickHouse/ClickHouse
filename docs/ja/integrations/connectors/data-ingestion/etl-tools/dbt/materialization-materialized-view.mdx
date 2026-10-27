@@ -525,7 +525,7 @@ select a, b, c from {{ source('raw', 'table_2') }}
   ## リフレッシャブルmaterialized view
 </div>
 
-[リフレッシャブルmaterialized view](/ja/concepts/features/materialized-views/refreshable-materialized-view) は、ClickHouse における特殊な種類の materialized view で、クエリを定期的に再実行してその結果を保存します。これは、他のデータベースにおける materialized view の動作に似ています。リアルタイムの insert trigger ではなく、定期的なスナップショットや集計が必要なシナリオで役立ちます。
+[リフレッシャブルmaterialized view](/ja/concepts/features/materialized-views/refreshable-materialized-view) は、ClickHouse における特殊な種類の materialized view で、クエリを定期的に再実行してその結果を保存します。これは、他のデータベースにおける materialized view の動作に似ています。リアルタイムの挿入トリガーではなく、定期的なスナップショットや集計が必要なシナリオで役立ちます。
 
 <Tip>
   リフレッシャブルmaterialized view は、[暗黙的ターゲット](#implicit-target) と [明示的ターゲット](#explicit-target) の**両方**のアプローチで使用できます。`refreshable` 設定は、ターゲットテーブルの管理方法とは独立しています。
@@ -535,10 +535,10 @@ select a, b, c from {{ source('raw', 'table_2') }}
 
 | オプション                         | 説明                                                                                                       | 必須 | デフォルト値 |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------- | -- | ------ |
-| refresh&#95;interval          | interval 句 (必須)                                                                                          | はい |        |
+| interval                      | interval 句 (必須)。`EVERY 5 MINUTE` など                                                                      | はい |        |
 | randomize                     | ランダム化句。`RANDOMIZE FOR` の後に指定されます                                                                         |    |        |
-| append                        | `True` に設定すると、各 refresh で既存の行を削除せずにテーブルへ行を insert します。この insert は、通常の INSERT SELECT と同様に atomic ではありません。 |    | False  |
-| depends&#95;on                | リフレッシャブルmaterialized view の依存関係リストです。依存関係は `{schema}.{view_name}` の形式で指定してください。                        |    |        |
+| append                        | `True` に設定すると、各 refresh で既存の行を削除せずにテーブルへ行を insert します。この insert は、通常の INSERT SELECT と同様にアトミックではありません。 |    | False  |
+| depends&#95;on                | リフレッシャブルmaterialized view の依存関係リストです。依存関係は `{schema}.{view_name}` の形式で指定してください。                          |    |        |
 | depends&#95;on&#95;validation | `depends_on` で指定した依存関係の存在を検証するかどうかを指定します。依存関係に schema が含まれていない場合、検証は schema `default` に対して行われます          |    | False  |
 
 <div id="refreshable-implicit-example">
@@ -591,6 +591,19 @@ SELECT
 FROM {{ source('raw', 'events') }}
 GROUP BY event_date, event_type
 ```
+
+<div id="refreshable-updating-parameters">
+  ### リフレッシュパラメータの更新
+</div>
+
+dbt-clickhouse 1.10.2 以降では、既存のリフレッシャブルmaterialized view のリフレッシュパラメータ (`interval`、`randomize`、`depends_on`) の変更は、通常の `dbt run` 実行時に `ALTER TABLE ... MODIFY REFRESH` を使用してインプレースで適用されます。materialized view は削除も再作成もされないため、データが失われることはなく、変更の適用中に「ブラインドウィンドウ」が生じることもありません。
+
+一部の変更はインプレースで適用できません。dbt はこれらを暗黙的に無視するのではなく、`dbt run --full-refresh` を使用するよう求めるエラーで実行を失敗させます。
+
+* 通常のmaterialized view をリフレッシャブルなものに変換する場合 (`refreshable` config を追加する場合) 、またはその逆の場合 (これを削除する場合) 。
+* ClickHouse では `MODIFY REFRESH` で `APPEND` を追加または削除できないため、`append` 設定を変更する場合。
+
+`--full-refresh` ではmaterialized view が削除・再作成され、[アクティブなインジェスト中の動作](#behavior-during-active-ingestion)で説明されている影響があることに注意してください。
 
 <div id="explicit-target-limitations">
   ### 制限事項

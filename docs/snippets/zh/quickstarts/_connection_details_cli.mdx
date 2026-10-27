@@ -1,0 +1,174 @@
+---
+title: 连接详情命令行客户端
+---
+
+本页介绍如何在命令行中使用 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 查找现有 ClickHouse Cloud 服务的连接详情——主机名、端口号、用户名和密码。相关命令均为非交互式；加上 `--json` 后，`clickhousectl` 会输出 JSON。
+
+## 前置条件 {#prerequisites}
+
+安装 ClickHouse 命令行客户端：
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+你还需要 `jq`。
+
+以下写入操作步骤需要 [API 密钥身份验证](/zh/products/cloud/features/admin-features/api/openapi)：`cloud service start` (仅当服务处于 `stopped` 状态时) 和 `reset-password`。OAuth 登录仅具有只读权限，只适用于读取步骤 (`service list`、`service get`) ：
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+或者，设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证，应当看到一条 scope 为 `read/write` 的条目。
+
+此外，你还需要一个已有的 ClickHouse Cloud 服务，以便从中获取连接详情，例如在[创建你的第一个 Cloud 服务](/zh/get-started/quickstarts/create-your-first-service-on-cloud)快速入门中创建的服务，或通过 [Cloud 快速入门](/zh/getting-started/quick-start/cloud)命令行客户端流程创建的服务。
+
+## 查找您的服务 {#find-your-service}
+
+列出您 organization 中的 services，并记下要连接的那个 service 的 ID：
+
+```bash
+clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+9c2d4e61-7a35-49c8-8f0e-2b5a1d7c3e90	my-first-service	running
+```
+
+请保存该 service ID；本指南中的其他所有命令都需要将其作为 argument 传入。若要按 name 查找：
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+```
+
+后续步骤中需要验证连通性，因此该 service 必须处于运行状态。如果其 state 为 `stopped`，请将其启动并轮询直至变为 `running` (因空闲扩缩容而处于 `idle` 状态的 service 会在首次建立 connection 时自动唤醒，此处无需任何操作) ：
+
+```bash
+clickhousectl cloud service start "$CH_ID"
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+## 获取连接详情 {#get-your-connection-details}
+
+`clickhousectl cloud service get` 会返回完整的服务详情，其中每个已暴露的协议对应一个端点。保存返回的响应，并从中提取所需的信息：
+
+```bash
+clickhousectl cloud service get "$CH_ID" --json > service.json
+jq '.endpoints' service.json
+```
+
+```json
+[
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 9440,
+    "protocol": "nativesecure"
+  },
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 8443,
+    "protocol": "https"
+  }
+]
+```
+
+以下是 ClickHouse Cloud 的两种主要网络协议，各自使用独立的端口：
+
+* **原生协议 (`nativesecure`，端口 9440)&#x20;**&#x20;—— 一种二进制协议，供 ClickHouse 客户端、`clickhouse-local` 以及大多数语言专用驱动程序使用。它是速度最快的选择，并支持 ClickHouse 的全部功能。在 Cloud 上必须使用 TLS。
+* **HTTPS 协议 (`https`，端口 8443)&#x20;**&#x20;—— 一种基于 HTTP 的接口，适用于 REST 客户端、`curl`、基于 Web 的工具，以及更倾向于使用 HTTP 的驱动程序。在 Cloud 上同样要求使用 TLS。
+
+连接 ClickHouse Cloud 时，这两种协议都必须使用 TLS 加密 —— 无法以明文方式连接。大多数工具在指定正确端口后会自动完成这一步，但视客户端而定，你可能需要传入 `--secure` 标志或设置 `ssl=true`。本系列中的大多数快速入门和命令行客户端操作流程都将使用**端口 9440 上的原生协议**。
+
+提取主机名和端口：
+
+```bash
+CH_HOST=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host' service.json)
+CH_NATIVE_PORT=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .port' service.json)
+CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' service.json)
+```
+
+除非您创建了其他数据库用户，否则用户名为 `default`。
+
+## 获取密码 {#get-a-password}
+
+`default` 用户的密码只会在 `clickhousectl cloud service create` 执行时返回一次，之后无法通过任何 API 或命令行客户端调用再次读取。如果你在创建时已保存该密码，请将其赋值给后续步骤所使用的变量，并跳过重置操作：
+
+```bash
+CH_PASSWORD='<your saved password>'
+```
+
+如果密码已丢失，请生成一个新的：
+
+```bash
+CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+```
+
+<Warning>
+  `reset-password` 会立即使 `default` 用户的旧密码失效——任何仍配置为使用旧密码的客户端都将无法通过认证。如果该服务属于某个[仓库](/zh/products/cloud/features/infrastructure/warehouses)，则数据库用户在该仓库内的所有服务之间共享，因此此次重置也会同时更改该仓库中每个同级服务的密码。与初始密码一样，新密码只会返回一次，请妥善保存。
+</Warning>
+
+## 保存连接详情以便重复使用 {#save-your-connection-details-for-reuse}
+
+在各个快速入门中，你会频繁用到这些连接详情。为避免每次都重新输入，可以在终端会话中将它们导出为环境变量：
+
+```bash
+export CLICKHOUSE_HOST=$CH_HOST
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=$CH_PASSWORD
+```
+
+<Warning>
+  这些环境变量仅在当前终端会话中有效。请勿将密码保存在 shell 配置文件 (`.bashrc`、`.zshrc`) 中，也不要将其提交到版本控制系统。
+</Warning>
+
+## 验证连通性 {#verify-connectivity}
+
+使用 `curl` 验证 HTTPS 接口 (端口 8443) ：
+
+```bash
+curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
+  "https://$CLICKHOUSE_HOST:8443/?query=SELECT%201"
+```
+
+```text
+1
+```
+
+使用 [**clickhouse client**](/zh/concepts/features/interfaces/client) 验证原生协议 (端口 9440) 。ClickHouse 命令行客户端会自动为你管理 `clickhouse` binary，因此若尚未安装，运行 `clickhousectl local use latest` 即可完成安装，并将其符号链接到 `~/.local/bin/clickhouse`。然后：
+
+```bash
+clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
+  --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
+  --query "SELECT concat('Connected to ClickHouse ', version(), ' as ', currentUser())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558 as default
+```
+
+## 清理 {#cleanup}
+
+本指南仅读取 service 的 metadata，并 (可选) 重置密码——不会创建任何新的云资源，因此无需清理。
+
+有一个例外：如果你的 service 原本处于 `stopped` 状态，而你为了验证连通性将其启动，那么它现在会持续运行并产生计算费用。如果暂时不需要它运行，请再次将其停止：
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+```
+
+## 后续步骤 {#next-steps}
+
+现在，你已经拥有从任意外部工具连接到 ClickHouse Cloud 服务所需的全部连接详情。此处获取的主机名、端口、用户名和密码将贯穿整个快速入门系列。
+
+接下来可以继续阅读以下快速入门：
+
+* [使用 ClickHouse 客户端插入数据](/zh/get-started/quickstarts/insert-data-using-clickhouse-client)
+* [创建你的第一张 MergeTree 表](/zh/get-started/quickstarts/create-your-first-mergetree-table)
+
+或通过参考文档深入了解：
+
+* [原生接口 (TCP)](/zh/concepts/features/interfaces/tcp)
+* [HTTP 接口](/zh/concepts/features/interfaces/http)

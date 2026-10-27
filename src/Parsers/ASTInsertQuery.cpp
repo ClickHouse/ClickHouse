@@ -83,6 +83,7 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("select", select);
+    w.writeChild("returning", returning);
     w.writeChild("infile", infile);
     w.writeChild("compression", compression);
 }
@@ -127,14 +128,14 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// `table_function` is parser-owned as an `ASTFunction` (`INSERT INTO FUNCTION ...`).
     /// `ClientBase::setInsertionTable` and `formatImpl` downcast it with `as<ASTFunction>()`,
     /// so a non-`ASTFunction` from malformed `clickhouse_json` must be rejected here.
-    child = r.readChildOfType<ASTFunction>("table_function");
+    child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {
         table_function = child;
         children.push_back(table_function);
     }
 
-    child = r.readChild("partition_by");
+    child = r.readExpressionChild("partition_by");
     if (child)
     {
         partition_by = child;
@@ -155,11 +156,18 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     /// `select` is parser-produced as an `ASTSelectWithUnionQuery` (`INSERT ... SELECT`). Insert
     /// execution downcasts it (`applyTrivialInsertSelectOptimization`, the distributed-insert paths),
     /// so reject any other node type from malformed `clickhouse_json` here.
-    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
     {
         select = child;
         children.push_back(select);
+    }
+
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("returning");
+    if (child)
+    {
+        returning = child;
+        children.push_back(returning);
     }
 
     /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
@@ -247,6 +255,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         ostr << " (";
         columns->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
+
+    if (returning)
+    {
+        ostr << " RETURNING (";
+        returning->format(ostr, settings, state, frame);
         ostr << ")";
     }
 
