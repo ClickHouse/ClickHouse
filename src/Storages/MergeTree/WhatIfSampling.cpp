@@ -29,6 +29,11 @@ std::vector<size_t> sampleUnits(size_t units, size_t step, const String & part_n
     return sampled;
 }
 
+size_t sampledRunLength(size_t units, size_t step, size_t i)
+{
+    return std::min(step, units - i * step);
+}
+
 double standardErrorOfSample(const std::vector<double> & values, const std::vector<double> & weights)
 {
     auto weight = [&](size_t i) { return weights.empty() ? 1.0 : weights[i]; };

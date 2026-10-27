@@ -91,6 +91,12 @@ struct ProjectionPartData
     bool variable_width = false;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
     std::vector<UInt32> granule_rows;
+    /// for a sample: the sampled granule of each row in read order, and the granules of its run that each sampled granule stands for
+    std::vector<UInt32> granule_of_row;
+    std::vector<UInt32> granule_weights;
+    /// for a sample: the rows kept and the rows read, each with the weight of its granule
+    UInt64 weighted_rows = 0;
+    UInt64 weighted_read_rows = 0;
 };
 
 /// per-row version of `getBlockSizeForGranularity`
@@ -196,7 +202,7 @@ bool buildProjectionPart(
     const ProjectionDescription & projection,
     const DataPartPtr & part,
     const MarkRanges & ranges,
-    bool sampled,
+    size_t sample_step,
     ReadFromMergeTree * read_step,
     const SizeLimits & read_limits,
     bool need_row_bytes,
@@ -224,7 +230,7 @@ bool buildProjectionPart(
     /// the source gives one block for each granule, and each `calculate` builds an interpreter, so call it for each batch
     /// the filter of the projection works row by row, so the size of the batch does not change the result
     /// a sample keeps the granule of each projection row, so the scan calculates a projection that drops rows for each granule
-    const bool per_granule = sampled && (projection.where_clause_ast || has_delete_mask);
+    const bool per_granule = sample_step > 1 && (projection.where_clause_ast || has_delete_mask);
     const size_t batch_limit = per_granule ? 1 : context->getSettingsRef()[Setting::max_block_size];
     Blocks batch;
     size_t batch_rows = 0;
@@ -300,20 +306,52 @@ bool buildProjectionPart(
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
 
+    if (sample_step > 1)
+    {
+        const auto & granularity = *part->index_granularity;
+        const size_t marks = granularity.getMarksCountWithoutFinal();
+        for (const auto & range : ranges)
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                const auto granule = static_cast<UInt32>(out.granule_weights.size());
+                const auto weight = static_cast<UInt32>(sampledRunLength(marks, sample_step, granule));
+                const size_t kept_rows = out.granule_rows.empty() ? granularity.getMarkRows(mark) : out.granule_rows[granule];
+                out.granule_weights.push_back(weight);
+                out.granule_of_row.resize(out.granule_of_row.size() + kept_rows, granule);
+                out.weighted_rows += UInt64{weight} * kept_rows;
+                out.weighted_read_rows += UInt64{weight} * granularity.getMarkRows(mark);
+            }
+        chassert(out.granule_of_row.size() == out.rows);
+    }
+
     return true;
 }
 
-/// the whole part seen through its sample, in projection order: part row `r` falls on sample row `r * sample rows / part rows`
+/// the whole part seen through its sample, in projection order: each sample row stands for an even share of the part rows,
+/// a row of a sample of granules for a share in proportion to the weight of its granule
 struct PartFromSample
 {
     const ProjectionPartData & sample;
     size_t rows;
+    /// for a sample of granules: the first part row that each sample row stands for
+    std::vector<UInt64> first_part_row;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
 
     PartFromSample(const ProjectionPartData & sample_, size_t rows_)
         : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
     {
+        if (!sample.granule_of_row.empty())
+        {
+            first_part_row.resize(sample.rows + 1);
+            UInt128 weight_before = 0;
+            for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
+            {
+                first_part_row[sample_row] = static_cast<UInt64>((weight_before * rows + sample.weighted_rows - 1) / sample.weighted_rows);
+                weight_before += sample.granule_weights[sample.granule_of_row[sample.order[sample_row]]];
+            }
+            first_part_row.back() = rows;
+        }
         for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
         {
             const size_t part_rows_covered = firstPartRow(sample_row + 1) - firstPartRow(sample_row);
@@ -321,9 +359,16 @@ struct PartFromSample
         }
     }
 
-    size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
+    size_t sampleRow(size_t part_row) const
+    {
+        if (!first_part_row.empty())
+            return std::upper_bound(first_part_row.begin(), first_part_row.end(), part_row) - first_part_row.begin() - 1;
+        return static_cast<size_t>(UInt128(part_row) * sample.rows / rows);
+    }
     size_t firstPartRow(size_t sample_row) const
     {
+        if (!first_part_row.empty())
+            return first_part_row[sample_row];
         return static_cast<size_t>((UInt128(sample_row) * rows + sample.rows - 1) / sample.rows);
     }
     /// the first sample row whose part rows start at or after `part_row`
@@ -626,7 +671,7 @@ bool buildScenarios(
         const MarkRanges & ranges = plan.ranges[part_idx];
         ProjectionPartData part_data;
         if (!buildProjectionPart(
-                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, total_rows_read,
+                part_data, projection, part, ranges, plan.sample_step, read_step, read_limits, adaptive, total_rows_read,
                 total_bytes_read, context))
         {
             result.empirical_unsupported_reason
@@ -671,7 +716,7 @@ bool buildScenarios(
 
         /// a sample stands for the whole part, and the filter of the projection keeps the same share of its rows
         const size_t part_rows = plan.sample_step > 1
-            ? static_cast<size_t>(UInt128(part->rows_count) * part_data.rows / part_data.read_rows)
+            ? static_cast<size_t>(UInt128(part->rows_count) * part_data.weighted_rows / part_data.weighted_read_rows)
             : part_data.rows;
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
@@ -697,6 +742,7 @@ void widenForSamples(
     /// the estimate knows a range end only up to the gap between neighbouring sample rows
     /// that gap is a sampling step if the key follows the parent order
     std::vector<double> granule_shares;
+    std::vector<double> granule_weights;
     UInt64 layout_marks = 0;
     double range_end_spread = 0;
     for (const auto & sampled : samples)
@@ -708,22 +754,15 @@ void widenForSamples(
         const MarkRanges pruned = pruned_it == outcome.ranges.end() ? MarkRanges{} : pruned_it->second;
         layout_marks += granularity.getMarksCount();
 
-        /// the sampled granule each sample row came from, and the rows of each
+        /// the rows of each sampled granule
         const auto & parent_granularity = *sampled.parent->index_granularity;
+        const auto & granule_of_row = sample.granule_of_row;
         std::vector<size_t> sampled_granule_rows;
-        std::vector<UInt32> granule_of_row;
-        granule_of_row.reserve(sample.rows);
         for (const auto & range : sampled.ranges_read)
             for (size_t mark = range.begin; mark < range.end; ++mark)
-            {
-                const auto granule = static_cast<UInt32>(sampled_granule_rows.size());
                 sampled_granule_rows.push_back(parent_granularity.getMarkRows(mark));
-                const size_t kept_rows = sample.granule_rows.empty() ? sampled_granule_rows.back() : sample.granule_rows[granule];
-                granule_of_row.resize(granule_of_row.size() + kept_rows, granule);
-            }
-        chassert(granule_of_row.size() == sample.rows);
-        /// the projection keeps this share of the rows read
-        const double kept_share = static_cast<double>(sample.rows) / static_cast<double>(sample.read_rows);
+        /// the projection keeps this share of the rows
+        const double kept_share = static_cast<double>(sample.weighted_rows) / static_cast<double>(sample.weighted_read_rows);
 
         size_t same_granule_neighbours = 0;
         for (size_t pos = 1; pos < sample.rows; ++pos)
@@ -746,13 +785,16 @@ void widenForSamples(
         }
         /// a share of the projection rows, as the marks of the projection part count them
         for (size_t i = 0; i < sampled_granule_rows.size(); ++i)
+        {
             granule_shares.push_back(static_cast<double>(selected_rows[i]) / (static_cast<double>(sampled_granule_rows[i]) * kept_share));
+            granule_weights.push_back(sample.granule_weights[i]);
+        }
     }
     widen(marks_low, marks_high, range_end_spread);
 
     /// widen by two standard errors of the selected share (successive differences, fits a systematic sample)
     if (granule_shares.size() > 1)
-        widen(marks_low, marks_high, 2.0 * standardErrorOfSample(granule_shares) * static_cast<double>(layout_marks));
+        widen(marks_low, marks_high, 2.0 * standardErrorOfSample(granule_shares, granule_weights) * static_cast<double>(layout_marks));
 
 }
 

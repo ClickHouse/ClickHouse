@@ -102,7 +102,7 @@ MarkRanges windowsToScan(
             ++range;
         }
         const size_t begin = (range->begin + sampled[i] - marks_before) / granularity * granularity;
-        const auto run_marks = static_cast<double>(std::min(run, marks - i * run));
+        const auto run_marks = static_cast<double>(sampledRunLength(marks, run, i));
         /// a window with the marks of more than a run can take more than one mark
         if (!ranges.empty() && ranges.back().end > begin)
         {

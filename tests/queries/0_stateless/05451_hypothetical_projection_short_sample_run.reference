@@ -1,0 +1,11 @@
+Baseline (after PK + partition + existing indexes):
+marks: 301
+rows: 30100
+With p (normal projection, hypothetical):
+marks: 1
+rows: 100
+marks_span: 0 to 15
+verdict: chosen
+sampled_parts: 1 / 1
+sampled_marks: 31 / 301
+real: 1 marks, 100 rows

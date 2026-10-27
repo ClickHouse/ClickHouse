@@ -19,6 +19,9 @@ size_t samplingStep(UInt64 rows_to_scan, size_t units, UInt64 budget, UInt64 max
 /// so data that repeats with the step can't line up with the sample
 std::vector<size_t> sampleUnits(size_t units, size_t step, const String & part_name);
 
+/// the units that the `i`-th unit of `sampleUnits` stands for: its run, which is shorter at the end
+size_t sampledRunLength(size_t units, size_t step, size_t i);
+
 /// the standard error of the mean of a systematic sample of at least two values, from the differences of successive values
 /// with `weights` (one for each value) the mean is weighted, and the differences are of weight x (value - mean)
 double standardErrorOfSample(const std::vector<double> & values, const std::vector<double> & weights = {});
