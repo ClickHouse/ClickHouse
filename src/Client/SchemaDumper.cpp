@@ -4236,6 +4236,15 @@ ReplayGateNeeds collectReplayGateNeeds(
         const std::vector<ASTPtr> eval_queries = evalQueries(*create_ast, unread_select, context);
         for (const auto & query : eval_queries)
             add_carriers(scan_analyzed(*query));
+        /// CREATE also analyzes a query in the storage definition: a table function that a `Remote` table reads, or that the
+        /// table is created `AS`, folds its arguments, and a scalar subquery in one, such as a computed structure, with them.
+        if (create->as_table_function)
+            add_carriers(scan_analyzed(*create->as_table_function));
+        if (create->storage)
+            add_carriers(scan_analyzed(*create->storage));
+        if (create->targets)
+            for (const auto * inner : create->targets->getInnerEngines())
+                add_carriers(scan_analyzed(*inner));
 
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())

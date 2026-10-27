@@ -38,6 +38,15 @@ round_trip remote_engine "
     CREATE DATABASE d;
     CREATE TABLE d.t (x UInt64) ENGINE = Remote('127.0.0.1', input(concat('x LowCardinality(', 'UInt64)')));"
 
+# A structure computed by a scalar subquery keeps every type gate, and CREATE analyzes the subquery, so its clauses keep
+# the analyzer gates: here the one of a LATERAL join.
+round_trip remote_engine_subquery "
+    SET allow_experimental_lateral_join = 1;
+    CREATE DATABASE d;
+    CREATE TABLE d.t (x UInt64) ENGINE = Remote('127.0.0.1', input((
+        SELECT concat('x LowCardinality(UInt', toString(r.y * 64), ')') FROM numbers(1) AS l
+        INNER JOIN LATERAL (SELECT l.number + 1 AS y) AS r ON true)));"
+
 round_trip view_inner_engine "
     CREATE DATABASE d;
     CREATE TABLE d.src (x UInt64) ENGINE = Memory;
