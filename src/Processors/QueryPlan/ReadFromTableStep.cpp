@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Storages/SelectQueryInfo.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -42,6 +43,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    if (row_level_filter)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +55,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (row_level_filter)
+        row_level_filter->serialize(ctx);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,14 +85,23 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
+    FilterDAGInfoPtr row_level_filter;
+    if (flags & 16)
+        row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    auto step = std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    step->setRowLevelFilter(std::move(row_level_filter));
+    return step;
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
     auto cloned = std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
     cloned->setReadsOnlyInjectedColumn(reads_only_injected_column);
+    if (row_level_filter)
+        cloned->setRowLevelFilter(std::make_shared<FilterDAGInfo>(
+            FilterDAGInfo{row_level_filter->actions.clone(), row_level_filter->column_name, row_level_filter->do_remove_column}));
     return cloned;
 }
 

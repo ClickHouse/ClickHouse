@@ -5,6 +5,9 @@
 namespace DB
 {
 
+struct FilterDAGInfo;
+using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
 class ReadFromTableStep : public ISourceStep
 {
 public:
@@ -50,6 +53,17 @@ public:
     const Names & getAccessCheckedColumns() const { return access_checked_columns; }
     void setAccessCheckedColumns(Names value) { access_checked_columns = std::move(value); }
 
+    /** The row-level security filter of the table, set only in a plan built for the query plan cache.
+      * Regular planning hands the policy to `IStorage::read` as `SelectQueryInfo::row_level_filter`, so a
+      * storage that supports it (e.g. `MergeTree`) applies it inside the read, before any user expression.
+      * An explicit `FilterStep` above the read would not be such a boundary: plan optimizations may merge
+      * it with the user's filters (`mergeFilters`), so a user expression such as `throwIf` could be evaluated
+      * on the rows the policy hides. The filter is carried here and pushed into the read when the plan is
+      * materialized (see `QueryPlan::resolveStorages`).
+      */
+    const FilterDAGInfoPtr & getRowLevelFilter() const { return row_level_filter; }
+    void setRowLevelFilter(FilterDAGInfoPtr value) { row_level_filter = std::move(value); }
+
     QueryPlanStepPtr clone() const override;
 private:
     String table_name;
@@ -57,6 +71,7 @@ private:
     bool use_parallel_replicas = false;
     bool reads_only_injected_column = false;
     Names access_checked_columns;
+    FilterDAGInfoPtr row_level_filter;
 };
 
 }

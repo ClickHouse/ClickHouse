@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -308,6 +309,18 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
         reading_plan.addInterpreterContext(context);
+
+        /// The interpreter applies the row policy of the table by itself; this filter repeats it on top
+        /// to keep the plan independent of that.
+        if (reading_from_table && reading_from_table->getRowLevelFilter() && reading_plan.isInitialized())
+        {
+            const auto & row_level_filter = *reading_from_table->getRowLevelFilter();
+            reading_plan.addStep(std::make_unique<FilterStep>(
+                reading_plan.getCurrentHeader(),
+                row_level_filter.actions.clone(),
+                row_level_filter.column_name,
+                row_level_filter.do_remove_column));
+        }
     }
     else
     {
@@ -316,6 +329,14 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         storage_limits->emplace_back(buildStorageLimits(*context, options));
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
+        /// The planner put the row policy here only for a storage that applies it inside the read (see
+        /// `ReadFromTableStep::getRowLevelFilter`), and the identity check above pins that very storage.
+        if (reading_from_table && reading_from_table->getRowLevelFilter())
+        {
+            const auto & row_level_filter = *reading_from_table->getRowLevelFilter();
+            select_query_info.row_level_filter = std::make_shared<FilterDAGInfo>(
+                FilterDAGInfo{row_level_filter.actions.clone(), row_level_filter.column_name, row_level_filter.do_remove_column});
+        }
 
         bool use_parallel_replicas = false;
         if (reading_from_table)

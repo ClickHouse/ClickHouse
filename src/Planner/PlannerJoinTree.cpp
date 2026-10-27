@@ -2189,6 +2189,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// applied before the `ALIAS` columns are computed: the regular read applies the policy inside
                 /// the storage, so an `ALIAS` expression (e.g. `throwIf(id = 2)`) never sees the excluded rows.
                 std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> row_policy_filter_before_aliases;
+                /// Whether the regular read would push that policy into the storage (`row_level_filter`). Then the
+                /// cacheable plan carries it in the `ReadFromTableStep` instead of a filter step, and the policy is
+                /// pushed into the read when the plan is materialized (see `ReadFromTableStep::getRowLevelFilter`).
+                bool row_policy_filter_into_read = false;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -2336,9 +2340,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// before both: neither the user's conditions nor the `ALIAS` expressions may see the rows
                     /// the policy excludes (`PREWHERE throwIf(...)` or an `ALIAS` column `throwIf(...)` would
                     /// otherwise reveal them through an exception).
+                    /// An explicit filter step is still not a boundary for the plan optimizations, which may merge
+                    /// it with the user's filters; so where the regular read pushes the policy into the storage, the
+                    /// cacheable plan does the same at materialization (`row_policy_filter_into_read`).
                     else if (select_query_options.cacheable_logical_plan)
                     {
                         row_policy_filter_before_aliases.emplace(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_into_read = can_push_down_filter;
                         row_policy_filter_not_pushed = true;
                     }
                     else
@@ -2889,6 +2897,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             if (access_checked_columns_set.insert(column_name).second)
                                 access_checked_columns.push_back(column_name);
                         reading_from_table->setAccessCheckedColumns(std::move(access_checked_columns));
+
+                        if (row_policy_filter_before_aliases && row_policy_filter_into_read)
+                        {
+                            reading_from_table->setRowLevelFilter(
+                                std::make_shared<FilterDAGInfo>(std::move(row_policy_filter_before_aliases->first)));
+                            row_policy_filter_before_aliases.reset();
+                        }
 
                         query_plan.addStep(std::move(reading_from_table));
                     }
