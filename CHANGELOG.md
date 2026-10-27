@@ -24,6 +24,66 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release 9a348d8c282741a1e07a112418909550f8369131 (9a348d8c282) FIXME as compared to c7b68329fdb6544b16c4b41f8a042c56a2979543 (c7b68329fdb)
+
+#### New Feature
+* Added support for reading and writing the [Vortex](https://github.com/vortex-data/vortex) columnar file format (the `Vortex` input and output format). This closes [#87327](https://github.com/ClickHouse/ClickHouse/issues/87327). [#112950](https://github.com/ClickHouse/ClickHouse/pull/112950) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Added the `SHARED` modifier for typed paths of the `JSON` type, for example `JSON(SHARED a UInt32, SHARED b String)`. In `MergeTree` parts such paths are stored together in a constant set of files instead of a set of files per path, which keeps the number of files and object storage requests per part small for columns with many typed paths, while a read of a path still decodes only that path. The on-disk format is controlled by the new `MergeTree` setting `object_typed_shared_data_serialization_version`. Sub-column resolution of `JSON` now prefers a typed path over a same-named sub-column of another typed path, for example `json.a.b` of `JSON(a Tuple(b String), a.b Int64)` is now the typed path `a.b`; `MergeTree` rejects such types, so only other engines and `CAST` see the change. [#127000](https://github.com/ClickHouse/ClickHouse/pull/127000) ([Pavel Kruglov](https://github.com/Avogar)).
+* Added the `ssl_key_passphrase` argument so `ENGINE = MySQL`, the `mysql` table function, the MySQL database engine, and the MySQL dictionary source can use an encrypted client key (`ssl_key` / `ssl_key_pem`). [#127740](https://github.com/ClickHouse/ClickHouse/pull/127740) ([yanglongwei](https://github.com/ylw510)).
+
+#### Performance Improvement
+* `GROUP BY` queries with many distinct keys run faster with the adaptive aggregator (`enable_adaptive_aggregator`, enabled by default). Across 13 ClickBench aggregation queries, speedups reach 2.9x, with geometric mean speedups of 1.62x at 64 threads and 1.47x at 16 threads. The adaptive aggregator's profile events are reworked to match: `AdaptiveAggregationGiveUps`, `AdaptiveAggregationPressureDrainedRecords`, `AdaptiveAggregationPressureStandDowns`, `AdaptiveAggregationPressureSweeps`, `AdaptiveAggregationResidueReleases`, `AdaptiveAggregationSealNormalizations`, `AdaptiveAggregationSealedChunks`, `AdaptiveAggregationSharedTableSpills`, `AdaptiveAggregationSpillBacklogSheds`, `AdaptiveAggregationStagedChunkPiecesOverBound`, `AdaptiveAggregationStagedChunkSplits`, `AdaptiveAggregationStagedClaimsClosedAtBound` and `AdaptiveAggregationStagedRecordsMerged` are removed, and `AdaptiveAggregationSpills`, `AdaptiveAggregationSpilledRecords`, `AdaptiveAggregationSpilledBytes`, `AdaptiveAggregationFrozenTableSpills`, `AdaptiveAggregationMergeUnits`, `AdaptiveAggregationPrunedUnits`, `AdaptiveAggregationPrunedRecords` and `AdaptiveAggregationCountFirstUnits` are added. [#123531](https://github.com/ClickHouse/ClickHouse/pull/123531) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* The statistics of data parts are loaded in parallel (up to `max_threads` threads) for part pruning by statistics, the ordering of `PREWHERE` conditions and `min`/`max`/`count` from statistics. This speeds up the first queries over tables with many parts on a cold disk. [#126625](https://github.com/ClickHouse/ClickHouse/pull/126625) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* With the experimental columns cache enabled, conditions on all queried columns (such as `WHERE URL LIKE '%google%'` in `SELECT count()`) are again moved to `PREWHERE` and filtered during the scan, so that queries served from the cache are up to 5 times faster. [#127332](https://github.com/ClickHouse/ClickHouse/pull/127332) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Improvement
+* In `Pretty` formats, the ellipsis of a value cut by `output_format_pretty_max_value_width` is no longer underlined when the cut falls inside highlighted trailing whitespace or a highlighted digit group. Closes [#104834](https://github.com/ClickHouse/ClickHouse/issues/104834). [#126146](https://github.com/ClickHouse/ClickHouse/pull/126146) ([Groene AI](https://github.com/groeneai)).
+* Added Keeper setting `snapshot_transfer_remote_disk_streaming` to send remote-disk snapshots to followers without keeping the whole file in memory. [#126659](https://github.com/ClickHouse/ClickHouse/pull/126659) ([Samuel Krempaský](https://github.com/NIKTONIKTO717)).
+* Fix huge transient values of `data_files` and `data_compressed_bytes` in `system.distribution_queue` during asynchronous inserts into `Distributed` tables. [#127551](https://github.com/ClickHouse/ClickHouse/pull/127551) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* A full-definition `ATTACH TABLE` now refuses a column of type `Dynamic` or `JSON` for a table engine that does not support columns with dynamic structure (for example `Log`, `TinyLog`, `StripeLog`), the same way `CREATE TABLE` does. Previously such a table was attached and its first `INSERT` failed with a `LOGICAL_ERROR`. Existing tables still load at server startup and with a short `ATTACH TABLE`. [#127613](https://github.com/ClickHouse/ClickHouse/pull/127613) ([Groene AI](https://github.com/groeneai)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Partition commands accept explicit `toDate`/`CAST` conversions with their normal SQL semantics, while raw date-time partition literals retain strict validation. [#122996](https://github.com/ClickHouse/ClickHouse/pull/122996) ([DeviousCardi](https://github.com/DeviousCardi)).
+* Remove Iceberg orphan files on failure. [#127275](https://github.com/ClickHouse/ClickHouse/pull/127275) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+* Fix `text_log.level` having no effect when it is set to a more verbose level than `logger.level`: messages below `logger.level` never reached `system.text_log`, neither at startup nor after a configuration reload. Behaviour is unchanged when `text_log.level` is not set. [#127717](https://github.com/ClickHouse/ClickHouse/pull/127717) ([Nikita Vaniasin](https://github.com/nikita-vanyasin)).
+* Fix loss of coordinate precision when inserting `GEOGRAPHY` values into BigQuery, including repeated fields. [#127767](https://github.com/ClickHouse/ClickHouse/pull/127767) ([Ashish Kumar Choubey](https://github.com/aschoube)).
+* The `obfuscate` table function and `clickhouse obfuscator` no longer move `DateTime` values to another century, e.g. from `1970-01-01` to `2106-02-07`, when the source value is on the first or the last local day of the `DateTime` range, e.g. `toDateTime(0)` in `Asia/Tokyo` or `toDateTime(4294967295)` in `UTC`. [#127819](https://github.com/ClickHouse/ClickHouse/pull/127819) ([oleg-milanov](https://github.com/oleg-milanov)).
+
+#### Build/Testing/Packaging Improvement
+* The Stress test runs every `.sql` test over a random protocol: native, native with TLS, HTTP, HTTPS, MySQL, PostgreSQL, gRPC, Arrow Flight, SSH or the Web Terminal. [#125517](https://github.com/ClickHouse/ClickHouse/pull/125517) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Update `c-ares` from v1.34.8 to v1.34.9. [#127411](https://github.com/ClickHouse/ClickHouse/pull/127411) ([Actuele AI](https://github.com/actueleai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Not applicable — test-only change. [#120210](https://github.com/ClickHouse/ClickHouse/pull/120210) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#120817](https://github.com/ClickHouse/ClickHouse/pull/120817) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#120818](https://github.com/ClickHouse/ClickHouse/pull/120818) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#120983](https://github.com/ClickHouse/ClickHouse/pull/120983) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#121192](https://github.com/ClickHouse/ClickHouse/pull/121192) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#121307](https://github.com/ClickHouse/ClickHouse/pull/121307) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#121511](https://github.com/ClickHouse/ClickHouse/pull/121511) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#122498](https://github.com/ClickHouse/ClickHouse/pull/122498) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123613](https://github.com/ClickHouse/ClickHouse/pull/123613) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123678](https://github.com/ClickHouse/ClickHouse/pull/123678) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123697](https://github.com/ClickHouse/ClickHouse/pull/123697) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123748](https://github.com/ClickHouse/ClickHouse/pull/123748) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123758](https://github.com/ClickHouse/ClickHouse/pull/123758) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123766](https://github.com/ClickHouse/ClickHouse/pull/123766) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#123910](https://github.com/ClickHouse/ClickHouse/pull/123910) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#124227](https://github.com/ClickHouse/ClickHouse/pull/124227) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#124381](https://github.com/ClickHouse/ClickHouse/pull/124381) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#124703](https://github.com/ClickHouse/ClickHouse/pull/124703) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Not applicable — test-only change. [#125187](https://github.com/ClickHouse/ClickHouse/pull/125187) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Keep the "last token is a delimiter" state of the line editor per session instead of per thread. [#125510](https://github.com/ClickHouse/ClickHouse/pull/125510) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Not applicable — test-only change. [#125988](https://github.com/ClickHouse/ClickHouse/pull/125988) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* Fixed a spurious `TOO_MANY_ROWS` error with `parallel_replicas_plan_based`, where naming the plan fragment sent to a replica ran index analysis and enforced `max_rows_to_read` against a query that reads nothing, such as a `count()` answered from partition metadata. [#126740](https://github.com/ClickHouse/ClickHouse/pull/126740) ([Igor Nikonov](https://github.com/devcrafter)).
+* AST fuzzer oracle: skip `SEMI` joins like `ANY` joins. [#127260](https://github.com/ClickHouse/ClickHouse/pull/127260) ([Groene AI](https://github.com/groeneai)).
+* Test-only change, no changelog entry required. [#127481](https://github.com/ClickHouse/ClickHouse/pull/127481) ([Groene AI](https://github.com/groeneai)).
+* `SYSTEM SYNC MERGES`: report `TIMEOUT_EXCEEDED` when `CancellationChecker` stops it. [#127759](https://github.com/ClickHouse/ClickHouse/pull/127759) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Fix the flaky test `05218_text_index_substreams_opened_lazily`, which failed with a randomized `use_columns_cache = 1` since the columns cache also serves compact parts. [#127781](https://github.com/ClickHouse/ClickHouse/pull/127781) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
