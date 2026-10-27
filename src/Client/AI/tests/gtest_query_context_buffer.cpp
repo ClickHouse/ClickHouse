@@ -7,6 +7,7 @@
 #include <Client/AI/QueryContextBuffer.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -68,6 +69,24 @@ TEST(QueryContextBuffer, LargeResultIsTruncatedToHeadAndTail)
     EXPECT_NE(text.find("\n998\n999\n"), String::npos);
     /// No middle rows.
     EXPECT_EQ(text.find("\n500\n"), String::npos);
+}
+
+TEST(QueryContextBuffer, ConstColumnIsNotMaterializedWhole)
+{
+    /// A 1 MiB constant over a million rows would take a terabyte if the block were materialized
+    /// whole before sampling; only the sampled rows may be.
+    auto value = ColumnString::create();
+    value->insert(String(1024 * 1024, 'x'));
+    Block block{ColumnWithTypeAndName{ColumnConst::create(std::move(value), 1000000), std::make_shared<DataTypeString>(), "s"}};
+
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT repeat('x', 1048576) FROM numbers(1000000)", false);
+    buffer.addBlock(block);
+    buffer.finishQuery(1.0, false);
+
+    String text = buffer.format(0, false);
+    EXPECT_NE(text.find("Result: 1000000 rows"), String::npos);
+    EXPECT_NE(text.find("xxxx"), String::npos);
 }
 
 TEST(QueryContextBuffer, ErrorsAndStandaloneErrors)

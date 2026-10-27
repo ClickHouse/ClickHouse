@@ -231,20 +231,30 @@ void QueryContextBuffer::addBlock(const Block & block)
     if (rows == 0)
         return;
 
-    /// Const and sparse columns cannot be serialized row by row directly.
-    const Block materialized = materializeBlock(block);
-    const std::vector<ColumnSampling> sampling = columnsSampling(materialized);
+    /// Const and sparse columns cannot be serialized row by row directly, and materializing the
+    /// whole block would expand a constant over every row of it (a large constant over a large
+    /// block takes gigabytes) - so only the rows that are kept are cut out and materialized.
+    const auto format_rows = [](const Block & source, size_t from, size_t count, auto && consume)
+    {
+        const Block part = materializeBlock(source.cloneWithCutColumns(from, count));
+        const std::vector<ColumnSampling> sampling = columnsSampling(part);
+        for (size_t row = 0; row < count; ++row)
+            consume(formatRow(part, sampling, row));
+    };
 
-    for (size_t row = 0; row < rows && entry->head_lines.size() < head_rows; ++row)
-        entry->head_lines.push_back(formatRow(materialized, sampling, row));
+    if (entry->head_lines.size() < head_rows)
+    {
+        size_t head_count = std::min(rows, head_rows - entry->head_lines.size());
+        format_rows(block, 0, head_count, [&](String line) { entry->head_lines.push_back(std::move(line)); });
+    }
 
     size_t tail_from = rows > tail_rows ? rows - tail_rows : 0;
-    for (size_t row = tail_from; row < rows; ++row)
+    format_rows(block, tail_from, rows - tail_from, [&](String line)
     {
-        entry->tail_lines.push_back(formatRow(materialized, sampling, row));
+        entry->tail_lines.push_back(std::move(line));
         while (entry->tail_lines.size() > tail_rows)
             entry->tail_lines.pop_front();
-    }
+    });
 
     entry->result_rows += rows;
 }
@@ -379,14 +389,15 @@ String formatBlockAsTextForAI(const Block & block)
     if (block.rows() == 0)
         return out.str();
 
-    const Block materialized = materializeBlock(block);
+    /// Only the rows that can be shown are materialized (see `QueryContextBuffer::addBlock`).
+    const Block materialized = materializeBlock(block.cloneWithCutColumns(0, std::min(block.rows(), max_rows)));
     const std::vector<ColumnSampling> sampling = columnsSampling(materialized);
     size_t row = 0;
-    for (; row < materialized.rows(); ++row)
+    for (; row < block.rows(); ++row)
     {
         if (row >= max_rows || out.count() > max_bytes)
         {
-            writeString(fmt::format("(truncated: {} of {} rows shown)\n", row, materialized.rows()), out);
+            writeString(fmt::format("(truncated: {} of {} rows shown)\n", row, block.rows()), out);
             break;
         }
         writeString(formatRow(materialized, sampling, row), out);
