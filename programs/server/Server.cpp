@@ -2643,6 +2643,8 @@ try
         command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
     }
 
+    const Int32 startup_port_offset = server_settings[ServerSetting::port_offset];
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2699,6 +2701,15 @@ try
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
                 *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
+
+            /// Fail closed on a changed `port_offset`. Listeners could be moved, but the state derived from the
+            /// offset at startup could not: the advertised interserver address, cached `remote_servers` clusters
+            /// with inherited ports and locality flags, cluster discovery registrations, the streaming exchange
+            /// listener. Changing the offset requires a restart. Validate before `config().replace` below, for
+            /// the same reason as above.
+            if (const Int32 new_port_offset = getPortOffsetFromConfig(*reload_config); new_port_offset != startup_port_offset)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Changing `port_offset` (from {} to {}) requires a server restart", startup_port_offset, new_port_offset);
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 

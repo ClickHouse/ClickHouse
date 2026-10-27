@@ -2054,6 +2054,7 @@ modifying individual port configurations. Can be positive or negative. The resul
 must be in range 1-65535, otherwise the server will refuse to start.
 A port configured as `0` (an OS-assigned, ephemeral port) is never offset. An explicit
 client-side `port` setting (for example `--port` of `clickhouse-client`) is not affected.
+Changing the offset requires a server restart: a configuration reload with a different value is rejected.
 
 The offset applies to the ports this server *listens* on, and to the addresses it advertises
 to its peers (cluster discovery, distributed DDL host IDs, replica endpoints, `tcpPort`).
