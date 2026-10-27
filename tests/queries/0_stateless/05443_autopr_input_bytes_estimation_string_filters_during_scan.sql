@@ -43,8 +43,10 @@ DROP TABLE IF EXISTS t_compact_cached_subcolumn_prefix;
 CREATE TABLE t_wide(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
 
+-- Each column compressed apart: with blocks shared by the columns, a granule served from the columns cache for one column
+-- is loaded from the part all the same for another one, and the queries of the columns cache below read from disk.
 CREATE TABLE t_compact(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
 
 -- Only the column that is read counts: here the column that is not read compresses either much better or much worse
 -- than the one that is. The columns are compressed separately, otherwise reading one of them reads the other one as well.

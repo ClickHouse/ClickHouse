@@ -23,7 +23,7 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, string_seriali
     ratio_of_defaults_for_sparse_serialization = 1;
 
 CREATE TABLE t_compact (key UInt64, s String) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, string_serialization_version = 'with_size_stream',
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, string_serialization_version = 'with_size_stream',
     serialization_info_version = 'with_types', ratio_of_defaults_for_sparse_serialization = 1;
 
 -- Renamed while the mutation that renames the files in the part is held back: the part still names the column `s`.
@@ -35,11 +35,11 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, share_nested_o
 
 -- A compact part reads the offsets as `n.a.size0`, not as the shared `n.size0`.
 CREATE TABLE t_nested_compact (key UInt64, n Nested(a String, b UInt64)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, share_nested_offsets = 1, ratio_of_defaults_for_sparse_serialization = 1;
 
 -- A compact part is sampled with the `CODEC` of the column, which must be found under its old name too.
 CREATE TABLE t_codec (key UInt64, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, ratio_of_defaults_for_sparse_serialization = 1;
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1;
 CREATE TABLE t_codec_renamed AS t_codec;
 
 INSERT INTO t_wide SELECT intDiv(number, 100000), repeat('x', cityHash64(number) % 50) FROM numbers(1e6);
@@ -84,6 +84,8 @@ SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
+-- Compact parts compress each column apart (`compress_per_column_in_compact_parts`): with blocks shared by the
+-- columns, reading one of them loads the others too.
 -- The bytes on disk of what each query reads: `key`, plus the stream of `s.size` if it has one and all of `s`
 -- otherwise, or the offsets `n.size0` that `n.a` and `n.b` share. The compact tables report no per-column sizes;
 -- they hold the same rows as `t_wide` and `t_nested`, and so does the renamed table, whose part is still the one
@@ -114,10 +116,22 @@ JOIN on_disk ON on_disk.table = multiIf(
     't_wide')
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
     AND log_comment IN ('05452_wide', '05452_wide_single_stream', '05452_compact', '05452_renamed', '05452_nested',
-        '05452_nested_shared_stream', '05452_nested_compact', '05452_wide_single_stream_full_and_size')
+        '05452_nested_shared_stream', '05452_wide_single_stream_full_and_size')
     AND type = 'QueryFinish'
 )
 ORDER BY log_comment;
+
+-- A compact part reports no per-column sizes, and keeps the offsets of each array of a `Nested` apart: what it reads
+-- for `n.a.size0` is at least the shared offsets of the wide part, and at most the whole part.
+WITH
+    (SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] FROM system.query_log
+     WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+        AND log_comment = '05452_nested_compact' AND type = 'QueryFinish') AS compact,
+    (SELECT sum(subcolumns.data_compressed_bytes[indexOf(subcolumns.names, 'size0')]) FROM system.parts_columns
+     WHERE database = currentDatabase() AND table = 't_nested' AND active AND column = 'n.a') AS offsets,
+    (SELECT sum(data_compressed_bytes) FROM system.parts
+     WHERE database = currentDatabase() AND table = 't_nested_compact' AND active) AS part_bytes
+SELECT compact BETWEEN offsets * 0.8 AND part_bytes * 1.25 AS nested_compact_offsets_priced;
 
 -- What is read next to the offsets is the data of `n.b`, which is at most the size the part gives `n.b`.
 WITH
@@ -149,3 +163,60 @@ DROP TABLE t_nested;
 DROP TABLE t_nested_compact;
 DROP TABLE t_codec;
 DROP TABLE t_codec_renamed;
+
+-- A selection of unusually large values must be priced by what it reads, not by the average row of the part:
+-- the first 1000 rows hold 1 KiB strings, the others empty ones, and `CODEC(NONE)` keeps their size on disk.
+DROP TABLE IF EXISTS t_skew_wide;
+DROP TABLE IF EXISTS t_skew_compact;
+
+CREATE TABLE t_skew_wide (key UInt64, flag UInt8, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_skew_compact (key UInt64, flag UInt8, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1;
+
+INSERT INTO t_skew_wide SELECT number, number < 1000, if(number < 1000, repeat('x', 1024), '') FROM numbers(1e6);
+INSERT INTO t_skew_compact SELECT * FROM t_skew_wide;
+
+SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2;
+
+SELECT s FROM t_skew_wide PREWHERE flag = 1 FORMAT Null SETTINGS log_comment = '05452_skew_wide_prewhere';
+SELECT s FROM t_skew_wide WHERE key < 1000 FORMAT Null SETTINGS log_comment = '05452_skew_wide_primary_key';
+SELECT s FROM t_skew_compact PREWHERE flag = 1 FORMAT Null SETTINGS log_comment = '05452_skew_compact_prewhere';
+SELECT s FROM t_skew_compact WHERE key < 1000 FORMAT Null SETTINGS log_comment = '05452_skew_compact_primary_key';
+
+-- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
+SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_1';
+SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_2';
+SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_1';
+SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_2';
+
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT part_type, min(input_bytes) > 0 AND max(input_bytes) <= min(input_bytes) * 1.25 AS cache_priced_as_part
+FROM
+(
+    SELECT extract(log_comment, '05452_cache_(\\w+)_\\d') AS part_type, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+        AND log_comment LIKE '05452\\_cache\\_%' AND type = 'QueryFinish'
+)
+GROUP BY part_type
+ORDER BY part_type;
+
+WITH
+    (SELECT sum(column_data_compressed_bytes) FROM system.parts_columns
+     WHERE database = currentDatabase() AND table = 't_skew_wide' AND active) AS wide_bytes
+SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] BETWEEN 1000 * 1024 * 0.8 AND wide_bytes * 1.25 AS large_values_priced
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+    AND log_comment LIKE '05452\\_skew\\_%' AND type = 'QueryFinish'
+ORDER BY log_comment;
+
+DROP TABLE t_skew_wide;
+DROP TABLE t_skew_compact;

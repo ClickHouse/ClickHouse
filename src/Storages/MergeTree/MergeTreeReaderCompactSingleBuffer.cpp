@@ -47,18 +47,7 @@ std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRea
     if (!count_compressed_bytes_read)
         return std::nullopt;
 
-    /// A compressed block may hold several columns, read or served from the cache, and may be loaded more than once.
-    std::sort(ranges_read.begin(), ranges_read.end());
-    size_t bytes = 0;
-    size_t counted_until = 0;
-    for (const auto & [begin, end] : ranges_read)
-    {
-        if (end > std::max(begin, counted_until))
-            bytes += end - std::max(begin, counted_until);
-        counted_until = std::max(counted_until, end);
-    }
-    ranges_read.clear();
-    return bytes;
+    return takeBytesOfCompressedBlockRanges(ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark)

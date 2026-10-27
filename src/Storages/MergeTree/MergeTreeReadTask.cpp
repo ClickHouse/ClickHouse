@@ -1,4 +1,3 @@
-#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -23,39 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Resolves the codecs to use for estimating the compressed size of a whole column.
-///
-/// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
-/// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
-/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
-/// column into a single buffer, so a type-specific codec can only be used when the column consists of a
-/// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
-/// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
-/// structural substreams.
-///
-/// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
-/// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has
-/// to happen here, because it can throw: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the
-/// factory, so it is attempted only for a type whose default serialization is a single stream of it.
-ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
-{
-    auto & factory = CompressionCodecFactory::instance();
-    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
-
-    if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
-        return {.generic = std::move(generic)};
-
-    return {
-        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
-        .type_specific_for = description.type,
-        .generic = std::move(generic)};
-}
-
 }
 
 NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
@@ -164,90 +130,10 @@ MergeTreeReadTask::MergeTreeReadTask(
         /// The compressed bytes read are taken by `dataflow_cache_update_cb`.
         readers.countCompressedBytesRead();
 
-        /// Resolved once rather than per block, and taken from the table metadata because a part does
-        /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
-        /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
-        /// A borrowed part carries no part-level codec; the server default stands in for it, which is the
-        /// same substitution `CompressionCodecFactory::get` makes for a null current default.
-        const auto part_codec = info->data_part_info->getDefaultCompressionCodec();
-        const auto default_codec = part_codec ? part_codec : CompressionCodecFactory::instance().getDefaultCodec();
-        const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
-        /// Everything below is keyed by the names the readers give the columns they read, which are the names in the
-        /// part: a column renamed by a mutation not yet applied to the part keeps its old one there.
-        ColumnCodecByName resolved_codecs;
-        /// The streams the readers open for each column, which the part's column sizes cannot give: they hold no
-        /// subcolumn (`s.size` for `length(s)`), and a stream shared by several columns (the offsets `n.size0` of the
-        /// arrays of a `Nested`) is counted in one of them only.
-        RuntimeDataflowStatisticsCacheUpdater::StreamsBytesPerRowByName resolved_streams_bytes;
-        const size_t part_rows = info->data_part_info->getIndexGranularity().getTotalRows();
-        const bool resolve_streams = info->data_part_info->isWidePart() && part_rows;
-        auto resolve_for_reader = [&](IMergeTreeReader & reader)
-        {
-            const auto & requested_columns = reader.getColumns();
-            const auto & columns_in_part = reader.getColumnsToRead();
-            chassert(requested_columns.size() == columns_in_part.size());
-            auto column_to_streams = resolve_streams ? reader.getCompressedBytesOfColumnsToRead() : decltype(reader.getCompressedBytesOfColumnsToRead()){};
-            auto requested_it = requested_columns.begin();
-            for (const auto & column : columns_in_part)
-            {
-                /// The metadata knows the column by its requested name. A subcolumn is written with the `CODEC` of its column.
-                const auto * description = metadata_columns.tryGet((requested_it++)->getNameInStorage());
-                if (description && description->codec)
-                    resolved_codecs.emplace(column.name, resolveCodecsForWholeColumn(*description, default_codec));
-
-                if (!resolve_streams)
-                    continue;
-
-                RuntimeDataflowStatisticsCacheUpdater::StreamsBytesPerRow streams;
-                if (auto it = column_to_streams.find(column.name); it != column_to_streams.end())
-                {
-                    for (const auto & [stream_name, bytes] : it->second)
-                        streams.emplace_back(stream_name, static_cast<double>(bytes) / static_cast<double>(part_rows));
-                }
-                /// The streams of a dynamic structure are known only from its prefixes, which the part reads for this.
-                else if (column.isSubcolumn() && info->data_part_info->tryGetColumn(column.name))
-                {
-                    if (const auto bytes = info->data_part_info->getSubcolumnSize(column.name).data_compressed)
-                        streams.emplace_back(column.name, static_cast<double>(bytes) / static_cast<double>(part_rows));
-                }
-                /// A column with no streams is left out, so that its read is reported as unsupported.
-                if (!streams.empty())
-                    resolved_streams_bytes.emplace(column.name, std::move(streams));
-            }
-        };
-        resolve_for_reader(*readers.main);
-        for (const auto & reader : readers.prewhere)
-            resolve_for_reader(*reader);
-
-        /// Owned by the part, which outlives the task.
-        const auto * part_columns = &readers.main->getPartColumnsDescription();
-        dataflow_cache_update_cb = [this,
-                                    part_columns,
-                                    default_codec,
-                                    column_codecs = std::move(resolved_codecs),
-                                    streams_bytes = std::move(resolved_streams_bytes)](const ColumnsWithTypeAndName & columns,
-                                                           const NameSet & partially_read_columns,
-                                                           const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
-                                                           size_t read_bytes,
-                                                           std::optional<size_t> compressed_bytes_read,
-                                                           std::optional<bool> & should_continue_sampling) -> void
+        dataflow_cache_update_cb = [this](std::optional<size_t> compressed_bytes_read)
         {
             chassert(updater);
-            /// Cached map by shared pointer -- no per-block copy; null for borrowed parts (no size info).
-            static const std::unordered_map<String, ColumnSize> no_column_sizes;
-            auto column_sizes = info->data_part_info->getColumnSizes();
-            updater->recordInputColumns(
-                columns,
-                partially_read_columns,
-                bytes_skipped_by_string_value_filters,
-                *part_columns,
-                column_sizes ? *column_sizes : no_column_sizes,
-                streams_bytes,
-                column_codecs,
-                default_codec,
-                read_bytes,
-                compressed_bytes_read,
-                should_continue_sampling);
+            updater->recordInputBytesRead(compressed_bytes_read);
         };
     }
 }

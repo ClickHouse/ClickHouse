@@ -157,36 +157,21 @@ IMergeTreeReader::IMergeTreeReader(
 
             /// The key is the name in the part: it may differ from the requested name
             /// when the column is affected by a pending RENAME.
-            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, StringValueFilterForColumn{.filter = it->second});
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, it->second);
         }
     }
 }
 
-void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings)
+StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePair & column_in_part) const
 {
-    deserialize_settings.string_value_filter = nullptr;
-    deserialize_settings.string_value_filter_bytes_skipped = nullptr;
-
     if (string_value_filters_by_part_column_name.empty())
-        return;
+        return nullptr;
 
     auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
     if (it == string_value_filters_by_part_column_name.end())
-        return;
+        return nullptr;
 
-    deserialize_settings.string_value_filter = it->second.filter;
-    deserialize_settings.string_value_filter_bytes_skipped = &it->second.bytes_skipped;
-}
-
-std::unordered_map<String, size_t> IMergeTreeReader::takeBytesSkippedByStringValueFilters()
-{
-    std::unordered_map<String, size_t> res;
-    for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
-    {
-        if (filter_for_column.bytes_skipped)
-            res.emplace(name, std::exchange(filter_for_column.bytes_skipped, 0));
-    }
-    return res;
+    return it->second;
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
@@ -653,14 +638,6 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         return {*column_in_part, IDataType::getSerialization(*column_in_part, *it->second)};
 
     return {*column_in_part, IDataType::getSerialization(*column_in_part, infos.getSettings())};
-}
-
-const ColumnsDescription & IMergeTreeReader::getPartColumnsDescription() const
-{
-    /// The same choice as `getColumns`.
-    return data_part_info_for_read->isWidePart() && (*storage_settings)[MergeTreeSetting::share_nested_offsets]
-        ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
-        : data_part_info_for_read->getColumnsDescription();
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const

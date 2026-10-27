@@ -330,6 +330,21 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
+size_t takeBytesOfCompressedBlockRanges(CompressedBlockRanges & ranges)
+{
+    std::sort(ranges.begin(), ranges.end());
+    size_t bytes = 0;
+    size_t counted_until = 0;
+    for (const auto & [begin, end] : ranges)
+    {
+        if (end > std::max(begin, counted_until))
+            bytes += end - std::max(begin, counted_until);
+        counted_until = std::max(counted_until, end);
+    }
+    ranges.clear();
+    return bytes;
+}
+
 void MergeTreeReaderStream::setBlocksReadSink(CompressedBlockRanges * blocks_read_)
 {
     if (!settings.is_compressed)
@@ -610,8 +625,12 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     return {max_range_bytes, sum_range_bytes};
 }
 
-void MergeTreeReaderStreamMultipleColumns::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
+void MergeTreeReaderStream::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
 {
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
+        return;
+
     loadMarks();
     const size_t num_positions = marks_getter->getNumColumns();
     /// The granules are written one after another, and the positions of a granule in their order.
