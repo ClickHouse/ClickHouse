@@ -1749,3 +1749,46 @@ TEST(RuntimeDataflowStatisticsStateSampling, UnsampledReplicatedChunksCountOnlyR
     EXPECT_GE(stats->output_bytes, wire_bytes * 4 / 5);
     EXPECT_LE(stats->output_bytes, wire_bytes * 5 / 4);
 }
+
+/// The unsampled chunks size their referenced nested rows one by one: the indexes can pick rows much larger
+/// than the nested column holds on average, as after a filter correlated with the value. Here every index of
+/// every chunk refers to the one 1 MiB string among 99 one-byte ones, and the average nested row size would
+/// count each unsampled chunk at about 1% of what it sends.
+TEST(RuntimeDataflowStatisticsStateSampling, UnsampledReplicatedChunksSizeReferencedRowsExactly)
+{
+    constexpr size_t chunks = 30;
+    constexpr size_t rows = 32;
+    constexpr size_t nested_rows = 100;
+
+    auto nested = ColumnString::create();
+    nested->insert(String(1 << 20, 'a'));
+    for (size_t i = 1; i < nested_rows; ++i)
+        nested->insert(String("x"));
+    auto indexes = ColumnUInt8::create();
+    for (size_t row = 0; row < rows; ++row)
+        indexes->insertValue(0);
+    const ColumnPtr replicated = ColumnReplicated::create(MutableColumnPtr(std::move(nested)), MutableColumnPtr(std::move(indexes)));
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{replicated, std::make_shared<DataTypeString>(), "s"});
+
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size() * chunks;
+
+    const size_t cache_key = 0x111985 + 53;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows * chunks, none));
+        Block header = block.cloneEmpty();
+        for (size_t chunk = 0; chunk < chunks; ++chunk)
+            updater.recordOutputChunk(Chunk(Columns{replicated}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, wire_bytes * 4 / 5);
+    EXPECT_LE(stats->output_bytes, wire_bytes * 5 / 4);
+}

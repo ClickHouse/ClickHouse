@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -427,8 +428,10 @@ static DataTypePtr replicatedIndexesType(const ColumnReplicated & column)
 /// it, estimated without copying any payload: compaction materializes or filters the nested column, which
 /// for large `String` or `Array` values costs as much as the payload itself, too much for every chunk.
 /// Follow the writer's decision (`convertToFullColumnIfReplicationNotUseful`): a materialized column costs
-/// a row of average nested size per output row; a kept one costs its indexes and the referenced nested
-/// rows, the unreferenced ones being dropped, taken at the average nested row size as well.
+/// the nested row each output row refers to; a kept one costs its indexes and every referenced nested row
+/// once, the unreferenced ones being dropped. The referenced rows are sized one by one with `byteSizeAt`
+/// rather than at the average nested row size, because the indexes can pick rows of very different sizes -
+/// a filter correlated with the value, say - than the nested column holds on average.
 static size_t replicatedWireBytes(const ColumnReplicated & column)
 {
     const size_t rows = column.size();
@@ -436,13 +439,30 @@ static size_t replicatedWireBytes(const ColumnReplicated & column)
     const size_t nested_rows = nested->size();
     if (rows == 0 || nested_rows == 0)
         return 0;
-    const double average_row_bytes = static_cast<double>(nested->byteSize()) / static_cast<double>(nested_rows);
-    if (!isLazyReplicationUseful(nested))
-        return static_cast<size_t>(average_row_bytes * static_cast<double>(rows));
-    const size_t referenced_rows = std::min(getReferencedRowsBound(column), nested_rows);
-    if (nested_rows >= rows && referenced_rows >= rows)
-        return static_cast<size_t>(average_row_bytes * static_cast<double>(rows));
-    return column.getIndexesColumn()->byteSize() + static_cast<size_t>(average_row_bytes * static_cast<double>(referenced_rows));
+    const auto & indexes = column.getIndexes();
+    const bool materialized = !isLazyReplicationUseful(nested)
+        || (nested_rows >= rows && std::min(getReferencedRowsBound(column), nested_rows) >= rows);
+    if (materialized)
+    {
+        if (nested->isFixedAndContiguous())
+            return nested->sizeOfValueIfFixed() * rows;
+        size_t bytes = 0;
+        for (size_t row = 0; row < rows; ++row)
+            bytes += nested->byteSizeAt(indexes.getIndexAt(row));
+        return bytes;
+    }
+    PaddedPODArray<UInt8> referenced(nested_rows, 0);
+    size_t bytes = column.getIndexesColumn()->byteSize();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const size_t index = indexes.getIndexAt(row);
+        if (!referenced[index])
+        {
+            referenced[index] = 1;
+            bytes += nested->byteSizeAt(index);
+        }
+    }
+    return bytes;
 }
 
 /// Samples the compression of everything in a state-bearing column except the aggregate-state leaves
