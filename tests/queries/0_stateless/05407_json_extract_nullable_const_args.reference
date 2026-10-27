@@ -1,0 +1,20 @@
+[]
+[]
+[]
+[]
+[]
+[]
+	LowCardinality(String)
+	LowCardinality(String)
+\N	LowCardinality(Nullable(String))
+\N	LowCardinality(Nullable(String))
+[]
+[]
+[]
+[]
+	LowCardinality(String)
+	LowCardinality(String)
+['x']
+['y']
+['x']
+['y']
