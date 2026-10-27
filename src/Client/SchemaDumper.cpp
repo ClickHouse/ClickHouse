@@ -54,10 +54,14 @@
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParser.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageURL.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
@@ -3077,6 +3081,19 @@ struct ReplayGateNeeds
     bool statistics = false;
     bool xgboost = false;
     bool ipcrypt_functions = false;
+    bool subcolumn_codecs = false; /// a `CODEC name (...)` declaration for a subcolumn
+    bool elasticsearch = false; /// the `Elasticsearch` table engine, or the `elasticsearch` table function where CREATE reads it
+    bool client_http_header_function = false;
+    bool introspection_functions = false;
+    bool nonconst_timezone_argument = false; /// a time zone argument that is not a literal, where only a constant is allowed
+    bool throw_if_error_code = false; /// `throwIf` with an error code argument
+    bool rank_arguments = false; /// `rank` or `dense_rank` with arguments
+    bool streaming_query = false; /// a table expression read with `STREAM`
+    bool kafka_consumers_over_limit = false; /// `kafka_num_consumers` may be above the per-server limit
+    bool dynamic_disk_from_env = false;
+    bool dynamic_disk_from_zk = false;
+    bool dynamic_disk_include = false;
+    bool iceberg_geo_types = false; /// an Iceberg table with a `Geometry` column, which its metadata holds as a geo field
     std::set<String> codec_gates; /// `enable_<family>_codec` of the codecs the statements name
     std::set<String> data_lake_catalog_gates; /// gates of the known `catalog_type`s; `data_lake_catalog_database` keeps all
 };
@@ -3115,6 +3132,99 @@ bool kafkaMayStoreOffsetsInKeeper(const ASTStorage & storage)
             if (change.name == "kafka_keeper_path" || change.name == "kafka_replica_name")
                 return true;
     return false;
+}
+
+/// A fresh Kafka table may have as many consumers as the server has CPU cores, or 16 on a smaller server, unless
+/// `kafka_disable_num_consumers_limit` is set. The count is the seventh engine argument or a SETTING, and a named
+/// collection or a computed argument may set it too.
+bool kafkaMayExceedConsumerLimit(const ASTStorage & storage)
+{
+    constexpr UInt64 limit_on_any_server = 16;
+    const auto may_exceed = [&](const Field & value)
+    {
+        return value.getType() != Field::Types::UInt64 || value.safeGet<UInt64>() > limit_on_any_server;
+    };
+    if (storage.engine->arguments)
+    {
+        const auto & arguments = storage.engine->arguments->children;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const auto * literal = arguments[i]->as<ASTLiteral>();
+            if (!literal || (i == 6 && may_exceed(literal->value)))
+                return true;
+        }
+    }
+    if (storage.settings)
+        for (const auto & change : storage.settings->changes)
+            if (change.name == "kafka_num_consumers" && may_exceed(change.value))
+                return true;
+    return false;
+}
+
+/// A `disk = disk(...)` SETTING reads `dynamic_disk_allow_include` for an `include` key, and `dynamic_disk_allow_from_env`
+/// or `dynamic_disk_allow_from_zk` for a value that starts with `from_env` or `from_zk` (`getDiskConfigurationFromAST`).
+void addDynamicDiskGateNeeds(const ASTSetQuery & settings, ReplayGateNeeds & needs)
+{
+    for (const auto & change : settings.changes)
+    {
+        CustomType custom;
+        if (change.name != "disk" || !change.value.tryGet<CustomType>(custom)
+            || std::string_view(custom.getTypeName()) != FieldFromASTImpl::name)
+            continue;
+        forEachNode(*dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, [&](const IAST & node)
+        {
+            const auto * function = node.as<ASTFunction>();
+            if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+                return;
+            const auto & key = function->arguments->children[0];
+            const auto & value = function->arguments->children[1];
+            if (const auto * identifier = key->as<ASTIdentifier>(); identifier && identifier->name() == "include")
+                needs.dynamic_disk_include = true;
+            /// An identifier value is read as its name.
+            String text;
+            if (const auto * literal = value->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                text = literal->value.safeGet<String>();
+            else if (const auto * identifier = value->as<ASTIdentifier>())
+                text = identifier->name();
+            needs.dynamic_disk_from_env |= text.starts_with("from_env");
+            needs.dynamic_disk_from_zk |= text.starts_with("from_zk");
+        });
+    }
+}
+
+/// Whether a call passes a time zone that is not a literal to a function that takes only a constant one unless
+/// `allow_nonconst_timezone_arguments` is set. A constant expression is over-approximated as not constant.
+bool hasNonConstantTimeZoneArgument(const ASTFunction & function)
+{
+    static const std::vector<std::pair<std::string_view, size_t>> time_zone_positions = {
+        {"now", 0}, {"current_timestamp", 0}, {"localtimestamp", 0}, {"nowInBlock", 0},
+        {"toTimeZone", 1}, {"toTimezone", 1}, {"now64", 1},
+        {"fromUnixTimestamp64Second", 1}, {"fromUnixTimestamp64Milli", 1}, {"fromUnixTimestamp64Micro", 1},
+        {"fromUnixTimestamp64Nano", 1},
+        {"snowflakeIDToDateTime", 2}, {"snowflakeIDToDateTime64", 2},
+    };
+    if (!function.arguments)
+        return false;
+    const auto & arguments = function.arguments->children;
+    for (const auto & [name, position] : time_zone_positions)
+        if (equalsCaseInsensitive(function.name, name))
+            return position < arguments.size() && !arguments[position]->as<ASTLiteral>();
+    return false;
+}
+
+/// The column or subcolumn a `CODEC name (...)` declaration of a column list names. `SHOW CREATE` prints the name
+/// first, before the codecs in brackets. The declaration is read through `IAST` (its id is `CodecDeclaration`), so this
+/// builds against servers with and without that syntax.
+std::optional<String> codecDeclarationName(const IAST & declaration)
+{
+    const String text = declaration.formatWithSecretsOneLine();
+    Tokens tokens(text.data(), text.data() + text.size());
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr name;
+    Expected expected;
+    if (!ParserCompoundIdentifier().parse(pos, name, expected) || !name->as<ASTIdentifier>())
+        return std::nullopt;
+    return name->as<ASTIdentifier &>().name();
 }
 
 /// Whether the lowercase `text` has `token` starting at an identifier boundary, and ending at one unless `prefix`.
@@ -3616,22 +3726,10 @@ TypeGateNeeds typeGateNeeds(const ASTPtr & type_ast)
     };
 }
 
-/// The codec gates the codec factory reads for a column's CODEC: each is switched off alone, and is needed when that
-/// throws. A column type this client cannot build needs all of them.
-std::vector<String> codecGateNeeds(const ASTPtr & codec, const ASTPtr & type_ast, const std::vector<String> & gates)
+/// The codec gates the codec factory reads for a codec of a column or subcolumn of `type`: each is switched off alone,
+/// and is needed when that throws.
+std::vector<String> codecGateNeedsForType(const ASTPtr & codec, const DataTypePtr & type, const std::vector<String> & gates)
 {
-    DataTypePtr type;
-    try
-    {
-        if (type_ast)
-            type = DataTypeFactory::instance().get(type_ast);
-    }
-    catch (const Exception &)
-    {
-        return gates;
-    }
-    if (!type)
-        return gates;
     std::vector<String> needed;
     for (const auto & gate : gates)
     {
@@ -3648,6 +3746,24 @@ std::vector<String> codecGateNeeds(const ASTPtr & codec, const ASTPtr & type_ast
         }
     }
     return needed;
+}
+
+/// The same for a column's CODEC. A column type this client cannot build needs all of them.
+std::vector<String> codecGateNeeds(const ASTPtr & codec, const ASTPtr & type_ast, const std::vector<String> & gates)
+{
+    DataTypePtr type;
+    try
+    {
+        if (type_ast)
+            type = DataTypeFactory::instance().get(type_ast);
+    }
+    catch (const Exception &)
+    {
+        return gates;
+    }
+    if (!type)
+        return gates;
+    return codecGateNeedsForType(codec, type, gates);
 }
 
 /// The same for a codec given as a string, as the MergeTree `*_compression_codec` settings are.
@@ -4028,6 +4144,21 @@ ReplayGateNeeds collectReplayGateNeeds(
                     if (inner->engine)
                         table_storages.push_back(inner);
 
+            /// An Iceberg table parses the schema of its metadata at CREATE, where a `geometry` or `geography` field, which it
+            /// stores as a `Geometry` column, needs `allow_geo_types_in_iceberg`.
+            bool has_geometry_column = false;
+            if (create->columns_list && create->columns_list->columns)
+                for (const auto & child : create->columns_list->columns->children)
+                    if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+                        forEachNode(*column->getType(), [&](const IAST & node)
+                        {
+                            const auto * type = node.as<ASTDataType>();
+                            has_geometry_column |= type && equalsCaseInsensitive(type->name, "Geometry");
+                        });
+            const auto * as_function = create->as_table_function ? create->as_table_function->as<ASTFunction>() : nullptr;
+            if (has_geometry_column && as_function && startsWithCaseInsensitive(as_function->name, "Iceberg"))
+                needs.iceberg_geo_types = true;
+
             /// CREATE TABLE: gate on the table engine name.
             for (const auto * storage : table_storages)
             {
@@ -4043,12 +4174,16 @@ ReplayGateNeeds collectReplayGateNeeds(
                     needs.time_series_table = true;
                 if (equalsCaseInsensitive(engine->name, "Kafka") && kafkaMayStoreOffsetsInKeeper(*storage))
                     needs.kafka_keeper_offsets = true;
+                if (equalsCaseInsensitive(engine->name, "Kafka") && kafkaMayExceedConsumerLimit(*storage))
+                    needs.kafka_consumers_over_limit = true;
                 if (equalsCaseInsensitive(engine->name, "YTsaurus"))
                     needs.ytsaurus_table = true;
                 if (startsWithCaseInsensitive(engine->name, "Paimon"))
                     needs.paimon_table = true;
                 if (startsWithCaseInsensitive(engine->name, "DeltaLake"))
                     needs.delta_lake_table = true;
+                if (startsWithCaseInsensitive(engine->name, "Iceberg") && has_geometry_column)
+                    needs.iceberg_geo_types = true;
                 /// `File`, `URL` and the `S3` family split an archive path at CREATE only under `allow_archive_path_syntax`.
                 if (mayNameArchivePath(*engine, named_collections))
                     needs.archive_path = true;
@@ -4069,6 +4204,14 @@ ReplayGateNeeds collectReplayGateNeeds(
                     && mayNameArchivePath(*table_expression->table_function, named_collections))
                     needs.archive_path = true;
             }, unread_select);
+
+        /// A table, or a database, builds a `disk = disk(...)` of its SETTINGS at CREATE.
+        if (create->storage && create->storage->settings)
+            addDynamicDiskGateNeeds(*create->storage->settings, needs);
+        if (create->targets)
+            for (const auto * inner_engine : create->targets->getInnerEngines())
+                if (inner_engine->settings)
+                    addDynamicDiskGateNeeds(*inner_engine->settings, needs);
 
         /// `enable_unique_key` is checked only for a UNIQUE KEY; a view or TimeSeries keeps its engines in `targets`.
         if (create->storage && create->storage->unique_key)
@@ -4095,6 +4238,10 @@ ReplayGateNeeds collectReplayGateNeeds(
         needs.time_series_aggregate_functions |= hasTimeSeriesFunction(names);
         needs.xgboost |= hasToken(names, "predictxgboost");
         needs.ipcrypt_functions |= hasToken(names, "ipcrypt", true);
+        needs.client_http_header_function |= hasToken(names, "getclienthttpheader");
+        /// `flameGraph` also as the function of an `AggregateFunction` type, and with combinators.
+        needs.introspection_functions |= hasToken(names, "addresstoline", true) || hasToken(names, "addresstosymbol")
+            || hasToken(names, "demangle") || hasToken(names, "flamegraph", true);
 
         /// Type gates come from `validateDataType` itself. `InterpreterCreateQuery` validates the stored columns except a
         /// view's; a materialized view's inner table validates them on its own CREATE.
@@ -4132,16 +4279,58 @@ ReplayGateNeeds collectReplayGateNeeds(
                     needs.statistics = true;
 
         /// Codec gates come from the codec factory itself, for every column CODEC (`getColumnsDescription`).
+        const auto add_codec_gates = [&needs](const std::vector<String> & gates)
+        {
+            for (const auto & gate : gates)
+            {
+                if (gate == "allow_suspicious_codecs")
+                    needs.suspicious_codecs = true;
+                else
+                    needs.codec_gates.insert(gate);
+            }
+        };
         if (create->columns_list && create->columns_list->columns)
             for (const auto & child : create->columns_list->columns->children)
                 if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getCodec())
-                    for (const auto & gate : codecGateNeeds(column->getCodec(), column->getType(), codec_gates_to_check))
+                    add_codec_gates(codecGateNeeds(column->getCodec(), column->getType(), codec_gates_to_check));
+
+        /// `SHOW CREATE` lists the codecs declared for subcolumns after the columns, as `CODEC name (codecs)`. CREATE reads
+        /// `enable_subcolumn_codecs` for each, and validates its codecs against the type of the subcolumn like a column
+        /// CODEC (`applyCodecDeclarations`). A name is a column if there is one with that name.
+        if (create->columns_list)
+        {
+            std::map<String, ASTPtr> column_types;
+            if (create->columns_list->columns)
+                for (const auto & child : create->columns_list->columns->children)
+                    if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getType())
+                        column_types.emplace(column->name, column->getType());
+            const auto subcolumn_type = [&](const String & name) -> DataTypePtr
+            {
+                for (size_t dot = name.find('.'); dot != String::npos; dot = name.find('.', dot + 1))
+                    if (const auto column = column_types.find(name.substr(0, dot)); column != column_types.end())
+                        if (const auto column_type = DataTypeFactory::instance().tryGet(column->second))
+                            if (auto type = column_type->tryGetSubcolumnType(name.substr(dot + 1)))
+                                return type;
+                return nullptr;
+            };
+            for (const auto & list : create->columns_list->children)
+                for (const auto & declaration : list->children)
+                {
+                    if (declaration->getID('_') != "CodecDeclaration" || declaration->children.empty())
+                        continue;
+                    const ASTPtr & codec = declaration->children.front();
+                    const std::optional<String> name = codecDeclarationName(*declaration);
+                    if (name && column_types.contains(*name))
                     {
-                        if (gate == "allow_suspicious_codecs")
-                            needs.suspicious_codecs = true;
-                        else
-                            needs.codec_gates.insert(gate);
+                        add_codec_gates(codecGateNeeds(codec, column_types.at(*name), codec_gates_to_check));
+                        continue;
                     }
+                    needs.subcolumn_codecs = true;
+                    /// A subcolumn this client cannot resolve, or whose column type it cannot build, keeps every codec gate.
+                    const DataTypePtr type = name ? subcolumn_type(*name) : nullptr;
+                    add_codec_gates(type ? codecGateNeedsForType(codec, type, codec_gates_to_check) : codec_gates_to_check);
+                }
+        }
 
         if (create->dictionary && create->dictionary->source && equalsCaseInsensitive(create->dictionary->source->name, "ytsaurus"))
             needs.ytsaurus_dictionary_source = true;
@@ -4162,7 +4351,27 @@ ReplayGateNeeds collectReplayGateNeeds(
             else if ((equalsCaseInsensitive(function->name, "url") || equalsCaseInsensitive(function->name, "urlCluster"))
                      && !(create->getTable().empty() && &node == main_engine) && urlMayHaveWildcard(*function))
                 needs.url_wildcard = true;
+            /// Both the table engine and the table function.
+            else if (equalsCaseInsensitive(function->name, "elasticsearch"))
+                needs.elasticsearch = true;
+            else if (function->name == "throwIf" && function->arguments && function->arguments->children.size() == 3)
+                needs.throw_if_error_code = true;
+            else if ((equalsCaseInsensitive(function->name, "rank") || equalsCaseInsensitive(function->name, "dense_rank")
+                      || equalsCaseInsensitive(function->name, "denseRank"))
+                     && function->arguments && !function->arguments->children.empty())
+                needs.rank_arguments = true;
+            else
+                needs.nonconst_timezone_argument |= hasNonConstantTimeZoneArgument(*function);
         };
+        /// The analyzer reads `enable_streaming_queries` for a table expression with `STREAM`.
+        const auto visit_streaming_table = [&](const IAST & node)
+        {
+            if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->stream_settings)
+                needs.streaming_query = true;
+        };
+        forEachNode(*create_ast, visit_streaming_table, unread_select);
+        for (const auto & query : eval_queries)
+            forEachNode(*query, visit_streaming_table);
         forEachNode(*create_ast, visit_gated_function, unread_select);
         for (const auto & query : eval_queries)
             forEachNode(*query, visit_gated_function);
@@ -4405,6 +4614,37 @@ String replaySettingsPrelude(
         {"allow_statistics", &ReplayGateNeeds::statistics},
         {"enable_xgboost", &ReplayGateNeeds::xgboost},
         {"enable_ipcrypt", &ReplayGateNeeds::ipcrypt_functions},
+        {"enable_subcolumn_codecs", &ReplayGateNeeds::subcolumn_codecs},
+        {"enable_elasticsearch", &ReplayGateNeeds::elasticsearch},
+        {"enable_streaming_queries", &ReplayGateNeeds::streaming_query},
+        {"allow_get_client_http_header", &ReplayGateNeeds::client_http_header_function},
+        {"allow_introspection_functions", &ReplayGateNeeds::introspection_functions},
+        {"allow_nonconst_timezone_arguments", &ReplayGateNeeds::nonconst_timezone_argument},
+        {"allow_custom_error_code_in_throwif", &ReplayGateNeeds::throw_if_error_code},
+        {"allow_rank_dense_rank_arguments", &ReplayGateNeeds::rank_arguments},
+        {"kafka_disable_num_consumers_limit", &ReplayGateNeeds::kafka_consumers_over_limit},
+        {"dynamic_disk_allow_from_env", &ReplayGateNeeds::dynamic_disk_from_env},
+        {"dynamic_disk_allow_from_zk", &ReplayGateNeeds::dynamic_disk_from_zk},
+        {"dynamic_disk_allow_include", &ReplayGateNeeds::dynamic_disk_include},
+        {"allow_geo_types_in_iceberg", &ReplayGateNeeds::iceberg_geo_types},
+    };
+    /// Gates that CREATE reads besides `allExperimentalSettingNames`. That list is also what `enableAllExperimentalSettings`
+    /// sets on server contexts, which these permissions are not meant to widen, so the dump keeps them here and sets each
+    /// only where a statement carries it.
+    static const std::vector<String> create_gates = {
+        "enable_subcolumn_codecs",
+        "enable_elasticsearch",
+        "enable_streaming_queries",
+        "allow_get_client_http_header",
+        "allow_introspection_functions",
+        "allow_nonconst_timezone_arguments",
+        "allow_custom_error_code_in_throwif",
+        "allow_rank_dense_rank_arguments",
+        "kafka_disable_num_consumers_limit",
+        "dynamic_disk_allow_from_env",
+        "dynamic_disk_allow_from_zk",
+        "dynamic_disk_allow_include",
+        "allow_geo_types_in_iceberg",
     };
     auto shared_needed = [&needs](const String & name)
     {
@@ -4438,6 +4678,10 @@ String replaySettingsPrelude(
     };
     for (const auto & name : allExperimentalSettingNames())
         if (!dump_specific_names.contains(name) && shared_needed(name))
+            if (const auto spelling = server_spelling(name))
+                res += "SET " + *spelling + " = 1;\n";
+    for (const auto & name : create_gates)
+        if (shared_needed(name))
             if (const auto spelling = server_spelling(name))
                 res += "SET " + *spelling + " = 1;\n";
     /// Emit dump-specific gates only when the dumped AST proves they are needed.

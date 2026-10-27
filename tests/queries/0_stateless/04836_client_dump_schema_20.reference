@@ -1,0 +1,60 @@
+subcolumn_codec: dump rc=0
+SET enable_subcolumn_codecs = 1;
+SET data_type_default_nullable = 0;
+subcolumn_codec: replay rc=0
+subcolumn_codec: same definition: 1
+subcolumn_suspicious_codec: dump rc=0
+SET allow_suspicious_codecs = 1;
+SET enable_subcolumn_codecs = 1;
+SET data_type_default_nullable = 0;
+subcolumn_suspicious_codec: replay rc=0
+subcolumn_suspicious_codec: same definition: 1
+subcolumn_beta_codec: dump rc=0
+SET enable_alp_codec = 1;
+SET enable_subcolumn_codecs = 1;
+SET data_type_default_nullable = 0;
+subcolumn_beta_codec: replay rc=0
+subcolumn_beta_codec: same definition: 1
+elasticsearch: dump rc=0
+SET enable_elasticsearch = 1;
+SET data_type_default_nullable = 0;
+elasticsearch: replay rc=0
+elasticsearch: same definition: 1
+client_http_header: dump rc=0
+SET allow_get_client_http_header = 1;
+SET data_type_default_nullable = 0;
+client_http_header: replay rc=0
+client_http_header: same definition: 1
+introspection: dump rc=0
+SET allow_introspection_functions = 1;
+SET data_type_default_nullable = 0;
+introspection: replay rc=0
+introspection: same definition: 1
+nonconst_timezone: dump rc=0
+SET allow_nonconst_timezone_arguments = 1;
+SET data_type_default_nullable = 0;
+nonconst_timezone: replay rc=0
+nonconst_timezone: same definition: 1
+throw_if_error_code: dump rc=0
+SET allow_custom_error_code_in_throwif = 1;
+SET data_type_default_nullable = 0;
+throw_if_error_code: replay rc=0
+throw_if_error_code: same definition: 1
+rank_arguments: dump rc=0
+SET allow_suspicious_types_in_order_by = 1;
+SET allow_rank_dense_rank_arguments = 1;
+SET allow_materialized_view_with_bad_select = 1;
+SET data_type_default_nullable = 0;
+rank_arguments: replay rc=0
+rank_arguments: same definition: 1
+streaming_query: dump rc=0
+SET enable_streaming_queries = 1;
+SET allow_materialized_view_with_bad_select = 1;
+SET data_type_default_nullable = 0;
+streaming_query: replay rc=0
+streaming_query: same definition: 1
+dynamic_disk: dump rc=0
+SET dynamic_disk_allow_from_env = 1;
+SET data_type_default_nullable = 0;
+dynamic_disk: replay rc=0
+dynamic_disk: same definition: 1
