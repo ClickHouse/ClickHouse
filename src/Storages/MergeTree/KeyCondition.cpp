@@ -6071,10 +6071,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 /// the single padded value while `convertFieldToType` below builds a point
                 /// range from the padding:
                 ///   - against a `String` key it matches the family `value` + trailing '\0'*
-                ///     (`'abc'`, `'abc\0'`, ...), not a point, so the point range is unsound
-                ///     and prunes matching granules: decline this candidate;
-                ///   - against a narrower `FixedString(M)` key (N > M) it is cut to M bytes if
-                ///     the other bytes are zero bytes, and declined otherwise.
+                ///     (`'abc'`, `'abc\0'`, ...), not a point;
+                ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
+                ///     bytes, which no longer map into the key domain.
+                /// Either way the point range is unsound and prunes matching granules, so
+                /// decline this candidate, or cut it to M bytes for a narrower key if the bytes past M are zero bytes.
                 /// A wider-or-equal `FixedString(M)` key (`M >= N`) pads
                 /// the constant into exactly one key value, so a point range is sound.
                 /// `isFixedStringConstant` strips `LowCardinality` and `Nullable`: a wrapped constant such as
