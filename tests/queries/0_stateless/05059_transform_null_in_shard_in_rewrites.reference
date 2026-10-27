@@ -19,6 +19,6 @@ nullable dict declined	90	3
 nullable dict declined, setting off	90	3
 nullable dict not rewritten	0
 nullable dict rewritten, setting off	1
-nested nullable rewritten	1
+nested nullable not rewritten	0
 nested nullable	100	3
 nested nullable, setting off	100	3
