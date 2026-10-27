@@ -1,0 +1,24 @@
+If
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+Nullable
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+Variadic
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+Tuple argument
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+Array
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+State
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+ArrayIfState
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
+Merge
+adaptive, ORDER BY k	1	1	0
+adaptive, ORDER BY c DESC LIMIT 1	1	1	1
