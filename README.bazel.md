@@ -50,6 +50,17 @@ appear as `download outputs` in the profile even when the `.o` stays remote.
 To get a local copy of the executable, add `--remote_download_outputs=toplevel`
 to the build of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
+These x86-64 timing profiles used a local Bazel client with `--jobs=2000`
+and a warm repository cache. Each run set a fresh target `--action_env` cache
+buster, kept the host action environment unchanged, and executed the final
+`ClickHouseNativeLink` on BuildBuddy. The hashes identify the `//:clickhouse` executables;
+the [CMake comparison](#binary-comparison) below uses separate builds.
+
+| BuildBuddy timing profile | ClickHouse SHA-256 | Bytes |
+| --- | --- | ---: |
+| [`-c fastbuild`](https://app.buildbuddy.io/invocation/b5f2d5ff-b97e-423b-bec7-b32127aee8cf#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [`-c opt --features=thin_lto`](https://app.buildbuddy.io/invocation/841c82aa-2b17-4df6-890f-8ac960d94733#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
+
 ## Linux headers and link inputs
 
 Bazel C and C++ rules use the headers selected by the [target platforms](bazel/BUILD.bazel):
