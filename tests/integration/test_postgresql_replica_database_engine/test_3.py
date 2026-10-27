@@ -3855,18 +3855,27 @@ def test_attach_table_reuses_existing_publication_membership(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
-@pytest.mark.parametrize("replacement_snapshot_fails", [False, True])
+@pytest.mark.parametrize(
+    "failpoint, replacement_snapshot_fails",
+    [
+        ("materialized_postgresql_pause_before_attach_table_snapshot", False),
+        ("materialized_postgresql_pause_before_attach_table_snapshot", True),
+        ("materialized_postgresql_pause_after_attach_table_nested_created", False),
+    ],
+)
 def test_attach_table_snapshot_interrupted_by_server_termination(
-    started_cluster, replacement_snapshot_fails
+    started_cluster, failpoint, replacement_snapshot_fails
 ):
     # The server is terminated while `ATTACH TABLE` loads the snapshot of a table discovered from
     # `materialized_postgresql_schema_list`, so its empty nested table and publication entry survive.
     # On attach, the interrupted snapshot is not taken for a completed one: the nested table is loaded again.
     # If loading it again fails, the table has no nested table anymore and does not count as materialized.
+    # With `materialized_postgresql_pause_after_attach_table_nested_created`, the server is terminated right after the
+    # nested table is created, before the replication handler is reached. The table is published beforehand, so that
+    # on attach it is published and has a nested table, which must not be taken for a synchronized one either.
     table_a = "interrupted_snapshot_a"
     table_b = "interrupted_snapshot_b"
     mat_db = "interrupted_snapshot_database"
-    failpoint = "materialized_postgresql_pause_before_attach_table_snapshot"
     # Two schemas, so that the table names have the schema prefix that the replication stream uses.
     pg_manager.create_postgres_schema("interrupted_snapshot_schema")
     pg_manager.create_postgres_table(table_a)
@@ -3891,6 +3900,10 @@ def test_attach_table_snapshot_interrupted_by_server_termination(
     instance.query(
         f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 100)"
     )
+    if failpoint == "materialized_postgresql_pause_after_attach_table_nested_created":
+        cursor = pg_manager.get_db_cursor()
+        publication = get_single_publication(cursor)
+        cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY {table_b}')
 
     def attach_table():
         try:

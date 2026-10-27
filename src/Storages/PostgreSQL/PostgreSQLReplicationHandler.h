@@ -67,6 +67,17 @@ public:
     /// shared replication slot is behind it (see `snapshot_positions_path`). Must be called before startSynchronization.
     void setSnapshotPositionsFile(DiskPtr disk, const String & path);
 
+    /// Called by `ATTACH TABLE` before the nested table is created. The snapshot of the table is marked incomplete, so that
+    /// if the server is terminated before the snapshot completes, the next attach does not resume the partially loaded
+    /// nested table: it is dropped together with the publication entry if the table is not replicated then, and loaded
+    /// again otherwise (it is discovered from `materialized_postgresql_schema_list`). Whether the table is published
+    /// already is recorded too, so that the publication entry is kept then, as the rollback of a failed `ATTACH TABLE`
+    /// does. The snapshot position is set later by addTableToReplication, when the temporary replication slot is created.
+    void markSnapshotIncomplete(const String & table_name) const;
+
+    /// Removes the entry written by markSnapshotIncomplete, if the nested table could not be created.
+    void removeSnapshotPosition(const String & table_name) const;
+
     /// Called by `DETACH TABLE ... PERMANENTLY` before the table is removed from the persisted table list: if the
     /// detach is interrupted after that, the publication entry of the table is removed on the next attach.
     void markPublicationEntryOwned(const String & table_name) const;

@@ -95,6 +95,9 @@ private:
 
     String getFormattedTablesList(const String & except = {}) const TSA_REQUIRES(tables_mutex);
 
+    /// Throws if the replication has not started yet (see `synchronization_started`).
+    void checkSynchronizationStarted(const String & table_name) const;
+
     /// Throws if `table_name` is not replicated, or if detaching it permanently would leave no replicated tables.
     void checkCanDetachTablePermanently(const String & table_name) const TSA_REQUIRES(tables_mutex);
 
@@ -144,6 +147,12 @@ private:
 
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
+
+    /// Set once `startSynchronization` has started the replication handler. Until then, `startSynchronization` holds
+    /// `handler_mutex` while it drops and creates nested tables, which takes their DDL guards. A query that holds the
+    /// DDL guard of a table (`ATTACH TABLE`, `DETACH TABLE ... PERMANENTLY`) must not wait for `handler_mutex` then,
+    /// otherwise the two would wait for each other. See `checkSynchronizationStarted`.
+    std::atomic<bool> synchronization_started = false;
 
     LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };

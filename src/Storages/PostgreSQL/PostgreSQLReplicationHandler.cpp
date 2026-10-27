@@ -528,6 +528,28 @@ void PostgreSQLReplicationHandler::markSnapshotCompleted(const String & table_na
 }
 
 
+void PostgreSQLReplicationHandler::markSnapshotIncomplete(const String & table_name) const
+{
+    assertInitialized();
+
+    postgres::Connection connection(connection_info);
+    pqxx::nontransaction tx(connection.getRef());
+    const bool already_published = fetchPublishedTablePairs(tx).contains(resolveSchemaAndTableName(tx, table_name));
+
+    auto positions = loadSnapshotPositions();
+    positions[table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = !already_published};
+    saveSnapshotPositions(positions);
+}
+
+
+void PostgreSQLReplicationHandler::removeSnapshotPosition(const String & table_name) const
+{
+    auto positions = loadSnapshotPositions();
+    if (positions.erase(table_name))
+        saveSnapshotPositions(positions);
+}
+
+
 void PostgreSQLReplicationHandler::markPublicationEntryOwned(const String & table_name) const
 {
     auto positions = loadSnapshotPositions();
@@ -2281,21 +2303,10 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         String start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
-        /// See `snapshot_positions_path`. The snapshot is marked incomplete before the table is published: otherwise, after
-        /// a restart in between, a published table with an empty nested table would be resumed. The snapshot position is
-        /// not known until the temporary replication slot is created. An entry left by a failure is dropped on the next
-        /// attach if the table is not replicated then, together with its nested table and publication entry. Otherwise
-        /// (it is discovered from `materialized_postgresql_schema_list`), the nested table is loaded again, because its
-        /// snapshot is not marked completed.
-        /// Whether this query creates the publication entry is persisted too, so that a restart in between keeps
-        /// a publication entry that existed before, as the rollback below does. It is recorded before
-        /// `ALTER PUBLICATION`, so that a restart right after it still removes the entry that it created.
+        /// The snapshot of the table was marked incomplete by markSnapshotIncomplete before its nested table was created.
         auto snapshot_positions = loadSnapshotPositions();
         {
             pqxx::nontransaction tx(replication_connection.getRef());
-            const bool already_published = fetchPublishedTablePairs(tx).contains(resolveSchemaAndTableName(tx, postgres_table_name));
-            snapshot_positions[postgres_table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = !already_published};
-            saveSnapshotPositions(snapshot_positions);
 
             /// The table must be in the publication before the snapshot is taken: `pgoutput` decides publication membership
             /// by the catalog at the LSN of each change, so the changes between the snapshot and `ALTER PUBLICATION`

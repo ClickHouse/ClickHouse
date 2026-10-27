@@ -63,6 +63,7 @@ namespace MaterializedPostgreSQLSetting
 namespace FailPoints
 {
     extern const char database_materialized_postgresql_pause_before_table_drop[];
+    extern const char materialized_postgresql_pause_after_attach_table_nested_created[];
 }
 
 namespace ErrorCodes
@@ -196,6 +197,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     replication_handler->startup(/* delayed */false);
+    synchronization_started = true;
 
     /// Do not keep wrappers of the tables that the replication handler excluded from replication.
     if (const auto & skipped_tables = replication_handler->getTablesSkippedOnAttach(); !skipped_tables.empty())
@@ -398,10 +400,28 @@ void DatabaseMaterializedPostgreSQL::addUnmaterializedTablesListChange(SettingsC
 }
 
 
+void DatabaseMaterializedPostgreSQL::checkSynchronizationStarted(const String & table_name) const
+{
+    if (!synchronization_started)
+        throw Exception(
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Cannot change the replication of table `{}` in MaterializedPostgreSQL database `{}`: the replication has not "
+            "started yet (it is starting, or its start failed and is retried in the background). Retry the query later",
+            table_name, getDatabaseName());
+}
+
 ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     if (!local_context->hasQueryContext())
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
+
+    /// `ATTACH TABLE` calls this method while it holds the DDL guard of the table.
+    if (!synchronization_started)
+    {
+        if (throw_on_error)
+            checkSynchronizationStarted(table_name);
+        return nullptr;
+    }
 
     /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every
     /// call to this method returns a slightly different definition, which breaks operations that
@@ -476,13 +496,47 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
+    checkSynchronizationStarted(table_name);
+
+    /// The nested table is persisted below, before its snapshot is loaded. Mark its snapshot incomplete first: otherwise,
+    /// after a restart in between, a table discovered from `materialized_postgresql_schema_list` would be resumed with
+    /// an empty nested table. An existing table is not marked: the creation below fails for it.
+    bool marked_snapshot_incomplete = false;
+    if (!DatabaseAtomic::tryGetTable(table_name, getContext()))
+    {
+        std::lock_guard lock(handler_mutex);
+        replication_handler->markSnapshotIncomplete(table_name);
+        marked_snapshot_incomplete = true;
+    }
+
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();
     auto * create_query = assert_cast<ASTCreateQuery *>(query_copy.get());
     create_query->attach = false;
     create_query->attach_short_syntax = false;
     DatabaseCatalog::instance().addUUIDMapping(create->uuid);
-    DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
+    try
+    {
+        DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
+    }
+    catch (...)
+    {
+        if (marked_snapshot_incomplete)
+        {
+            try
+            {
+                std::lock_guard lock(handler_mutex);
+                replication_handler->removeSnapshotPosition(table_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove the snapshot position after a failed ATTACH TABLE");
+            }
+        }
+        throw;
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_after_attach_table_nested_created);
 
     /// Attach MaterializedPostgreSQL table.
     attachTable(local_context, table_name, table, {});
@@ -639,6 +693,8 @@ void DatabaseMaterializedPostgreSQL::checkCanDetachTablePermanently(const String
 
 void DatabaseMaterializedPostgreSQL::checkTableCanBeDetachedPermanently(ContextPtr, const String & table_name)
 {
+    checkSynchronizationStarted(table_name);
+
     std::lock_guard tables_lock(tables_mutex);
     checkCanDetachTablePermanently(table_name);
     tables_detaching_permanently.insert(table_name);
@@ -654,6 +710,8 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             std::lock_guard tables_lock(tables_mutex);
             tables_detaching_permanently.erase(table_name);
         });
+
+        checkSynchronizationStarted(table_name);
 
         StoragePtr table_to_delete;
         SettingsChanges new_settings;
