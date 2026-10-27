@@ -168,8 +168,7 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
         enabled.params.user_id,
         enabled.params.enabled_roles,
         enabled.params.settings_from_enabled_roles,
-        enabled.params.settings_from_user,
-        [&](const UUID & profile_id) { return access_control.shouldSkipSQLAccessEntityForUser(profile_id, enabled.params.user_id); });
+        enabled.params.settings_from_user);
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
     info->profiles = std::move(resolved.profiles);

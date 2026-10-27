@@ -18,7 +18,6 @@ from ci.jobs.scripts.settings_history import (
     violation_message as settings_violation_message,
     violations as settings_history_violations,
 )
-from ci.jobs.scripts.check_style.check_broken_links import check_pr as check_pr_links
 from ci.jobs.scripts.check_style.clickhouse_spelling import (
     CLICKHOUSE_ANY_SPELLING,
     CLICKHOUSE_CORRECT_SPELLINGS,
@@ -1502,15 +1501,6 @@ def check_settings_changes_history():
     return settings_violation_message(found, version) if found else ""
 
 
-def check_broken_links_in_diff():
-    """The links added by the PR must be reachable. Not run outside of PRs: the merge queue and
-    master would only get flaky on unrelated sites going down, as every link was checked in its PR."""
-    info = Info()
-    if info.pr_number <= 0:
-        return ""
-    return check_pr_links(info.repo_name, info.pr_number)
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -1690,14 +1680,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_settings_changes_history,
-            )
-        )
-    testname = "broken_links"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_broken_links_in_diff,
             )
         )
     testname = "cpp"

@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET optimize_use_projections = 0;

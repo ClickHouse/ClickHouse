@@ -1,6 +1,8 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires dictionaries
 
+SET enable_analyzer = 1; -- DictGetTupleElementPass is an Analyzer pass; EXPLAIN QUERY TREE also requires the analyzer
+
 DROP TABLE IF EXISTS test_keys;
 DROP DICTIONARY IF EXISTS test_dict;
 DROP TABLE IF EXISTS dict_source;

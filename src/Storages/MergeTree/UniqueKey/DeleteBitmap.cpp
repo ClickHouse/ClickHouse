@@ -129,29 +129,33 @@ namespace
         return r.contains(row);
     }
 
-    /// Walks only the set rows from the first one >= `begin`, so a sparse bitmap costs its rows, not `n`.
-    template <typename Bitmap>
-    size_t clearInFilterAny(const Bitmap & r, UInt64 begin, size_t n, UInt8 * filter)
+    void containsBulkAny(const roaring::Roaring & r, const UInt64 * rows, size_t n, uint8_t * out_keep)
     {
-        using Row = typename Bitmap::const_iterator::value_type;
-        /// A narrower bitmap holds no row this high, and the cast below would wrap it.
-        if constexpr (sizeof(Row) < sizeof(UInt64))
-            if (begin > std::numeric_limits<Row>::max())
-                return 0;
-
-        /// A miss leaves the iterator at `end()`.
-        auto it = r.begin();
-        it.move_equalorlarger(static_cast<Row>(begin));
-
-        const UInt64 end = begin + n;
-        size_t cleared = 0;
-        for (; it != r.end() && *it < end; ++it)
+        if (r.isEmpty())
         {
-            const UInt64 row = *it;
-            filter[row - begin] = 0;
-            ++cleared;
+            std::memset(out_keep, 1, n);
+            return;
         }
-        return cleared;
+        constexpr UInt64 max_row = std::numeric_limits<UInt32>::max();
+        roaring::BulkContext ctx;
+        for (size_t i = 0; i < n; ++i)
+        {
+            const UInt64 v = rows[i];
+            if (v > max_row)
+                out_keep[i] = 1;
+            else
+                out_keep[i] = r.containsBulk(ctx, static_cast<UInt32>(v)) ? 0 : 1;
+        }
+    }
+    void containsBulkAny(const roaring::Roaring64Map & r, const UInt64 * rows, size_t n, uint8_t * out_keep)
+    {
+        if (r.isEmpty())
+        {
+            std::memset(out_keep, 1, n);
+            return;
+        }
+        for (size_t i = 0; i < n; ++i)
+            out_keep[i] = r.contains(rows[i]) ? 0 : 1;
     }
 
     void containsBulkRangeAny(const roaring::Roaring & r, UInt64 begin, size_t n, uint8_t * out_keep)
@@ -319,12 +323,17 @@ bool DeleteBitmap::contains(UInt64 row) const
     return std::visit([row](const auto & p) { return containsAny(*p, row); }, bitmap);
 }
 
-size_t DeleteBitmap::clearInFilter(UInt64 begin, size_t n, UInt8 * filter) const
+void DeleteBitmap::containsBulk(const UInt64 * rows, size_t n, uint8_t * out_keep) const
 {
-    chassert(n <= std::numeric_limits<UInt64>::max() - begin, fmt::format("range of {} row(s) from {} wraps around", n, begin));
     if (n == 0)
-        return 0;
-    return std::visit([&](const auto & p) { return clearInFilterAny(*p, begin, n, filter); }, bitmap);
+        return;
+    std::visit([&](const auto & p) { containsBulkAny(*p, rows, n, out_keep); }, bitmap);
+}
+
+size_t DeleteBitmap::buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const
+{
+    containsBulk(rows, n, reinterpret_cast<uint8_t *>(out_keep));
+    return countBytesInFilter(out_keep, 0, n);
 }
 
 size_t DeleteBitmap::buildKeepFilterRange(UInt64 begin, size_t n, UInt8 * out_keep) const

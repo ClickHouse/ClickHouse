@@ -14,7 +14,6 @@
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Storages/StorageView.h>
-#include <Storages/SubcolumnCodecs.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -334,10 +333,8 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
-            ASTPtr codec = ISerialization::isSpecialCompressionAllowed(path)
-                ? getSubstreamCodecDescription(path, column) : nullptr;
-            if (codec)
-                res_columns[i++]->insert(codec->as<ASTFunction>()->arguments->formatForLogging());
+            if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
+                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 

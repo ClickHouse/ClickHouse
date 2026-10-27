@@ -96,7 +96,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
-    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
@@ -788,11 +787,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     ContextPtr context,
-    bool may_have_leftover,
-    const MergeTreeTransactionPtr & txn)
+    bool may_have_leftover)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, txn);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -813,8 +811,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     std::optional<PatchPartIndex> patch_part_index,
     ContextPtr context,
     UInt64 block_number,
-    bool may_have_leftover,
-    const MergeTreeTransactionPtr & txn)
+    bool may_have_leftover)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -1055,8 +1052,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
-    if (auto max_bytes_to_buffer = (*data_settings)[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
-        data_part_storage->setTemporaryDataForTransaction(context->getTempDataOnDisk(), max_bytes_to_buffer);
 
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
@@ -1134,10 +1129,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
     /// recompression should happen during merges, not on the initial write path.
-    /// The size of the part is not known before it is written, so the uncompressed size of the block is
-    /// used as an estimate: a large insert gets the better compression right away, instead of writing
-    /// the data with `LZ4` and rewriting it with the default codec on the first merge.
-    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, block.bytes(), {}, time(nullptr)).codec;
+    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block,
@@ -1148,8 +1140,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
 
-    const auto & creating_txn = txn ? txn : context->getCurrentTransaction();
-    const auto creation_tid = (data.supportsTransactions() && creating_txn) ? creating_txn->tid : Tx::NonTransactionalTID;
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
@@ -1158,7 +1148,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         indices,
         compression_codec,
         std::move(index_granularity_ptr),
-        creation_tid,
+        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
         block.bytes(),
         /*reset_columns=*/false,
         /*blocks_are_granules_size=*/false,
@@ -1239,8 +1229,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-    if (metadata_snapshot->hasUniqueKey() && perm_ptr)
-        temp_part->sort_permutation = std::move(perm);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
@@ -1260,7 +1248,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeIndices indices,
     bool merge_is_needed,
     bool try_adaptive_codec,
-    ContextPtr context,
     bool use_selected_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1277,14 +1264,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
 
-    /// A temporary projection part has its own transaction, so it does not get the temporary data
-    /// of the parent part. Set it up the same way as a merge of projection parts does.
     if (is_temp)
-    {
         projection_part_storage->beginTransaction();
-        if (auto max_bytes_to_buffer = (*data_settings)[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
-            projection_part_storage->setTemporaryDataForTransaction(context->getTempDataOnDisk(), max_bytes_to_buffer);
-    }
 
     new_data_part->is_temp = is_temp;
 
@@ -1458,8 +1439,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false,
-        context);
+        /*try_adaptive_codec=*/ false);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1495,7 +1475,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(indices),
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
-        context,
         use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;

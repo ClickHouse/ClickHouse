@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET allow_not_comparable_types_in_comparison_functions = 0;
 

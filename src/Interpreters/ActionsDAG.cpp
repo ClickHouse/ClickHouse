@@ -1112,10 +1112,7 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 
                 /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
                 /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
-                /// An INPUT is never folded: `ExpressionActions` binds each entry of `inputs` to a required column as an INPUT.
-                if (allow_constant_folding && node->column
-                    && (!node->children.empty()
-                        || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
+                if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
@@ -2104,8 +2101,6 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, true);
                         else if (params.allow_unknown_function_arguments)
                             node_to_column[node] = executeActionForPartialResult(node, std::move(arguments), input_rows_count, false);
-                        else /// Recorded as unknown, so that a node shared by several parents is walked once.
-                            node_to_column.try_emplace(node, ColumnWithTypeAndName{nullptr, node->result_type, node->result_name});
                     }
                 }
             }
@@ -4263,26 +4258,20 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
     }
 
-    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
-    auto conjunction_atoms = extractConjunctionAtoms(predicate);
-    std::ranges::reverse(conjunction_atoms);
+    NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
+    NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
 
-    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions)
+    std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
+    std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
+
+    for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
     {
-        std::unordered_set<const Node *> remaining(side_allowed_conjunctions.begin(), side_allowed_conjunctions.end());
-        remaining.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
+        if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
+            left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
 
-        NodeRawConstPtrs ordered;
-        ordered.reserve(remaining.size());
-        for (const auto * atom : conjunction_atoms)
-            if (remaining.erase(atom) != 0)
-                ordered.push_back(atom);
-        chassert(remaining.empty());
-        return ordered;
-    };
-
-    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(left_stream_push_down_conjunctions.allowed);
-    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(right_stream_push_down_conjunctions.allowed);
+        if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
+            right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+    }
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
@@ -4295,13 +4284,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     for (const auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
-    const size_t rejected_count = rejected_conjunctions_set.size();
-    NodeRawConstPtrs rejected_conjunctions;
-    rejected_conjunctions.reserve(rejected_count);
-    for (const auto * atom : conjunction_atoms)
-        if (rejected_conjunctions_set.erase(atom) != 0)
-            rejected_conjunctions.push_back(atom);
-    chassert(rejected_conjunctions.size() == rejected_count);
+    NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
 
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());

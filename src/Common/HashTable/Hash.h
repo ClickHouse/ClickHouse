@@ -498,7 +498,7 @@ struct TrivialHash
 
 /** A relatively good non-cryptographic hash function from UInt64 to UInt32.
   * But worse (both in quality and speed) than just cutting intHash64.
-  * Taken from here: https://web.archive.org/web/20071223173210/http://www.concentric.net/~Ttwang/tech/inthash.htm
+  * Taken from here: http://www.concentric.net/~ttwang/tech/inthash.htm
   *
   * Slightly changed compared to the function by link: shifts to the right are accidentally replaced by a cyclic shift to the right.
   * This change did not affect the smhasher test results.

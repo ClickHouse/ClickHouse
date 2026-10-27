@@ -12,8 +12,6 @@ set max_threads = 1;
 set max_insert_threads = 1;
 set max_block_size = 1000000;
 set allow_suspicious_low_cardinality_types = 1;
--- A column served from the columns cache reads no pages, see the `ParquetReadPages` check below.
-set use_columns_cache = 0;
 
 -- Two row groups, [0, 0] and [2, 2].
 insert into function file(currentDatabase() || '_05321_rg.parquet', Parquet, 'x UInt8')

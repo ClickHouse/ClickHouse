@@ -6,7 +6,6 @@
 #include <Access/Role.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/quoteString.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <base/sort.h>
@@ -17,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ACCESS_DENIED;
 }
 
 
@@ -263,33 +261,6 @@ bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_s
     bool in_except_list = std::any_of(
         enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
     return !in_except_list;
-}
-
-
-void RolesOrUsersSet::throwIfTargetingUsersFromUsersConfig(const AccessControl & access_control) const
-{
-    /// `TO ALL` is handled at match time by the access-entity caches. Only explicit IDs are checked here.
-    if (all)
-        return;
-
-    for (const auto & id : ids)
-    {
-        /// Only User IDs are checked here. Roles may be defined in users.xml and granted to SQL users,
-        /// in which case a SQL policy targeting such a role is legitimate.
-        auto name_and_type = access_control.tryReadNameWithType(id);
-        if (!name_and_type || name_and_type->second != AccessEntityType::USER)
-            continue;
-
-        if (access_control.isEntityFromUsersConfig(id))
-        {
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Cannot target user {} which is defined in the users.xml configuration. "
-                "Quotas, row policies, masking policies, and settings profiles for users "
-                "defined in configuration files must also be defined in configuration files",
-                backQuote(name_and_type->first));
-        }
-    }
 }
 
 

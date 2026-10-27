@@ -4,7 +4,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/SilkFiberScheduler.h>
-#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -71,8 +70,6 @@ void Throttler::sleep(UInt64 nanoseconds)
         return;
     }
 #endif
-    /// Park the CPU lease while sleeping
-    CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }
 

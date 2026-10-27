@@ -16,7 +16,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true"
+# enable_analyzer = 1: the query condition cache only works with the analyzer (query_info has no
+# filter DAG without it), like in the other query_condition_cache tests.
+settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, enable_analyzer = 1"
 
 # A single part that mixes 'old' rows (which no current-time condition matches) with recent rows,
 # ordered so that the old rows fill whole granules of their own. A separate all-old part would be
@@ -94,10 +96,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.query_condition_cac
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT sum(x) FROM tab WHERE time >= today() - 100
-    SETTINGS use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = false FORMAT Null"
+    SETTINGS use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = false, enable_analyzer = 1 FORMAT Null"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT sum(x) FROM tab WHERE time >= now() - INTERVAL 100 DAY
-    SETTINGS use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = false FORMAT Null"
+    SETTINGS use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = false, enable_analyzer = 1 FORMAT Null"
 echo -n "disabled, entries cached: "
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.query_condition_cache"
 

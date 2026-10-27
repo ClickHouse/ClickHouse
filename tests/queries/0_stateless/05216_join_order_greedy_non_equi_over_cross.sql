@@ -9,6 +9,7 @@ SET query_plan_join_swap_table = 'false';
 SET join_algorithm = 'hash';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
+SET enable_analyzer = 1;
 
 CREATE TABLE ta (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE tb (k UInt64) ENGINE = MergeTree ORDER BY k;

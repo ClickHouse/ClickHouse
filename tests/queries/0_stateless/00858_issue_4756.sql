@@ -1,3 +1,4 @@
+set enable_analyzer = 1;
 set distributed_product_mode = 'local';
 set optimize_skip_unused_shards = 0;
 

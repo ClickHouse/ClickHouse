@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 -- A MATERIALIZED helper CTE referenced only from the recursive member is materialized once, before the

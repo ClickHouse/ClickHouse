@@ -5,6 +5,7 @@
 -- by the interpolated expression.
 
 -- The check is done by the analyzer, and the old analyzer does not have it.
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_interpolate_local;
 DROP TABLE IF EXISTS t_interpolate_dist;

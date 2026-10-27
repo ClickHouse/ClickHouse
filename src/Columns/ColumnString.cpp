@@ -689,20 +689,6 @@ void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t en
     get(max_idx, max);
 }
 
-namespace
-{
-
-void restoreOffsets(const Memory<> & offsets_compressed, bool offsets_were_compressed, IColumn::Offsets & offsets)
-{
-    if (offsets_were_compressed)
-        ColumnCompressed::decompressBuffer(
-            offsets_compressed.data(), offsets.data(), offsets_compressed.size(), offsets.size() * sizeof(IColumn::Offset));
-    else
-        memcpy(offsets.data(), offsets_compressed.data(), offsets_compressed.size());
-}
-
-}
-
 ColumnPtr ColumnString::compress(bool force_compression) const
 {
     const size_t source_chars_size = chars.size();
@@ -735,17 +721,6 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();
-
-    ColumnPtr offsets_part = ColumnCompressed::create(
-        source_offsets_elements,
-        offsets_compressed_size,
-        [my_offsets_compressed = offsets_compressed, source_offsets_elements, offsets_were_compressed]
-        {
-            auto res = ColumnUInt64::create(source_offsets_elements);
-            restoreOffsets(*my_offsets_compressed, offsets_were_compressed, res->getData());
-            return res;
-        });
-
     return ColumnCompressed::create(
         source_offsets_elements,
         chars_compressed_size + offsets_compressed_size,
@@ -762,11 +737,22 @@ ColumnPtr ColumnString::compress(bool force_compression) const
 
             ColumnCompressed::decompressBuffer(
                 my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
-            restoreOffsets(*my_offsets_compressed, offsets_were_compressed, res->getOffsets());
+
+            if (offsets_were_compressed)
+            {
+                ColumnCompressed::decompressBuffer(
+                    my_offsets_compressed->data(),
+                    res->getOffsets().data(),
+                    my_offsets_compressed->size(),
+                    source_offsets_elements * sizeof(Offset));
+            }
+            else
+            {
+                memcpy(res->getOffsets().data(), my_offsets_compressed->data(), my_offsets_compressed->size());
+            }
 
             return res;
-        },
-        Columns{std::move(offsets_part)});
+        });
 }
 
 #if USE_EMBEDDED_COMPILER

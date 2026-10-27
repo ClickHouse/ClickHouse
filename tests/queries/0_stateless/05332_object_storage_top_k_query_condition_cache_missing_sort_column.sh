@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-parallel-replicas
+# Tags: no-fasttest, no-parallel
 # - no-fasttest: needs S3 (MinIO)
 # - no-parallel: other tests drop the query condition cache, which would remove the entries checked here
-# - no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 # The Parquet reader does not apply TopN dynamic filtering to a file that does not store the sort
 # column. Such a file is read as without TopN, so a TopK read must still populate the query condition

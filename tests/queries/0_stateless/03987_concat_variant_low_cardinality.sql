@@ -6,6 +6,7 @@
 SET allow_suspicious_low_cardinality_types = 1;
 SET allow_suspicious_types_in_group_by = 1;
 SET allow_not_comparable_types_in_comparison_functions = 1;
+SET enable_analyzer = 1;
 
 SELECT concat('a', [(1, 2), toLowCardinality(3)]);
 SELECT concat(7, [(1., 100000000000000000000.), isNull((NULL, 1048577)), toLowCardinality(toNullable(2))]);

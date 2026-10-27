@@ -102,11 +102,6 @@ public:
 
     SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
 
-    SerializationPtr tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const override
-    {
-        return data_part->tryGetSubcolumnSerialization(column_name, subcolumn_name);
-    }
-
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
     UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }

@@ -1,5 +1,6 @@
 <test>
   <settings>
+      <allow_experimental_analyzer>1</allow_experimental_analyzer>
       <max_threads>1</max_threads>
   </settings>
 

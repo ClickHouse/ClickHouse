@@ -45,17 +45,17 @@
 
     <!-- Invalid input should repair from the first error without rescanning the prefix. -->
     <query>
-        SELECT sum(length(toValidUTF8(materialize(concat('\xFF', repeat('a', 127)))))) AS s
+        SELECT sum(length(toValidUTF8(materialize(concat('\xFF', repeat('a', 127))))))
         FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 63), '\xE2\x82X', repeat('b', 64)))))) AS s
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 63), '\xE2\x82X', repeat('b', 64))))))
         FROM numbers(100000)
         FORMAT Null
     </query>
     <query>
-        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 127), '\xE2'))))) AS s
+        SELECT sum(length(toValidUTF8(materialize(concat(repeat('a', 127), '\xE2')))))
         FROM numbers(100000)
         FORMAT Null
     </query>

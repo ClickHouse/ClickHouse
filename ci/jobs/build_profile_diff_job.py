@@ -21,10 +21,9 @@ official-build flag, so their object files, unstripped binaries and link times
 are incomparable to master's (observed on a no-op PR as an apparent -73%
 binary size and -39% link time):
 
-  * `Build (arm_release_performance_reference)` - the warmup build below: a
-    master build made exactly like a PR build, which also fills the sccache,
-    profiled for its object files only.
-    Baseline for object file sizes and per-TU compile times.
+  * `Build (arm_release_pr_cache_warmup)` - the master sccache-warmup build,
+    compiled with exactly the PR flags but never linked. Baseline for object
+    file sizes and per-TU compile times.
   * `Build (arm_release)` - the official master build. Baseline for the
     artifacts that do not depend on debug info: the stripped binary size and
     the per-symbol sizes of the linked binaries, plus per-function ThinLTO
@@ -74,7 +73,6 @@ import json
 import os
 import statistics
 import subprocess
-import time
 import traceback
 from typing import Dict, List, Optional
 
@@ -85,10 +83,10 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
 CHECK_NAME = "arm_release"
-# The master build made exactly like a PR build (see
-# PERFORMANCE_REFERENCE_TO_RELEASE in build_clickhouse.py), so it is the
+# The master sccache-warmup build: compiled with the PR build's exact cmake
+# flags (see PR_CACHE_WARMUP_BUILD_TYPES in build_clickhouse.py), so it is the
 # comparable baseline for everything measured before linking.
-WARMUP_CHECK_NAME = "arm_release_performance_reference"
+WARMUP_CHECK_NAME = "arm_release_pr_cache_warmup"
 COMMENT_TAG = "build-profile-diff"
 
 BUILD_DIR = "./ci/tmp/build"
@@ -352,16 +350,13 @@ def resolve_run(
     repo: str,
     table: str = "binary_sizes",
     check_name: str = CHECK_NAME,
-    extra_where: str = "",
 ) -> Optional[Side]:
     """The newest uploaded build run for one side, or None if there is no data.
 
     Resolved from `binary_sizes` by default (the canonical, always-complete
     table); the resulting (check_start_time, instance_id) is reused for every
-    other table of the same build. `extra_where` limits it to the runs that
-    have matching rows.
+    other table of the same build.
     """
-    where = f"\n            AND {extra_where}" if extra_where else ""
     rows = db.query(
         f"""SELECT check_start_time, instance_id
         FROM {table}
@@ -369,7 +364,7 @@ def resolve_run(
             AND {repo_condition(repo)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
-            AND check_name = {quote(check_name)}{where}
+            AND check_name = {quote(check_name)}
         ORDER BY check_start_time DESC
         LIMIT 1"""
     )
@@ -578,8 +573,6 @@ EXTEND_MAX_PAGES = 60
 # `gh` self-bounds connect and TLS handshake but not a stalled response body,
 # so every call carries its own deadline.
 GH_TIMEOUT_SECONDS = 120
-# Attempts per commit listing: GitHub fails single requests while the ones around them succeed.
-GH_ATTEMPTS = 3
 GH_STREAM_LEN = 300
 
 # Wall clock kept back from the CI logs cluster read retries so that the job can
@@ -626,9 +619,6 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
     This is NOT the first-parent chain: the listing interleaves merged PRs'
     second-parent commits. Each entry carries its parent shas so that
     `_walk_first_parent` can reconstruct the chain client-side.
-
-    A timeout, an HTTP 5xx or 429, or a failure that names no HTTP status (a
-    cut or reset response) is retried; any other 4xx fails at once.
     """
     # Hardcoded upstream namespace, like the store_data hook: the profile rows
     # in the CI logs cluster carry public-repo shas.
@@ -640,30 +630,20 @@ def _list_commits_page(anchor_sha: str, page: int) -> List[dict]:
         "--jq",
         "[.[] | {sha: .sha, date: .commit.committer.date, parents: [.parents[].sha]}]",
     ]
-    error = None
-    for attempt in range(1, GH_ATTEMPTS + 1):
-        if attempt > 1:
-            print(f"WARNING: {error}, retrying in {5 * (attempt - 1)} s")
-            time.sleep(5 * (attempt - 1))
-        try:
-            res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            error = RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s (attempt {attempt} of {GH_ATTEMPTS}): {endpoint}")
-            continue
-        if res.returncode == 0:
-            return json.loads(res.stdout)
+    try:
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"gh api timed out after {GH_TIMEOUT_SECONDS} s: {endpoint}") from e
+    if res.returncode != 0:
         # Field order matters: an outer caller bounds this message before it
         # reaches a public comment, so the exit code and the endpoint - one of
         # up to EXTEND_MAX_PAGES - precede the capped API-controlled streams,
         # which are what name the HTTP status.
-        error = RuntimeError(
-            f"gh api exited {res.returncode} for {endpoint} (attempt {attempt} of {GH_ATTEMPTS}): "
+        raise RuntimeError(
+            f"gh api exited {res.returncode} for {endpoint}: "
             f"err[{_elide_stream(res.stderr)}] out[{_elide_stream(res.stdout)}]"
         )
-        # gh reports an HTTP error as "gh: <message> (HTTP <status>)"; a 4xx other than 429 is not transient.
-        if "(HTTP 4" in res.stderr and "(HTTP 429)" not in res.stderr:
-            break
-    raise error
+    return json.loads(res.stdout)
 
 
 def _walk_first_parent(anchor_sha: str, cutoff: str, max_pages: int, list_page, max_commits: int = 0):
@@ -796,13 +776,13 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: s
 def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str, repo: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
-    The warmup build (PR flags) is profiled for its objects only, so its
+    The warmup build compiles with the PR flags but does not link, so its
     canonical data is the object files, not MAIN_BINARY. May legitimately be
     absent while master catches up with profiling the warmup build.
 
-    As in `find_baseline`, an object-file `binary_sizes` row is the completion
-    marker: it is uploaded after the time trace, so a warmup commit selected
-    here also has the per-TU compile times the drill-down reads.
+    As in `find_baseline`, the `binary_sizes` row is the completion marker: it
+    is uploaded after the time trace, so a warmup commit selected here also has
+    the per-TU compile times the drill-down reads.
     """
     candidates = [sha for sha in master_shas if sha != pr_sha][:100]
     if not candidates:
@@ -814,7 +794,6 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
             AND {repo_condition(repo)}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
-            AND {OBJECT_FILTER}
             AND commit_sha IN ({in_list(candidates)})"""
     )
     with_data = {row["commit_sha"] for row in rows}
@@ -970,7 +949,7 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
 
     Only the object files the PR build produced are compared. The two builds do
     not have the same target set: the warmup build compiles every object-file
-    target ninja knows about (see PERFORMANCE_REFERENCE_TO_RELEASE in
+    target ninja knows about (see PR_CACHE_WARMUP_BUILD_TYPES in
     build_clickhouse.py), while a PR build only builds `clickhouse-bundle`, so
     hundreds of object files - `grpc_unsecure`, protobuf-lite, the gRPC half of
     google-cloud-cpp, the unit tests, the utils - exist on the warmup side alone.
@@ -1649,7 +1628,7 @@ def run_comparison(db, info, args, pr_number: int, pr_sha: str):
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
-    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME, extra_where=OBJECT_FILTER) if warmup_sha else None
+    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
     # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
     # commits of the anchored chain - so its candidate set is extended with
     # older ancestors (see extend_master_shas).

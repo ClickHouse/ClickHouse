@@ -327,7 +327,7 @@ public:
 
     /// Calculate row limits for reading based on settings and query info.
     /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Context & context, const SelectQueryInfo & query_info);
+    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 
     static MarkRanges mergePartialResultsForDisjunctions(
         const IMergeTreeDataPartInfoForReader & part_info,

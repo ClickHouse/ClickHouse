@@ -1,23 +1,17 @@
 #include <Storages/System/StorageSystemErrors.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolsHelper.h>
-#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
 #include <mutex>
@@ -55,42 +49,7 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
     };
 }
 
-Block StorageSystemErrors::getFilterSampleBlock() const
-{
-    return {
-        {{}, std::make_shared<DataTypeString>(), "name"},
-        {{}, std::make_shared<DataTypeInt32>(), "code"},
-        {{}, std::make_shared<DataTypeUInt64>(), "value"},
-        {{}, std::make_shared<DataTypeDateTime>(), "last_error_time"},
-        {{}, std::make_shared<DataTypeString>(), "last_error_message"},
-        {{}, std::make_shared<DataTypeString>(), "last_error_format_string"},
-        {{}, std::make_shared<DataTypeUInt8>(), "remote"},
-        {{}, std::make_shared<DataTypeString>(), "query_id"},
-    };
-}
-
-/// Whether the condition has a lambda, whose sets the walk below cannot see, or reads a set that can change while the
-/// query runs (a `Set` table).
-static bool hasLambdaOrSetMutableDuringQuery(const ActionsDAG & dag)
-{
-    for (const auto & node : dag.getNodes())
-    {
-        /// A lambda without captures can be folded into a constant, so check for `FunctionCapture` as well.
-        if (WhichDataType(node.result_type).isFunction()
-            || (node.type == ActionsDAG::ActionType::FUNCTION && typeid_cast<const FunctionCapture *>(node.function_base.get())))
-            return true;
-
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (column_set && column_set->getData()->isMutableDuringQuery())
-            return true;
-    }
-    return false;
-}
-
-void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
+void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
     {
@@ -185,33 +144,6 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         }
     };
 
-    struct ErrorRow
-    {
-        std::string_view name;
-        ErrorCodes::ErrorCode code;
-        ErrorCodes::Error error;
-        bool remote;
-    };
-
-    /// Positions of `last_error_symbols` and `last_error_lines` in getColumnsDescription().
-    constexpr size_t last_error_symbols_position = 9;
-    constexpr size_t last_error_lines_position = 10;
-
-    /// Rows the condition rejects are dropped before the expensive symbolization.
-    Block block;
-    std::optional<ActionsDAG> filter_dag;
-    if (predicate && (columns_mask[last_error_symbols_position] || columns_mask[last_error_lines_position]))
-    {
-        block = getFilterSampleBlock();
-        filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
-
-        /// A set that is not built yet, or one that can change before the filter above runs, cannot drop rows here.
-        if (filter_dag && (hasLambdaOrSetMutableDuringQuery(*filter_dag) || !VirtualColumnUtils::buildSetsForDAG(*filter_dag, context)))
-            filter_dag.reset();
-    }
-
-    const bool show_zero_values = context->getSettingsRef()[Setting::system_events_show_zero_values];
-    std::vector<ErrorRow> rows;
     for (const auto code : ErrorCodes::getCodes())
     {
         std::string_view name = ErrorCodes::getName(code);
@@ -220,59 +152,10 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         if (name.empty())
             continue;
 
-        /// Without the pre-filter, add the rows right away, so only one error pair is held at a time.
-        if (!filter_dag)
-        {
-            const auto & error = ErrorCodes::values[code].get();
-            add_row(name, code, error.local, /* remote= */ false);
-            add_row(name, code, error.remote, /* remote= */ true);
-            continue;
-        }
-
-        auto error = ErrorCodes::values[code].get();
-        if (error.local.count || show_zero_values)
-            rows.push_back({name, code, std::move(error.local), /* remote= */ false});
-        if (error.remote.count || show_zero_values)
-            rows.push_back({name, code, std::move(error.remote), /* remote= */ true});
+        const auto & error = ErrorCodes::values[code].get();
+        add_row(name, code, error.local, /* remote= */ false);
+        add_row(name, code, error.remote, /* remote= */ true);
     }
-
-    if (filter_dag)
-    {
-        MutableColumns columns;
-        for (const auto & column : block)
-            columns.push_back(column.type->createColumn());
-        auto idx_column = ColumnUInt64::create();
-
-        for (size_t i = 0; i < rows.size(); ++i)
-        {
-            const auto & [name, code, error, remote] = rows[i];
-            columns[0]->insert(name);
-            columns[1]->insert(code);
-            columns[2]->insert(error.count);
-            columns[3]->insert(error.error_time_ms / 1000);
-            columns[4]->insert(error.message);
-            columns[5]->insert(error.format_string);
-            columns[6]->insert(remote);
-            columns[7]->insert(error.query_id);
-            idx_column->insertValue(i);
-        }
-
-        for (size_t i = 0; i < columns.size(); ++i)
-            block.getByPosition(i).column = std::move(columns[i]);
-        block.insert({std::move(idx_column), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), context), block);
-
-        const auto & kept = assert_cast<const ColumnUInt64 &>(*block.getByName("_idx").column).getData();
-        std::vector<ErrorRow> kept_rows;
-        kept_rows.reserve(kept.size());
-        for (const auto i : kept)
-            kept_rows.push_back(std::move(rows[i]));
-        rows = std::move(kept_rows);
-    }
-
-    for (const auto & row : rows)
-        add_row(row.name, row.code, row.error, row.remote);
 }
 
 }

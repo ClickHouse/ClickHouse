@@ -1,5 +1,6 @@
 -- { echo ON }
 
+SET enable_analyzer = 1;
 SET optimize_rewrite_regexp_functions = 1;
 
 -- Rule 1: replaceRegexpAll / regexp_replace -> replaceRegexpOne if pattern without alternatives starts with ^ or ends with unescaped $

@@ -7,6 +7,7 @@
 -- terminate: a streaming read stops once its output port finishes.
 
 SET enable_streaming_queries = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_explain_analyze_stream;
 

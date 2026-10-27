@@ -104,17 +104,19 @@ public:
         : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
     {}
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Same pattern as snowflakeToDateTime: const-tz captures into the return type,
-        /// non-const-tz (only when allowed by the flag) yields a tz-less DateTime.
-        if (allow_nonconst_timezone_arguments)
-            return
-                "(const tz StringOrFixedString) -> DateTime(tz)"
-                " OR ([StringOrFixedString]) -> DateTime";
-        return
-            "(const tz StringOrFixedString) -> DateTime(tz)"
-            " OR () -> DateTime";
+        FunctionArgumentDescriptors mandatory_arguments{};
+        FunctionArgumentDescriptors optional_arguments{
+            {"timezone", &isStringOrFixedString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
+        if (arguments.size() == 1)
+        {
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
+        }
+        return std::make_shared<DataTypeDateTime>();
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override

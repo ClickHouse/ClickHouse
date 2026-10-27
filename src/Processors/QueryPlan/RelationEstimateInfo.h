@@ -25,8 +25,6 @@ enum class RowEstimateSource : UInt8
     Randomized,
     /// Measured row count reused from a previous run's hash table.
     HashTableCache,
-    /// Row count from data lake metadata (Iceberg manifest files).
-    DataLakeMetadata,
 };
 
 /// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
@@ -52,8 +50,6 @@ constexpr std::string_view rowEstimateSourceTag(RowEstimateSource source)
             return "cache";
         case RowEstimateSource::NoSource:
         case RowEstimateSource::Statistics:
-        /// Labelled like MergeTree: no tag when exact, `no_stats` from `displayName` when imprecise.
-        case RowEstimateSource::DataLakeMetadata:
             return "";
     }
     return "";

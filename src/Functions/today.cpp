@@ -74,7 +74,7 @@ public:
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
 
-    String getSignatureString() const override { return "() -> Date"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {

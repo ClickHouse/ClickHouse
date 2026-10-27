@@ -19,7 +19,7 @@ SOURCE="
             if(number = 0, 0, number * 100),
             number * 10,
             if(number = 2, 'image/png', 'application/octet-stream'),
-            if(number = 3, NULL, 'sipHash128:' || lower(hex(sipHash128(toString(number))))),
+            if(number = 3, NULL, 'MD5:' || lower(hex(MD5(toString(number))))),
             repeat('x', number)
         ) AS Tuple(uri String, offset UInt32, size UInt64, content_type LowCardinality(String), checksum Nullable(String), inline String)) AS file,
         CAST((toFixedString(char(number, 0, 255), 3), 'application/octet-stream') AS Tuple(inline FixedString(3), content_type String)) AS inline_file,

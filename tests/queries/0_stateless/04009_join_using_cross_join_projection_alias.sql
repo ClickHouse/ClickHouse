@@ -2,6 +2,7 @@
 -- with `analyzer_compatibility_join_using_top_level_identifier` and a constant projection alias.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=1aefdf9c553447757c0daa4a6d48fa875173b7ee&name_0=MasterCI&name_1=BuzzHouse%20%28amd_ubsan%29
 
+SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
 
 DROP TABLE IF EXISTS t1;

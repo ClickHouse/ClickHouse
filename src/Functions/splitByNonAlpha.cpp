@@ -38,7 +38,6 @@ private:
 public:
     /// Get the name of the function.
     static constexpr auto name = "splitByNonAlpha";
-    static constexpr auto signature = "(String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }

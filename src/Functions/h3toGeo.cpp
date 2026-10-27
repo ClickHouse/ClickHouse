@@ -24,6 +24,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -58,11 +59,27 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return h3togeo_lon_lat_result_order
-            ? "(UInt64) -> Tuple(longitude Float64, latitude Float64)"
-            : "(UInt64) -> Tuple(latitude Float64, longitude Float64)";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
+
+        if (h3togeo_lon_lat_result_order)
+        {
+            return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"longitude", "latitude"});
+        }
+        else
+        {
+            return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"latitude", "longitude"});
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

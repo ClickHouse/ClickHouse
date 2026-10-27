@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// A pair of Object path and its data type, for example `a.b.c String`, optionally marked `SHARED`.
+/// A pair of  Object path and its data type. For example: a.b.c String.
 class ASTObjectTypedPathArgument : public IAST
 {
 public:
@@ -14,11 +14,9 @@ public:
     String path;
     /// type
     ASTPtr type;
-    /// `SHARED path Type`: the path is stored in the typed shared data of a part instead of its own files.
-    bool shared = false;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return String(shared ? "ObjectSharedTypedPath" : "ObjectTypedPath") + delim + path; }
+    String getID(char delim) const override { return "ObjectTypedPath" + (delim + path); }
     ASTPtr clone() const override;
 
 protected:

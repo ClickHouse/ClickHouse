@@ -95,9 +95,8 @@ static InConversion buildInConversion(
         get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, std::move(set_settings));
 
     ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
-    /// The set is filled from the right side at execution time, so it is not a constant across queries.
-    const ActionsDAG::Node * in_rhs_arg = &lhs_dag.addColumn(
-        std::move(set_col), std::make_shared<DataTypeSet>(), "set column", /*is_deterministic_constant=*/false);
+    const ActionsDAG::Node * in_rhs_arg =
+        &lhs_dag.addColumn(std::move(set_col), std::make_shared<DataTypeSet>(), "set column");
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);

@@ -129,9 +129,8 @@ ManifestFilesPruner::ManifestFilesPruner(
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
-    const DB::KeyDescription * partition_key_,
-    DB::ContextPtr context,
-    bool require_ready_sets)
+    const ManifestFileIterator & manifest_file,
+    DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
     , initial_schema_id(initial_schema_id_)
@@ -147,18 +146,12 @@ ManifestFilesPruner::ManifestFilesPruner(
         schema_processor, current_schema_id, initial_schema_id, filter_dag, used_columns_in_filter, row_lineage_columns);
     chassert(transformed_dag != nullptr);
 
-    if (partition_key_)
+    if (manifest_file.hasPartitionKey())
     {
-        partition_key = partition_key_;
+        partition_key = &manifest_file.getPartitionKeyDescription();
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
         partition_key_condition.emplace(
-            inverted_dag,
-            context,
-            partition_key->column_names,
-            partition_key->expression,
-            /* single_point_ */ true,
-            /* skip_analysis_ */ false,
-            require_ready_sets);
+            inverted_dag, context, partition_key->column_names, partition_key->expression, true /* single_point */);
     }
 
     for (Int32 used_column_id : used_columns_in_filter)
@@ -182,16 +175,7 @@ ManifestFilesPruner::ManifestFilesPruner(
             = std::make_shared<ExpressionActions>(ActionsDAG({name_and_type.value()}), ExpressionActionsSettings(context));
 
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context, /* boolean_context */ true);
-        min_max_key_conditions.emplace(
-            used_column_id,
-            KeyCondition(
-                inverted_dag,
-                context,
-                {name_and_type->name},
-                expression,
-                /* single_point_ */ false,
-                /* skip_analysis_ */ false,
-                require_ready_sets));
+        min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
 }
 

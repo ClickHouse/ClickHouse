@@ -361,6 +361,8 @@ DROP TABLE t_scalar_dotted_multi;
 
 SELECT '--- merge engine ---';
 
+SET enable_analyzer = 1; -- Old analyzer doesn't support missing columns in Merge engine child tables
+
 DROP TABLE IF EXISTS child1;
 DROP TABLE IF EXISTS child2;
 DROP TABLE IF EXISTS t_merge;
