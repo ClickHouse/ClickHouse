@@ -7,6 +7,7 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/PerCPUMemory.h>
 
+#include <algorithm>
 #include <atomic>
 #include <limits>
 #include <tuple>
@@ -67,6 +68,12 @@ bool canCheckQueryLimit(MemoryTracker * memory_tracker)
             return true;
     }
     return false;
+}
+
+/// Adds the bytes of a flush that did not check the limit, as `ThreadStatus::flushUntrackedMemory` does.
+void addUncheckedFlush(DB::ThreadStatus & thread, Int64 size)
+{
+    thread.untracked_memory_flushed_unchecked = std::max<Int64>(0, thread.untracked_memory_flushed_unchecked + size);
 }
 
 }
@@ -141,9 +148,11 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
                 throw;
             }
 
-            /// A flush that did not check the limit leaves the unchecked flushes to the next allocation.
+            /// A flush that checks the limit settles the unchecked flushes, one that does not enforce it adds to them.
             if (enforce_memory_limit && canCheckQueryLimit(memory_tracker))
                 cur_thread->untracked_memory_flushed_unchecked = 0;
+            else if (!enforce_memory_limit)
+                addUncheckedFlush(*cur_thread, new_untracked_memory);
         }
 
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
@@ -219,6 +228,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
                 std::ignore = memory_tracker->allocImpl(new_untracked_memory, /*enforce_memory_limit=*/ false, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
             else
                 std::ignore = memory_tracker->free(-new_untracked_memory, /*_sample_probability=*/ 0.0);
+            addUncheckedFlush(*cur_thread, new_untracked_memory);
         }
 
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
