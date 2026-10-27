@@ -7,7 +7,8 @@
 # a cluster storage on the initiator, so the query takes the distributed `INSERT ... SELECT` path, which
 # forwarded the plain function to every shard, and each shard read all the files. Forwarding it as
 # `urlCluster` needs a cluster name the shards know, and a `remote(...)` destination has none, so the
-# distributed execution is skipped for it.
+# distributed execution is skipped for the auto-converted `url`. An explicit `urlCluster` carries its own
+# cluster name and is still forwarded.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +21,8 @@ $CLICKHOUSE_CLIENT -q "
 
 # Three single-row URLs, so a shard that reads all of them instead of its share changes the count.
 URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT%20{1,2,3}"
-DST="remote('${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP},${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 'dst_05452', x)"
+# A deterministic sharding key would skip the distributed execution before the cluster name is checked, hence `rand()`.
+DST="remote('${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP},${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 'dst_05452', rand())"
 
 # `enable_parallel_replicas`, `max_parallel_replicas` and `cluster_for_parallel_replicas` allow converting
 # `url` into a cluster storage. `parallel_distributed_insert_select = 2` takes the distributed path, as the
