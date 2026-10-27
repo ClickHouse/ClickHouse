@@ -84,11 +84,16 @@ elseif (ARCH_PPC64LE)
     endif ()
 
 elseif (ARCH_S390X)
-    # s390x architecture levels. z10 is the current default -march value for clang and rust.
+    # s390x architecture levels. z10 is the default -march value for clang and rust.
     # Currently supported distros that have s390x support use at least z13 as the default.
     set (S390X_ARCH_LEVEL "13" CACHE STRING "s390x architecture level (10, 13, 14, 15, 16, 17)")
     set_property (CACHE S390X_ARCH_LEVEL PROPERTY STRINGS "10" "13" "14" "15" "16" "17")
-    if(S390X_ARCH_LEVEL VERSION_GREATER_EQUAL 13)
+
+    if (NOT S390X_ARCH_LEVEL MATCHES "^(10|13|14|15|16|17)$")
+        message (FATAL_ERROR "S390X_ARCH_LEVEL must be one of: 10, 13, 14, 15, 16, 17 (got '${S390X_ARCH_LEVEL}')")
+    endif ()
+
+    if (S390X_ARCH_LEVEL VERSION_GREATER_EQUAL 13)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=z${S390X_ARCH_LEVEL}")
         list (APPEND RUSTFLAGS_CPU "-C" "target-cpu=z${S390X_ARCH_LEVEL}")
     endif ()
