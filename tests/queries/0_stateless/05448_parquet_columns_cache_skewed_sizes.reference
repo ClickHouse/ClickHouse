@@ -1,12 +1,12 @@
 --- dictionary-encoded strings without size statistics, mostly the longest value of the dictionary: not cached
 [false]
-65536	133957903
-65536	133957903
+65536	33489679
+65536	33489679
 --- a wide cached chunk among narrow ones
-1048576	33554432
-s	16	1048576
-7017442613245325312
-7017442613245325312
+524288	16777216
+s	8	524288
+5292701924961914880
+5292701924961914880
 --- a large dictionary page of a column that PREWHERE does not need
 [false,false]
 0	0
@@ -17,17 +17,25 @@ s	16	1048576
 0	0	0	0	0	0	0
 --- strings encoded with DELTA_BYTE_ARRAY without size statistics: not cached
 [false]
-65536	134217728
-65536	134217728
+65536	33554432
+65536	33554432
 --- short strings read as a wide FixedString: not cached
 [false]
 65536	7268979749752893985
 65536	7268979749752893985
 --- the long strings of a row group in one chunk, with size statistics
 [true]
-1048576	134217728
-1048576	134217728
+262144	33554432
+262144	33554432
 --- the non-null strings of a row group in one chunk, without size statistics
 [false]
-1048576	134217728
-1048576	134217728
+262144	33554432
+262144	33554432
+--- a wide column missing in the file: not cached
+[true]
+2147450880	10104791784030208000
+2147450880	10104791784030208000
+--- a variant read as JSON: not cached
+[true,true]
+65536	720896
+65536	720896
