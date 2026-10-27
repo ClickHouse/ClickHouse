@@ -1508,14 +1508,17 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
-    /// A running server holds an exclusive lock on its pid file (see `StatusFile`). A terminated one does not, even while
-    /// `kill(pid, 0)` still succeeds because its parent has not reaped it yet. Errors count as locked.
-    bool isPidFileLocked(const fs::path & pid_file)
+    /// Whether another process holds a lock on the file, or `std::nullopt` if that cannot be determined.
+    std::optional<bool> isPidFileLocked(const fs::path & pid_file)
     {
         int fd = ::open(pid_file.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd == -1)
-            return true;
-        bool locked = 0 != flock(fd, LOCK_SH | LOCK_NB);
+            return std::nullopt;
+        std::optional<bool> locked;
+        if (0 == flock(fd, LOCK_SH | LOCK_NB))
+            locked = false;
+        else if (errno == EWOULDBLOCK)
+            locked = true;
         if (0 != ::close(fd))
             throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close {}", pid_file.string());
         return locked;
@@ -1531,7 +1534,7 @@ namespace
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
 
-                if (0 == kill(pid, 0) && isPidFileLocked(pid_file))
+                if (0 == kill(pid, 0))
                 {
                     fmt::print("The process with pid = {} is already running.\n", pid);
                     return 2;
@@ -1629,7 +1632,10 @@ namespace
         return 0;
     }
 
-    int isRunning(const fs::path & pid_file, bool ignore_file_does_not_exist)
+    /// A server holds a lock on its pid file (`StatusFile`) until it exits, so once `stop` has seen the lock, an unlocked file means
+    /// the server has terminated even while `kill(pid, 0)` succeeds for its unreaped zombie. A file never seen locked may be written
+    /// by something else (e.g. `--pidfile`), so then only `kill` decides.
+    int isRunning(const fs::path & pid_file, bool ignore_file_does_not_exist, bool * pid_file_seen_locked = nullptr)
     {
         int pid = 0;
 
@@ -1656,10 +1662,16 @@ namespace
         {
             if (0 == kill(pid, 0))
             {
-                if (!isPidFileLocked(pid_file))
+                if (pid_file_seen_locked)
                 {
-                    fmt::print("The server process with pid = {} has terminated: {} is not locked.\n", pid, pid_file.string());
-                    return 0;
+                    auto locked = isPidFileLocked(pid_file);
+                    if (locked == true)
+                        *pid_file_seen_locked = true;
+                    else if (locked == false && *pid_file_seen_locked)
+                    {
+                        fmt::print("The server process with pid = {} has terminated: {} is no longer locked.\n", pid, pid_file.string());
+                        return 0;
+                    }
                 }
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
@@ -1680,9 +1692,10 @@ namespace
         return pid;
     }
 
-    bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
+    bool sendSignalAndWaitForStop(
+        const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name, bool & pid_file_seen_locked)
     {
-        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
+        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false, &pid_file_seen_locked);
 
         if (!pid)
             return true;
@@ -1696,7 +1709,7 @@ namespace
         for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
-            if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
+            if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true, &pid_file_seen_locked))
             {
                 fmt::print("Server stopped\n");
                 break;
@@ -1714,11 +1727,12 @@ namespace
 
         int signal = force ? SIGKILL : SIGTERM;
         const char * signal_name = force ? "kill" : "terminate";
+        bool pid_file_seen_locked = false;
 
-        if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
+        if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name, pid_file_seen_locked))
             return 0;
 
-        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
+        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false, &pid_file_seen_locked);
         if (!pid)
             return 0;
 
@@ -1730,17 +1744,17 @@ namespace
 
         /// Send termination signal again, the server will receive it and immediately terminate.
         fmt::print("Will send the termination signal again to force the termination (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, signal, std::min(10U, max_tries), 1000, signal_name))
+        if (sendSignalAndWaitForStop(pid_file, signal, std::min(10U, max_tries), 1000, signal_name, pid_file_seen_locked))
             return 0;
 
         /// Send kill signal. Total wait is 100 seconds.
         constexpr size_t num_kill_check_tries = 1000;
         constexpr size_t kill_check_delay_ms = 100;
         fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, "kill"))
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, "kill", pid_file_seen_locked))
             return 0;
 
-        if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
+        if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true, &pid_file_seen_locked))
             return 0;
 
         throw Exception(ErrorCodes::CANNOT_KILL,
