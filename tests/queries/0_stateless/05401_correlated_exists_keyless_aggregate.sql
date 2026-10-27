@@ -96,6 +96,10 @@ FROM numbers(2) AS o
 INNER JOIN LATERAL (SELECT uniqUpTo(5)(NULL) AS u, count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1) AS l ON true
 ORDER BY o.number
 SETTINGS allow_experimental_lateral_join = 1;
+SELECT o.number, EXISTS (SELECT uniqUpToArray(5)([NULL]) AS u FROM numbers(2) AS i WHERE i.number = o.number HAVING u = 0)
+FROM numbers(2) AS o ORDER BY o.number;
+SELECT o.number, EXISTS (SELECT uniqUpToArrayState(5)([NULL]) AS u FROM numbers(2) AS i WHERE i.number = o.number HAVING finalizeAggregation(u) = 0)
+FROM numbers(2) AS o ORDER BY o.number;
 
 SELECT '-- layouts of the decorrelated plan';
 SELECT

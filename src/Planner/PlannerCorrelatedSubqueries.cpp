@@ -604,11 +604,28 @@ bool foldsMarkerIntoCondition(const AggregateDescription & aggregate)
     return aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty();
 }
 
+bool isNothingPlaceholder(const IAggregateFunction & function)
+{
+    const auto & name = function.getName();
+    return name == "nothing" || name == "nothingNull" || name == "nothingUInt64";
+}
+
 /// The `nothing` placeholders of aggregates over only-NULL arguments ignore every row, restored ones included.
 bool ignoresInputRows(const AggregateDescription & aggregate)
 {
-    const auto & name = aggregate.function->getName();
-    return name == "nothing" || name == "nothingNull" || name == "nothingUInt64";
+    return isNothingPlaceholder(*aggregate.function);
+}
+
+/// A placeholder keeps the parameters of the aggregate it replaced, which the factory rejects when it rebuilds
+/// a combinator over the placeholder by name.
+bool canBeRebuiltByName(const AggregateDescription & aggregate)
+{
+    for (auto nested = aggregate.function->getNestedFunction(); nested; nested = nested->getNestedFunction())
+    {
+        if (isNothingPlaceholder(*nested) && !nested->getParameters().empty())
+            return false;
+    }
+    return true;
 }
 
 /// The factory builds the -If form with the same handling of Nullable arguments as for a user
@@ -639,7 +656,8 @@ bool canRestoreEmptyGroups(const DecorrelationContext & context, const Aggregato
         && std::ranges::all_of(params.aggregates, [](const AggregateDescription & aggregate)
         {
             return foldsMarkerIntoCondition(aggregate) || ignoresInputRows(aggregate)
-                || getAggregateFunctionWithMarker(aggregate)->getResultType()->equals(*aggregate.function->getResultType());
+                || (canBeRebuiltByName(aggregate)
+                    && getAggregateFunctionWithMarker(aggregate)->getResultType()->equals(*aggregate.function->getResultType()));
         });
 }
 
