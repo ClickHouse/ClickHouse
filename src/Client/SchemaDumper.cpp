@@ -2773,7 +2773,7 @@ struct ReplayGateNeeds
     bool ytsaurus_table = false;
     bool paimon_table = false;
     bool delta_lake_table = false;
-    bool archive_path = false; /// a table engine argument that names a file inside an archive (`a.tar :: f.csv`)
+    bool archive_path = false; /// a table engine or table function argument that names a file inside an archive (`a.tar :: f.csv`)
     bool nested_column = false; /// a column of type `Nested`, which CREATE flattens unless `flatten_nested = 0`
     bool column_declaration = false; /// a column, which CREATE makes `Nullable` when `data_type_default_nullable = 1`
 
@@ -2933,6 +2933,23 @@ void forEachNode(const IAST & node, const std::function<void(const IAST &)> & vi
     visit(node);
     for (const auto & child : node.children)
         forEachNode(*child, visit, skip);
+}
+
+/// Whether a string literal of `ast` names a file inside an archive (`a.tar :: f.csv`). `File` splits it with
+/// `splitToArchivePathAndPathInArchive`, `S3` and `URL` with `getURIAndArchivePattern`, which also takes
+/// a `::` with spaces around it; either reads `allow_archive_path_syntax` first.
+bool hasArchivePathLiteral(const IAST & ast)
+{
+    bool found = false;
+    forEachNode(ast, [&found](const IAST & node)
+    {
+        const auto * literal = node.as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return;
+        const String & value = literal->value.safeGet<String>();
+        found |= !splitToArchivePathAndPathInArchive(value).first.empty() || getURIAndArchivePattern(value).second.has_value();
+    });
+    return found;
 }
 
 /// Lowercase function names and type names of `ast`, without the column, table and database names, so that
@@ -3518,16 +3535,24 @@ ReplayGateNeeds collectReplayGateNeeds(
                 if (startsWithCaseInsensitive(engine->name, "DeltaLake"))
                     needs.delta_lake_table = true;
                 /// `File`, `URL` and the `S3` family split an archive path at CREATE only under `allow_archive_path_syntax`.
-                if (engine->arguments)
-                    forEachNode(*engine->arguments, [&needs](const IAST & node)
-                    {
-                        const auto * literal = node.as<ASTLiteral>();
-                        if (literal && literal->value.getType() == Field::Types::String
-                            && !splitToArchivePathAndPathInArchive(literal->value.safeGet<String>()).first.empty())
-                            needs.archive_path = true;
-                    });
+                if (engine->arguments && hasArchivePathLiteral(*engine->arguments))
+                    needs.archive_path = true;
             }
         }
+
+        /// The same split happens wherever CREATE parses a table function's arguments: a table created `AS` one keeps
+        /// the source it parsed until it is attached again, and a SELECT that CREATE analyzes (a materialized view's)
+        /// parses its table functions, where an `S3` URI with an archive path does not parse without the setting.
+        /// A plain view's SELECT is parsed only when the view is read, under the reader's setting.
+        if (create->as_table_function && hasArchivePathLiteral(*create->as_table_function))
+            needs.archive_path = true;
+        if (create->select)
+            forEachNode(*create->select, [&needs](const IAST & node)
+            {
+                const auto * table_expression = node.as<ASTTableExpression>();
+                if (table_expression && table_expression->table_function && hasArchivePathLiteral(*table_expression->table_function))
+                    needs.archive_path = true;
+            }, unread_select);
 
         /// `enable_unique_key` is checked only for a UNIQUE KEY; a view or TimeSeries keeps its engines in `targets`.
         if (create->storage && create->storage->unique_key)
@@ -3746,7 +3771,8 @@ String replaySettingsPrelude(
         {"database_replicated_allow_explicit_uuid", "3"},
         /// Value 0 keeps a table that stores data on disk without replication in a `Replicated` database.
         {"database_replicated_allow_only_replicated_engine", "0"},
-        /// Without it a File table reads the archive path as a plain file name, and an S3 table fails to create.
+        /// Without it a File table, or one created `AS file`, reads the archive path as a plain file name, and an S3
+        /// table, or a materialized view that reads `s3` over an archive, fails to create.
         {"allow_archive_path_syntax", "1"},
         /// Value 0 keeps a `Nested` column as the source stored it, instead of `n.a Array(...)` columns.
         {"flatten_nested", "0"},

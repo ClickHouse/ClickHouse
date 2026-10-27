@@ -1,0 +1,15 @@
+as_file: dump rc=0, archive gate: 1
+Code: 48
+as_file: replay rc=48
+as_file: same definition: 1
+as_file: source table refuses the write: Code: 48
+as_file: plain files written: 0
+as_plain_file: dump rc=0, archive gate: 0
+as_plain_file: replay rc=0
+as_plain_file: same definition: 1
+materialized_view: dump rc=0, archive gate: 1
+materialized_view: replay rc=0
+materialized_view: same definition: 1
+view: dump rc=0, archive gate: 0
+view: replay rc=0
+view: same definition: 1
