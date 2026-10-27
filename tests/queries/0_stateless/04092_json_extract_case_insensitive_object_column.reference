@@ -107,3 +107,6 @@ escaped dots literal key ci rows	3			v	v
 const object non-const keys	0	1	1
 const object non-const keys	1	2	2
 const object non-const keys	2	0	0
+float precision	1	1	1.234	1.234	{"a":1.234}	{"a":1.234}
+float type markers	Float64	Double	Double	Double	Double	{"f":1}	{"f":1}	1	1
+negative zero	-inf	-inf	{"a":[-0,0]}	{"a":[-0,0]}

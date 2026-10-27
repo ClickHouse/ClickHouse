@@ -275,3 +275,22 @@ SELECT 'const object non-const keys', number,
     JSONExtractIntCaseInsensitive('{"A": 1, "b": 2}'::JSON, ['a', 'B', 'c'][number + 1]),
     JSONExtractIntCaseInsensitive('{"A": 1, "b": 2}', ['a', 'B', 'c'][number + 1])
 FROM numbers(3);
+
+-- `output_format_float_precision` only changes how a value is presented in output; it must not round
+-- the values the JSON functions read.
+SET output_format_float_precision = 2;
+SELECT 'float precision',
+    JSONExtractFloat('{"a": [1.234]}'::JSON, 'a', 1) = 1.234, JSONExtractFloat('{"a": [1.234]}', 'a', 1) = 1.234,
+    JSONExtractRaw('{"a": 1.234}'::JSON, 'a'), JSONExtractRaw('{"a": 1.234}', 'a'),
+    JSONExtractRaw('{"a": 1.234}'::JSON), JSONExtractRaw('{"a": 1.234}');
+SET output_format_float_precision = 0;
+
+-- An integral floating-point value stays a floating-point number, and negative zero keeps its sign.
+SELECT 'float type markers',
+    dynamicType(('{"f": 1.0}'::JSON).f), JSONType('{"f": 1.0}'::JSON, 'f'), JSONType('{"f": 1.0}', 'f'),
+    JSONType('{"a": [1.0]}'::JSON, 'a', 1), JSONType('{"a": [1.0]}', 'a', 1),
+    JSONExtractRaw('{"f": 1.0}'::JSON), JSONExtractRaw('{"f": 1.0}'),
+    JSONExtractRaw('{"f": 1.0}'::JSON, 'f'), JSONExtractRaw('{"f": 1.0}', 'f');
+SELECT 'negative zero',
+    1 / JSONExtractFloat('{"a": [-0.0]}'::JSON, 'a', 1), 1 / JSONExtractFloat('{"a": [-0.0]}', 'a', 1),
+    JSONExtractRaw('{"a": [-0.0, 0.0]}'::JSON), JSONExtractRaw('{"a": [-0.0, 0.0]}');

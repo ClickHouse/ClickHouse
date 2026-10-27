@@ -342,16 +342,18 @@ public:
             return result;
         }
 
-        /// The settings `output_format_json_quote_64bit_integers`, `output_format_json_quote_64bit_floats` and
-        /// `output_format_json_quote_decimals` only change how a number is presented in JSON output. When a value
-        /// of a `JSON` column is written as JSON text for `JSONExtract*` functions, they must not apply, so that
-        /// the result is the same as for the equivalent JSON string, where a number is always written unquoted.
-        static FormatSettings withoutJSONQuotingOfNumbers(const FormatSettings & format_settings)
+        /// The settings `output_format_json_quote_64bit_integers`, `output_format_json_quote_64bit_floats`,
+        /// `output_format_json_quote_decimals` and `output_format_float_precision` only change how a number is
+        /// presented in output. When a value of a `JSON` column is written as JSON text for `JSONExtract*`
+        /// functions, they must not apply, so that the result is the same as for the equivalent JSON string,
+        /// where a number is always written unquoted and with all its digits.
+        static FormatSettings withoutJSONNumberPresentation(const FormatSettings & format_settings)
         {
             FormatSettings result = format_settings;
             result.json.quote_64bit_integers = false;
             result.json.quote_64bit_floats = false;
             result.json.quote_decimals = false;
+            result.float_precision = 0;
             return result;
         }
 
@@ -375,9 +377,12 @@ public:
             const IColumn & object_column = col_const ? col_const->getDataColumn() : *column.column;
             const size_t num_rows = col_const ? 1 : input_rows_count;
 
-            FormatSettings round_trip_settings = withoutJSONQuotingOfNumbers(format_settings);
+            FormatSettings round_trip_settings = withoutJSONNumberPresentation(format_settings);
             /// A bare `inf` or `nan` is not valid JSON and would make the whole document unparseable.
             round_trip_settings.json.quote_denormals = true;
+            /// A floating-point value must stay a floating-point number with the same value when the text is
+            /// parsed back: `1.0` rather than `1`, which would be read as an integer, and `-0.0` rather than `0`.
+            round_trip_settings.json.write_float_type_markers = true;
             round_trip_settings.json.write_named_tuples_as_objects = true;
             round_trip_settings.json.skip_null_value_in_named_tuples = false;
             round_trip_settings.json.write_map_as_array_of_tuples = false;
@@ -599,7 +604,7 @@ public:
             };
 
             /// `JSONExtractRaw` returns JSON text, which for a string input never has a quoted number.
-            const FormatSettings raw_format_settings = withoutJSONQuotingOfNumbers(format_settings);
+            const FormatSettings raw_format_settings = withoutJSONNumberPresentation(format_settings);
             auto serialize_raw = [&](const IColumn & merged, const ISerialization & serialization, size_t row, ColumnString & out)
             {
                 WriteBufferFromOwnString buf;

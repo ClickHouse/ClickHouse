@@ -326,6 +326,11 @@ struct FormatSettings
         bool quote_denormals = true;
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
+        /// Not bound to any user setting. Write a finite floating-point value so that parsing the text
+        /// back keeps it a floating-point number with the same value: an integral value gets a `.0`
+        /// suffix (`1.0` instead of `1`) and negative zero keeps its sign (`-0.0` instead of `0`). Used
+        /// by the JSON functions, which reparse the JSON text of a `JSON` column.
+        bool write_float_type_markers = false;
         bool read_named_tuples_as_objects = false;
         /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
         /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
