@@ -25,11 +25,18 @@ clickhouse_local "
     INSERT INTO d.t_projection VALUES ([0]), ([1, 2]);
     ALTER TABLE d.t_projection ADD PROJECTION p (SELECT sum(\`a.size0\`));
     ALTER TABLE d.t_projection MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
+    CREATE TABLE d.t_projection_ignore (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS deduplicate_merge_projection_mode = 'ignore';
+    INSERT INTO d.t_projection_ignore VALUES ([0]), ([1, 2]);
+    ALTER TABLE d.t_projection_ignore ADD PROJECTION p (SELECT sum(\`a.size0\`));
+    ALTER TABLE d.t_projection_ignore MATERIALIZE PROJECTION p SETTINGS mutations_sync = 1;
     CREATE TABLE d.t_ttl (a Array(UInt64)) ENGINE = MergeTree ORDER BY tuple() TTL addDays(toDate('2000-01-01'), 36500 * \`a.size0\`);
     INSERT INTO d.t_ttl VALUES ([1]);"
 
 # shellcheck disable=SC2016
 sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 7\1/' "${WORKING_FOLDER}/metadata/d/t_projection.sql"
+# shellcheck disable=SC2016
+sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 7\1/' "${WORKING_FOLDER}/metadata/d/t_projection_ignore.sql"
 # shellcheck disable=SC2016
 sed -i 's/^    `a` Array(UInt64)\(,\?\)$/    `a` Array(UInt64),\n    `a.size0` UInt64 DEFAULT 0\1/' "${WORKING_FOLDER}/metadata/d/t_ttl.sql"
 
@@ -43,6 +50,13 @@ clickhouse_local "
     OPTIMIZE TABLE d.t_projection FINAL;
     SELECT sum(\`a.size0\`) FROM d.t_projection SETTINGS optimize_use_projections = 0;
     SELECT sum(\`a.size0\`) FROM d.t_projection SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+    SELECT 'projection, deduplicate_merge_projection_mode = ignore';
+    SELECT sum(\`a.size0\`) FROM d.t_projection_ignore SETTINGS optimize_use_projections = 0;
+    SELECT sum(\`a.size0\`) FROM d.t_projection_ignore SETTINGS optimize_use_projections = 1;
+    OPTIMIZE TABLE d.t_projection_ignore FINAL;
+    SELECT sum(\`a.size0\`) FROM d.t_projection_ignore SETTINGS optimize_use_projections = 0;
+    SELECT sum(\`a.size0\`) FROM d.t_projection_ignore SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
     SELECT 'ttl';
     SELECT a, \`a.size0\` FROM d.t_ttl;
