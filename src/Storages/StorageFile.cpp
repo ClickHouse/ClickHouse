@@ -3093,15 +3093,30 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                 QueryConditionCache::makeFilePartName(path, split_file->file_cache_version),
                 *format_filter_info->condition_hash,
                 /*increment_profile_events=*/ false);
-            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
 
+            std::vector<size_t> matching_row_groups;
+            std::vector<FileBucketInfoPtr> buckets;
             if (matching_marks)
             {
-                std::vector<size_t> matching_row_groups;
                 for (size_t i = 0; i < matching_marks->size(); ++i)
                     if ((*matching_marks)[i])
                         matching_row_groups.push_back(i);
 
+                for (const auto & bucket : split_file->buckets)
+                    if (auto filtered_bucket = bucket->filterByMatchingRowGroups(matching_row_groups))
+                        buckets.push_back(std::move(filtered_bucket));
+
+                /// No row group of the file can match: do not split it. Its only source then skips it by the
+                /// same cache entry (and counts it), and still finalizes the file, e.g. renames it according
+                /// to `rename_files_after_processing`, which is done when a source is destroyed.
+                if (buckets.empty())
+                    return nullptr;
+            }
+
+            ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+
+            if (matching_marks)
+            {
                 LOG_DEBUG(
                     getLogger("StorageFile"),
                     "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
@@ -3115,11 +3130,7 @@ StorageFileSource::SplitFilePtr ReadFromFile::trySplitSingleFile(
                 /// Only Parquet has a splitter.
                 ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, matching_marks->size() - matching_row_groups.size());
 
-                /// Fewer buckets (or none at all) may be left, and they are still read as a split file.
-                std::vector<FileBucketInfoPtr> buckets;
-                for (const auto & bucket : split_file->buckets)
-                    if (auto filtered_bucket = bucket->filterByMatchingRowGroups(matching_row_groups))
-                        buckets.push_back(std::move(filtered_bucket));
+                /// Fewer buckets may be left, and they are still read as a split file.
                 split_file->buckets = std::move(buckets);
             }
         }
