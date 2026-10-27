@@ -1,9 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/ShortCircuitArgumentStatistics.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -30,7 +33,9 @@ private:
         bool is_short_circuit_argument_ = false,
         bool is_function_compiled_ = false,
         bool recursively_convert_result_to_full_column_if_low_cardinality_ = false,
-        bool allow_lazy_replicated_captures_ = false);
+        bool allow_lazy_replicated_captures_ = false,
+        ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics_ = nullptr,
+        std::optional<size_t> short_circuit_eager_argument_ = {});
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -105,6 +110,9 @@ public:
 #else
     void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
 #endif
+
+    /// Squashing uses this to decide whether `insertRangeFrom` can concatenate two columns.
+    bool structureEquals(const IColumn & rhs) const override;
 
     void insertData(const char *, size_t) override
     {
@@ -194,6 +202,7 @@ public:
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
 
     const FunctionBasePtr & getFunction() const { return function; }
+    const ShortCircuitArgumentStatisticsPtr & getShortCircuitArgumentStatistics() const { return short_circuit_argument_statistics; }
     const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
 
 private:
@@ -220,6 +229,16 @@ private:
     /// If true, replicate function wraps captured columns into ColumnReplicated instead of physically copying them.
     /// Controlled by the setting enable_lazy_columns_replication.
     bool allow_lazy_replicated_captures = false;
+
+    /// Set for a lazy executed argument of a short-circuit function with commutative arguments (`and`, `or`),
+    /// if the argument can be executed before the arguments that precede it, see ExpressionActions.cpp for details.
+    /// The function uses these statistics to choose the order in which it executes such arguments.
+    ShortCircuitArgumentStatisticsPtr short_circuit_argument_statistics;
+
+    /// Set for a lazy executed short-circuit function with commutative arguments (`and`, `or`), if the argument that
+    /// is executed first was chosen instead of the one from `arguments_with_disabled_lazy_execution`,
+    /// see `processShortCircuitFunctions` in ExpressionActions.cpp.
+    std::optional<size_t> short_circuit_eager_argument;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

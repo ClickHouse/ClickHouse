@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
@@ -16,6 +15,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -36,8 +36,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 min_execution_speed;
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -55,7 +53,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getMaxThreadsForAvailableMemory(context->getSettingsRef()[Setting::max_threads], context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]))
+    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getEffectiveMaxThreads(context->getSettingsRef()))
 {
     if (options.shard_num)
         context->addSpecialScalar(
@@ -121,7 +119,8 @@ StorageLimits IInterpreterUnionOrSelectQuery::getStorageLimits(const Context & c
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        if (context.getClientInfo().distributed_depth > 0)
+            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};

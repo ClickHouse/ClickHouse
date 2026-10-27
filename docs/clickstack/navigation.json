@@ -98,6 +98,7 @@
         "clickstack/features/event-patterns",
         "clickstack/features/event-deltas",
         "clickstack/features/alerts",
+        "clickstack/features/anomaly-detection",
         "clickstack/service-maps",
         "clickstack/features/session-replay",
         "clickstack/mcp",
@@ -112,6 +113,7 @@
                 {
                   "group": "October",
                   "pages": [
+                    "clickstack/demo-days/2026/2026-10-08",
                     "clickstack/demo-days/2026/2026-10-01"
                   ]
                 },

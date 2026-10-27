@@ -4,7 +4,6 @@ SET explain_query_plan_default = 'legacy';
 set enable_json_type=1;
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
-set enable_analyzer=1;
 set optimize_move_to_prewhere=1;
 
 drop table if exists test;

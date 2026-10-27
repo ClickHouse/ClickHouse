@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class MergeTreeIndexText;
+
 /// Internal temporary storage for table function mergeTreeTextIndex(...)
 class StorageMergeTreeTextIndex final : public StorageWithCommonVirtualColumns
 {
@@ -33,7 +35,9 @@ public:
 
     String getName() const override { return "MergeTreeTextIndex"; }
 
-    static VirtualColumnsDescription createVirtuals();
+    /// Besides `_table` and `_database`, the columns of the posting lists of the index: `row_id`, and `positions`
+    /// if the index stores them. Reading one returns a row per posting instead of a row per token.
+    static VirtualColumnsDescription createVirtuals(const MergeTreeIndexText & text_index);
 
     /// Throws if the user may not read the tokens of `index` of `source_table`. `source_metadata` must be the metadata
     /// the index was built from, so the columns the check authorizes are the ones the index is computed over.

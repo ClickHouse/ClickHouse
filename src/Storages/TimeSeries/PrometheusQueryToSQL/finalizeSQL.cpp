@@ -285,25 +285,30 @@ namespace
 
         builder.where = std::move(where);
 
-        if (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
+        const auto * aggregation = (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
+            ? static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node)
+            : nullptr;
+        if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
         {
-            const auto * aggregation = static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node);
-            if (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk")
+            if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
             {
-                if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
-                {
-                    bool metric_name_dropped = result.metric_name_dropped;
-                    /// Group ids follow read order, so order by the bucket tags.
-                    ASTPtr bucket_group = transformGroupASTForAggregationOperator(
-                        aggregation,
-                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                        /*drop_metric_name=*/true,
-                        metric_name_dropped);
-                    builder.order_by.push_back(makeASTFunction("timeSeriesGroupToTags", std::move(bucket_group)));
-                }
-                builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-                builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
+                bool metric_name_dropped = result.metric_name_dropped;
+                /// Group ids follow read order, so order by the bucket tags.
+                ASTPtr bucket_group = transformGroupASTForAggregationOperator(
+                    aggregation,
+                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                    /*drop_metric_name=*/true,
+                    metric_name_dropped);
+                builder.order_by.push_back(makeASTFunction("timeSeriesGroupToTags", std::move(bucket_group)));
             }
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
+        }
+        else if (result.store_method == StoreMethod::VECTOR_GRID)
+        {
+            /// Other instant vectors are sorted by tags, as range vectors are.
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+            builder.order_direction = 1;
         }
 
         builder.with = std::move(context.subqueries);
