@@ -29,6 +29,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS src_05445 SYNC;
     CREATE TABLE src_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE dst_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
+    SYSTEM STOP MERGES src_05445;
     INSERT INTO src_05445 VALUES (1);
     CREATE MATERIALIZED VIEW mv_05445 REFRESH EVERY 1 SECOND IF CHANGED APPEND TO dst_05445
         AS SELECT x FROM src_05445;
@@ -53,6 +54,9 @@ wait_for_dst()
 }
 
 echo "initial: $(wait_for_dst '[1]')"
+
+# Merges of the source are stopped: a merge changes its modification hash without changing its rows,
+# which would make a later refresh append them again.
 
 # Park the scheduled refresh that appends the changed source.
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT $FP"
@@ -80,6 +84,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE USER $USER;
     CREATE TABLE src_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE TABLE dst_05445 (x UInt64) ENGINE = MergeTree ORDER BY x;
+    SYSTEM STOP MERGES src_05445;
     INSERT INTO src_05445 VALUES (1);
     CREATE MATERIALIZED VIEW mv_05445 REFRESH EVERY 1 SECOND IF CHANGED APPEND TO dst_05445
         SQL SECURITY NONE AS SELECT x FROM src_05445;
