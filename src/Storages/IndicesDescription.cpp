@@ -104,6 +104,31 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     return *this;
 }
 
+namespace
+{
+
+/// Clone an index declaration with the SQL user-defined functions of its expression inlined. Only the
+/// expression is visited: the `TYPE` of the index is an `ASTFunction` too, and a function named like the
+/// index type (e.g. `minmax`) must not be expanded there.
+ASTPtr cloneWithExpandedUserDefinedFunctions(const ASTPtr & definition_ast, ContextPtr context)
+{
+    ASTPtr result = definition_ast->clone();
+    auto * index_definition = result->as<ASTIndexDeclaration>();
+    if (!index_definition || index_definition->children.empty())
+        return result;
+
+    /// The expression is the first child, see `ASTIndexDeclaration::getExpression`.
+    ASTPtr & expression = index_definition->children.front();
+    auto * old_ptr = expression.get();
+    UserDefinedSQLFunctionVisitor::visit(expression, context);
+    if (expression.get() != old_ptr)
+        index_definition->updatePointerToChild(old_ptr, expression.get());
+
+    return result;
+}
+
+}
+
 IndexDescription IndexDescription::getIndexFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -112,8 +137,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     ContextPtr context,
     bool validate_expressions)
 {
-    ASTPtr expanded_definition_ast = definition_ast->clone();
-    UserDefinedSQLFunctionVisitor::visit(expanded_definition_ast, context);
+    ASTPtr expanded_definition_ast = cloneWithExpandedUserDefinedFunctions(definition_ast, context);
 
     const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -191,8 +215,7 @@ ASTPtr replaceAliasesInExpressionList(ASTPtr index_expression, const ColumnsDesc
 
 ASTPtr IndexDescription::getExpandedExpressionList(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
 {
-    ASTPtr expanded_definition_ast = definition_ast->clone();
-    UserDefinedSQLFunctionVisitor::visit(expanded_definition_ast, context);
+    ASTPtr expanded_definition_ast = cloneWithExpandedUserDefinedFunctions(definition_ast, context);
 
     const auto * index_definition = expanded_definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition || !index_definition->getExpression())
