@@ -13,6 +13,7 @@
 #include <Core/MySQL/PacketsGeneric.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 
@@ -89,8 +90,28 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
         "mysql_native_password", proxy_scramble, /*charset=*/ 33);
     client_ep.sendPacket(greeting, true);
 
+    /// The client is not authenticated yet, so the size of its `HandshakeResponse` is bounded before it is read,
+    /// as in `MySQLHandler::finishHandshake`: otherwise its strings could grow over continuation packets.
+    constexpr size_t max_handshake_response_payload_size = 64 * 1024;
+    String handshake_packet(4, '\0');
+    client_in.readStrict(handshake_packet.data(), 4);
+    const size_t handshake_payload_size = static_cast<UInt8>(handshake_packet[0])
+        | (static_cast<size_t>(static_cast<UInt8>(handshake_packet[1])) << 8)
+        | (static_cast<size_t>(static_cast<UInt8>(handshake_packet[2])) << 16);
+    if (handshake_payload_size > max_handshake_response_payload_size)
+    {
+        LOG_WARNING(ctx.log, "MySQL handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+            handshake_payload_size, max_handshake_response_payload_size);
+        return;
+    }
+    handshake_packet.resize(4 + handshake_payload_size);
+    client_in.readStrict(handshake_packet.data() + 4, handshake_payload_size);
+
     HandshakeResponse response;
-    client_ep.receivePacket(response);
+    {
+        ReadBufferFromString handshake_in(handshake_packet);
+        response.readPayload(handshake_in, client_seq);
+    }
 
     RouteAttributes attributes;
     attributes.protocol = ListenerProtocol::MySQL;
@@ -198,12 +219,13 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
 
 }
 
-/// MySQL is server-speaks-first and negotiates TLS in-band. When a routing rule needs the user or the
-/// database the proxy terminates the handshake to read them; otherwise it forwards transparently and
+/// MySQL is server-speaks-first and negotiates TLS in-band. When a routing rule or a first-seen hook needs
+/// the user or the database the proxy terminates the handshake to read them; otherwise it forwards transparently and
 /// routes by peer address or the default pool.
 void handleMySQL(FiberSocket & client, const FrontendContext & ctx)
 {
-    if (ctx.router.needsCredentials(ListenerProtocol::MySQL))
+    /// The first-seen hooks need the user and the database too.
+    if (ctx.router.needsCredentials(ListenerProtocol::MySQL) || ctx.router.hasFirstSeenHooks())
     {
         try
         {

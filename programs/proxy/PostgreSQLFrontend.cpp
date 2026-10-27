@@ -24,23 +24,28 @@ constexpr UInt32 CANCEL_REQUEST = 80877102;
 constexpr UInt32 PROTOCOL_VERSION_3 = 196608;
 
 /// Parse the "user" and "database" parameters out of a PostgreSQL StartupMessage parameter block
-/// (a sequence of NUL-terminated key/value strings).
-void parseStartupParameters(const String & params, RouteAttributes & attributes)
+/// (a sequence of NUL-terminated key/value strings, then a terminating NUL), exactly as the server's
+/// `StartupMessage::deserialize` does: pairs are read up to the terminating byte, including pairs with
+/// an empty key, and a repeated parameter takes the last value. Returns false for a block the server rejects,
+/// so that the proxy never routes by parameters other than the ones the backend authenticates with.
+bool parseStartupParameters(const String & params, RouteAttributes & attributes)
 {
+    if (params.empty() || params.back() != '\0')
+        return false;
+
+    const size_t terminator = params.size() - 1;
     size_t i = 0;
-    while (i < params.size())
+    while (i < terminator)
     {
         const size_t key_end = params.find('\0', i);
-        if (key_end == String::npos)
-            break;
-        const String key = params.substr(i, key_end - i);
-        if (key.empty())
-            break;
-
+        if (key_end >= terminator)
+            return false;
         const size_t value_end = params.find('\0', key_end + 1);
-        if (value_end == String::npos)
-            break;
-        const String value = params.substr(key_end + 1, value_end - key_end - 1);
+        if (value_end >= terminator)
+            return false;
+
+        const std::string_view key(params.data() + i, key_end - i);
+        const std::string_view value(params.data() + key_end + 1, value_end - key_end - 1);
         i = value_end + 1;
 
         if (key == "user")
@@ -49,9 +54,9 @@ void parseStartupParameters(const String & params, RouteAttributes & attributes)
             attributes.database = value;
     }
 
-    /// PostgreSQL defaults the database to the user name when it is not given explicitly.
-    if (attributes.database.empty())
-        attributes.database = attributes.user;
+    /// The server does not default an omitted or empty database to the user name (unlike PostgreSQL):
+    /// the session keeps the user's default database, which the proxy does not know, so it stays empty.
+    return true;
 }
 
 /// A `CancelRequest` arrives on a new connection and must reach the backend serving the session it
@@ -122,7 +127,11 @@ void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx)
                     return;
                 }
                 const String params = reader->readFixed(length - 8);
-                parseStartupParameters(params, attributes);
+                if (!parseStartupParameters(params, attributes))
+                {
+                    LOG_WARNING(ctx.log, "Invalid PostgreSQL StartupMessage parameters");
+                    return;
+                }
                 break;
             }
 

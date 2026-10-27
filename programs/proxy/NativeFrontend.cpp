@@ -7,6 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <Core/Protocol.h>
+
 #include <base/scope_guard.h>
 
 #include <Poco/String.h>
@@ -44,7 +46,13 @@ void handleNative(FiberSocket & client, const FrontendContext & ctx)
         reader.readVarUInt();     /// protocol revision
         attributes.database = reader.readVarString();
         attributes.user = reader.readVarString();
-        reader.readVarString();   /// password (cleartext on a plaintext port; ignored by the proxy)
+        const String password = reader.readVarString();   /// Cleartext on a plaintext port; not used to route.
+
+        /// SSH key authentication sends the user name with a marker and an empty password, and the server
+        /// removes the marker before authenticating (`TCPHandler::receiveHello`): route by the same user name.
+        /// The Hello is still forwarded unchanged.
+        if (password.empty() && attributes.user.starts_with(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER))
+            attributes.user.erase(0, std::string_view(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER).size());
     }
     catch (...)
     {
