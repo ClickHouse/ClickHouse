@@ -2,7 +2,7 @@
 SET compatibility = '';
 SET use_query_condition_cache_for_time_conditions = DEFAULT;
 
--- The released 26.10 default is off; the default changed in 26.11.
+-- Keep the setting off by default, including under older compatibility versions.
 SELECT 'default', value
 FROM system.settings WHERE name = 'use_query_condition_cache_for_time_conditions';
 SELECT '26.9', value
