@@ -283,6 +283,43 @@ def test_port_offset_does_not_shift_outbound_default_port(start_cluster):
     )
 
 
+def test_port_offset_unshifted_port_is_not_local(start_cluster):
+    """An address with the configured, unshifted port does not point to the offset node.
+
+    The offset node listens on `9000`, not on the configured `8900`, where another instance
+    sharing the network namespace could listen. So `127.0.0.1:8900` must be treated as a
+    remote server - nothing listens there, so the connection fails - instead of silently
+    reading the local tables. `127.0.0.1:9000` is the node itself.
+    """
+    assert (
+        node_offset.query("SELECT * FROM remote('127.0.0.1:9000', system.one)").strip()
+        == "0"
+    )
+    error = node_offset.query_and_get_error(
+        "SELECT * FROM remote('127.0.0.1:8900', system.one)"
+    )
+    assert "8900" in error, error
+
+    # The same holds for a ClickHouse dictionary source: loading it must not read the local table.
+    node_offset.query(
+        "CREATE TABLE dict_unshifted_port_source (id UInt64, value UInt64) ENGINE = Memory"
+    )
+    node_offset.query("INSERT INTO dict_unshifted_port_source VALUES (1, 42)")
+    node_offset.query(
+        "CREATE DICTIONARY dict_unshifted_port (id UInt64, value UInt64) PRIMARY KEY id"
+        " SOURCE(CLICKHOUSE(HOST '127.0.0.1' PORT 8900 DB 'default' TABLE 'dict_unshifted_port_source'))"
+        " LIFETIME(0) LAYOUT(FLAT())"
+    )
+    try:
+        error = node_offset.query_and_get_error(
+            "SELECT dictGet('dict_unshifted_port', 'value', toUInt64(1))"
+        )
+        assert "8900" in error, error
+    finally:
+        node_offset.query("DROP DICTIONARY dict_unshifted_port")
+        node_offset.query("DROP TABLE dict_unshifted_port_source")
+
+
 def test_port_offset_replicated_database_replica_is_local(start_cluster):
     """A `Replicated` database recognizes its own replica as local on an offset node.
 
@@ -377,3 +414,26 @@ def test_port_offset_secure_discovery_advertises_secure_port(start_cluster):
         "SELECT host_name, port, is_local FROM system.clusters WHERE cluster = 'secure_discovery'",
         "node_offset\t9440\t1",
     )
+
+
+def test_port_offset_change_on_reload_is_rejected(start_cluster):
+    """Changing `port_offset` requires a restart: a configuration reload with a new value is rejected.
+
+    The offset is baked into state that a reload does not rebuild (the advertised interserver
+    address, cached `remote_servers` clusters, discovery registrations), so moving the listeners
+    alone would leave the server advertising stale endpoints.
+    """
+    config_path = "/etc/clickhouse-server/config.d/port_offset.xml"
+    node_embedded_keeper.replace_in_config(
+        config_path, "<port_offset>100</port_offset>", "<port_offset>200</port_offset>"
+    )
+    try:
+        error = node_embedded_keeper.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "port_offset" in error and "restart" in error, error
+        # The listeners stay where they were.
+        assert node_embedded_keeper.query("SELECT tcpPort()").strip() == "9000"
+    finally:
+        node_embedded_keeper.replace_in_config(
+            config_path, "<port_offset>200</port_offset>", "<port_offset>100</port_offset>"
+        )
+    node_embedded_keeper.query("SYSTEM RELOAD CONFIG")
