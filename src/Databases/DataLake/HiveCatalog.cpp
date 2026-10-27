@@ -10,8 +10,10 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Common/RemoteHostFilter.h>
 #include <Databases/DataLake/Common.h>
 
 namespace DB::ErrorCodes
@@ -64,11 +66,23 @@ std::pair<String, Int32> parseHostPort(const String & url)
     }
 }
 
+std::shared_ptr<apache::thrift::transport::TSocket> createSocket(const String & base_url, const DB::ContextPtr & context)
+{
+    auto [host, port] = parseHostPort(base_url);
+
+    /// Also rejects control characters such as NUL, which `getaddrinfo` would truncate the host at.
+    context->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(
+        host + ":" + std::to_string(port), static_cast<UInt16>(port), "Hive metastore address");
+
+    return std::make_shared<apache::thrift::transport::TSocket>(host, port);
 }
 
-HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
+}
+
+HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_)
     : ICatalog(warehouse_)
-    , socket(new apache::thrift::transport::TSocket(parseHostPort(base_url_).first, parseHostPort(base_url_).second))
+    , DB::WithContext(context_)
+    , socket(createSocket(base_url_, context_))
     , transport(new apache::thrift::transport::TBufferedTransport(socket))
     , protocol(new apache::thrift::protocol::TBinaryProtocol(transport))
     , client(protocol)
