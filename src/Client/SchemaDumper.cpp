@@ -3760,6 +3760,22 @@ String nameTokens(
             else
             {
                 names += function->name + ' ';
+                /// These build the aggregate function their first argument names, with its combinators and parameters, read
+                /// like `getAggregateFunctionNameAndParametersArray` does. A name this client cannot fold may be any one, so it
+                /// stands for every gated aggregate function that `collectReplayGateNeeds` matches.
+                if ((function->name == "arrayReduce" || function->name == "arrayReduceInRanges"
+                        || function->name == "initializeAggregation")
+                    && function->arguments && !function->arguments->children.empty())
+                {
+                    const auto folded = tryFoldStructureArgument(function->arguments->children[0], context);
+                    if (folded && folded->getType() == Field::Types::String && !folded->safeGet<String>().empty())
+                    {
+                        const String & aggregate = folded->safeGet<String>();
+                        names += (aggregate.back() == ')' ? aggregate.substr(0, aggregate.find('(')) : aggregate) + ' ';
+                    }
+                    else
+                        names += "flameGraph sequenceNextNode timeSeriesGroupArray ";
+                }
                 const bool cast_or_default = function->name == "accurateCastOrDefault";
                 const bool is_cast = equalsCaseInsensitive(function->name, "CAST") || equalsCaseInsensitive(function->name, "_CAST")
                     || function->name == "accurateCast" || function->name == "accurateCastOrNull" || cast_or_default;
@@ -4337,6 +4353,7 @@ ReplayGateNeeds collectReplayGateNeeds(
         for (const auto & query : eval_queries)
             names += nameTokens(*query, nullptr, /* with_types= */ true, context, &validated_types);
 
+        /// `nameTokens` names one of each gated aggregate function for an aggregate function name it cannot fold.
         needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
         needs.nlp_functions |= hasToken(names, "synonyms") || hasToken(names, "lemmatize") || hasToken(names, "detectlanguage", true)
             || hasToken(names, "detectcharset") || hasToken(names, "detecttonality");
@@ -4348,7 +4365,7 @@ ReplayGateNeeds collectReplayGateNeeds(
         needs.xgboost |= hasToken(names, "predictxgboost");
         needs.ipcrypt_functions |= hasToken(names, "ipcrypt", true);
         needs.client_http_header_function |= hasToken(names, "getclienthttpheader");
-        /// `flameGraph` also as the function of an `AggregateFunction` type, and with combinators.
+        /// `flameGraph` also as the function of an `AggregateFunction` type, named by `arrayReduce`, and with combinators.
         needs.introspection_functions |= hasToken(names, "addresstoline", true) || hasToken(names, "addresstosymbol")
             || hasToken(names, "demangle") || hasToken(names, "flamegraph", true);
 

@@ -58,6 +58,14 @@ round_trip client_http_header t "SET allow_get_client_http_header = 1;
 round_trip introspection t "
     CREATE TABLE d.t (k UInt64, s String, n String DEFAULT demangle(s), f AggregateFunction(flameGraph, Array(UInt64)))
     ENGINE = MergeTree ORDER BY k;"
+# `arrayReduce` and the like build the aggregate function that a string argument names, here also a folded one.
+round_trip introspection_by_name t "
+    CREATE TABLE d.t (k UInt64, traces Array(Array(String)), flame Array(String) DEFAULT arrayReduce('flameGraph', traces))
+    ENGINE = MergeTree ORDER BY k;"
+round_trip introspection_by_folded_name t "
+    CREATE TABLE d.t (k UInt64, traces Array(Array(String)),
+        flame Array(Array(String)) DEFAULT arrayReduceInRanges(concat('flame', 'Graph'), [(1, 1)], traces))
+    ENGINE = MergeTree ORDER BY k;"
 round_trip nonconst_timezone t "SET allow_nonconst_timezone_arguments = 1;
     CREATE TABLE d.t (t DateTime, tz String, l DateTime DEFAULT toTimeZone(t, tz)) ENGINE = MergeTree ORDER BY t;"
 round_trip throw_if_error_code t "SET allow_custom_error_code_in_throwif = 1;

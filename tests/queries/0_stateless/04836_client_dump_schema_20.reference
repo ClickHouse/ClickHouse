@@ -30,6 +30,16 @@ SET allow_introspection_functions = 1;
 SET data_type_default_nullable = 0;
 introspection: replay rc=0
 introspection: same definition: 1
+introspection_by_name: dump rc=0
+SET allow_introspection_functions = 1;
+SET data_type_default_nullable = 0;
+introspection_by_name: replay rc=0
+introspection_by_name: same definition: 1
+introspection_by_folded_name: dump rc=0
+SET allow_introspection_functions = 1;
+SET data_type_default_nullable = 0;
+introspection_by_folded_name: replay rc=0
+introspection_by_folded_name: same definition: 1
 nonconst_timezone: dump rc=0
 SET allow_nonconst_timezone_arguments = 1;
 SET data_type_default_nullable = 0;
