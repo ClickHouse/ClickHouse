@@ -342,6 +342,8 @@ ReachableFilesResult collectReachableFiles(
 
     auto visit = [&](const IcebergPathFromMetadata & path)
     {
+        if (check_before_read)
+            check_before_read(path);
         auto [storage, key] = resolveObjectStorageForPath(
             persistent_table_components.table_location, path.serialize(), object_storage, external_storages, context, resolver);
         if (isObjectInTableDirectory(storage, key, object_storage, persistent_table_components.table_path))

@@ -1793,6 +1793,7 @@ def test_drop_table_purge_requires_write_grant_on_external_files(started_cluster
             f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user, settings=drop_settings
         )
         assert "Not enough privileges to drop the Iceberg table" in error, error
+        assert f"{test_ref}_external" not in error, error
         assert catalog.table_exists(f"{root_namespace}.{table_name}")
         assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
 
@@ -1821,7 +1822,8 @@ def _rewrite_s3_manifest_entries(minio_client, manifest_path, rewrite_entry):
 
 
 def test_drop_table_purge_rejects_unresolvable_external_file(started_cluster):
-    # The catalog would purge a file that `DROP` cannot resolve, so its `WRITE` grant check must fail the `DROP`.
+    # The catalog would purge a file that `DROP` cannot resolve, so its `WRITE` grant check must fail the `DROP`
+    # before the resolution error discloses the path.
     node = started_cluster.instances["node2"]
     catalog = load_catalog_impl(started_cluster)
 
@@ -1853,7 +1855,8 @@ def test_drop_table_purge_rejects_unresolvable_external_file(started_cluster):
     node.query(f"CREATE USER {user}")
     node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
     error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
-    assert "refers to host 'other-host'" in error, error
+    assert "Not enough privileges to drop the Iceberg table" in error, error
+    assert "other-host" not in error, error
     assert catalog.table_exists(f"{root_namespace}.{table_name}")
     assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
 

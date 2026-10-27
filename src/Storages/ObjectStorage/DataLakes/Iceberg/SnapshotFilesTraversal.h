@@ -70,7 +70,8 @@ struct ReachableFilesResult
 /// Use the latest head for `remove_orphan_files`, but the configured head for `drop`.
 /// `scan_metadata_log_history` adds surviving external references without making expired in-table files reachable.
 /// The returned root identifies the traversed state for TOCTOU checks.
-/// `check_before_read` is passed to `collectSnapshotReferencedFiles` for the snapshots of the head.
+/// `check_before_read` is passed to `collectSnapshotReferencedFiles` for the snapshots of the head, and is also called with
+/// each path of the head before it is resolved.
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,

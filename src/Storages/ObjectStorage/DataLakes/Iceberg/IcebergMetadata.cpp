@@ -2214,23 +2214,19 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context, bool catalog_p
                 persistent_components.path_resolver))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
-                "Not enough privileges to drop the Iceberg table: `iceberg_delete_data_on_drop` deletes the file '{}' "
-                "outside the table directory, which requires the `WRITE` grant on it",
-                path);
+                "Not enough privileges to drop the Iceberg table: `iceberg_delete_data_on_drop` deletes files "
+                "outside the table directory, which requires the `WRITE` grant on them");
     };
 
-    /// `resolve_context` has the grants of the global context, so the manifests are authorized for the dropping user before
-    /// they are read. The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
+    /// `resolve_context` has the grants of the global context, so each path is authorized for the dropping user before
+    /// it is resolved or read. The catalog purges even the files that cannot be enumerated here, so their check must fail the `DROP`.
     const auto external_files = catalog_purges_files
         ? collectExternalFilesToDeleteOnDrop(resolve_context, /* include_deleted_entries */ true, check_write_granted)
         : tryCollectExternalFilesToDeleteOnDrop(resolve_context, check_write_granted);
 
     std::unordered_set<String> authorized;
     for (const auto & file : external_files)
-    {
-        check_write_granted(file.path);
         authorized.insert(file.path.serialize());
-    }
 
     std::lock_guard lock(external_files_drop_authorized_mutex);
     external_files_drop_authorized = std::move(authorized);
