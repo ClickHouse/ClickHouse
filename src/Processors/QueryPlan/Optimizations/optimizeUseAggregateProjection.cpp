@@ -44,6 +44,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -51,6 +52,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool prefer_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
@@ -241,6 +243,8 @@ static const ActionsDAG::Node * buildResidualFilterNode(
         filter_root = filter_root->children.front();
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while the rebuilt `and` is evaluated left to right.
+    std::ranges::reverse(query_atoms);
 
     std::vector<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
@@ -650,8 +654,7 @@ static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
     if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
         return {};
 
-    /// TODO(unique-key): the delete bitmap of a unique-key table is applied at read time,
-    /// statistics don't reflect it.
+    /// TODO(unique-key): support statistics-based answers; they don't see the delete bitmap.
     if (metadata->hasUniqueKey())
         return {};
 
@@ -980,6 +983,7 @@ static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_
 static Block makeBlockWithMinMaxFromStatistics(
     const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
     ReadFromMergeTree::AnalysisResult & remaining_select_result,
+    const ContextPtr & context,
     const LoggerPtr & logger)
 {
     std::vector<Field> folded_values(stats_aggregates.size());
@@ -988,8 +992,20 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
 
-    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
+    /// The columns whose estimates are needed, so that only their statistics are read.
+    NameSet required_columns;
+    for (const auto & stats_aggregate : stats_aggregates)
+        if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
+            required_columns.insert(stats_aggregate.column_name);
+
+    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
+
+    /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
+    /// consumed; `std::nullopt` for a part that is read instead.
+    std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
+    auto part_may_use_statistics = [&](size_t part_index)
     {
+        const auto & part_with_ranges = parts_with_ranges[part_index];
         const auto & part = part_with_ranges.data_part;
 
         /// A lightweight delete mask hides rows that the statistics still account for.
@@ -1002,20 +1018,39 @@ static Block makeBlockWithMinMaxFromStatistics(
 
         /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
         /// it contributes nothing to the result anyway.
-        if (part->rows_count == 0)
-            return false;
+        return part->rows_count != 0;
+    };
 
-        Estimates estimates;
+    /// Returns false only if `only_from_memory` and the estimates of the part need reads from disk.
+    auto load_part_estimates = [&](size_t part_index, bool only_from_memory)
+    {
+        if (!part_may_use_statistics(part_index))
+            return true;
+
+        const auto & part = parts_with_ranges[part_index].data_part;
         try
         {
-            estimates = part->getEstimates();
+            /// An empty set would mean all columns, but `count` needs no statistics.
+            if (required_columns.empty())
+                parts_estimates[part_index] = Estimates{};
+            else if (!only_from_memory)
+                parts_estimates[part_index] = part->getEstimates(required_columns);
+            else if (auto estimates = part->tryGetEstimatesFromMemory(required_columns))
+                parts_estimates[part_index] = std::move(*estimates);
+            else
+                return false;
         }
         catch (const Exception &)
         {
             tryLogCurrentException(logger, fmt::format(
                 "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
-            return false;
         }
+        return true;
+    };
+
+    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges, const Estimates & estimates)
+    {
+        const auto & part = part_with_ranges.data_part;
 
         std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
         for (size_t i = 0; i < stats_aggregates.size(); ++i)
@@ -1071,8 +1106,23 @@ static Block makeBlockWithMinMaxFromStatistics(
         return true;
     };
 
-    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
-    std::erase_if(parts_with_ranges, part_covered_by_statistics);
+    RangesInDataParts parts_to_read;
+    auto consume_part_estimates = [&](size_t part_index)
+    {
+        auto & part_with_ranges = parts_with_ranges[part_index];
+        const auto estimates = std::move(parts_estimates[part_index]);
+        if (!estimates || !part_covered_by_statistics(part_with_ranges, *estimates))
+            parts_to_read.push_back(std::move(part_with_ranges));
+    };
+
+    /// `count` alone reads nothing, so there is nothing to parallelize then.
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts_with_ranges.size(),
+        required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
+        [&](size_t part_index) { return load_part_estimates(part_index, /* only_from_memory = */ true); },
+        [&](size_t part_index) { load_part_estimates(part_index, /* only_from_memory = */ false); },
+        consume_part_estimates);
+    parts_with_ranges = std::move(parts_to_read);
 
     if (covered_parts == 0)
         return {};
@@ -1244,7 +1294,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
         /// remaining parts (without statistics), to be used for normal reading.
         inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
         statistics_min_max_block = makeBlockWithMinMaxFromStatistics(
-            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, logger);
+            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, context, logger);
 
         if (statistics_min_max_block.empty())
             return result;
@@ -1272,6 +1322,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
             /// store the remaining inexact ranges (not covered by exact analysis), to be used for for normal reading
             /// and count calculation.
             inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+            inexact_ranges_select_result->exact_ranges_excluded = true;
             auto & parent_parts_with_ranges = inexact_ranges_select_result->parts_with_ranges;
             size_t exact_ranges_count = 0;
             size_t exact_ranges_parts = 0;
@@ -1388,6 +1439,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
+                    reading->getMutationsSnapshot(),
                     empty_mutations_snapshot,
                     required_column_names,
                     metadata,

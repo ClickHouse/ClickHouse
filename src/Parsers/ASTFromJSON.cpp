@@ -12,6 +12,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -76,6 +77,7 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserSetQuery.h>
 
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
@@ -167,6 +169,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
 
         /// DDL types
         {"ColumnDeclaration", [] { return make_intrusive<ASTColumnDeclaration>(); }},
+        {"CodecDeclaration", [] { return make_intrusive<ASTCodecDeclaration>(); }},
         {"IndexDeclaration", [] { return make_intrusive<ASTIndexDeclaration>(); }},
         {"ConstraintDeclaration", [] { return make_intrusive<ASTConstraintDeclaration>(); }},
         {"ProjectionDeclaration", [] { return make_intrusive<ASTProjectionDeclaration>(); }},
@@ -328,6 +331,41 @@ public:
     }
 };
 
+/// Poco destroys a JSON document recursively, and destroying a nesting level can take more stack than
+/// parsing it, so a document that `StackCheckingParseHandler` let through within half of the stack can
+/// still overflow the rest of it on destruction (seen on aarch64). Empty every container iteratively
+/// instead, so that each of them is destroyed with no children left.
+void dismantleJSON(const Poco::Dynamic::Var & root)
+{
+    std::vector<Poco::Dynamic::Var> pending{root};
+    while (!pending.empty())
+    {
+        /// `Poco::Dynamic::Var` has no move constructor; the copy only bumps the refcount of the holder.
+        Poco::Dynamic::Var value = pending.back();
+        pending.pop_back();
+
+        /// The children stay referenced from `pending`, so clearing a container never releases one
+        /// of them recursively.
+        if (value.type() == typeid(Poco::JSON::Object::Ptr))
+        {
+            Poco::JSON::Object::Ptr object = value.extract<Poco::JSON::Object::Ptr>();
+            if (!object)
+                continue;
+            for (const auto & [_, child] : *object)
+                pending.push_back(child);
+            object->clear();
+        }
+        else if (value.type() == typeid(Poco::JSON::Array::Ptr))
+        {
+            Poco::JSON::Array::Ptr array = value.extract<Poco::JSON::Array::Ptr>();
+            if (!array)
+                continue;
+            pending.insert(pending.end(), array->begin(), array->end());
+            array->clear();
+        }
+    }
+}
+
 }
 
 ASTPtr IAST::createFromJSON(const String & json)
@@ -346,34 +384,50 @@ ASTPtr IAST::createFromJSON(const String & json)
     parser.setHandler(new StackCheckingParseHandler);
     /// Poco's own default bound is 1000 levels (JSON_DEFAULT_DEPTH).
     parser.setDepth(json_nesting_budget);
-    Poco::Dynamic::Var result;
+    /// Every exit must go through `dismantleJSON`, including the failed ones: the parse handler keeps
+    /// the document built so far, whole if only trailing characters are rejected, or as deep as the
+    /// stack allows if `StackCheckingParseHandler` throws, and `parser` would destroy it recursively.
+    /// `parser.result` returns the root held by the handler on every path.
+    ASTPtr ast;
     try
     {
-        result = parser.parse(json);
+        Poco::Dynamic::Var result;
+        try
+        {
+            result = parser.parse(json);
+        }
+        /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
+        catch (const Exception &)
+        {
+            throw;
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
+        }
+
+        Poco::JSON::Object::Ptr obj;
+        try
+        {
+            obj = result.extract<Poco::JSON::Object::Ptr>();
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
+        }
+
+        if (!obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
+
+        ast = createFromJSON(*obj);
     }
-    /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
-    catch (const Exception &)
+    catch (...)
     {
+        dismantleJSON(parser.result());
         throw;
     }
-    catch (const Poco::Exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
-    }
-
-    Poco::JSON::Object::Ptr obj;
-    try
-    {
-        obj = result.extract<Poco::JSON::Object::Ptr>();
-    }
-    catch (const Poco::Exception &)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
-    }
-
-    if (!obj)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
-    return createFromJSON(*obj);
+    dismantleJSON(parser.result());
+    return ast;
 }
 
 
@@ -469,28 +523,19 @@ size_t getJSONDeserializationRemainingElements()
     return json_deser_max_elements - json_deser_current_elements;
 }
 
-bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size)
+bool isClickHouseJSONSetEscape(const char * begin, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
-    /// In the `clickhouse_json` dialect, a leading `SET` query is an escape hatch back to a
-    /// SQL dialect. Detect it via the lexer so that leading SQL comments and whitespace are
-    /// skipped exactly as normal parsing would (e.g. `-- switch back\nSET dialect = 'clickhouse'`
-    /// or `/* */ SET ...`), rather than only stripping ASCII whitespace.
-    /// `max_query_size` bounds the lexer so that an oversized leading comment cannot make it scan
-    /// far past the per-query limit before the caller's own `max_query_size` guard runs.
-    Lexer lexer(begin, end, max_query_size);
-    Token token = lexer.nextToken();
-    while (!token.isEnd() && !token.isError() && !token.isSignificant())
-        token = lexer.nextToken();
-
-    if (token.type != TokenType::BareWord)
-        return false;
-
-    std::string_view text(token.begin, token.size());
-    if (text.size() != 3)
-        return false;
-    return (text[0] == 'S' || text[0] == 's')
-        && (text[1] == 'E' || text[1] == 'e')
-        && (text[2] == 'T' || text[2] == 't');
+    /// A valid SQL `SET` query is an escape hatch from non-ClickHouse dialects. Merely checking
+    /// the leading token would hijack valid queries in those dialects, such as a PromQL metric
+    /// named `set`. The shorthand form `SET name` (without a value) is not accepted: it would
+    /// steal queries of other dialects such as the KQL `set notruncation`, while the escape only
+    /// needs to assign settings like `dialect`.
+    Tokens tokens(begin, end, max_query_size, true);
+    IParser::Pos pos(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+    ParserSetQuery parser(/*parse_only_internals_=*/ false, /*shorthand_syntax_=*/ false);
+    ASTPtr ast;
+    Expected expected;
+    return parser.parse(pos, ast, expected) && ast->as<ASTSetQuery>();
 }
 
 }

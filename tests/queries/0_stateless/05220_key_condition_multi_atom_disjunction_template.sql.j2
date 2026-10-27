@@ -1,0 +1,34 @@
+-- A 16-leaf `OR` has 31 template elements; a 17-leaf `OR` has 33 and exceeds the 32-element limit. Each leaf
+-- expands into two index atoms. The combined skip-index result must retain the original template positions:
+-- individual indexes cannot prune the disjunction on their own. Count projections, trivial counts and
+-- PREWHERE are disabled, so the counts are plain reads of the selected granules, and the query condition
+-- cache is disabled, so the granules do not depend on earlier reads of the same predicate.
+SET explain_query_plan_default = 'legacy';
+SET use_query_condition_cache = 0;
+SET optimize_use_projections = 0;
+SET optimize_trivial_count_query = 0;
+SET optimize_trivial_count_with_sparsity_filter = 0;
+SET optimize_move_to_prewhere = 0;
+SET analyze_index_with_multiple_key_columns_per_condition = 1;
+SET use_skip_indexes_on_data_read = 0;
+SET optimize_min_equality_disjunction_chain_length = 1000;
+
+{#- Each check prints the predicate, the count with index analysis, the count of a full scan and the parts and
+    granules selected by each index. `settings` apply to the whole check. -#}
+{% macro check(table, predicate, settings = '') -%}
+SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT count() FROM {{ table }} WHERE {{ predicate }}),
+    (SELECT count() FROM {{ table }} WHERE {{ predicate }} SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0),
+    (SELECT arrayStringConcat(groupArray(trimLeft(explain)), ' ') FROM (EXPLAIN indexes = 1 SELECT 1 FROM {{ table }} WHERE {{ predicate }}) WHERE match(trimLeft(explain), '^(Min-Max|Partition|Statistics|PrimaryKey|Skip|Name:|Parts:|Granules:)'))
+    {%- if settings %} SETTINGS {{ settings }}{% endif %}
+FORMAT TSVRaw;
+{%- endmacro %}
+
+CREATE TABLE test_multi_atom_disjunction_template (id UInt32, a UInt32, b UInt32, INDEX ia (intDiv(a, 8), a) TYPE minmax GRANULARITY 1, INDEX ib (intDiv(b, 8), b) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO test_multi_atom_disjunction_template SELECT number, number, number FROM numbers(128);
+
+{% set leaves16 = 'a = 3 OR b = 6 OR a = 9 OR b = 12 OR a = 15 OR b = 18 OR a = 21 OR b = 24 OR a = 27 OR b = 30 OR a = 33 OR b = 36 OR a = 39 OR b = 42 OR a = 45 OR b = 48' -%}
+-- 16 leaves without and with disjunction pruning, then 17 leaves with disjunction pruning.
+{{ check('test_multi_atom_disjunction_template', leaves16, settings = 'use_skip_indexes_for_disjunctions = 0') }}
+{{ check('test_multi_atom_disjunction_template', leaves16, settings = 'use_skip_indexes_for_disjunctions = 1') }}
+{{ check('test_multi_atom_disjunction_template', leaves16 ~ ' OR a = 51', settings = 'use_skip_indexes_for_disjunctions = 1') }}
