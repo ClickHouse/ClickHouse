@@ -2,7 +2,6 @@
 -- read, whose query can have it: the block goes through the joins up to the LIMIT with no rows to read lazily, and a
 -- value computed below a join is that join's default in it. The results are compared with the optimization disabled.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 SET enable_join_runtime_filters = 0;

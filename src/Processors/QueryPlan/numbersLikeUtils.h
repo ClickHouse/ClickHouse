@@ -49,7 +49,7 @@ void addNullSource(Pipe & pipe, SharedHeader header);
 std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context);
 
 /// Fail fast if estimated number of rows to read exceeds the limit.
-void checkLimits(const Settings & settings, size_t rows);
+void checkLimits(const Context & context, size_t rows);
 
 }
 
