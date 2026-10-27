@@ -2430,8 +2430,9 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
         }
         /// `normalized_name` seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
-        result.push_back(
-            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
+        result.push_back(decodeBatchColumn(
+            field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true,
+            /*declare_decoded_union_type=*/true));
     }
 
     finishBatch();
@@ -2449,7 +2450,8 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
     ColumnUInt8::Ptr null_map;
     /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
     DecodedColumn values = decodeBatchColumn(
-        value_field, use.hint, use.position.path, use.position.list_depth, /*read_undeclared_nulls=*/false, &null_map);
+        value_field, use.hint, use.position.path, use.position.list_depth, /*read_undeclared_nulls=*/false,
+        /*declare_decoded_union_type=*/false, &null_map);
     finishBatch();
     ColumnPtr dictionary_null_map = std::move(null_map);
     if (dictionary_null_map && isColumnConst(*values.column))
@@ -2488,7 +2490,7 @@ void RecordBatchDecoder::beginBatch(
 
 RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
-    ColumnUInt8::Ptr * decoded_null_map)
+    bool declare_decoded_union_type, ColumnUInt8::Ptr * decoded_null_map)
 {
     const size_t batch_rows = static_cast<size_t>(current_batch->length());
 
@@ -2552,7 +2554,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
             list_depth,
             /*invisible_rows=*/nullptr,
             decoded_null_map,
-            &union_type);
+            declare_decoded_union_type ? &union_type : nullptr);
         /// A union settles its element types while decoding, so take the type from there rather than from
         /// the field alone.
         if (union_type)

@@ -381,9 +381,14 @@ private:
     /// and reports its ClickHouse type. `target_hint`, `path`, and `list_depth` describe the requested-type
     /// position used by `decodeField`: a record batch column sits at the top level, and dictionary values
     /// sit at the position of the field encoding the dictionary.
+    /// `declare_decoded_union_type` takes a union's element types from what decoding settled on rather than
+    /// from `fieldToCHType`. Only a caller whose returned type becomes the column's declaration may ask for
+    /// it. Dictionary values are declared by whichever field references them, and a reference nested in a
+    /// container is typed by `fieldToCHType` recursing through that container, which cannot see a type
+    /// built while decoding - so the values would carry alternatives their declaration does not name.
     DecodedColumn decodeBatchColumn(
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        bool read_undeclared_nulls, ColumnUInt8::Ptr * decoded_null_map = nullptr);
+        bool read_undeclared_nulls, bool declare_decoded_union_type, ColumnUInt8::Ptr * decoded_null_map = nullptr);
     /// Verifies that the batch's nodes, buffers and variadic counts were consumed exactly, then releases the
     /// per-batch state `beginBatch` set up.
     void finishBatch();
