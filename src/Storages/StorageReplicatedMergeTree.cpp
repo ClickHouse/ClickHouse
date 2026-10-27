@@ -9034,6 +9034,13 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     if (statuses.empty())
         return statuses;
 
+    /// The queue lists a mutation once per command, in adjacent rows that differ only in the command.
+    /// Only the first row of each mutation is checked and sized below; the other rows copy it at the end.
+    auto repeats_previous_mutation = [](const std::vector<MergeTreeMutationStatus> & rows, size_t i)
+    {
+        return i > 0 && rows[i - 1].id == rows[i].id;
+    };
+
     /// Finished mutations need no part sizes, so a table with only those does not scan its parts.
     if (std::ranges::all_of(statuses, [](const auto & status) { return status.is_done; }))
     {
@@ -9049,9 +9056,10 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     std::unordered_set<String> mutations_in_committing_blocks;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        for (const auto & status : statuses)
+        for (size_t i = 0; i < statuses.size(); ++i)
         {
-            if (status.is_done || mutations_without_older_inserts.contains(status.id))
+            const auto & status = statuses[i];
+            if (repeats_previous_mutation(statuses, i) || status.is_done || mutations_without_older_inserts.contains(status.id))
                 continue;
             mutations_in_committing_blocks.insert(status.id);
             for (const auto & [partition_id, _] : status.block_numbers)
@@ -9111,8 +9119,12 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
             mutating_part_progress[source_part_name.safeGet<String>()] = merge.progress;
     }
 
-    for (auto & status : statuses)
+    for (size_t i = 0; i < statuses.size(); ++i)
     {
+        if (repeats_previous_mutation(statuses, i))
+            continue;
+        auto & status = statuses[i];
+
         /// An unfinished mutation with nothing to do is waiting for an in-flight INSERT whose part
         /// is not committed yet, so the remaining bytes are unknown and `progress` stays unset.
         if (!status.is_done && status.parts_to_do_names.empty())
@@ -9182,7 +9194,16 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     }
 
     /// An older INSERT that has not published its part yet is work of unknown size, even with known parts left.
+    /// Only the first row of each mutation has `progress` set here, so each mutation is checked once.
     resetProgressWhileOlderInsertsCommit(statuses, committing_blocks, committing_blocks_loaded, mutations_in_committing_blocks);
+
+    for (size_t i = 0; i < statuses.size(); ++i)
+    {
+        if (!repeats_previous_mutation(statuses, i))
+            continue;
+        statuses[i].bytes_to_do = statuses[i - 1].bytes_to_do;
+        statuses[i].progress = statuses[i - 1].progress;
+    }
 
     /// Denominators are dropped by `dropMutationInitialBytes` on the queue transitions that remove
     /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot
