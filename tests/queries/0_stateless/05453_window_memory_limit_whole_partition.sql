@@ -1,3 +1,6 @@
+-- Tags: no-asan, no-tsan, no-msan
+-- Tag no-asan, no-tsan, no-msan: the sanitizers replace `operator new`, so the allocations of the window through it are not tracked
+
 -- `max_memory_usage` must stop a window function over the whole input near the limit. These block and batch sizes make the
 -- allocations that are checked against the limit reach the memory tracker together with ones that are not.
 SELECT any(isNull(zero)) OVER () FROM zeros(30000000) FORMAT Null
