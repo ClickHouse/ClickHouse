@@ -2010,6 +2010,15 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             is_smallest_column_requested = true;
         }
 
+        if (row_policy_data_opt)
+        {
+            if (auto row_level_filter = row_policy_data_opt->makeRowLevelFilter(*storage, modified_query_info.row_level_filter, modified_context))
+            {
+                modified_query_info.row_level_filter = std::move(row_level_filter);
+                applies_row_policy = true;
+            }
+        }
+
         storage->read(plan,
             real_column_names,
             storage_snapshot_,
@@ -2024,7 +2033,9 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
         if (row_policy_data_opt)
         {
-            if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>((plan.getRootNode()->step.get())))
+            if (applies_row_policy)
+                row_policy_data_opt->addCreatingSetsStep(plan, context);
+            else if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>((plan.getRootNode()->step.get())))
                 row_policy_data_opt->addStorageFilter(source_step_with_filter);
         }
     }
@@ -2055,6 +2066,26 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     return ChildPlan{.plan = std::move(plan), .stage = storage_stage, .applies_row_policy = applies_row_policy};
 }
 
+namespace
+{
+
+/// The filter column is dropped after filtering, so its name must be unique against the DAG outputs and
+/// against the child table's columns: a table may have a column named __row_policy_filter, and on
+/// SELECT * it flows into the same block as the filter column, so a clash makes Block::insert throw.
+String makeUniqueRowPolicyFilterColumnName(const ActionsDAG & dag, const NamesAndTypesList & table_columns)
+{
+    NameSet reserved_names;
+    for (const auto & column : table_columns)
+        reserved_names.insert(column.name);
+
+    String name = "__row_policy_filter";
+    for (size_t i = 0; dag.tryFindInOutputs(name) != nullptr || reserved_names.contains(name); ++i)
+        name = "__row_policy_filter_" + std::to_string(i);
+    return name;
+}
+
+}
+
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
     StorageMetadataPtr storage_metadata,
     ContextPtr local_context)
@@ -2074,6 +2105,9 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
+    /// A read cannot produce `ALIAS` columns, so the policy must consume the columns they are computed from.
+    replaceAliasColumnsInQuery(expr, storage_columns, {}, local_context);
+
     auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
@@ -2090,17 +2124,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
     const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
 
-    /// The alias name must be unique against the current DAG outputs and against the child table's
-    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
-    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
-    NameSet reserved_names;
-    for (const auto & column : needed_columns)
-        reserved_names.insert(column.name);
-
-    filter_column_name = "__row_policy_filter";
-    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
-        filter_column_name = "__row_policy_filter_" + std::to_string(i);
-
+    filter_column_name = makeUniqueRowPolicyFilterColumnName(actions_dag, needed_columns);
     const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
 
     /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
@@ -2145,9 +2169,65 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextP
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
 
+    addCreatingSetsStep(plan, local_context);
+}
+
+void ReadFromMerge::RowPolicyData::addCreatingSetsStep(QueryPlan & plan, ContextPtr local_context) const
+{
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
     /// additional pushdown. No subquery adds no step.
     addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
+}
+
+FilterDAGInfoPtr ReadFromMerge::RowPolicyData::makeRowLevelFilter(
+    const IStorage & storage, const FilterDAGInfoPtr & forwarded, ContextPtr local_context) const
+{
+    const auto & columns = storage_metadata_snapshot->getColumns();
+    const auto required_columns = filter_actions->getRequiredColumns();
+    if (!canPushDownRowPolicyFilter(storage, columns, required_columns))
+        return nullptr;
+
+    /// The policy DAG does not compute `ALIAS` or `EPHEMERAL` columns, and the read cannot produce them.
+    for (const auto & column_name : required_columns)
+        if (!columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            return nullptr;
+
+    auto row_level_filter = std::make_shared<FilterDAGInfo>();
+    row_level_filter->do_remove_column = true;
+
+    if (!forwarded)
+    {
+        row_level_filter->actions = actions_dag.clone();
+        row_level_filter->column_name = filter_column_name;
+        return row_level_filter;
+    }
+
+    /// One row-level filter for both policies: the child's and the `Merge` table's.
+    auto dag = ActionsDAG::merge(actions_dag.clone(), forwarded->actions.clone());
+    const auto * policy_node = &dag.findInOutputs(filter_column_name);
+    const auto * forwarded_node = &dag.findInOutputs(forwarded->column_name);
+    const auto & conjunction_node = dag.addFunction(FunctionFactory::instance().get("and", local_context), {policy_node, forwarded_node}, {});
+
+    row_level_filter->column_name = makeUniqueRowPolicyFilterColumnName(dag, columns.getAll());
+    const auto & alias_node = dag.addAlias(conjunction_node, row_level_filter->column_name);
+
+    ActionsDAG::NodeRawConstPtrs outputs;
+    std::unordered_set<const ActionsDAG::Node *> output_set;
+    for (const auto * output : dag.getOutputs())
+    {
+        if (output == policy_node || (forwarded->do_remove_column && output == forwarded_node))
+            continue;
+        outputs.push_back(output);
+        output_set.insert(output);
+    }
+    for (const auto * input : dag.getInputs())
+        if (!output_set.contains(input))
+            outputs.push_back(input);
+    outputs.push_back(&alias_node);
+    dag.getOutputs() = std::move(outputs);
+
+    row_level_filter->actions = std::move(dag);
+    return row_level_filter;
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(

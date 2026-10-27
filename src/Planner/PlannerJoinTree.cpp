@@ -2221,29 +2221,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
 
-                    /// The filter is built against this table's schema, but read() hands it to wrapper
-                    /// storages' children (Merge, Buffer), which re-derive it against their own types.
-                    /// Push it down only if every column it consumes is in the PREWHERE contract.
-                    /// A remote storage cannot carry it at all: read() only ships query text to the
-                    /// remote servers and never lowers the filter into it, so pushing would silently
-                    /// drop an access-control filter. Refuse, and let the stage check fail closed.
-                    bool can_push_down_filter = storage->supportsPrewhere() && !storage->isRemote();
-                    if (can_push_down_filter)
-                    {
-                        if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
-                        {
-                            const auto & table_columns = storage_snapshot->metadata->getColumns();
-                            const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
-                            for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
-                            {
-                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
-                                {
-                                    can_push_down_filter = false;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    const bool can_push_down_filter = canPushDownRowPolicyFilter(
+                        *storage, storage_snapshot->metadata->getColumns(), row_policy_filter_info->actions.getRequiredColumnsNames());
 
                     /// A logical plan (a serialized query plan or a parallel replicas plan) reads through a
                     /// placeholder `ReadFromTableStep`, which cannot carry `row_level_filter`: the node that

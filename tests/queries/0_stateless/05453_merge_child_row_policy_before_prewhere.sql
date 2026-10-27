@@ -1,0 +1,82 @@
+-- Random settings limits: use_query_condition_cache=(0, 0); optimize_move_to_prewhere=(1, None)
+-- A `Merge` table applies a child's row policy before the query's PREWHERE and WHERE, as a direct read of the child does.
+-- Only the rows the policies hide hold values `toUInt64` cannot parse, so evaluating the condition on them throws.
+
+SET query_plan_optimize_prewhere = 1;
+
+DROP ROW POLICY IF EXISTS p_05453_mt ON t_mt;
+DROP ROW POLICY IF EXISTS p_05453_memory ON t_memory;
+DROP ROW POLICY IF EXISTS p_05453_final ON t_final;
+DROP ROW POLICY IF EXISTS p_05453_in ON t_in;
+DROP ROW POLICY IF EXISTS p_05453_alias ON t_alias;
+DROP ROW POLICY IF EXISTS p_05453_both_child ON t_both;
+DROP ROW POLICY IF EXISTS p_05453_both_merge ON m_both;
+DROP ROW POLICY IF EXISTS p_05453_nested ON m_nested_inner;
+DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_final, t_final, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
+    m_nested_outer, m_nested_inner, t_nested;
+
+CREATE TABLE t_mt (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_mt VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_mt AS t_mt ENGINE = Merge(currentDatabase(), '^t_mt$');
+
+SELECT count() FROM m_mt PREWHERE toUInt64(payload) > 10; -- { serverError CANNOT_PARSE_TEXT }
+
+CREATE ROW POLICY p_05453_mt ON t_mt USING tenant = 'a' TO ALL;
+SELECT 'mt prewhere', count() FROM m_mt PREWHERE toUInt64(payload) > 10;
+SELECT 'mt where', count() FROM m_mt WHERE toUInt64(payload) > 10;
+SELECT 'mt rows', payload FROM m_mt PREWHERE toUInt64(payload) > 10 ORDER BY payload;
+
+CREATE TABLE t_memory (tenant String, payload String) ENGINE = Memory;
+INSERT INTO t_memory VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_memory AS t_memory ENGINE = Merge(currentDatabase(), '^t_memory$');
+CREATE ROW POLICY p_05453_memory ON t_memory USING tenant = 'a' TO ALL;
+SELECT 'memory prewhere', count() FROM m_memory PREWHERE toUInt64(payload) > 10;
+
+CREATE TABLE t_final (k UInt64, tenant String, payload String) ENGINE = ReplacingMergeTree ORDER BY k;
+INSERT INTO t_final VALUES (1, 'a', '5'), (2, 'a', '20'), (3, 'b', 'secret'), (4, 'a', '30');
+CREATE TABLE m_final AS t_final ENGINE = Merge(currentDatabase(), '^t_final$');
+CREATE ROW POLICY p_05453_final ON t_final USING tenant = 'a' TO ALL;
+SELECT 'final prewhere', count() FROM m_final FINAL PREWHERE toUInt64(payload) > 10;
+SELECT 'final prewhere, policy before final', count() FROM m_final FINAL PREWHERE toUInt64(payload) > 10
+SETTINGS apply_row_policy_after_final = 0;
+
+CREATE TABLE t_in_dst (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_in AS t_in_dst ENGINE = Buffer(currentDatabase(), t_in_dst, 1, 1000, 1000, 100000, 100000, 10000000, 10000000);
+INSERT INTO t_in VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_in AS t_in_dst ENGINE = Merge(currentDatabase(), '^t_in$');
+CREATE ROW POLICY p_05453_in ON t_in USING tenant IN (SELECT 'a') TO ALL;
+SELECT 'in prewhere', count() FROM m_in PREWHERE toUInt64(payload) > 10;
+
+CREATE TABLE t_alias (tenant String, payload String, t2 String ALIAS lower(tenant)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_alias (tenant, payload) VALUES ('a', '5'), ('a', '20'), ('B', 'secret'), ('a', '30');
+CREATE TABLE m_alias (tenant String, payload String) ENGINE = Merge(currentDatabase(), '^t_alias$');
+CREATE ROW POLICY p_05453_alias ON t_alias USING t2 = 'a' TO ALL;
+SELECT 'alias prewhere', count() FROM m_alias PREWHERE toUInt64(payload) > 10;
+
+CREATE TABLE t_both (tenant String, region String, payload String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_both VALUES ('a', 'eu', '5'), ('a', 'eu', '20'), ('b', 'eu', 'secret'), ('a', 'eu', '30'), ('a', 'us', 'other');
+CREATE TABLE m_both AS t_both ENGINE = Merge(currentDatabase(), '^t_both$');
+CREATE ROW POLICY p_05453_both_child ON t_both USING tenant = 'a' TO ALL;
+CREATE ROW POLICY p_05453_both_merge ON m_both USING region = 'eu' TO ALL;
+SELECT 'both prewhere', count() FROM m_both PREWHERE toUInt64(payload) > 10;
+SELECT 'both where', count() FROM m_both WHERE toUInt64(payload) > 10;
+SELECT 'both rows', payload FROM m_both PREWHERE toUInt64(payload) > 10 ORDER BY payload;
+SELECT 'both rows with region', region, payload FROM m_both PREWHERE toUInt64(payload) > 10 ORDER BY payload;
+
+CREATE TABLE t_nested (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_nested VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_nested_inner AS t_nested ENGINE = Merge(currentDatabase(), '^t_nested$');
+CREATE TABLE m_nested_outer AS t_nested ENGINE = Merge(currentDatabase(), '^m_nested_inner$');
+CREATE ROW POLICY p_05453_nested ON m_nested_inner USING tenant = 'a' TO ALL;
+SELECT 'nested prewhere', count() FROM m_nested_outer PREWHERE toUInt64(payload) > 10;
+
+DROP ROW POLICY p_05453_mt ON t_mt;
+DROP ROW POLICY p_05453_memory ON t_memory;
+DROP ROW POLICY p_05453_final ON t_final;
+DROP ROW POLICY p_05453_in ON t_in;
+DROP ROW POLICY p_05453_alias ON t_alias;
+DROP ROW POLICY p_05453_both_child ON t_both;
+DROP ROW POLICY p_05453_both_merge ON m_both;
+DROP ROW POLICY p_05453_nested ON m_nested_inner;
+DROP TABLE m_mt, t_mt, m_memory, t_memory, m_final, t_final, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
+    m_nested_outer, m_nested_inner, t_nested;

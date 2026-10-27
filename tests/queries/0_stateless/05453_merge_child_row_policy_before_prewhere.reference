@@ -1,0 +1,16 @@
+mt prewhere	2
+mt where	2
+mt rows	20
+mt rows	30
+memory prewhere	2
+final prewhere	2
+final prewhere, policy before final	2
+in prewhere	2
+alias prewhere	2
+both prewhere	2
+both where	2
+both rows	20
+both rows	30
+both rows with region	eu	20
+both rows with region	eu	30
+nested prewhere	2
