@@ -4,15 +4,15 @@
 
 # A skip index condition must not copy every column named like a map key subcolumn (`attrs.key_*`)
 # when the predicate reads no map. The tables differ only in such names, so the same filter over
-# 128 `bloom_filter` indexes must peak at about the same memory on both.
+# 64 `bloom_filter` indexes must peak at about the same memory on both.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-num_indexes=128
-num_wide_columns=1000
-name_padding=$(printf 'p%.0s' $(seq 1 150))
+num_indexes=64
+num_wide_columns=100
+name_padding=$(printf 'p%.0s' $(seq 1 4000))
 
 indexed_columns=$(seq 1 $num_indexes | awk '{printf ", s%d String", $1}')
 indexes=$(seq 1 $num_indexes | awk '{printf ", INDEX i%d s%d TYPE bloom_filter GRANULARITY 1", $1, $1}')
