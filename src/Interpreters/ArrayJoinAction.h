@@ -33,6 +33,7 @@ public:
     NameSet columns;
     bool is_left = false;
     bool is_unaligned = false;
+    bool array_join_use_nulls = false;
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
     bool enable_lazy_columns_replication = false;
 
@@ -47,9 +48,9 @@ public:
     ExpressionActionsPtr element_filter;
     String element_filter_column_name;
 
-    ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
-    static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);
-    static void prepare(const Names & columns, ColumnsWithTypeAndName & sample);
+    ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_, bool array_join_use_nulls_ = false);
+    static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample, bool array_join_use_nulls = false);
+    static void prepare(const Names & columns, ColumnsWithTypeAndName & sample, bool array_join_use_nulls = false);
 
     ArrayJoinResultIteratorPtr execute(Block block);
 };
@@ -75,6 +76,7 @@ private:
     ColumnPtr cutAnyArray(size_t start, size_t length) const;
     /// Window of the joined column `name` as a full ColumnArray, padded for aligned LEFT ARRAY JOIN.
     ColumnPtr cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const;
+    DataTypePtr getArrayJoinElementType(const DataTypeArray & type) const;
 
     const ArrayJoinAction * array_join;
     Block block;

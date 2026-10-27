@@ -5,9 +5,21 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <optional>
+
 
 namespace DB
 {
+
+/// Returns `true` if there is a `Nullable` column in `src_block` whose namesake in `dst_block` is not `Nullable`.
+bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block);
+
+/// Returns `true` if the query contains `LEFT ARRAY JOIN` at any level of nesting.
+bool hasLeftArrayJoin(const IAST & ast);
+
+/// Returns the value of `array_join_use_nulls` set by the `SETTINGS` clauses of the query: `true` if any of them
+/// enables it, `false` if some disable it and none enables it, and `std::nullopt` if none mentions it.
+std::optional<bool> findArrayJoinUseNulls(const IAST & ast);
 
 class StorageView final : public StorageWithCommonVirtualColumns
 {
