@@ -418,7 +418,7 @@ public:
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
         std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
 
-        void create(Type which, size_t reserve)
+        void create(Type which, size_t reserve, bool robin_hood_allowed)
         {
             switch (which)
             {
@@ -429,6 +429,8 @@ public:
                                        : std::make_shared<typename decltype(NAME)::element_type>();               \
                     else                                                                                          \
                         NAME = std::make_shared<typename decltype(NAME)::element_type>();                         \
+                    if constexpr (requires { NAME->setRobinHoodAllowed(robin_hood_allowed); })                    \
+                        NAME->setRobinHoodAllowed(robin_hood_allowed);                                             \
                     break;
 
                 APPLY_FOR_JOIN_VARIANTS(M)

@@ -115,6 +115,13 @@
         FORMAT Null
     </query>
 
+    <!-- More than 2^15 keys in every bucket of the two-level map. Half of the left keys are found. -->
+    <query tag='left_large_right'>
+        SELECT sum(r.v) FROM (SELECT intHash64(number) AS k FROM numbers_mt(24000000)) AS l
+        LEFT JOIN (SELECT intHash64(number * 2) AS k, number AS v FROM numbers_mt(12000000)) AS r ON l.k = r.k
+        FORMAT Null
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS phj_right_nullable</drop_query>
     <drop_query>DROP TABLE IF EXISTS phj_left</drop_query>
     <drop_query>DROP TABLE IF EXISTS phj_asof_left</drop_query>
