@@ -119,6 +119,16 @@ bool endsWithCaseInsensitive(std::string_view s, std::string_view suffix)
     return suffix.size() <= s.size() && equalsCaseInsensitive(s.substr(s.size() - suffix.size()), suffix);
 }
 
+/// Visits `node` and its subtree, except the `skip` subtree.
+void forEachNode(const IAST & node, const std::function<void(const IAST &)> & visit, const IAST * skip = nullptr)
+{
+    if (&node == skip)
+        return;
+    visit(node);
+    for (const auto & child : node.children)
+        forEachNode(*child, visit, skip);
+}
+
 /// Sends `query`, calling `handle_block` for each received `Data` packet, in order.
 void executeQuery(
     IServerConnection & connection,
@@ -920,19 +930,129 @@ const IAST * remoteFunctionArgumentsToSkip(const IAST & node, const ClusterLocal
     return nullptr;
 }
 
-/// Visits `node` and its subtree, except what a call that reads nothing locally names. The visitor also gets whether the
-/// node is in a table expression, whose table functions the analyzer resolves.
+/// A call of the `eval` table function, which the analyzer reads as the query its argument folds to, written in its place.
+/// The table function factory matches the name exactly, and the parser stores `eval` in a table expression in lowercase.
+const ASTFunction * asEvalCall(const IAST & node)
+{
+    const auto * function = node.as<ASTFunction>();
+    return function && function->name == "eval" ? function : nullptr;
+}
+
+/// The query an `eval` call generates, parsed like `TableFunctionEval::parseArguments` does, when its argument is a string
+/// literal or a constant expression that folds the same outside the server: it runs no subquery and reads neither the session
+/// nor the server. Null otherwise, or when the text is not a SELECT, which the server cannot analyze either.
+ASTPtr tryParseEvalQuery(const ASTFunction & eval, const ContextPtr & context)
+{
+    if (!eval.arguments || eval.arguments->children.size() != 1)
+        return nullptr;
+    ASTPtr text = eval.arguments->children[0];
+    if (!text->as<ASTLiteral>())
+    {
+        /// Unlike in `dependsOnUnstoredContext`, a function named like a table function, such as `file`, is folded as a scalar
+        /// one here. The bare `eval(SELECT ...)` form is stored as a scalar subquery.
+        bool folds_outside_server = true;
+        forEachNode(*text, [&](const IAST & node)
+        {
+            if (node.as<ASTSubquery>())
+                folds_outside_server = false;
+            else if (const auto * function = node.as<ASTFunction>())
+            {
+                const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+                if (!resolver || !resolver->isDeterministic() || resolver->isServerConstant())
+                    folds_outside_server = false;
+            }
+        });
+        if (!folds_outside_server)
+            return nullptr;
+        try
+        {
+            text = evaluateConstantExpressionAsLiteral(text->clone(), context);
+        }
+        catch (const Exception &)
+        {
+            return nullptr;
+        }
+    }
+    const auto * literal = text->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return nullptr;
+    try
+    {
+        ParserSelectWithUnionQuery parser;
+        return parseQuery(parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+    catch (const Exception &)
+    {
+        return nullptr;
+    }
+}
+
+/// The query an `eval` call generates, and the names of its `WITH` subqueries, which a table expression in it reads before a table.
+struct EvalQuery
+{
+    ASTPtr ast;
+    std::set<String> cte_names;
+};
+
+/// The query an `eval` call in `owner` generates. The analyzer reads it when `owner` is created or read, so the tables it reads
+/// must be created first, and a query the dump cannot resolve refuses the dump instead of leaving them unordered.
+EvalQuery parseEvalQueryOrRefuse(const ASTFunction & eval, const ContextPtr & context, const std::pair<String, String> & owner)
+{
+    EvalQuery query{.ast = tryParseEvalQuery(eval, context), .cte_names = {}};
+    if (!query.ast)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot statically resolve the query that {} generates in {}.{} for --dump-schema: only a string literal or a constant "
+            "expression that runs no subquery and reads neither the session nor the server, holding one SELECT, is supported, "
+            "so the tables that query reads cannot be ordered before it",
+            eval.formatForErrorMessage(), backQuoteIfNeed(owner.first), backQuoteIfNeed(owner.second));
+    forEachNode(*query.ast, [&](const IAST & node)
+    {
+        if (const auto * with = node.as<ASTWithElement>())
+            query.cte_names.insert(with->name);
+    });
+    return query;
+}
+
+/// The queries the `eval` calls of `ast` outside `skip` generate, where the dump can resolve them. Where replay analyzes one it
+/// cannot resolve, `visitLocalAST` has refused the dump.
+std::vector<ASTPtr> evalQueries(const IAST & ast, const IAST * skip, const ContextPtr & context)
+{
+    std::vector<ASTPtr> queries;
+    forEachNode(ast, [&](const IAST & node)
+    {
+        if (const auto * eval = asEvalCall(node))
+            if (ASTPtr query = tryParseEvalQuery(*eval, context))
+                queries.push_back(std::move(query));
+    }, skip);
+    return queries;
+}
+
+/// Visits `node` and its subtree, except what a call that reads nothing locally names, and after an `eval` call the query it
+/// generates, as if written in its place. The visitor also gets whether the node is in a table expression, whose table functions
+/// the analyzer resolves, and the generated query the node is in, whose table names the server did not qualify. `owner` is the
+/// object whose stored query `node` is in.
 template <typename Visitor>
-void visitLocalAST(const IAST * node, const ClusterLocality & clusters, Visitor && visitor, bool in_table_expression = false)
+void visitLocalAST(
+    const IAST * node,
+    const ClusterLocality & clusters,
+    const std::pair<String, String> & owner,
+    Visitor && visitor,
+    bool in_table_expression = false,
+    const EvalQuery * eval_query = nullptr)
 {
     if (!node)
         return;
     in_table_expression |= node->as<ASTTableExpression>() != nullptr;
-    visitor(*node, in_table_expression);
+    visitor(*node, in_table_expression, eval_query);
     const IAST * skip = remoteFunctionArgumentsToSkip(*node, clusters, /* constant_keys= */ !in_table_expression);
     for (const auto & child : node->children)
         if (child.get() != skip)
-            visitLocalAST(child.get(), clusters, visitor, in_table_expression);
+            visitLocalAST(child.get(), clusters, owner, visitor, in_table_expression, eval_query);
+    if (const auto * eval = asEvalCall(*node))
+    {
+        const EvalQuery generated = parseEvalQueryOrRefuse(*eval, clusters.context, owner);
+        visitLocalAST(generated.ast.get(), clusters, owner, visitor, /* in_table_expression= */ false, &generated);
+    }
 }
 
 /// Reads a table identifier or `db.name` string; an empty database is resolved by the caller.
@@ -1620,6 +1740,12 @@ void collectNamedCollectionsFromTableFunction(
     if (!function.arguments)
         return;
 
+    /// The query `eval` generates reads its collections as if it were written in its place. Where replay analyzes a query
+    /// the dump cannot resolve, `visitLocalAST` refuses the dump.
+    if (asEvalCall(function))
+        if (const ASTPtr query = tryParseEvalQuery(function, clusters.context))
+            collectNamedCollectionsFromTableExpressions(*query, clusters, dependencies);
+
     for (const auto & argument : function.arguments->children)
         collectNamedCollectionsFromTableExpressions(*argument, clusters, dependencies);
 
@@ -2147,10 +2273,24 @@ std::vector<TableInfo> resolveTables(
         };
 
         std::vector<TableReference> references;
-        visitLocalAST(select_ast.get(), clusters, [&](const IAST & node, bool in_table_expression)
+        const auto visit = [&](const IAST & node, bool in_table_expression, const EvalQuery * eval_query)
         {
-            if (const auto * table_id = node.as<ASTTableIdentifier>(); table_id && !table_id->getDatabaseName().empty())
-                references.push_back({table_id->getDatabaseName(), table_id->shortName()});
+            /// The server qualifies the tables a stored query names, but not the ones in the query `eval` generates: those
+            /// resolve against the session database like a database-less name, unless a `WITH` subquery has the name.
+            if (const auto * table_id = node.as<ASTTableIdentifier>())
+            {
+                if (!table_id->getDatabaseName().empty())
+                    references.push_back({table_id->getDatabaseName(), table_id->shortName()});
+                else if (eval_query && !eval_query->cte_names.contains(table_id->shortName()))
+                    references.push_back({"", table_id->shortName()});
+            }
+            /// A bare name after `IN` there is read as a column or an alias first, so it counts only when it names a table
+            /// of the owning database, which replay resolves it against.
+            if (const auto * function = node.as<ASTFunction>(); eval_query && function && functionIsInOrGlobalInOperator(function->name)
+                && function->arguments && function->arguments->children.size() == 2)
+                if (const auto * identifier = function->arguments->children[1]->as<ASTIdentifier>(); identifier && !identifier->compound()
+                    && !eval_query->cte_names.contains(identifier->name()) && known_tables.contains({row.database, identifier->name()}))
+                    references.push_back({"", identifier->name()});
             /// A parameterized view is called like a table function, by its `[db.]name`, which the analyzer splits at the dot.
             const auto * table_expression = node.as<ASTTableExpression>();
             if (const auto * call = table_expression && table_expression->table_function
@@ -2171,7 +2311,8 @@ std::vector<TableInfo> resolveTables(
             collectMergeAndLoopReferences(
                 node, all_table_names_by_db, undumped_databases, omitted_tables, row.database,
                 clusters.context, references, row.unchecked_references);
-        });
+        };
+        visitLocalAST(select_ast.get(), clusters, {row.database, row.name}, visit);
         for (const auto & candidate : references)
             add_dependency(candidate);
     }
@@ -2925,16 +3066,6 @@ std::optional<std::vector<String>> dataLakeCatalogGates(const ASTStorage & stora
     return std::nullopt;
 }
 
-/// Visits `node` and its subtree, except the `skip` subtree.
-void forEachNode(const IAST & node, const std::function<void(const IAST &)> & visit, const IAST * skip = nullptr)
-{
-    if (&node == skip)
-        return;
-    visit(node);
-    for (const auto & child : node.children)
-        forEachNode(*child, visit, skip);
-}
-
 /// Whether a string literal of `ast` names a file inside an archive (`a.tar :: f.csv`). `File` splits it with
 /// `splitToArchivePathAndPathInArchive`, `S3` and `URL` with `getURIAndArchivePattern`, which also takes
 /// a `::` with spaces around it; either reads `allow_archive_path_syntax` first.
@@ -3257,7 +3388,7 @@ bool tableFunctionBuildsPassively(const ASTFunction & function, const ContextPtr
 
 /// Whether a SELECT can be probed on the source server: it analyzes there the same as at replay, and its analysis does no
 /// I/O. Every table function in it is a local generator, builds its storage passively, or is a `merge` or `loop` that
-/// names its database.
+/// names its database. `eval` is none of them, so the query it generates is never probed.
 bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
 {
     static const std::set<std::string_view> generators = {"numbers", "numbers_mt", "zeros", "zeros_mt", "values", "generateRandom",
@@ -3480,6 +3611,11 @@ ReplayGateNeeds collectReplayGateNeeds(
                 }
                 add_gates_read(carriers, select_query);
             }
+        /// The query an `eval` call generates is analyzed where the call is, an engine argument too, as if it were written
+        /// there. Its clauses alone decide the analyzer gates: no SELECT that reads `eval` is probed (`analyzesOnlyLocally`).
+        const std::vector<ASTPtr> eval_queries = evalQueries(*create_ast, unread_select, context);
+        for (const auto & query : eval_queries)
+            add_carriers(scan_analyzed(*query));
 
         /// `registerStorageMergeTree` re-enters its check only for an engine that kept its arguments.
         if (create->getTable().empty())
@@ -3565,7 +3701,9 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// Shared gates: each carrier is matched on the statement's names or AST, over-approximated
         /// where the exact check site is not worth mirroring.
         std::vector<ASTPtr> validated_types;
-        const String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, &validated_types);
+        String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, &validated_types);
+        for (const auto & query : eval_queries)
+            names += nameTokens(*query, nullptr, /* with_types= */ true, &validated_types);
 
         needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
         needs.nlp_functions |= hasToken(names, "synonyms") || hasToken(names, "lemmatize") || hasToken(names, "detectlanguage", true)
@@ -3631,7 +3769,7 @@ ReplayGateNeeds collectReplayGateNeeds(
             needs.xgboost = true;
 
         const IAST * main_engine = create->storage ? create->storage->engine : nullptr;
-        forEachNode(*create_ast, [&](const IAST & node)
+        const auto visit_gated_function = [&](const IAST & node)
         {
             const auto * function = node.as<ASTFunction>();
             if (!function)
@@ -3644,7 +3782,10 @@ ReplayGateNeeds collectReplayGateNeeds(
             else if ((equalsCaseInsensitive(function->name, "url") || equalsCaseInsensitive(function->name, "urlCluster"))
                      && !(create->getTable().empty() && &node == main_engine) && urlMayHaveWildcard(*function))
                 needs.url_wildcard = true;
-        }, unread_select);
+        };
+        forEachNode(*create_ast, visit_gated_function, unread_select);
+        for (const auto & query : eval_queries)
+            forEachNode(*query, visit_gated_function);
 
         const bool has_indices = create->columns_list && create->columns_list->indices && !create->columns_list->indices->children.empty();
         const bool has_projections = create->columns_list && create->columns_list->projections
@@ -4269,12 +4410,18 @@ void markMaterializedViewsNeedingBadSelectGate(
         /// The dump does not create user-defined functions; a stored CREATE still calls one only if it predates the function.
         const ASTPtr ast = user_defined_functions.empty() ? nullptr : tryParseCreate(table.create_query);
         std::set<String> called;
+        const auto visit_call = [&](const IAST & node)
+        {
+            if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
+                called.insert(function->name);
+        };
         if (ast)
-            forEachNode(*ast, [&](const IAST & node)
-            {
-                if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
-                    called.insert(function->name);
-            });
+        {
+            forEachNode(*ast, visit_call);
+            /// The query an `eval` call generates calls them as if it were written in its place.
+            for (const auto & query : evalQueries(*ast, nullptr, context))
+                forEachNode(*query, visit_call);
+        }
         for (const auto & name : called)
             err << "Warning: " << backQuoteIfNeed(table.database) << "." << backQuoteIfNeed(table.name)
                 << " calls user-defined function " << backQuoteIfNeed(name) << ", which this dump does not create.\n";

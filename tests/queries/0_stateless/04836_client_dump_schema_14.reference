@@ -1,0 +1,11 @@
+eval: dump rc=0
+SET allow_deprecated_error_prone_window_functions = 1;
+SET allow_experimental_eval_table_function = 1;
+SET allow_materialized_view_with_bad_select = 1;
+SET data_type_default_nullable = 0;
+eval: replay rc=0
+eval: source before the literal query: yes
+eval: source before the folded query: yes
+eval: source before the joined query: yes
+opaque: dump rc=48
+Cannot statically resolve the query that eval((SELECT q FROM d.queries)) generates in d.aaa_opaque
