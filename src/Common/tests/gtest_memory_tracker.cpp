@@ -13,6 +13,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
@@ -342,6 +343,44 @@ TEST(MemoryTracker, LimitEnforcementCanBeDisabled)
 
         std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
         expectUsage(hierarchy, 0);
+    });
+}
+
+/// With batching, an allocation whose limit check was suppressed is checked by the next allocation of the thread.
+TEST(MemoryTracker, SuppressedLimitCheckIsMadeByNextAllocation)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.process.setHardLimit(LIMIT);
+
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        DB::CurrentThread::get().untracked_memory_limit = MB;
+        {
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT);
+        }
+        expectMemoryLimitExceeded(1);
+        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+    });
+}
+
+/// A free charged to another tracker does not settle the allocations the query holds without a check.
+TEST(MemoryTracker, FreeInSwitchedScopeKeepsUncheckedAllocations)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.process.setHardLimit(LIMIT);
+
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        DB::CurrentThread::get().untracked_memory_limit = MB;
+        std::ignore = CurrentMemoryTracker::allocNoThrow(OVER_LIMIT);
+        {
+            DB::MemoryTrackerSwitcher switcher(&total_memory_tracker);
+            std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT);
+            std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+        }
+        expectMemoryLimitExceeded(1);
+        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
     });
 }
 

@@ -335,6 +335,60 @@ TEST(PerCPUMemory, CallerReleasesContributionOnBudgetFlush)
 
     resetTrackers();
 }
+
+/// A free that flushes pending allocations because the per-CPU budget is exceeded does not check the limit, so the next
+/// allocation of the thread checks it.
+TEST(PerCPUMemory, BudgetFlushOnFreeIsCheckedByNextAllocation)
+{
+    resetTrackers();
+
+    constexpr Int64 limit = 1024 * 1024;
+    constexpr Int64 pending = 900 * 1024;
+    constexpr Int64 freed = 64 * 1024;
+    MemoryTracker query(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
+    query.setHardLimit(limit);
+
+    bool limit_hit = false;
+    const bool ran = runOnAnyCpu([&](int)
+    {
+        auto & thread = CurrentThread::get();
+        auto * const saved_parent = thread.memory_tracker.getParent();
+        const Int64 saved_thread_limit = thread.untracked_memory_limit;
+        thread.memory_tracker.setParent(&query);
+        thread.untracked_memory_flushed_unchecked = 0;
+        thread.untracked_memory_limit = limit;
+
+        /// Each round flushes `pending - freed` bytes without a check; two rounds exceed `untracked_memory_limit`.
+        for (int round = 0; round < 2; ++round)
+        {
+            std::ignore = CurrentMemoryTracker::alloc(pending);
+            per_cpu_memory.setBudgetCapacity(1);
+            std::ignore = CurrentMemoryTracker::free(freed);
+            per_cpu_memory.setBudgetCapacity(PerCPUMemory::DEFAULT_BUDGET);
+        }
+
+        try
+        {
+            std::ignore = CurrentMemoryTracker::alloc(1);
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+            limit_hit = true;
+        }
+
+        std::ignore = CurrentMemoryTracker::free(2 * (pending - freed));
+        CurrentThread::flushUntrackedMemory();
+        thread.untracked_memory_flushed_unchecked = 0;
+        thread.untracked_memory_limit = saved_thread_limit;
+        thread.memory_tracker.setParent(saved_parent);
+    });
+    if (!ran)
+        GTEST_SKIP() << "cannot pin a CPU";
+
+    resetTrackers();
+    EXPECT_TRUE(limit_hit);
+}
 #endif
 
 TEST(PerCPUMemory, BalancedAllocFreeDoesNotInflateTracker)
