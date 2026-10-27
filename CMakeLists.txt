@@ -664,7 +664,7 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-# Position independent code is enabled on every amd64 and aarch64 build:
+# Position independent code is enabled on every amd64 and aarch64 build except the ThinLTO ones:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
 # 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
@@ -684,7 +684,7 @@ include(cmake/dbms_glob_sources.cmake)
 # compile without -fPIE. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
-if (ARCH_AMD64 OR ARCH_AARCH64)
+if ((ARCH_AMD64 OR ARCH_AARCH64) AND NOT (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE AND CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
     # -fPIE only makes the code relocatable; whether the executable itself is position independent is
@@ -749,6 +749,12 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+    # The base of a PIE started with ASLR disabled; on x86-64 modulo 1 GiB, as position dependent code must stay below 2 GiB.
+    if (ARCH_AMD64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--image-base=0x15554000")
+    elseif (ARCH_AARCH64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--image-base=0xaaaaaaaa0000")
+    endif ()
 endif ()
 
 # Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
