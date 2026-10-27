@@ -1,0 +1,6 @@
+-- external target table, version 9
+cpu_usage	gauge	percent	CPU usage
+cpu_usage	gauge	percent	CPU usage
+-- inner table, current version
+cpu_usage	LowCardinality(String)	gauge	percent	CPU usage
+cpu_usage	gauge	percent	CPU usage
