@@ -317,7 +317,8 @@ ch_cc_library(
             "utilities/blob_db/**",
             "utilities/cassandra/**",
             "utilities/cache_dump_load_impl.h",
-            "utilities/fault_injection*.h",
+            "utilities/fault_injection_env.h",
+            "utilities/fault_injection_secondary_cache.h",
         ],
     ) + [
         "include/rocksdb/utilities/ldb_cmd.h",
