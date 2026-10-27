@@ -2544,7 +2544,7 @@ The delta-kernel Azure path also requires environment variables:
 
 ```sql
 CREATE NAMED COLLECTION azure_wi AS
-    storage_account_url = 'https://account.blob.core.windows.net',
+    storage_account_url = 'https://<account>.blob.core.windows.net',
     container = 'mycontainer',
     blob_path = 'path/to/table',
     client_id = '<client-id>',
