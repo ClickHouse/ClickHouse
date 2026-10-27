@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from initial_migration.compact_build import Source
 from initial_migration.native_public_includes import directory, list_elements
+from initial_migration.normalize_cpp_builds import drop_unused_loads
 from initial_migration.prune_inherited_headers import ARCHES, CC_PROVIDERS, Document, Graph
 from initial_migration.repository_inputs import ROOT
 from initial_migration.scan_include_adjacency import includes as source_includes
@@ -463,26 +464,39 @@ cc_library(
 
 
 
+def fold_glibc_compatibility(path):
+    """Compile the musl C sources in the public library; keep its assembly flags separate."""
+    text = path.read_text()
+    source = Source(text)
+    rules = {attrs(rule)["name"].value: rule for _, rule in source.rules()}
+    name = "glibc-compatibility"
+    c_group = name + "__compile_0"
+    if c_group not in rules:
+        return
+    # CMake excludes getauxval.c on AArch64. Both source lists keep CMake's glob order.
+    sources = """["glibc-compatibility.c"] + select({
+        "@platforms//cpu:x86_64": glob(["musl/*.c"]),
+        "@platforms//cpu:aarch64": glob(["musl/*.c"], exclude = ["musl/getauxval.c"]),
+    }) + glob(["musl/*.h"]) + select({
+        "@platforms//cpu:x86_64": glob(["musl/x86_64/*.h"]),
+        "@platforms//cpu:aarch64": glob(["musl/aarch64/*.h"]),
+    }) + ["spawn.h"]"""
+    text = source.rewrite([(*source.span(rules[name]), "")])
+    text = replace_attrs(text, {c_group: {
+        "name": json.dumps(name),
+        "srcs": sources,
+        "hdrs": None,
+        "deps": None,
+        "implementation_deps": '["//base/glibc-rseq", ":glibc-compatibility__compile_1"]',
+    }})
+    path.write_text(drop_unused_loads(Source(text)))
+
+
 def run(root, from_generator=False):
     stats = Counter()
     paths = build_files(root)
     publish_base(root, paths, stats, from_generator)
-    compatibility = root / "base/glibc-compatibility/BUILD.bazel"
-    before = compatibility.read_text()
-    source = Source(before)
-    compile_0 = next(rule for _, rule in source.rules()
-                     if ast.literal_eval(attrs(rule)["name"]) == "glibc-compatibility__compile_0")
-    data = attrs(compile_0)
-    if "hdrs" in data:
-        if ast.literal_eval(data["hdrs"]) != ["spawn.h"]:
-            raise ValueError("glibc-compatibility__compile_0 public headers changed")
-        compatibility.write_text(replace_attrs(before, {
-            "glibc-compatibility__compile_0": {
-                "srcs": source.text(data["srcs"]) + ' + ["spawn.h"]',
-                "hdrs": None,
-            }
-        }))
-        stats["glibc-compatibility spawn.h moved to srcs"] += 1
+    fold_glibc_compatibility(root / "base/glibc-compatibility/BUILD.bazel")
     base = root / "base/BUILD.bazel"
     if base.exists() and base not in paths:
         paths.append(base)

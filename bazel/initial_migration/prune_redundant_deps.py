@@ -249,10 +249,6 @@ def private_compile_groups(doc):
                  'strip_include_prefix', 'module_interfaces'} & a.keys()
         and isinstance(a['name'], ast.Constant)
     }
-    # Moving the 15 glibc C headers changes the inputs of over 5,000 source files per CPU.
-    # The assembly group publishes no headers.
-    if doc.package == 'base/glibc-compatibility':
-        private.discard(':glibc-compatibility__compile_0')
     changes = {}
     for kind, a in rules:
         deps = a.get('deps')

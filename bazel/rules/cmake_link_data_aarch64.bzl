@@ -385,7 +385,7 @@ CMAKE_LINK = {
     "//base/poco/XML:_poco_xml_expat",
     "//base/poco/JSON:_poco_json_pdjson",
     "//base/glibc-rseq",
-    "//base/glibc-compatibility:glibc-compatibility__compile_0",
+    "//base/glibc-compatibility:glibc-compatibility",
     "//base/glibc-compatibility:glibc-compatibility__compile_1",
     "//bazel/rust:chdig_cc",
     "@clickhouse_llvm_project//:cxx",

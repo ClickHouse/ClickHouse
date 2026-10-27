@@ -1,70 +1,16 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 ch_cc_library(
-    name = "glibc-compatibility__compile_0",
-    srcs = [
-        "glibc-compatibility.c",
-    ] + glob(["musl/_*.c"]) + [
-        "musl/accept4.c",
-    ] + glob(["musl/clock_*.c"]) + [
-        "musl/dup3.c",
-        "musl/epoll.c",
-        "musl/eventfd.c",
-        "musl/exp.c",
-        "musl/exp2.c",
-        "musl/exp2f.c",
-        "musl/exp2f_data.c",
-        "musl/exp_data.c",
-        "musl/expf.c",
-        "musl/fallocate.c",
-        "musl/fcntl.c",
-        "musl/futimens.c",
-    ] + select({
-        "@platforms//cpu:x86_64": ["musl/getauxval.c"],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "musl/getentropy.c",
-        "musl/getrandom.c",
-        "musl/glob.c",
-        "musl/inotify.c",
-        "musl/lgamma.c",
-        "musl/lgammaf.c",
-        "musl/lgammal.c",
-        "musl/log.c",
-        "musl/log2.c",
-        "musl/log2_data.c",
-        "musl/log2f.c",
-        "musl/log2f_data.c",
-        "musl/log_data.c",
-        "musl/logf.c",
-        "musl/logf_data.c",
-        "musl/mkstemps.c",
-        "musl/pipe2.c",
-        "musl/posix_spawn.c",
-        "musl/pow.c",
-        "musl/pow_data.c",
-        "musl/powf.c",
-        "musl/powf_data.c",
-        "musl/powl.c",
-        "musl/pwritev.c",
-        "musl/recvmmsg.c",
-        "musl/scalbnf.c",
-        "musl/sched_cpucount.c",
-        "musl/sched_getcpu.c",
-        "musl/secure_getenv.c",
-        "musl/sendmmsg.c",
-        "musl/strsignal.c",
-        "musl/sync_file_range.c",
-        "musl/syscall_ret.c",
-        "musl/timerfd.c",
-        "musl/timespec_get.c",
-        "musl/utimensat.c",
-        "musl/vasprintf.c",
-        "musl/vdso.c",
-    ] + glob(["musl/*.h"]) + select({
+    name = "glibc-compatibility",
+    srcs = ["glibc-compatibility.c"] + select({
+        "@platforms//cpu:x86_64": glob(["musl/*.c"]),
+        "@platforms//cpu:aarch64": glob(
+            ["musl/*.c"],
+            exclude = ["musl/getauxval.c"],
+        ),
+    }) + glob(["musl/*.h"]) + select({
         "@platforms//cpu:x86_64": glob(["musl/x86_64/*.h"]),
         "@platforms//cpu:aarch64": glob(["musl/aarch64/*.h"]),
     }) + ["spawn.h"],
@@ -76,7 +22,10 @@ ch_cc_library(
         "-Wno-builtin-requires-header",
         "-Wno-error",
     ],
-    implementation_deps = ["//base/glibc-rseq"],
+    implementation_deps = [
+        "//base/glibc-rseq",
+        ":glibc-compatibility__compile_1",
+    ],
     language = "C",
     local_includes = select({
         "@platforms//cpu:x86_64": [
@@ -114,10 +63,4 @@ ch_cc_library(
             "musl/aarch64",
         ],
     }),
-)
-
-cc_library(
-    name = "glibc-compatibility",
-    implementation_deps = [":glibc-compatibility__compile_1"],
-    deps = [":glibc-compatibility__compile_0"],
 )
