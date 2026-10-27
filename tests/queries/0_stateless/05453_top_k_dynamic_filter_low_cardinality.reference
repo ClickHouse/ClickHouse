@@ -1,6 +1,8 @@
 parts	3	1	1
 plan s	1
 plan sn	1
+plan memory	1
+plan group by	1
 s asc	64	1	30
 s asc	1000	1	30
 s desc	64	1	30

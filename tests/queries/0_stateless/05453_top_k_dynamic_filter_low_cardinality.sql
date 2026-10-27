@@ -50,87 +50,98 @@ SELECT 'plan sn', count() > 0 FROM (
     EXPLAIN actions = 1 SELECT sn FROM t_lc ORDER BY sn LIMIT 5
     SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0
 ) WHERE explain LIKE '%__topKFilter%';
+SELECT 'plan memory', count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT s FROM t_lc_memory ORDER BY s LIMIT 30
+    SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1
+) WHERE explain LIKE '%TopN filter column%';
+SELECT 'plan group by', count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT s FROM t_lc GROUP BY s ORDER BY s LIMIT 5
+    SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1, max_rows_to_group_by = 0
+) WHERE explain LIKE '%__topKFilter%';
 
 -- Each check prints whether the sort key values of the result, in order (as tuples, which keep `NULL`), are equal to those
 -- of the same query without the filter, and their number.
+-- max_threads = 1 on the filter side: the later blocks are read only after a threshold is published.
 SELECT 's asc', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's asc', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's desc', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's desc', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's where', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc WHERE s != '' ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc WHERE s != '' ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc WHERE s != '' ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's where', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc WHERE s != '' ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc WHERE s != '' ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc WHERE s != '' ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'sn nulls first, NULL threshold', 64, a = b, length(a), countEqual(a, tuple(NULL)) FROM (SELECT
     (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn NULLS FIRST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
     (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn NULLS FIRST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'sn nulls first, NULL threshold', 1000, a = b, length(a), countEqual(a, tuple(NULL)) FROM (SELECT
-    (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn NULLS FIRST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn NULLS FIRST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn NULLS FIRST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'sn desc nulls last', 64, a = b, length(a), countEqual(a, tuple(NULL)) FROM (SELECT
-    (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn DESC NULLS LAST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn DESC NULLS LAST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn DESC NULLS LAST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'sn desc nulls last', 1000, a = b, length(a), countEqual(a, tuple(NULL)) FROM (SELECT
-    (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn DESC NULLS LAST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn DESC NULLS LAST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(sn)) FROM (SELECT sn FROM t_lc ORDER BY sn DESC NULLS LAST LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's collate', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's collate', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's collate desc', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 's collate desc', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc ORDER BY s DESC COLLATE 'en' LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 't ties', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(t)) FROM (SELECT t FROM t_lc ORDER BY t LIMIT 1000) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(t)) FROM (SELECT t FROM t_lc ORDER BY t LIMIT 1000) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(t)) FROM (SELECT t FROM t_lc ORDER BY t LIMIT 1000) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 't ties', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(t)) FROM (SELECT t FROM t_lc ORDER BY t LIMIT 1000) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(t)) FROM (SELECT t FROM t_lc ORDER BY t LIMIT 1000) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(t)) FROM (SELECT t FROM t_lc ORDER BY t LIMIT 1000) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'd', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(d)) FROM (SELECT d FROM t_lc ORDER BY d LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(d)) FROM (SELECT d FROM t_lc ORDER BY d LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(d)) FROM (SELECT d FROM t_lc ORDER BY d LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'd', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(d)) FROM (SELECT d FROM t_lc ORDER BY d LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(d)) FROM (SELECT d FROM t_lc ORDER BY d LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(d)) FROM (SELECT d FROM t_lc ORDER BY d LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'fs', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(fs)) FROM (SELECT fs FROM t_lc ORDER BY fs LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(fs)) FROM (SELECT fs FROM t_lc ORDER BY fs LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(fs)) FROM (SELECT fs FROM t_lc ORDER BY fs LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'fs', 1000, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(fs)) FROM (SELECT fs FROM t_lc ORDER BY fs LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000) AS a,
+    (SELECT groupArray(tuple(fs)) FROM (SELECT fs FROM t_lc ORDER BY fs LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 1000, max_threads = 1) AS a,
     (SELECT groupArray(tuple(fs)) FROM (SELECT fs FROM t_lc ORDER BY fs LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 
 -- `LowCardinality` nested in a `Tuple` is compared without `LowCardinality`.
 SELECT 'tup', 64, a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(tup)) FROM (SELECT tup FROM t_lc ORDER BY tup LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1, max_block_size = 64) AS a,
+    (SELECT groupArray(tuple(tup)) FROM (SELECT tup FROM t_lc ORDER BY tup LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1, max_block_size = 64, max_threads = 1) AS a,
     (SELECT groupArray(tuple(tup)) FROM (SELECT tup FROM t_lc ORDER BY tup LIMIT 20) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 
 -- A `Memory` table, whose blocks are read whole.
 SELECT 'memory', a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 SELECT 'memory desc', a = b, length(a) FROM (SELECT
-    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1) AS a,
+    (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 
+-- The CI profile sets `max_rows_to_group_by`, which disables the GROUP BY top-K optimization.
 SELECT 'group by', a = b, length(a) FROM (SELECT
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc GROUP BY s ORDER BY s LIMIT 5)
         SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1,
-        use_top_k_dynamic_filtering_for_variable_length_types = 1, max_block_size = 64) AS a,
+        use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 100000,
+        use_query_condition_cache = 0, max_block_size = 64, max_threads = 1, max_rows_to_group_by = 0) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc GROUP BY s ORDER BY s LIMIT 5)
         SETTINGS enable_group_by_top_k_optimization = 0) AS b);
 
