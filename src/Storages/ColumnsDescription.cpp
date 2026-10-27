@@ -2164,6 +2164,17 @@ NameSet collectMaterializedColumnsStaleAfterClear(
     return stale;
 }
 
+NameSet getColumnsClearedByClearColumn(const ColumnsDescription & columns, const String & column_name)
+{
+    if (columns.has(column_name) || !columns.hasNested(column_name))
+        return {column_name};
+
+    NameSet result;
+    for (const auto & nested_column : columns.getNested(column_name))
+        result.insert(nested_column.name);
+    return result;
+}
+
 void validateColumnsDefaults(
     ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, const NameSet & insert_time_default_columns)
 {

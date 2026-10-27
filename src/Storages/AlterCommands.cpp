@@ -2626,8 +2626,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     /// the mutation would only fail (or rewrite the wrong columns) after being queued.
                     auto materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(all_columns, context);
 
-                    auto stale_columns
-                        = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs.by_column, {command.column_name});
+                    auto stale_columns = collectMaterializedColumnsStaleAfterClear(
+                        materialized_column_inputs.by_column, getColumnsClearedByClearColumn(all_columns, command.column_name));
 
                     if (auto unsafe_column = materialized_column_inputs.findFirstUnsafeColumn(stale_columns))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -2652,6 +2652,22 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 "partition key depends on it, and the rewritten values would disagree with the "
                                 "partition the parts are placed in",
                                 backQuote(command.column_name), backQuote(stale_column));
+                    }
+
+                    /// The sign, version and `is_deleted` columns decide which rows survive a merge. Rewriting
+                    /// them in place would change that for rows that have not been merged yet, the same reason
+                    /// `MergeTreeData::checkAlterIsPossible` rejects their automatic rematerialization.
+                    if (const auto merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load))
+                    {
+                        const auto & merging_params = merge_tree->merging_params;
+                        for (const auto * merging_column : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
+                        {
+                            if (!merging_column->empty() && stale_columns.contains(*merging_column))
+                                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                    "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "
+                                    "{}MergeTree engine uses it to merge rows, and rewriting it would change which rows survive merges",
+                                    backQuote(command.column_name), backQuote(*merging_column), merging_params.getModeName());
+                        }
                     }
                 }
                 if (!command.clear)

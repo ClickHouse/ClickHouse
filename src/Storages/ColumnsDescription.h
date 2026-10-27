@@ -404,6 +404,11 @@ void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const Column
 NameSet collectMaterializedColumnsStaleAfterClear(
     const std::unordered_map<String, Names> & materialized_column_inputs, const NameSet & cleared_columns);
 
+/// The storage columns that `CLEAR COLUMN column_name` resets. A name that is not a column of the
+/// table denotes a whole `Nested` group when shared nested offsets are enabled (otherwise the clear
+/// is rejected), and the command clears every column of the group, like `MutateTask` does.
+NameSet getColumnsClearedByClearColumn(const ColumnsDescription & columns, const String & column_name);
+
 struct MaterializedColumnInputInfo
 {
     std::unordered_map<String, Names> by_column;

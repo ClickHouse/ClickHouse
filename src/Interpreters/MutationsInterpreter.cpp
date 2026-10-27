@@ -1777,7 +1777,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
         {
-            cleared_columns.insert(command.column_name);
+            cleared_columns.merge(getColumnsClearedByClearColumn(columns_desc, command.column_name));
 
             /// Rebuild indices that depend on the cleared column from its
             /// post-CLEAR DEFAULT value. Dropping them would make index
@@ -1897,6 +1897,21 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "but the partition key depends on it, and the rewritten values would disagree with the "
                     "partition the parts are placed in",
                     backQuote(name));
+        }
+
+        /// The sign, version and `is_deleted` columns decide which rows survive a merge, so they must not be
+        /// rewritten in place either. `AlterCommands::validate` rejects such ALTERs up front as well.
+        if (const auto * merge_tree_data = source.getMergeTreeData())
+        {
+            const auto & merging_params = merge_tree_data->merging_params;
+            for (const auto * merging_column : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
+            {
+                if (!merging_column->empty() && clear_stale_materialized.contains(*merging_column))
+                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                        "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
+                        "but the {}MergeTree engine uses it to merge rows, and rewriting it would change which rows survive merges",
+                        backQuote(*merging_column), merging_params.getModeName());
+            }
         }
 
         /// Only the MATERIALIZED columns the clear makes stale are recomputed. A MATERIALIZED
