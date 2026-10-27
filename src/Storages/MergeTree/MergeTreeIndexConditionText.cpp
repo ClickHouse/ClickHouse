@@ -9,6 +9,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -1219,6 +1220,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
+    /// hasTokenPrefix/Like/Match take the tokenizer of the index on their input, so they must find an index on `m['key']`
+    /// also after `optimize_functions_to_subcolumns` makes `m.key_<key>` of it. Otherwise that setting changes their result.
+    if (!has_index_column && isPerTokenPatternFunction(function_name))
+        has_index_column = hasIndexForMapElementSubcolumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
@@ -2322,6 +2327,18 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
     return header.has(fmt::format("mapValues({})", map_column_name));
+}
+
+bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & column_name) const
+{
+    auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns);
+    if (!parsed)
+        return false;
+
+    /// `serializeText` is the identity for a String key, which the index expression names as a quoted literal.
+    /// Same assumption as traverseMapElementKeyNode. A key of another type is not matched.
+    const auto & [map_column_name, serialized_key] = *parsed;
+    return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, quoteString(serialized_key)));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const

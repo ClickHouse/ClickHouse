@@ -89,6 +89,28 @@ JSON FixedString	8
 JSON FixedString	8
 JSON FixedString	8
 JSON FixedString	8
+-- a map element read as the subcolumn m.key_k: the functions use the tokenizer of the index on the element
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	0
+Map	0
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	8
+FixedString	8
+FixedString	8
+FixedString	8
 -- LowCardinality(String): direct read
 8
 8

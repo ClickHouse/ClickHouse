@@ -237,6 +237,65 @@ SELECT 'JSON FixedString', count() FROM tab WHERE hasTokenMatch(j.k::FixedString
 
 DROP TABLE tab;
 
+SELECT '-- a map element read as the subcolumn m.key_k: the functions use the tokenizer of the index on the element';
+
+-- optimize_functions_to_subcolumns must not change the result.
+SET optimize_functions_to_subcolumns = 1;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX idx_keys(mapKeys(m)) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX idx_k(m['k']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, multiIf(number < 16, map('k', if(number % 2 = 0, 'env:prod-eu', 'env:prod-us')), number < 24, map('k', 'env prod'), number < 32, map('x', 'env:prod-eu'), map('k', 'dev')) FROM numbers(64);
+
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod');
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'prod');
+SELECT 'Map', count() FROM tab WHERE hasTokenPrefix(m['k'], 'prod') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenLike(m['k'], 'env:prod-%');
+SELECT 'Map', count() FROM tab WHERE hasTokenLike(m['k'], 'env:prod-%') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenLike(m['k'], 'env:prod-%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenMatch(m['k'], '^env:prod-(eu|us)$');
+SELECT 'Map', count() FROM tab WHERE hasTokenMatch(m['k'], '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasTokenMatch(m['k'], '^env:prod-(eu|us)$') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Map', countIf(hasTokenPrefix(m['k'], 'env:prod')) FROM tab;
+
+DROP TABLE tab;
+
+-- The index on mapKeys(m) must not skip the granule without the key, as above.
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, FixedString(8)),
+    INDEX idx_keys(mapKeys(m)) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_k(m['k']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, if(number < 8, map(), map('k', toFixedString('abc', 8))) FROM numbers(64);
+
+SELECT 'FixedString', count() FROM tab WHERE hasTokenLike(m['k'], '_%');
+SELECT 'FixedString', count() FROM tab WHERE hasTokenLike(m['k'], '_%') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasTokenLike(m['k'], '_%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasTokenMatch(m['k'], '^[^a]');
+SELECT 'FixedString', count() FROM tab WHERE hasTokenMatch(m['k'], '^[^a]') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasTokenMatch(m['k'], '^[^a]') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasTokenMatch(m['k'], '^[^a]') SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE tab;
+
 SET optimize_functions_to_subcolumns = DEFAULT;
 
 SELECT '-- LowCardinality(String): direct read';
