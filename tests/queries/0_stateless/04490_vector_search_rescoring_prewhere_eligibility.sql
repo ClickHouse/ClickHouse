@@ -2,7 +2,6 @@
 -- no-parallel-replicas: vector-search read hints are produced during local index analysis.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS tab;
@@ -36,8 +35,7 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 1
     SETTINGS vector_search_with_rescoring = 1,
-             optimize_move_to_prewhere = 1,
-             query_plan_optimize_prewhere = 1
+             optimize_move_to_prewhere = 1
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 
@@ -52,8 +50,7 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 1,
-             optimize_move_to_prewhere = 1,
-             query_plan_optimize_prewhere = 1
+             optimize_move_to_prewhere = 1
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 
@@ -68,8 +65,7 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 0,
-             optimize_move_to_prewhere = 1,
-             query_plan_optimize_prewhere = 1
+             optimize_move_to_prewhere = 1
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 
@@ -84,8 +80,7 @@ FROM
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 0,
-             optimize_move_to_prewhere = 1,
-             query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0
 )
 WHERE explain LIKE '%Prewhere filter column:%';
 

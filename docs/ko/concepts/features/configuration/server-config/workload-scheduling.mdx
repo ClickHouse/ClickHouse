@@ -52,7 +52,7 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 
 ## 워크로드 계층 구조 {#workloads}
 
-ClickHouse는 스케줄링 계층 구조를 정의할 수 있는 편리한 SQL 구문을 제공합니다. 모든 리소스는 공통 WORKLOAD 계층 구조 전체에 분산됩니다. 분산 규칙은 특정 리소스에 따라 일부 측면이 달라질 수 있지만, 계층 구조 자체는 동일합니다. 각 WORKLOAD는 모든 리소스에 필요한 스케줄링 노드를 유지합니다. 하위 워크로드는 계층 구조를 이루도록 임의의 워크로드 내부에 생성할 수 있습니다. ClickHouse는 워크로드 계층 구조에 특정하거나 사전 정의된 구조를 강제하지 않습니다.
+ClickHouse는 스케줄링 계층 구조를 정의할 수 있는 편리한 SQL 구문을 제공합니다. 모든 리소스는 공통 WORKLOAD 계층 구조 전체에 분산됩니다. 분산 규칙은 특정 리소스에 따라 일부 측면이 달라질 수 있지만, 계층 구조 자체는 동일합니다. 각 WORKLOAD는 모든 리소스에 필요한 스케줄링 노드를 유지합니다. 하위 워크로드는 계층 구조를 이루도록 임의의 워크로드 내부에 생성할 수 있습니다. ClickHouse는 워크로드 계층 구조에 특정하거나 사전 정의된 구조를 강제하지 않습니다. 부모가 없는(`IN` 절이 없는) 워크로드는 루트 워크로드이며, 계층 구조에는 루트 워크로드가 개수 제한 없이 포함될 수 있습니다. 예를 들어 하나의 트리는 SQL로 정의하고 다른 트리는 구성에서 로드할 수 있습니다. 모든 루트 워크로드는 암시적인 익명 루트(`system.scheduler`에서 경로 `/`로 표시됨)의 자식이므로, 트리 내의 형제 워크로드와 마찬가지로 `weight`, `priority`, `precedence` 설정에 따라 서로 간에 스케줄링됩니다.
 
 다음은 모든 리소스를 각각 90%와 10%가 보장되는 &quot;user&quot; 워크로드와 &quot;system&quot; 워크로드로 나누는 계층 구조의 예시입니다. 워크로드에 정의된 가중치는 최대-최소 공정성(max-min fairness)에 사용되므로 아래에서 보장되는 최선 노력형 보장만 제공하며(위에서 제한하는 한도나 QUOTA는 아님), 모든 스케줄링은 각 host에서 독립적으로 수행되므로 `max_*` 설정으로 정의된 한도는 host별로 적용된다는 점에 유의하십시오. &quot;user&quot; 워크로드는 자신의 리소스를 다시 &quot;development&quot; 워크로드와 &quot;production&quot; 워크로드로 나누며, &quot;production&quot;은 &quot;development&quot;보다 3배 더 많은 리소스를 가집니다:
 
@@ -106,8 +106,8 @@ graph LR
 
 워크로드를 사용자 지정하려면 다음 설정을 사용할 수 있습니다.
 
-* `priority` - (time-shared 전용) 형제 워크로드는 정적 값에 따라 처리됩니다(값이 낮을수록 우선순위가 높습니다). 선점을 제어합니다.
-* `precedence` - (space-shared 전용) 형제 워크로드는 정적 값에 따라 허용됩니다(값이 낮을수록 precedence가 높습니다). 축출 및 승인을 제어합니다.
+* `priority` - (시간 공유 전용) 형제 워크로드는 정적 값에 따라 처리됩니다(값이 낮을수록 우선순위가 높습니다). 선점을 제어합니다.
+* `precedence` - (공간 공유 전용) 형제 워크로드는 정적 값에 따라 허용됩니다(값이 낮을수록 precedence가 높습니다). 축출 및 승인을 제어합니다.
 * `weight` - 동일한 정적 우선순위 또는 precedence를 가진 형제 워크로드는 가중치에 따라 공정하게 리소스를 공유합니다. 선점, 축출, 승인에 영향을 줍니다.
 * `max_io_requests` - 이 워크로드에서 동시 IO 요청 수의 한도입니다.
 * `max_bytes_inflight` - 이 워크로드에서 동시 요청의 진행 중인 총 바이트 수 한도입니다.
@@ -118,20 +118,21 @@ graph LR
 * `max_cpus` - 이 워크로드의 쿼리를 처리하는 데 사용할 수 있는 CPU 코어 수 한도입니다.
 * `max_cpu_share` - `max_cpus`와 동일하지만, 사용 가능한 CPU 코어 수를 기준으로 정규화됩니다.
 * `max_burst_cpu_seconds` - `max_cpus`로 인해 스로틀링되지 않고 워크로드가 소비할 수 있는 최대 CPU 초 수입니다.
+* `scheduler` - (시간 공유 전용) 이 워크로드의 쿼리 간에 사용되는 스케줄링 알고리즘으로, `fifo`(기본값, 선착순 처리), `fair`(가중 공정 큐잉), `las`(최소 획득 서비스 우선), `priority`(쿼리의 `workload_priority` 설정에 따른 엄격한 순서) 중 하나입니다. [쿼리 인식 스케줄링](#query_aware_scheduling)을 참조하십시오.
 * `max_memory` - 이 워크로드에 예약된 총 메모리 한도입니다.
 
-워크로드 설정을 통해 지정한 모든 한도는 각 리소스별로 서로 독립적입니다. 예를 들어 `max_bytes_per_second = '10Mi'`인 워크로드는 각 읽기 및 쓰기 리소스에 대해 각각 10 MB/s의 대역폭 한도를 가집니다. 읽기와 쓰기에 공통 한도가 필요하다면 READ 및 WRITE 액세스에 동일한 리소스를 사용하는 것을 고려하십시오.
+워크로드 설정으로 지정한 모든 한도는 리소스별로 독립적으로 적용됩니다. 예를 들어 `max_bytes_per_second = '10Mi'`가 설정된 워크로드는 읽기 및 쓰기 리소스마다 각각 독립적으로 10 MB/s의 대역폭 한도를 갖습니다. 읽기와 쓰기에 공통 한도가 필요하다면 READ 및 WRITE 액세스에 동일한 리소스를 사용하는 것을 고려하십시오.
 
-리소스별로 서로 다른 워크로드 계층 구조를 지정하는 방법은 없습니다. 하지만 특정 리소스에 대해서는 다른 워크로드 설정 값을 지정할 수 있습니다:
+리소스마다 서로 다른 워크로드 계층 구조를 지정할 수는 없습니다. 다만 특정 리소스에 대해 워크로드 설정 값을 다르게 지정할 수는 있습니다.
 
 ```sql
 CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
 ```
 
-또한 다른 워크로드에서 참조하고 있는 경우에는 워크로드나 리소스를 삭제할 수 없다는 점에 유의하십시오. 워크로드 정의를 업데이트하려면 `CREATE OR REPLACE WORKLOAD` 쿼리를 사용하십시오.
+또한 워크로드나 리소스가 다른 워크로드에서 참조되고 있으면 해당 워크로드나 리소스를 삭제할 수 없다는 점에 유의하십시오. 워크로드 정의를 업데이트하려면 `CREATE OR REPLACE WORKLOAD` 쿼리를 사용하십시오.
 
 <Note>
-  워크로드 설정은 적절한 스케줄링 노드 집합으로 변환됩니다. 더 하위 수준의 세부 사항은 스케줄링 노드 [타입과 옵션](#hierarchy) 설명을 참조하십시오.
+  워크로드 설정은 적절한 스케줄링 노드 집합으로 변환됩니다. 더 하위 수준의 세부 사항은 스케줄링 노드의 [타입과 옵션](#hierarchy)에 대한 설명을 참조하십시오.
 </Note>
 
 ## 워크로드 마크업 {#workload-markup}
@@ -203,6 +204,41 @@ CPU 스케줄링은 아직 머지와 뮤테이션을 지원하지 않습니다.
 <Note>
   CPU 리소스를 선언하면 [`concurrent_threads_soft_limit_num`](/ko/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) 및 [`concurrent_threads_soft_limit_ratio_to_cores`](/ko/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 설정이 더 이상 적용되지 않습니다. 대신 특정 워크로드에 할당되는 CPU 수를 제한하는 데 워크로드 설정 `max_concurrent_threads`를 사용합니다. 이전 동작과 동일하게 하려면 WORKER THREAD 리소스만 생성하고, 워크로드 `all`의 `max_concurrent_threads`를 `concurrent_threads_soft_limit_num`과 같은 값으로 설정한 뒤, 쿼리 설정 `workload = "all"`을 사용하십시오. 이 구성은 [`concurrent_threads_scheduler`](/ko/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 설정 값을 &quot;fair&#95;round&#95;robin&quot;으로 지정한 것과 같습니다.
 </Note>
+
+## 쿼리 인식 스케줄링 {#query_aware_scheduling}
+
+`weight` 및 `priority` 워크로드 설정은 워크로드 *간에* 리소스를 스케줄링합니다. *하나의 워크로드 안에서* 쿼리들이 시간 공유 리소스를 어떻게 나누어 사용할지 제어하려면 워크로드의 `scheduler`를 선택하십시오.
+
+```sql
+CREATE WORKLOAD all SETTINGS scheduler = 'fair'
+```
+
+* **`fifo`** (기본값) — 선착순 방식으로, 기존 동작을 그대로 유지합니다. 기아(starvation)가 발생하지 않지만 공정성을 보장하지 않으며, `weight` 및 관련 쿼리별 설정을 무시합니다.
+* **`fair`** — 가중 공정 큐잉(weighted fair queueing): 각 쿼리는 자신의 `weight`(쿼리 설정, 기본값 `1`)에 비례하여 리소스를 할당받으며, 기아 상태에 빠지는 쿼리가 없습니다.
+* **`las`** — 최소 획득 서비스(least-attained-service): 지금까지 해당 리소스를 가장 적게 사용한 쿼리가 먼저 처리됩니다(쿼리는 수준별로 버킷화되며, 리소스 사용량이 두 배가 될 때마다 한 수준씩 내려갑니다). 혼합 워크로드에서 짧은 쿼리의 지연 시간을 최소화하지만, 짧은 쿼리가 계속 유입되면 장기 실행 쿼리가 기아 상태에 빠질 수 있습니다. 기아 방지를 보장해야 한다면 `fair`를 사용하십시오.
+* **`priority`** — 쿼리의 `workload_priority` 설정(`Int64`, 값이 낮을수록 우선순위가 높음)에 따른 엄격한 우선순위 방식입니다. 쿼리는 우선순위 순서대로 처리되며, 우선순위가 같으면 FIFO로 처리됩니다. 기본값 `0`은 중립 기준값이며, 음수 값을 지정하면 쿼리의 우선순위가 기본값보다 높아지고 양수 값을 지정하면 낮아집니다. 다른 엄격한 우선순위 방식과 마찬가지로 우선순위가 낮은 쿼리가 기아 상태에 빠질 수 있습니다.
+
+`scheduler`는 시간 공유 리소스(CPU 및 IO)에만 적용되며, `FOR <resource>` 절을 사용하여 리소스별로 설정할 수 있습니다. 기존 워크로드에서 이를 변경하면 다른 리소스를 중단하지 않고 알고리즘이 즉시 스왑됩니다.
+
+CPU 리소스에서는 CPU 슬롯 선점(`cpu_slot_preemption = 1`, 기본값)이 활성화된 경우에만 `scheduler` 및 아래의 쿼리별 설정이 의미가 있습니다. 선점을 사용하지 않으면 CPU 슬롯에 실제 CPU 시간 대신 슬롯당 고정 비용이 부과되므로, 이러한 설정이 실제 CPU 사용량을 더 이상 반영하지 못합니다.
+
+`fair` 스케줄러에서는 쿼리가 **실행되는 동안** 유효 가중치가 낮아질 수 있으므로, 더 짧거나 새로운 쿼리가 더 많은 몫을 할당받습니다. 이 동작은 쿼리별 설정으로 제어합니다(모두 기본적으로 비활성화되어 있습니다):
+
+| 쿼리 설정                         | 효과                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `weight`                      | 쿼리의 기본 공정 스케줄링 가중치입니다(기본값 `1.0`).                                                                                                           |
+| `weight_lowering_age_seconds` | 쿼리의 경과 시간(wall-clock)이 이 값을 초과하면 가중치가 낮아집니다. `0`이면 비활성화됩니다.                                                                                 |
+| `weight_lowering_cpu_seconds` | 쿼리가 획득한 CPU 시간이 이 값(초)에 도달하면 가중치가 낮아집니다(CPU 리소스). `0`이면 비활성화됩니다.                                                                            |
+| `weight_lowering_io_bytes`    | 쿼리가 획득한 IO 바이트가 이 값에 도달하면 가중치가 낮아집니다(IO 리소스). `0`이면 비활성화됩니다.                                                                                |
+| `weight_lowering_factor`      | 임계값을 넘었을 때 가중치에 곱해지는 계수입니다(예: `0.25`). 가장 먼저 도달한 임계값에서 감소분이 전부 적용되며, 여러 임계값의 효과가 중첩되지 않습니다. `1.0`이면 가중치 감소가 비활성화됩니다. 값은 `[0, 1]` 범위로 제한됩니다. |
+
+```sql
+-- Enable fair scheduling for the workload (once):
+CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = 'fair';
+
+-- Then, per query: keep full weight until it burns 10 CPU-seconds, after which it is de-prioritised.
+SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_lowering_factor = 0.1;
+```
 
 ## 스레드와 CPU {#threads_vs_cpus}
 
@@ -405,10 +441,10 @@ graph TD
     -->nw_semp[\"semaphore"/]
     -->|100 concurrent requests| nw_fair("p0_fair")
     -->|75% bandwidth| nw_prod{{"production"}}
-    -->nw_prod_q["fifo"]
+    -->nw_prod_q["queue"]
     nw_fair
     -->|25% bandwidth| nw_dev{{"development"}}
-    -->nw_dev_q["fifo"]
+    -->nw_dev_q["queue"]
 
     mem_root(["memory"])
     -->mem_all{{"all"}}
@@ -427,7 +463,7 @@ graph TD
 * `bandwidth_limit` (constraint) - 현재 대역폭이 `max_speed`를 초과하거나(0은 무제한), 버스트가 `max_burst`를 초과하면 차단합니다(`max_burst`의 기본값은 `max_speed`). 단일 자식이 있어야 합니다.
 * `fair` (policy) - max-min 공정성에 따라 자식 노드 중 하나에서 다음에 처리할 요청을 선택합니다. 자식 노드는 `weight`를 지정할 수 있습니다(기본값은 1).
 * `priority` (policy) - 정적 우선순위에 따라 자식 노드 중 하나에서 다음에 처리할 요청을 선택합니다(값이 낮을수록 우선순위가 높음). 자식 노드는 `priority`를 지정해야 합니다(기본값은 0).
-* `fifo` (queue) - 리소스 용량을 초과한 요청을 보관할 수 있는 계층 구조의 리프 노드입니다.
+* `queue` - 리소스 용량을 초과한 요청을 보관할 수 있는 계층 구조의 리프 노드입니다.
 
 **공간 공유 노드 유형:**
 

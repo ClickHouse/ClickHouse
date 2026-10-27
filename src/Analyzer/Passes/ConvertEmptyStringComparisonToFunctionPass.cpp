@@ -10,6 +10,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -238,8 +239,13 @@ public:
         size_t expr_idx = 1 - const_idx;
         const auto & expr_node = args[expr_idx];
 
+        /// For Nullable, both the comparison and the function return NULL for NULL.
+        /// Only Nullable(String) is supported, because `empty` and `notEmpty` of Nullable(FixedString)
+        /// are neither read from a subcolumn nor analyzed by the primary key.
         const auto expr_type = expr_node->getResultType();
-        if (!expr_type || !isStringOrFixedString(expr_type))
+        if (!expr_type)
+            return;
+        if (expr_type->isNullable() ? !isString(removeNullable(expr_type)) : !isStringOrFixedString(expr_type))
             return;
 
         if (mustStayAsWritten(expr_node))

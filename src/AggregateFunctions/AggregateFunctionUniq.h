@@ -10,6 +10,7 @@
 #include <base/bit_cast.h>
 
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -27,6 +28,7 @@
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Core/ProtocolDefines.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -256,6 +258,16 @@ struct IsUniqExactSet<UniqExactSet<T1, T2>> : std::true_type
 {
 };
 
+template <typename T>
+struct IsUniquesHashSet : std::false_type
+{
+};
+
+template <typename Hash>
+struct IsUniquesHashSet<UniquesHashSet<Hash>> : std::true_type
+{
+};
+
 /** Hash function for uniq.
   */
 template <typename T, typename ColumnType>
@@ -290,9 +302,8 @@ struct AggregateFunctionUniqTraits
     {
         if constexpr (std::is_same_v<T, std::string_view>)
         {
-            SipHash hash;
-            hash.update(x.data(), x.size());
-            return hash.get128();
+            /// The strings come from the padded `ColumnString` and `ColumnFixedString`.
+            return sipHash128Padded(x.data(), x.size());
         }
         else if constexpr (std::is_same_v<T, IPv6>)
         {
@@ -549,6 +560,7 @@ private:
     static constexpr size_t num_args = 1;
     static constexpr bool is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
     static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
+    static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<DataSet>::value;
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
@@ -559,6 +571,34 @@ public:
     String getName() const override { return Data::getName(); }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
+    /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
+    bool isVersioned() const override { return is_uniques_hash_set; }
+
+    /// The default version - the one used when the type carries no explicit version - must stay 0,
+    /// so that unversioned `AggregateFunction(uniq, ...)` types in persisted data keep the byte
+    /// layout unversioned data always had. Version 1 applies only where it is spelled out
+    /// in the type name (see `getStateType`) or derived from the negotiated revision on the `Native` wire.
+    /// See the analogous comment for `quantileDeterministic` in AggregateFunctionQuantile.h for the full reasoning.
+    size_t getDefaultVersion() const override { return 0; }
+
+    /// The state type spells the version out, so that the type name and the payload stay consistent
+    /// on every medium the state can travel through.
+    DataTypePtr getStateType() const override
+    {
+        if constexpr (is_uniques_hash_set)
+            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
+        else
+            return IAggregateFunction::getStateType();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
+            return 1;
+        return 0;
+    }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -573,7 +613,7 @@ public:
         {
             using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
             addBatchUniq<&DataSet::insertHash>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
-                [&](size_t row) { return DataSet::hash(Traits::hash(Traits::value(*columns[0], row))); },
+                [&](size_t row) { return DataSet::fullHash(Traits::hash(Traits::value(*columns[0], row))); },
                 [&](AggregateDataPtr place) { return &this->data(place).set; });
         }
         else
@@ -630,6 +670,20 @@ public:
 
     bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return this->data(place).set.size();
+        return 0;
+    }
+
+    size_t getStateBytesPerDistinctInput() const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return Data::Set::getEstimatedBytesPerValue();
+        return 0;
+    }
+
     constexpr static bool parallelizeMergeWithKey() { return true; }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -652,6 +706,14 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+            return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
+        else
+            return false;
+    }
+
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
@@ -672,19 +734,36 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        this->data(place).set.write(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.write(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
-        this->data(place).set.read(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.read(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+    }
+
+    /// `uniqExact` counts an exact set union: at least the largest and at most the sum of the
+    /// partial counts. The bound is not declared for the estimating variants (`uniq`,
+    /// `uniqHLL12`): their estimates are only approximately subadditive.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return MergedValueBound::Subadditive;
+        else
+            return MergedValueBound::Unknown;
     }
 };
 
@@ -700,7 +779,9 @@ private:
     using T = typename Data::Set::value_type;
 
     static constexpr size_t is_able_to_parallelize_merge = Data::is_able_to_parallelize_merge;
+    static constexpr bool is_parallelize_merge_prepare_needed = Data::is_parallelize_merge_prepare_needed;
     static constexpr size_t argument_is_tuple = Data::argument_is_tuple;
+    static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<typename Data::Set>::value;
 
     size_t num_args = 0;
 
@@ -716,7 +797,36 @@ public:
 
     String getName() const override { return Data::getName(); }
 
+    size_t getStateBytesPerDistinctInput() const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return Data::Set::getEstimatedBytesPerValue();
+        return 0;
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
+
+    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
+    /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
+    /// The versioning follows the same scheme as the single-argument `uniq` above, see the comments there.
+    bool isVersioned() const override { return is_uniques_hash_set; }
+
+    size_t getDefaultVersion() const override { return 0; }
+
+    DataTypePtr getStateType() const override
+    {
+        if constexpr (is_uniques_hash_set)
+            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
+        else
+            return IAggregateFunction::getStateType();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (is_uniques_hash_set && revision >= DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1)
+            return 1;
+        return 0;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -756,7 +866,38 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return this->data(place).set.size();
+        return 0;
+    }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
+
+    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+
+    constexpr static bool parallelizeMergeWithKey() { return true; }
+
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    {
+        if constexpr (is_parallelize_merge_prepare_needed)
+        {
+            using DataSet = typename Data::Set;
+            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() is only implemented when is_parallelize_merge_prepare_needed is true for {} ", getName());
+        }
+    }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+            return this->data(place).set.worthMergingInParallel(this->data(rhs).set);
+        else
+            return false;
+    }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
     {
@@ -779,19 +920,34 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        this->data(place).set.write(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.write(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
-        this->data(place).set.read(buf);
+        if constexpr (is_uniques_hash_set)
+            this->data(place).set.read(buf, version.value_or(getDefaultVersion()) < 1);
+        else
+            this->data(place).set.read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
+    }
+
+    /// See `AggregateFunctionUniq::getMergedValueBound`.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
+            return MergedValueBound::Subadditive;
+        else
+            return MergedValueBound::Unknown;
     }
 };
 

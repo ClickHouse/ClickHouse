@@ -1,6 +1,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/DecomposedFloat.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Common/formatIPv6.h>
 #include <Common/NaNUtils.h>
 
@@ -168,6 +168,11 @@ void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer &
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringMySQL(s_, buf_); });
+}
+
+void writeProbablyBackQuotedStringSQLite(std::string_view s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringSQLite(s_, buf_); });
 }
 
 void writePointerHex(const void * ptr, WriteBuffer & buf)
@@ -364,7 +369,7 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
         else if (exp > 53 && exp <= 62)
             result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
         else
-            result = zmij::detail::write(x, buffer) - buffer;
+            result = zmij::detail::write(buffer, x) - buffer;
     }
     else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
     {
@@ -402,7 +407,7 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
             result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
         /// Not an integer, or exp out of range: use zmij.
         else
-            result = zmij::detail::write(f32, buffer) - buffer;
+            result = zmij::detail::write(buffer, f32) - buffer;
     }
 
     /// Append a trailing decimal point for finite values whose representation is a bare integer

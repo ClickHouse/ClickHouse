@@ -2,6 +2,8 @@
 
 #include <Common/TargetSpecific.h>
 
+#include <bit>
+
 namespace
 {
 /// Below this size the head scan costs more than the cache line splits it avoids.
@@ -35,6 +37,46 @@ MULTITARGET_FUNCTION_X86_V4(
 
         return !(mask & 0x80);
     }))
+
+using NonASCIIBytes = Int8 __attribute__((ext_vector_type(64)));
+using NonASCIIMask = bool __attribute__((ext_vector_type(64)));
+
+/// `bytes >> 7` is nonzero exactly where the sign bit is set: a comparison would depend on
+/// `-faltivec-src-compat` on PowerPC. A bit mask of a bool vector follows the target endianness.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(static size_t NO_INLINE),
+    findFirstNonASCIIImpl,
+    MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
+    {
+        NonASCIIBytes bytes;
+        size_t i = 0;
+
+        /// As in `isAllASCIIImpl`, the first block is checked unaligned so that the bulk loop starts on a 64-byte boundary.
+        if (size >= ALIGN_THRESHOLD)
+        {
+            memcpy(&bytes, data, sizeof(bytes));
+            if (__builtin_reduce_or(bytes) >= 0)
+                i = 64 - (reinterpret_cast<uintptr_t>(data) & 63);
+        }
+
+        for (; i + sizeof(bytes) <= size; i += sizeof(bytes))
+        {
+            memcpy(&bytes, data + i, sizeof(bytes));
+            /// The sign bit of the OR tests a block without its bit mask, which takes several instructions on AArch64.
+            if (__builtin_reduce_or(bytes) < 0)
+            {
+                if constexpr (std::endian::native == std::endian::little)
+                    return i + static_cast<size_t>(std::countr_zero(__builtin_bit_cast(UInt64, __builtin_convertvector(bytes >> 7, NonASCIIMask))));
+                break;
+            }
+        }
+
+        for (; i < size; ++i)
+            if (data[i] >= 0x80)
+                return i;
+
+        return size;
+    }))
 }
 
 namespace impl
@@ -60,6 +102,16 @@ bool isAllASCII(const UInt8 * data, size_t size)
 #endif
 
     return isAllASCIIImpl(data, size);
+}
+
+size_t findFirstNonASCII(const UInt8 * data, size_t size)
+{
+#if USE_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
+        return findFirstNonASCIIImpl_x86_64_v4(data, size);
+#endif
+
+    return findFirstNonASCIIImpl(data, size);
 }
 
 LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)

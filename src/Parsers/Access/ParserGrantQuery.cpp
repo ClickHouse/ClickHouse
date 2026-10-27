@@ -8,8 +8,6 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -213,14 +211,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserGrantQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementGrant(StatementFactory & factory)
-{
-    factory.registerStatement("GRANT",
+    documentation["GRANT"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -525,6 +521,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
     - `SYSTEM RESET DDL WORKER`
+    - `SYSTEM RESET FILELOG`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -857,6 +854,7 @@ Possible parameters:
 - `AZURE`
 - `BIGQUERY`
 - `DISK`
+- `ELASTICSEARCH`
 - `FILE`
 - `HDFS`
 - `HIVE`
@@ -1038,22 +1036,22 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 )",
         .related = {"REVOKE", "CHECK GRANT", "CREATE USER", "CREATE ROLE", "SET ROLE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("REVOKE",
+    documentation["REVOKE"] =
     {
         .description = R"DOCS_MD(
 Revokes privileges from users or roles.
 
 ## Syntax {#syntax}
 
-**Revoking privileges from users**
+**Revoking privileges**
 
 ```sql
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 ```
 
-**Revoking roles from users**
+**Revoking roles**
 
 ```sql
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
@@ -1086,11 +1084,13 @@ REVOKE SELECT(wage) ON accounts.staff FROM mira;
 [Original article](/reference/settings/session-settings)
 )DOCS_MD",
         .syntax = R"(
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 )",
         .related = {"GRANT", "CHECK GRANT", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

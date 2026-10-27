@@ -1,0 +1,11 @@
+rows read back through the storage engine
+1	7	(1,'one')	{'k':1}	10.0.0.1	\N
+2	x	(2,'two')	{'k':2,'l':3}	192.168.1.2	2001:db8::1
+declared types are kept
+Variant(String, UInt64)	Tuple(\n    a Int64,\n    b String)	Map(String, Int64)	IPv4	Nullable(IPv6)
+inner types of Variant
+1	UInt64
+2	String
+the same values through the sqlite table function
+1	7	(1,\'one\')
+2	x	(2,\'two\')

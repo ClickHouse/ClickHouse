@@ -55,12 +55,6 @@ SELECT 'Nullable(String) key, INNER';
 SELECT t.pref, dd.v FROM (SELECT arrayJoin(['a', 'b', 'x', NULL]::Array(Nullable(String))) AS pref) AS t
 INNER JOIN dict_str AS dd ON t.pref = dd.k ORDER BY t.pref, dd.v;
 
--- The analyzer casts LowCardinality away before the join; enable_analyzer = 0 keeps the
--- LowCardinality key so it survives to the dictionary lookup and exercises the stripping in getByKeys.
-SELECT 'LowCardinality(String) key, LEFT';
-
-SELECT 'LowCardinality(Nullable(String)) key, LEFT';
-
 SELECT 'NULL key does not match a real empty-string dictionary key';
 SELECT t.pref, dd.v FROM (SELECT arrayJoin(['a', NULL]::Array(Nullable(String))) AS pref) AS t
 LEFT JOIN dict_empty AS dd ON t.pref = dd.k ORDER BY t.pref NULLS LAST, dd.v;

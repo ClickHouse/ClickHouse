@@ -13,9 +13,9 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `-q QUERY`, `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-keeper-client` will start in interactive mode.
 -   `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`.
 -   `-p N`, `--port=N` — Server port. Default value: 9181
--   `-c FILE_PATH`, `--config-file=FILE_PATH` — Set path of config file to get the connection string. Default value: `config.xml`.
--   `--password=PASSWORD` — Password for authentication. Can also be set via the `CLICKHOUSE_KEEPER_PASSWORD` environment variable or in the XML config file under `<zookeeper><password>`.
--   `--identity=IDENTITY` — Identity for `digest` authentication scheme. Can also be set via the `CLICKHOUSE_KEEPER_IDENTITY` environment variable or in the XML config file under `<zookeeper><identity>`.
+-   `-c FILE_PATH`, `--config-file=FILE_PATH` — Set path of config file to get the connection string. By default, the first of `config.xml`, `config.yaml` and `config.yml` that exists in the current directory is used.
+-   `--password=PASSWORD` — Password for authentication. Can also be set via the `CLICKHOUSE_KEEPER_PASSWORD` environment variable or in the configuration file under `<zookeeper><password>` (`zookeeper.password` in YAML).
+-   `--identity=IDENTITY` — Identity for `digest` authentication scheme. Can also be set via the `CLICKHOUSE_KEEPER_IDENTITY` environment variable or in the configuration file under `<zookeeper><identity>` (`zookeeper.identity` in YAML).
 -   `--connection-timeout=TIMEOUT` — Set connection timeout in seconds. Default value: 10s.
 -   `--session-timeout=TIMEOUT` — Set session timeout in seconds. Default value: 10s.
 -   `--operation-timeout=TIMEOUT` — Set operation timeout in seconds. Default value: 10s.
@@ -35,11 +35,13 @@ When connecting to a Keeper server that requires authentication, the password is
 
 1. `--password` command-line argument
 2. `CLICKHOUSE_KEEPER_PASSWORD` environment variable
-3. `<zookeeper><password>` in the XML config file specified by `--config-file`
+3. `<zookeeper><password>` in the loaded configuration file
+
+The configuration file in step 3 is the one given by `--config-file`, or, when that option is omitted, the first of `config.xml`, `config.yaml` and `config.yml` found in the current directory. Both the XML and the YAML forms are read, so `zookeeper.password` in a `config.yaml` works exactly like `<zookeeper><password>` in a `config.xml`.
 
 The same priority applies to `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
 
-Example XML config file with authentication settings:
+Example configuration file with authentication settings:
 
 ```xml
 <clickhouse>
