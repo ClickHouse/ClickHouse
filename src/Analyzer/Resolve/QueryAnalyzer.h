@@ -242,9 +242,19 @@ private:
 
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
+    /// A matched column before the column transformers replaced it.
+    struct MatchedColumnBeforeTransformers
+    {
+        QueryTreeNodePtr node;
+        /// The projection name of the matched column itself.
+        String name;
+        /// Whether the projection name of the transformed result depends on the name of the matched column.
+        bool projection_name_derived_from_column = true;
+    };
+
     static void validateMatchedColumnsFromJoinCanBeQualified(
         const QueryTreeNodePtr & matcher_node,
-        const QueryTreeNodes & matched_nodes,
+        const std::vector<MatchedColumnBeforeTransformers> & matched_columns,
         const ProjectionNames & matched_projection_names,
         const IdentifierResolveScope & scope);
 

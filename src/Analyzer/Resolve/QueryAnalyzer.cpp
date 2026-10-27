@@ -84,6 +84,7 @@
 #include <base/types.h>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <map>
 #include <memory>
 #include <ranges>
 
@@ -2989,6 +2990,27 @@ static const IQueryTreeNode * getMatchedColumnSource(const QueryTreeNodePtr & no
     return nullptr;
 }
 
+/// Whether the expression `node` uses a column of `column_source` (see getMatchedColumnSource).
+static bool expressionReferencesColumnSource(const QueryTreeNodePtr & node, const IQueryTreeNode * column_source)
+{
+    if (!node || !column_source)
+        return false;
+
+    if (node->as<ColumnNode>())
+        return getMatchedColumnSource(node) == column_source;
+
+    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+        return expressionReferencesColumnSource(constant_node->getSourceExpression(), column_source);
+
+    for (const auto & child : node->getChildren())
+    {
+        if (expressionReferencesColumnSource(child, column_source))
+            return true;
+    }
+
+    return false;
+}
+
 /** Nearest scope, up to the enclosing QUERY/UNION scope, whose `member` is not empty.
   * `registered_table_expression_nodes` and `nullable_group_by_keys` are populated only on the scope
   * that owns the join tree, never on a lambda's child scope.
@@ -3015,16 +3037,19 @@ static IdentifierResolveScope * findNearestScopeWithNonEmpty(IdentifierResolveSc
   *
   * Example: SELECT * FROM test_table, (SELECT 1 AS id);
   *
-  * `matched_nodes` are the matched columns before the column transformers replaced them: a transformed node no longer
+  * `matched_columns` are the matched columns before the column transformers replaced them: a transformed node no longer
   * carries the source of the column its projection name is derived from (`SELECT * APPLY (x -> 1 + x)`).
+  * Only a collision that qualification can resolve is reported: the matched columns themselves must be equally named,
+  * and the final projection names must be derived from them. Columns `a` and `b` that a transformer ignoring its argument
+  * turns into equally named results (`SELECT * APPLY (x -> 0)`) collide no matter how the inputs are qualified.
   */
 void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
     const QueryTreeNodePtr & matcher_node,
-    const QueryTreeNodes & matched_nodes,
+    const std::vector<MatchedColumnBeforeTransformers> & matched_columns,
     const ProjectionNames & matched_projection_names,
     const IdentifierResolveScope & scope)
 {
-    if (matched_nodes.size() < 2 || !scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
+    if (matched_columns.size() < 2 || !scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return;
 
     const auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -3038,17 +3063,21 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
 
     /// Only equally named columns of different table expressions matter. A single table expression is allowed to expose
     /// equally named columns (SELECT * FROM (SELECT x, x FROM t)), and they do not need a qualification.
-    std::unordered_map<std::string_view, size_t> projection_name_to_first_node_index;
-    size_t matched_nodes_size = matched_nodes.size();
-    for (size_t i = 0; i < matched_nodes_size; ++i)
+    std::map<std::pair<std::string_view, std::string_view>, size_t> names_to_first_node_index;
+    size_t matched_columns_size = matched_columns.size();
+    for (size_t i = 0; i < matched_columns_size; ++i)
     {
-        auto [it, inserted] = projection_name_to_first_node_index.emplace(matched_projection_names[i], i);
+        if (!matched_columns[i].projection_name_derived_from_column)
+            continue;
+
+        auto [it, inserted] = names_to_first_node_index.emplace(std::pair{std::string_view(matched_columns[i].name), std::string_view(matched_projection_names[i])}, i);
         if (inserted)
             continue;
 
-        const auto & first_node = matched_nodes[it->second];
+        const auto & first_node = matched_columns[it->second].node;
+        const auto & second_node = matched_columns[i].node;
         const auto * first_column_source = getMatchedColumnSource(first_node);
-        const auto * second_column_source = getMatchedColumnSource(matched_nodes[i]);
+        const auto * second_column_source = getMatchedColumnSource(second_node);
         if (first_column_source == second_column_source)
             continue;
 
@@ -3059,7 +3088,7 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
         const auto * combining_join_node = combining_join ? combining_join->as<JoinNode>() : nullptr;
 
         auto unaliased_table_expression = IdentifierResolver::getUnaliasedTableExpressionRequiringAlias(
-            first_node, matched_nodes[i], combining_join_node, scope);
+            first_node, second_node, combining_join_node, scope);
         if (!unaliased_table_expression)
             continue;
 
@@ -3251,10 +3280,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
     /** The matched columns before the transformers replaced them, in the same order as `result_projection_names`.
       * A transformer turns the matched column into an arbitrary expression over it (`APPLY`) or into an unrelated
-      * expression (`REPLACE`), but the projection name of the result is still derived from the matched column, so the
-      * table expression that has to be qualified is the source of the matched column, not of the transformed node.
+      * expression (`REPLACE`), but the projection name of the result is usually still derived from the matched column, so
+      * the table expression that has to be qualified is the source of the matched column, not of the transformed node.
       */
-    QueryTreeNodes matched_nodes_before_transformers;
+    std::vector<MatchedColumnBeforeTransformers> matched_columns_before_transformers;
 
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
@@ -3269,7 +3298,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         else
             result_projection_names.push_back(column_name);
 
-        matched_nodes_before_transformers.push_back(node);
+        matched_columns_before_transformers.push_back({node, result_projection_names.back(), /*projection_name_derived_from_column=*/ true});
 
         String apply_column_name_prefix;
         /// Prefix the projection name: it carries the qualifier (`f_t2.a`) that tells same-named columns apart.
@@ -3319,6 +3348,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
                     node = lambda_expression_to_resolve_typed.getExpression();
+
+                    /// A lambda that ignores its argument (`x -> 0`) names the result after its body alone, so qualifying
+                    /// the matched column would not change that name. A prefix keeps the (qualified) column name.
+                    auto & matched_column = matched_columns_before_transformers.back();
+                    matched_column.projection_name_derived_from_column = !apply_column_name_prefix.empty()
+                        || expressionReferencesColumnSource(node, getMatchedColumnSource(matched_column.node));
                 }
                 else if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
                 {
@@ -3445,7 +3480,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             {
                                 result_projection_names.push_back({});
                                 /// Every element derives its name from the same matched column.
-                                matched_nodes_before_transformers.push_back(matched_nodes_before_transformers.back());
+                                matched_columns_before_transformers.push_back(matched_columns_before_transformers.back());
                             }
                             result_projection_names.back() = element_projection_name;
 
@@ -3541,11 +3576,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         else
         {
             result_projection_names.pop_back();
-            matched_nodes_before_transformers.pop_back();
+            matched_columns_before_transformers.pop_back();
         }
     }
 
-    validateMatchedColumnsFromJoinCanBeQualified(matcher_node, matched_nodes_before_transformers, result_projection_names, scope);
+    validateMatchedColumnsFromJoinCanBeQualified(matcher_node, matched_columns_before_transformers, result_projection_names, scope);
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
     {

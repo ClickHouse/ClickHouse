@@ -97,6 +97,11 @@ SELECT * APPLY (x -> 1 + x) FROM (SELECT 1 AS a) AS l, (SELECT 2 AS a) AS r FORM
 SELECT * APPLY (x -> 1 + x) FROM (SELECT 1 AS a), (SELECT 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> 1 + x) FROM item, (SELECT 1 AS other) ORDER BY item_id FORMAT TSVWithNames;
 
+SELECT '-- Matcher: a collision introduced by a transformer that ignores its argument cannot be resolved by qualification';
+SELECT * APPLY (x -> 0) FROM (SELECT 1 AS a), (SELECT 2 AS b) FORMAT TSVWithNames;
+SELECT * APPLY (x -> 0) FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b), (SELECT 3 AS c) AS r FORMAT TSVWithNames;
+SELECT * APPLY (x -> 0, 'f') FROM (SELECT 1 AS a), (SELECT 2 AS a); -- { serverError ALIAS_REQUIRED }
+
 SELECT '-- Equally named columns of a single table expression do not need a qualification';
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x));
 SELECT * FROM (SELECT x, x FROM (SELECT 1 AS x)), (SELECT 3 AS y);

@@ -55,6 +55,11 @@ plus(1, a)	plus(1, b)
 plus(1, item_id)	plus(1, brand)	plus(1, other)
 2	101	2
 3	201	2
+-- Matcher: a collision introduced by a transformer that ignores its argument cannot be resolved by qualification
+0	0
+0	0
+0	0	0
+0	0	0
 -- Equally named columns of a single table expression do not need a qualification
 1	1
 1	1	3
