@@ -4,9 +4,14 @@
 
 #include <Common/Logger.h>
 
-#include <condition_variable>
 #include <map>
+#include <memory>
 #include <mutex>
+
+namespace silk
+{
+class FiberEvent;
+}
 
 namespace DB::Proxy
 {
@@ -47,6 +52,8 @@ public:
 
     bool needsCredentials(ListenerProtocol protocol) const { return table->needsCredentials(protocol); }
     bool needsQueryType(ListenerProtocol protocol) const { return table->needsQueryType(protocol); }
+    /// Whether a hook runs for the user or the database of a connection, which have to be read then.
+    bool hasFirstSeenHooks() const { return !hooks.on_first_seen_user.empty() || !hooks.on_first_seen_database.empty(); }
 
     /// Whether connect failures may mark a backend as down
     /// (only when active health checks are enabled to bring it back up).
@@ -85,20 +92,24 @@ private:
     /// The keys are (routing target, user or database name), see `Decision::target_identity`: the same
     /// name routed to different pools or dynamic backends (e.g. different tenants) is a different name
     /// for the purpose of provisioning.
-    /// The value is whether the hook has completed successfully; a failed hook removes the entry,
-    /// so a later connection retries it. The keys come from clients, so the maps are bounded:
-    /// when one is full, the completed entries are forgotten (the hooks are required to be idempotent).
+    /// A failed hook removes the entry, so a later connection retries it. The keys come from clients,
+    /// so the maps are bounded: when one is full, the completed entries are forgotten
+    /// (the hooks are required to be idempotent).
     static constexpr size_t max_seen_names = 100000;
     std::mutex first_seen_mutex;
-    std::condition_variable first_seen_finished;
     using SeenKey = std::pair<String, String>;
-    std::map<SeenKey, bool> seen_users;
-    std::map<SeenKey, bool> seen_databases;
+    struct SeenEntry
+    {
+        bool done = false;                              /// The hook has completed successfully.
+        std::shared_ptr<silk::FiberEvent> finished;     /// Set when the hook in flight finishes.
+    };
+    std::map<SeenKey, SeenEntry> seen_users;
+    std::map<SeenKey, SeenEntry> seen_databases;
 
     LoggerPtr log;
 
     void runFirstSeenHook(const String & command, const char * kind, const String & target_identity, const String & value,
-        std::map<SeenKey, bool> & seen, const RouteAttributes & attributes);
+        std::map<SeenKey, SeenEntry> & seen, const RouteAttributes & attributes);
     bool runHook(const String & command, const char * kind, const RouteAttributes & attributes);
     /// Fills `pool`, `target_identity`, `authorized_key_matched`, `dynamic_backends_exhausted` and `user_unknown` of the decision.
     Decision resolvePool(const RouteAttributes & attributes, const ListenerConfig & listener);

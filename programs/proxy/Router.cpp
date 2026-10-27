@@ -8,6 +8,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 
+#include <silk/fibers/event.h>
 #include <silk/fibers/fiber.h>
 
 #include <fmt/format.h>
@@ -104,6 +105,12 @@ bool Router::runHook(const String & command, const char * kind, const RouteAttri
             /// Hooks do not consume their output. Let it inherit the proxy's standard streams
             /// instead of creating unread pipes that can block a verbose hook on write(2).
             config.pipe_stdin_only = true;
+            /// A hook is run by `/bin/sh -c`, which may be waiting for other processes (`provision.py && true`):
+            /// a timed out hook is killed with all of them, so it cannot act after it was reported as failed.
+            config.new_process_group = true;
+            /// Nor may it inherit the sockets of the connections (some, like those of libssh, are not close-on-exec):
+            /// a long-lived process started by a hook would keep them open.
+            config.close_inherited_descriptors = true;
             process = ShellCommand::execute(config);
         }
 
@@ -116,8 +123,10 @@ bool Router::runHook(const String & command, const char * kind, const RouteAttri
             if (std::chrono::steady_clock::now() >= deadline)
             {
                 LOG_WARNING(log, "Hook {} did not finish in {} ms; killing it", kind, hooks.timeout_ms);
-                ::kill(process->getPid(), SIGKILL);
-                /// Reap the killed child.
+                /// The process group of the hook: the shell is its leader, and it is not reaped yet,
+                /// so the group ID cannot have been reused.
+                ::kill(-process->getPid(), SIGKILL);
+                /// Reap the killed child; its killed descendants are reaped by `init`.
                 silk::FiberScheduler::ThreadModeScope thread_mode;
                 process->tryWait();
                 return false;
@@ -134,43 +143,59 @@ bool Router::runHook(const String & command, const char * kind, const RouteAttri
 }
 
 void Router::runFirstSeenHook(const String & command, const char * kind, const String & target_identity, const String & value,
-    std::map<SeenKey, bool> & seen, const RouteAttributes & attributes)
+    std::map<SeenKey, SeenEntry> & seen, const RouteAttributes & attributes)
 {
     if (command.empty() || value.empty())
         return;
 
     const SeenKey key{target_identity, value};
+    std::shared_ptr<silk::FiberEvent> finished;
 
+    /// The waits below are cooperative and happen with the mutex released: a fiber waiting for another
+    /// hook must not occupy a thread (of the fixed pool of the scheduler), or hold the mutex that the
+    /// hook's connection needs to report its completion.
+    while (!finished)
     {
-        std::unique_lock lock(first_seen_mutex);
-        while (seen.size() >= max_seen_names && !seen.contains(key))
+        std::shared_ptr<silk::FiberEvent> wait_for;
+        bool wait_for_same_key = false;
         {
-            std::erase_if(seen, [](const auto & entry) { return entry.second; });
-            if (seen.size() < max_seen_names)
-                break;
+            std::lock_guard lock(first_seen_mutex);
+            if (seen.size() >= max_seen_names && !seen.contains(key))
+            {
+                std::erase_if(seen, [](const auto & entry) { return entry.second.done; });
+                /// Every entry is a hook in flight, so nothing can be evicted: wait for one of them to finish
+                /// (each is bounded by `timeout_ms`) instead of growing the map beyond the limit.
+                if (seen.size() >= max_seen_names)
+                    wait_for = seen.begin()->second.finished;
+            }
 
-            /// Every entry is a hook in flight, so nothing can be evicted: wait for one of them to finish
-            /// (each is bounded by `timeout_ms`) instead of growing the map beyond the limit.
-            silk::FiberScheduler::ThreadModeScope thread_mode;
-            first_seen_finished.wait(lock);
+            if (!wait_for)
+            {
+                auto [it, inserted] = seen.try_emplace(key);
+                if (inserted)
+                {
+                    it->second.finished = std::make_shared<silk::FiberEvent>();
+                    finished = it->second.finished;
+                }
+                else if (it->second.done)
+                {
+                    return;
+                }
+                else
+                {
+                    /// Another connection is running the hook right now: wait for it to finish (successfully,
+                    /// or by removing the entry on failure, in which case a later connection retries it).
+                    wait_for = it->second.finished;
+                    wait_for_same_key = true;
+                }
+            }
         }
 
-        auto [it, inserted] = seen.emplace(key, false);
-        if (!inserted)
+        if (wait_for)
         {
-            if (it->second)
+            wait_for->wait();
+            if (wait_for_same_key)
                 return;
-
-            /// Another connection is running the hook right now: wait for it to finish (successfully,
-            /// or by removing the entry on failure, in which case a later connection retries it).
-            /// Waiting on a condition variable blocks the borrowed thread, so leave the scheduler.
-            silk::FiberScheduler::ThreadModeScope thread_mode;
-            first_seen_finished.wait(lock, [&]
-            {
-                auto found = seen.find(key);
-                return found == seen.end() || found->second;
-            });
-            return;
         }
     }
 
@@ -178,12 +203,13 @@ void Router::runFirstSeenHook(const String & command, const char * kind, const S
 
     {
         std::lock_guard lock(first_seen_mutex);
+        /// An entry of a hook in flight is never evicted, so it is still there.
         if (success)
-            seen[key] = true;
+            seen.at(key).done = true;
         else
             seen.erase(key);
     }
-    first_seen_finished.notify_all();
+    finished->set();
 }
 
 BackendPoolPtr Router::poolForDynamicBackend(const BackendConfig & backend_config, const ListenerConfig & listener, String & identity)
