@@ -247,6 +247,8 @@ struct Reader
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
+        /// If `is_missing_column`, the memory that a default value takes in the column, see `formOutputColumn`.
+        double missing_bytes_per_value = 0;
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
         /// null map reconstructed from the leaves' definition levels. Used to read a physically

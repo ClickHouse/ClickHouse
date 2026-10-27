@@ -1077,8 +1077,14 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
     /// The conversion may widen the column a lot, e.g. one-byte strings read as `FixedString(256)`.
-    for (const OutputColumnInfo & info : output_columns)
+    for (OutputColumnInfo & info : output_columns)
     {
+        if (info.is_missing_column)
+        {
+            auto column = info.output_type->createColumn();
+            column->insertDefault();
+            info.missing_bytes_per_value = static_cast<double>(column->byteSizeAt(0));
+        }
         if (!info.needs_cast || info.is_missing_column || info.primitive_start == info.primitive_end)
             continue;
         const DataTypePtr output_type = removeNullable(info.output_type);
@@ -3065,6 +3071,47 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 /// E.g. numbers converted to strings.
                 size_unknown = true;
             }
+        }
+        /// Some columns are formed in `formOutputColumn` without a primitive column that bounds them: the columns and the
+        /// elements of tuples that are missing in the file are filled with default values, and a variant is assembled
+        /// into `Dynamic` or `JSON`, whose size is not bounded by the size of its binary columns (e.g. each row may
+        /// add a path). `max_values` bounds the number of values of the column in a chunk.
+        std::function<void(size_t, double)> count_assembled_column = [&](size_t output_idx, double max_values)
+        {
+            const OutputColumnInfo & info = output_columns.at(output_idx);
+            if (info.is_missing_column)
+            {
+                chunk_bytes += info.missing_bytes_per_value * max_values;
+                return;
+            }
+            const TypeIndex kind = removeNullable(info.input_type)->getColumnType();
+            if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+            {
+                size_unknown = true;
+                return;
+            }
+            if (info.is_primitive)
+                return;
+            if (kind == TypeIndex::Array)
+            {
+                /// The elements of the arrays of a chunk: at most the values of any primitive column inside, all of
+                /// which may be in one chunk. None if no primitive column is inside, see `formOutputColumn`.
+                double nested_values = 0;
+                for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                    nested_values = std::max(nested_values, static_cast<double>(std::max<Int64>(0, row_group.columns.at(i).meta->meta_data.num_values)));
+                max_values = nested_values;
+            }
+            for (size_t nested_idx : info.nested_columns)
+                count_assembled_column(nested_idx, max_values);
+        };
+        const double chunk_rows = static_cast<double>(std::min(COLUMNS_CACHE_CHUNK_ROWS, size_t(std::max<Int64>(0, row_group.meta->num_rows))));
+        for (size_t idx = 0; idx < sample_block_to_output_columns_idx.size(); ++idx)
+        {
+            const auto & output_idx = sample_block_to_output_columns_idx[idx];
+            /// The columns served from the cache are counted below.
+            if (!output_idx.has_value() || (!row_group.cached_columns.empty() && !row_group.cached_columns.at(idx).empty()))
+                continue;
+            count_assembled_column(*output_idx, chunk_rows);
         }
         /// A cached column is counted by its largest chunk.
         for (const auto & chunks : row_group.cached_columns)
