@@ -598,6 +598,8 @@ def test_move_after_processing_basename_collision(started_cluster):
     create_mv(node, table_name, f"{table_name}_dst")
 
     wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 2)
+    # `(1, 1)` already holds once the first file is moved, before the second one is post-processed.
+    wait_until(lambda: move_collisions(node) > collisions_before)
     wait_until(
         lambda: move_counts(
             started_cluster, "S3Queue", None, files_path, processed_prefix
@@ -616,7 +618,6 @@ def test_move_after_processing_basename_collision(started_cluster):
                 )
             )
     assert sorted(remaining) == sorted(source_data.values())
-    assert move_collisions(node) > collisions_before
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -670,13 +671,14 @@ def test_move_after_processing_existing_destination(
     create_mv(node, table_name, f"{table_name}_dst")
 
     wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
+    # `(1, 1)` holds before processing starts, and the row is visible before post-processing runs.
+    wait_until(lambda: move_collisions(node) > collisions_before)
     wait_until(
         lambda: move_counts(
             started_cluster, engine_name, destination, files_path, processed_prefix
         )
         == (1, 1)
     )
-    assert move_collisions(node) > collisions_before
 
     if is_s3:
         data = read_s3_object(
