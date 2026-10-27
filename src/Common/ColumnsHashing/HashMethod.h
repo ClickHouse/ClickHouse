@@ -245,7 +245,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     /// Returns the row's bytes in the padded source column, without persisting the key. The view remains
     /// valid for this block and permits reads up to 15 bytes past its end.
-    std::string_view getKeyBytes(ssize_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(ssize_t row) const
     {
         return {reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]};
     }
@@ -360,7 +360,7 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
 
     /// Returns the row's bytes in the padded source column, without packing or persisting the key. The
     /// view remains valid for this block and permits reads up to 15 bytes past its end.
-    std::string_view getKeyBytes(ssize_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(ssize_t row) const
     {
         const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
         const size_t size = offsets[row] - offsets[row - 1];
@@ -422,7 +422,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
 
     /// Returns the row's bytes in the padded source column, without persisting the key. The view remains
     /// valid for this block and permits reads up to 15 bytes past its end.
-    std::string_view getKeyBytes(size_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(size_t row) const
     {
         return {reinterpret_cast<const char *>(&(*chars)[row * n]), n};
     }

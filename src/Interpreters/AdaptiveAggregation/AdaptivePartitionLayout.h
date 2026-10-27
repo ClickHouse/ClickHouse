@@ -33,17 +33,17 @@ public:
     static AdaptivePartitionLayout forProducers(size_t producers, size_t max_bytes_before_external_group_by);
 
     /// The first chunk of every partition in a producer's staging buffer (see `PartitionedRecordBuffer`).
-    size_t firstChunkBytes() const { return first_chunk_bytes; }
+    [[nodiscard]] size_t firstChunkBytes() const { return first_chunk_bytes; }
 
-    size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
-    size_t numPartitions() const { return partition_mask + 1; }
-    size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
+    [[nodiscard]] size_t partitionsPerBucket() const { return numPartitions() / ADAPTIVE_AGGREGATION_NUM_BUCKETS; }
+    [[nodiscard]] size_t numPartitions() const { return partition_mask + 1; }
+    [[nodiscard]] size_t partitionOf(UInt64 hash) const { return (hash >> partition_shift) & partition_mask; }
 
     /// The partitions of a bucket are consecutive: they start at `firstPartition(bucket)`, and `subOf` is a
     /// partition's place among them.
-    size_t firstPartition(size_t bucket) const { return bucket * partitionsPerBucket(); }
-    size_t subOf(size_t partition) const { return partition & (partitionsPerBucket() - 1); }
-    size_t bucketOf(size_t partition) const { return partition / partitionsPerBucket(); }
+    [[nodiscard]] size_t firstPartition(size_t bucket) const { return bucket * partitionsPerBucket(); }
+    [[nodiscard]] size_t subOf(size_t partition) const { return partition & (partitionsPerBucket() - 1); }
+    [[nodiscard]] size_t bucketOf(size_t partition) const { return partition / partitionsPerBucket(); }
 
 private:
     /// The two-level tables take the bucket from the top `bucket_bits` of the low 32 bits of the hash. The kernels

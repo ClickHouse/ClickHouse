@@ -677,7 +677,7 @@ public:
         return 0;
     }
 
-    size_t getStateBytesPerDistinctInput() const override
+    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override
     {
         if constexpr (detail::IsUniqExactSet<typename Data::Set>::value)
             return Data::Set::getEstimatedBytesPerValue();

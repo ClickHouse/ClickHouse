@@ -77,7 +77,7 @@ public:
     template <typename Callback>
     void forEachChunk(size_t partition, Callback && callback) const;
 
-    UInt64 recordsOf(size_t partition) const { return chains[partition].closed_chunk_records + cursors[partition].records; }
+    [[nodiscard]] UInt64 recordsOf(size_t partition) const { return chains[partition].closed_chunk_records + cursors[partition].records; }
 
     /// Releases the partition's chunks and resets its cursor. Consumers may release distinct partitions
     /// concurrently, after `finishAppending`.
@@ -85,7 +85,7 @@ public:
 
     /// The total capacity of chunks allocated since construction or `clear`. This counts chunk headers and
     /// padding, excludes unused block capacity, and is not reduced by concurrent partition releases.
-    size_t allocatedChunkBytes() const { return allocated_chunk_bytes; }
+    [[nodiscard]] size_t allocatedChunkBytes() const { return allocated_chunk_bytes; }
 
     /// Releases all records and blocks and resets allocation accounting. Requires exclusive access.
     void clear();
@@ -133,7 +133,7 @@ private:
 
     /// The size of the group's next block: the first takes the first chunks of the group's partitions, and
     /// each later one is as large as the group's blocks together, up to the cap.
-    size_t nextBlockBytes(size_t group) const;
+    [[nodiscard]] size_t nextBlockBytes(size_t group) const;
 
     const size_t num_partitions;
     const size_t partitions_per_group;
@@ -154,7 +154,7 @@ struct PartitionedRecordBuffer::ChunkHeader
     UInt32 capacity;
 
     char * records() { return reinterpret_cast<char *>(this) + sizeof(ChunkHeader); }
-    const char * records() const { return reinterpret_cast<const char *>(this) + sizeof(ChunkHeader); }
+    [[nodiscard]] const char * records() const { return reinterpret_cast<const char *>(this) + sizeof(ChunkHeader); }
 };
 
 template <typename Callback>

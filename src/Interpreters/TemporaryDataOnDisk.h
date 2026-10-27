@@ -195,7 +195,7 @@ public:
 
     /// The disk of the file, or null for a file in a cache. Returned by reference, because a copy for
     /// every append would contend on the reference count, which all the files on the disk share.
-    virtual const DiskPtr & getDisk() const;
+    [[nodiscard]] virtual const DiskPtr & getDisk() const;
 
     virtual ~TemporaryFileHolder() = default;
 

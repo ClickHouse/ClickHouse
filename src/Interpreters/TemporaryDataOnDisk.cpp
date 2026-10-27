@@ -316,7 +316,7 @@ public:
         return fmt::format("disk({})://{}/{}", disk->getName(), disk->getPath(), path_to_file);
     }
 
-    const DiskPtr & getDisk() const override
+    [[nodiscard]] const DiskPtr & getDisk() const override
     {
         return disk;
     }

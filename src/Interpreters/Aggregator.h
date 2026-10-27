@@ -191,13 +191,13 @@ public:
         /// Whether the adaptive aggregation prunes its merge by the top-K of `bucket_top_k` (see `AdaptiveTopKPruning`):
         /// the count bins bound the ranks from above, which serves a descending order only, and a throw-mode group limit
         /// needs every group counted, which a skipped unit is not.
-        bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
+        [[nodiscard]] bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
 
         /// Whether a frozen producer of the adaptive aggregation may thaw: not with `adaptive_aggregator_disable_thaw`,
         /// and not under the top-K pruning. There the frozen tables pay even for a repetitive stream: the merge skips
         /// the units whose groups cannot reach the top, which a thawed table, a source of every unit, would no longer
         /// allow.
-        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw && !adaptiveTopKPrunes(); }
+        [[nodiscard]] bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw && !adaptiveTopKPrunes(); }
 
         /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
         /// as `bucket_top_k` (never by users) when the plan proves this aggregation feeds

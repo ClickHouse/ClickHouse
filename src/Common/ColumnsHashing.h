@@ -244,7 +244,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     /// Like `getKeyHolder`, it does not handle the `NULL` sentinel at dictionary index 0: the caller must
     /// check `isNullAt` first. The adaptive aggregator, which uses it, rejects `LowCardinality` keys in
     /// `adaptiveAggregatorRejectionReason`.
-    std::string_view getKeyBytes(size_t row) const
+    [[nodiscard]] std::string_view getKeyBytes(size_t row) const
         requires requires (const Base & base) { base.getKeyBytes(row); }
     {
         return Base::getKeyBytes(getIndexAt(row));
