@@ -11,11 +11,16 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <atomic>
 #include <chrono>
+#include <deque>
+#include <optional>
 #include <string>
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <fcntl.h>
+#include <sched.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -59,6 +64,22 @@ namespace
 /// to the chosen backend (client leg), then splices the two channels. One Bridge lives on the stack of
 /// the handler for the whole connection, so the callback structs it owns stay valid and are private to
 /// this connection (concurrent connections each have their own).
+/// Output of one direction of the splice that its destination channel cannot take yet, as its window is closed.
+/// `ssh_channel_write` would wait for the window up to the session timeout and then leave the rest in the source
+/// channel, where libssh offers it to the data callback again only when more data arrives on it. So the data
+/// callbacks write only what fits in the window and keep the rest here, and the splice loop writes it as the
+/// window reopens. The amount kept is bounded: beyond it, the callbacks leave the data in the source channel,
+/// whose window then stays closed for the sender, and the splice loop reads it from there later.
+struct PendingOutput
+{
+    std::deque<std::pair<bool, String>> segments;   /// (is_stderr, data), in order.
+    size_t bytes = 0;
+    bool eof_received = false;      /// The source sent EOF: forwarded once everything before it is written.
+    bool eof_sent = false;
+};
+
+constexpr size_t max_pending_output_bytes = 1024 * 1024;
+
 struct Bridge
 {
     const FrontendContext * ctx = nullptr;
@@ -79,6 +100,10 @@ struct Bridge
     ssh_session backend_session = nullptr;
     ssh_channel backend_channel = nullptr;
     ssh_key backend_key = nullptr;
+
+    PendingOutput to_backend;
+    PendingOutput to_client;
+    std::optional<int> backend_exit_status;    /// Forwarded after the output to the client.
 
     ssh_server_callbacks_struct server_cb{};
     ssh_channel_callbacks_struct client_cb{};
@@ -123,6 +148,15 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
             return SSH_AUTH_DENIED;
         }
 
+        /// A client may send a signed request without asking first, so the allowlist is checked before
+        /// the routing, which may expand a backend template into a dynamic backend (and start probing it).
+        if (!bridge->ctx->router.keyIsAcceptable(attributes))
+        {
+            LOG_DEBUG(bridge->log, "SSH {} key (user '{}') is not in the allowlist of a routing rule with an available backend",
+                public_key.getType(), attributes.user);
+            return SSH_AUTH_DENIED;
+        }
+
         /// Pure routing only: hooks and waits use fibers and must not run inside this callback.
         Router::Decision decision = bridge->ctx->router.routeStatic(attributes, bridge->ctx->listener);
 
@@ -151,22 +185,110 @@ int onAuthPubkey(ssh_session, const char * user, ssh_key key, char signature_sta
     }
 }
 
+/// Writes as much of @p data as the window of @p channel admits, so the write does not wait for the window.
+/// Returns the number of bytes written.
+size_t writeWithinWindow(ssh_channel channel, const char * data, size_t size, bool is_stderr)
+{
+    const uint32_t length = static_cast<uint32_t>(std::min<size_t>(size, ssh_channel_window_size(channel)));
+    if (length == 0)
+        return 0;
+    const int written = is_stderr ? ssh_channel_write_stderr(channel, data, length) : ssh_channel_write(channel, data, length);
+    return written > 0 ? static_cast<size_t>(written) : 0;
+}
+
+/// Forwards data from the source channel to @p destination, keeping what does not fit in its window.
+/// Returns the number of bytes consumed from the source.
+size_t forward(PendingOutput & out, ssh_channel destination, const char * data, size_t size, bool is_stderr)
+{
+    size_t consumed = 0;
+    if (out.segments.empty())
+        consumed = writeWithinWindow(destination, data, size, is_stderr);
+
+    const size_t keep = std::min(size - consumed, max_pending_output_bytes - std::min(out.bytes, max_pending_output_bytes));
+    if (keep)
+    {
+        out.segments.emplace_back(is_stderr, String(data + consumed, keep));
+        out.bytes += keep;
+        consumed += keep;
+    }
+    return consumed;
+}
+
+/// Called from the splice loop: writes the pending output as the window of @p destination admits, then reads
+/// the data left in @p source, and forwards the EOF once everything before it is written.
+/// Returns whether everything received from the source has been written.
+bool pump(PendingOutput & out, ssh_channel source, ssh_channel destination, bool with_stderr, Backend * backend, bool to_client)
+{
+    while (!out.segments.empty())
+    {
+        auto & [is_stderr, data] = out.segments.front();
+        const size_t written = writeWithinWindow(destination, data.data(), data.size(), is_stderr);
+        out.bytes -= written;
+        if (written == data.size())
+        {
+            out.segments.pop_front();
+        }
+        else
+        {
+            data.erase(0, written);
+            break;
+        }
+    }
+
+    bool source_drained = true;
+    for (const bool is_stderr : {false, true})
+    {
+        if (is_stderr && !with_stderr)
+            break;
+        while (true)
+        {
+            if (out.bytes >= max_pending_output_bytes)
+            {
+                source_drained = false;
+                break;
+            }
+            /// The data callbacks may run within the read for newly arrived data: they take the data from
+            /// the front of the same buffer, so the order is preserved.
+            char buffer[16384];
+            const int read = ssh_channel_read_nonblocking(source, buffer,
+                static_cast<uint32_t>(std::min(sizeof(buffer), max_pending_output_bytes - out.bytes)), is_stderr);
+            if (read <= 0)
+                break;
+            forward(out, destination, buffer, read, is_stderr);
+            if (backend)
+            {
+                if (to_client)
+                    backend->addBytesToClient(read);
+                else
+                    backend->addBytesFromClient(read);
+            }
+        }
+    }
+
+    const bool drained = source_drained && out.segments.empty();
+    if (drained && out.eof_received && !out.eof_sent)
+    {
+        ssh_channel_send_eof(destination);
+        out.eof_sent = true;
+    }
+    return drained;
+}
+
 int onClientData(ssh_session, ssh_channel, void * data, uint32_t len, int is_stderr, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
     if (!bridge->backend_channel || is_stderr)
         return 0;
-    int written = ssh_channel_write(bridge->backend_channel, data, len);
-    if (bridge->backend && written > 0)
-        bridge->backend->addBytesFromClient(written);
-    return written > 0 ? written : 0;
+    const size_t consumed = forward(bridge->to_backend, bridge->backend_channel, static_cast<const char *>(data), len, false);
+    if (bridge->backend && consumed > 0)
+        bridge->backend->addBytesFromClient(consumed);
+    return static_cast<int>(consumed);
 }
 
 void onClientEof(ssh_session, ssh_channel, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
-    if (bridge->backend_channel)
-        ssh_channel_send_eof(bridge->backend_channel);
+    bridge->to_backend.eof_received = true;
 }
 
 int onBackendData(ssh_session, ssh_channel, void * data, uint32_t len, int is_stderr, void * userdata)
@@ -174,26 +296,22 @@ int onBackendData(ssh_session, ssh_channel, void * data, uint32_t len, int is_st
     auto * bridge = static_cast<Bridge *>(userdata);
     if (!bridge->client_channel)
         return 0;
-    int written = is_stderr
-        ? ssh_channel_write_stderr(bridge->client_channel, data, len)
-        : ssh_channel_write(bridge->client_channel, data, len);
-    if (bridge->backend && written > 0)
-        bridge->backend->addBytesToClient(written);
-    return written > 0 ? written : 0;
+    const size_t consumed = forward(bridge->to_client, bridge->client_channel, static_cast<const char *>(data), len, is_stderr != 0);
+    if (bridge->backend && consumed > 0)
+        bridge->backend->addBytesToClient(consumed);
+    return static_cast<int>(consumed);
 }
 
 void onBackendEof(ssh_session, ssh_channel, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
-    if (bridge->client_channel)
-        ssh_channel_send_eof(bridge->client_channel);
+    bridge->to_client.eof_received = true;
 }
 
 void onBackendExitStatus(ssh_session, ssh_channel, int exit_status, void * userdata)
 {
     auto * bridge = static_cast<Bridge *>(userdata);
-    if (bridge->client_channel)
-        ssh_channel_request_send_exit_status(bridge->client_channel, exit_status);
+    bridge->backend_exit_status = exit_status;
 }
 
 int onPtyRequest(ssh_session, ssh_channel, const char * term, int cols, int rows, int /*px*/, int /*py*/, void * userdata)
@@ -202,6 +320,14 @@ int onPtyRequest(ssh_session, ssh_channel, const char * term, int cols, int rows
     if (!bridge->backend_channel)
         return SSH_ERROR;
     return ssh_channel_request_pty_size(bridge->backend_channel, term, cols, rows) == SSH_OK ? SSH_OK : SSH_ERROR;
+}
+
+int onPtyWindowChange(ssh_session, ssh_channel, int cols, int rows, int /*px*/, int /*py*/, void * userdata)
+{
+    auto * bridge = static_cast<Bridge *>(userdata);
+    if (!bridge->backend_channel)
+        return SSH_ERROR;
+    return ssh_channel_change_pty_size(bridge->backend_channel, cols, rows) == SSH_OK ? SSH_OK : SSH_ERROR;
 }
 
 int onShellRequest(ssh_session, ssh_channel, void * userdata)
@@ -337,6 +463,7 @@ ssh_channel onChannelOpen(ssh_session session, void * userdata)
     bridge->client_cb.channel_data_function = onClientData;
     bridge->client_cb.channel_eof_function = onClientEof;
     bridge->client_cb.channel_pty_request_function = onPtyRequest;
+    bridge->client_cb.channel_pty_window_change_function = onPtyWindowChange;
     bridge->client_cb.channel_shell_request_function = onShellRequest;
     bridge->client_cb.channel_exec_request_function = onExecRequest;
     ssh_callbacks_init(&bridge->client_cb) // NOLINT: macro statement, no trailing semicolon
@@ -360,8 +487,8 @@ void runSSHSession(int owned_fd, const FrontendContext & ctx)
     session.disableDefaultConfig();
 
     /// libssh takes ownership of the fd it accepts, so hand it a duplicate and keep closing the
-    /// original ourselves (via the scope guard above).
-    int accept_fd = ::dup(owned_fd);
+    /// original ourselves (via the scope guard above). The duplicate stays close-on-exec, so hooks do not inherit it.
+    int accept_fd = ::fcntl(owned_fd, F_DUPFD_CLOEXEC, 0);
     if (accept_fd < 0)
         throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot duplicate the SSH socket fd");
     bind.acceptFd(session, accept_fd);
@@ -409,10 +536,23 @@ void runSSHSession(int owned_fd, const FrontendContext & ctx)
         }
     }
 
-    /// Splice the two channels until either side closes.
-    while (!bridge.finished && bridge.client_channel && ssh_channel_is_open(bridge.client_channel)
-        && bridge.backend_channel && ssh_channel_is_open(bridge.backend_channel))
+    /// Splice the two channels until either side closes, and the output of a closed backend is delivered.
+    while (!bridge.finished && bridge.client_channel && ssh_channel_is_open(bridge.client_channel) && bridge.backend_channel)
     {
+        const bool backend_open = ssh_channel_is_open(bridge.backend_channel);
+        if (backend_open)
+            pump(bridge.to_backend, bridge.client_channel, bridge.backend_channel, /*with_stderr=*/ false, bridge.backend.get(), /*to_client=*/ false);
+        const bool to_client_drained = pump(bridge.to_client, bridge.backend_channel, bridge.client_channel,
+            /*with_stderr=*/ true, bridge.backend.get(), /*to_client=*/ true);
+
+        if (to_client_drained && bridge.backend_exit_status)
+        {
+            ssh_channel_request_send_exit_status(bridge.client_channel, *bridge.backend_exit_status);
+            bridge.backend_exit_status.reset();
+        }
+        if (!backend_open && to_client_drained)
+            break;
+
         if (ssh_event_dopoll(bridge.event, poll_ms) == SSH_ERROR)
             break;
     }
@@ -450,6 +590,30 @@ void handleSSH(int fd, const FrontendContext & ctx)
         [[maybe_unused]] int err = ::close(fd);
         return;
     }
+
+    static const size_t max_sessions = [&]
+    {
+        if (ctx.config.ssh.max_sessions)
+            return static_cast<size_t>(ctx.config.ssh.max_sessions);
+        /// The scheduler has a blocking-work thread per CPU it runs on.
+        cpu_set_t cpus;
+        CPU_ZERO(&cpus);
+        size_t cpu_count = 1;
+        if (0 == sched_getaffinity(0, sizeof(cpus), &cpus))
+            cpu_count = CPU_COUNT(&cpus);
+        return std::max<size_t>(1, cpu_count / 2);
+    }();
+    static std::atomic<size_t> active_sessions{0};
+
+    if (active_sessions.fetch_add(1, std::memory_order_relaxed) >= max_sessions)
+    {
+        active_sessions.fetch_sub(1, std::memory_order_relaxed);
+        LOG_WARNING(ctx.log, "Rejecting an SSH connection: the limit of {} concurrent SSH sessions "
+            "(<proxy><ssh><max_sessions>) is reached", max_sessions);
+        [[maybe_unused]] int err = ::close(fd);
+        return;
+    }
+    SCOPE_EXIT({ active_sessions.fetch_sub(1, std::memory_order_relaxed); });
 
     /// Interactive traffic is latency-sensitive; disable Nagle's algorithm on the client fd.
     const int one = 1;

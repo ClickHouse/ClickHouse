@@ -378,6 +378,7 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     res.ssh.backend_key_file = config.getString("proxy.ssh.backend_key_file", "");
     res.ssh.known_hosts_file = config.getString("proxy.ssh.known_hosts_file", "");
     res.ssh.auth_timeout_ms = config.getUInt64("proxy.ssh.auth_timeout_ms", 10000);
+    res.ssh.max_sessions = config.getUInt64("proxy.ssh.max_sessions", 0);
 
     for (const auto & listener : res.listeners)
     {

@@ -152,6 +152,12 @@ struct SSHConfig
     String known_hosts_file;
 
     UInt64 auth_timeout_ms = 10000;
+
+    /// libssh drives blocking I/O, so each SSH session occupies a thread of the fixed pool that the fiber
+    /// scheduler uses for all blocking work (DNS resolution, hooks, files) for its whole duration.
+    /// The number of concurrent sessions is bounded to keep threads for that work: further SSH connections
+    /// are rejected. Zero means half of the CPUs available to the proxy (the pool has a thread per CPU), at least one.
+    UInt64 max_sessions = 0;
 };
 
 struct StaticPageConfig
