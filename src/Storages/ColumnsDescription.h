@@ -380,10 +380,9 @@ bool prewhereSupportedColumnsContain(
 
 class IStorage;
 
-/// Whether `storage` can evaluate a row policy filter over `required_columns` as its read's row-level
-/// filter. A remote storage only ships query text and would silently drop it. Wrapper storages
-/// (Merge, Buffer) re-derive the filter against their children's types, so every column must be in
-/// the PREWHERE contract.
+/// Whether the read of `storage` can evaluate a row policy over `required_columns` as its row-level filter.
+/// A remote storage ships only query text and would drop it. Wrappers (Merge, Buffer) re-derive it against
+/// their children's types, so every column must be in the PREWHERE contract.
 bool canPushDownRowPolicyFilter(const IStorage & storage, const ColumnsDescription & columns, const Names & required_columns);
 
 }

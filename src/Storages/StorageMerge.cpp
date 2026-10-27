@@ -2069,9 +2069,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 namespace
 {
 
-/// The filter column is dropped after filtering, so its name must be unique against the DAG outputs and
-/// against the child table's columns: a table may have a column named __row_policy_filter, and on
-/// SELECT * it flows into the same block as the filter column, so a clash makes Block::insert throw.
+/// Unique against the DAG outputs and the table's columns: on SELECT * a table column named
+/// `__row_policy_filter` lands in the same block as the filter column, and Block::insert throws.
 String makeUniqueRowPolicyFilterColumnName(const ActionsDAG & dag, const NamesAndTypesList & table_columns, const NameSet & other_names = {})
 {
     NameSet reserved_names = other_names;
@@ -2105,8 +2104,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    /// A read cannot produce `ALIAS` columns, so the policy should consume the columns they are computed from. That is
-    /// not possible for an `ALIAS` over a virtual column (`_table`): the policy then reads the `ALIAS` column.
+    /// A read cannot produce `ALIAS` columns: expand them, unless the expansion reads a virtual column.
     TreeRewriterResultPtr syntax_result;
     if (!storage_columns.getAliases().empty())
     {
@@ -2218,7 +2216,6 @@ FilterDAGInfoPtr ReadFromMerge::RowPolicyData::makeRowLevelFilter(
         return row_level_filter;
     }
 
-    /// One row-level filter for both policies: the child's and the `Merge` table's.
     /// `forwarded` may be another `Merge`'s child policy filter, named like ours.
     NameSet forwarded_names;
     for (const auto * node : forwarded->actions.getInputs())
