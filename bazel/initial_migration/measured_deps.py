@@ -19,6 +19,17 @@ MINIZIP = '@clickhouse_minizip_ng//:_minizip'
 S2 = '@clickhouse_s2geometry//:_s2'
 UPB_WIRE = '@clickhouse_grpc//:upb_wire_lib'
 PRIVATE_VENDOR_DEPS = ['@clickhouse_libcotp//:_libcotp', '@clickhouse_libgsasl//:_gsasl', '@clickhouse_zxc//:_zxc']
+CAPNP_AND_GOOGLE_CLOUD_DEPS = [
+    '@clickhouse_capnproto//:_capnp', '@clickhouse_google_cloud_cpp//:google_cloud_cpp_common',
+    '@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal',
+]
+# These fileless aggregates already receive the listed libraries through their deps.
+AGGREGATE_TRANSITIVE_DEPS = [
+    *PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2, *CAPNP_AND_GOOGLE_CLOUD_DEPS,
+    '//src/Access/Common:clickhouse_common_access', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic',
+    '@clickhouse_arrow//:_parquet', '@clickhouse_boost//:_boost_context', '@clickhouse_openldap//:_lber',
+    '@clickhouse_silk//:_silk_fibers',
+]
 ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
 UNIT_TEST_FUNCTION_DEPS = [
@@ -86,10 +97,10 @@ DEPENDENCIES = {
         '@clickhouse_double_conversion//:_double-conversion',
         '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
     ], [], []),
-    ('src', 'clickhouse_common_io'): ([CXX, GLIBC_COMPATIBILITY, MINIZIP], [], []),
-    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([*PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2, UPB_WIRE], [], []),
-    ('src/Dictionaries', 'clickhouse_dictionaries'): ([*PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2], [], []),
-    ('src/Storages/System', 'clickhouse_storages_system'): ([*PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2, UPB_WIRE], [], []),
+    ('src', 'clickhouse_common_io'): ([CXX, GLIBC_COMPATIBILITY, MINIZIP, '@clickhouse_openssl//:crypto'], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([*AGGREGATE_TRANSITIVE_DEPS, UPB_WIRE], [], []),
+    ('src/Dictionaries', 'clickhouse_dictionaries'): (AGGREGATE_TRANSITIVE_DEPS, [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([*AGGREGATE_TRANSITIVE_DEPS, UPB_WIRE], [], []),
     ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
     ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
@@ -116,9 +127,15 @@ DEPENDENCIES = {
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
     ], ['//src:headers'], []),
-    ('src/Functions/array', 'clickhouse_functions_array'): ([CXX], [], []),
+    ('src/Functions', 'clickhouse_functions_obj'): ([
+        '//base/poco/Foundation:_poco_foundation_pcre', '//base/poco/JSON:_poco_json_pdjson',
+    ], [], []),
+    ('src/Functions/array', 'clickhouse_functions_array'): ([
+        CXX, *CAPNP_AND_GOOGLE_CLOUD_DEPS, '@clickhouse_librseq//:_librseq',
+        '@clickhouse_liburing//:_liburing', '@clickhouse_libxml2//:_libxml2',
+    ], [], []),
     ('src/Functions/URL', 'clickhouse_functions_url'): ([
-        *PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2,
+        *AGGREGATE_TRANSITIVE_DEPS,
         '@clickhouse_mongo_c_driver//:_libbson',
         '@clickhouse_arrow//:_orc',
     ], [], []),
@@ -493,7 +510,10 @@ def apply(root):
                                   'cc_library(name = "minizip_link", implementation_deps = [' +
                                   json.dumps(MINIZIP) + '], visibility = ["//src/Functions/array:__pkg__"])\n\n'))
                 # capnp, icui18n and upb_textformat_lib already forward these libraries.
-                unused = {UPB_WIRE, '@clickhouse_capnproto//:_kj', '@clickhouse_icu//:_icuuc'}
+                unused, private, public = DEPENDENCIES[package, name]
+                if private or public:
+                    raise ValueError(f'{name}: dependency replacements must preserve visibility')
+                unused = {canonical(v) for v in [*unused, UPB_WIRE, '@clickhouse_capnproto//:_kj', '@clickhouse_icu//:_icuuc']}
                 for field in ('deps', 'implementation_deps'):
                     if field not in attrs:
                         continue
@@ -501,6 +521,8 @@ def apply(root):
                     if direct is None:
                         raise ValueError(f'{name}: cannot preserve the Minizip and S2 dependency order')
                     edits.extend(direct)
+                found.add(name)
+                continue
             spec = DEPENDENCIES.get((package, name))
             if spec is None:
                 continue

@@ -650,8 +650,6 @@ cc_library(
         ":clickhouse_functions_obj__compile_0",
         ":clickhouse_functions_obj__compile_1",
         ":clickhouse_functions_obj__compile_2",
-        "//base/poco/Foundation:_poco_foundation_pcre",
-        "//base/poco/JSON:_poco_json_pdjson",
         "//contrib/bech32:_bech32",
         "//contrib/lz4-cmake:_lz4",
         "//src:dbms",
