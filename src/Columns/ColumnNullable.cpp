@@ -476,12 +476,13 @@ void ColumnNullable::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     const ColumnNullable & src_concrete = assert_cast<const ColumnNullable &>(src);
-    const UInt8 is_null = src_concrete.isNullAt(n) ? src_concrete.getNullMapData()[n] : 0;
+    const auto * src_null_map = src_concrete.tryGetNullMapData();
+    const UInt8 is_null = src_null_map ? (*src_null_map)[n] : 0;
     if (is_null)
         materializeNullMap();
     nested_column->insertFrom(src_concrete.getNestedColumn(), n);
     if (hasNullMap())
-        getNullMapData().push_back(is_null);
+        assert_cast<ColumnUInt8 &>(*null_map).getData().push_back(is_null);
 }
 
 
