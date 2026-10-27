@@ -37,8 +37,10 @@ done
 
 SETTINGS_COMMON="use_query_condition_cache = 0, use_query_cache = 0, use_text_index_negative_tokens_cache = 1,
     use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, load_marks_asynchronously = 0,
-    enable_parallel_replicas = 0, max_threads = 1"
+    enable_parallel_replicas = 0, max_threads = 1, use_columns_cache = 0"
 
+# The columns cache would serve the columns of the warmed-up in-range query without opening the part files,
+# so the in-range control would drop below its threshold.
 # A per-query postings cache can never hit, so the in-range query below always reads its postings
 # and the third one, which must not, needs the global cache instead.  Reading the index instead
 # of the column keeps the third query's budget down to one open per part, which is what makes its
