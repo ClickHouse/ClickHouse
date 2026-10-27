@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -83,7 +84,7 @@ Polygon<Point> minimumRotatedRectangle(const Polygon<Point> & convex_hull)
     for (size_t i = 0; i < n; ++i)
     {
         /// The coordinates along and across the edge are in the units of its length, without a square root,
-        /// which keeps the rounding small. The squares overflow for coordinates beyond 1e154.
+        /// which keeps the rounding small.
         const Float64 ex = x(next(i)) - x(i);
         const Float64 ey = y(next(i)) - y(i);
         const Float64 squared_length = ex * ex + ey * ey;
@@ -175,13 +176,31 @@ public:
 
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    Polygon<Point> convex_hull{};
+                    /// Scale by a power of two, which is exact, so that the products of coordinates
+                    /// in the convex hull and in the rectangle neither overflow nor underflow.
+                    Float64 max_abs = 0;
+                    boost::geometry::for_each_point(geometries[i], [&](const Point & point)
+                    {
+                        max_abs = std::max({max_abs, std::abs(boost::geometry::get<0>(point)), std::abs(boost::geometry::get<1>(point))});
+                    });
+                    const int exponent = max_abs == 0 ? 0 : std::ilogb(max_abs);
+                    auto scale = [](int e)
+                    {
+                        return [e](Point & point)
+                        {
+                            point = Point(std::ldexp(boost::geometry::get<0>(point), e), std::ldexp(boost::geometry::get<1>(point), e));
+                        };
+                    };
+                    boost::geometry::for_each_point(geometries[i], scale(-exponent));
+
+                    Polygon<Point> result{};
                     if (!hasNoPointsForConvexHull(geometries[i]))
-                        boost::geometry::convex_hull(geometries[i], convex_hull);
+                        boost::geometry::convex_hull(geometries[i], result);
                     if constexpr (minimum_rotated_rectangle)
-                        serializer.add(minimumRotatedRectangle(convex_hull));
-                    else
-                        serializer.add(convex_hull);
+                        result = minimumRotatedRectangle(result);
+
+                    boost::geometry::for_each_point(result, scale(exponent));
+                    serializer.add(result);
                 }
             }
         }
