@@ -771,6 +771,12 @@ if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,separate-code")
 endif ()
 
+# Keep the stack non-executable even if an input object asks for an executable one (for GNU ld, an assembly source
+# without a `.note.GNU-stack` section does), and forbid loading the executable with `dlopen`. Same exclusions as above.
+if (NOT OS_DARWIN AND NOT OS_WASM AND NOT LINKER_IS_SOLARIS)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack -Wl,-z,nodlopen")
+endif ()
+
 # Keep the static initializers (`.text.startup`) and the code the compiler marks cold (`.text.unlikely`) in
 # their own groups instead of next to their translation units all over `.text`. Startup then reads a few
 # hundred contiguous pages instead of thousands scattered over the binary, which matters most when the
