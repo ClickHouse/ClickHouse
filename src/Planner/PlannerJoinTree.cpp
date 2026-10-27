@@ -2276,6 +2276,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
+                /// The columns whose `SELECT` access was checked for this read. Building the row policy filter
+                /// below marks the columns the policy reads as selected too, but those are the policy's own
+                /// implementation, not columns the user must be granted, so the query plan cache records the
+                /// set as it was before (see `ReadFromTableStep::getAccessCheckedColumns`).
+                const Names selected_columns_before_row_policy = table_expression_data.getSelectedColumnsNames();
+
                 auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
                     storage,
                     table_expression_query_info,
@@ -2891,7 +2897,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// access contract, so only the resolved-away columns are recorded.
                         Names access_checked_columns;
                         if (!table_expression_data.readsOnlyInjectedColumn())
-                            access_checked_columns = table_expression_data.getSelectedColumnsNames();
+                            access_checked_columns = selected_columns_before_row_policy;
                         NameSet access_checked_columns_set(access_checked_columns.begin(), access_checked_columns.end());
                         for (const auto & column_name : table_expression_data.getAccessCheckedColumnsNames())
                             if (access_checked_columns_set.insert(column_name).second)
@@ -2900,8 +2906,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                         if (row_policy_filter_before_aliases && row_policy_filter_into_read)
                         {
-                            reading_from_table->setRowLevelFilter(
-                                std::make_shared<FilterDAGInfo>(std::move(row_policy_filter_before_aliases->first)));
+                            /// The materialized read reads the columns of this step's header and converts its result
+                            /// back to that header, so the filter applied inside the read must keep every one of them,
+                            /// including the columns that only the policy reads (which the filter consumes otherwise).
+                            auto & cached_row_level_filter = row_policy_filter_before_aliases->first;
+                            auto & outputs = cached_row_level_filter.actions.getOutputs();
+                            for (const auto * input : cached_row_level_filter.actions.getInputs())
+                            {
+                                /// The first output is the filter column, which is removed after filtering.
+                                if (sample_block->has(input->result_name) && std::find(outputs.begin() + 1, outputs.end(), input) == outputs.end())
+                                    outputs.push_back(input);
+                            }
+
+                            reading_from_table->setRowLevelFilter(std::make_shared<FilterDAGInfo>(std::move(cached_row_level_filter)));
                             row_policy_filter_before_aliases.reset();
                         }
 
