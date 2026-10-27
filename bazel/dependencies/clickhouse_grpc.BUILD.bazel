@@ -947,26 +947,7 @@ ch_cc_library(
     ] + glob(["src/core/client_channel/subchannel_*.cc"]) + [
         "src/core/config/core_configuration.cc",
         "src/core/config/experiment_env_var.cc",
-    ] + glob([
-        "src/core/credentials/call/**/*.cc",
-        "src/core/credentials/transport/alts/*.cc",
-    ]) + [
-        "src/core/credentials/transport/channel_creds_registry_init.cc",
-        "src/core/credentials/transport/composite/composite_channel_credentials.cc",
-        "src/core/credentials/transport/fake/fake_credentials.cc",
-        "src/core/credentials/transport/fake/fake_security_connector.cc",
-        "src/core/credentials/transport/google_default/credentials_generic.cc",
-        "src/core/credentials/transport/google_default/google_default_credentials.cc",
-        "src/core/credentials/transport/insecure/insecure_credentials.cc",
-        "src/core/credentials/transport/insecure/insecure_security_connector.cc",
-        "src/core/credentials/transport/local/local_credentials.cc",
-        "src/core/credentials/transport/local/local_security_connector.cc",
-        "src/core/credentials/transport/security_connector.cc",
-        "src/core/credentials/transport/ssl/ssl_credentials.cc",
-        "src/core/credentials/transport/ssl/ssl_security_connector.cc",
-    ] + glob(["src/core/credentials/transport/tls/*.cc"]) + [
-        "src/core/credentials/transport/transport_credentials.cc",
-        "src/core/credentials/transport/xds/xds_credentials.cc",
+    ] + glob(["src/core/credentials/**/*.cc"]) + [
         "src/core/ext/filters/backend_metrics/backend_metric_filter.cc",
         "src/core/ext/filters/census/grpc_context.cc",
         "src/core/ext/filters/channel_idle/idle_filter_state.cc",
@@ -1107,19 +1088,7 @@ ch_cc_library(
     ] + glob(["src/core/load_balancing/**/*.cc"]) + [
         "src/core/plugin_registry/grpc_plugin_registry.cc",
         "src/core/plugin_registry/grpc_plugin_registry_extra.cc",
-    ] + glob(["src/core/resolver/dns/c_ares/*.cc"]) + [
-        "src/core/resolver/dns/dns_resolver_plugin.cc",
-        "src/core/resolver/dns/event_engine/event_engine_client_channel_resolver.cc",
-        "src/core/resolver/dns/event_engine/service_config_helper.cc",
-        "src/core/resolver/dns/native/dns_resolver.cc",
-        "src/core/resolver/endpoint_addresses.cc",
-        "src/core/resolver/fake/fake_resolver.cc",
-        "src/core/resolver/google_c2p/google_c2p_resolver.cc",
-        "src/core/resolver/polling_resolver.cc",
-        "src/core/resolver/resolver.cc",
-        "src/core/resolver/resolver_registry.cc",
-        "src/core/resolver/sockaddr/sockaddr_resolver.cc",
-    ] + glob(["src/core/resolver/xds/*.cc"]) + [
+    ] + glob(["src/core/resolver/**/*.cc"]) + [
         "src/core/server/add_port.cc",
         "src/core/server/server.cc",
         "src/core/server/server_call_tracer_filter.cc",

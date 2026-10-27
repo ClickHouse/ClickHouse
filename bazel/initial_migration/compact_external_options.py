@@ -40,6 +40,33 @@ CPUS = ('@platforms//cpu:x86_64', '@platforms//cpu:aarch64')
 SOURCE_SUFFIXES = {'.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM'}
 
 
+# ClickHouse's CMake source groups. Each glob must expand to the existing
+# consecutive srcs in order; unmatched source groups keep their captured list.
+ORDERED_COMPILE_GLOBS = {
+    'clickhouse_cassandra': [
+        (['src/*.cpp'], ['src/get_time-mac.cpp', 'src/get_time-win.cpp']),
+    ],
+    'clickhouse_google_benchmark': [
+        (['src/*.cc'], ['src/benchmark_main.cc']),
+    ],
+    'clickhouse_grpc': [
+        (['src/core/credentials/**/*.cc'], []),
+        (['src/core/resolver/**/*.cc'], []),
+    ],
+    'clickhouse_s2geometry': [
+        (['src/s2/*.cc', 'src/s2/base/*.cc', 'src/s2/util/**/*.cc'],
+         ['src/s2/**/*_test.cc', 'src/s2/*_testing.cc', 'src/s2/gmock_matchers.cc']),
+    ],
+    'clickhouse_vectorscan': [
+        (['src/*.c'], ['src/dispatcher.c']),
+        (['src/*/*.c'], []),
+        (['src/' + directory + '/*.cpp' for directory in (
+            'hwlm', 'nfa', 'nfagraph', 'parser', 'rose', 'smallwrite', 'som', 'util',
+        )], ['src/*/*dump*.cpp']),
+    ],
+}
+
+
 def function(node):
     return node.func.id if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) else None
 
@@ -420,7 +447,7 @@ class OrderedTemplates(ast.NodeTransformer):
         return node
 
 
-def source_globs(text, files, stats, examples, *, headers=False, source_tests=False):
+def source_globs(text, files, stats, examples, *, headers=False, source_tests=False, groups=()):
     """Replace contiguous exact-order files; header mode never moves attributes."""
     source = Source(text)
     if headers:
@@ -440,6 +467,10 @@ def source_globs(text, files, stats, examples, *, headers=False, source_tests=Fa
     rule_names = {kw.value.value for _, rule in source.rules() for kw in rule.keywords
                   if kw.arg == 'name' and isinstance(kw.value, ast.Constant)
                   and isinstance(kw.value.value, str)}
+    ordered_groups = [
+        (files.result(patterns, exclude), tuple(patterns), tuple(exclude))
+        for patterns, exclude in groups if all(files.matching(p) for p in patterns)
+    ]
     edits = []
 
     def source_file(node):
@@ -484,7 +515,11 @@ def source_globs(text, files, stats, examples, *, headers=False, source_tests=Fa
                 if filename is None:
                     index += 1
                     continue
-                matches = []
+                matches = [
+                    (len(names), -sum(map(len, includes + exclude)), includes, exclude)
+                    for names, includes, exclude in ordered_groups
+                    if names and values[index:index + len(names)] == names
+                ]
                 for pattern in set(patterns(filename)):
                     excluded = ()
                     if source_tests and not headers:
@@ -506,24 +541,24 @@ def source_globs(text, files, stats, examples, *, headers=False, source_tests=Fa
                                             '**' not in pattern, -len(pattern), pattern))
                         else:
                             expression_size = len(pattern) + sum(map(len, excluded))
-                            matches.append((count, -expression_size, pattern, excluded))
+                            matches.append((count, -expression_size, (pattern,), excluded))
                 if not matches:
                     index += 1
                     continue
                 if headers:
                     count, *_, pattern = max(matches)
-                    excluded = ()
+                    includes, excluded = (pattern,), ()
                 else:
-                    count, _, pattern, excluded = max(matches)
+                    count, _, includes, excluded = max(matches)
                 if index > emitted:
                     parts.append(render_list(source, node.elts[emitted:index], indent))
                 options = ', exclude = ' + json.dumps(excluded) if excluded else ''
-                parts.append('glob(' + json.dumps([pattern]) + options + ')')
+                parts.append('glob(' + json.dumps(includes) + options + ')')
                 category = 'header' if headers else 'source'
                 stats[category + '_globs_added'] += 1
                 stats[category + '_files_in_new_globs'] += count
                 if len(examples) < 25:
-                    examples.append({'rule': rule_name, 'pattern': pattern, 'sources': count})
+                    examples.append({'rule': rule_name, 'pattern': includes[0] if len(includes) == 1 else list(includes), 'sources': count})
                 index += count
                 emitted = index
             if parts:
@@ -549,7 +584,7 @@ def source_globs(text, files, stats, examples, *, headers=False, source_tests=Fa
     return result
 
 
-def compact_source_glob_runs(text, files, stats, examples):
+def compact_source_glob_runs(text, files, stats, examples, groups=()):
     """Reconsider adjacent srcs lists and existing globs in source ordinal order."""
     source = Source(text)
     edits = []
@@ -600,7 +635,7 @@ def compact_source_glob_runs(text, files, stats, examples):
                         ' ' * (indent + 4) + value + ',\n' for value in filenames
                     ) + ' ' * indent + ']'
                     fragment = f'cc_library(name = {json.dumps(rule_name)},\n    srcs = {literal},\n)\n'
-                    result = source_globs(fragment, files, Counter(), [], source_tests=True)
+                    result = source_globs(fragment, files, Counter(), [], source_tests=True, groups=groups)
                     compacted = Source(result)
                     call = next(compacted.rules())[1]
                     replacement = compacted.text(attrs(call)['srcs'])
@@ -639,13 +674,13 @@ def compact_source_glob_runs(text, files, stats, examples):
     return source.rewrite(edits)
 
 
-def external_source_globs(text, files, stats, examples):
+def external_source_globs(text, files, stats, examples, groups=()):
     """Compact external TU lists, retaining every original file's ordinal."""
     after = text
     while True:
         before = after
-        after = source_globs(before, files, stats, examples, source_tests=True)
-        after = compact_source_glob_runs(after, files, stats, examples)
+        after = source_globs(before, files, stats, examples, source_tests=True, groups=groups)
+        after = compact_source_glob_runs(after, files, stats, examples, groups)
         if after == before:
             return after
 
@@ -797,7 +832,7 @@ def compact(text, spec_name, files=None, stats=None, examples=None):
             break
         after = joined
     if files is not None:
-        after = external_source_globs(after, files, stats, examples)
+        after = external_source_globs(after, files, stats, examples, ORDERED_COMPILE_GLOBS.get(spec_name, ()))
     after, renamed = readable_names(after, spec_name, stats)
     after, template_names = factor_substitutions(after, spec_name, stats)
     renamed.update({name: name for name in template_names})
