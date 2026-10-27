@@ -68,8 +68,9 @@ def _llvm_runtime_objects_impl(ctx):
         action_name = action,
     )
     triple = ctx.attr.arch + "-linux-gnu"
-    c_headers = [target[DirectoryInfo] for target in ctx.attr._c_headers]
-    toolchain_files = depset(transitive = [toolchain.all_files] + [directory.transitive_files for directory in c_headers])
+
+    # @llvm exposes each include tree as one action input in DefaultInfo.
+    toolchain_files = depset(ctx.files._c_headers, transitive = [toolchain.all_files])
     header_inputs = depset(
         ctx.files.hdrs + private_headers + ctx.files.textual_srcs,
         transitive = [toolchain_files],
@@ -89,8 +90,8 @@ def _llvm_runtime_objects_impl(ctx):
         system_flags.extend(["-isystem", include_dir])
 
     # Keep Clang's builtin headers before the Linux and glibc headers, as in CMake.
-    for directory in c_headers:
-        system_flags.extend(["-idirafter", directory.path])
+    for target in ctx.attr._c_headers:
+        system_flags.extend(["-idirafter", target[DirectoryInfo].path])
     flags = [
         "--target=" + triple,
         "-nostdlibinc",

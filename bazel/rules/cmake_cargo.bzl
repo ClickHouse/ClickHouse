@@ -69,8 +69,8 @@ def _cmake_cargo_impl(ctx):
     source_depsets = [
         ctx.attr.workspace_sources[DefaultInfo].files,
         ctx.attr._link_files[DefaultInfo].files,
-        linux_headers.transitive_files,
-        glibc_headers.transitive_files,
+        ctx.attr._linux_headers[DefaultInfo].files,
+        ctx.attr._glibc_headers[DefaultInfo].files,
     ]
     args.add_all(ctx.attr.workspace_sources[DefaultInfo].files, before_each = "--source")
     destinations = {"contrib/sysroot": True}
