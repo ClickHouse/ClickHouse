@@ -32,6 +32,7 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <algorithm>
+#include <ranges>
 #include <vector>
 
 namespace ProfileEvents
@@ -63,6 +64,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsMilliseconds sleep_before_commit_local_part_in_replicated_table_ms;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
 }
@@ -92,6 +94,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_READ_ONLY;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -504,14 +507,25 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 /// A deduplicated block is acknowledged on the strength of the part that already holds it.
                 /// If that part is on this replica, it may have been committed by an INSERT that failed or
                 /// was cancelled before its own batched fsync (or that is still running), so it is synced
-                /// together with the parts this query commits. A part that exists only on another replica
-                /// is not found locally and is skipped by MergeTreeData::fsyncPartsAfterInsert().
-                /// This does not depend on whether this query syncs its own parts inline or in a batch.
+                /// together with the parts this query commits. This does not depend on whether this query
+                /// syncs its own parts inline or in a batch.
+                /// A part that exists only on another replica is not found locally and is skipped by
+                /// MergeTreeData::fsyncPartsAfterInsert(). With `fsync_after_insert_each_part = 1` that
+                /// replica synced it before publishing it in Keeper. With `fsync_after_insert_each_part = 0`
+                /// it publishes the part first and syncs it only at the end of its INSERT, so the part may
+                /// not be durable anywhere yet: this replica waits for a local copy and syncs that instead.
                 if (partition.temp_part->fsync_after_insert)
                 {
+                    const bool wait_for_local_copy = !(*storage.getSettings())[MergeTreeSetting::fsync_after_insert_each_part];
                     for (const auto & hash : conflicts)
-                        if (hash.hasConflictPartName())
-                            committed_parts.push_back(MergeTreePartInfo::fromPartName(hash.getConflictPartName(), storage.format_version));
+                    {
+                        if (!hash.hasConflictPartName())
+                            continue;
+                        auto conflict_part_info = MergeTreePartInfo::fromPartName(hash.getConflictPartName(), storage.format_version);
+                        committed_parts.push_back(conflict_part_info);
+                        if (wait_for_local_copy)
+                            deduplicated_parts.push_back(conflict_part_info);
+                    }
                 }
 
                 if (conflicts.empty())
@@ -1330,8 +1344,54 @@ void ReplicatedMergeTreeSink::fsyncCommittedParts()
     if (committed_parts.empty())
         return;
 
+    waitForDeduplicatedParts();
     storage.fsyncPartsAfterInsert(committed_parts, context);
     committed_parts.clear();
+}
+
+void ReplicatedMergeTreeSink::waitForDeduplicatedParts()
+{
+    if (deduplicated_parts.empty())
+        return;
+
+    auto has_local_copies = [&]
+    {
+        auto lock = storage.readLockParts();
+        return std::ranges::all_of(deduplicated_parts, [&](const auto & part_info)
+        {
+            return storage.getActiveContainingPart(part_info, MergeTreeDataPartState::Active, lock)
+                || storage.getActiveContainingPart(part_info, MergeTreeDataPartState::PreActive, lock);
+        });
+    };
+
+    /// Granularity of the wait: how often we wake up to re-check whether the query was cancelled.
+    static constexpr UInt64 wait_step_ms = 1000;
+
+    auto process_list_element = context->getProcessListElement();
+    Stopwatch watch;
+    while (!has_local_copies())
+    {
+        const UInt64 elapsed_ms = watch.elapsedMilliseconds();
+        if (elapsed_ms >= quorum_timeout_ms)
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout while waiting for a local copy of the parts that the inserted data was deduplicated against: {}. "
+                "They exist only on other replicas, which may not have synced them yet (fsync_after_insert_each_part = 0), "
+                "so the data cannot be acknowledged as durable. The INSERT can be retried",
+                fmt::join(deduplicated_parts | std::views::transform([](const auto & part_info) { return part_info.getPartNameForLogs(); }), ", "));
+
+        /// The log entry that brings a deduplicated part here (`GET_PART`, or a later entry that covers or
+        /// drops it) was created in Keeper together with its deduplication block. Once this replica has
+        /// processed these entries, a part that is still not here has been dropped since, and there is
+        /// nothing left to make durable.
+        if (storage.waitForProcessingQueue(std::min(wait_step_ms, quorum_timeout_ms - elapsed_ms), SyncReplicaMode::LIGHTWEIGHT, {}))
+            break;
+
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+    }
+
+    deduplicated_parts.clear();
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(
