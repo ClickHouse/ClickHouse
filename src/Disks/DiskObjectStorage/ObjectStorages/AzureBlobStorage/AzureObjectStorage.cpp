@@ -61,6 +61,16 @@ namespace ErrorCodes
 namespace
 {
 
+/// An account with a hierarchical namespace lists each directory as an empty blob with
+/// `hdi_isfolder=true` metadata (the marker `DataLakePathClient::GetProperties` reads).
+bool isDirectoryEntry(const Azure::Storage::Blobs::Models::BlobItem & blob)
+{
+    if (blob.BlobSize != 0)
+        return false;
+    auto it = blob.Details.Metadata.find("hdi_isfolder");
+    return it != blob.Details.Metadata.end() && it->second == "true";
+}
+
 class AzureIteratorAsync final : public IObjectStorageIteratorAsync
 {
 public:
@@ -77,6 +87,7 @@ public:
     {
         options.Prefix = path_prefix;
         options.PageSizeHint = static_cast<int>(max_list_size);
+        options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     }
 
     ~AzureIteratorAsync() override
@@ -99,6 +110,8 @@ private:
 
         for (const auto & blob : blobs_list)
         {
+            if (isDirectoryEntry(blob))
+                continue;
             batch.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
@@ -211,6 +224,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
+    options.Include = Azure::Storage::Blobs::Models::ListBlobsIncludeFlags::Metadata;
     if (max_keys)
         options.PageSizeHint = max_keys;
     else
@@ -228,6 +242,8 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         for (const auto & blob : blob_list_response.Blobs)
         {
+            if (isDirectoryEntry(blob))
+                continue;
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
                 ObjectMetadata{
