@@ -1,0 +1,16 @@
+package(default_visibility = ["//visibility:public"])
+
+[
+    alias(
+        name = name,
+        actual = select({
+            "@platforms//cpu:aarch64": "@clickhouse_sysroot//:" + name,
+            "@platforms//cpu:x86_64": "@ubuntu_focal_amd64//:" + name,
+        }),
+    )
+    for name in [
+        "cargo_link_files",
+        "gcc_pie_startup_objects",
+        "linux_link_files",
+    ]
+]

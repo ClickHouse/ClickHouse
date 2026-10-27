@@ -9,6 +9,10 @@
   "ignore": {
     "include_map": [
       {
+        "from": "external/+ubuntu_focal_amd64+ubuntu_focal_amd64",
+        "to": "contrib/sysroot"
+      },
+      {
         "from": "contrib/lz4/lib",
         "to": "@lz4"
       },

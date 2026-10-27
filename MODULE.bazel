@@ -22,6 +22,10 @@ single_version_override(
 include("//bazel:contrib.MODULE.bazel")
 include("//bazel:clickstack.MODULE.bazel")
 
+ubuntu_focal_amd64 = use_repo_rule("//bazel/link_runtime:ubuntu.bzl", "ubuntu_focal_amd64")
+
+ubuntu_focal_amd64(name = "ubuntu_focal_amd64")
+
 # Same CMake release used by bazel/initial_migration/run_cmake_reference.sh.
 # SHA-256 values are from Kitware's cmake-3.28.3-SHA-256.txt.
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")

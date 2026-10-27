@@ -89,7 +89,7 @@ def _cmake_cargo_impl(ctx):
         args.add("--native-linker", ctx.executable._native_linker)
         tools.append(ctx.executable._native_linker)
 
-        # ClickHouse's pinned sysroot contains libgcc.a but no libgcc_s or
+        # The target link runtime contains libgcc.a but no libgcc_s or
         # libutil. Use the registered LLVM runtime's own libgcc_s convention
         # and link its real libunwind archive.
         unwind = [file for file in ctx.files._native_unwind if file.extension == "a"]
@@ -173,7 +173,7 @@ cmake_cargo = rule(
         # valid when Cargo resolves the complete ClickHouse Rust workspace.
         "repositories": attr.label_keyed_string_dict(mandatory = True, allow_files = True),
         "config": attr.label(mandatory = True, allow_single_file = True),
-        "_link_files": attr.label(default = "@clickhouse_sysroot//:cargo_link_files"),
+        "_link_files": attr.label(default = "//bazel/link_runtime:cargo_link_files"),
         "_linux_headers": attr.label(default = "@kernel_headers//:kernel_headers_directory", providers = [DirectoryInfo]),
         "_glibc_headers": attr.label(default = "@llvm//runtimes/glibc:glibc_headers_include_search_directory", providers = [DirectoryInfo]),
         # Cargo hashes the absolute SourceId of path dependencies outside
