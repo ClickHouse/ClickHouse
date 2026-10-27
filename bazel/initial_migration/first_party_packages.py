@@ -280,7 +280,7 @@ DBMS_PUBLIC_HEADERS = {
     "Planner": ("PlannerContext.h", "PlannerCorrelatedSubqueries.h", "Utils.h"),
     "Processors": ("IAccumulatingTransform.h", "ResizeProcessor.h"),
     "Processors/Executors": ("PushingPipelineExecutor.h",),
-    "Processors/Executors/Runtime/V1": ("*.h",),
+    "Processors/Executors/Runtime/V1": ("ExecutingGraph.h", "PipelineExecutor.h", "PollingQueue.h"),
     "Processors/Formats": ("IRowInputFormat.h", "RowInputFormatWith*.h"),
     "Processors/Formats/Impl": (
         "ArrowGeoTypes.h", "CHColumnToArrowColumn.h", "JSONEachRowRowInputFormat.h",
@@ -370,7 +370,7 @@ COMMON_IO_PUBLIC_HEADERS = {
         "PackedFilesWriter.h", "PageCacheProvider.h", "PeekableWriteBuffer.h",
         "PipelineReadBuffer.h", "ReadBufferFromFileDecorator.h", "ReadBufferFromFileView.h",
         "ReadPipeline.h", "SilkFiberStreamSocketImpl.h", "SilkSecureFiberStreamSocketImpl.h",
-        "SocketPeerClosed.h", "StdIStreamFromMemory.h", "SynchronousReader.h", "TimeoutSetter.h",
+        "SocketPeerClosed.h", "SynchronousReader.h", "TimeoutSetter.h",
         "WriteBufferFromArena.h", "WriteBufferFromFileDecorator.h", "WriteBufferFromS3.h",
         "Zlib*Buffer.h", "ZstdDeflatingWriteBuffer.h", "parseHTTPDate.h", "preadNoWait.h", "writeValidUTF8.h",
     ),
@@ -387,6 +387,9 @@ def declare_src_compiled_headers(rows, files):
         literals = list_expr([p for p in paths if "*" not in p])
         headers = ast.BinOp(left=expr("glob(" + json.dumps(patterns) + ")"), op=ast.Add(), right=literals)
         declare_compiled_headers(rows, files, compiler, headers)
+    declare_compiled_headers(rows, files, "clickhouse_common_io__compile_0", list_expr([
+        "IO/S3/ReadBufferFromGetObjectResult.h", "IO/StdIStreamFromMemory.h",
+    ]), field="srcs")
     # dbms group 0 publishes IStorage's full interface where it compiles StorageGenerateRandom.
     declare_compiled_headers(rows, files, "dbms__compile_0", list_expr(["Storages/StorageGenerateRandom.h"]),
                              when_compiling="Storages/StorageGenerateRandom.cpp")
@@ -507,6 +510,10 @@ def declare_dbms_private_headers(rows, files):
         "Interpreters/AddDefaultDatabaseVisitor.h",
         "Interpreters/getHeaderForProcessingStage.h",
         "Interpreters/joinDispatch.h",
+        "Processors/Executors/Runtime/V1/ExecutionThreadContext.h",
+        "Processors/Executors/Runtime/V1/ExecutorTasks.h",
+        "Processors/Executors/Runtime/V1/TasksQueue.h",
+        "Processors/Executors/Runtime/V1/ThreadsQueue.h",
         "Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h",
         "Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h",
         "Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h",
