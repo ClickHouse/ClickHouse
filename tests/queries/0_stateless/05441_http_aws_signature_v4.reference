@@ -47,6 +47,7 @@ PUT with unsigned payload: 200
 PUT presigned: 200 
 PUT aws-chunked: 200 
 PUT with wrong payload hash: 400 Code: 117
+PUT of many blocks with wrong payload hash: 400 Code: 117
 PUT with signed streaming payload: 501 Code: 48
 GET after PUT: 200 1	Hello
 2	World

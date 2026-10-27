@@ -150,6 +150,31 @@ bool requestDeclaresFormBody(const HTTPServerRequest & request)
         || startsWith(content_type, "multipart/form-data");
 }
 
+/// Reads the data staged in a temporary file and owns the file, which is removed when the buffer is destroyed.
+class ReadBufferFromStagedTemporaryData : public ReadBuffer
+{
+public:
+    explicit ReadBufferFromStagedTemporaryData(std::unique_ptr<TemporaryDataBuffer> staged_)
+        : ReadBuffer(nullptr, 0)
+        , staged(std::move(staged_))
+        , in(staged->read())
+    {
+    }
+
+private:
+    bool nextImpl() override
+    {
+        in->position() = position();
+        if (!in->next())
+            return false;
+        BufferBase::set(in->buffer().begin(), in->buffer().size(), in->offset());
+        return true;
+    }
+
+    std::unique_ptr<TemporaryDataBuffer> staged;
+    std::unique_ptr<ReadBuffer> in;
+};
+
 void addHTTPOptionHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
 {
     if (!config.has("http_options_response"))
@@ -955,16 +980,28 @@ void HTTPHandler::processQuery(
         /// A body that is a part of the query is verified as a whole before the query is executed: its consumer
         /// can stop before the end of the body, where the hash is verified, or act on the data read before that.
         /// The body is held in memory, so the size is limited the same way as of a `multipart/form-data` content.
-        /// The body of an upload into a table is not a part of the query and is verified while it is inserted.
+        /// The body of an upload into a table is verified as a whole before the `INSERT` as well: the table can
+        /// commit the blocks read before the end of the body (e.g. a `MergeTree` part per block), so an upload with
+        /// a wrong hash would insert a part of its rows. It is staged in a temporary file, as it can be large.
         /// A body with an unsigned payload is rejected below, unless it is an upload.
-        if (!is_upload_into_table && isAWSSignatureV4PayloadSigned(aws_payload_hash))
+        if (isAWSSignatureV4PayloadSigned(aws_payload_hash))
         {
-            String body;
+            if (is_upload_into_table)
             {
-                WriteBufferFromString out(body);
-                copyDataMaxBytes(*request_body, out, context->getSettingsRef()[Setting::http_max_multipart_form_data_size]);
+                auto staged = std::make_unique<TemporaryDataBuffer>(server.context()->getTempDataOnDisk());
+                copyData(*request_body, *staged);
+                staged->finishWriting();
+                request_body = std::make_unique<ReadBufferFromStagedTemporaryData>(std::move(staged));
             }
-            request_body = std::make_unique<ReadBufferFromOwnString>(std::move(body));
+            else
+            {
+                String body;
+                {
+                    WriteBufferFromString out(body);
+                    copyDataMaxBytes(*request_body, out, context->getSettingsRef()[Setting::http_max_multipart_form_data_size]);
+                }
+                request_body = std::make_unique<ReadBufferFromOwnString>(std::move(body));
+            }
         }
     }
 

@@ -217,6 +217,10 @@ chunked_body = b"%x\r\n%s\r\n0\r\nx-amz-checksum-crc32:AAAAAA==\r\n\r\n" % (len(
 show("PUT aws-chunked", signed_request("PUT", csv_path, body=chunked_body, payload_hash="STREAMING-UNSIGNED-PAYLOAD-TRAILER",
      headers={"Content-Encoding": "aws-chunked", "X-Amz-Decoded-Content-Length": str(len(chunk))}))
 show("PUT with wrong payload hash", signed_request("PUT", csv_path, body=b"7,\"wrong\"\n", payload_hash=EMPTY_SHA256))
+# A block per row: the table commits the rows read before the end of the body, where the hash is verified.
+show("PUT of many blocks with wrong payload hash", signed_request("PUT", csv_path,
+     body=b"".join(b"%d,\"wrong\"\n" % i for i in range(100, 110)), payload_hash=EMPTY_SHA256,
+     params=[("max_insert_block_size", "1"), ("min_insert_block_size_rows", "1"), ("min_insert_block_size_bytes", "0")]))
 show("PUT with signed streaming payload", signed_request("PUT", csv_path, body=b"8,\"x\"\n", payload_hash="STREAMING-AWS4-HMAC-SHA256-PAYLOAD"))
 show("GET after PUT", signed_request("GET", table_path, params=[("order", "x")]))
 EOF
