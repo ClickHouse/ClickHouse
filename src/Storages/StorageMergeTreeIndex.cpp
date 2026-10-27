@@ -424,6 +424,18 @@ void StorageMergeTreeIndex::readImpl(
                 continue;
             }
         }
+
+        /// `minmax_<name>` holds the range of the partition key column (or subcolumn) `<name>`.
+        static constexpr std::string_view minmax_prefix = "minmax_";
+        if (minmax_sample_block && minmax_sample_block->has(column_name) && column_name.starts_with(minmax_prefix))
+        {
+            auto source_column_name = column_name.substr(minmax_prefix.size());
+            if (storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, source_column_name))
+            {
+                columns_from_storage.push_back(std::move(source_column_name));
+                continue;
+            }
+        }
     }
 
     auto source_storage_id = source_table->getStorageID();

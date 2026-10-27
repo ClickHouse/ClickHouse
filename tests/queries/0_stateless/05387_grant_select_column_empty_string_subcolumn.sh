@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-user="user_05385_${CLICKHOUSE_DATABASE}"
+user="user_05387_${CLICKHOUSE_DATABASE}"
 settings="SETTINGS optimize_empty_string_comparisons = 1, optimize_functions_to_subcolumns = 1"
 
 $CLICKHOUSE_CLIENT -q "
