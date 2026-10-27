@@ -7,6 +7,8 @@
 #include <base/range.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <algorithm>
+#include <ranges>
 #include <utility>
 #include <filesystem>
 
@@ -652,15 +654,15 @@ void MergeTreeReaderStream::addRangeOfPosition(size_t mark, size_t position, Com
         end = next_mark.offset_in_compressed_file;
         if (next_mark.offset_in_decompressed_block != 0)
         {
-            end = file_size;
-            for (; mark < marks_count; next(mark, position))
+            /// The block goes on to the next later offset. The offsets don't decrease, and many marks can share the block,
+            /// e.g. all marks of a `LowCardinality` dictionary written once, so search instead of scanning them.
+            const auto positions = std::views::iota(mark * num_positions + position, marks_count * num_positions);
+            const auto it = std::ranges::partition_point(positions, [&](size_t i)
             {
-                if (marks_getter->getMark(mark, position).offset_in_compressed_file > next_mark.offset_in_compressed_file)
-                {
-                    end = marks_getter->getMark(mark, position).offset_in_compressed_file;
-                    break;
-                }
-            }
+                return marks_getter->getMark(i / num_positions, i % num_positions).offset_in_compressed_file
+                    <= next_mark.offset_in_compressed_file;
+            });
+            end = it == positions.end() ? file_size : marks_getter->getMark(*it / num_positions, *it % num_positions).offset_in_compressed_file;
         }
     }
     ranges.emplace_back(begin, end);

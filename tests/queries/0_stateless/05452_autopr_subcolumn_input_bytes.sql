@@ -15,16 +15,20 @@ DROP TABLE IF EXISTS t_codec_renamed;
 -- `s.size` has a stream of its own.
 CREATE TABLE t_wide (key UInt64, s String) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, string_serialization_version = 'with_size_stream',
-    serialization_info_version = 'with_types', ratio_of_defaults_for_sparse_serialization = 1;
+    serialization_info_version = 'with_types', ratio_of_defaults_for_sparse_serialization = 1,
+    index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- The sizes are kept inside the only stream of `s`, so reading `s.size` reads all of `s`.
 CREATE TABLE t_wide_single_stream (key UInt64, s String) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, string_serialization_version = 'single_stream',
     ratio_of_defaults_for_sparse_serialization = 1;
 
+-- With `compress_per_column_in_compact_parts`, each column of each granule is a compressed block of its own: the granules
+-- have to be as large as in `t_wide` to compare with its sizes.
 CREATE TABLE t_compact (key UInt64, s String) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, string_serialization_version = 'with_size_stream',
-    serialization_info_version = 'with_types', ratio_of_defaults_for_sparse_serialization = 1;
+    serialization_info_version = 'with_types', ratio_of_defaults_for_sparse_serialization = 1,
+    index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- Renamed while the mutation that renames the files in the part is held back: the part still names the column `s`.
 CREATE TABLE t_renamed AS t_wide;
@@ -169,13 +173,28 @@ DROP TABLE t_codec_renamed;
 DROP TABLE IF EXISTS t_skew_wide;
 DROP TABLE IF EXISTS t_skew_compact;
 
+-- The compact part is compared with the sizes of the wide one, so their granules are as large, see `t_compact`.
 CREATE TABLE t_skew_wide (key UInt64, flag UInt8, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1,
+    index_granularity = 8192, index_granularity_bytes = '10Mi';
 CREATE TABLE t_skew_compact (key UInt64, flag UInt8, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY key
-SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1;
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1,
+    index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO t_skew_wide SELECT number, number < 1000, if(number < 1000, repeat('x', 1024), '') FROM numbers(1e6);
 INSERT INTO t_skew_compact SELECT * FROM t_skew_wide;
+
+DROP TABLE IF EXISTS t_cache_sparse;
+DROP TABLE IF EXISTS t_cache_dynamic;
+
+CREATE TABLE t_cache_sparse (key UInt64, n Nullable(UInt64)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.5,
+    nullable_serialization_version = 'allow_sparse', serialization_info_version = 'with_types';
+CREATE TABLE t_cache_dynamic (key UInt64, d Dynamic) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_cache_sparse SELECT number, if(number % 100 = 0, number, NULL) FROM numbers(1e6);
+INSERT INTO t_cache_dynamic SELECT number, if(number % 2, number::Dynamic, toString(number)::Dynamic) FROM numbers(1e6);
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2;
 
@@ -194,9 +213,30 @@ SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads
 SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_2';
 
+-- The streams of the null map of a sparse `Nullable` and of a `Dynamic` are not all known without reading the column,
+-- so the bytes of the granules served from the cache are not measured, and no statistics are collected.
+SELECT sum(n.null) FROM t_cache_sparse FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_1';
+SELECT sum(n.null) FROM t_cache_sparse FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_2';
+SELECT d FROM t_cache_dynamic FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_1';
+SELECT d FROM t_cache_dynamic FORMAT Null
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_2';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
+
+-- The first read is from the part. The second is not measured when the cache served it, which other tests can prevent by
+-- evicting the entries.
+SELECT log_comment, if(endsWith(log_comment, '_1'),
+    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0,
+    ProfileEvents['ColumnsCacheHits'] = 0 OR ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_when_streams_known
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+    AND log_comment LIKE '05452\\_unknown\\_streams\\_%' AND type = 'QueryFinish'
+ORDER BY log_comment;
 
 SELECT part_type, min(input_bytes) > 0 AND max(input_bytes) <= min(input_bytes) * 1.25 AS cache_priced_as_part
 FROM
@@ -220,3 +260,5 @@ ORDER BY log_comment;
 
 DROP TABLE t_skew_wide;
 DROP TABLE t_skew_compact;
+DROP TABLE t_cache_sparse;
+DROP TABLE t_cache_dynamic;
