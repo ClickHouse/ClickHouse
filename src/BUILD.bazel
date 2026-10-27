@@ -3118,7 +3118,7 @@ cc_library(
     ],
 )
 
-_UNIT_TEST_HEADERS = glob(["**/tests/*.h"])
+_UNIT_TEST_HEADERS = glob(["**/tests/*.h"]) + ["Client/SilkConnectionPool.h"]
 
 cc_test(
     name = "unit_tests_dbms",

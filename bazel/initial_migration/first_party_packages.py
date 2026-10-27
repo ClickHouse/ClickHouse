@@ -555,7 +555,8 @@ def declare_dbms_private_headers(rows, files):
         "Processors/Transforms/WindowTransform.h", "WindowFunctions/IWindowFunction.h",
     ]))
     declare_compiled_headers(rows, files, ("dbms__compile_0", "dbms__compile_2"), dbms_0_2_headers, field="srcs")
-    declare_compiled_headers(rows, files, "unit_tests_dbms", expr('glob(["**/tests/*.h"])'), field="srcs")
+    declare_compiled_headers(rows, files, "unit_tests_dbms",
+                            expr('glob(["**/tests/*.h"]) + ["Client/SilkConnectionPool.h"]'), field="srcs")
 
 
 def group_runtime_filter_benchmark_sources(root):
@@ -690,7 +691,21 @@ def group_package_sources(root):
             if entries != original:
                 edits.append((*source.span(node), json.dumps(entries)))
     for package, names in groups.items():
-        with (root / package / "BUILD.bazel").open("a") as output:
+        build = root / package / "BUILD.bazel"
+        if package == "src/Common" and "unit_test_sources" in names:
+            # These headers are included only by gtest_bucket_partitioned_table and gtest_lru_resource_cache.
+            headers = ["HashTable/BucketPartitionedTable.h", "HashTable/PartitionedFixedHashTable.h", "LRUResourceCache.h"]
+            doc = Source(build.read_text())
+            stmt, common = next((st, rule) for st, rule in doc.rules() if attributes(rule)["name"].value == "Common")
+            excluded = attributes(attributes(common)["hdrs"])["exclude"]
+            start = doc.span(stmt)[0]
+            build.write_text(doc.rewrite([
+                (start, start, "_UNIT_TEST_HEADERS = " + json.dumps(headers) + "\n\n"),
+                (*doc.span(excluded), doc.text(excluded) + " + _UNIT_TEST_HEADERS"),
+            ]))
+            sources, testonly = names["unit_test_sources"]
+            names["unit_test_sources"] = (sources + " + _UNIT_TEST_HEADERS", testonly)
+        with build.open("a") as output:
             for name, (expr, test) in names.items():
                 testonly = ", testonly = True" if test else ""
                 print(f'\nfilegroup(name = "{name}", srcs = {expr}{testonly}, visibility = ["//src:__pkg__"])', file=output)

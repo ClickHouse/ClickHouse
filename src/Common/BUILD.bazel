@@ -399,6 +399,12 @@ ch_cc_library(
     ],
 )
 
+_UNIT_TEST_HEADERS = [
+    "HashTable/BucketPartitionedTable.h",
+    "HashTable/PartitionedFixedHashTable.h",
+    "LRUResourceCache.h",
+]
+
 ch_cc_library(
     name = "Common",
     srcs = [
@@ -443,7 +449,7 @@ ch_cc_library(
             "IThrottler.h",
             "CopyableAtomic.h",
             "callOnce.h",
-        ],
+        ] + _UNIT_TEST_HEADERS,
     ),
     clickhouse_code = True,
     implementation_deps = [
@@ -572,6 +578,6 @@ filegroup(
 filegroup(
     name = "unit_test_sources",
     testonly = True,
-    srcs = glob(["tests/gtest*.cpp"]),
+    srcs = glob(["tests/gtest*.cpp"]) + _UNIT_TEST_HEADERS,
     visibility = ["//src:__pkg__"],
 )
