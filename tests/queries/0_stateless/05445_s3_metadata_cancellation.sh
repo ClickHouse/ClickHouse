@@ -43,7 +43,7 @@ query --query "CREATE DATABASE ${database} ENGINE=Atomic"
 for table in checks attaches; do
     engine=MergeTree
     if [[ "$table" == checks ]]; then
-        engine="ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/checks', 'r1')"
+        engine="ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/checks', 'r1')"
     fi
     query --query "
         CREATE TABLE ${database}.${table} (n UInt64, PROJECTION p (SELECT n ORDER BY n))
