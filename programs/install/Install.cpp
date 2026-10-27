@@ -1509,24 +1509,33 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
-    /// Whether another process holds a lock on the file, or `std::nullopt` if that cannot be determined.
-    /// With `remove_if_unlocked`, an unlocked file is removed while we hold its lock and its path still names it, so a server starting
-    /// meanwhile cannot lose its pid file.
-    std::optional<bool> isPidFileLocked(const fs::path & pid_file, bool remove_if_unlocked)
+    /// Whether another process holds a lock on the file, or `std::nullopt` if that cannot be determined. With `remove_if_unlocked_pid`,
+    /// an unlocked file is removed under our lock, but only while it still contains that pid and its path still names it; a pid file
+    /// written meanwhile for another process is kept and gives `std::nullopt`.
+    std::optional<bool> isPidFileLocked(const fs::path & pid_file, int remove_if_unlocked_pid)
     {
         int fd = ::open(pid_file.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd == -1)
             return std::nullopt;
         std::optional<bool> locked;
         int remove_errno = 0;
-        if (0 == flock(fd, (remove_if_unlocked ? LOCK_EX : LOCK_SH) | LOCK_NB))
+        if (0 == flock(fd, (remove_if_unlocked_pid ? LOCK_EX : LOCK_SH) | LOCK_NB))
         {
-            locked = false;
+            std::array<char, 32> buf{};
+            ssize_t size = remove_if_unlocked_pid ? ::pread(fd, buf.data(), buf.size(), 0) : 0;
+            ReadBufferFromMemory content(buf.data(), static_cast<size_t>(std::max<ssize_t>(size, 0)));
+            int file_pid = 0;
             struct stat opened{};
             struct stat current{};
-            if (remove_if_unlocked && 0 == fstat(fd, &opened) && 0 == stat(pid_file.c_str(), &current) && opened.st_dev == current.st_dev
-                && opened.st_ino == current.st_ino && 0 != unlink(pid_file.c_str()))
-                remove_errno = errno;
+            if (!remove_if_unlocked_pid)
+                locked = false;
+            else if (tryReadIntText(file_pid, content) && file_pid == remove_if_unlocked_pid && 0 == fstat(fd, &opened)
+                && 0 == stat(pid_file.c_str(), &current) && opened.st_dev == current.st_dev && opened.st_ino == current.st_ino)
+            {
+                locked = false;
+                if (0 != unlink(pid_file.c_str()) && errno != ENOENT)
+                    remove_errno = errno;
+            }
         }
         else if (errno == EWOULDBLOCK)
             locked = true;
@@ -1678,7 +1687,7 @@ namespace
             {
                 if (locked_pid)
                 {
-                    auto locked = isPidFileLocked(pid_file, /*remove_if_unlocked=*/ *locked_pid == pid);
+                    auto locked = isPidFileLocked(pid_file, /*remove_if_unlocked_pid=*/ *locked_pid == pid ? pid : 0);
                     if (locked == true)
                         *locked_pid = pid;
                     else if (locked == false && *locked_pid == pid)
