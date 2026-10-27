@@ -2787,3 +2787,51 @@ A separate full ClickHouse link substituted six glibc shared-library and loader 
 x86-64: DWYU refused the 6 offered targets before running an analyzer because their extracted HTTP archives were redirected. No targets received a grade.
 
 ARM64: DWYU refused the 6 offered targets before running an analyzer because their extracted HTTP archives were redirected. No targets received a grade.
+
+## 516678a35
+
+At [516678a35](https://github.com/dzbarsky/clickhouse/commit/516678a35313629982c599f768d3943263786d16), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The unstripped ClickHouse and unit-test outputs are compared with the [preceding published build](https://github.com/dzbarsky/clickhouse/commit/1238cfa9d3ae2ec115686b3f8426c8d79dcd6a27).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/0c580598-4dc8-4e50-a564-fb72932edc4c) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/0c580598-4dc8-4e50-a564-fb72932edc4c) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/0c580598-4dc8-4e50-a564-fb72932edc4c) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/8c423a35-84d5-4585-8b5e-246885630ffe) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/8c423a35-84d5-4585-8b5e-246885630ffe) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/8c423a35-84d5-4585-8b5e-246885630ffe) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Differs from previous Bazel |
+
+Both native builds completed 19 of 19 requested targets and passed all 25 runtime checks in nine status files. The runtime checks include the bitmap-cardinality SQL reference and the integer-hash benchmark. A separate compiler action built ZooKeeper with logging disabled.
+
+Both native BuildBuddy invocations succeeded. The first local report reader omitted the SQL status file’s execution path and recorded `native_tests_unverified` on both CPUs. A second reader joined each built target to its original Bazel output, checked the file name, path, SHA-256 and length, and reran the same 25 report checks on those bytes. A changed SQL status path was rejected. The two original reader results were retained; no build or runtime test was repeated.
+
+Four C++ libraries removed 47 direct LLVM entries from `implementation_deps`: `//src/Common/ZooKeeper:clickhouse_common_zookeeper_no_log` (9), `//src/Functions/TimeSeries:clickhouse_functions_time_series` (16), `//src/Functions/URL:clickhouse_functions_url__compile_0` (6), `//src/TableFunctions:clickhouse_table_functions` (16). Their other dependencies still supply the LLVM archives. CRoaring now compiles `roaring.c` in `@clickhouse_croaring//:_roaring`; all 22 objects retain their native CMake archive order. Six ClickHouse targets now get headers from the libraries that supply them, allowing removal of `//src:clickhouse_source_headers`.
+
+The full shipping linker arguments are unchanged. The unit-test link renames one CRoaring object and reorders existing library blocks; both builds verified the complete new linker arguments. The byte-for-byte CMake requirement applies to the stripped ClickHouse executable.
+
+The [Rust archive rule](../rules/rust_archive.bzl) passes GNU glibc’s `libm.abilist` to [`localize_rust_c_symbols.sh`](../../cmake/localize_rust_c_symbols.sh). Native CMake can still pass a libm shared object. The SHA-256 and length of every processed archive below matched the preceding published Bazel link and the preceding failed run on that CPU. The comparison used BuildBuddy file metadata.
+
+| Processed Rust target | x86-64 SHA-256 | ARM64 SHA-256 |
+| --- | --- | --- |
+| `//bazel/rust:chdig_processed` | `7fd314140234d36eb545151a6bac0544d82b74ee16d556e16c0dd1b879bf8053` | `2f0778ce0de8972ad86adea333e9b68c7d93f187e5ca9ddfd07a1584ba89ea63` |
+| `//bazel/rust:delta_kernel_ffi_processed` | `3be90bfd14a959438169db2cb3381c99f7f6f1e286cd0318852c02747630e707` | `56e77fb10f1da4a8eb5fc8e249c34ae8bec5b0dad4def0aa1349322fba6f56f7` |
+| `//bazel/rust:skim_processed` | `4df9bf9106b1eb5e79a4fef6d23b0ffed7c03c299089cff261f98fd05bb49abd` | `c8d9480fab2071b3803462763c6e4147210aef6c7e500a164f7accbc61ce6b3c` |
+| `//bazel/rust:prql_processed` | `6b585395d4779325864febc38f564b5ce4d98c55a655c4e92d1b12ede29362f7` | `62eb09a8129efd2dd2d4ec1c7f693e91b85aefe32318e839d9875ecfc24345cd` |
+| `//bazel/rust:polyglot_processed` | `309f9f7e0e9232bb7c3c705b70dc1fd6186805038a5e95515544d51f1bec8811` | `df2e3a589e3823f27588e880c65e2ccba491d04425060ccb829eb3fff51ffc03` |
+| `//bazel/rust:pco_processed` | `43a5186e80e9fa8e8132c7f1bb933fe717e8d1ef71e7b3f429b48d9f561b02cf` | `b605db6b0353d38d36fb95fda0ee63f8e2a0fabe78acbaaedd5f99d6a844446a` |
+| `//bazel/rust:wasmtime_processed` | `85b135a13bae748478913793baa47830573b3566b4b51f36814916e92ab4f6f7` | `894e62e21b2b15d98cb94c7fb80cdd5318383f0b0e6a723ae9bf841b09c82232` |
+
+At [26550a188](https://github.com/dzbarsky/clickhouse/commit/26550a188fe7c56d78ecf190462b8c22ef5f3a5d), the [x86-64](https://app.buildbuddy.io/invocation/0039b635-5d8e-4ed2-a075-b934240a5b70) and [ARM64](https://app.buildbuddy.io/invocation/b5caccff-384d-4f95-b3d0-602a852c69e5) builds each completed 18 of 19 targets. The shipping binaries matched native CMake, and all 14 processed Rust archive hashes matched the published baseline. The validation fixture `//bazel/fixtures/m11:owners` still named the removed sysroot `linux_math_library` target and failed in analysis. Neither build was accepted as a passing native run; neither started DWYU. The current fixture checks `@glibc//:libm_abi` on all seven Rust actions.
+
+The following experiments replaced five glibc libraries and the ELF loader with six generated interfaces. Both used the original `libc_nonshared.a` and startup objects. The ARM64 linker and strip both exited 0. The ARM64 hash differs from the original native CMake binary; the comparison did not isolate which input caused the difference. The current ordinary build did not repeat either experiment.
+
+| Six generated glibc interfaces | Tested source | Stripped SHA-256 | Bytes | Native CMake |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) | [1238cfa9d](https://github.com/dzbarsky/clickhouse/commit/1238cfa9d3ae2ec115686b3f8426c8d79dcd6a27) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches |
+| [ARM64](https://app.buildbuddy.io/invocation/b5caccff-384d-4f95-b3d0-602a852c69e5) | [26550a188](https://github.com/dzbarsky/clickhouse/commit/26550a188fe7c56d78ecf190462b8c22ef5f3a5d) | `2e1036e58552cd96a069bb932d322096b6d92a9a0416505a3684c23117a22335` | 637316696 | Differs |
+
+Across the native builds, including their validation targets, BuildBuddy recorded 308 remote executions and 55,524 remote cache hits on x86-64 and 307 remote executions and 55,995 remote cache hits on ARM64.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/a576b859-b469-45d2-85eb-f325fba38de6) exited 1. For ZooKeeper with logging disabled, the analyzer could not establish whether nine dependencies were needed for linking. The report reader rejected the JSON ordering of the seven Rust archive names; this comparison credits none of the six selected targets with a verified report.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/198ad727-b17f-46e0-896f-09a254289676) exited 1. For ZooKeeper with logging disabled, the analyzer could not establish whether nine dependencies were needed for linking. The report reader rejected the JSON ordering of the seven Rust archive names; this comparison credits none of the six selected targets with a verified report.
