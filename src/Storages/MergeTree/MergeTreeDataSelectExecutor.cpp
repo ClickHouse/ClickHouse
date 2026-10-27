@@ -109,6 +109,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -921,51 +922,79 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         required_column_types.emplace_back(column_name, metadata_column ? metadata_column->type : nullptr);
     }
 
-    for (const auto & part : parts)
-    {
-        if (MergeTreeDataSelectExecutor::partHasPendingAlterOrMetadataMutations(part.data_part, mutations_snapshot))
+    /// A part with a pending alter or metadata mutation is not pruned by statistics, so its statistics are not loaded.
+    std::vector<char> part_has_pending_mutations(parts.size());
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        part_has_pending_mutations[part_index] = partHasPendingAlterOrMetadataMutations(parts[part_index].data_part, mutations_snapshot);
+
+    std::vector<Estimates> parts_estimates(parts.size());
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [&](size_t part_index)
         {
-            res_parts.push_back(part);
-            continue;
-        }
+            if (part_has_pending_mutations[part_index])
+                return true;
 
-        auto estimates = part.data_part->getEstimates(required_columns);
-
-        /// The statistics describe the values as they are stored in the part. When the part stores a
-        /// column with a type different from the current metadata, a read converts the values to the
-        /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
-        /// describe what the query sees, unless the conversion keeps the representation (e.g. an
-        /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
-        /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
-        /// `KILL MUTATION` it is gone, while the conversion on read still happens.
-        /// Only the required columns are checked: the estimates may hold every column of the part.
-        for (const auto & [column_name, metadata_type] : required_column_types)
+            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
+            if (!estimates)
+                return false;
+            parts_estimates[part_index] = std::move(*estimates);
+            return true;
+        },
+        [&](size_t part_index)
         {
-            auto it = estimates.find(column_name);
-            if (it == estimates.end())
-                continue;
+            if (part_has_pending_mutations[part_index])
+                return;
 
-            auto part_column = part.data_part->tryGetColumn(column_name);
-            if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
-                estimates.erase(it);
-        }
-
-        try
+            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+        },
+        [&](size_t part_index)
         {
-            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            const auto & part = parts[part_index];
+            if (part_has_pending_mutations[part_index])
             {
-                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                continue;
+                res_parts.push_back(part);
+                return;
             }
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                part.data_part->name), LogsLevel::debug);
-        }
-        res_parts.push_back(part);
-    }
+
+            Estimates estimates = std::move(parts_estimates[part_index]);
+
+            /// The statistics describe the values as they are stored in the part. When the part stores a
+            /// column with a type different from the current metadata, a read converts the values to the
+            /// current type (`IMergeTreeReader::performRequiredConversions`), so the statistics do not
+            /// describe what the query sees, unless the conversion keeps the representation (e.g. an
+            /// extended `Enum`). This happens independently of the mutations snapshot: e.g. with
+            /// `apply_mutations_on_fly = 0` the pending `MODIFY COLUMN` is not in the snapshot, and after
+            /// `KILL MUTATION` it is gone, while the conversion on read still happens.
+            /// Only the required columns are checked: the estimates may hold every column of the part.
+            for (const auto & [column_name, metadata_type] : required_column_types)
+            {
+                auto it = estimates.find(column_name);
+                if (it == estimates.end())
+                    continue;
+
+                auto part_column = part.data_part->tryGetColumn(column_name);
+                if (!part_column || !metadata_type || !isRepresentationPreservingConversion(part_column->type.get(), metadata_type.get()))
+                    estimates.erase(it);
+            }
+
+            try
+            {
+                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                {
+                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                    return;
+                }
+            }
+            catch (const Exception &)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                    part.data_part->name), LogsLevel::debug);
+            }
+            res_parts.push_back(part);
+        });
 
     if (res_parts.size() < total_parts_before)
     {
