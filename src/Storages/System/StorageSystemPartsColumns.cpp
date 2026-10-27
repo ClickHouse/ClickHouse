@@ -418,6 +418,7 @@ void StorageSystemPartsColumns::processNextStorage(
             Array subcolumn_data_compressed_bytes;
             Array subcolumn_data_uncompressed_bytes;
             Array subcolumn_marks_bytes;
+            NamesAndTypesList subcolumns;
 
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
@@ -434,30 +435,18 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_types.push_back(data.type->getName());
                 subcolumn_serializations.push_back(ISerialization::kindStackToString(data.serialization->getKindStack()));
 
-                ColumnSize size;
-                NameAndTypePair subcolumn(column.name, name, column.type, data.type);
+                subcolumns.emplace_back(column.name, name, column.type, data.type);
+            }, ISerialization::SubstreamData(serialization).withType(column.type));
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
-                if (stream_name)
-                {
-                    auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");
-                    if (bin_checksum != part->checksums.files.end())
-                    {
-                        size.data_compressed += bin_checksum->second.file_size;
-                        size.data_uncompressed += bin_checksum->second.uncompressed_size;
-                    }
-
-                    auto mrk_checksum = part->checksums.files.find(*stream_name + part->index_granularity_info.mark_type.getFileExtension());
-                    if (mrk_checksum != part->checksums.files.end())
-                        size.marks += mrk_checksum->second.file_size;
-                }
-
+            /// Through the part, as the readers take it, and for all sub-columns of the column at once: a sub-column stored
+            /// in a shared file has no file of its own to measure, and one reader lists the streams of all of them.
+            for (const auto & size : part->getSubcolumnSizes(subcolumns))
+            {
                 subcolumn_bytes_on_disk.push_back(size.data_compressed + size.marks);
                 subcolumn_data_compressed_bytes.push_back(size.data_compressed);
                 subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
                 subcolumn_marks_bytes.push_back(size.marks);
-
-            }, ISerialization::SubstreamData(serialization).withType(column.type));
+            }
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_names);
