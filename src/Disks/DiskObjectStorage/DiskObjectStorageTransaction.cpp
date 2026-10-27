@@ -754,7 +754,7 @@ void DiskObjectStorageTransaction::undo() noexcept
     {
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            object_storages->takePointingTo(location)->removeObjectsOfFailedTransaction(blobs);
         }
         catch (...)
         {
