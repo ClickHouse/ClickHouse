@@ -29,8 +29,8 @@ if (OS_WINDOWS)
     # `common/compiler_gcc.h` of the fork defines `_rotr64` and similar as macros unless they are already macros.
     # mingw-w64 declares them as functions in `stdlib.h`, which the fork includes only after that header (through
     # `immintrin.h`), so the macros break the declarations. Include `stdlib.h` first, so that its include guard
-    # skips it later.
-    target_compile_options(_gdeflate PRIVATE -include stdlib.h)
+    # skips it later. `SHELL:` keeps CMake from merging the repeated `-include` with the one above.
+    target_compile_options(_gdeflate PRIVATE "SHELL:-include stdlib.h")
 endif ()
 target_include_directories(_gdeflate PRIVATE "${LIBRARY_DIR}")
 target_include_directories(_gdeflate SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
