@@ -267,7 +267,7 @@ private:
         if (!storage)
             return nullptr;
 
-        auto [it, inserted] = declarations_by_storage.try_emplace(storage.get());
+        auto [it, inserted] = declarations_by_storage.try_emplace(storage);
         if (inserted)
         {
             auto metadata = storage->getInMemoryMetadataPtr(getContext(), false);
@@ -360,8 +360,10 @@ private:
         return false;
     }
 
-    /// Looked up once per table and query: most queries never reach this.
-    std::unordered_map<const IStorage *, DeclaredComparisons> declarations_by_storage;
+    /// Looked up once per table and query: most queries never reach this. Keyed by `StoragePtr` rather than a raw
+    /// pointer, because `getUnderlyingStorage` may return a target table that nothing else holds: the key keeps it alive
+    /// for the whole pass, so a concurrently dropped table cannot be freed and another one allocated at its address.
+    std::unordered_map<StoragePtr, DeclaredComparisons> declarations_by_storage;
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodes> arrays_by_lambda;
     std::unordered_map<const IQueryTreeNode *, bool> lambda_over_declared_array;
 };

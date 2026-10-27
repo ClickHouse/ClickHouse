@@ -5,6 +5,8 @@ SET explain_query_plan_default = 'legacy';
 SET optimize_empty_string_comparisons = 1;
 SET use_skip_indexes_on_data_read = 0;
 
+DROP TABLE IF EXISTS al;
+DROP TABLE IF EXISTS al_mv;
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS mv;
@@ -25,7 +27,7 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM tab WHERE if(s = '',
 CREATE TABLE plain (s String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO plain VALUES (''), ('x');
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM plain, tab WHERE if(plain.s = '', 'abc', plain.s) = 'abc' AND if(tab.s = '', 'abc', tab.s) = 'abc') WHERE explain LIKE '%function_name: empty%';
--- The index of the target table is seen through a materialized view, a `Buffer` table and a chain of both.
+-- The index of the target table is seen through a materialized view, a `Buffer` table, a chain of both, and `Alias` tables.
 CREATE TABLE dst (s String, INDEX idx if(s = '', 'abc', s) TYPE minmax) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 CREATE MATERIALIZED VIEW mv TO dst AS SELECT s FROM plain;
 CREATE TABLE buf AS dst ENGINE = Buffer(currentDatabase(), dst, 1, 1, 1, 1, 1, 1, 1);
@@ -34,6 +36,12 @@ INSERT INTO plain VALUES (''), ('x'), ('y'), ('z');
 SELECT count() FROM mv WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM buf WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM mv_buf WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_data_skipping_indices = 'idx';
+CREATE TABLE al ENGINE = Alias(dst);
+CREATE TABLE al_mv ENGINE = Alias(mv);
+SELECT count() FROM al WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM al_mv WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_data_skipping_indices = 'idx';
+DROP TABLE al;
+DROP TABLE al_mv;
 DROP TABLE tab;
 DROP TABLE mv;
 DROP TABLE mv_buf;
