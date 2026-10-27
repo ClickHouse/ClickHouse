@@ -1811,12 +1811,12 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        const auto exception = std::current_exception();
-        if (CurrentThread::isQueryCancellationException(exception))
+        const auto exception_ptr = std::current_exception();
+        if (CurrentThread::isQueryCancellationException(exception_ptr))
             throw;
 
         /// Don't scare people with broken part error if it's retryable or an I/O error.
-        if (!isRetryableException(exception) && !isIOErrorException(exception))
+        if (!isRetryableException(exception_ptr) && !isIOErrorException(exception_ptr))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
@@ -1942,8 +1942,8 @@ void IMergeTreeDataPart::loadProjections(
                 }
                 catch (...)
                 {
-                    const auto exception = std::current_exception();
-                    if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
+                    const auto exception_ptr = std::current_exception();
+                    if (CurrentThread::isQueryCancellationException(exception_ptr) || isRetryableException(exception_ptr))
                         throw;
 
                     auto message = getCurrentExceptionMessage(true);
