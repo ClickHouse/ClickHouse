@@ -360,7 +360,7 @@ struct TableInfo
     /// Database-less references no dumped database contains. They resolve against `database` on
     /// replay, which does not contain them either, so the dump cannot create them.
     std::vector<String> unresolved_references;
-    /// Database-less references that an omitted database whose tables could not be listed may also hold.
+    /// Database-less references that an omitted external database, whose tables are not listed, may also hold.
     std::vector<String> unchecked_references;
     /// (database, table, call) for a table in the dump read through a `remote*` address not shown to be this server.
     std::vector<std::tuple<String, String, String>> unproven_remote_reads;
@@ -1181,7 +1181,7 @@ bool engineCanBind(ReferenceKind kind, const String & engine)
     }
 }
 
-/// Tables (name -> engine) of the databases left out of the dump, and the databases whose tables could not be listed.
+/// Tables (name -> engine) of the databases left out of the dump, and the external ones among them, whose tables are not listed.
 struct OmittedTables
 {
     std::map<String, std::map<String, String>> by_database;
@@ -2641,62 +2641,40 @@ std::vector<TableInfo> fetchTables(
         if (!DatabaseCatalog::isPredefinedDatabase(db))
             undumped_databases_to_scan.insert(db);
 
-    OmittedTables scanned;
-    auto scan_undumped = [&](const std::vector<String> & names)
-    {
-        String undumped_list;
-        for (const auto & db : names)
-        {
-            if (!undumped_list.empty())
-                undumped_list += ", ";
-            undumped_list += quoteString(db);
-        }
-        auto undumped_visibility = detectExternalTableVisibility(connection, timeouts, client_info, undumped_list, context->getSettingsRef());
-        executeQuery(connection, timeouts, client_info,
-            "SELECT database, name, engine FROM system.tables WHERE database IN (" + undumped_list + ") AND NOT is_temporary",
-            [&](const Block & block)
-            {
-                if (block.empty())
-                    return;
-                const Block full = unwrapColumns(block);
-                const auto & db_col = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
-                const auto & name_col = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
-                const auto & engine_col = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
-                for (size_t i = 0; i < db_col.size(); ++i)
-                    scanned.by_database[db_col[i].safeGet<String>()].emplace(
-                        name_col[i].safeGet<String>(), engine_col[i].safeGet<String>());
-            }, context->getSettingsRef(), undumped_visibility.show_datalake_catalogs, undumped_visibility.show_remote_databases);
-    };
-    /// Listed on first need only: most dumps have no database-less reference to check, and an external database can be down.
+    /// Listed on first need only: most dumps have no database-less reference to check.
+    /// An external database is never listed: its tables live in an outside service (a remote server, MySQL,
+    /// PostgreSQL, a catalog), and the dump must not contact one it was not asked to dump. Its tables stay
+    /// unknown, and the references they could compete for are reported instead of checked.
     std::optional<OmittedTables> omitted;
     const OmittedTablesGetter omitted_tables = [&]() -> const OmittedTables &
     {
         if (omitted)
             return *omitted;
-        std::vector<String> plain_databases;
-        std::vector<String> external_databases;
+        OmittedTables scanned;
+        String plain_list;
         for (const auto & db : undumped_databases_to_scan)
         {
             auto it = database_info.find(db);
             if (it != database_info.end() && it->second.is_external)
-                external_databases.push_back(db);
-            else
-                plain_databases.push_back(db);
-        }
-        if (!plain_databases.empty())
-            scan_undumped(plain_databases);
-        /// An external database lists its tables by asking an outside service, which can fail for reasons unrelated to this dump.
-        for (const auto & db : external_databases)
-        {
-            try
-            {
-                scan_undumped({db});
-            }
-            catch (const Exception &)
-            {
                 scanned.unlisted.insert(db);
-            }
+            else
+                plain_list += (plain_list.empty() ? "" : ", ") + quoteString(db);
         }
+        if (!plain_list.empty())
+            executeQuery(connection, timeouts, client_info,
+                "SELECT database, name, engine FROM system.tables WHERE database IN (" + plain_list + ") AND NOT is_temporary",
+                [&](const Block & block)
+                {
+                    if (block.empty())
+                        return;
+                    const Block full = unwrapColumns(block);
+                    const auto & db_col = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+                    const auto & name_col = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                    const auto & engine_col = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
+                    for (size_t i = 0; i < db_col.size(); ++i)
+                        scanned.by_database[db_col[i].safeGet<String>()].emplace(
+                            name_col[i].safeGet<String>(), engine_col[i].safeGet<String>());
+                }, context->getSettingsRef());
         return omitted.emplace(std::move(scanned));
     };
 
@@ -2896,7 +2874,7 @@ void reportDependenciesOutsideDumpSet(
     for (const auto & [database, name, reference] : unchecked)
         err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " references " << reference
             << " without a database, and the tables of omitted external database(s) " << unlisted
-            << " could not be listed to rule out the same name there; if one has it, the object may have been created "
+            << " are not listed to rule out the same name there; if one has it, the object may have been created "
             << "reading that one, while replay reads the one in " << backQuoteIfNeed(database) << ".\n";
 
     /// A proxy row is listed too: readers through it would also need the table first.

@@ -1503,6 +1503,18 @@ void LocalServer::processConfig()
         && getClientConfiguration().has("dump-schema-exclude"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`--dump-schema` with an explicit database list cannot be combined with `--dump-schema-exclude`");
+    if (dump_schema)
+    {
+        /// The dump must leave the data it reads as it was, but loading the metadata starts every table, and its
+        /// background work with it, before the first query. Before the context reads them from the configuration:
+        /// `MergeTree` tables are read-only, so no merge, mutation, TTL, move or cleanup runs, and nothing is
+        /// inserted, so `Kafka`, `RabbitMQ`, `NATS`, `S3Queue` and `FileLog` do not stream into their views.
+        /// In front of the other layers, so neither the configuration file nor the command line undoes it.
+        /// The refreshes of refreshable materialized views are stopped below, with the query settings.
+        getClientConfiguration().addFront(getConfigurationFromXMLString(
+            "<clickhouse><merge_tree><table_readonly>1</table_readonly></merge_tree>"
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation></clickhouse>").duplicate(), false);
+    }
 
     pager = getClientConfiguration().getString("pager", "");
 
@@ -1912,6 +1924,11 @@ void LocalServer::processConfig()
     /// taken back out below, once `client_context` exists.
     applyCmdSettings(global_context);
 
+    /// A refreshable materialized view would otherwise refresh, and write its target, as soon as it is loaded.
+    /// Set after the command-line settings, which must not turn it back off.
+    if (dump_schema)
+        global_context->setSetting("stop_refreshable_materialized_views_on_startup", true);
+
     /// After the default profile and command-line settings: the first access to `MergeTreeSettings`
     /// caches them, and it must see the final `compatibility` value.
     std::string server_log_path = !server_logs_file.empty() ? server_logs_file : server_settings[ServerSetting::logger_log];
@@ -2017,9 +2034,11 @@ void LocalServer::processConfig()
     /// teardown that would otherwise be triggered for short-lived processes.
     /// Also skip in `--only-system-tables` mode, which is intended for reading existing persisted
     /// system tables; spinning up the loggers there is unnecessary and can race with shutdown.
+    /// Also skip with `--dump-schema`: the loggers would write the dump's own queries into the data it reads.
     /// This must happen after the system database is attached.
     if (!getClientConfiguration().has("no-system-tables")
         && !getClientConfiguration().has("only-system-tables")
+        && !dump_schema
         && hasAnySystemLogConfigured(config()))
         global_context->initializeSystemLogs();
 

@@ -1,0 +1,11 @@
+--- clickhouse-local: a dump runs no background work of the tables it loads ---
+refreshable view dumped: 1
+FileLog view dumped: 1
+data path unchanged by the dumps
+rows in the target of the refreshable view: 0
+mutated rows after a plain run	5
+--- an omitted Remote database is not listed for a database-less reference ---
+database-less reader dumped: 1
+Remote database named for the database-less reader: 1
+dump queries naming the Remote database: 0
+queries the Remote database sent to its server: 0
