@@ -40,6 +40,12 @@ Parts: 1/1
 Granules: 10/10
 Parts: 1/1
 Granules: 10/10
+Parts: 3/3
+Granules: 30/30
+Parts: 3/3
+Granules: 30/30
+Parts: 1/3
+Granules: 10/30
 a nonzero byte past the key width matches nothing
 0
 0
@@ -63,6 +69,12 @@ Parts: 2/2
 Granules: 20/20
 Parts: 2/2
 Granules: 20/20
+Parts: 3/3
+Granules: 30/30
+Parts: 3/3
+Granules: 30/30
+Parts: 2/3
+Granules: 20/30
 not in
 20
 20
@@ -73,6 +85,12 @@ Parts: 2/2
 Granules: 20/20
 Parts: 2/2
 Granules: 20/20
+Parts: 3/3
+Granules: 30/30
+Parts: 3/3
+Granules: 30/30
+Parts: 2/3
+Granules: 20/30
 nullable set
 10
 10
