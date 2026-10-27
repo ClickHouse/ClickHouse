@@ -140,8 +140,7 @@ namespace DB
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
-/// `metrics_perf_events_enabled`, refused when the `seccomp_allow_perf_events` server setting is
-/// false) and the `io_uring` family (for
+/// `metrics_perf_events_enabled`) and the `io_uring` family (for
 /// `local_filesystem_read_method = io_uring`). The filter sees `io_uring_enter` but not the
 /// operations queued in the ring, so whoever can make a ring can reach through it the operations
 /// that `io_uring` implements even where their system calls are refused here - such as the
@@ -218,8 +217,8 @@ namespace DB
     /* Asynchronous file reads through the older `libaio` read method. */ \
     M(io_setup) M(io_destroy) M(io_submit) M(io_cancel) M(io_getevents) \
     \
-    /* Hardware performance counters, for `metrics_perf_events_enabled`, unless the */ \
-    /* `seccomp_allow_perf_events` server setting refuses them. */ \
+    /* Hardware performance counters, for `metrics_perf_events_enabled`. */ \
+    /* `ENOSYS` instead if `seccomp_allow_perf_events` is false. */ \
     M(perf_event_open)
 
 #if defined(__x86_64__)
@@ -300,8 +299,7 @@ constexpr int removexattrat_syscall_number = 466;
 /// nothing in ClickHouse uses them, but the NSS modules of the host are loaded into the process by
 /// every name lookup, and `nss-resolve` of `systemd` tags its socket to `systemd-resolved` with an
 /// attribute after probing whether the kernel lets it, treating `ENOSYS` as "it does not" and
-/// carrying on without the tag. `installSeccompFilter` adds `perf_event_open` when
-/// `seccomp_allow_perf_events` is false.
+/// carrying on without the tag.
 constexpr int refused_with_enosys[] = {
     clone3_syscall_number,
     __NR_setxattr, __NR_lsetxattr, __NR_fsetxattr,

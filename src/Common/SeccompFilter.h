@@ -72,8 +72,8 @@ struct SeccompFilterStatus
 /// install a filter with that action: the `Log` mode refuses nothing, so running without it takes
 /// away nothing a filter would have enforced, and a server that used to start must not stop
 /// starting because of it. Throws if one of the enforcing modes was requested but its filter could
-/// not be installed. With `allow_perf_events` false, `perf_event_open` is refused with `ENOSYS` in
-/// every mode but `Log`.
+/// not be installed.
+/// With `allow_perf_events` false, `perf_event_open` is refused with `ENOSYS` in every mode but `Log`.
 ///
 /// Call this once, as early in the startup as the configuration allows: the filter takes effect
 /// immediately and there is no way to widen it afterwards.
