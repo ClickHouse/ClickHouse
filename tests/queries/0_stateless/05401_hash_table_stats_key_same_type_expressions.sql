@@ -24,8 +24,8 @@ INSERT INTO t_05401 SELECT number FROM numbers(600000);
 -- The subquery shape reads its own table, so it cannot reuse an entry of the queries above.
 CREATE TABLE t2_05401 (a UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t2_05401 SELECT number FROM numbers(600000);
-CREATE TABLE u_05401 (s String) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO u_05401 SELECT toString(number) FROM numbers(600000);
+CREATE TABLE u_05401 (s String, d DateTime) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO u_05401 SELECT toString(number), toDateTime(number) FROM numbers(600000);
 
 SELECT a + 1 AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_plus_1';
 SELECT a + 1 AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_plus_2';
@@ -37,6 +37,9 @@ SELECT intDiv(a, 1000000) AS k FROM t_05401 GROUP BY k FORMAT Null SETTINGS log_
 SELECT trimBoth(s, 'x') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_trim_x_1';
 SELECT trimBoth(s, 'x') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_trim_x_2';
 SELECT trimBoth(s, '0123456789') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_trim_digits_1';
+-- A step that changes the column type is keyed by its serialized form instead.
+SELECT formatDateTime(d, '%F %T') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_format_full_1';
+SELECT formatDateTime(d, '%Y') AS k FROM u_05401 GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_string_format_year_1';
 
 -- Through a subquery the aggregation key is named `__table1.k` whatever it computes.
 SELECT k FROM (SELECT a + 1 AS k FROM t2_05401) GROUP BY k FORMAT Null SETTINGS log_comment = 'q05401_subquery_plus_1';
