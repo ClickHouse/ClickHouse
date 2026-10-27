@@ -19,9 +19,16 @@ disabled_node = cluster.add_instance(
 errno_node = cluster.add_instance(
     "errno_node", main_configs=["configs/errno.xml", "configs/binary_checksum.xml"]
 )
-log_node = cluster.add_instance("log_node", main_configs=["configs/log.xml"])
+log_node = cluster.add_instance(
+    "log_node", main_configs=["configs/log.xml", "configs/no_perf_events.xml"]
+)
 trap_node = cluster.add_instance(
-    "trap_node", main_configs=["configs/trap.xml", "configs/binary_checksum.xml"]
+    "trap_node",
+    main_configs=[
+        "configs/trap.xml",
+        "configs/binary_checksum.xml",
+        "configs/no_perf_events.xml",
+    ],
 )
 # The setting comes from ZooKeeper, which the server reads only after it has loaded the local
 # configuration - where the setting is `trap`, from the shipped configuration file.
@@ -384,3 +391,73 @@ def test_reloaded_setting_does_not_replace_the_one_in_force(started_cluster):
             )
             == f"{installed}\n"
         )
+
+
+def get_perf_events_setting(node):
+    return node.query(
+        "SELECT value, changeable_without_restart FROM system.server_settings "
+        "WHERE name = 'seccomp_allow_perf_events'"
+    )
+
+
+def run_perf_event_open_probe(node):
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with vfork")
+    return node.query(
+        "SELECT * FROM executable('perf_event_open_status.py', 'TabSeparated', 'result String')"
+    ).strip()
+
+
+def test_query_with_perf_events_runs_where_they_are_refused(started_cluster):
+    # `trap_node` and `log_node` have `seccomp_allow_perf_events` set to `false`. In the `trap` mode
+    # `perf_event_open` is refused with `ENOSYS` rather than `SIGSYS`, and the server does not even
+    # try it: the query runs without perf events, and the reason is logged once. The `log` mode
+    # refuses nothing, and `default_node` allows the call. Over HTTP, because `clickhouse client`
+    # applies the setting to its own threads too and would open perf events itself.
+    for node in [trap_node, default_node, log_node]:
+        assert (
+            node.http_query(
+                "SELECT sum(number) FROM numbers_mt(1000000) "
+                "SETTINGS metrics_perf_events_enabled = 1, max_threads = 4"
+            )
+            == "499999500000\n"
+        )
+
+    # See `test_setting_from_zookeeper_is_the_one_installed` for the dots.
+    assert trap_node.contains_in_log("refuses .perf_event_open.")
+    assert not trap_node.contains_in_log("Failed to open perf event")
+    assert not trap_node.contains_in_log("Not enough permissions to record perf events")
+    assert trap_node.query("SELECT 1") == "1\n"
+    for node in [default_node, log_node]:
+        assert not node.contains_in_log("refuses .perf_event_open.")
+
+    assert get_perf_events_setting(trap_node) == "0\tNo\n"
+    assert get_perf_events_setting(default_node) == "1\tNo\n"
+
+
+def test_perf_event_open_is_refused_for_processes_the_server_starts(started_cluster):
+    # The filter is inherited, so a process the server starts gets the same answer: `ENOSYS`, the
+    # one of a kernel without performance events, where `SIGSYS` would kill the script.
+    assert run_perf_event_open_probe(trap_node) == "ENOSYS"
+    for node in [default_node, log_node]:
+        assert run_perf_event_open_probe(node) != "ENOSYS"
+
+
+def test_reloaded_perf_events_setting_does_not_replace_the_one_in_force(
+    started_cluster,
+):
+    # Like `seccomp`, the setting is part of a filter that cannot change after startup.
+    with trap_node.with_replace_config(
+        "/etc/clickhouse-server/config.d/no_perf_events.xml",
+        "<clickhouse><seccomp_allow_perf_events>true</seccomp_allow_perf_events></clickhouse>",
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert get_perf_events_setting(trap_node) == "0\tNo\n"
+        if not trap_node.is_built_with_memory_sanitizer():
+            assert run_perf_event_open_probe(trap_node) == "ENOSYS"
+        assert trap_node.contains_in_log(
+            "seccomp_allow_perf_events. server setting was changed from .false. to .true."
+        )
+
+    assert get_perf_events_setting(trap_node) == "0\tNo\n"
