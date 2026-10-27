@@ -203,7 +203,8 @@ struct ImplBLAKE3
         static_assert(LLVM_BLAKE3_OUT_LEN == ImplBLAKE3::length);
         auto & result = *reinterpret_cast<std::array<uint8_t, LLVM_BLAKE3_OUT_LEN> *>(out_char_data);
 
-        llvm::BLAKE3 hasher;
+        /// The constructor writes every field except the CV stack, and a stack entry is written before it is read.
+        [[clang::uninitialized]] llvm::BLAKE3 hasher;
         if (size > 0)
             hasher.update(llvm::StringRef(begin, size));
         hasher.final(result);

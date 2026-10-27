@@ -20,7 +20,8 @@ static void formatReadable(double size, DB::WriteBuffer & out,
     for (; i + 1 < units_size && fabs(size) >= delimiter; ++i)
         size /= delimiter;
 
-    DB::DoubleConverter<false>::BufferType buffer;
+    /// Only the first `builder.position()` bytes are read, and the converter writes them.
+    [[clang::uninitialized]] DB::DoubleConverter<false>::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
     const auto & converter = DB::DoubleConverter<false>::instance();

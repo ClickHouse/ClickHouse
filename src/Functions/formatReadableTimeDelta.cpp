@@ -289,7 +289,8 @@ public:
 private:
     static std::string getFractionalString(const Float64 & fractional_part)
     {
-        DB::DoubleConverter<true>::BufferType buffer;
+        /// Only the first `builder.position()` bytes are read, and the converter writes them.
+        [[clang::uninitialized]] DB::DoubleConverter<true>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
         if (!DB::DoubleConverter<false>::instance().ToFixed(fractional_part, 9, &builder))
