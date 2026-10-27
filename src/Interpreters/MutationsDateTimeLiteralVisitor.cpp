@@ -244,4 +244,16 @@ ASTPtr rewriteDateTimeLiteralsWithTimezone(
     return query;
 }
 
+bool rewriteDateTimeLiteralsWithTimezone(const ASTPtr & expression, const ColumnsDescription & columns, const String & session_timezone)
+{
+    if (session_timezone.empty() || !expression)
+        return false;
+
+    /// The visitor replaces only the arguments of the functions it visits, so the root of the expression stays the same.
+    ASTPtr root = expression;
+    RewriteDateTimeLiteralsMatcher::Data data{columns, session_timezone, false};
+    RewriteDateTimeLiteralsVisitor(data).visit(root);
+    return data.modified;
+}
+
 }

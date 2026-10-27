@@ -1,0 +1,3 @@
+CREATE	[2]
+WHERE event = toDateTime(\'2020-01-01 00:00:00\', \'Asia/Tokyo\')
+MODIFY TTL	[2]
