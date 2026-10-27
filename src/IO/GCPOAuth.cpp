@@ -4,8 +4,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -59,15 +58,14 @@ GCPOAuthToken postTokenRequest(
     request.setContentLength(body.size());
     request.set("Accept", "application/json");
 
-    auto request_body = sendHTTPRequest(*session, request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    std::ostream & os = session->sendRequest(request);
+    os << body;
 
     Poco::Net::HTTPResponse response;
-    auto response_body = receiveHTTPResponse(*session, response);
+    std::istream & rs = session->receiveResponse(response);
 
     String token_json_raw;
-    readStringUntilEOF(token_json_raw, *response_body);
+    Poco::StreamCopier::copyToString(rs, token_json_raw);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(
@@ -93,12 +91,19 @@ GCPOAuthToken postTokenRequest(
 
     GCPOAuthToken result;
     result.access_token = object->getValue<String>("access_token");
+    checkGCPOAuthAccessToken(result.access_token);
     if (object->has("expires_in"))
         result.expires_in = object->getValue<Int64>("expires_in");
 
     return result;
 }
 
+}
+
+void checkGCPOAuthAccessToken(const std::string & access_token)
+{
+    if (access_token.find_first_of("\r\n") != std::string::npos)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP access token contains CR or LF");
 }
 
 GCPOAuthToken fetchGCPOAuthToken(

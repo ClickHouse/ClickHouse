@@ -29,6 +29,8 @@
 
 namespace ProfileEvents
 {
+    extern const Event AIInputTokens;
+    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -133,7 +135,11 @@ public:
         String model(arguments[model_arg_index].column->getDataAt(0));
 
         auto provider = createAIProvider(
-            params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+            getContext(),
+            params.collection.provider,
+            params.collection.endpoint,
+            params.collection.api_key,
+            params.collection.api_version);
         if (!provider->supportsEmbeddings())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "AI provider '{}' does not support embeddings", params.collection.provider);
@@ -192,12 +198,14 @@ public:
             }
         }
 
-        FunctionBaseAI::EmbeddingResult embedding_result;
-        FunctionBaseAI::embedTexts(
+        auto embedding_result = FunctionBaseAI::embedTexts(
             *provider, model, dimensions, getName(),
             getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
             inputs, max_batch_size, max_retries,
-            retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
+            retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
+
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
 
         const auto & embeddings = embedding_result.embeddings;
 

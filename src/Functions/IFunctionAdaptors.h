@@ -21,7 +21,6 @@ protected:
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
-    bool isNullPropagating(const DataTypePtr & result_type) const final { return function->isNullPropagating(result_type); }
     bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
@@ -34,7 +33,6 @@ protected:
     /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
     /// should become the conservative `true` instead of that approximation.
     bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
-    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
 private:
     std::shared_ptr<IFunction> function;
@@ -49,8 +47,6 @@ public:
             : function(std::move(function_)), arguments(std::move(arguments_)), result_type(std::move(result_type_)) {}
 
     String getName() const override { return function->getName(); }
-
-    void updateHash(SipHash & hash) const override { function->updateHash(hash); }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }

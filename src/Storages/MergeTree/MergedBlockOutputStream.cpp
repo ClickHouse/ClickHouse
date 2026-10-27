@@ -49,8 +49,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec,
-    StreamBaseManifestPtr stream_base_manifest)
+    bool try_adaptive_codec)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -73,8 +72,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         save_primary_index_in_memory,
         blocks_are_granules_size,
         try_adaptive_codec);
-
-    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
 
     data_part_storage->createDirectories();
 
@@ -485,10 +482,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            if (new_part->default_codec_is_approximate)
-                writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
-            else
-                writeText(default_codec->getFullCodecDescription()->formatWithSecretsOneLine(), buffer);
+            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

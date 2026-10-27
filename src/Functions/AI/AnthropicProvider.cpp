@@ -1,7 +1,5 @@
 #include <Functions/AI/AnthropicProvider.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -33,10 +31,17 @@ AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & ap
             "Unsupported Anthropic API version '{}'. Supported: '{}'", api_version, DEFAULT_ANTHROPIC_API_VERSION);
 }
 
-void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
+HTTPHeaderEntries AnthropicProvider::getHeaders() const
 {
-    response = {};
+    HTTPHeaderEntries headers;
+    if (!api_key.empty()) /// not all providers need API key
+        headers.emplace_back("x-api-key", api_key);
+    headers.emplace_back("anthropic-version", api_version);
+    return headers;
+}
 
+AIResponse AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts)
+{
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
     root->set("temperature", ai_request.temperature);
@@ -84,20 +89,22 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("x-api-key", api_key);
-    http_request.set("anthropic-version", api_version);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -111,16 +118,7 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    /// A malformed body was still charged for, so read the usage before the checks below can throw.
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-        {
-            response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
-            response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
-        }
-    }
+    AIResponse ai_response;
 
     /** Map Anthropic's `stop_reason` onto the canonical `FinishReason`.
       *
@@ -132,20 +130,20 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
       *
       * Only a token/context limit counts as truncation.
       */
-    response.raw_finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
+    ai_response.raw_finish_reason = json_obj->optValue<String>("stop_reason", "end_turn");
     const bool forced_structured_output = !ai_request.response_format.isNull();
-    if (response.raw_finish_reason == "end_turn" || response.raw_finish_reason == "stop_sequence")
-        response.finish_reason = FinishReason::Complete;
-    else if (response.raw_finish_reason == "tool_use")
-        response.finish_reason = forced_structured_output ? FinishReason::Complete : FinishReason::RequiresAction;
-    else if (response.raw_finish_reason == "max_tokens" || response.raw_finish_reason == "model_context_window_exceeded")
-        response.finish_reason = FinishReason::Truncated;
-    else if (response.raw_finish_reason == "refusal")
-        response.finish_reason = FinishReason::ContentFilter;
-    else if (response.raw_finish_reason == "pause_turn")
-        response.finish_reason = FinishReason::RequiresAction;
+    if (ai_response.raw_finish_reason == "end_turn" || ai_response.raw_finish_reason == "stop_sequence")
+        ai_response.finish_reason = FinishReason::Complete;
+    else if (ai_response.raw_finish_reason == "tool_use")
+        ai_response.finish_reason = forced_structured_output ? FinishReason::Complete : FinishReason::RequiresAction;
+    else if (ai_response.raw_finish_reason == "max_tokens" || ai_response.raw_finish_reason == "model_context_window_exceeded")
+        ai_response.finish_reason = FinishReason::Truncated;
+    else if (ai_response.raw_finish_reason == "refusal")
+        ai_response.finish_reason = FinishReason::ContentFilter;
+    else if (ai_response.raw_finish_reason == "pause_turn")
+        ai_response.finish_reason = FinishReason::RequiresAction;
     else
-        response.finish_reason = FinishReason::Unknown;
+        ai_response.finish_reason = FinishReason::Unknown;
 
     auto content = json_obj->getArray("content");
     if (!content)
@@ -161,7 +159,7 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
         String type = block->optValue<String>("type", "");
         if (type == "text")
         {
-            response.result = block->optValue<String>("text", "");
+            ai_response.result = block->optValue<String>("text", "");
             break;
         }
         else if (type == "tool_use")
@@ -172,10 +170,22 @@ void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionT
                     "Anthropic response output is missing for tool_use block");
             std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
             input->stringify(ss);
-            response.result = ss.str();
+            ai_response.result = ss.str();
             break;
         }
     }
+
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+        {
+            ai_response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
+            ai_response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
+        }
+    }
+
+    return ai_response;
 }
 
 }

@@ -66,7 +66,6 @@ public:
     void readSync(char * to, size_t n, size_t offset);
 
     size_t getFileSize() const { return file_size; }
-    bool isLocalFile() const { return is_local_file; }
 
 private:
     friend class PrefetchHandle;
@@ -181,7 +180,6 @@ private:
     PaddedPODArray<char> entire_file;
 
     size_t file_size{};
-    bool is_local_file = false;
     size_t min_bytes_for_seek{};
     size_t bytes_per_read_task{};
 

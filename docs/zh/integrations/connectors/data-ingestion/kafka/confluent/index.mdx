@@ -1,21 +1,14 @@
 ---
 sidebarTitle: 'Confluent Platform'
 slug: /integrations/kafka/cloud/confluent
-description: '将 Confluent Kafka 连接到 ClickHouse 的方案'
-title: '将 Confluent 与 ClickHouse 集成'
+description: 'Confluent Cloud 的 Kafka 连接'
+title: '将 Confluent Cloud 与 ClickHouse 集成'
 doc_type: 'guide'
 keywords: ['Confluent Cloud ClickHouse', 'Confluent ClickHouse 集成', 'Kafka ClickHouse 连接器', 'Confluent Platform ClickHouse', 'ClickHouse Connect Sink']
 ---
 
-Confluent 提供了三种与 ClickHouse 集成的方案：
+Confluent Platform 提供了两种与 ClickHouse 集成的方案
 
-* [Confluent Cloud 上的 ClickHouse Connect Sink](/zh/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)，即全托管连接器
-* [以 自定义连接器 形式运行在 Confluent Cloud 上的 ClickHouse Connect Sink](/zh/integrations/connectors/data-ingestion/kafka/confluent/custom-connector)，需由您自行上传连接器
+* [Confluent Cloud 上的 ClickHouse Connect Sink](/zh/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)
+* [Confluent Platform 上的 ClickHouse Connect Sink](/zh/integrations/connectors/data-ingestion/kafka/confluent/custom-connector)，使用自定义连接器功能
 * [Confluent Platform 的 HTTP Sink 连接器](/zh/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http)，可通过 HTTP 或 HTTPS 将 Apache Kafka 与 API 集成
-
-## 应该选择哪种 Confluent Cloud 方案？ {#which-confluent-cloud-option-should-i-use}
-
-前两种方案在 Confluent Cloud 上运行的都是同一个 ClickHouse Connect Sink，区别仅在于由谁来管理连接器：
-
-* **全托管连接器**：由 Confluent 负责安装和升级连接器。除非您需要它不提供的功能，否则建议优先选择此方案。
-* **自定义连接器**：由您自行从 [GitHub](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) 下载连接器的某个发行版，并上传到 Confluent Cloud。如果您需要使用特定版本的连接器，或者希望覆盖某些设置 (在全托管连接器中，这些设置只能通过向 Confluent 提交支持工单来更改) ，请选择此方案。自定义连接器仅在部分 AWS 区域可用。

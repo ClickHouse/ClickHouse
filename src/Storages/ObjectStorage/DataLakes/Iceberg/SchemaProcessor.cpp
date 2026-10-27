@@ -23,7 +23,6 @@
 #include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -231,19 +230,6 @@ String canonicalizeTypeSpacing(const String & s)
     return result;
 }
 
-/// canonicalizeTypeSpacing, then resolve the names catalogs report instead of the spec ones: AWS Glue
-/// reports `binary` as the Redshift `varbyte` / `varbyte(N)` (a maximum length, no ClickHouse
-/// counterpart), and Hive 3 reports `timestamptz` as `timestamp with local time zone`.
-String canonicalizeTypeName(const String & s)
-{
-    String result = canonicalizeTypeSpacing(s);
-    if (result == f_varbyte || (result.starts_with("varbyte(") && result.ends_with(')')))
-        return f_binary;
-    if (result == f_timestamp_with_local_time_zone)
-        return f_timestamptz;
-    return result;
-}
-
 /// Compare two Iceberg type descriptors for the same field. A type is either a primitive
 /// string ("long", "decimal(20, 0)", ...) or a nested object ("struct" with a fields array,
 /// or "list" / "map" wrappers whose element/key/value members are themselves types).
@@ -262,7 +248,7 @@ bool typesAreStructurallyIdentical(
     /// "binary" would compare unequal and be wrongly rejected.
     if (first.isString())
     {
-        const String canon = canonicalizeTypeName(first.toString());
+        const String canon = canonicalizeTypeSpacing(first.toString());
         first = canon;
         for (const auto & [prefix, mapped] : type_mapping)
             if (canon.starts_with(prefix))
@@ -273,7 +259,7 @@ bool typesAreStructurallyIdentical(
     }
     if (second.isString())
     {
-        const String canon = canonicalizeTypeName(second.toString());
+        const String canon = canonicalizeTypeSpacing(second.toString());
         second = canon;
         for (const auto & [prefix, mapped] : type_mapping)
             if (canon.starts_with(prefix))
@@ -593,7 +579,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
     /// ASCII whitespace so parsing accepts every spelling the whitespace-insensitive comparison does.
-    const String type_name = canonicalizeTypeName(type_name_arg);
+    const String type_name = canonicalizeTypeSpacing(type_name_arg);
 
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
@@ -619,8 +605,6 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
-    if (type_name == f_variant)
-        return std::make_shared<DataTypeDynamic>();
 
     if (type_name.starts_with(f_geometry) || type_name.starts_with(f_geography))
     {
@@ -628,7 +612,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         {
             return DataTypeFactory::instance().get("Geometry");
         }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_geo_types_in_iceberg flag");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
     }
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
@@ -824,7 +808,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// Parameterized primitive types (decimal, geography, ...) can be serialized with
                 /// different spacing across metadata files, so compare ignoring ASCII whitespace:
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
-                if (canonicalizeTypeName(old_type) == canonicalizeTypeName(new_type))
+                if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
                     /// Nullability is carried by the separate `required` key, so equal type strings
                     /// can still resolve to different types. Only relaxing required to optional is

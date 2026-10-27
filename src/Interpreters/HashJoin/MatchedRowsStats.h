@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <base/types.h>

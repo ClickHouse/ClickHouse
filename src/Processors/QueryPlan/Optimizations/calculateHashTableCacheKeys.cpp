@@ -5,26 +5,21 @@
 #include <Core/Block.h>
 #include <Core/Joins.h>
 #include <Core/ProtocolDefines.h>
-#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 using namespace DB;
@@ -43,75 +38,26 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
-    /// `SipHash::update` of a string mixes in its bytes and nothing else, so a sequence of strings
-    /// hashed one after another is not self-delimiting: a header of `a UInt8` and one of `aU Int8`
-    /// both produce the bytes `aUInt8`. Mix in each length so that only the same split matches.
-    const auto update_with_size = [&hash](std::string_view s)
-    {
-        hash.update(s.size());
-        hash.update(s);
-    };
-
-    update_with_size(read.getSerializationName());
+    hash.update(read.getSerializationName());
     if (const auto & snapshot = read.getStorageSnapshot())
     {
         StorageID storage_id = snapshot->storage.getStorageID();
         if (storage_id.hasUUID())
             hash.update(storage_id.uuid.toUnderType());
         else
-            update_with_size(storage_id.getFullTableName());
+            hash.update(storage_id.getFullTableName());
     }
     /// A storage created by a table function has no UUID, and its StorageID does not depend on
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
     /// function subtree (its name and resolved arguments), otherwise e.g. numbers(1) and
     /// numbers(1e6) would share a stats entry.
-    ///
-    /// Unlike the actions DAGs below, the arguments are hashed with their values whatever their size:
-    /// they are the identity of what is read (a path, a URL, a format, a structure), so leaving out a
-    /// string would merge reads of different files. Their size is that of the query text the server
-    /// already parsed, since a folded expression argument such as `numbers(length(...))` is stored as
-    /// its result. The exception is a scalar subquery passed directly as an argument, whose whole
-    /// result is hashed here.
     if (const auto & table_expression = read.getQueryInfo().table_expression)
     {
         if (table_expression->as<TableFunctionNode>())
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
-    /// The columns the read produces. Two reads of the same table that produce different columns move
-    /// different volumes of data, so they must not share a statistics entry: the cache stores
-    /// `input_bytes` and `output_bytes`, and nothing downstream catches the difference - the drift
-    /// check compares `total_rows_to_read`, which is the same for both. A projection above the read is
-    /// no help either, since one that hands its inputs onward unchanged is transparent for the key.
-    ///
-    /// Types are hashed alongside the names because a subcolumn is a column of its own here: `n.a` and
-    /// `n.a.size0` are both read from the same `Nested` column under names that differ only in a
-    /// suffix, and they differ by the whole array payload.
-    ///
-    /// This is the read's own header, before any renaming step, so the names are the table's columns
-    /// rather than the branch-local `__tableN.x` form, and the single-replica and parallel-replicas
-    /// plan builds agree on them.
-    for (const auto & column : *read.getOutputHeader())
-    {
-        update_with_size(column.name);
-        update_with_size(column.type->getName());
-    }
-    /// `SAMPLE`, `FINAL` and `OFFSET` change how much of the table the read touches while leaving the
-    /// storage, the header and the PREWHERE identical, so without this `SAMPLE 1` and `SAMPLE 0.1`
-    /// share an entry and the sampled query is priced at ten times what it reads. `SAMPLE` is the one
-    /// case the drift check would eventually catch, since it changes the row count too, but only
-    /// after a decision has already been made on the wrong estimate.
-    if (const auto & modifiers = read.getQueryInfo().table_expression_modifiers)
-        modifiers->updateTreeHash(hash);
-    /// A row policy is pushed into the read itself rather than becoming a step above it, so there is
-    /// nothing else in the plan to tell two policies apart: the header is the same, and a policy over
-    /// a column outside the primary key leaves index analysis - and so the drift check - unmoved. Two
-    /// policies that pass very different numbers of rows to the boundary would otherwise share an
-    /// entry.
-    if (const auto & row_level_filter = read.getRowLevelFilter())
-        row_level_filter->actions.updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
     if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(
-            hash, /*build_independent=*/true, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
+        dag->prewhere_actions.updateHash(hash);
     return hash.get64();
 }
 
@@ -130,93 +76,26 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
-/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
-/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
-/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
-/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
-/// `isPassthroughExpressionWithRenames` below.
-bool isByteTransparentTransform(const ITransformingStep & transform)
-{
-    return transform.getTransformTraits().preserves_number_of_rows
-        && !transform.getInputHeaders().empty()
-        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
-}
-
-
-/// If `dag` only forwards its inputs (possibly renaming and reordering them), return the input index
-/// each output comes from. Returns nothing when an output is computed rather than forwarded.
-///
-/// `outputsAreRenamedInputs` below asks a neighbouring yes/no question - may this wrapper be skipped
-/// over entirely - and is stricter: it also rejects forwarding one input twice. This one answers what
-/// the permutation IS, which is what a key needs to tell two orderings of the same columns apart.
-std::optional<std::vector<size_t>> pureColumnPermutation(const ActionsDAG & dag)
-{
-    std::unordered_map<const ActionsDAG::Node *, size_t> input_index;
-    const auto & inputs = dag.getInputs();
-    for (size_t i = 0; i < inputs.size(); ++i)
-        input_index.emplace(inputs[i], i);
-
-    std::vector<size_t> result;
-    result.reserve(dag.getOutputs().size());
-    for (const auto * output : dag.getOutputs())
-    {
-        const auto * node = output;
-        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-            node = node->children.front();
-
-        auto it = input_index.find(node);
-        if (it == input_index.end())
-            return {};
-
-        result.push_back(it->second);
-    }
-    return result;
-}
-
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
-    /// leaves the output byte layout unchanged - see `isByteTransparentTransform`. The cache stores
-    /// `output_bytes`, not just cardinality, so a row-preserving `ExpressionStep` that adds, removes,
-    /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
-    /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
-    /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
-    if (isByteTransparentTransform(transform))
-    {
-        /// A rename-only step is transparent, but a step that REORDERS same-typed columns is not: it
-        /// changes which column each position holds, and a position is how the payloads above identify
-        /// their columns (`writeCacheKeyColumnName`). `sameByteLayout` cannot see the difference - a
-        /// permutation of same-typed columns has the same layout - so two mirror queries whose only
-        /// difference is which join input a column comes from would otherwise share a key. Hash the
-        /// permutation, which is structural and so equal in both plan builds.
-        if (const auto * expression = typeid_cast<const ExpressionStep *>(&transform))
-        {
-            if (auto permutation = pureColumnPermutation(expression->getExpression()))
-            {
-                bool is_identity = true;
-                for (size_t i = 0; i < permutation->size(); ++i)
-                    is_identity &= (*permutation)[i] == i;
-
-                if (!is_identity)
-                {
-                    SipHash permutation_hash;
-                    permutation_hash.update("column permutation");
-                    for (auto index : *permutation)
-                        permutation_hash.update(index);
-                    return permutation_hash.get64();
-                }
-            }
-        }
+    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
+    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
+    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
+    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
+    /// rename-only step keeps the same byte layout and stays transparent.
+    ///
+    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
+    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
+    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
+    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
+    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
+    /// consequence is a slightly-off estimate, never a wrong result.
+    if (transform.getTransformTraits().preserves_number_of_rows
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
         return 0;
-    }
 
-    /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
-    /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
-    /// written without their variable-size constant values, which can be arbitrarily large (a folded
-    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
-    /// step and of a join are hashed with `updateHash` under the same contract.
-    SipHash hash;
-    SipHashingWriteBuffer wbuf(hash);
+    WriteBufferFromOwnString wbuf;
     SerializedSetsRegistry registry;
     registry.for_cache_key = true;
     /// The bytes are hashed in-process by the same binary that wrote them and never reach another
@@ -224,28 +103,15 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     /// default 0 would make every step that gates on a minimum version (e.g. `WindowStep`) either
     /// throw or silently write an older encoding. The key then varies across server versions, which
     /// only invalidates in-memory cache entries.
-    /// Give the step its own input header: a column name in its payload is then identified by where it
-    /// sits in that header as well as by its (normalized) text, which is what keeps the same name taken
-    /// from two different join inputs apart. See `writeCacheKeyColumnName`.
-    /// `step_version` is set below, inside the `isSerializable` guard: `versionToWrite` throws for a step
-    /// the registry does not know, and this runs for every transforming step in the plan, serializable or
-    /// not - a `FilledJoin` (a direct join) reached it and the query failed with `Unknown query plan step`.
     IQueryPlanStep::Serialization ctx{
-        .out = wbuf,
-        .registry = registry,
-        .for_cache_key = true,
-        .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
-        .input_header = transform.getInputHeaders().empty() ? nullptr : transform.getInputHeaders().front().get()};
+        .out = wbuf, .registry = registry, .for_cache_key = true, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
 
-    const auto step_name = transform.getSerializationName();
-    writeStringBinary(step_name, wbuf);
+    writeStringBinary(transform.getSerializationName(), wbuf);
     if (transform.isSerializable())
-    {
-        ctx.step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         transform.serialize(ctx);
-    }
 
-    wbuf.finalize();
+    SipHash hash;
+    hash.update(wbuf.str());
     return hash.get64();
 }
 
@@ -257,86 +123,6 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-/// Does this expression hand every one of its inputs onward, renamed or reordered but otherwise
-/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, no two outputs may
-/// land on the same one, and there must be as many outputs as inputs. That makes the mapping a
-/// bijection: nothing is dropped, added, duplicated or computed, so the columns that leave are the
-/// columns that came in and the bytes are the same however they are ordered.
-///
-/// The mapping is what decides this, not a comparison of the two headers position by position. An
-/// `ALIAS` carries its child's type, so following each output to its input compares like with like, and
-/// a reorder of unlike types - `SELECT b, a` over `(a UInt64, b String)`, which the planner really does
-/// emit as a `Project names` or `Projection` of its own - is recognised for what it is. Reading the
-/// headers off by position would call that a change of layout and refuse to look through the step.
-///
-/// Both halves matter. A `FUNCTION` or a constant `COLUMN` means the step puts something in the column
-/// that was never read: `SELECT concat(s, s) AS s` keeps the arity, the position and the type name, and
-/// preserves the row count, yet doubles the bytes, and so does any first-stage `Projection` - the
-/// arbitrary DAG built from the query's projection list (`Planner.cpp`,
-/// `PlannerExpressionAnalysis::analyzeProjection`). And forwarding one input twice is no better:
-/// `SELECT a AS x, a AS y` over `(a, b)` keeps two `String` columns in the header while what leaves the
-/// step is `a + a`, not `a + b`.
-///
-/// A forwarded column is an `INPUT` whether or not it happens to be constant - `ActionsDAG::addInput`
-/// never sets `node.column` - so a `COLUMN` output is always a constant this step materialized itself,
-/// which is the case to reject.
-static bool outputsAreRenamedInputs(const ActionsDAG & actions)
-{
-    const auto & inputs = actions.getInputs();
-    const auto & outputs = actions.getOutputs();
-    if (outputs.size() != inputs.size())
-        return false;
-
-    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> forwarded;
-    for (const auto * output : outputs)
-    {
-        const auto * node = output;
-        while (node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            chassert(node->children.size() == 1);
-            node = node->children.front();
-        }
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            return false;
-        if (!forwarded.insert(node).second)
-            return false;
-    }
-    return true;
-}
-
-/// Is this a wrapper that can be skipped over - looked through when locating the boundary the replicas
-/// ship from, and collapsed onto its child when keying it? Only an expression that permutes its inputs
-/// qualifies. Deliberately not every step that contributes nothing to a key: a full `SortingStep` does
-/// (it preserves rows and layout) and must still be a boundary of its own, which is what
-/// `Do not look through `Limit` and `Sorting` when picking the node to instrument` settled.
-bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step)
-{
-    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
-    return expression && expression->getTransformTraits().preserves_number_of_rows
-        && !expression->getInputHeaders().empty()
-        && outputsAreRenamedInputs(expression->getExpression());
-}
-
-/// Does this wrapper forward its inputs in the SAME order? `outputsAreRenamedInputs` accepts a
-/// reordering too, and a reordering is not a rename: it changes which column each position holds, and a
-/// position is how the payloads above identify their columns (`writeCacheKeyColumnName`).
-static bool forwardsInputsInOrder(const IQueryPlanStep & step)
-{
-    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
-    if (!expression)
-        return false;
-
-    auto permutation = pureColumnPermutation(expression->getExpression());
-    if (!permutation)
-        return false;
-
-    for (size_t i = 0; i < permutation->size(); ++i)
-        if ((*permutation)[i] != i)
-            return false;
-
-    return true;
-}
-
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
     SipHash hash;
@@ -347,23 +133,14 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
         auto [op, lhs, rhs] = condition.asBinaryPredicate();
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
-            /// A join-condition node is named by `calculateActionNodeName`, so its name is branch-local
-            /// (`__table1.k` in one plan build, `__table2.k` in the other) and this contribution is not
-            /// equal across builds. It is hashed exactly all the same, because it also keys the
-            /// hash-table-size statistics that `optimizeJoin` reads back when it chooses a build side -
-            /// it recomputes this very value after reordering. Dropping the names there makes two
-            /// structurally identical joins over different tables share one entry:
-            /// `03279_join_choose_build_table` catches it, sizing the swapped-operand query from the
-            /// other one's sample and picking the wrong build table. Making this build-independent for
-            /// Auto-PR needs the two consumers separated first.
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
+                lhs.getNode()->updateHash(hash);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
+                rhs.getNode()->updateHash(hash);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
+                lhs.getNode()->updateHash(hash);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
+                rhs.getNode()->updateHash(hash);
         }
     }
 
@@ -373,9 +150,8 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
-/// (e.g. the column-blind read hash on the input side, the join output column names - see the
-/// `JoinStep` case below for why hashing them would be strictly worse - or the values of
-/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
+/// (e.g. the column-blind read hash on the input side, or the join output column names - see the
+/// `JoinStep` case below for why hashing them would be strictly worse). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
@@ -469,34 +245,12 @@ void calculateHashTableCacheKeys(
         {
             const auto & table_join = join_step->getJoin()->getTableJoin();
             auto kind = table_join.kind();
-            /// Remember the original orientation: the RIGHT->LEFT remap below swaps the children, and the
-            /// per-output-column side bits mixed in further down must be expressed in the remapped
-            /// orientation to stay orientation-invariant.
-            const bool children_swapped = isRight(kind);
 
             /// Fold each physical side's equi-keys (with null-safety) and its on-clause residual
             /// condition into that side's child hash, so they travel with the child under the
             /// RIGHT->LEFT remap below (keeping `A RIGHT JOIN B ≡ B LEFT JOIN A`). Two joins over the
             /// same inputs but with different keys/conditions then yield different child
             /// contributions, hence different cache keys, instead of colliding.
-            /// Identify a key by where it sits in that side's header and what type it has, never by its
-            /// name: names are branch-local (see `ActionsDAG::Node::updateHash`), so hashing them makes
-            /// the single-replica plan and the parallel-replicas plan disagree on a join they both
-            /// perform identically. This is the same choice already made for the join's output columns
-            /// below, applied to its keys.
-            const auto & left_header = *node.children.at(0)->step->getOutputHeader();
-            const auto & right_header = *node.children.at(1)->step->getOutputHeader();
-            auto update_with_column = [](SipHash & key_hash, const Block & header, const String & name)
-            {
-                if (const auto * column = header.findByName(name))
-                {
-                    key_hash.update(header.getPositionByName(name));
-                    key_hash.update(column->type->getName());
-                }
-                /// A key that is not a column of this side's header is produced by the join itself;
-                /// there is nothing build-independent to say about it, so it contributes nothing.
-            };
-
             SipHash keys_left;
             SipHash keys_right;
             for (const auto & clause : table_join.getClauses())
@@ -504,14 +258,14 @@ void calculateHashTableCacheKeys(
                 for (size_t i = 0; i < clause.keysCount(); ++i)
                 {
                     const bool nullsafe = clause.nullsafe_compare_key_indexes.contains(i);
-                    update_with_column(keys_left, left_header, clause.key_names_left[i]);
+                    keys_left.update(clause.key_names_left[i]);
                     keys_left.update(nullsafe);
-                    update_with_column(keys_right, right_header, clause.key_names_right[i]);
+                    keys_right.update(clause.key_names_right[i]);
                     keys_right.update(nullsafe);
                 }
                 const auto [left_cond, right_cond] = clause.condColumnNames();
-                update_with_column(keys_left, left_header, left_cond);
-                update_with_column(keys_right, right_header, right_cond);
+                keys_left.update(left_cond);
+                keys_right.update(right_cond);
             }
             auto a = cache_keys[node.children.at(0)] ^ keys_left.get64();
             auto b = cache_keys[node.children.at(1)] ^ keys_right.get64();
@@ -533,20 +287,8 @@ void calculateHashTableCacheKeys(
             if (table_join.strictness() == JoinStrictness::Asof)
                 frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
             frame.hash.update(table_join.joinUseNulls());
-            /// The residual on-clause predicate is a DAG whose node names come from
-            /// `calculateActionNodeName` and are therefore branch-local; hash what it computes instead.
-            /// It reads from both sides, so give it the header it actually sees - the left columns
-            /// followed by the right ones. Without it `lhs.ts < rhs.ts` and `rhs.ts < lhs.ts` collapse
-            /// onto one hash once the qualifier index is erased, and two joins with quite different
-            /// residual selectivity would share a statistics entry.
             if (const auto & mixed = table_join.getMixedJoinExpression())
-            {
-                Block joined_header = *node.children.at(0)->step->getOutputHeader();
-                for (const auto & column : *node.children.at(1)->step->getOutputHeader())
-                    joined_header.insert(column);
-                mixed->getActionsDAG().updateHash(
-                    frame.hash, /*build_independent=*/true, &joined_header, /*with_variable_size_constant_values=*/false);
-            }
+                mixed->getActionsDAG().updateHash(frame.hash);
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of
             /// columns have different output headers and different `output_bytes` when the join result
@@ -562,39 +304,8 @@ void calculateHashTableCacheKeys(
             /// silently never running for an otherwise-supported shape - strictly worse than the
             /// same-type collision, which only yields a slightly-off estimate. So per the best-effort
             /// policy above we keep matching robust and accept that residual collision.
-            ///
-            /// What we do mix in per output column, instead of its name, is WHICH SIDE produced it. That
-            /// is a structural property - membership in one child's header - so it is the same in both
-            /// plan builds, while the name it is derived from never enters the key. It restores the only
-            /// discrimination the names were carrying: in a self-join `t AS l JOIN t AS r`, the plans for
-            /// `WHERE l.id > 0` and `WHERE r.id > 0` are otherwise isomorphic (same tables, same keys,
-            /// same output types, and the filter above the join sees a single `id` input either way), so
-            /// without this bit they share a statistics entry and one predicate's selectivity is served
-            /// to the other. A name present in both headers says nothing about a side, so it contributes
-            /// the `unknown` marker rather than an arbitrary choice.
-            ///
-            /// Like everything else in this key, the side bit is best-effort, and the cases it does not
-            /// separate cost nothing in correctness. A false-positive match only makes Auto-PR read a
-            /// statistics entry collected for a different-but-isomorphic plan, i.e. estimate `input_bytes`
-            /// / `output_bytes` from the wrong sample and enable or skip parallel replicas
-            /// sub-optimally. The query result is unaffected either way: these statistics feed the
-            /// decision, never the execution. So where a side cannot be determined we accept the
-            /// collision rather than reach for a discriminator that would have to be branch-local.
             for (const auto & column : *join_step->getOutputHeader())
-            {
                 frame.hash.update(column.type->getName());
-
-                const bool in_left = left_header.has(column.name);
-                const bool in_right = right_header.has(column.name);
-                UInt8 side = 2; /// produced by the join itself, or ambiguous (in both headers)
-                if (in_left != in_right)
-                {
-                    side = in_left ? 0 : 1;
-                    if (children_swapped)
-                        side = 1 - side;
-                }
-                frame.hash.update(side);
-            }
             /// `join_any_take_last_row` selects the last instead of the first matching right-side row for
             /// `ANY` joins, so the two modes can produce very different outputs (and thus very different
             /// collected `output_bytes`) for the same query shape. The physical `JoinStep` no longer
@@ -621,43 +332,13 @@ void calculateHashTableCacheKeys(
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
-        {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
-        }
 
-        /// A step that contributes nothing must not contribute a hashing round either. Hashing its
-        /// child through it gives `SipHash(key(child))`, which is not `key(child)`, so the mere
-        /// presence of such a step shifts every key above it - the step is free of content but not
-        /// free of position. Adopt the child's key instead, which makes it genuinely invisible: a
-        /// plan that carries one and a plan that does not then agree on every key above it.
-        ///
-        /// This is what keeps `optimizePrewhere` from moving the keys. A filter fully moved into
-        /// PREWHERE leaves an `Expression` in the `Filter`'s place, and expression merging has
-        /// already run by then, so the plan is left with two neighbouring `Expression` steps that no
-        /// plan built any other way carries. That step is a rename, hence row- and layout-preserving,
-        /// hence transparent here - and with the adoption below the automatic parallel replicas
-        /// decision can still find its counterpart in the other plan.
-        ///
-        /// A transforming step always has exactly one child, so the join branches above never reach
-        /// this; the guard is for safety, not for a shape that occurs.
-        /// Only a wrapper that forwards its inputs in order is adopted. One that also reorders them keeps
-        /// a key of its own, from the permutation `calculateHashFromStep` hashed: adopting it would put a
-        /// plan that permutes same-typed columns and a plan that does not on one key, which is how two
-        /// mirror queries over different join inputs came to share a statistics entry.
-        if (isPassthroughExpressionWithRenames(*node.step) && node.children.size() == 1
-            && forwardsInputsInOrder(*node.step))
-        {
-            raw_hashes[&node] = raw_hashes[node.children.front()];
-            cache_keys[&node] = cache_keys[node.children.front()];
-        }
-        else
-        {
-            const auto raw = frame.hash.get64();
-            raw_hashes[&node] = raw;
-            cache_keys[&node] = raw;
-        }
+        const auto raw = frame.hash.get64();
+        raw_hashes[&node] = raw;
+        cache_keys[&node] = raw;
 
         stack.pop_back();
     }

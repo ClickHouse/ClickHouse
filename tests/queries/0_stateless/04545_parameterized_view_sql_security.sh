@@ -54,7 +54,7 @@ echo "--- parallel replicas ---"
 # automatic_parallel_replicas_mode = 0 forces the explicit parallel-replicas path so the
 # ParallelReplicasUsedCount guard below is deterministic (otherwise the coordinator may skip
 # parallel replicas for this small table and the guard would flap).
-pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 1, automatic_parallel_replicas_mode = 0"
+pr_settings="enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 1, parallel_replicas_only_with_analyzer = 0, automatic_parallel_replicas_mode = 0"
 echo -n "definer pr: "
 ${CLICKHOUSE_CLIENT} --user "$invoker" --query \
     "SELECT count() FROM $db.pv_definer(lim = 5000) SETTINGS $pr_settings, log_comment = '04545_pr_${CLICKHOUSE_DATABASE}'"

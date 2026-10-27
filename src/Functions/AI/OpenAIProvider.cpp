@@ -1,7 +1,5 @@
 #include <Functions/AI/OpenAIProvider.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -43,10 +41,15 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_
 {
 }
 
-void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
+HTTPHeaderEntries OpenAIProvider::getHeaders() const
 {
-    response = {};
+    if (api_key.empty()) /// not all providers need API key
+        return {};
+    return {{"Authorization", "Bearer " + api_key}};
+}
 
+AIResponse OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts)
+{
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
     root->set("temperature", ai_request.temperature);
@@ -80,20 +83,23 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     setCommonHeaders(http_request, ai_request);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -107,16 +113,7 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    /// A malformed body was still charged for, so read the usage before the checks below can throw.
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-        {
-            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-            response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
-        }
-    }
+    AIResponse ai_response;
 
     auto choices = json_obj->getArray("choices");
     if (!choices || choices->size() == 0)
@@ -133,42 +130,50 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI chat response is missing output message");
 
-    response.result = message->optValue<String>("content", "");
+    ai_response.result = message->optValue<String>("content", "");
 
     /// A structured-output safety refusal arrives as a populated `message.refusal` with a null
     /// `content`, and `finish_reason` stays "stop" because the generation itself ended normally.
     auto refusal = message->optValue<String>("refusal", "");
     if (!refusal.empty())
     {
-        response.result = refusal;
-        response.raw_finish_reason = "refusal";
-        response.finish_reason = FinishReason::ContentFilter;
+        ai_response.result = refusal;
+        ai_response.raw_finish_reason = "refusal";
+        ai_response.finish_reason = FinishReason::ContentFilter;
     }
     else
     {
         /// Map OpenAI's `finish_reason` onto the canonical `FinishReason`. An absent field means the
         /// generation completed normally. OpenAI reuses "stop" for both a natural end and a stop-sequence
         /// hit, so a stop sequence does not look like truncation.
-        response.raw_finish_reason = choice->optValue<String>("finish_reason", "stop");
-        if (response.raw_finish_reason == "stop")
-            response.finish_reason = FinishReason::Complete;
-        else if (response.raw_finish_reason == "length")
-            response.finish_reason = FinishReason::Truncated;
-        else if (response.raw_finish_reason == "content_filter")
-            response.finish_reason = FinishReason::ContentFilter;
-        else if (response.raw_finish_reason == "tool_calls" || response.raw_finish_reason == "function_call")
-            response.finish_reason = FinishReason::RequiresAction;
+        ai_response.raw_finish_reason = choice->optValue<String>("finish_reason", "stop");
+        if (ai_response.raw_finish_reason == "stop")
+            ai_response.finish_reason = FinishReason::Complete;
+        else if (ai_response.raw_finish_reason == "length")
+            ai_response.finish_reason = FinishReason::Truncated;
+        else if (ai_response.raw_finish_reason == "content_filter")
+            ai_response.finish_reason = FinishReason::ContentFilter;
+        else if (ai_response.raw_finish_reason == "tool_calls" || ai_response.raw_finish_reason == "function_call")
+            ai_response.finish_reason = FinishReason::RequiresAction;
         else
-            response.finish_reason = FinishReason::Unknown;
+            ai_response.finish_reason = FinishReason::Unknown;
     }
+
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+        {
+            ai_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+            ai_response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
+        }
+    }
+
+    return ai_response;
 }
 
-void OpenAIProvider::embed(
-    const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response)
+AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts)
 {
-    response.embeddings.clear();
-    response.input_tokens = 0;
-
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_embedding_request.model);
 
@@ -188,20 +193,23 @@ void OpenAIProvider::embed(
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     setCommonHeaders(http_request, ai_embedding_request);
     http_request.setContentLength(body.size());
 
-    auto request_body = sendHTTPRequest(*session, http_request);
-    writeString(body, *request_body);
-    request_body->finalize();
+    auto & out_stream = session->sendRequest(http_request);
+    out_stream << body;
 
     Poco::Net::HTTPResponse http_response;
-    auto response_stream = receiveHTTPResponse(*session, http_response);
+    auto & in_stream = session->receiveResponse(http_response);
 
     String response_body;
-    readStringUntilEOF(response_body, *response_stream);
+    {
+        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        ss << in_stream.rdbuf();
+        response_body = std::move(ss).str();
+    }
 
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
@@ -215,15 +223,8 @@ void OpenAIProvider::embed(
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    /// A malformed body was still charged for, so read the usage before the checks below can throw.
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-    }
-
-    response.embeddings.resize(ai_embedding_request.inputs.size());
+    AIEmbeddingResponse ai_embedding_response;
+    ai_embedding_response.embeddings.resize(ai_embedding_request.inputs.size());
 
     auto data_arr = json_obj->getArray("data");
     if (!data_arr)
@@ -248,10 +249,10 @@ void OpenAIProvider::embed(
 
         /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
         UInt64 idx = item->optValue<UInt64>("index", i);
-        if (idx >= response.embeddings.size())
+        if (idx >= ai_embedding_response.embeddings.size())
             throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} is out of range (expected < {})",
-                i, idx, response.embeddings.size());
+                i, idx, ai_embedding_response.embeddings.size());
         if (seen[idx])
             throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} duplicates an earlier entry", i, idx);
@@ -263,8 +264,17 @@ void OpenAIProvider::embed(
                 "AI embedding response 'data[{}].embedding' is missing or not an array", i);
 
         for (unsigned j = 0; j < embedding_arr->size(); ++j)
-            response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
+            ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
     }
+
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+            ai_embedding_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+    }
+
+    return ai_embedding_response;
 }
 
 }

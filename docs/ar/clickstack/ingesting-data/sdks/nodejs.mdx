@@ -6,17 +6,24 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'التسجيل', 'التكامل', 'مراقبة التطبيقات']
 ---
 
-import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
-
 يستخدم ClickStack معيار OpenTelemetry لجمع بيانات القياس عن بُعد (السجلات والمقاييس
 والتتبعات والاستثناءات). تُنشأ التتبعات تلقائيًا عبر الرصد التلقائي، لذا
 لا يلزم إجراء رصد يدوي للاستفادة من التتبع.
 
-<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
+يُكامل هذا الدليل ما يلي:
 
-## بدء الاستخدام {#getting-started}
+* **السجلات**
+* **المقاييس**
+* **التتبعات**
+* **الاستثناءات**
 
-### ثبّت حزمة HyperDX OpenTelemetry الخاصة بالرصد {#install-hyperdx-opentelemetry-instrumentation-package}
+<div id="getting-started">
+  ## بدء الاستخدام
+</div>
+
+<div id="install-hyperdx-opentelemetry-instrumentation-package">
+  ### ثبّت حزمة HyperDX OpenTelemetry الخاصة بالرصد
+</div>
 
 استخدم الأمر التالي لتثبيت [حزمة ClickStack OpenTelemetry](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
 
@@ -34,7 +41,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### تهيئة SDK {#initializin-the-sdk}
+<div id="initializin-the-sdk">
+  ### تهيئة SDK
+</div>
 
 لتهيئة SDK، ستحتاج إلى استدعاء الدالة `init` في بداية نقطة الدخول الخاصة بتطبيقك.
 
@@ -44,8 +53,8 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
     const HyperDX = require('@hyperdx/node-opentelemetry');
 
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // احذف هذا الحقل في Managed ClickStack
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا الحقل في Managed ClickStack
         service: 'my-service'
     });
     ```
@@ -56,8 +65,8 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
     import * as HyperDX from '@hyperdx/node-opentelemetry';
 
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // احذف هذا الحقل في Managed ClickStack
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا الحقل في Managed ClickStack
         service: 'my-service'
     });
     ```
@@ -66,7 +75,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 سيؤدي ذلك تلقائيًا إلى التقاط بيانات التتبّع والمقاييس والسجلات من تطبيق Node.js الخاص بك.
 
-### إعداد جمع السجلات {#setup-log-collection}
+<div id="setup-log-collection">
+  ### إعداد جمع السجلات
+</div>
 
 افتراضيًا، تُجمَع سجلات `console.*` تلقائيًا. إذا كنت تستخدم `logger`
 مثل `winston` أو `pino`، فستحتاج إلى إضافة `transport` إلى `logger` لديك
@@ -126,7 +137,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### إعداد التقاط الأخطاء {#setup-error-collection}
+<div id="setup-error-collection">
+  ### إعداد التقاط الأخطاء
+</div>
 
 يمكن لحزمة SDK الخاصة بـ ClickStack التقاط الاستثناءات والأخطاء غير المعالَجة تلقائيًا في تطبيقك، مع stack trace كامل وسياق الشيفرة.
 
@@ -137,8 +150,8 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
     ```javascript
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // احذف هذا عند استخدام Managed ClickStack
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا عند استخدام Managed ClickStack
         service: 'my-service'
     });
     const app = express();
@@ -159,8 +172,8 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
     const Router = require("@koa/router");
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
-        apiKey: '<YOUR_INGESTION_API_KEY>', // احذف هذا عند استخدام Managed ClickStack
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا عند استخدام Managed ClickStack
         service: 'my-service'
     });
 
@@ -187,7 +200,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
 
 إذا كنت تواجه مشكلة في الـ SDK، يمكنك تفعيل التسجيل المطوّل عبر ضبط
 متغير البيئة `OTEL_LOG_LEVEL` على `debug`.
@@ -196,9 +211,13 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 export OTEL_LOG_LEVEL=debug
 ```
 
-## التهيئة المتقدّمة للرصد {#advanced-instrumentation-configuration}
+<div id="advanced-instrumentation-configuration">
+  ## التهيئة المتقدّمة للرصد
+</div>
 
-### التقاط سجلات وحدة التحكم {#capture-console-logs}
+<div id="capture-console-logs">
+  ### التقاط سجلات وحدة التحكم
+</div>
 
 افتراضيًا، تلتقط حزمة SDK الخاصة بـ ClickStack سجلات وحدة التحكم. يمكنك تعطيل ذلك عن طريق
 ضبط متغير البيئة `HDX_NODE_CONSOLE_CAPTURE` على 0.
@@ -207,7 +226,9 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-### إرفاق معلومات المستخدم أو البيانات الوصفية {#attach-user-information-or-metadata}
+<div id="attach-user-information-or-metadata">
+  ### إرفاق معلومات المستخدم أو البيانات الوصفية
+</div>
 
 لتوسيم جميع الأحداث المرتبطة بسهولة بسمة أو معرّف معيّن (مثل: معرّف المستخدم
 أو البريد الإلكتروني)، يمكنك استدعاء الدالة `setTraceAttributes`، التي ستوسم كل
@@ -247,7 +268,9 @@ app.use((req, res, next) => {
 export HDX_NODE_BETA_MODE=1
 ```
 
-### Google Cloud Run {#google-cloud-run}
+<div id="google-cloud-run">
+  ### Google Cloud Run
+</div>
 
 إذا كنت تشغّل تطبيقك على Google Cloud Run، فإن Cloud Trace
 يضيف تلقائيًا رؤوس أخذ العينات إلى الطلبات الواردة، مما
@@ -264,7 +287,9 @@ export HDX_NODE_BETA_MODE=1
 لمعرفة المزيد، ولفرض التتبع لطلبات محددة، يُرجى الرجوع إلى
 [وثائق Google Cloud Run](https://cloud.google.com/run/docs/trace).
 
-### المكتبات المزوّدة بأدوات الرصد تلقائيًا {#auto-instrumented-libraries}
+<div id="auto-instrumented-libraries">
+  ### المكتبات المزوّدة بأدوات الرصد تلقائيًا
+</div>
 
 سيضيف SDK التتبّع تلقائيًا إلى المكتبات التالية:
 
@@ -286,9 +311,13 @@ export HDX_NODE_BETA_MODE=1
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-## طريقة تثبيت بديلة {#alternative-installation}
+<div id="alternative-installation">
+  ## طريقة تثبيت بديلة
+</div>
 
-### شغّل التطبيق باستخدام ClickStack OpenTelemetry CLI {#run-the-application-with-cli}
+<div id="run-the-application-with-cli">
+  ### شغّل التطبيق باستخدام ClickStack OpenTelemetry CLI
+</div>
 
 بدلاً من ذلك، يمكنك تفعيل الرصد التلقائي لتطبيقك من دون أي تغييرات على الشيفرة باستخدام واجهة سطر الأوامر `opentelemetry-instrument` أو عبر
 الخيار `--require` في Node.js. يوفّر تثبيت CLI نطاقًا أوسع من المكتبات وأطر العمل المزوّدة بالرصد التلقائي.
@@ -302,7 +331,7 @@ export HDX_NODE_BETA_MODE=1
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
     ```
   </Tab>
 
@@ -314,7 +343,7 @@ export HDX_NODE_BETA_MODE=1
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
     ```
   </Tab>
 
@@ -334,7 +363,9 @@ export HDX_NODE_BETA_MODE=1
 
 *يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعريف بخدمتك في تطبيق HyperDX، ويمكن أن يكون أي اسم تريده.*
 
-### تمكين التقاط الاستثناءات {#enabling-exception-capturing}
+<div id="enabling-exception-capturing">
+  ### تمكين التقاط الاستثناءات
+</div>
 
 لتمكين التقاط الاستثناءات غير المعالَجة، عليك ضبط متغير البيئة `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` على القيمة 1.
 
@@ -344,7 +375,9 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 بعد ذلك، لالتقاط الاستثناءات تلقائيًا من Express أو Koa، أو للتعامل مع الاستثناءات يدويًا، اتبع الإرشادات الواردة في قسم [إعداد جمع الأخطاء](#setup-error-collection) أعلاه.
 
-### المكتبات التي تُزوَّد بأدوات الرصد تلقائيًا {#auto-instrumented-libraries-2}
+<div id="auto-instrumented-libraries-2">
+  ### المكتبات التي تُزوَّد بأدوات الرصد تلقائيًا
+</div>
 
 سيتم تزويد المكتبات التالية بأدوات الرصد تلقائيًا (لتجميع التتبعات) باستخدام طرق التثبيت المذكورة أعلاه:
 

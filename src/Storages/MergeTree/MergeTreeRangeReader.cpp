@@ -24,7 +24,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
-#if defined(__SSSE3__)
+#if defined(__AVX2__)
 #include <immintrin.h>
 #endif
 
@@ -46,12 +46,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-}
-
-LoggerPtr getMergeTreeRangeReaderLogger()
-{
-    static LoggerPtr log = getLogger("MergeTreeRangeReader");
-    return log;
 }
 
 static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
@@ -172,10 +166,8 @@ void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCoun
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
     size_t from_mark,
-    size_t current_range_last_mark_,
     IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
-        , current_range_last_mark(current_range_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
         , continue_reading(false), is_finished(false)
@@ -193,7 +185,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, s
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(
-            current_mark, current_range_last_mark, continue_reading, num_rows, columns);
+            current_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -271,7 +263,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(MutableColumns & columns)
 MergeTreeRangeReader::Stream::Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
-    , stream(from_mark, to_mark, merge_tree_reader)
+    , stream(from_mark, merge_tree_reader)
     , current_mark(from_mark)
     , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
     , offset_after_current_mark(0)
@@ -999,11 +991,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         result_sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
     }
 
-    part_offset_position = read_sample_block.findPositionByName("_part_offset");
-    block_offset_position = read_sample_block.findPositionByName(BlockOffsetColumn::name);
-    part_granule_offset_position = read_sample_block.findPositionByName("_part_granule_offset");
-    distance_position = read_sample_block.findPositionByName("_distance");
-
     if (prewhere_info)
     {
         const auto & step = *prewhere_info;
@@ -1231,14 +1218,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-
-    /// A step that materializes no on-disk column (constant PREWHERE, or a filter over a column
-    /// absent from the part) reports no rows read, though the granule sizes taken from the index
-    /// are correct and those rows flow on through the chain. Only this front step accumulates it.
-    if (result.numReadRows() == 0)
-        result.addRows(result.total_rows_per_granule);
-
-    result.num_rows = result.numReadRows();
+    /// When no columns were physically read (e.g., constant PREWHERE expression),
+    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
+    /// from the index granularity. Use it so the reading chain can continue
+    /// to subsequent readers that read actual data columns.
+    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1268,49 +1252,53 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 {
     ColumnPtr part_offset_column;
 
-    auto add_part_offset_column = [&](size_t pos)
+    auto add_offset_column = [&](const auto & column_name)
     {
+        size_t pos = read_sample_block.getPositionByName(column_name);
         chassert(pos < columns.size());
 
         /// Column may be persisted in part.
         if (columns[pos])
             return;
 
-        if (!part_offset_column)
-            part_offset_column = createPartOffsetColumn(result);
-        columns[pos] = part_offset_column;
+        if (column_name == "_part_offset" || column_name == BlockOffsetColumn::name)
+        {
+            if (!part_offset_column)
+                part_offset_column = createPartOffsetColumn(result);
+            columns[pos] = part_offset_column;
+        }
+        else if (column_name == "_part_granule_offset")
+        {
+            columns[pos] = createPartGranuleOffsetColumn(result);
+        }
     };
 
-    if (part_offset_position)
-        add_part_offset_column(*part_offset_position);
+    if (read_sample_block.has("_part_offset"))
+        add_offset_column("_part_offset");
 
     /// Column _block_offset is the same as _part_offset if it's not persisted in part.
-    if (block_offset_position)
-        add_part_offset_column(*block_offset_position);
+    if (read_sample_block.has(BlockOffsetColumn::name))
+        add_offset_column(BlockOffsetColumn::name);
 
-    if (part_granule_offset_position)
-    {
-        chassert(*part_granule_offset_position < columns.size());
-        if (!columns[*part_granule_offset_position])
-            columns[*part_granule_offset_position] = createPartGranuleOffsetColumn(result);
-    }
+    if (read_sample_block.has("_part_granule_offset"))
+        add_offset_column("_part_granule_offset");
 
     const auto & read_hints = merge_tree_reader->getReadHints();
     /// Rescoring row filtering belongs only to the final reader. Earlier readers may
     /// share the same read hints but must not shrink the block before later stages.
     const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
     bool is_vector_search = read_hints.vector_search_results.has_value()
-        && (distance_position || apply_rescoring_row_filter);
+        && (read_sample_block.has("_distance") || apply_rescoring_row_filter);
     if (is_vector_search)
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
     }
-    else if (distance_position)
+    else if (read_sample_block.has("_distance"))
     {
         /// Fill `_distance` with a default value when vector search is not active
         /// but the column was requested (e.g. via SELECT * with asterisk_include_virtual_columns).
-        auto pos = *distance_position;
+        auto pos = read_sample_block.getPositionByName("_distance");
         if (!columns[pos])
             columns[pos] = ColumnFloat32::create(result.total_rows_per_granule, Float32(0));
     }
@@ -1352,7 +1340,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     /// Populate the `_distance` virtual column from the distances we got from vector index
     /// only when the query plan requested it. Rescoring queries still use the row filter
     /// below, while the SQL pipeline computes the exact distance expression.
-    const bool fill_distance = distance_position.has_value();
+    const bool fill_distance = read_sample_block.has("_distance");
     MutableColumnPtr distance_column;
     Float32 * distances = nullptr;
     if (fill_distance)
@@ -1418,7 +1406,8 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     if (fill_distance)
     {
-        columns[*distance_position] = std::move(distance_column);
+        auto distance_column_pos = read_sample_block.getPositionByName("_distance");
+        columns[distance_column_pos] = std::move(distance_column);
     }
     part_offsets_filter_for_vector_search = FilterWithCachedCount(std::move(filter_data));
 }
@@ -1584,59 +1573,68 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
 }
 )
 
-/* For each 8-bit mask of non-zero bytes of the first filter, `combine_filters_expand_table` holds a byte shuffle control
- * that moves the next bytes of the second filter to the set positions. The control byte 0x80 yields zero for both
- * `pshufb` (high bit set) and `tbl` (index out of range), also after adding up to 8 to it.
+/* The BMI2 intrinsic, _pdep_u64 (unsigned __int64 a, unsigned __int64 mask), works
+ * by copying contiguous low-order bits from unsigned 64-bit integer a to destination
+ * at the corresponding bit locations specified by mask. To implement the column
+ * combination with the intrinsic, 8 contiguous bytes would be loaded from second_begin
+ * as a UInt64 and act the first operand, meanwhile the mask should be constructed from
+ * first_begin so that the bytes to be replaced (non-zero elements) are mapped to 0xFF
+ * at the exact bit locations and 0x00 otherwise.
  *
- * Do not replace this with `_pdep_u64`: it is microcoded on AMD Zen 1 and Zen 2, where it is slower than the scalar loop.
+ * The construction of mask employs the SSE intrinsic, mm_cmpeq_epi8(__m128i a, __m128i
+ * b), which compares packed 8-bit integers in first_begin and packed 0s and outputs
+ * 0xFF for equality and 0x00 for inequality. The result's negation then creates the
+ * desired bit masks for _pdep_u64.
  *
- * The shuffle has no portable spelling: `__builtin_shufflevector` needs constant indices, and a per-lane
- * `source[control[i]]` loop becomes `pshufb` only in isolation, never `tbl`. As a fallback, that loop is ~2x slower
- * than the scalar loop (the table layout also assumes little-endian).
+ * The below example visualizes how this optimization applies to the combination of
+ * two quadwords from first_begin and second_begin.
  *
- * Both filters are `PaddedPODArray`, so loading 16 bytes at `second_begin` is safe near the end.
+ *                                      Addr  high                           low
+ *                                      <----------------------------------------
+ * first_begin............................0x00 0x11 0x12 0x00 0x00 0x13 0x14 0x15
+ *     |      mm_cmpeq_epi8(src, 0)        |    |    |    |    |    |    |    |
+ *     v                                   v    v    v    v    v    v    v    v
+ *  inv_mask..............................0xFF 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00
+ *     |      (negation)                   |    |    |    |    |    |    |    |
+ *     v                                   v    v    v    v    v    v    v    v
+ *    mask-------------------------+......0x00 0xFF 0xFF 0x00 0x00 0xFF 0xFF 0xFF
+ *                                 |            |    |              |    |    |
+ *                                 v            v    v              v    v    v
+ *    dst = pdep_u64(second_begin, mask)..0x00 0x05 0x04 0x00 0x00 0x03 0x02 0x01
+ *                        ^                     ^    ^              ^    ^    ^
+ *                        |                     |    |              |    |    |
+ *                        |                     |    +---------+    |    |    |
+ *     +------------------+                     +---------+    |    |    |    |
+ *     |                                                  |    |    |    |    |
+ * second_begin...........................0x00 0x00 0x00 0x05 0x04 0x03 0x02 0x01
+ *
+ * References:
+ * 1. https://www.felixcloutier.com/x86/pdep
+ * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
  */
-#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
-static constexpr auto combine_filters_expand_table = []
-{
-    std::array<UInt64, 256> table{};
-    for (size_t mask = 0; mask < 256; ++mask)
-    {
-        UInt64 source_index = 0;
-        for (size_t i = 0; i < 8; ++i)
-            table[mask] |= ((mask >> i) & 1 ? source_index++ : 0x80) << (8 * i);
-    }
-    return table;
-}();
-
+#if defined(__BMI2__)
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
-    using UInt8x16 = UInt8 __attribute__((vector_size(16)));
-    using UInt64x2 = UInt64 __attribute__((vector_size(16)));
+    constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
+    const __m128i zero16 = _mm_setzero_si128();
 
-    while (first_begin + 64 <= first_end)
+    while (first_begin + XMM_VEC_SIZE_IN_BYTES <= first_end)
     {
-        UInt64 mask = bytes64MaskToBits64Mask(first_begin);
-        for (size_t i = 0; i < 4; ++i, mask >>= 16)
+        __m128i src = _mm_loadu_si128(reinterpret_cast<__m128i *>(first_begin));
+        __m128i inv_mask = _mm_cmpeq_epi8(src, zero16);
+
+        UInt64 masks[] = {
+            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 0)),
+            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 1)),
+        };
+
+        for (const auto & mask: masks)
         {
-            UInt64 low = mask & 0xFF;
-            UInt64 high = (mask >> 8) & 0xFF;
-            /// The second half takes its bytes after the ones taken by the first half.
-            UInt64x2 control = {
-                combine_filters_expand_table[low],
-                combine_filters_expand_table[high] + static_cast<UInt64>(std::popcount(low)) * 0x0101010101010101ULL};
+            UInt64 dst = _pdep_u64(unalignedLoad<UInt64>(second_begin), mask);
+            unalignedStore<UInt64>(first_begin, dst);
 
-            UInt8x16 source;
-            memcpy(&source, second_begin, sizeof(source));
-#if defined(__SSSE3__)
-            auto result = _mm_shuffle_epi8(std::bit_cast<__m128i>(source), std::bit_cast<__m128i>(control));
-#else
-            auto result = vqtbl1q_u8(std::bit_cast<uint8x16_t>(source), std::bit_cast<uint8x16_t>(control));
-#endif
-            memcpy(first_begin, &result, sizeof(result));
-
-            first_begin += 16;
-            second_begin += std::popcount(mask & 0xFFFF);
+            first_begin += sizeof(UInt64);
+            second_begin += std::popcount(mask) / 8;
         }
     }
 
@@ -1700,7 +1698,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     else
 #endif
     {
-#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+#if defined(__BMI2__)
         combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
 #else
         for (auto & val : first_data)
@@ -1728,7 +1726,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// share the same read hints but must not shrink the block before later stages.
     const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
     bool is_vector_search = read_hints.vector_search_results.has_value()
-        && (distance_position || apply_rescoring_row_filter);
+        && (read_sample_block.has("_distance") || apply_rescoring_row_filter);
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.total_rows_per_granule))
     {
         auto current_filter = part_offsets_filter_for_vector_search;
@@ -1795,19 +1793,11 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         /// Additional columns might only be needed if there are more steps in the chain.
         if (!is_last_reader)
         {
-            const bool filter_column_is_removed = prewhere_info->type == PrewhereExprStep::Filter && prewhere_info->remove_filter_column;
-
             for (auto & col : additional_columns)
             {
                 /// Exclude columns that are present in the result block to avoid storing them and filtering twice.
                 /// TODO: also need to exclude the columns that are not needed for the next steps.
-                ///
-                /// The filter column is still in the block here but is erased from the result further down,
-                /// so it does not survive as a result column and has to be stored like a projected-out one.
-                /// Otherwise a single-step `PREWHERE` over a column that is itself the condition loses it,
-                /// and a later step cannot evaluate the DEFAULT expression of a column missing in the part:
-                /// `SELECT b FROM t PREWHERE a` with `b DEFAULT a % 13` filled `b` with the type default.
-                if (block.has(col.name) && !(filter_column_is_removed && col.name == prewhere_info->filter_column_name))
+                if (block.has(col.name))
                     continue;
                 result.additional_columns.insert(col);
             }
