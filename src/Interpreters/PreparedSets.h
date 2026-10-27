@@ -328,6 +328,7 @@ public:
     using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
     Subqueries getSubqueries() const;
     bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
+    bool hasSetsFromStorage() const { return !sets_from_storage.empty(); }
 
     const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }

@@ -18,6 +18,8 @@ $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS secret_keys;
     DROP TABLE IF EXISTS t_reader;
     DROP TABLE IF EXISTS t_slow;
+    DROP TABLE IF EXISTS t_set;
+    DROP TABLE IF EXISTS secret_set;
     DROP VIEW IF EXISTS slow_keys;
 
     CREATE TABLE secret_keys (p UInt8) ENGINE = MergeTree ORDER BY p;
@@ -60,6 +62,19 @@ $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT p, f FROM t_reader ORDER BY p"
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.secret_keys FROM ${user}"
 $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT p, f FROM t_reader ORDER BY p" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
+# The same for a right-hand side with `ENGINE = Set`, whose set is ready and is not built by a subquery.
+echo 'merge does not materialize the default from a Set table'
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE TABLE secret_set (p UInt8) ENGINE = Set;
+    INSERT INTO secret_set VALUES (1), (2);
+    CREATE TABLE t_set (p UInt8) ENGINE = MergeTree ORDER BY p;
+    INSERT INTO t_set VALUES (1), (2);
+    INSERT INTO t_set VALUES (3);
+    ALTER TABLE t_set ADD COLUMN f UInt8 DEFAULT p IN secret_set;
+"
+$CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_set FINAL" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "SELECT p, f FROM t_set ORDER BY p"
+
 # The set is limited by the settings of the reading query.
 echo 'set size limit of the read'
 $CLICKHOUSE_CLIENT -q "SELECT p, f FROM t_reader ORDER BY p SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw'" 2>&1 | grep -o -m1 'SET_SIZE_LIMIT_EXCEEDED'
@@ -79,6 +94,8 @@ $CLICKHOUSE_CLIENT -q "SELECT f FROM t_slow SETTINGS max_execution_time = 1, max
 
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE t_slow;
+    DROP TABLE t_set;
+    DROP TABLE secret_set;
     DROP VIEW slow_keys;
     DROP ROW POLICY ${policy} ON secret_keys;
     DROP ROW POLICY ${policy}_others ON secret_keys;

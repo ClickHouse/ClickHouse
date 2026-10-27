@@ -21,6 +21,11 @@ ACCESS_DENIED
 2	1
 3	0
 ACCESS_DENIED
+merge does not materialize the default from a Set table
+ACCESS_DENIED
+1	1
+2	1
+3	0
 set size limit of the read
 SET_SIZE_LIMIT_EXCEEDED
 limit of the read stops building the set

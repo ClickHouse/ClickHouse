@@ -280,14 +280,16 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     chassert(expression->getChildren().size() == actions.getOutputs().size());
 
     /// The actions are executed as a standalone `ExpressionActions` over a block, with no query plan
-    /// to carry a `CreatingSet` step, so a column default containing `IN <table>` has to have its set
+    /// to carry a `CreatingSet` step, so a column default containing `x IN table` has to have its set
     /// filled here. This must come after the actions are built: planning a set subquery renames the
     /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
     /// look the set up by, so building first would make the lookup miss.
     /// Without a query on whose behalf to read, as for the background merges and mutations, there is no
     /// user to check the access to the tables of the sets for, nor whose row policies to apply. Do not
     /// read them with the full access of the storage: that would store their contents in the new part.
-    if (!allow_reading_tables && !planner_context->getPreparedSets().getSubqueries().empty())
+    /// This includes the tables with `ENGINE = Set`, whose sets are ready and so are not subqueries.
+    const auto & prepared_sets = planner_context->getPreparedSets();
+    if (!allow_reading_tables && (prepared_sets.hasSubqueries() || prepared_sets.hasSetsFromStorage()))
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot evaluate the default expression of a column missing in the part without a reading query, "
             "because it reads a table (as in `x IN table`). Background merges and mutations are not authorized "
