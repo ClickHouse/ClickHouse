@@ -185,6 +185,7 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool adaptive_aggregator_disable_thaw;
     extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -2665,7 +2666,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         /// require reading some data (but much faster than reading columns).
         /// Set a special flag in query info so the storage will see it and optimize count in read() method.
         query_info.optimize_trivial_count = optimize_trivial_count;
-        return storage->totalRows(context);
+        return storage->totalRowsInSnapshot(storage_snapshot, context);
     }
 
     // It's possible to optimize count() given only partition predicates
@@ -2997,6 +2998,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
         settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::adaptive_aggregator_disable_thaw],
         settings[Setting::use_aggregation_memory_tracker]};
 }
 

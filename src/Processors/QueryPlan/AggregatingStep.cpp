@@ -1,8 +1,8 @@
 #include <algorithm>
-#include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
 #include <unordered_set>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -31,6 +31,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/RadixUniqExactTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -71,6 +72,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
     extern const QueryPlanSerializationSettingsBool use_aggregation_memory_tracker;
@@ -237,10 +239,19 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+    /// The in-order executors (`FinalizeAggregatedTransform`, `MergingAggregatedBucketTransform`)
+    /// never reach `Aggregator::mergeAndConvertOneBucketToChunk` or
+    /// `Aggregator::convertOneBucketToChunkTopK`, so the top-K threshold merge and the bucket-local
+    /// Top-K conversion set by the first optimization pass would be silent no-ops there. Drop them,
+    /// so that the plan does not claim an optimization the pipeline does not perform.
+    params.threshold_top_k.reset();
+    params.bucket_top_k = 0;
 
     /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
     /// which the GROUP BY top-K heap breaks by skipping rows.
     params.top_k.reset();
+    /// The in-order pipeline has no two-level conversion to run the bucket-local Top-K in.
+    params.bucket_top_k = 0;
 }
 
 bool AggregatingStep::supportsDataflowStatisticsCollection() const
@@ -291,6 +302,17 @@ static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processo
     bool tracked = false;
     for (const auto * processor : step_processors)
     {
+        /// The radix partitioned `uniqExact` has one state for all its transforms.
+        if (const auto * route_transform = typeid_cast<const RadixUniqExactRouteTransform *>(processor))
+        {
+            if (auto peak = route_transform->getState().getPeakMemoryUsage())
+            {
+                peak_memory += *peak;
+                tracked = true;
+            }
+            break;
+        }
+
         const auto * aggregating_transform = typeid_cast<const AggregatingTransform *>(processor);
         if (!aggregating_transform)
             continue;
@@ -423,6 +445,17 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.keys_size < 1)
         return "the aggregation has no keys";
 
+    /// The merge adds the staged rows of every thread to the same states, and a thawed table holds rows newer than the
+    /// records its thread staged before, so a state does not receive its rows in order. The factory gives a combinator
+    /// the properties of its nested function.
+    for (const auto & aggregate : params.aggregates)
+    {
+        const auto properties
+            = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName(), NullsAction::EMPTY);
+        if (properties && properties->requires_ordered_rows_per_state)
+            return "an aggregate function needs the rows of each state in order";
+    }
+
     if (!sort_description_for_merging.empty())
         return "the aggregation is in order";
 
@@ -438,15 +471,16 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
 
-    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
-    /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
-    /// statistics; a run without it takes the ordinary path with the statistics-driven
-    /// initialization, exactly as if the feature were off.
-    if (params.stats_collecting_params.isCollectionAndUseEnabled())
+    /// The staged streams of most threads of a prior run kept repeating the missed keys (see
+    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for this query, so do not engage it again. The verdict
+    /// lives in the hash-table statistics; a run without it takes the ordinary path with the statistics-driven
+    /// initialization, exactly as if the feature were off. A run that may not thaw does not ask: the verdict is the
+    /// thaw's, and a top-K run that shares the statistics of the query without its `LIMIT` gains by its frozen tables.
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
         if (hint && hint->adaptive_staging_repeat_dominated)
-            return "a prior run measured the staged stream as repeat-dominated";
+            return "a prior run measured the staged streams as repeat-dominated";
     }
 
     /// TODO (nihalzp): Support LowCardinality keys and the single-key Nullable methods.
@@ -482,6 +516,84 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     }
 
     return nullptr;
+}
+
+bool AggregatingStep::canUseRadixUniqExact() const
+{
+    if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging || params.only_merge
+        || params.overflow_row || !params.keys.empty() || params.aggregates.size() != 1)
+        return false;
+
+    const auto & aggregate = params.aggregates[0];
+    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1
+        || !WhichDataType(aggregate.function->getResultType()).isUInt64())
+        return false;
+
+    /// The type of the column as the transforms read it, not the argument type of the function, which has no `LowCardinality`.
+    return isRadixUniqExactSupported(*input_headers.front()->getByName(aggregate.argument_names[0]).type);
+}
+
+void AggregatingStep::buildRadixUniqExact(
+    QueryPipelineBuilder & pipeline,
+    const AggregatingTransformParamsPtr & transform_params,
+    size_t max_threads,
+    size_t new_temporary_data_merge_threads,
+    const StatsCollectingParams & stats_collecting_params) const
+{
+    const auto & aggregator_params = transform_params->params;
+    const auto & aggregate = aggregator_params.aggregates[0];
+    const auto & output_header = transform_params->getHeader();
+
+    const auto & input_header = pipeline.getHeader();
+    const auto & argument = input_header.getByName(aggregate.argument_names[0]);
+    const size_t num_streams = pipeline.getNumStreams();
+    /// The keys spill with the same settings as the ordinary aggregation, for consistency. Currently the ordinary
+    /// aggregation never spills this query: without `GROUP BY` it has no two-level form, which spilling needs. Keep it in
+    /// mind if its spilling evolves.
+    auto state = createRadixUniqExactState(
+        *argument.type,
+        num_streams,
+        stats_collecting_params,
+        {.max_bytes = aggregator_params.max_bytes_before_external_group_by,
+         .min_bytes = aggregator_params.min_bytes_before_external_group_by,
+         .min_free_disk_space = aggregator_params.min_free_disk_space,
+         .tmp_data_scope = aggregator_params.tmp_data_scope});
+
+    const size_t key_position = input_header.getPositionByName(argument.name);
+    auto result_header = std::make_shared<const Block>(output_header);
+
+    size_t stream = 0;
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<RadixUniqExactRouteTransform>(header, result_header, state, stream++, key_position);
+    });
+
+    /// The builds read the spilled keys back, and their memory adds up, so they run in as many threads as the ordinary
+    /// aggregation merges its temporary data with.
+    size_t num_builders = std::min(max_threads, state->numBuckets());
+    if (aggregator_params.max_bytes_before_external_group_by && aggregator_params.tmp_data_scope)
+        num_builders = std::min(num_builders, std::max<size_t>(new_temporary_data_merge_threads, 1));
+    pipeline.transform([&](OutputPortRawPtrs ports)
+    {
+        auto barrier = std::make_shared<RadixUniqExactBarrierTransform>(result_header, ports.size(), num_builders);
+        Processors processors{barrier};
+
+        auto input = barrier->getInputs().begin();
+        for (auto * port : ports)
+            connect(*port, *input++);
+
+        for (auto & output : barrier->getOutputs())
+        {
+            auto builder = std::make_shared<RadixUniqExactBuildTransform>(result_header, state);
+            connect(output, builder->getInputs().front());
+            processors.push_back(std::move(builder));
+        }
+        return processors;
+    });
+
+    pipeline.resize(1);
+    pipeline.addTransform(std::make_shared<RadixUniqExactSumTransform>(
+        result_header, state, aggregator_params.empty_result_for_aggregation_by_empty_set));
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -545,8 +657,25 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
+    const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && canUseRadixUniqExact();
+
+    /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
+    const StatsCollectingParams radix_uniq_exact_stats_params = params.stats_collecting_params;
+    if (params.keys.empty())
+        params.stats_collecting_params.disable();
+
     const auto & src_header = pipeline.getSharedHeader();
+    /// Only a final aggregation carries the bucket-local Top-K (see `setFinal`): the adaptive merge prunes by the
+    /// counts of the final conversion, so a partial aggregation with it would drop groups.
+    chassert(final || !params.bucket_top_k);
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
+    if (use_radix_uniq_exact)
+    {
+        buildRadixUniqExact(pipeline, transform_params, max_threads, new_temporary_data_merge_threads, radix_uniq_exact_stats_params);
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
+        return;
+    }
 
     if (!grouping_sets_params.empty())
     {
@@ -793,7 +922,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
-            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
+            many_data->adaptive_session = transform_params->aggregator.createAdaptiveSession(pipeline.getNumStreams());
 
         /// The shared kept-keys cutoff is needed only when the streams are merged into one result.
         /// With `skip_merging` the streams hold disjoint key sets (data is partitioned by the
@@ -1166,6 +1295,11 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
             = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
+    /// The same for a name of a later version. A peer that predates it thaws as it always did, and a thaw changes
+    /// only the speed and the memory of the aggregation, not its result.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW)
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw] = params.adaptive_aggregator_disable_thaw;
+
     /// A peer predating the name keeps its own two-level decision: writing an unknown name would make it throw
     /// while reading the strict named schema, which would break every distributed `GROUP BY` of a query that
     /// sets `use_aggregation_memory_tracker` or a `compatibility` below the release that fixes the regression.
@@ -1500,6 +1634,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw],
         ctx.version >=DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER
             ? bool(ctx.settings[QueryPlanSerializationSetting::use_aggregation_memory_tracker])
             : bool(ctx.context->getSettingsRef()[Setting::use_aggregation_memory_tracker])};
@@ -1553,6 +1688,10 @@ void AggregatingStep::setFinal(bool new_value)
         return;
 
     final = new_value;
+    /// A partial aggregation has no final conversion to run the bucket-local Top-K in, and the adaptive merge prunes by
+    /// the counts that conversion produces.
+    if (!final)
+        params.bucket_top_k = 0;
 
     /// Output header is different for partial and final result, so it needs to be updated when we switch between them.
     updateOutputHeader();

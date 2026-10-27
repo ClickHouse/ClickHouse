@@ -1,0 +1,62 @@
+-- query_plan_optimize_lazy_materialization_for_object_storage = 1
+-- s3: ORDER BY ... LIMIT
+0	val_0
+1	val_1
+2	val_2
+-- s3: ORDER BY ... DESC LIMIT across files
+1999	val_1999
+1998	val_1998
+1997	val_1997
+-- s3: with a filter
+1992	val_1992
+1975	val_1975
+1958	val_1958
+-- s3: virtual columns together with lazy columns
+data_1.vortex	999	999	val_999
+data_2.vortex	0	1000	val_1000
+-- Iceberg: ORDER BY ... LIMIT
+0	val_0
+1	val_1
+2	val_2
+-- Iceberg: ORDER BY ... DESC LIMIT across data files
+9999	val_9999
+9998	val_9998
+9997	val_9997
+-- Iceberg: with a filter
+4994	val_4994
+5001	val_5001
+5008	val_5008
+-- the number of lazy read steps in the plan
+1
+1
+-- query_plan_optimize_lazy_materialization_for_object_storage = 0
+-- s3: ORDER BY ... LIMIT
+0	val_0
+1	val_1
+2	val_2
+-- s3: ORDER BY ... DESC LIMIT across files
+1999	val_1999
+1998	val_1998
+1997	val_1997
+-- s3: with a filter
+1992	val_1992
+1975	val_1975
+1958	val_1958
+-- s3: virtual columns together with lazy columns
+data_1.vortex	999	999	val_999
+data_2.vortex	0	1000	val_1000
+-- Iceberg: ORDER BY ... LIMIT
+0	val_0
+1	val_1
+2	val_2
+-- Iceberg: ORDER BY ... DESC LIMIT across data files
+9999	val_9999
+9998	val_9998
+9997	val_9997
+-- Iceberg: with a filter
+4994	val_4994
+5001	val_5001
+5008	val_5008
+-- the number of lazy read steps in the plan
+0
+0

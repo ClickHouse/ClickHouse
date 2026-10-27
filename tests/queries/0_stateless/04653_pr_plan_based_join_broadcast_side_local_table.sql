@@ -13,7 +13,6 @@ CREATE TABLE mt_dim  (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO rmt_fact SELECT number, number FROM numbers(1000);
 INSERT INTO mt_dim  SELECT number, number * 2 FROM numbers(1000);   -- sum(v) = 999000
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

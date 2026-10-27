@@ -595,9 +595,28 @@ public:
 
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
+    /// Calls `load_part(part_index)` for every part index in `[0, num_parts)`, using up to `max_threads`
+    /// threads, and `consume_part(part_index)` for every part index in their order in the calling thread.
+    /// It is used to load the statistics (or the estimates) of many parts at once: each part does several
+    /// small reads, so on a cold disk loading them one after another adds up the latencies. With more than one
+    /// thread, the parts are processed in bounded windows of consecutive parts, and a window is consumed before
+    /// the next one is loaded, so `consume_part` should release what was loaded for the part. Every part of a
+    /// window is first passed to `try_load_part_from_memory(part_index)` in the calling thread, which loads the
+    /// part and returns true if that needs no reads from disk, and returns false otherwise; only the parts for
+    /// which it returns false are passed to `load_part`, in other threads. `load_part` must be safe to call concurrently for different
+    /// parts. If it throws for some parts, the exception of the first of them in the order of parts is
+    /// rethrown, and the parts from it onwards are not consumed.
+    static void loadStatisticsOfPartsInParallel(
+        size_t num_parts,
+        size_t max_threads,
+        const std::function<bool(size_t)> & try_load_part_from_memory,
+        const std::function<void(size_t)> & load_part,
+        const std::function<void(size_t)> & consume_part);
+
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumnCodecs() const override { return true; }
 
     bool supportsTTL() const override { return true; }
 
@@ -856,6 +875,10 @@ public:
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states) const;
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states) const;
 
+    bool checkPartCanBeRemoved(const MergeTreePartInfo & part_info);
+    bool checkPartCanBeRemoved(const String & part_name);
+    bool hasPartInAnyState(const String & part_name) const;
+
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
@@ -906,6 +929,8 @@ public:
         const Names & deduplicate_by_columns,
         bool cleanup,
         ContextPtr context);
+
+    virtual void removeTemporaryPart(const MutableDataPartPtr & part) const;
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
@@ -1006,6 +1031,7 @@ public:
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
+    void outdateRemovedPartsLocally(const DataPartsVector & parts, DataPartsLock & lock);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout);
     void removePartsFromWorkingSet(MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
@@ -1180,6 +1206,10 @@ public:
 
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
+
+    /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
+    /// Only for a definition written now: an existing table with such a column must still load and replicate.
+    static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -2049,7 +2079,7 @@ protected:
     void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;
 
     /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
-    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
+    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under a unique lock.
     void calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
@@ -2313,6 +2343,12 @@ protected:
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
+    void setFilenameRegexpForCachePrewarming(MergeTreeSettingsPtr settings);
+    std::shared_ptr<const re2::RE2> getFilenameRegexpForCachePrewarming() const;
+
+    StorageSnapshotPtr createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
+    void injectSleepBeforeCreatingStorageSnapshot(ContextPtr query_context) const;
+
 private:
     DeleteBitmapSnapshotPtr makeDeleteBitmapSnapshot(CSN snapshot_csn) const;
 
@@ -2444,12 +2480,14 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
@@ -2485,9 +2523,6 @@ private:
 
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
-
-    StorageSnapshotPtr
-    createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
 
