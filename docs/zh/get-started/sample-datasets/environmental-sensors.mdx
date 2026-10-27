@@ -12,8 +12,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 [Sensor.Community](https://sensor.community/en/) 是一个由贡献者推动的全球传感器网络，致力于创建开放环境数据。这些数据由全球各地的传感器采集。任何人都可以购买传感器，并将其放置在任何位置。下载这些数据所需的 API 可在 [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) 上获取，数据依据 [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/) 免费开放。
 
 <Warning>
-  该数据集包含超过 200 亿条记录，因此，除非您的资源足以处理这种规模的数据量，否则请谨慎直接复制粘贴下面的命令。下面的命令是在 [ClickHouse Cloud](https://clickhouse.cloud) 的 **Production** 实例上执行的。
+  该数据集包含超过 200 亿条记录，因此，除非您的资源足以处理这种规模的数据量，否则请谨慎直接复制粘贴下面的命令。这些命令是在规格合适的 [ClickHouse Cloud](/zh/products/cloud/getting-started/intro) 服务上运行的。
 </Warning>
+
+<Tip>
+  如需亲自尝试这些命令，您可以注册 [ClickHouse Cloud 免费试用](https://clickhouse.cloud/signUp?loc=docs-get-started-sample-datasets-environmental-sensors)，或部署[自托管 ClickHouse](/zh/get-started/setup/install)。
+</Tip>
 
 1. 数据位于 S3 中，因此我们可以使用 `s3` 表函数根据这些文件创建一张表。我们也可以直接查询这些数据。在尝试将其插入 ClickHouse 之前，先看几行数据：
 
@@ -73,7 +77,7 @@ ENGINE = MergeTree
 ORDER BY (timestamp, sensor_id);
 ```
 
-3. ClickHouse Cloud 服务中有一个名为 `default` 的集群。我们将使用 `s3Cluster` 表函数，它会由集群中的各个节点并行读取 S3 文件。 (如果你没有集群，只需使用 `s3` 函数并去掉集群名称。)
+3. 我们将使用 [`s3Cluster`](/zh/reference/functions/table-functions/s3Cluster) 表函数，它会将 S3 文件分配给集群中的各个节点并行读取。在 ClickHouse Cloud 中，集群名为 `default`，可以直接按示例运行。在自管理服务器上，请将 `default` 替换为你的集群名称；如果你运行的是单台服务器，则改用 [`s3`](/zh/reference/functions/table-functions/s3) 表函数，并去掉第一个参数，让调用直接以 URL 开头。
 
 此查询需要一些时间——未压缩数据量约为 1.67T：
 
@@ -172,4 +176,4 @@ ORDER BY day ASC;
 
 以下是结果的可视化展示：
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="闷热潮湿的日子" />
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="炎热且潮湿的天数" />

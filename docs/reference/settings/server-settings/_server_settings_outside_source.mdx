@@ -58,8 +58,8 @@ WITH settings AS (
     ('compare_collected_metadata', 'Bool', 'If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup .', 'true'),
     ('create_table_timeout', 'UInt64', 'Timeout in milliseconds for creating tables during restore.', '300000'),
     ('max_attempts_after_bad_version', 'UInt64', 'Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore.', '3'),
-    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Maximum sleep time in milliseconds before the next attempt to collect metadata.', '100'),
-    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Minimum sleep time in milliseconds before the next attempt to collect metadata.', '5000'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Maximum sleep time in milliseconds before the next attempt to collect metadata.', '5000'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Minimum sleep time in milliseconds before the next attempt to collect metadata.', '100'),
     ('remove_backup_files_after_failure', 'Bool', 'If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are.', 'true'),
     ('sync_period_ms', 'UInt64', 'Synchronization period in milliseconds for coordinated backup/restore.', '5000'),
     ('test_inject_sleep', 'Bool', 'Testing related sleep', 'false'),
@@ -79,8 +79,8 @@ SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat
 | `compare_collected_metadata` | Bool | If true, compares the collected metadata with the existing metadata to ensure they are not changed during backup . | `true` |
 | `create_table_timeout` | UInt64 | Timeout in milliseconds for creating tables during restore. | `300000` |
 | `max_attempts_after_bad_version` | UInt64 | Maximum number of attempts to retry after encountering a bad version error during coordinated backup/restore. | `3` |
-| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Maximum sleep time in milliseconds before the next attempt to collect metadata. | `100` |
-| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Minimum sleep time in milliseconds before the next attempt to collect metadata. | `5000` |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Maximum sleep time in milliseconds before the next attempt to collect metadata. | `5000` |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Minimum sleep time in milliseconds before the next attempt to collect metadata. | `100` |
 | `remove_backup_files_after_failure` | Bool | If the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. | `true` |
 | `sync_period_ms` | UInt64 | Synchronization period in milliseconds for coordinated backup/restore. | `5000` |
 | `test_inject_sleep` | Bool | Testing related sleep | `false` |
@@ -189,7 +189,7 @@ You can configure multiple `<case>` sections.
 - If a data part matches multiple condition sets, ClickHouse uses the last matched condition set (the `<case>` sections are checked in order, and each matching one overrides the previous choice).
 
 <Note>
-If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
+If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: the uncompressed size of the inserted block for a freshly inserted part, and the size of the source parts for a merge or a mutation. So small inserts are written with `LZ4`, and large inserts are written with `ZSTD(3)` right away. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
 </Note>
 
 **Example**
@@ -1143,8 +1143,8 @@ Example:
 <opentelemetry_span_log>
     <engine>
         engine MergeTree
-        partition by toYYYYMM(finish_date)
-        order by (finish_date, finish_time_us, trace_id)
+        partition by toYYYYMM(event_date)
+        order by (event_date, finish_time_us, trace_id)
     </engine>
     <database>system</database>
     <table>opentelemetry_span_log</table>
@@ -1473,7 +1473,7 @@ Additionally:
 
 | Setting | Description                                                                                                                                                                                                 | Default Value       |
 |---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `level` | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
+| `level` | Maximum message level stored in the table. When set explicitly, the root logger level is raised to at least this value, so `text_log` can be more verbose than the server log file (`logger.level`). When not set, messages up to the most verbose level of the configured log outputs (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`) are stored. | `Trace` (limited by the other log outputs when not set) |
 
 **Example**
 
@@ -1729,6 +1729,7 @@ When adding a single S3 bucket with the `\<s3_bucket\>` xml tag, as `host/bucket
 - it is useful when the endpoint is shared by many parties, for example the path-style AWS endpoint `s3.us-west-2.amazonaws.com`, and allowing the whole host would allow every bucket on it.
 - the bucket is taken from the parsed S3 URL, so the entry matches both `https://s3.us-west-2.amazonaws.com/my-bucket/...` and `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
 - it applies to S3 URLs only: the `s3` table functions and engines, the `S3` database engine, `BACKUP`/`RESTORE` to `S3`, and S3 disks created in SQL with the `disk` function.
+- an S3 disk created in SQL is checked when the query creates it. A disk that already existed when the list was set, or that was created by a version without this check, still loads at server start, including a table that was dropped but not yet deleted, so `UNDROP TABLE` keeps working; the server reports it in the log and in `system.warnings`.
 - a permanent (301) redirect returned by S3 is checked against the bucket entries as well, but a temporary (307) redirect is checked by host only, so it is rejected when the list contains only `\<s3_bucket\>` entries.
 
 For example:

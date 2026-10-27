@@ -135,6 +135,10 @@ chdb&#95;hook выполняется только для тех целей `COPY
 
 #### File {#file}
 
+<Important>
+  Схема `file://` не поддерживается в ClickHouse Cloud.
+</Important>
+
 Должен быть абсолютным путём на сервере Postgres. Относительный путь приводит к
 ошибке. Пользователь Postgres должен входить в роль `pg_read_server_files` или
 `pg_write_server_files` — в зависимости от ситуации. Системный пользователь Postgres должен
@@ -309,6 +313,18 @@ URL-адресов S3.
 Тайм-аут запроса в миллисекундах. Применяется к URL-адресам HTTP, S3, GCS и Azure.
 Значение по умолчанию — `30000` (30 с).
 
+#### `encoding_check` {#encoding_check}
+
+Определяет, как обрабатывать недопустимые символы в [database encoding] при
+преобразовании значений chDB типов String и JSON. Возможные значения:
+
+* `fail` (по умолчанию): сгенерировать ошибку
+* `remove`: удаляет недопустимые байты
+* `replace`: в кодировании UTF-8 заменяет недопустимые байты
+  символом замены Unicode (`�`); для других кодирований
+  работает так же, как `remove`
+* `truncate`: обрезает текст по первому недопустимому байту
+
 ### Отладка {#debugging}
 
 При ошибке команда `COPY` из chdb&#95;hook добавляет в контекст ошибки
@@ -350,10 +366,12 @@ chdb&#95;hook также встраивается в [CREATE TABLE], благо�
 получать свои столбцы и загружать строки из URL.
 
 Чтобы создать таблицу со структурой, полученной из URL, передайте URL в
-параметре `structure_from` и оставьте список столбцов пустым:
+параметре `structure_from` и оставьте список столбцов пустым (имейте в виду: этот общедоступный
+файл данных содержит 41 млн строк):
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -362,6 +380,7 @@ CREATE TABLE reviews () WITH (
 
 ```sql
 CREATE TABLE reviews () WITH (
+    encoding_check = 'replace',
     copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
 );
 ```
@@ -376,18 +395,21 @@ CREATE TABLE times (
 ) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
 ```
 
-Оба варианта поддерживают те же [URL schemes](#url-schemes) и
+Когда `copy_from` определяет столбцы автоматически, он использует схему источника, возвращаемую `DESCRIBE`.
+Поэтому значения `Map`, `Tuple` и `Nested` загружаются как текстовые столбцы типа Array,
+по которым нельзя определить их исходные типы ClickHouse.
+
+Оба варианта поддерживают те же [схемы URL](#url-schemes) и
 [options](#options), что и `COPY`: учётные данные, format, сжатие, тайм-аут и
 даже явно заданная [structure](#structure) — всё это работает. Postgres сохраняет все
 оставшиеся storage parameters:
 
 ```sql
-CREATE TABLE users () WITH (
-    copy_from     = 's3://my-bucket/users.csv',
-    access_key    = 'AKIAIOSFODNN7EXAMPLE',
-    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
-    format        = 'CSVWithNames',
-    fillfactor    = 90
+CREATE TABLE logs () WITH (
+    copy_from  = 's3://chdb-lakedata-public/logs/logs-2026-08-26.csv',
+    format     = 'CSVWithNames',
+    timeout    = 60000,
+    fillfactor = 90
 );
 ```
 
@@ -402,6 +424,10 @@ CREATE TABLE users () WITH (
 * Невозможно выполнить `COPY` для отношений с политиками [безопасность на уровне строк],
   которые применяются к копирующей роли. Postgres применяет такие политики,
   переписывая `COPY TO` в запрос, а chdb&#95;hook этого не поддерживает.
+* Невозможно выполнить `COPY FROM` из URL с предложением `WHERE`.
+* В chDB нет NULL-массива, поэтому вместо NULL `COPY TO` сохраняет пустой массив (`[]`).
+* chDB представляет эквиваленты `lseg`, `path` и `polygon` в виде массивов,
+  поэтому NULL-значения этих типов при `COPY TO` также превращаются в пустой массив (`[]`).
 * В ClickHouse нет NULL-массива, поэтому вместо `NULL` `COPY TO` сохраняет пустой массив (`[]`).
 * ClickHouse представляет эквиваленты `lseg`, `path` и `polygon` в виде
   массивов, поэтому NULL-значения этих типов при `COPY TO` также превращаются в пустой массив
@@ -432,8 +458,6 @@ CREATE TABLE users () WITH (
 * Вывод Protobuf усекает значения временных меток до секунд.
 * Вывод Protobuf не поддерживает даты ранее 1970-01-01. Чтобы сохранить значения,
   задавайте столбцы `time` как `String` в явной [структуре](#structure). (ClickHouse/ClickHouse#111860)
-* Форматы CSVWithNames и CSVWithNamesAndTypes в настоящее время не могут импортировать
-  `NULL`-значения box или circle. (ClickHouse/ClickHouse#115523)
 
 ## Типы данных {#data-types}
 
@@ -441,66 +465,60 @@ CREATE TABLE users () WITH (
 а [CREATE TABLE](#create-table-overloading) — типы chDB для URL
 с типами Postgres.
 
-### Postgres в chDB {#postgres-to-chdb}
+### Из Postgres в chDB {#postgres-to-chdb}
 
 Если параметр [structure](#structure) не задан явно, chdb&#95;hook сопоставляет
-типы Postgres с подходящими эквивалентами chDB. Если такое сопоставление не
-подходит для вашего сценария, укажите [structure](#structure), чтобы заменить
-сгенерированные типы на нужные вам.
+типы Postgres с подходящими эквивалентами в chDB. Если они не подходят для
+вашего сценария, укажите [structure](#structure), чтобы заменить
+сгенерированные типы нужными.
 
-| Postgres    | chDB                                     | Примечания                                                                  |
-| ----------- | ---------------------------------------- | --------------------------------------------------------------------------- |
-| boolean     | Bool                                     |                                                                             |
-| name        | String                                   |                                                                             |
-| text        | String                                   |                                                                             |
-| inet        | String                                   | Замените на `IPv4` или `IPv6`, если данные содержат только один из них.     |
-| cidr        | String                                   |                                                                             |
-| macaddr     | String                                   |                                                                             |
-| macaddr8    | String                                   |                                                                             |
-| interval    | String                                   | Замените на единицу `Interval`, например `IntervalDay`.                     |
-| tsvector    | String                                   |                                                                             |
-| tsquery     | String                                   |                                                                             |
-| jsonpath    | String                                   |                                                                             |
-| money       | String                                   |                                                                             |
-| enum        | String                                   |                                                                             |
-| varchar     | String                                   |                                                                             |
-| varbit      | String                                   |                                                                             |
-| char        | FixedString                              |                                                                             |
-| bit         | FixedString                              |                                                                             |
-| bpchar      | String                                   |                                                                             |
-| int2        | Int16                                    |                                                                             |
-| int4        | Int32                                    |                                                                             |
-| int8        | Int64                                    |                                                                             |
-| oid         | UInt32                                   |                                                                             |
-| oid8        | UInt64                                   |                                                                             |
-| xid8        | UInt64                                   |                                                                             |
-| json        | String                                   | Замените на `JSON`, если данные содержат только объекты.                    |
-| jsonb       | String                                   | Замените на `JSON`, если данные содержат только объекты.                    |
-| float4      | Float32                                  |                                                                             |
-| float8      | Float64                                  |                                                                             |
-| date        | Date32                                   |                                                                             |
-| time        | Time64(6)                                | Замените на `String` для форматов, не поддерживающих время.                 |
-| timetz      | String                                   |                                                                             |
-| timestamp   | DateTime64(6)                            | Объявляется с часовым поясом `UTC`, преобразуется из часового пояса сеанса. |
-| timestamptz | DateTime64(6)                            | Объявляется с часовым поясом `UTC`.                                         |
-| numeric     | Decimal                                  |                                                                             |
-| uuid        | UUID                                     |                                                                             |
-| point       | `Point`                                  | Те же две координаты, что и в Postgres.                                     |
-| lseg        | `LineString`                             | Линия ровно из двух точек.                                                  |
-| path        | `LineString`                             | В замкнутом пути первая точка повторяется.                                  |
-| polygon     | `Ring`                                   | Ring замыкается неявно, как и полигон.                                      |
-| box         | `Tuple(high Point, low Point)`           | Два угла в том же порядке, что и в Postgres.                                |
-| circle      | `Tuple(center Point, radius Float64)`    |                                                                             |
-| line        | `Tuple(a Float64, b Float64, c Float64)` | Уравнение `Ax + By + C = 0`.                                                |
+| PostgreSQL       | chDB                                   | Примечания                                                                     |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
+| boolean          | Bool                                   |                                                                                |
+| smallint         | Int16                                  |                                                                                |
+| integer          | Int32                                  |                                                                                |
+| bigint           | Int64                                  |                                                                                |
+| oid              | UInt32                                 |                                                                                |
+| xid8             | UInt64                                 |                                                                                |
+| oid8             | UInt64                                 |                                                                                |
+| real             | Float32                                |                                                                                |
+| double precision | Float64                                |                                                                                |
+| numeric          | Decimal256(38)                         | Также если точность превышает 76 цифр.                                         |
+| numeric(12,6)    | Decimal(12,6)                          | Точность и масштаб сохраняются.                                                |
+| text             | String                                 |                                                                                |
+| bytea            | String                                 |                                                                                |
+| date             | Date32                                 |                                                                                |
+| time             | Time64(6)                              | Для форматов, не поддерживающих время, замените на `String`.                   |
+| timestamp        | DateTime64(6, &#39;UTC&#39;)           | Преобразуется из часового пояса сеанса.                                        |
+| timestamptz      | DateTime64(6, &#39;UTC&#39;)           |                                                                                |
+| interval         | String                                 | Замените на единицу `Interval`, например `IntervalDay`.                        |
+| uuid             | UUID                                   |                                                                                |
+| json             | String                                 | Замените на `JSON`, если данные содержат только объекты.                       |
+| jsonb            | String                                 | Замените на `JSON`, если данные содержат только объекты.                       |
+| inet             | String                                 | Замените на `IPv4` или `IPv6`, если данные содержат адреса только одного вида. |
+| point            | Point                                  | Те же две координаты, что и в Postgres.                                        |
+| lseg             | LineString                             | Линия ровно из двух точек.                                                     |
+| path             | LineString                             | В замкнутом пути первая точка повторяется в конце.                             |
+| polygon          | Ring                                   | Кольцо замыкается неявно, как и многоугольник.                                 |
+| box              | Tuple(high Point, low Point)           | Два угла, упорядоченные так же, как в Postgres.                                |
+| circle           | Tuple(center Point, radius Float64)    |                                                                                |
+| line             | Tuple(a Float64, b Float64, c Float64) | Уравнение `Ax + By + C = 0`.                                                   |
 
-Массивы сопоставляются с `Array` соответствующего типа элементов. В ClickHouse
-допустимость NULL задаётся для каждого столбца, а в Postgres — для всего
-массива, поэтому элементы всегда `Nullable`.
+Типы, отсутствующие в этой таблице, например `name`, `varchar`, `char`, `bit`,
+`timetz`, `money` и перечисления, сопоставляются с `String`.
 
-Ни один тип Postgres не сопоставляется с `Map` или `Tuple`, однако
-[structure](#structure) может указать такой тип. `Map` можно преобразовать в
-массив пар «ключ — значение», а `Tuple` преобразуется в массив. Для поддержки
-разнородных данных используйте `text[]`.
+Типы массивов сопоставляются с `Array` из сопоставленного типа элементов. В ClickHouse
+допустимость NULL задаётся на уровне столбца, а в Postgres — на уровне массива, поэтому элементы
+всегда имеют тип `Nullable`.
+
+Ни один тип Postgres не сопоставляется напрямую с `Map`, `Tuple` или `Nested`, однако
+их можно указать в [structure](#structure) или в исходном файле. `Tuple` можно прочитать
+в `text[]` (по одному элементу на каждое поле кортежа) или в соответствующий [составной
+тип][composite
+type], чтобы сохранить типы полей. `Map` или `Nested` можно прочитать в
+`text[][]` (по одному вложенному массиву на каждую пару ключ-значение или вложенный кортеж) или в
+массив соответствующего составного типа. Примеры см. в разделе [Ручное сопоставление
+типов](#manual-type-mappings).
 
 ### Преобразование временных меток {#timestamp-conversion}
 
@@ -536,82 +554,145 @@ UTC, благодаря чему они выводятся относитель�
 | `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
 | `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
 
-### chDB в Postgres {#chdb-to-postgres}
+### Из chDB в Postgres {#chdb-to-postgres}
 
-chdb&#95;hook сопоставляет типы ClickHouse, возвращаемые [`DESCRIBE`], со следующими
-типами Postgres:
+Для существующих таблиц значения преобразуются к объявленным типам столбцов.
+Для альтернативных скалярных типов используются явные приведения PostgreSQL (если они есть), а
+элементы массивов преобразуются к объявленному типу элементов. Неподдерживаемые
+преобразования и значения, выходящие за допустимый диапазон, вызывают ошибки.
 
-{/* TYPE-TABLE-BEGIN сгенерировано `make type-table` */}
+Сопоставляйте типы chDB `Interval` с `smallint`, `integer` или `bigint`, чтобы читать и
+записывать количество соответствующих единиц. Например, значение `IntervalDay`, равное `3`, сопоставляется
+с целым числом `3`. При сопоставлении `IntervalNanosecond` с `bigint` наносекунды
+сохраняются, а при сопоставлении с `interval` значение усекается до микросекунд.
 
-| chDB                | Postgres                    | Примечания                                              |
-| ------------------- | --------------------------- | ------------------------------------------------------- |
-| Array(T)            | T[]                         | По одному типу массива PG на каждый уровень вложенности |
-| BFloat16            | real                        | При записи младшие биты мантиссы отбрасываются          |
-| Bool                | boolean                     |                                                         |
-| Date                | date                        |                                                         |
-| Date32              | date                        |                                                         |
-| DateTime            | timestamp with time zone    |                                                         |
-| DateTime64(P)       | timestamp(P) with time zone | Значения P больше 6 ограничиваются до 6                 |
-| Decimal(P,S)        | numeric(P,S)                |                                                         |
-| Decimal32(S)        | numeric(9,S)                |                                                         |
-| Decimal64(S)        | numeric(18,S)               |                                                         |
-| Decimal128(S)       | numeric(38,S)               |                                                         |
-| Decimal256(S)       | numeric(76,S)               |                                                         |
-| Enum8               | text                        |                                                         |
-| Enum16              | text                        |                                                         |
-| FixedString(N)      | text                        | N задаёт байты в CH и символы в PG                      |
-| Float32             | real                        |                                                         |
-| Float64             | double precision            |                                                         |
-| IPv4                | inet                        |                                                         |
-| IPv6                | inet                        |                                                         |
-| Int8                | smallint                    |                                                         |
-| Int16               | smallint                    |                                                         |
-| Int32               | integer                     |                                                         |
-| Int64               | bigint                      |                                                         |
-| Int128              | numeric(39,0)               |                                                         |
-| Int256              | numeric(77,0)               |                                                         |
-| IntervalDay         | interval                    |                                                         |
-| IntervalHour        | interval                    |                                                         |
-| IntervalMicrosecond | interval                    |                                                         |
-| IntervalMillisecond | interval                    |                                                         |
-| IntervalMinute      | interval                    |                                                         |
-| IntervalMonth       | interval                    |                                                         |
-| IntervalNanosecond  | interval                    | Усекается до микросекунд                                |
-| IntervalQuarter     | interval                    |                                                         |
-| IntervalSecond      | interval                    |                                                         |
-| IntervalWeek        | interval                    |                                                         |
-| IntervalYear        | interval                    |                                                         |
-| JSON                | jsonb                       |                                                         |
-| LineString          | path                        |                                                         |
-| LowCardinality(T)   | T                           |                                                         |
-| Map(K,V)            | text[][]                    | По одной строке текстовых элементов на каждую пару      |
-| MultiLineString     | path[]                      |                                                         |
-| MultiPolygon        | polygon[][]                 |                                                         |
-| Nullable(T)         | T                           | Задаёт для столбца признак nullable                     |
-| Point               | point                       |                                                         |
-| Polygon             | polygon[]                   |                                                         |
-| Ring                | polygon                     |                                                         |
-| String              | text                        |                                                         |
-| Time                | time without time zone      |                                                         |
-| Time64(P)           | time(P) without time zone   | Значения P больше 6 ограничиваются до 6                 |
-| Tuple(...)          | text[]                      | Поля становятся текстовыми элементами                   |
-| UInt8               | smallint                    |                                                         |
-| UInt16              | integer                     |                                                         |
-| UInt32              | bigint                      |                                                         |
-| UInt64              | numeric(20,0)               |                                                         |
-| UInt128             | numeric(39,0)               |                                                         |
-| UInt256             | numeric(78,0)               |                                                         |
-| UUID                | uuid                        |                                                         |
+При создании таблиц на основе типов ClickHouse, возвращаемых [`DESCRIBE`], chdb&#95;hook использует
+приведённые ниже типы Postgres по умолчанию. Дополнительные целевые типы для чтения применяются к
+явно объявленным столбцам и включают преобразования, выходящие за рамки явных приведений
+PostgreSQL. Пустые ячейки не означают, что эти приведения недоступны. Указанные целевые типы относятся только к чтению;
+для записи действуют отдельные правила преобразования.
 
-{/* TYPE-TABLE-END */}
+| chDB                         | PostgreSQL по умолчанию     | Дополнительные целевые типы при чтении        | Примечания                                                                  |
+| ---------------------------- | --------------------------- | --------------------------------------------- | --------------------------------------------------------------------------- |
+| Array(T)                     | T[]                         |                                               | Отдельный тип массива PG для каждого уровня вложенности                     |
+| BFloat16                     | real                        |                                               |                                                                             |
+| Bool                         | boolean                     |                                               |                                                                             |
+| Date                         | date                        |                                               |                                                                             |
+| Date32                       | date                        |                                               |                                                                             |
+| DateTime                     | timestamp with time zone    | time                                          |                                                                             |
+| DateTime64(P)                | timestamp(P) with time zone | time                                          | Значения P больше 6 ограничиваются до 6                                     |
+| Decimal(P,S)                 | numeric(P,S)                | xid8, oid8                                    |                                                                             |
+| Decimal32(S)                 | numeric(9,S)                | xid8, oid8                                    |                                                                             |
+| Decimal64(S)                 | numeric(18,S)               | xid8, oid8                                    |                                                                             |
+| Decimal128(S)                | numeric(38,S)               | xid8, oid8                                    |                                                                             |
+| Decimal256(S)                | numeric(76,S)               | xid8, oid8                                    |                                                                             |
+| Enum8                        | text                        | bytea; типы, совместимые по входному формату  | Декодируется в метку; подходят перечисления PG с совпадающими метками       |
+| Enum16                       | text                        | bytea; типы, совместимые по входному формату  | Декодируется в метку; подходят перечисления PG с совпадающими метками       |
+| FixedString(N)               | text                        | bytea; типы, совместимые по входному формату  | Завершающие NUL-символы сохраняются только в bytea                          |
+| Float32                      | real                        |                                               |                                                                             |
+| Float64                      | double precision            |                                               |                                                                             |
+| IPv4                         | inet                        |                                               |                                                                             |
+| IPv6                         | inet                        |                                               |                                                                             |
+| Int8                         | smallint                    | boolean                                       | Ноль — false, ненулевое значение — true                                     |
+| Int16                        | smallint                    | boolean                                       | Ноль — false, ненулевое значение — true                                     |
+| Int32                        | integer                     |                                               |                                                                             |
+| Int64                        | bigint                      |                                               |                                                                             |
+| Int128                       | numeric(39,0)               | xid8, oid8                                    |                                                                             |
+| Int256                       | numeric(77,0)               | xid8, oid8                                    |                                                                             |
+| IntervalDay                  | interval                    | smallint, integer, bigint                     | В целочисленные типы записывается количество единиц                         |
+| IntervalHour                 | interval                    | smallint, integer, bigint                     | В целочисленные типы записывается количество единиц                         |
+| IntervalMicrosecond          | interval                    | smallint, integer, bigint                     | В целочисленные типы записывается количество единиц                         |
+| IntervalMillisecond          | interval                    | smallint, integer, bigint                     | В целочисленные типы записывается количество единиц                         |
+| IntervalMinute               | interval                    | smallint, integer, bigint                     | В целочисленные типы записывается количество единиц                         |
+| IntervalMonth                | interval                    | smallint, integer, bigint                     | Целые числа содержат количество единиц                                      |
+| IntervalNanosecond           | interval                    | smallint, integer, bigint                     | Целые числа сохраняют наносекунды; interval усекает значение до микросекунд |
+| IntervalQuarter              | interval                    | smallint, integer, bigint                     | Целые числа содержат количество единиц                                      |
+| IntervalSecond               | interval                    | smallint, integer, bigint                     | Целые числа содержат количество единиц                                      |
+| IntervalWeek                 | interval                    | smallint, integer, bigint                     | Целые числа содержат количество единиц                                      |
+| IntervalYear                 | interval                    | smallint, integer, bigint                     | Целые числа содержат количество единиц                                      |
+| JSON                         | jsonb                       | json, text, bytea; типы, совместимые по вводу | jsonb нормализует документ                                                  |
+| LineString                   | path                        | lseg                                          | Для lseg требуются ровно две точки                                          |
+| LowCardinality(T)            | T                           |                                               |                                                                             |
+| Map(K,V)                     | text[][]                    | composite[], T[][], text                      | Одна строка текстовых элементов на каждую пару                              |
+| MultiLineString              | path[]                      |                                               |                                                                             |
+| MultiPolygon                 | polygon[][]                 |                                               |                                                                             |
+| Nested(...)                  | text[][]                    | composite[], T[][], text                      | Одна строка текстовых элементов на каждую вложенную строку                  |
+| Nullable(T)                  | T                           |                                               | Делает столбец допускающим NULL                                             |
+| Point                        | point                       |                                               |                                                                             |
+| Polygon                      | polygon[]                   |                                               |                                                                             |
+| Ring                         | polygon                     | lseg                                          | Для lseg требуются ровно две точки                                          |
+| SimpleAggregateFunction(f,T) | T                           |                                               | Хранит значения как T                                                       |
+| String                       | text                        | bytea; типы, совместимые по вводу             | bytea сохраняет необработанные байты                                        |
+| Time                         | time without time zone      |                                               |                                                                             |
+| Time64(P)                    | time(P) without time zone   |                                               | Значения P больше 6 ограничиваются до 6                                     |
+| Tuple(...)                   | text[]                      | composite, T[], text; box, circle, line       | Поля преобразуются в текстовые элементы                                     |
+| UInt8                        | smallint                    | boolean                                       | Ноль — false; ненулевое значение — true                                     |
+| UInt16                       | integer                     |                                               |                                                                             |
+| UInt32                       | bigint                      |                                               |                                                                             |
+| UInt64                       | numeric(20,0)               | xid8, oid8                                    |                                                                             |
+| UInt128                      | numeric(39,0)               | xid8, oid8                                    |                                                                             |
+| UInt256                      | numeric(78,0)               | xid8, oid8                                    |                                                                             |
+| UUID                         | uuid                        |                                               |                                                                             |
 
-Любой тип chDB, отсутствующий в этой таблице, приводит к ошибке — в том числе `Nested`,
-`Variant` и `Dynamic`. Чтобы читать их как текст, используйте [structure](#structure), сопоставляющую их с
-`String`.
+Типы, совместимые по вводу, можно читать из строковых значений с помощью их функции ввода PostgreSQL.
+Составные типы должны иметь совпадающие поля в совпадающем порядке. Чтобы прочитать кортеж
+как массив, каждое поле должно преобразовываться в тип элемента массива, и ни одно поле
+само не может быть массивом.
+
+При чтении в виде массива `Map` использует одну строку на каждую пару ключ-значение, а `Nested` —
+одну строку на каждую вложенную строку. Чтобы прочитать кортеж как `box`, укажите две точки; для
+`circle` укажите точку и радиус; для `line` укажите три коэффициента.
+
+Любой тип chDB, отсутствующий в этой таблице, приводит к ошибке — в том числе `Variant`,
+`Dynamic` и `AggregateFunction`. Чтобы читать их как текст, используйте [structure](#structure), сопоставляющую
+их с `String`.
 
 Для некоторых из этих типов Postgres поддерживает более узкий диапазон, чем chDB, поэтому копирование
 завершается ошибкой для `Time` или `Time64` свыше 24 часов, а также для `Date32`
 за пределами диапазона дат Postgres.
+
+### Ручное сопоставление типов {#manual-type-mappings}
+
+При автоматическом определении столбцов для перечислений используется `text`, а для значений `Tuple`, `Map`
+и `Nested` — текстовые массивы. Чтобы сохранить типы полей или ограничить допустимые значения перечислений, создайте
+в PostgreSQL перечисляемые и составные типы, а затем объявите столбцы с этими типами.
+Задайте типы chDB с помощью [structure](#structure) или используйте `structure 'auto'`,
+чтобы они определялись по исходным данным, а не по таблице Postgres. Например,
+с помощью следующих типов можно загрузить статусы событий, координаты, метки и
+вложенные элементы:
+
+```sql
+CREATE TYPE event_status AS ENUM ('new', 'done');
+CREATE TYPE event_point AS (x integer, y integer);
+CREATE TYPE event_label AS (key text, value bigint);
+CREATE TYPE event_item AS (id integer, name text);
+
+CREATE TABLE events (
+    status event_status,
+    point  event_point,
+    labels event_label[],
+    items  event_item[]
+);
+
+COPY events FROM 's3://chdb-lakedata-public/examples/events.parquet' (
+    structure $$
+        status Enum8('new' = 1, 'done' = 2),
+        point  Tuple(Int32, Int32),
+        labels Map(String, Int64),
+        items  Array(Tuple(id Int32, name String))
+    $$
+);
+```
+
+Объявляйте поля составных типов в том же порядке, что и поля в chDB, используя совместимые типы PostgreSQL.
+Для значений `Map` объявите сначала поле ключа, а затем поле значения. Каждый
+`Tuple` преобразуется в одно составное значение; каждая пара `Map` или строка `Nested` — в
+один элемент массива составного типа.
+
+Если `structure` задан явно, chDB разбивает `Nested` на отдельные столбцы типа `Array` — по одному на каждое
+поле. Чтобы считать вложенные строки в один столбец с массивом составного типа, используйте `Array(Tuple(...))`,
+как показано выше, либо укажите `structure 'auto'`, если исходный формат chDB
+содержит информацию о типах.
 
 ### Кодирование текста {#text-encoding}
 
@@ -629,8 +710,8 @@ ERROR:  invalid byte sequence for encoding "UTF8": 0x00
 Копируйте в `bytea`, чтобы сохранить байты в том виде, в котором их записал chDB. Задавайте таким полям соответствующие имена, поскольку [CREATE TABLE](#create-table-overloading) выводит для этих типов `text`:
 
 ```sql
-CREATE TABLE logs (id bigint, payload bytea) WITH (
-    copy_from = 's3://my-bucket/logs.parquet'
+CREATE TABLE logs (req_id numeric(20,0), resource bytea) WITH (
+    copy_from = 's3://chdb-lakedata-public/logs/logs-2026-08-26.parquet'
 );
 ```
 
@@ -758,6 +839,8 @@ Copyright (c) 2026, ClickHouse
 
 [ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: типы данных в ClickHouse"
 
+[composite type]: https://www.postgresql.org/docs/current/rowtypes.html#ROWTYPES-DECLARING "Документация PostgreSQL: объявление составных типов"
+
 [log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "Документация PostgreSQL: log_min_messages"
 
 [`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
@@ -767,3 +850,5 @@ Copyright (c) 2026, ClickHouse
 [`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: настройки сеанса max_threads_*"
 
 [`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: настройка сеанса max_parsing_threads"
+
+[database encoding]: https://www.postgresql.org/docs/current/multibyte.html "PostgreSQL Docs: поддержка кодировок"

@@ -22,6 +22,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Core/Settings.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -130,6 +131,15 @@ void visitSlots(ASTPtr & ast, Slot slot, Replace && replace)
         /// We have to replace them if the child was replaced.
         if (child.get() != old_ptr)
             ast->updatePointerToChild(old_ptr, child);
+    }
+
+    /// `GROUP BY` keys and `SET` assignments of a `TTL` rule are not among its children.
+    if (auto * ttl_element = ast->template as<ASTTTLElement>())
+    {
+        for (auto & key : ttl_element->group_by_key)
+            visitSlots(key, Slot::Call, replace);
+        for (auto & assignment : ttl_element->group_by_assignments)
+            visitSlots(assignment, Slot::Call, replace);
     }
 
     if (isCall(*ast, slot))
