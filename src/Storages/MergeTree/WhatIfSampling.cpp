@@ -31,6 +31,7 @@ std::vector<size_t> sampleUnits(size_t units, size_t step, const String & part_n
 
 size_t sampledRunLength(size_t units, size_t step, size_t i)
 {
+    chassert(i * step < units);
     return std::min(step, units - i * step);
 }
 
