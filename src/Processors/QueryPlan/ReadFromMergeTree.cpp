@@ -11,6 +11,8 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -85,6 +87,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -4756,6 +4759,21 @@ bool ReadFromMergeTree::isQueryWithSampling() const
     return query_info.getSampleSizeRatio().has_value();
 }
 
+/// The name of the `...Map` structure that the merge of `SummingMergeTree` sums the column `column` in, as `defineColumns`
+/// in `SummingSortedAlgorithm.cpp` names it, or an empty string.
+static String getSummingMapName(const NameAndTypePair & column, bool allow_tuple_element_aggregation)
+{
+    if (!typeid_cast<const DataTypeArray *>(column.type.get())
+        || dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+        return {};
+
+    String map_name = allow_tuple_element_aggregation ? Nested::splitName(column.name, /*reverse=*/true).first
+                                                      : Nested::extractTableName(column.name);
+    if (map_name == column.name || !endsWith(map_name, "Map"))
+        return {};
+    return map_name;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRanges(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -4792,6 +4810,46 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
         auto original_column_names = column_names_to_read;
+
+        /// The merge of `SummingMergeTree` takes the first column of a `...Map` structure in the block as its key, and
+        /// sums the structure only if all its value columns can be summed. A merge in the background reads all the
+        /// columns in the order of the table, so read all the columns of a structure in that order when the query reads
+        /// any of them. Otherwise a value column read before the key or without it is taken as the key, and a value
+        /// column read alone is not summed at all.
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            const auto & columns = storage_snapshot->metadata->getColumns();
+            const bool allow_tuple_element_aggregation = data.merging_params.allow_tuple_element_aggregation;
+
+            std::unordered_map<String, Names> map_columns;
+            for (const auto & column : columns.getAllPhysical())
+                if (auto map_name = getSummingMapName(column, allow_tuple_element_aggregation); !map_name.empty())
+                    map_columns[map_name].push_back(column.name);
+
+            if (!map_columns.empty())
+            {
+                Names columns_with_maps;
+                NameSet columns_with_maps_set;
+                for (const auto & column_name : column_names_to_read)
+                {
+                    auto column = columns.tryGetPhysical(column_name);
+                    auto map_name = column ? getSummingMapName(*column, allow_tuple_element_aggregation) : String{};
+                    if (map_name.empty())
+                    {
+                        if (columns_with_maps_set.emplace(column_name).second)
+                            columns_with_maps.push_back(column_name);
+                        continue;
+                    }
+
+                    for (const auto & map_column_name : map_columns.at(map_name))
+                        if (columns_with_maps_set.emplace(map_column_name).second)
+                            columns_with_maps.push_back(map_column_name);
+                }
+
+                column_names_to_read = std::move(columns_with_maps);
+                names = std::move(columns_with_maps_set);
+            }
+        }
 
         /// Add columns needed to calculate the sorting expression and the sign.
         for (const auto & column : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
