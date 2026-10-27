@@ -3264,10 +3264,27 @@ function shapeQueryKey(query) {
 /// Built from the values a run is launched with (`postSingle`'s snapshotted database, connection and
 /// parameters), never from the live inputs, so it describes the run that produced the result. The
 /// parameters are sorted so an unordered rebuild of the same bindings is the same context.
-function shapeContextKey(database, url, user, params) {
+/// `implicitUser` is the connection's implicit-user stamp (`implicitUserStamp`), so the account is
+/// compared like everywhere else (`sameShapeContext`).
+function shapeContextKey(database, url, user, params, implicitUser = '') {
     const entries = Object.entries(params || {}).map(([name, value]) => [String(name), String(value)]);
     entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
-    return JSON.stringify([database ?? null, url ?? null, user ?? null, entries]);
+    return JSON.stringify([database ?? null, url ?? null, user ?? null, entries, implicitUser || '']);
+}
+
+/// Do two run contexts (`shapeContextKey`) denote the same run context? The database, the server
+/// address and the parameters must be equal, and the account is compared by `sameConnectionUser`,
+/// not by the spelling of the `user` field: an implicit login and the name the password manager
+/// refilled for it (`storeCredentials`) are the same account, so a rerun after the refill keeps the
+/// shape, as it keeps the selected database. A context recorded before the stamp was part of it has
+/// no stamp, which `sameConnectionUser` treats as an account that is not known (failing closed).
+function sameShapeContext(a, b) {
+    if (a === b) return true;
+    const [a_database, a_url, a_user, a_params, a_implicit_user = ''] = JSON.parse(a);
+    const [b_database, b_url, b_user, b_params, b_implicit_user = ''] = JSON.parse(b);
+    return a_database === b_database && a_url === b_url
+        && JSON.stringify(a_params) === JSON.stringify(b_params)
+        && sameConnectionUser(a_url ?? '', a_user ?? '', a_implicit_user, b_url ?? '', b_user ?? '', b_implicit_user);
 }
 
 /// Apply a click on one of a column's sort arrows to a sort list, IN PLACE (the list is the owning
@@ -3327,8 +3344,8 @@ function shapeUrlParams(cell) {
 
 /// The shape parameters for a run of `query` in `cell`, dropping a shape that belongs to a different
 /// statement (see `shapeQueryKey`) and re-binding the cell's shape to the statement now being run.
-/// `context` is the run's `shapeContextKey`; a shape whose recorded context is a DIFFERENT one belongs
-/// to another database/connection/parameter binding and is dropped too. A `null` recorded context
+/// `context` is the run's `shapeContextKey`; a shape whose recorded context is a DIFFERENT one
+/// (`sameShapeContext`) belongs to another database/connection/parameter binding and is dropped too. A `null` recorded context
 /// means the shape was restored from a URL, which carries no context of its own: it adopts the context
 /// of the run that re-applies it, and only a change AFTER that drops it. (A shape restored from a
 /// stored snapshot is NOT unbound: the snapshot records the context that produced its rows, and the
@@ -3336,7 +3353,7 @@ function shapeUrlParams(cell) {
 function resolveShapeForRun(cell, query, context = null) {
     const bound_context = cell.shapeContext ?? null;
     if (shapeQueryKey(cell.shapeQuery) !== shapeQueryKey(query)
-        || (bound_context !== null && bound_context !== context)) {
+        || (bound_context !== null && (context === null || !sameShapeContext(bound_context, context)))) {
         clearResultShape(cell);
         cell.shapeQuery = query;
     }
@@ -3356,7 +3373,8 @@ function resolveShapeForRun(cell, query, context = null) {
 /// producing query stays unbound too, but such a snapshot carries no shape either.
 function snapshotShapeContext(result) {
     if (!result || result.query == null) { return null; }
-    return shapeContextKey(result.database ?? null, result.url ?? null, result.user ?? null, result.params || {});
+    return shapeContextKey(result.database ?? null, result.url ?? null, result.user ?? null, result.params || {},
+        result.implicitUser || '');
 }
 
 /// The names a result header carries more than once. A result can legitimately repeat a name -
@@ -12706,7 +12724,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     /// resolves to different columns after the database selection, the connection or a parameter
     /// binding changed, so that too drops it.
     const shape_params = resolveShapeForRun(
-        cell, query, shapeContextKey(query_database, query_url, query_user, paramValuesSnapshot));
+        cell, query, shapeContextKey(query_database, query_url, query_user, paramValuesSnapshot, query_implicit_user));
     /// Now that the launch has decided which shape actually applies, mirror it into the URL, the
     /// history entry and the cell's stored snapshot. Deliberately NOT done when the shape was chosen
     /// (`commitResultShape` launches this run without persisting it): a shape this launch drops -
