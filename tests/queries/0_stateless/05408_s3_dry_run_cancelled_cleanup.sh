@@ -28,7 +28,9 @@ INSERT INTO dry_run_cleanup VALUES (1, 'one');
 INSERT INTO dry_run_cleanup VALUES (2, 'two');
 "
 
-objects_query="SELECT _path FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One') ORDER BY _path"
+# The disk writes its snapshot in the background. It is not output owned by the dry-run merge.
+objects_query="SELECT _path FROM s3('${endpoint}**', 'clickhouse', 'clickhouse', 'One')
+    WHERE NOT endsWith(_path, '/__meta/snapshot.bin') ORDER BY _path"
 before="$(${CLICKHOUSE_CLIENT} --query "${objects_query}")"
 test -n "$before"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT temporary_part_cancel_after_remove_rename"
