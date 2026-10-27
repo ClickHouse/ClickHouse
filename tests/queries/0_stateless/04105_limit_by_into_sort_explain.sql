@@ -123,7 +123,8 @@ INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
-ORDER BY k, v LIMIT 2, 3 BY k;
+ORDER BY k, v LIMIT 2, 3 BY k
+SETTINGS join_algorithm = 'hash';
 
 -- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
 -- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to

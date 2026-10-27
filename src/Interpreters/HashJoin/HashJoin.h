@@ -154,6 +154,9 @@ public:
     /// The left side is streamed through once, each row emitted in input order.
     bool preservesLeftBlockOrder() const override { return true; }
 
+    bool resizeProbeSideToMaxStreams() const override { return resize_probe_side_to_max_streams; }
+    void setResizeProbeSideToMaxStreams(bool value) { resize_probe_side_to_max_streams = value; }
+
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
         SharedHeader right_sample_block_) const override
@@ -657,6 +660,7 @@ private:
     bool from_storage_join = false;
 
     const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
+    bool resize_probe_side_to_max_streams = false;
     const size_t reserve_num;
     const String instance_id;
     std::optional<TypeIndex> asof_type;

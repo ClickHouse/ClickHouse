@@ -1235,6 +1235,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
         {
+            /// Set when `parallel_hash` was allowed but the size threshold picked the single-threaded build.
+            bool replaces_parallel_hash = false;
             if (table_join->allowParallelHashJoin())
             {
                 const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
@@ -1252,9 +1254,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         stats_collecting_params,
                         params.join_any_take_last_row);
                 }
+                replaces_parallel_hash = true;
             }
 
-            return std::make_shared<SpillingHashJoin>(
+            auto spilling_join = std::make_shared<SpillingHashJoin>(
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
@@ -1263,8 +1266,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets,
                 stats_collecting_params,
                 params.join_any_take_last_row);
+            spilling_join->setResizeProbeSideToMaxStreams(replaces_parallel_hash);
+            return spilling_join;
         }
 
+        bool replaces_parallel_hash = false;
         if (table_join->allowParallelHashJoin())
         {
             const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
@@ -1278,11 +1284,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     stats_collecting_params,
                     params.join_any_take_last_row);
             }
+            replaces_parallel_hash = true;
         }
 
-        return std::make_shared<HashJoin>(
+        auto hash_join = std::make_shared<HashJoin>(
             table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
             /*is_concurrent_hash_join_=*/false, stats_collecting_params);
+        /// The size threshold, often fed by the hash table statistics of a previous run, picked
+        /// `hash` over `parallel_hash`. Keep the probe as wide as `parallel_hash` would have made it.
+        hash_join->setResizeProbeSideToMaxStreams(replaces_parallel_hash);
+        return hash_join;
     }
 
     /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
