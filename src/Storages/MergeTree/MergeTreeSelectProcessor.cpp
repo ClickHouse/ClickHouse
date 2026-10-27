@@ -116,10 +116,14 @@ ParallelReadingExtension::ParallelReadingExtension(
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
-    CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
+    CoordinationMode mode,
+    RangesInDataPartsDescription description,
+    size_t mark_segment_size,
+    size_t min_marks_per_request,
+    bool wants_analyzed_ranges) const
 {
     return all_callback(InitialAllRangesAnnouncement{
-        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id});
+        mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, stream_id, wants_analyzed_ranges});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
@@ -145,6 +149,27 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
     chassert(index_reader_pool);
+}
+
+void MergeTreeIndexBuildContext::addAnalyzedReadRanges(size_t part_index, const MarkRanges & ranges)
+{
+    auto & part_ranges = read_ranges.at(part_index).ranges;
+    if (parts_with_analyzed_ranges.insert(part_index).second)
+        part_ranges.clear();
+
+    part_ranges.insert(part_ranges.end(), ranges.begin(), ranges.end());
+    std::sort(part_ranges.begin(), part_ranges.end());
+
+    /// Merge adjacent ranges, as `optimizeRanges` in `RangesInPatchParts.cpp` does.
+    MarkRanges merged;
+    for (const auto & range : part_ranges)
+    {
+        if (!merged.empty() && merged.back().end >= range.begin)
+            merged.back().end = std::max(merged.back().end, range.end);
+        else
+            merged.push_back(range);
+    }
+    part_ranges = std::move(merged);
 }
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
@@ -455,6 +480,11 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
     auto res = task_algorithm.readFromTask(current_task);
 
+    /// Loaded after the PREWHERE of the block ran, so a block filtered without the rows equal to the threshold is never recorded.
+    const auto & rows_equal_to_threshold_dropped = reader_settings.top_k_filter_rows_equal_to_threshold_dropped;
+    const bool record_in_query_condition_cache = reader_settings.use_query_condition_cache
+        && (!rows_equal_to_threshold_dropped || !rows_equal_to_threshold_dropped->load(std::memory_order_relaxed));
+
     if (res.row_count)
     {
         /// Reorder the columns according to result_header
@@ -474,7 +504,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 
         /// QueryConditionCache is keyed by the storage UUID, which is only available from a
         /// concrete part; borrowed parts (stateless worker) skip it.
-        if (reader_settings.use_query_condition_cache && data_part_info->getDataPart())
+        if (record_in_query_condition_cache && data_part_info->getDataPart())
         {
             /// The attached marks let the downstream FilterTransform record WHERE-filtered marks
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
@@ -522,7 +552,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     /// security filter is also prepended before PREWHERE (getPrewhereActions), yet this write keys only
     /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
     /// PREWHERE predicate and read by a later query without that policy.
-    if (reader_settings.use_query_condition_cache && prewhere_info
+    if (record_in_query_condition_cache && prewhere_info
         && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)

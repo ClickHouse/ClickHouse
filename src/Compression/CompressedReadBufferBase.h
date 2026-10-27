@@ -49,6 +49,8 @@ protected:
     size_t decompressed_size_limit = 0;
     size_t total_decompressed_size = 0;
 
+    UInt64 statistics_hint = 0;
+
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
     /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer()
@@ -91,6 +93,9 @@ public:
     {
         decompressed_size_limit = limit;
     }
+
+    /// Identifies the column this buffer reads, see LZ4StatisticsHint.h.
+    void setStatisticsHint(UInt64 hint) { statistics_hint = hint; }
 
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);

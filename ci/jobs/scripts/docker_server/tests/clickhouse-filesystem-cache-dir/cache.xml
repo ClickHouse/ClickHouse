@@ -2,6 +2,8 @@
     <filesystem_caches>
         <docker_test_cache>
             <max_size>10000000</max_size>
+            <max_file_segment_size>2097152</max_file_segment_size>
+            <boundary_alignment>2097152</boundary_alignment>
             <path>/mnt/clickhouse-cache/docker_test_cache</path>
         </docker_test_cache>
     </filesystem_caches>

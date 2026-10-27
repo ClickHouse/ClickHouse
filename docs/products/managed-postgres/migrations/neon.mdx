@@ -63,7 +63,16 @@ Once the new environment is stable, complete the clean-up step to remove the Cli
 Neon provides instant copy-on-write branching. ClickHouse Managed Postgres uses local NVMe storage to deliver fast, predictable, and reliable Postgres performance.
 The trade-off is that branches are not instantaneous; instead, they are created as independent deployments using [Point-in-Time Recovery (PITR)](/products/managed-postgres/backup-and-restore). They typically become available within a few minutes.
 
-For everyday development, we recommend maintaining a smaller ClickHouse Managed Postgres development database with representative, sanitized production data - for example, a few gigabytes and creating PITR branches from it as needed. Branch creation and cleanup can be automated through [clickhousectl](/concepts/features/interfaces/cli), our official CLI or [OpenAPI](/products/managed-postgres/openapi) or [Terraform](/products/managed-postgres/terraform)
+For everyday development, we recommend maintaining a smaller ClickHouse Managed Postgres development database with representative, sanitized production data - for example, a few gigabytes and creating PITR branches from it as needed. Branch creation and cleanup can be automated through [clickhousectl](/concepts/features/interfaces/cli), our official CLI, the [OpenAPI](/products/managed-postgres/openapi), or [Terraform](/products/managed-postgres/terraform). With clickhousectl and an API key, a branch is a point-in-time restore into a new service:
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore` returns the new service's ID but no password, so set one with `reset-password` once the branch is `running`. The branch gets the source's current IPv4 access rules unless you pass `--ip-allow` rules or `--block-public-access`. `delete` removes the branch and its data permanently.
 
 Some customers use this approach to manage hundreds of development environments. We are actively improving the forking and sandboxing experience. See the [branching documentation](/products/managed-postgres/branching).
 
@@ -95,7 +104,7 @@ ClickHouse Managed Postgres supports 500 direct Postgres connections by default.
 - Use application-side connection pooling.
 - Use the bundled PgBouncer instance, which supports up to 5,000 client connections.
 - Increase `max_connections` if more direct connections are required.
-  - `max_connections` can be changed from **Settings → Edit parameters**. Some changes require a restart. See the [configuration documentation](/products/managed-postgres/settings#changing-configuration).
+  - `max_connections` can be changed from **Settings → Edit parameters**, or with `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000`. Some changes require a restart, which you can trigger with `clickhousectl cloud postgres restart <postgres-id>`. See the [configuration documentation](/products/managed-postgres/settings#changing-configuration).
 
 ### Schema changes during migration {#schema-changes}
 

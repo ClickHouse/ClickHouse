@@ -32,7 +32,7 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=0) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0"
 
 
 $CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
@@ -40,7 +40,7 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=0) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, send_logs_level='trace', parallel_replicas_prefer_local_join=0" 2>&1 |
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, send_logs_level='trace', parallel_replicas_prefer_local_join=0" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 grep -v -E "#split_[1-9]" |
@@ -56,14 +56,14 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=1) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0"
 
 $CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings parallel_replicas_prefer_local_join=1) r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, send_logs_level='trace', parallel_replicas_prefer_local_join=0" 2>&1 |
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, send_logs_level='trace', parallel_replicas_prefer_local_join=0" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 grep -v -E "#split_[1-9]" |
@@ -80,14 +80,14 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, join_algorithm='full_sorting_merge'"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, join_algorithm='full_sorting_merge'"
 
 $CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='full_sorting_merge'" 2>&1 |
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='full_sorting_merge'" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 grep -v -E "#split_[1-9]" |
@@ -103,14 +103,14 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='hash') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, join_algorithm='full_sorting_merge'"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, join_algorithm='full_sorting_merge'"
 
 $CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='hash') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='full_sorting_merge'" 2>&1 |
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='full_sorting_merge'" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 grep -v -E "#split_[1-9]" |
@@ -126,14 +126,14 @@ select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, join_algorithm='hash'"
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, join_algorithm='hash'"
 
 $CLICKHOUSE_CLIENT --max_rows_in_set_to_optimize_join 0 -q "
 select * from (select key, value from num_1) l
 inner join (select key, value from num_2 inner join
   (select number * 7 as key from numbers(1e5)) as nn on num_2.key = nn.key settings join_algorithm='full_sorting_merge') r
 on l.key = r.key order by l.key limit 10 offset 10000
-SETTINGS enable_analyzer=1, $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='hash'" 2>&1 |
+SETTINGS $PARALLEL_REPLICAS_SETTINGS, parallel_replicas_prefer_local_join=0, send_logs_level='trace', join_algorithm='hash'" 2>&1 |
 grep "Executing read from.*with parallel replicas\|<Trace>.*Coordinator.*Coordination done" |
 grep -o "(SELECT.*WithMergeableState\|<Trace>.*Coordinator.*Coordination done" |
 grep -v -E "#split_[1-9]" |
