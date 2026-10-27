@@ -2977,3 +2977,40 @@ All seven processed Rust archives matched their previous SHA-256 values and byte
 [x86-64 DWYU setup](https://app.buildbuddy.io/invocation/40148839-ec69-4531-bf00-96c8d4133b4a) exited 1: `different H30 strict limits`. No analyzer ran; there is no current DWYU scan result. All 3 offered targets remain ungraded.
 
 [ARM64 DWYU setup](https://app.buildbuddy.io/invocation/fc007502-2219-4c33-8f8e-6da3f5171886) exited 1: `different H30 strict limits`. No analyzer ran; there is no current DWYU scan result. All 3 offered targets remain ungraded.
+
+## d1988ae46
+
+At [d1988ae46](https://github.com/dzbarsky/clickhouse/commit/d1988ae46f0fb012a95da538e124a6026e5b0cd7), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. Unstripped ClickHouse and unit-test hashes are compared with the [preceding build](https://github.com/dzbarsky/clickhouse/commit/3c0cbce7691838f7a370a648b937a136906c999d).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0134e281fa) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0134e281fa) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0134e281fa) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/60ac6503-597e-4623-a4a3-9ff4ce7c44ed) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/60ac6503-597e-4623-a4a3-9ff4ce7c44ed) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/60ac6503-597e-4623-a4a3-9ff4ce7c44ed) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[The S2 and ICU BUILD files](https://github.com/dzbarsky/clickhouse/commit/c9f63c0126f13e2a9655875f1e8ab61db250ba83) move one S2 implementation header and four ICU implementation headers from public headers to private sources. S2 also stops declaring two headers with no compiled readers.
+
+[Five BUILD files](https://github.com/dzbarsky/clickhouse/commit/23272ec010167248f109814dbcd93b500afe838e) now use globs for 508 C/C++ sources in Cassandra, Google Benchmark, gRPC, S2 and Vectorscan. The source lists retain their order across both CPUs; the five files are 370 lines shorter.
+
+[Google Cloud C++](https://github.com/dzbarsky/clickhouse/commit/d1988ae46f0fb012a95da538e124a6026e5b0cd7) now reads its pinned upstream manifests for the same 26 gRPC and 41 REST sources. The REST target keeps the Poco client and excludes upstream curl and Windows implementations.
+
+Both native builds completed all 19 targets. The original verifier stopped with `native_compile_unverified`: it still expected the Google Benchmark BUILD file at Git blob `6f5d94e91`, and the glob changed that blob to `ad9807704`. The six other pinned inputs were unchanged. An offline check compared the original ordered 19 Benchmark sources with Bazel’s saved expansion of the new glob. It then verified 30 runtime checks and three compile checks from each build’s nine original status files. Neither build was retried.
+
+The new check ran the first `geoToS2` query from ClickHouse test [02224](https://github.com/dzbarsky/clickhouse/blob/d1988ae46f0fb012a95da538e124a6026e5b0cd7/tests/queries/0_stateless/02224_s2_test_const_columns.sql) and returned both expected cell IDs: `4704772434919038107` and `1527555102286129111`. The three compile checks covered ZooKeeper with logging disabled and the radix-sort and wrap-in-nullable benchmarks.
+
+Bazel reported these counts for the native builds: [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0134e281fa): 3,827 remote executions and 52,007 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/60ac6503-597e-4623-a4a3-9ff4ce7c44ed): 3,831 remote executions and 52,481 remote cache hits.
+
+The ClickHouse linker commands, unit-test linker response files, and SHA-256 and byte counts of all seven processed Rust archives were unchanged on both CPUs. The ARM64 build confirmed the same seven input and output digests for the registered `llvm-strip --strip-debug` actions as in the [original digest table](#ecd39e5e3). Neither build requested an experimental glibc link.
+
+### Dependency reports
+
+The preceding [x86-64](https://app.buildbuddy.io/invocation/40148839-ec69-4531-bf00-96c8d4133b4a) and [ARM64](https://app.buildbuddy.io/invocation/fc007502-2219-4c33-8f8e-6da3f5171886) DWYU runs both stopped during setup (`different H30 strict limits`). Their final records confirm no analyzer ran and none of the three offered targets was graded.
+
+On both CPUs, `DwyuAnalyzeTarget` exited 1 for `//src/Dictionaries:dictionary_api`. The analyzer could not prove whether linking requires `//src/Common:Common`. `//src/Compression:codec_api` and `//src/Loggers:headers` each produced a report.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/cb78756b-8a51-4b36-ac48-9c682ae00824) selected all three targets. Verified clean: `//src/Compression:codec_api`, `//src/Loggers:headers`. All three targets had zero owned object files and zero symbol or archive scans. `dictionary_api` forwarded 4,818 objects and remains ungraded.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/642b696f-c938-4fb7-80e7-9b5007c70512) selected all three targets. Verified clean: `//src/Compression:codec_api`, `//src/Loggers:headers`. All three targets had zero owned object files and zero symbol or archive scans. `dictionary_api` forwarded 4,805 objects and remains ungraded.
