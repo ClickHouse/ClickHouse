@@ -604,6 +604,19 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    /// A rename of a name that an earlier drop of the batch removed moves the column added again, which the part does not store.
+    NameSet renamed_after_drop;
+    {
+        NameSet dropped_earlier;
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+                dropped_earlier.insert(command.column_name);
+            else if (command.type == MutationCommand::Type::RENAME_COLUMN && dropped_earlier.contains(command.column_name))
+                renamed_after_drop.insert(command.column_name);
+        }
+    }
+
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
         || part->getDataPartStorage().getType() != future_storage_type)
@@ -775,19 +788,6 @@ static void splitAndModifyMutationCommands(
         }
 
         num_for_file_renames_from_commands = for_file_renames.size();
-
-        /// A rename of a name that an earlier drop of the batch removed moves the column added again, which the part does not store.
-        NameSet renamed_after_drop;
-        {
-            NameSet dropped_earlier;
-            for (const auto & command : commands)
-            {
-                if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
-                    dropped_earlier.insert(command.column_name);
-                else if (command.type == MutationCommand::Type::RENAME_COLUMN && dropped_earlier.contains(command.column_name))
-                    renamed_after_drop.insert(command.column_name);
-            }
-        }
 
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
@@ -1108,7 +1108,7 @@ static void splitAndModifyMutationCommands(
 
         for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
         {
-            if (!dropped_in_batch.contains(rename_from))
+            if (!dropped_in_batch.contains(rename_from) && !renamed_after_drop.contains(rename_from))
                 for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
     }
