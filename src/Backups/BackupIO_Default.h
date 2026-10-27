@@ -82,6 +82,9 @@ public:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override = 0;
 
 protected:
+    /// Creates a lowercase probe file in the backup's root and checks whether its uppercase name finds it.
+    bool probeCaseInsensitivity();
+
     LoggerPtr const log;
 
     /// The read settings are used to read from the source disk in copyFileFromDisk().

@@ -84,6 +84,9 @@ public:
     /// buffer is finalized, so they answer `false`.
     virtual bool createsFileOnOpenIfNotExists() const { return false; }
 
+    /// Whether two names that differ only in case refer to the same file in the destination.
+    virtual bool isCaseInsensitive() { return false; }
+
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
 
