@@ -435,7 +435,7 @@ void MergeTreeReaderWide::lookupColumnsCache(
 }
 
 void MergeTreeReaderWide::countCachedGranules(
-    const std::vector<ColumnsCache::MappedPtr> & entries, size_t counts_first_mark, size_t begin, size_t end, std::vector<UInt32> & cached_columns)
+    std::span<const ColumnsCache::MappedPtr> entries, size_t counts_first_mark, size_t begin, size_t end, std::vector<UInt32> & cached_columns)
 {
     /// Entry by entry rather than granule by granule: a stripe can hold hundreds of granules.
     for (const auto & entry : entries)
@@ -459,10 +459,12 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     /// So nothing is claimed unless the block is sized to whole stripes, as `canReadWholeColumnsCacheStripe`
     /// makes it for the reads that write to the cache.
     std::vector<ColumnsCache::Key> needed;
+    std::vector<size_t> needed_positions;
     std::vector<ColumnsCache::Key> to_claim;
     auto collect = [&]
     {
         needed.clear();
+        needed_positions.clear();
         to_claim.clear();
         for (size_t stripe = first_stripe; stripe < end_stripe; ++stripe)
         {
@@ -485,6 +487,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
                 if (!missing)
                     continue;
                 needed.push_back(ColumnsCache::Key{column_identities[pos], stripe});
+                needed_positions.push_back(pos);
                 if (claim)
                     to_claim.push_back(needed.back());
             }
@@ -501,7 +504,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     {
         /// The stripes another reader wrote and released after the range was looked up are served from the
         /// cache: a reader that trails another one through a part finds most of its stripes written so.
-        refreshColumnsCacheStripes(first_stripe, end_stripe);
+        refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
         if (!claims.empty())
             FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_after_claim);
         return claims;
@@ -519,7 +522,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
 
     /// Nothing is claimed yet: a reader never waits while it holds claims.
     ColumnsCache::waitForFills(in_progress, max_wait_ns);
-    refreshColumnsCacheStripes(first_stripe, end_stripe);
+    refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
     collect();
 
     /// What is still missing - the other reader could not write it, is still at it, or someone else
@@ -531,28 +534,28 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     return remaining_claims;
 }
 
-void MergeTreeReaderWide::refreshColumnsCacheStripes(size_t first_stripe, size_t end_stripe)
+void MergeTreeReaderWide::refreshColumnsCacheStripes(
+    size_t first_stripe, size_t end_stripe, const std::vector<ColumnsCache::Key> & keys, const std::vector<size_t> & positions)
 {
+    auto entries = columns_cache->getMany(keys);
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        /// An entry looked up before is kept unless the new one holds all its granules: it stays valid
+        /// even if the cache has evicted it since.
+        auto & slot = cached_entries[positions[i]][keys[i].stripe - range_first_stripe];
+        if (entries[i] && (!slot || entries[i]->coversMarks(slot->first_mark, slot->end_mark)))
+            slot = std::move(entries[i]);
+    }
+
     const size_t begin = std::max(range_first_mark, stripes.firstMark(first_stripe));
     const size_t end = std::min(range_end_mark, stripes.firstMark(end_stripe));
     std::fill(granule_cached_columns.begin() + (begin - range_first_mark), granule_cached_columns.begin() + (end - range_first_mark), 0);
-
     for (size_t pos = 0; pos < column_kinds.size(); ++pos)
     {
-        if (!column_kinds[pos].regular)
-            continue;
-
-        auto entries = columns_cache->getMany(column_identities[pos], first_stripe, end_stripe);
-        for (size_t i = 0; i < entries.size(); ++i)
-        {
-            /// An entry looked up before is kept unless the new one holds all its granules: it stays
-            /// valid even if the cache has evicted it since.
-            auto & slot = cached_entries[pos][first_stripe + i - range_first_stripe];
-            if (entries[i] && (!slot || entries[i]->coversMarks(slot->first_mark, slot->end_mark)))
-                slot = std::move(entries[i]);
-            entries[i] = slot;
-        }
-        countCachedGranules(entries, range_first_mark, begin, end, granule_cached_columns);
+        if (column_kinds[pos].regular)
+            countCachedGranules(
+                std::span(cached_entries[pos]).subspan(first_stripe - range_first_stripe, end_stripe - first_stripe),
+                range_first_mark, begin, end, granule_cached_columns);
     }
 }
 

@@ -269,6 +269,9 @@ public:
     /// Does not update hit/miss profile events; the reader counts them per granule it reads.
     std::vector<MappedPtr> getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe);
 
+    /// The entries of the keys, nullptr for those that are not in the cache. Each shard is locked once.
+    std::vector<MappedPtr> getMany(const std::vector<Key> & keys);
+
     /// Insert the entries of several stripes. The key of every entry is `entry->key`.
     ///
     /// An entry that holds a part of a stripe is merged with the entry the cache holds for the

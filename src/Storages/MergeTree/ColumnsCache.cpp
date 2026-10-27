@@ -217,26 +217,34 @@ ColumnsCache::~ColumnsCache() = default;
 
 std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const UInt128 & column_identity, size_t first_stripe, size_t end_stripe)
 {
-    const size_t num_keys = end_stripe - first_stripe;
-    std::vector<MappedPtr> result(num_keys);
-
-    /// The keys of a column spread over the shards; each shard is locked once for its keys.
-    std::vector<std::vector<size_t>> positions_by_shard(shards.size());
-    for (size_t i = 0; i < num_keys; ++i)
-        positions_by_shard[shardIndex(Key{column_identity, first_stripe + i})].push_back(i);
-
     std::vector<Key> keys;
+    keys.reserve(end_stripe - first_stripe);
+    for (size_t stripe = first_stripe; stripe < end_stripe; ++stripe)
+        keys.push_back(Key{column_identity, stripe});
+    return getMany(keys);
+}
+
+std::vector<ColumnsCache::MappedPtr> ColumnsCache::getMany(const std::vector<Key> & keys)
+{
+    std::vector<MappedPtr> result(keys.size());
+
+    /// The keys spread over the shards; each shard is locked once for its keys.
+    std::vector<std::vector<size_t>> positions_by_shard(shards.size());
+    for (size_t i = 0; i < keys.size(); ++i)
+        positions_by_shard[shardIndex(keys[i])].push_back(i);
+
+    std::vector<Key> shard_keys;
     for (size_t shard = 0; shard < shards.size(); ++shard)
     {
         const auto & positions = positions_by_shard[shard];
         if (positions.empty())
             continue;
 
-        keys.clear();
+        shard_keys.clear();
         for (size_t i : positions)
-            keys.push_back(Key{column_identity, first_stripe + i});
+            shard_keys.push_back(keys[i]);
 
-        auto entries = shards[shard]->getMany(keys);
+        auto entries = shards[shard]->getMany(shard_keys);
         for (size_t j = 0; j < positions.size(); ++j)
         {
             if (entries[j])
