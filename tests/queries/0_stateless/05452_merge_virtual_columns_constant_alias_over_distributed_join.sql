@@ -26,3 +26,29 @@ DROP TABLE m_nested;
 DROP TABLE m;
 DROP TABLE dist;
 DROP TABLE child;
+
+-- An alias several others depend on is not a cycle: `c` is visited twice, from `y` and from `d`.
+CREATE TABLE child (p UInt8, c UInt8 ALIAS 1, d UInt8 ALIAS c + 1, y UInt8 ALIAS c + c + d) ENGINE = MergeTree ORDER BY p;
+INSERT INTO child (p) VALUES (7), (8);
+CREATE TABLE dist AS child ENGINE = Distributed(test_shard_localhost, currentDatabase(), child);
+CREATE TABLE m (y UInt8) ENGINE = Merge(currentDatabase(), '^dist$');
+
+SELECT _table, y FROM m ARRAY JOIN [1] AS one;
+SELECT _database = currentDatabase(), y FROM m ARRAY JOIN [1] AS one;
+
+DROP TABLE m;
+DROP TABLE dist;
+DROP TABLE child;
+
+-- The argument of a lambda is not a column of the child, even when it is named as one.
+CREATE TABLE child (p UInt8, y UInt8 ALIAS arraySum(arrayMap(p -> p + 1, [1]))) ENGINE = MergeTree ORDER BY p;
+INSERT INTO child (p) VALUES (7), (8);
+CREATE TABLE dist AS child ENGINE = Distributed(test_shard_localhost, currentDatabase(), child);
+CREATE TABLE m (y UInt8) ENGINE = Merge(currentDatabase(), '^dist$');
+
+SELECT _table, y FROM m ARRAY JOIN [1] AS one;
+SELECT _database = currentDatabase(), y FROM m ARRAY JOIN [1] AS one;
+
+DROP TABLE m;
+DROP TABLE dist;
+DROP TABLE child;

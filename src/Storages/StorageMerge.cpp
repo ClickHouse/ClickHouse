@@ -36,7 +36,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -1352,7 +1352,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// column whose expression reads no column of the child (`y ALIAS 1`) does not: once it is
             /// expanded, nothing is left to read, as for a column the child does not have at all.
             const auto & child_columns_with_defaults = storage_metadata_snapshot->getColumns();
-            std::function<bool(const String &, NameSet &)> reads_child_column = [&](const String & column_name, NameSet & visited_aliases)
+            /// The result for every alias already visited is kept, so that an alias several others depend
+            /// on (`c ALIAS 1`, `y ALIAS c + c`) is decided once and not mistaken for a cycle.
+            std::unordered_map<String, bool> alias_reads_child_column;
+            NameSet aliases_being_visited;
+            std::function<bool(const String &)> reads_child_column = [&](const String & column_name)
             {
                 auto name_in_child = resolve_column_in_child(column_name);
                 if (!name_in_child)
@@ -1362,15 +1366,30 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 if (!column_default || column_default->kind != ColumnDefaultKind::Alias || !column_default->expression)
                     return true;
 
+                if (auto it = alias_reads_child_column.find(*name_in_child); it != alias_reads_child_column.end())
+                    return it->second;
+
                 /// A cyclic alias is rejected elsewhere; do not decide it here.
-                if (!visited_aliases.insert(*name_in_child).second)
+                if (!aliases_being_visited.insert(*name_in_child).second)
                     return true;
 
-                for (const auto * identifier : IdentifiersCollector::collect(column_default->expression))
-                    if (reads_child_column(identifier->name(), visited_aliases))
-                        return true;
+                /// Unlike `IdentifiersCollector`, this skips the arguments of lambdas, which are not columns.
+                RequiredSourceColumnsVisitor::Data required_columns_data;
+                RequiredSourceColumnsVisitor(required_columns_data).visit(column_default->expression);
 
-                return false;
+                bool result = false;
+                for (const auto & required_column : required_columns_data.requiredColumns())
+                {
+                    if (reads_child_column(required_column))
+                    {
+                        result = true;
+                        break;
+                    }
+                }
+
+                aliases_being_visited.erase(*name_in_child);
+                alias_reads_child_column.emplace(*name_in_child, result);
+                return result;
             };
 
             /// Query-tree rewriting turns the Merge virtual columns into constants. Request a
@@ -1380,11 +1399,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// constant `ALIAS` columns: the substitute has to be known here to become part of the
             /// child's projection and of the snapshot the query tree is resolved against, e.g. of a
             /// joined read.
-            if (std::ranges::none_of(real_column_names, [&](const String & column_name)
-                {
-                    NameSet visited_aliases;
-                    return reads_child_column(column_name, visited_aliases);
-                }))
+            if (std::ranges::none_of(real_column_names, reads_child_column))
             {
                 /// A child that reads its own rows at `FetchColumns` reports its own name as its `_table`
                 /// virtual column, which is the value the Merge puts there anyway, so that column is the
