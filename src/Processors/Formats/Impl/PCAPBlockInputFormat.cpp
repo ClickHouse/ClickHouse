@@ -760,6 +760,14 @@ Chunk PCAPBlockInputFormat::read()
     for (const std::string & name : header.getNames())
         need[getColumnIdx(name)] = true;
 
+    /// The container metadata and `raw` are taken from the record as is; only the other columns
+    /// need the packet to be dissected.
+    bool need_dissection = false;
+    for (size_t idx = 0; idx < COL_COUNT; ++idx)
+        if (need[idx] && idx != COL_NUMBER && idx != COL_TIMESTAMP && idx != COL_CAPTURE_LENGTH
+            && idx != COL_ORIGINAL_LENGTH && idx != COL_RAW)
+            need_dissection = true;
+
     /// LowCardinality(String) columns are built directly via insertData.
     static const auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     auto make_lc = [] { return lc_string_type->createColumn(); };
@@ -847,13 +855,6 @@ Chunk PCAPBlockInputFormat::read()
         const UInt32 caplen = pkthdr->caplen;
         const UInt32 wire_len = pkthdr->len;
 
-        /// Dissect the raw bytes into a PDU chain; undissected tails are kept as a RAW pdu.
-        std::unique_ptr<Tins::PDU> pdu_owner(dissectFrame(dlt, data, caplen));
-        Tins::PDU * pdu = pdu_owner.get();
-        if (pdu == nullptr)
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                "Cannot dissect packet {} in PCAP input", packet_number + 1);
-
         ++num_rows;
         ++packet_number;
 
@@ -874,6 +875,24 @@ Chunk PCAPBlockInputFormat::read()
             col_capture_length->insertValue(caplen);
         if (need[COL_ORIGINAL_LENGTH])
             col_original_length->insertValue(wire_len);
+
+        if (need[COL_RAW])
+        {
+            col_raw->insertData(reinterpret_cast<const char *>(data), caplen);
+            block_bytes += caplen;
+        }
+
+        /// The columns above are taken from the record header and the captured bytes as they are,
+        /// so the packet is dissected only when a decoded column is requested.
+        if (!need_dissection)
+            continue;
+
+        /// Dissect the raw bytes into a PDU chain; undissected tails are kept as a RAW pdu.
+        std::unique_ptr<Tins::PDU> pdu_owner(dissectFrame(dlt, data, caplen));
+        Tins::PDU * pdu = pdu_owner.get();
+        if (pdu == nullptr)
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+                "Cannot dissect packet {} in PCAP input", packet_number);
 
         if (need[COL_LINK_TYPE])
         {
@@ -1152,12 +1171,6 @@ Chunk PCAPBlockInputFormat::read()
                 col_payload->insertData(payload.data(), payload.size());
                 block_bytes += payload.size();
             }
-        }
-
-        if (need[COL_RAW])
-        {
-            col_raw->insertData(reinterpret_cast<const char *>(data), caplen);
-            block_bytes += caplen;
         }
     }
 
