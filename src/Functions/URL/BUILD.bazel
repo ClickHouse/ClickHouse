@@ -141,7 +141,6 @@ cc_library(
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_rocksdb//:_rocksdb",
-        "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_silk//:_silk_util",
     ] + select({
         "@platforms//cpu:x86_64": [
@@ -152,11 +151,7 @@ cc_library(
         "@clickhouse_simdutf//:_simdutf",
         "@clickhouse_simsimd//:_simsimd",
         "@clickhouse_snappy//:_snappy",
-        "@clickhouse_libstemmer_c//:_stemmer",
-        "@clickhouse_ulid_c//:_ulid",
         "@clickhouse_vectorscan//:_vectorscan",
-        "@clickhouse_wordnet_blast//:_wnb",
-        "@clickhouse_yaml_cpp//:_yaml_cpp",
         "@clickhouse_zmij//:_zmij",
         "@clickhouse_zstd//:_zstd",
         "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",

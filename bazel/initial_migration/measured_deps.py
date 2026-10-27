@@ -29,6 +29,11 @@ AGGREGATE_TRANSITIVE_DEPS = [
     '//src/Access/Common:clickhouse_common_access', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic',
     '@clickhouse_arrow//:_parquet', '@clickhouse_boost//:_boost_context', '@clickhouse_openldap//:_lber',
     '@clickhouse_silk//:_silk_fibers',
+    '@clickhouse_libstemmer_c//:_stemmer',
+    '@clickhouse_sha3iuf//:_sha3iuf',
+    '@clickhouse_ulid_c//:_ulid',
+    '@clickhouse_wordnet_blast//:_wnb',
+    '@clickhouse_yaml_cpp//:_yaml_cpp',
 ]
 ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
