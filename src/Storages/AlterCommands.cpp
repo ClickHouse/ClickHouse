@@ -2374,9 +2374,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Advance the working snapshot with the exact columns apply() would materialize, at the same place
             /// (flatten_nested expansion, FIRST / AFTER), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
+            ColumnDescription added_column(column_name, command.data_type);
+            /// Only the default kind: it decides whether the column has subcolumns.
+            if (command.default_expression)
+                added_column.default_desc.kind = command.default_kind;
             addColumnsAtPosition(
                 all_columns,
-                columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type), context, command.if_not_exists, share_nested),
+                columnsAddedByAlter(all_columns, added_column, context, command.if_not_exists, share_nested),
                 command.after_column,
                 command.first);
         }
