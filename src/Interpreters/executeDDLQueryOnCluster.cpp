@@ -213,7 +213,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// packet is stripped separately (in `setSettingsIfRequired`), but a worker parses `entry.query` before
     /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
     /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
+    ClusterProxy::stripInitiatorOnlySettingsFromDDLQuery(query_ptr);
     /// An explicit `use_uncompressed_cache = 0` is lost on the worker (it clamps the default-valued change away from
     /// the settings of the entry), so bake the opt-out into the query text, which an older worker understands too.
     /// The settings of the entry deliberately do not carry the resolved automatic mode (see `setSettingsIfRequired`).

@@ -1,0 +1,23 @@
+before	6
+orphans	1100
+after	6
+after_insert	10
+before	1	1
+after	1	1
+after_insert	1	1
+mixed	2
+uuid-named	2
+default	2
+v file only	1
+all files	2
+by last-updated-ms	2
+before drop	1	x
+before drop	2	y
+before drop	3	z
+drop refused
+after drop	1	x
+after drop	2	y
+after drop	3	z
+v files	v1.metadata.json
+v files	v2.metadata.json
+v files	v3.metadata.json

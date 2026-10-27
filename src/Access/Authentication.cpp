@@ -148,6 +148,13 @@ namespace
         const MySQLNative41Credentials * mysql_credentials,
         const AuthenticationData & authentication_method)
     {
+        /// The Native41 auth response is a hash of the password alone, so it cannot carry a one-time password.
+        /// Accepting it would let the client skip the second factor. `MySQLHandler` switches such users
+        /// to the `Sha256Password` plugin, which transmits the actual password string with the one-time
+        /// password appended, verified via the `BasicCredentials` path.
+        if (authentication_method.getOneTimePassword())
+            return false;
+
         switch (authentication_method.getType())
         {
             case AuthenticationType::PLAINTEXT_PASSWORD:
@@ -192,80 +199,60 @@ namespace
         return {password_with_otp.substr(0, separator_pos), password_with_otp.substr(separator_pos + 1)};
     }
 
-     Authentication::CredentialsCheckResult checkBasicAuthentication(
-        const BasicCredentials * basic_credentials,
+    /// Verifies the primary credential: the password without the one-time password part.
+    bool checkPrimaryCredential(
+        std::string_view password,
+        const BasicCredentials & basic_credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
         const ClientInfo & client_info,
         SettingsChanges & settings)
     {
-        const auto & provided_password = basic_credentials->getPassword();
-        const auto & otp_secret = authentication_method.getOneTimePassword();
-        auto [password, one_time_password] = splitOneTimePasswordAndPassword(provided_password, authentication_method);
-        Authentication::CredentialsCheckResult on_success = Authentication::CredentialsCheckResult::Success;
-        if (otp_secret)
-        {
-            /// Only a pure check here: the code is marked as used by `consumeOneTimePassword` after
-            /// the whole authentication succeeds, so a failed attempt cannot burn a valid code.
-            if (one_time_password.empty())
-                on_success = Authentication::CredentialsCheckResult::NeedSecondFactor;
-            else if (!checkOneTimePassword(one_time_password, *otp_secret))
-                return Authentication::CredentialsCheckResult::Fail;
-        }
-
         switch (authentication_method.getType())
         {
             case AuthenticationType::NO_PASSWORD:
             {
-                return on_success; // N.B. even if the password is not empty!
+                return true; // N.B. even if the password is not empty!
             }
             case AuthenticationType::PLAINTEXT_PASSWORD:
             {
                 const auto & password_plaintext = authentication_method.getPasswordHashBinary();
-                return constantTimeEquals(Util::stringToDigest(password), password_plaintext) ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return constantTimeEquals(Util::stringToDigest(password), password_plaintext);
             }
             case AuthenticationType::SHA256_PASSWORD:
             {
                 const auto & password_sha256 = authentication_method.getPasswordHashBinary();
                 const auto & salt = authentication_method.getSalt();
                 String salted_password = String(password).append(salt);
-                return Util::encodeSHA256(salted_password) == password_sha256 ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return Util::encodeSHA256(salted_password) == password_sha256;
             }
             case AuthenticationType::SCRAM_SHA256_PASSWORD:
             {
                 const auto & password_scram_sha256 = authentication_method.getPasswordHashBinary();
                 const auto & salt = authentication_method.getSalt();
                 auto digest = Util::encodeScramSHA256(password, salt);
-                return digest == password_scram_sha256 ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return digest == password_scram_sha256;
             }
             case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             {
                 const auto & password_double_sha1 = authentication_method.getPasswordHashBinary();
-                return Util::encodeDoubleSHA1(password) == password_double_sha1 ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return Util::encodeDoubleSHA1(password) == password_double_sha1;
             }
             case AuthenticationType::LDAP:
             {
-                if (otp_secret)
-                    /// One-time password supported only with password-based authentication methods.
-                    return Authentication::CredentialsCheckResult::Fail;
-                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), *basic_credentials) ?
-                    on_success : Authentication::CredentialsCheckResult::Fail;
+                return external_authenticators.checkLDAPCredentials(authentication_method.getLDAPServerName(), basic_credentials);
             }
             case AuthenticationType::BCRYPT_PASSWORD:
             {
                 const auto & password_bcrypt = authentication_method.getPasswordHashBinary();
-                return Util::checkPasswordBcrypt(password, password_bcrypt) ? on_success : Authentication::CredentialsCheckResult::Fail;
+                return Util::checkPasswordBcrypt(password, password_bcrypt);
             }
             case AuthenticationType::HTTP:
             {
-                if (otp_secret)
-                    /// One-time password supported only with password-based authentication methods.
-                    return Authentication::CredentialsCheckResult::Fail;
                 if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BASIC)
                 {
                     return external_authenticators.checkHTTPBasicCredentials(
-                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings) ?
-                        on_success : Authentication::CredentialsCheckResult::Fail;
+                        authentication_method.getHTTPAuthenticationServerName(), basic_credentials, client_info, settings);
                 }
                 break;
             }
@@ -273,7 +260,38 @@ namespace
                 break;
         }
 
-        return Authentication::CredentialsCheckResult::Fail;
+        return false;
+    }
+
+    Authentication::CredentialsCheckResult checkBasicAuthentication(
+        const BasicCredentials * basic_credentials,
+        const AuthenticationData & authentication_method,
+        const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
+        SettingsChanges & settings)
+    {
+        const auto & otp_secret = authentication_method.getOneTimePassword();
+        auto [password, one_time_password] = splitOneTimePasswordAndPassword(basic_credentials->getPassword(), authentication_method);
+
+        const auto auth_type = authentication_method.getType();
+        if (otp_secret && (auth_type == AuthenticationType::LDAP || auth_type == AuthenticationType::HTTP))
+            /// One-time password supported only with password-based authentication methods.
+            return Authentication::CredentialsCheckResult::Fail;
+
+        /// Decided before the primary credential is looked at, so that the response (and its timing) is the same
+        /// for a right and a wrong password: otherwise an attacker could confirm a guessed password without the code.
+        if (otp_secret && one_time_password.empty())
+            return Authentication::CredentialsCheckResult::NeedSecondFactor;
+
+        const bool primary_ok = checkPrimaryCredential(password, *basic_credentials, authentication_method, external_authenticators, client_info, settings);
+        if (!otp_secret)
+            return primary_ok ? Authentication::CredentialsCheckResult::Success : Authentication::CredentialsCheckResult::Fail;
+
+        /// Only a pure check here: the code is marked as used by `consumeOneTimePassword` after
+        /// the whole authentication succeeds, so a failed attempt cannot burn a valid code.
+        /// Both factors are evaluated unconditionally, so that the timing does not tell which one failed.
+        const bool otp_ok = checkOneTimePassword(one_time_password, *otp_secret);
+        return (primary_ok && otp_ok) ? Authentication::CredentialsCheckResult::Success : Authentication::CredentialsCheckResult::Fail;
     }
 
 #if USE_SSL
@@ -430,6 +448,22 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
         return CredentialsCheckResult::Success;
 
     return CredentialsCheckResult::Fail;
+}
+
+bool Authentication::mysqlNative41CannotVerify(const AuthenticationData & authentication_method)
+{
+    if (authentication_method.getOneTimePassword())
+        return true;
+
+    switch (authentication_method.getType())
+    {
+        case AuthenticationType::SHA256_PASSWORD:
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        case AuthenticationType::BCRYPT_PASSWORD:
+            return true;
+        default:
+            return false;
+    }
 }
 
 bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)

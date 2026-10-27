@@ -49,7 +49,7 @@ SELECT data, count() as cnt
 FROM test_rls_projection
 GROUP BY data
 ORDER BY data
-SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
+SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, enable_parallel_replicas = 0;
 
 -- Same plan via EXPLAIN actions = 1, showing that the row policy predicate on tenant_id is
 -- applied as a PREWHERE filter on the projection read even though tenant_id is not selected.
@@ -62,7 +62,7 @@ FROM (
     ORDER BY data
 )
 WHERE explain ILIKE '%ReadFromMergeTree (proj_by_data)%'
-SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
+SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, enable_parallel_replicas = 0;
 
 SELECT DISTINCT extract(explain, 'equals\(tenant_id, ''[^'']+''_String\)') AS prewhere_filter
 FROM (
@@ -73,7 +73,7 @@ FROM (
     ORDER BY data
 )
 WHERE explain ILIKE '%-> equals(tenant_id,%'
-SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, enable_analyzer = 1, enable_parallel_replicas = 0;
+SETTINGS force_optimize_projection = 1, optimize_use_projections = 1, enable_parallel_replicas = 0;
 
 -- Query without tenant_id in SELECT - should work with the RLS filter applied via the projection.
 -- The result must differ from the baseline: 'item_1' is now counted only twice (tenant_A rows)
