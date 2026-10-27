@@ -7,11 +7,12 @@
 -- If the fsync fails, a retry of the `INSERT` that is deduplicated against this part must fail as well,
 -- even after a mutation that hardlinks the files of this part, because the kernel may report success
 -- for the fsync of the same file through a new file descriptor, although the data was not written.
+-- Packed parts are rewritten by a mutation as a whole, so they are disabled.
 
 DROP TABLE IF EXISTS t_fsync_error;
 
 CREATE TABLE t_fsync_error (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-SETTINGS fsync_after_insert = 1, group_fsync_before_insert_finish = 1, non_replicated_deduplication_window = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS fsync_after_insert = 1, group_fsync_before_insert_finish = 1, non_replicated_deduplication_window = 100, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
 
 SYSTEM ENABLE FAILPOINT parallel_sync_paths_fail_fsync;
 INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
