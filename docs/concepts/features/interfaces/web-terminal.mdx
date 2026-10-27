@@ -70,6 +70,18 @@ The web terminal exposes an interactive shell-like session to anyone who can aut
 - The endpoint validates the `Origin` header against the `Host` to mitigate cross-origin WebSocket hijacking; configure reverse proxies accordingly if you terminate TLS externally.
 - Behind a TLS-terminating reverse proxy, the upstream connection to ClickHouse is plain `http` even though the browser uses `https`, so the strict same-origin check would reject legitimate connections. For these deployments, set `webterminal_allowed_origins` to a comma-separated list of full origins that are allowed to open WebSocket sessions; when this setting is non-empty, it replaces the default same-origin check. Example: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`.
 
+## Session limits {#session-limits}
+
+Each web terminal session runs an embedded `clickhouse-client` with its own thread and pseudoterminal, so the server applies the same limits to it as to sessions of other interfaces, taken from the settings of the authenticated user:
+
+- [`max_sessions_for_user`](/reference/settings/session-settings/max#max_sessions_for_user) limits the number of simultaneous sessions of the user. A session over the limit is rejected before the embedded client is started, and the server closes the WebSocket with code `1008`.
+- [`idle_connection_timeout`](/reference/settings/session-settings/other#idle_connection_timeout) closes a session after the specified number of seconds without traffic in either direction while the embedded client waits for the next query, as for the native protocol. A running query is not interrupted by this timeout, even if it produces no output.
+- [`receive_timeout`](/reference/settings/session-settings/receive#receive_timeout) and [`send_timeout`](/reference/settings/session-settings/send#send_timeout) limit the time of reading a WebSocket frame from the client and sending data to the client. A value of `0` disables the timeout.
+
+Changes of these settings with a `SET` query in the terminal take effect when the query finishes and the embedded client returns to the prompt.
+
+The sessions also count toward the server-wide [`max_connections`](/reference/settings/server-settings/settings/max#max_connections) limit together with the connections of other interfaces.
+
 The handler also enforces WebSocket protocol conformance per RFC 6455: unmasked client frames, reserved opcodes, oversized or fragmented control frames, and reserved RSV bits are rejected with protocol-error close codes.
 
 ## Platform availability {#platform}

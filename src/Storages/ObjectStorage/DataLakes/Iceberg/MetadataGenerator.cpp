@@ -30,16 +30,6 @@ namespace DB
 namespace
 {
 
-Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
-{
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    obj->stringify(oss);
-
-    Poco::JSON::Parser parser;
-    auto result = parser.parse(oss.str());
-    return result.extract<Poco::JSON::Object::Ptr>();
-}
-
 /// Only the incremental refreshable-MV append supplies a new cursor; every other snapshot must carry the parent's forward, else the next refresh re-appends already-materialized rows.
 void carryForwardRefreshCursor(
     Poco::JSON::Object::Ptr summary, Poco::JSON::Object::Ptr parent_snapshot, const std::optional<String> & new_cursor)
@@ -473,7 +463,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = deepCopy(current_schema);
+    current_schema = Iceberg::deepCopy(current_schema);
 
     auto fields = current_schema->getArray(Iceberg::f_fields);
     UInt32 index_to_drop = static_cast<UInt32>(fields->size());
@@ -512,7 +502,7 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = deepCopy(current_schema);
+    current_schema = Iceberg::deepCopy(current_schema);
 
     auto existing_fields = current_schema->getArray(Iceberg::f_fields);
     for (UInt32 i = 0; i < existing_fields->size(); ++i)
@@ -560,7 +550,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = deepCopy(current_schema);
+    current_schema = Iceberg::deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
@@ -575,7 +565,7 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
             if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
-            auto old_type = deepCopy(current_field);
+            auto old_type = Iceberg::deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
             if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
@@ -610,7 +600,7 @@ void MetadataGenerator::generateRenameColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = deepCopy(current_schema);
+    current_schema = Iceberg::deepCopy(current_schema);
 
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
