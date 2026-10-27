@@ -13,7 +13,7 @@ ch_cc_library(
     ],
     hdrs = glob(["include/**/*.h"]),
     includes = ["include"],
-    private_hdrs = [
+    private_textual_srcs = [
         "src/identifier.cpp",
         "src/mapping.cpp",
         "src/normalization.cpp",

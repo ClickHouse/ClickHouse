@@ -1525,11 +1525,14 @@ def main():
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
     google_cloud = ROOT / 'bazel/dependencies/clickhouse_google_cloud_cpp.BUILD.bazel'
     zxc = ROOT / 'bazel/dependencies/clickhouse_zxc.BUILD.bazel'
+    # gmock-all.cc, gtest-all.cc, and idna.cpp include their private_textual_srcs.
     # gRPC declares the public and private headers for grpc and grpc_unsecure.
     # PostgreSQL and Vectorscan own the headers installed by _CONFIGURED_FILES.
     read_only = {abseil, arrow, msgpack, google_cloud, zxc,
                  ROOT / 'bazel/dependencies/clickhouse_capnproto.BUILD.bazel',
+                 ROOT / 'bazel/dependencies/clickhouse_googletest.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_grpc.BUILD.bazel',
+                 ROOT / 'bazel/dependencies/clickhouse_idna.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_libhdfs3.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_postgres.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_rocksdb.BUILD.bazel',

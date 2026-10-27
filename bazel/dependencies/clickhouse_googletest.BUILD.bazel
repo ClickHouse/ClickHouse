@@ -23,7 +23,7 @@ ch_cc_library(
     local_includes = [
         "googlemock",
     ],
-    private_hdrs = [
+    private_textual_srcs = [
         "googlemock/src/gmock-cardinalities.cc",
         "googlemock/src/gmock-internal-utils.cc",
         "googlemock/src/gmock-matchers.cc",
@@ -58,7 +58,7 @@ ch_cc_library(
     local_includes = [
         "googletest",
     ],
-    private_hdrs = [
+    private_textual_srcs = [
         "googletest/src/gtest-assertion-result.cc",
         "googletest/src/gtest-death-test.cc",
         "googletest/src/gtest-filepath.cc",
