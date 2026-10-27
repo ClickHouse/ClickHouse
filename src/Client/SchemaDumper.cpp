@@ -1,5 +1,6 @@
 #include <Client/SchemaDumper.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Client/IServerConnection.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -360,6 +361,16 @@ struct TableInfo
     /// Materialized view only: replay may reach a check that `allow_materialized_view_with_bad_select` relaxes.
     bool needs_bad_select_gate = false;
 };
+
+/// A table of a dumped database as a probe of a stored query sees it, generated inner tables included.
+struct ProbedTable
+{
+    String engine;
+    String create_query;
+    /// Materialized view only: its `TO` target, explicit or implicit.
+    std::pair<String, String> target;
+};
+using ProbedTables = std::map<std::pair<String, String>, ProbedTable>;
 
 /// One `system.tables` row as fetched, before implicit storage tables are filtered out and the
 /// final dependency list per table is assembled.
@@ -2394,7 +2405,8 @@ std::vector<TableInfo> resolveTables(
 }
 
 /// Fetches and resolves every dumpable table in `databases`; see `resolveTables`. `undumped_databases`
-/// are the server's other databases, which a `merge(REGEXP(...), ...)` can still reach.
+/// are the server's other databases, which a `merge(REGEXP(...), ...)` can still reach. `probed_tables`
+/// receives every table of `databases` as fetched, for deciding which stored queries can be probed.
 std::vector<TableInfo> fetchTables(
     IServerConnection & connection,
     const ConnectionTimeouts & timeouts,
@@ -2406,7 +2418,8 @@ std::vector<TableInfo> fetchTables(
     const std::map<String, String> & database_queries,
     const std::map<String, DatabaseInfo> & database_info,
     std::map<String, NamedCollectionDependencies> & database_named_collections,
-    std::set<String> & unlisted_databases)
+    std::set<String> & unlisted_databases,
+    ProbedTables & probed_tables)
 {
     ClusterLocality clusters;
     clusters.context = context;
@@ -2566,8 +2579,11 @@ std::vector<TableInfo> fetchTables(
     for (const auto & [db, create_query] : database_queries)
         database_named_collections.emplace(db, namedCollectionsOfCreate(create_query, clusters));
 
+    auto rows = fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef());
+    for (const auto & row : rows)
+        probed_tables[{row.database, row.name}] = {row.engine, row.create_query, {row.target_database, row.target_table}};
     auto tables = resolveTables(
-        fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef()),
+        std::move(rows),
         clusters,
         undumped_databases,
         omitted_tables,
@@ -3585,7 +3601,7 @@ bool ttlMayNeedSuspiciousGate(const IAST & expression, const std::set<String> & 
 /// Runs a SELECT through the source server's analyzer under setting changes, and says whether it analyzes.
 using AnalyzesOnSource = std::function<bool(const String & select_query, const SettingsChanges & changes)>;
 
-bool tableFunctionHasStaticStructure(const ASTFunction & function, const ContextPtr & context);
+bool tableFunctionHasStaticStructure(const ASTFunction & function);
 
 /// Whether the source server builds the storage of this table function from its arguments alone, with no I/O. Analysis
 /// executes every table function it reads, so a probe builds these storages on the source, and a static structure does
@@ -3594,23 +3610,30 @@ bool tableFunctionHasStaticStructure(const ASTFunction & function, const Context
 /// with retries, under `allow_url_wildcard_from_index_pages`; `file` stats and lists files while parsing its arguments.
 /// So only an allowlist is probed: `StorageURL` without such a wildcard, `StorageInput`, `StorageExecutable` (the script
 /// runs on read), `StorageFilesystem` (it lists on read) and `traceView` (it reads the span log on read).
-bool tableFunctionBuildsPassively(const ASTFunction & function, const ContextPtr & context)
+bool tableFunctionBuildsPassively(const ASTFunction & function)
 {
-    static const std::set<std::string_view> passive = {"url", "input", "executable", "filesystem", "traceView"};
-    const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); };
-    /// Without a static structure the storage reads the source to infer one.
-    if (!std::ranges::any_of(passive, is) || !tableFunctionHasStaticStructure(function, context))
+    /// `tableFunctionHasStaticStructure` knows these five only; without a static structure the storage reads the source
+    /// to infer one.
+    if (!tableFunctionHasStaticStructure(function))
         return false;
-    return !is("url") || !urlMayHaveWildcard(function);
+    return !equalsCaseInsensitive(function.name, "url") || !urlMayHaveWildcard(function);
+}
+
+/// A table function whose storage the server builds in memory from its arguments: a local generator, or one
+/// `tableFunctionBuildsPassively` admits.
+bool tableFunctionIsGeneratorOrPassive(const ASTFunction & function)
+{
+    static const std::set<std::string_view> generators = {"numbers", "numbers_mt", "zeros", "zeros_mt", "values", "generateRandom",
+        "generateSeries", "generate_series", "primes", "null"};
+    return std::ranges::any_of(generators, [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); })
+        || tableFunctionBuildsPassively(function);
 }
 
 /// Whether a SELECT can be probed on the source server: it analyzes there the same as at replay, and its analysis does no
 /// I/O. Every table function in it is a local generator, builds its storage passively, or is a `merge` or `loop` that
 /// names its database. `eval` is none of them, so the query it generates is never probed.
-bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
+bool analyzesOnlyLocally(const IAST & select)
 {
-    static const std::set<std::string_view> generators = {"numbers", "numbers_mt", "zeros", "zeros_mt", "values", "generateRandom",
-        "generateSeries", "generate_series", "primes", "null"};
     bool local = true;
     forEachNode(select, [&](const IAST & node)
     {
@@ -3620,7 +3643,7 @@ bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
         if (!function)
             return;
         const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function->name, name); };
-        if (std::ranges::any_of(generators, is) || tableFunctionBuildsPassively(*function, context))
+        if (tableFunctionIsGeneratorOrPassive(*function))
             return;
         /// `merge` and `loop` read local tables; a database-less one would resolve in the dump session's database.
         const auto & arguments = function->arguments ? function->arguments->children : ASTs{};
@@ -3809,7 +3832,7 @@ ReplayGateNeeds collectReplayGateNeeds(
             /// A SELECT that may analyze differently on the source (current database, remote data), or whose analysis does
             /// I/O there, is not asked: its analyzer gates stay on its clauses.
             const bool ask_source = create->is_materialized_view && analyzes_on_source && has_carrier(carriers)
-                && analyzesOnlyLocally(*create->select, context) && !analysisMayRunSubquery(*create->select);
+                && analyzesOnlyLocally(*create->select) && !analysisMayRunSubquery(*create->select);
             add_gates_read(carriers, ask_source ? create->select->formatWithSecretsOneLine() : "");
         }
         if (create->columns_list && create->columns_list->projections)
@@ -4314,48 +4337,70 @@ std::set<String> insertableColumnNames(const ASTCreateQuery & create)
     return names;
 }
 
-/// A table function the server builds from a literal or fixed structure without reading the source, by its own `hasStaticStructure`.
-/// Data lakes read their metadata even then, and `file`/`url` must not reach a per-server `user_files_path` check.
-bool tableFunctionHasStaticStructure(const ASTFunction & function, const ContextPtr & context)
+/// Whether the server builds this table function from a structure its arguments spell out (or a fixed one), for the five
+/// table functions `tableFunctionBuildsPassively` admits; no other one can skip a probe's gates anyway. Decided from the
+/// arguments alone: parsing them through `TableFunctionFactory` would run in this process, where `url` loads the named
+/// collections (from disk or Keeper) and `traceView` looks a cluster up. An argument that is not a literal, or a plain
+/// identifier where a name goes, answers false, and so does `auto`, which is resolved from the data.
+bool tableFunctionHasStaticStructure(const ASTFunction & function)
 {
-    static const std::set<std::string_view> names
-        = {"url", "file", "s3", "gcs", "oss", "cosn", "azureBlobStorage", "hdfs", "input", "executable", "hive", "filesystem", "traceView"};
     /// A stored definition keeps the spelling it was written with, such as `URL(...)`.
-    const bool known = std::ranges::any_of(names, [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); });
-    if (!known || !function.arguments)
-        return false;
-    const bool is_url = equalsCaseInsensitive(function.name, "url");
-    const bool is_file = equalsCaseInsensitive(function.name, "file");
-    const auto & arguments = function.arguments->children;
-    for (const auto & argument : arguments)
+    const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); };
+    const ASTs arguments = function.arguments ? function.arguments->children : ASTs{};
+    const auto string_literal = [&](size_t i) -> std::optional<String>
     {
-        /// An `auto` format or structure is resolved from the data.
-        const auto * literal = argument->as<ASTLiteral>();
-        const auto * identifier = argument->as<ASTIdentifier>();
-        const bool is_auto_literal = literal && literal->value.getType() == Field::Types::String
-            && equalsCaseInsensitive(literal->value.safeGet<String>(), "auto");
-        if (is_auto_literal || (identifier && equalsCaseInsensitive(identifier->name(), "auto")))
-            return false;
-    }
-    if (is_url || is_file)
+        const auto * literal = i < arguments.size() ? arguments[i]->as<ASTLiteral>() : nullptr;
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return std::nullopt;
+        return literal->value.safeGet<String>();
+    };
+    /// A format, compression or script name, written as a string or an identifier.
+    const auto name = [&](size_t i)
     {
-        const auto * location = arguments.empty() ? nullptr : arguments.front()->as<ASTLiteral>();
-        if (!location || location->value.getType() != Field::Types::String)
-            return false;
-        const String & path = location->value.safeGet<String>();
-        if (is_url ? !(startsWithCaseInsensitive(path, "http://") || startsWithCaseInsensitive(path, "https://"))
-                   : path.starts_with('/') || path.contains(".."))
-            return false;
-    }
-    try
+        const auto * identifier = i < arguments.size() ? arguments[i]->as<ASTIdentifier>() : nullptr;
+        if (identifier && !identifier->compound())
+            return !equalsCaseInsensitive(identifier->name(), "auto");
+        const auto value = string_literal(i);
+        return value && !equalsCaseInsensitive(*value, "auto");
+    };
+    const auto structure = [&](size_t i)
     {
-        /// Parsing these reads only their arguments.
-        return TableFunctionFactory::instance().get(function.clone(), context)->hasStaticStructure();
-    }
-    catch (const Poco::Exception &) /// `DB::Exception` derives from it, so every parse error answers false here.
+        const auto value = string_literal(i);
+        return value && !value->empty() && !equalsCaseInsensitive(*value, "auto");
+    };
+    /// `url(URL, format, structure[, compression])`; any other scheme is dispatched to another engine.
+    if (is("url"))
     {
-        return false;
+        const auto location = string_literal(0);
+        return location && (startsWithCaseInsensitive(*location, "http://") || startsWithCaseInsensitive(*location, "https://"))
+            && (arguments.size() == 3 || (arguments.size() == 4 && name(3))) && name(1) && structure(2);
     }
+    if (is("input"))
+        return arguments.size() == 1 && structure(0);
+    /// The input queries and `SETTINGS` after the structure do not shape the storage.
+    if (is("executable"))
+        return arguments.size() >= 3 && name(0) && name(1) && structure(2);
+    if (is("filesystem"))
+        return arguments.empty() || (arguments.size() == 1 && string_literal(0));
+    /// `traceView(trace_id[, timeline_width])`, also with named arguments. A cluster is looked up by whichever server
+    /// analyzes it, which replay need not define.
+    if (is("traceView"))
+    {
+        size_t positional = 0;
+        for (const auto & argument : arguments)
+        {
+            const auto * named = argument->as<ASTFunction>();
+            const ASTs named_arguments = named && named->arguments ? named->arguments->children : ASTs{};
+            const auto * key = named_arguments.size() == 2 ? named_arguments[0]->as<ASTIdentifier>() : nullptr;
+            if (argument->as<ASTLiteral>())
+                ++positional;
+            else if (!key || named->name != "equals" || !named_arguments[1]->as<ASTLiteral>()
+                     || equalsCaseInsensitive(key->name(), "cluster"))
+                return false;
+        }
+        return positional <= 2;
+    }
+    return false;
 }
 
 /// Always analyzes on replay: `numbers`/`zeros` with counts, `generateRandom`/`values` with constant arguments, a source with
@@ -4485,7 +4530,7 @@ bool tableFunctionAlwaysAnalyzes(
             return false;
         }
     }
-    return tableFunctionHasStaticStructure(*function, context);
+    return tableFunctionHasStaticStructure(*function);
 }
 
 bool containsTableFunction(
@@ -4607,7 +4652,7 @@ bool materializedViewMayNeedBadSelectGate(
         if (const auto * identifier = node.as<ASTTableIdentifier>())
             unqualified_table |= identifier->getDatabaseName().empty() && !cte_names.contains(identifier->shortName());
     });
-    if (!analyzes_on_source || unqualified_table || analysisMayRunSubquery(*create->select) || !analyzesOnlyLocally(*create->select, context))
+    if (!analyzes_on_source || unqualified_table || analysisMayRunSubquery(*create->select) || !analyzesOnlyLocally(*create->select))
         return true;
     SettingsChanges analyzer_gates = {{"allow_suspicious_types_in_group_by", Field(true)},
         {"allow_suspicious_types_in_order_by", Field(true)}, {"allow_experimental_correlated_subqueries", Field(true)}};
@@ -4674,6 +4719,259 @@ std::set<String> overlaySourceDatabases(const String & database, const String & 
         sources.insert(*source);
     }
     return sources;
+}
+
+/// What decides whether analyzing a stored query on the source server stays inside it.
+struct ProbeCatalog
+{
+    /// Every table of `listed_databases`, generated inner tables included.
+    ProbedTables tables;
+    std::set<String> listed_databases;
+    const std::map<String, DatabaseInfo> * databases = nullptr;
+    /// The engine of each table of the predefined databases, which are never dumped; read on first need.
+    std::function<const std::map<std::pair<String, String>, String> &()> predefined_engines;
+    /// The analyzer resolves a table named in a query through the refresh task when it is the target of a refreshable
+    /// materialized view, which first runs `SYSTEM SYNC REPLICA` on it in a `Replicated` database.
+    std::set<std::pair<String, String>> refresh_targets;
+};
+
+std::set<std::pair<String, String>> refreshableViewTargets(const ProbedTables & tables)
+{
+    std::set<std::pair<String, String>> targets;
+    for (const auto & [name, table] : tables)
+        if (table.engine == "MaterializedView" && !table.target.first.empty())
+        {
+            const ASTPtr ast = tryParseCreate(table.create_query);
+            const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+            if (!create || create->refresh_strategy)
+                targets.insert(table.target);
+        }
+    return targets;
+}
+
+/// A database engine whose `tryGetTable` and `getTablesIterator` read only the server's memory. An external database
+/// (`MySQL`, `PostgreSQL`, `URL`, `S3`, `Filesystem`, `DataLakeCatalog`, ...) asks its source, and `Lazy` loads tables from disk.
+/// `Shared`, the ClickHouse Cloud counterpart of `Replicated`, keeps its catalog in memory the same way.
+bool databaseResolvesLocally(const ProbeCatalog & catalog, const String & database)
+{
+    static const std::set<std::string_view> local = {"Atomic", "Ordinary", "Replicated", "Shared", "Memory"};
+    const auto it = catalog.databases->find(database);
+    return it != catalog.databases->end() && !it->second.is_external && local.contains(it->second.engine);
+}
+
+bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String, String> & table, size_t depth);
+bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCatalog & catalog, size_t depth);
+
+/// A database or table name written as a string or an identifier.
+std::optional<String> literalName(const ASTPtr & argument)
+{
+    if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        return literal->value.safeGet<String>();
+    if (const auto * identifier = argument->as<ASTIdentifier>())
+        return identifier->name();
+    return std::nullopt;
+}
+
+/// `StorageMerge` lists the tables of its database while it is analyzed, so the database must hold no table that does I/O
+/// there among those the regular expression matches, other than the `Merge` table `self` itself.
+bool mergeSourcesAnalyzePassively(
+    const ProbeCatalog & catalog, const String & database, const String & table_regexp, size_t depth,
+    const std::pair<String, String> * self = nullptr)
+{
+    if (!catalog.listed_databases.contains(database) || !databaseResolvesLocally(catalog, database))
+        return false;
+    std::optional<OptimizedRegularExpression> regexp;
+    try
+    {
+        regexp.emplace(table_regexp);
+    }
+    catch (const Exception &)
+    {
+        /// The server cannot compile it either, so the probe would only fail.
+        return false;
+    }
+    return std::ranges::all_of(catalog.tables, [&](const auto & entry)
+    {
+        return entry.first.first != database || (self && entry.first == *self) || !regexp->match(entry.first.second)
+            || tableAnalyzesPassively(catalog, entry.first, depth + 1);
+    });
+}
+
+/// Whether the analyzer resolves this table without I/O. It looks the table up in its database, calls
+/// `updateExternalDynamicMetadataIfExists`, and takes its metadata and a storage snapshot, which these engines keep in
+/// memory: the `MergeTree` family (its parts), the Log family, `Memory`, `Null`, `Set`, `Join`, `View` (a probe does not
+/// inline it), `Dictionary` (it loads the dictionary on read only) and `Distributed` (it connects to shards on read only).
+/// A materialized view takes its target's metadata, an `Alias` its target's, `Merge` lists its source tables, and a
+/// table created `AS` a table function builds that function's storage. A data lake refreshes its metadata from storage,
+/// an object storage table may list it for a hive-partitioning sample, `SQLite` opens its file, and `Buffer` resolves
+/// its destination: any engine not named here keeps the query unprobed.
+bool tableAnalyzesPassively(const ProbeCatalog & catalog, const std::pair<String, String> & table, size_t depth)
+{
+    static const std::set<std::string_view> passive
+        = {"Log", "TinyLog", "StripeLog", "Memory", "Null", "Set", "Join", "View", "Dictionary", "Distributed"};
+    /// The server refuses a cycle of views and `Merge` tables; this only bounds the walk.
+    if (depth > 16 || !databaseResolvesLocally(catalog, table.first))
+        return false;
+    if (DatabaseCatalog::isPredefinedDatabase(table.first))
+    {
+        /// A `System*` table is built at startup with a fixed structure; the `system.all_*` logs are `Proxy` tables.
+        const auto & engines = catalog.predefined_engines();
+        const auto it = engines.find(table);
+        return it != engines.end()
+            && (it->second.starts_with("System") || it->second.ends_with("MergeTree") || passive.contains(it->second));
+    }
+    const auto it = catalog.tables.find(table);
+    if (it == catalog.tables.end())
+        return false;
+    const auto & [engine, create_query, target] = it->second;
+    const ASTPtr ast = tryParseCreate(create_query);
+    const auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+    if (!create)
+        return false;
+    if (create->as_table_function)
+    {
+        const auto * function = create->as_table_function->as<ASTFunction>();
+        return function && tableFunctionAnalyzesPassively(*function, catalog, depth + 1);
+    }
+    if (engine.ends_with("MergeTree") || passive.contains(engine))
+        return true;
+    if (engine == "MaterializedView")
+        return !target.first.empty() && tableAnalyzesPassively(catalog, target, depth + 1);
+    const auto * storage = create->storage ? create->storage->engine : nullptr;
+    const ASTs arguments = storage && storage->arguments ? storage->arguments->children : ASTs{};
+    if (engine == "Alias")
+    {
+        /// `Alias(database, table)`, or `Alias(table)` with an optional `database.` prefix.
+        std::optional<std::pair<String, String>> alias_target;
+        if (arguments.size() == 2)
+        {
+            const auto database = literalName(arguments[0]);
+            const auto name = literalName(arguments[1]);
+            if (database && name)
+                alias_target.emplace(*database, *name);
+        }
+        else if (const auto name = arguments.size() == 1 ? literalName(arguments[0]) : std::nullopt)
+        {
+            const size_t dot = name->find('.');
+            alias_target = dot == String::npos ? std::pair(table.first, *name)
+                                               : std::pair(name->substr(0, dot), name->substr(dot + 1));
+        }
+        return alias_target && tableAnalyzesPassively(catalog, *alias_target, depth + 1);
+    }
+    if (engine != "Merge" || arguments.size() != 2)
+        return false;
+    const auto database = literalName(arguments[0]);
+    const auto * regexp = arguments[1]->as<ASTLiteral>();
+    return database && regexp && regexp->value.getType() == Field::Types::String
+        && mergeSourcesAnalyzePassively(catalog, *database, regexp->value.safeGet<String>(), depth + 1, &table);
+}
+
+/// Whether the storage of a table function builds and analyzes without I/O, including the tables `merge` and `loop` read.
+bool tableFunctionAnalyzesPassively(const ASTFunction & function, const ProbeCatalog & catalog, size_t depth)
+{
+    const ASTs arguments = function.arguments ? function.arguments->children : ASTs{};
+    if (equalsCaseInsensitive(function.name, "merge"))
+    {
+        const auto database = arguments.size() == 2 ? literalName(arguments[0]) : std::nullopt;
+        const auto * regexp = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
+        return database && regexp && regexp->value.getType() == Field::Types::String
+            && mergeSourcesAnalyzePassively(catalog, *database, regexp->value.safeGet<String>(), depth + 1);
+    }
+    if (equalsCaseInsensitive(function.name, "loop"))
+    {
+        /// `loop(database.table)` or `loop(database, table)`.
+        std::optional<std::pair<String, String>> source;
+        if (const auto * identifier = arguments.size() == 1 ? arguments[0]->as<ASTIdentifier>() : nullptr;
+            identifier && identifier->name_parts.size() == 2)
+            source.emplace(identifier->name_parts[0], identifier->name_parts[1]);
+        else if (arguments.size() == 2)
+        {
+            const auto database = literalName(arguments[0]);
+            const auto name = literalName(arguments[1]);
+            if (database && name)
+                source.emplace(*database, *name);
+        }
+        return source && tableAnalyzesPassively(catalog, *source, depth + 1);
+    }
+    return tableFunctionIsGeneratorOrPassive(function);
+}
+
+/// Whether the analyzer can resolve this function without I/O. It folds a function whose arguments are all constant, and
+/// its passes ask a function about itself: a dictionary function then loads the dictionary from its source (the
+/// injective-function and inverse-lookup passes do so even for a column argument), `joinGet` and `hasColumnInTable` look
+/// up a table named in a string, `file` reads a file and the `filesystem*` functions query a disk. These are refused by
+/// name, before `FunctionFactory` builds them in this process. Any other function is passive only when it is deterministic.
+bool functionAnalyzesPassively(const ASTFunction & function, const ContextPtr & context)
+{
+    const String & name = function.name;
+    for (std::string_view prefix : {"dict", "joinGet", "hasColumnInTable", "filesystem"})
+        if (startsWithCaseInsensitive(name, prefix))
+            return false;
+    if (equalsCaseInsensitive(name, "file"))
+        return false;
+    try
+    {
+        /// An aggregate or window function is not folded, and a lambda is not a function.
+        if (name == "lambda" || AggregateFunctionFactory::instance().isAggregateFunctionName(name))
+            return true;
+        const auto resolver = FunctionFactory::instance().tryGet(name, context);
+        return resolver && resolver->isDeterministic();
+    }
+    catch (const Exception &)
+    {
+        /// A function this process cannot build, such as an experimental one, is not known to be passive.
+        return false;
+    }
+}
+
+/// Whether analyzing `query` on the source server stays inside it: every table it reads (directly, as the set of an `IN`,
+/// or through `merge` and `loop`) and every table function and function in it is passive to analyze.
+bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, const ContextPtr & context)
+{
+    if (!analyzesOnlyLocally(query))
+        return false;
+    std::set<String> cte_names;
+    std::set<const IAST *> table_functions;
+    forEachNode(query, [&](const IAST & node)
+    {
+        if (const auto * with = node.as<ASTWithElement>())
+            cte_names.insert(with->name);
+        else if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+            table_functions.insert(table_expression->table_function.get());
+    });
+    /// A table the analyzer resolves by name. A database-less name is a CTE; the stored query names the database of every table.
+    const auto reads_passively = [&](const IAST & name_node)
+    {
+        const auto * identifier = name_node.as<ASTIdentifier>();
+        if (!identifier || identifier->name_parts.empty() || identifier->name_parts.size() > 2)
+            return false;
+        if (identifier->name_parts.size() == 1)
+            return cte_names.contains(identifier->name_parts[0]);
+        const std::pair<String, String> table(identifier->name_parts[0], identifier->name_parts[1]);
+        return !catalog.refresh_targets.contains(table) && tableAnalyzesPassively(catalog, table, 0);
+    };
+    bool passive = true;
+    forEachNode(query, [&](const IAST & node)
+    {
+        if (!passive)
+            return;
+        if (const auto * table_expression = node.as<ASTTableExpression>())
+        {
+            const auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr;
+            if (table_expression->database_and_table_name)
+                passive = reads_passively(*table_expression->database_and_table_name);
+            else if (function)
+                passive = tableFunctionAnalyzesPassively(*function, catalog, 0);
+        }
+        else if (const auto * function = node.as<ASTFunction>(); function && !table_functions.contains(&node))
+        {
+            const ASTs arguments = function->arguments ? function->arguments->children : ASTs{};
+            if (functionIsInOrGlobalInOperator(function->name) && arguments.size() == 2 && arguments[1]->as<ASTIdentifier>())
+                passive = reads_passively(*arguments[1]);
+            passive = passive && functionAnalyzesPassively(*function, context);
+        }
+    });
+    return passive;
 }
 
 }
@@ -4845,9 +5143,35 @@ void dumpDatabaseSchema(
         connection, timeouts, client_info, "SELECT name FROM system.settings WHERE NOT is_obsolete", context->getSettingsRef());
     std::set<String> settings_known_to_server(server_setting_names.begin(), server_setting_names.end());
 
-    /// `EXPLAIN QUERY TREE` runs the analyzer only, so it creates nothing on the source; callers do not ask about a query whose
-    /// analysis runs a subquery or builds a storage that does I/O (see `analyzesOnlyLocally`). The settings go in the query
-    /// text, because `LocalConnection` drops the settings argument.
+    /// `EXPLAIN QUERY TREE` runs the analyzer only, so it creates nothing on the source. Callers do not ask about a query whose
+    /// analysis runs a subquery, and a query whose analysis may do I/O is not asked (see `analysisStaysOnServer`). The settings
+    /// go in the query text, because `LocalConnection` drops the settings argument.
+    ProbeCatalog probe_catalog;
+    probe_catalog.databases = &database_info;
+    probe_catalog.predefined_engines = [&, cached = std::optional<std::map<std::pair<String, String>, String>>{}]() mutable
+        -> const std::map<std::pair<String, String>, String> &
+    {
+        if (cached)
+            return *cached;
+        cached.emplace();
+        executeQuery(connection, timeouts, client_info,
+            "SELECT database, name, engine FROM system.tables "
+            "WHERE database IN ('system', 'information_schema', 'INFORMATION_SCHEMA') AND NOT is_temporary",
+            [&](const Block & block)
+            {
+                if (block.empty())
+                    return;
+                const Block full = unwrapColumns(block);
+                const auto & database_column = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+                const auto & name_column = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                const auto & engine_column = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
+                for (size_t i = 0; i < database_column.size(); ++i)
+                    cached->emplace(
+                        std::pair(database_column[i].safeGet<String>(), name_column[i].safeGet<String>()),
+                        engine_column[i].safeGet<String>());
+            }, context->getSettingsRef());
+        return *cached;
+    };
     const std::vector<String> user_defined_function_names = fetchStringColumn(connection, timeouts, client_info,
         "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
     const std::set<String> user_defined_functions(user_defined_function_names.begin(), user_defined_function_names.end());
@@ -4859,49 +5183,49 @@ void dumpDatabaseSchema(
         SettingsChanges changes = gate_changes;
         if (server_inlines_views)
             changes.setSetting("analyzer_inline_views", Field(false));
-        String query;
-        /// A stored query can end with its own SETTINGS clause, so the probe changes go into that clause.
+        ASTPtr ast;
         try
         {
             ParserSelectWithUnionQuery parser;
-            ASTPtr ast = parseQuery(parser, select_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            /// The analyzer expands a user-defined function body, which may run a scalar subquery, and a view, if a SETTINGS
-            /// clause of the query itself names `analyzer_inline_views`, so such a query is not asked.
-            bool expands_other_query = false;
-            forEachNode(*ast, [&](const IAST & node)
-            {
-                if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
-                    expands_other_query = true;
-                else if (const auto * set_query = node.as<ASTSetQuery>(); set_query && set_query->changes.tryGet("analyzer_inline_views"))
-                    expands_other_query = true;
-            });
-            if (expands_other_query)
-                return false;
-            ASTSelectQuery * last = nullptr;
-            if (const auto * with_union = ast->as<ASTSelectWithUnionQuery>(); with_union && with_union->list_of_selects
-                && !with_union->list_of_selects->children.empty())
-                last = with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
-            if (last && last->settings())
-            {
-                auto & set_query = last->settings()->as<ASTSetQuery &>();
-                for (const auto & change : changes)
-                {
-                    const Field value = UInt64(change.value.safeGet<bool>() ? 1 : 0);
-                    if (auto * existing = set_query.changes.tryGet(change.name))
-                        *existing = value;
-                    else
-                        set_query.changes.emplace_back(change.name, value);
-                }
-                query = "EXPLAIN QUERY TREE " + ast->formatWithSecretsOneLine();
-            }
+            ast = parseQuery(parser, select_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         }
         catch (const Exception &)
         {
-            /// The server parses the query below and decides, unless it may call a user-defined function or inline a view.
-            if (!user_defined_functions.empty() || select_query.find("analyzer_inline_views") != String::npos)
-                return false;
+            /// A query this process cannot parse cannot be shown to stay inside the source server.
+            return false;
         }
-        if (query.empty())
+        /// The analyzer expands a user-defined function body, which may run a scalar subquery, and a view, if a SETTINGS
+        /// clause of the query itself names `analyzer_inline_views`, so such a query is not asked.
+        bool expands_other_query = false;
+        forEachNode(*ast, [&](const IAST & node)
+        {
+            if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
+                expands_other_query = true;
+            else if (const auto * set_query = node.as<ASTSetQuery>(); set_query && set_query->changes.tryGet("analyzer_inline_views"))
+                expands_other_query = true;
+        });
+        if (expands_other_query || !analysisStaysOnServer(*ast, probe_catalog, context))
+            return false;
+        /// A stored query can end with its own SETTINGS clause, so the probe changes go into that clause.
+        String query;
+        ASTSelectQuery * last = nullptr;
+        if (const auto * with_union = ast->as<ASTSelectWithUnionQuery>(); with_union && with_union->list_of_selects
+            && !with_union->list_of_selects->children.empty())
+            last = with_union->list_of_selects->children.back()->as<ASTSelectQuery>();
+        if (last && last->settings())
+        {
+            auto & set_query = last->settings()->as<ASTSetQuery &>();
+            for (const auto & change : changes)
+            {
+                const Field value = UInt64(change.value.safeGet<bool>() ? 1 : 0);
+                if (auto * existing = set_query.changes.tryGet(change.name))
+                    *existing = value;
+                else
+                    set_query.changes.emplace_back(change.name, value);
+            }
+            query = "EXPLAIN QUERY TREE " + ast->formatWithSecretsOneLine();
+        }
+        else
         {
             query = "EXPLAIN QUERY TREE " + select_query + " SETTINGS ";
             for (size_t i = 0; i < changes.size(); ++i)
@@ -4966,7 +5290,10 @@ void dumpDatabaseSchema(
             create_database_query_by_db,
             database_info,
             database_named_collections,
-            unlisted_databases);
+            unlisted_databases,
+            probe_catalog.tables);
+        probe_catalog.listed_databases.insert(target_databases.begin(), target_databases.end());
+        probe_catalog.refresh_targets = refreshableViewTargets(probe_catalog.tables);
         reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, unlisted_databases, err);
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);

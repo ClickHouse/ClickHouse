@@ -1,6 +1,8 @@
 dump rc=0
-probes of the wildcard url: 0, of the file glob: 0, of the plain url: 1
+HTTP requests the dump sent for the URL database: 0, for the dictionary: 0
+dictionary after the dump: NOT_LOADED
+probes of the wildcard url: 0, of the file glob: 0, of the plain url: 1, of the URL database: 0, of the dictionary function: 0, of the in-memory tables: 1
 bad-select gate emitted: 1
 GROUP BY gate emitted: 1
 replay rc=0
-replayed views: 4
+replayed views: 7
