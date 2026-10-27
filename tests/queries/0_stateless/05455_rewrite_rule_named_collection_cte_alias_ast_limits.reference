@@ -1,0 +1,8 @@
+template CREATE NAMED COLLECTION, small limit: too big
+template CREATE NAMED COLLECTION, generous limit: accepted
+template ALTER NAMED COLLECTION, small limit: too big
+submitted CREATE NAMED COLLECTION, small limit: too big
+template CTE aliases, small limit: too big
+template CTE aliases, generous limit: accepted
+submitted CTE aliases, small limit: too big
+submitted CTE aliases, generous limit: accepted

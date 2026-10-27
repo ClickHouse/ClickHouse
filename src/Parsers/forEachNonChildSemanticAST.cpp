@@ -1,12 +1,15 @@
 #include <Parsers/forEachNonChildSemanticAST.h>
 
 #include <Core/Field.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
@@ -63,6 +66,23 @@ namespace
                 /// object, and never needs to reassign the member.
                 ASTPtr as_base = member;
                 visit(as_base);
+            }
+        };
+
+        /// The AST-valued entries of a `SettingsChanges` list (`FieldFromASTImpl`), e.g. the
+        /// `{n:Int}` of `SETTINGS max_threads = {n:Int}` or the `disk(...)` of
+        /// `CREATE NAMED COLLECTION c AS storage = disk(...)`. The `Field` payload is an immutable
+        /// shared object, so only the read-only overload descends into it — see the header.
+        auto visit_field_asts = [&](const SettingsChanges & changes)
+        {
+            if constexpr (std::is_const_v<Node>)
+            {
+                for (const auto & change : changes)
+                {
+                    CustomType custom;
+                    if (change.value.template tryGet<CustomType>(custom) && std::string_view(custom.getTypeName()) == FieldFromASTImpl::name)
+                        visit_if(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast);
+                }
             }
         };
 
@@ -197,6 +217,20 @@ namespace
             visit_if(roles_or_users->names);
             visit_if(roles_or_users->except_names);
         }
+        else if (auto * with_element = node.template as<ASTWithElement>())
+        {
+            /// The column alias list of `WITH t (a, b, c) AS (subquery)` is kept outside `children`,
+            /// but the tree hash folds it in.
+            visit_if(with_element->aliases);
+        }
+        else if (auto * create_collection = node.template as<ASTCreateNamedCollectionQuery>())
+        {
+            visit_field_asts(create_collection->changes);
+        }
+        else if (auto * alter_collection = node.template as<ASTAlterNamedCollectionQuery>())
+        {
+            visit_field_asts(alter_collection->changes);
+        }
         else if (auto * set_query = node.template as<ASTSetQuery>())
         {
             /// A setting value in a `SETTINGS` clause can itself be an AST — for example the
@@ -206,15 +240,7 @@ namespace
             /// `QueryParameterVisitor::visitSetQuery` / `ReplaceQueryParameterVisitor::visitSettingsChanges`).
             /// The `Field` payload is an immutable shared object, so only the read-only overload
             /// descends here — see the header.
-            if constexpr (std::is_const_v<Node>)
-            {
-                for (const auto & change : set_query->changes)
-                {
-                    CustomType custom;
-                    if (change.value.template tryGet<CustomType>(custom) && std::string_view(custom.getTypeName()) == FieldFromASTImpl::name)
-                        visit_if(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast);
-                }
-            }
+            visit_field_asts(set_query->changes);
         }
     }
 }

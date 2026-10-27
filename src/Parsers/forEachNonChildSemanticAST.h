@@ -13,7 +13,8 @@ class IAST;
 /// the `SHOW ... WHERE` / `LIMIT` expressions, the `BACKUP` settings / `ON CLUSTER` host ids /
 /// per-element partitions, the `CREATE ROW POLICY` filter expressions, the
 /// `CREATE MASKING POLICY` `UPDATE` assignments / `WHERE` condition, the `CREATE USER` /
-/// `ALTER USER` target names, and the AST-valued `SETTINGS` values of `ASTSetQuery`. Generic
+/// `ALTER USER` target names, the `WITH t (a, b) AS (...)` column aliases, and the AST-valued
+/// values of `ASTSetQuery` and of `CREATE` / `ALTER NAMED COLLECTION`. Generic
 /// walks over `children` — the rewrite-rule matcher and its size/depth limits and placeholder
 /// screening, and the query-parameter discovery and substitution — miss these members, so they
 /// must be told about them explicitly, and all of them must stay behind the SAME list: a carrier
@@ -25,7 +26,7 @@ class IAST;
 void forEachNonChildSemanticAST(const IAST & node, const std::function<void(const ASTPtr &)> & visit);
 
 /// The mutable overload, for walks that replace nodes (query-parameter substitution). It does NOT
-/// visit the `SETTINGS` values of `ASTSetQuery`: they are `ASTPtr`s inside immutable shared
+/// visit the AST-valued values of `ASTSetQuery` and of `CREATE` / `ALTER NAMED COLLECTION`: they are `ASTPtr`s inside immutable shared
 /// `Field` payloads (`FieldFromASTImpl`), so replacement must go through rebuilding the `Field`
 /// (`ReplaceQueryParameterVisitor::visitSettingsChanges`), not through mutating the AST in place.
 void forEachMutableNonChildSemanticAST(IAST & node, const std::function<void(ASTPtr &)> & visit);
