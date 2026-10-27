@@ -838,7 +838,9 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                         throw Exception(
                             ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
                             "When reading with readBigAt {}. The server returned the range '{}' instead of one starting at {}",
-                            maskedURI(initial_uri), content_range, offset);
+                            maskedURI(initial_uri),
+                            scrubRequestCredentials(content_range, current_uri.toString(), headerCredentialSecrets(http_header_entries)),
+                            offset);
                 }
 
                 copyFromReadBufferWithProgressCallback(*result, to, n, progress, &bytes_copied, &is_canceled);

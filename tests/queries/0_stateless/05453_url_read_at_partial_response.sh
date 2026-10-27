@@ -58,6 +58,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/misaligned':
             # The beginning of the file, whatever range was requested.
             return self.reply(206, DATA[:PIECE], 'bytes 0-{}/{}'.format(PIECE - 1, SIZE))
+        if self.path == '/reflected':
+            # An unparseable range that reflects the request's credentials.
+            return self.reply(206, DATA[:PIECE], self.headers.get('Authorization', ''))
         self.send_error(404)
 
     def log_message(self, *args):
@@ -89,5 +92,12 @@ $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM url('$URL/shrunk', Parqu
 
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM url('$URL/misaligned', Parquet, 'x UInt64') SETTINGS $SETTINGS, http_max_tries = 2" 2>&1 \
     | grep -q -F '(HTTP_RANGE_NOT_SATISFIABLE)' && echo "misaligned: HTTP_RANGE_NOT_SATISFIABLE"
+
+# Only the error line: the client also echoes the submitted query, which carries the token as typed.
+TOKEN="tok${CLICKHOUSE_TEST_UNIQUE_NAME}"
+ERROR=$($CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM url('$URL/reflected', Parquet, 'x UInt64', headers('Authorization' = 'Bearer $TOKEN'))
+    SETTINGS $SETTINGS, http_max_tries = 2" 2>&1 | grep -F 'The server returned the range')
+grep -q -F '(HTTP_RANGE_NOT_SATISFIABLE)' <<< "$ERROR" && grep -q -F "range 'Bearer [HIDDEN]'" <<< "$ERROR" \
+    && ! grep -q -F "$TOKEN" <<< "$ERROR" && echo "reflected: HTTP_RANGE_NOT_SATISFIABLE, token scrubbed"
 
 $CLICKHOUSE_CLIENT --query "SELECT 1"
