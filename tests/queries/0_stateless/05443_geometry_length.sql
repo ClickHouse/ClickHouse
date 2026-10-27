@@ -69,6 +69,15 @@ SELECT
 -- Almost along the equator.
 SELECT round(lengthSpheroid([(0., -1e-12), (170., 1e-12)]::LineString), 3);
 
+-- A latitude outside [-90, 90] is not on the spheroid. Longitudes of any size are wrapped exactly.
+SELECT
+    lengthSpheroid([(0., 0.), (0., 90.0000001)]::LineString),
+    lengthSpheroid([(0., 0.), (0., -270.)]::LineString),
+    round(lengthSpheroid([(0., -90.), (123., 90.)]::LineString), 3),
+    lengthSpheroid([(180.5, 0.), (-179.5, 0.)]::LineString),
+    lengthSpheroid([(1e300, 30.), (0., -20.)]::LineString) = lengthSpheroid([(0., 30.), (0., -20.)]::LineString),
+    lengthSpheroid([(1.7976931348623157e308, 30.), (0., -20.)]::LineString) = lengthSpheroid([(128., 30.), (0., -20.)]::LineString);
+
 -- A NaN or infinite coordinate has no position on the spheroid.
 SELECT
     lengthSpheroid([(0., nan), (1., 0.)]::LineString),

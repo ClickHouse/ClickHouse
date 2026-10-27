@@ -200,7 +200,7 @@ Calculates the length of the lines of a Geometry object in meters on the WGS84 s
 Each segment is the shortest path between its points on the spheroid (a geodesic), calculated with Karney's algorithm, as in GeographicLib.
 Like [lengthCartesian](#lengthcartesian), it returns 0 for points, polygons and multipolygons.
 For coordinates stored as (latitude, longitude), such as the input of `ST_Length_Spheroid` in DuckDB, swap them first with [flipCoordinates](/reference/functions/regular-functions/geo/flipCoordinates): without it, the result is the length of a different line.
-If a coordinate is NaN or infinite, the result is NaN.
+If a coordinate is NaN or infinite, or a latitude is outside [-90, 90], the result is NaN.
 
 **Syntax**
 

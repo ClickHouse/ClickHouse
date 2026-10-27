@@ -27,18 +27,31 @@ Float64 linearLength(const Geometry & geometry)
     /// for which Vincenty's formulae may not converge.
     if constexpr (std::is_same_v<Point, GeographicPoint>)
     {
-        /// A NaN or infinite coordinate has no position on the spheroid, so the length is NaN.
-        /// Karney's algorithm must not get such a coordinate: it asserts that the coordinates are finite.
-        bool all_finite = true;
+        /// A NaN or infinite coordinate, or a latitude outside [-90, 90], has no position on the spheroid, so the length is NaN,
+        /// as in GeographicLib. Karney's algorithm must not get a non-finite coordinate: it asserts that the coordinates are finite.
+        bool all_valid = true;
+        bool needs_wrap = false;
         boost::geometry::for_each_point(geometry, [&](const GeographicPoint & point)
         {
-            all_finite = all_finite && std::isfinite(boost::geometry::get<0>(point)) && std::isfinite(boost::geometry::get<1>(point));
+            Float64 longitude = boost::geometry::get<0>(point);
+            all_valid = all_valid && std::isfinite(longitude) && std::abs(boost::geometry::get<1>(point)) <= 90;
+            needs_wrap = needs_wrap || std::abs(longitude) > 180;
         });
-        if (!all_finite)
+        if (!all_valid)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return static_cast<Float64>(boost::geometry::length(
-            geometry, boost::geometry::strategies::length::geographic<boost::geometry::strategy::karney>()));
+        const auto strategy = boost::geometry::strategies::length::geographic<boost::geometry::strategy::karney>();
+        if (!needs_wrap)
+            return static_cast<Float64>(boost::geometry::length(geometry, strategy));
+
+        /// Boost converts longitudes to radians and back, which loses precision for large values,
+        /// so bring them to [-180, 180] first: `std::remainder` is exact.
+        Geometry wrapped = geometry;
+        boost::geometry::for_each_point(wrapped, [](GeographicPoint & point)
+        {
+            boost::geometry::set<0>(point, std::remainder(boost::geometry::get<0>(point), 360.0));
+        });
+        return static_cast<Float64>(boost::geometry::length(wrapped, strategy));
     }
     else
         return static_cast<Float64>(boost::geometry::length(geometry));
@@ -153,7 +166,7 @@ Returns the length of a line in meters on the WGS84 spheroid, the model of the E
 Each segment is the shortest path between its points on the spheroid (a geodesic), calculated with Karney's algorithm, as in GeographicLib.
 For coordinates stored as (latitude, longitude), such as the input of `ST_Length_Spheroid` in DuckDB, swap them first with `flipCoordinates`:
 without it, the result is the length of a different line.
-If a coordinate is NaN or infinite, the result is NaN.
+If a coordinate is NaN or infinite, or a latitude is outside [-90, 90], the result is NaN.
 )" + what_is_measured;
         FunctionDocumentation::Syntax syntax = "lengthSpheroid(geometry)";
         FunctionDocumentation::ReturnedValue returned_value = {"The length of the lines, in meters.", {"Float64"}};
