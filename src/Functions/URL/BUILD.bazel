@@ -24,12 +24,6 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
-        "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
-        "@clickhouse_llvm_project//:LLVMBitReader",
-        "@clickhouse_llvm_project//:LLVMBitWriter",
-        "@clickhouse_llvm_project//:LLVMInstCombine",
-        "@clickhouse_llvm_project//:LLVMMCDisassembler",
-        "@clickhouse_llvm_project//:LLVMObjCARCOpts",
         "@clickhouse_llvm_project//:LLVMSupport",
         "//base/glibc-compatibility",
         ":clickhouse_functions_url__compile_1",

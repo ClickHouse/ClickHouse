@@ -128,15 +128,7 @@ ch_cc_library(
     implementation_deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
-    }) + [
-        "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
-        "@clickhouse_llvm_project//:LLVMBitReader",
-        "@clickhouse_llvm_project//:LLVMBitWriter",
-        "@clickhouse_llvm_project//:LLVMInstCombine",
-        "@clickhouse_llvm_project//:LLVMMCDisassembler",
-        "@clickhouse_llvm_project//:LLVMObjCARCOpts",
-        "@clickhouse_llvm_project//:LLVMSupport",
-    ] + select({
+    }) + ["@clickhouse_llvm_project//:LLVMSupport"] + select({
         "@platforms//cpu:x86_64": ["@clickhouse_llvm_project//:LLVMX86CodeGen"],
         "@platforms//cpu:aarch64": [],
     }) + [
@@ -144,9 +136,6 @@ ch_cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_aws//:_aws",
         "@clickhouse_boost//:_boost_context",
-        "@clickhouse_llvm_project//:LLVMAsmPrinter",
-        "@clickhouse_llvm_project//:LLVMRuntimeDyld",
-        "@clickhouse_llvm_project//:LLVMSelectionDAG",
         "@clickhouse_openldap//:_ldap",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",

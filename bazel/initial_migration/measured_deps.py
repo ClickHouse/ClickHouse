@@ -22,6 +22,19 @@ UNIT_TEST_FUNCTION_DEPS = [
     '//src/Functions:headers', '//src/Parsers:headers',
 ]
 
+def llvm_components(*names):
+    return ['@clickhouse_llvm_project//:LLVM' + name for name in names]
+
+
+# Other dependencies of these four libraries already supply the LLVM archives.
+URL_LLVM_COMPONENTS = llvm_components(
+    'AggressiveInstCombine', 'BitReader', 'BitWriter', 'InstCombine', 'MCDisassembler', 'ObjCARCOpts',
+)
+ZOOKEEPER_LLVM_COMPONENTS = URL_LLVM_COMPONENTS + llvm_components('AsmPrinter', 'RuntimeDyld', 'SelectionDAG')
+FUNCTIONS_LLVM_COMPONENTS = ZOOKEEPER_LLVM_COMPONENTS + llvm_components(
+    'BitstreamReader', 'CFGuard', 'CodeGenTypes', 'HipStdPar', 'IRPrinter', 'IRReader', 'SandboxIR',
+)
+
 # Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
 DEPENDENCIES = {
     ('@clickhouse_arrow', '_arrow__compile_0'): ([], ['@clickhouse_boost//:boost_headers_no_openssl'], []),
@@ -95,6 +108,7 @@ DEPENDENCIES = {
         '@clickhouse_mongo_c_driver//:_libbson',
         '@clickhouse_arrow//:_orc',
     ], [], []),
+    ('src/Functions/URL', 'clickhouse_functions_url__compile_0'): (URL_LLVM_COMPONENTS, [], []),
     ('src/Functions/URL', 'clickhouse_functions_url__compile_1'): ([
         '@clickhouse_llvm_project//:LLVMBitReader', '@clickhouse_llvm_project//:LLVMBitstreamReader',
         '@clickhouse_llvm_project//:LLVMSupport', GLIBC_COMPATIBILITY,
@@ -108,6 +122,7 @@ DEPENDENCIES = {
     ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Columns/benchmarks', 'column_insert_many_from_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Common/ZooKeeper', 'headers'): (['//src/Parsers:headers'], [], []),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_no_log'): (ZOOKEEPER_LLVM_COMPONENTS, [], []),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_base'): (['@clickhouse_replxx//:_replxx'], [], []),
     ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc', '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
     ('src/Common/benchmarks', 'profile_events_objects'): ([TZDATA, '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
@@ -122,10 +137,10 @@ DEPENDENCIES = {
     ], ['//src/Common'], []),
     ('src/Functions/JSONPath', 'clickhouse_functions_jsonpath'): ([], ['//src/Parsers:headers'], ['//src/Parsers:parser_api']),
     ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (
-        ['@clickhouse_icu//:_icudata', '@clickhouse_zstd//:_zstd'], [], []),
+        FUNCTIONS_LLVM_COMPONENTS + ['@clickhouse_icu//:_icudata', '@clickhouse_zstd//:_zstd'], [], []),
     ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/TableFunctions', 'clickhouse_table_functions'): (
-        ['@clickhouse_icu//:_icudata', '@clickhouse_silk//:_silk_fibers', '@clickhouse_zstd//:_zstd'], [], []),
+        FUNCTIONS_LLVM_COMPONENTS + ['@clickhouse_icu//:_icudata', '@clickhouse_silk//:_silk_fibers', '@clickhouse_zstd//:_zstd'], [], []),
     ('src', 'benchmark_runtime_filter_objects'): ([], [
         '@clickhouse_google_benchmark//:google_benchmark', '//bazel:clickhouse_config_headers',
         '@clickhouse_fmtlib//:_fmt', '//base:common', ':dbms', ':dbms__compile_0', ':dbms__compile_1', '//src/Common',
