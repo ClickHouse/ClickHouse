@@ -1509,14 +1509,22 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 namespace
 {
     /// Whether another process holds a lock on the file, or `std::nullopt` if that cannot be determined.
-    std::optional<bool> isPidFileLocked(const fs::path & pid_file)
+    /// With `remove_if_unlocked`, an unlocked file is removed while we hold its lock, so a server starting meanwhile cannot lose it.
+    std::optional<bool> isPidFileLocked(const fs::path & pid_file, bool remove_if_unlocked)
     {
         int fd = ::open(pid_file.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd == -1)
             return std::nullopt;
         std::optional<bool> locked;
-        if (0 == flock(fd, LOCK_SH | LOCK_NB))
+        if (0 == flock(fd, (remove_if_unlocked ? LOCK_EX : LOCK_SH) | LOCK_NB))
+        {
             locked = false;
+            if (remove_if_unlocked)
+            {
+                std::error_code ec;
+                fs::remove(pid_file, ec);
+            }
+        }
         else if (errno == EWOULDBLOCK)
             locked = true;
         if (0 != ::close(fd))
@@ -1633,8 +1641,8 @@ namespace
     }
 
     /// A server holds a lock on its pid file (`StatusFile`) until it exits, so once `stop` has seen the lock, an unlocked file means
-    /// the server has terminated even while `kill(pid, 0)` succeeds for its unreaped zombie. A file never seen locked may be written
-    /// by something else (e.g. `--pidfile`), so then only `kill` decides.
+    /// the server has terminated even while `kill(pid, 0)` succeeds for its unreaped zombie; the stale file is then removed, as on a
+    /// clean shutdown. A file never seen locked may be written by something else (e.g. `--pidfile`), so then only `kill` decides.
     int isRunning(const fs::path & pid_file, bool ignore_file_does_not_exist, bool * pid_file_seen_locked = nullptr)
     {
         int pid = 0;
@@ -1664,16 +1672,12 @@ namespace
             {
                 if (pid_file_seen_locked)
                 {
-                    auto locked = isPidFileLocked(pid_file);
+                    auto locked = isPidFileLocked(pid_file, /*remove_if_unlocked=*/ *pid_file_seen_locked);
                     if (locked == true)
                         *pid_file_seen_locked = true;
                     else if (locked == false && *pid_file_seen_locked)
                     {
-                        fmt::print(
-                            "The server process with pid = {} has terminated: {} is no longer locked (the file will be removed).\n",
-                            pid,
-                            pid_file.string());
-                        (void)fs::remove(pid_file);
+                        fmt::print("The server process with pid = {} has terminated: {} is no longer locked.\n", pid, pid_file.string());
                         return 0;
                     }
                 }
