@@ -38,7 +38,8 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
         filter_step->setArrayJoinLowering({
             .max_block_size = settings.max_block_size,
             .enable_lazy_columns_replication = settings.enable_lazy_columns_replication,
-            .nondeterministic_before_expansion = settings.legacy_array_join_function_nondeterministic_evaluation});
+            .nondeterministic_before_expansion = settings.legacy_array_join_function_nondeterministic_evaluation,
+            .filter_push_down = settings.filter_push_down});
         return 0;
     }
 

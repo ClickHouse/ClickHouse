@@ -60,6 +60,7 @@ public:
         size_t max_block_size = 0;
         bool enable_lazy_columns_replication = false;
         bool nondeterministic_before_expansion = false;
+        bool filter_push_down = false;
     };
     void setArrayJoinLowering(ArrayJoinLowering lowering) { array_join_lowering = lowering; }
     const std::optional<ArrayJoinLowering> & getArrayJoinLowering() const { return array_join_lowering; }

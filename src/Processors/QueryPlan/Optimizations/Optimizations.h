@@ -102,6 +102,7 @@ struct Optimization
         bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
         bool filter_push_down_below_limit_by = true;
+        bool filter_push_down = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

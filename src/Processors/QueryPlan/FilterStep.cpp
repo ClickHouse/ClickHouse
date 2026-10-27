@@ -631,7 +631,8 @@ void FilterStep::addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const Bui
     {
         /// The conjuncts that do not depend on the remaining joins are pushed down below them, as `filterPushDown`
         /// would do, so a conjunct that becomes available after a join filters the rows before the next one.
-        if (remove_filter_column)
+        /// Like `filterPushDown`, this does not happen with stateful functions, which depend on the rows they see.
+        if (array_join_lowering->filter_push_down && remove_filter_column && !actions_dag.hasStatefulFunctions())
         {
             auto pushed = actions_dag.splitActionsForFilterPushDown(
                 filter_column_name, remove_filter_column, pipeline.getHeader().getNames(), pipeline.getHeader().getColumnsWithTypeAndName(),
