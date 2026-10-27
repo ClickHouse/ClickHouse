@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <mutex>
 
 #include <Storages/StorageProxy.h>
 #include <Common/Exception.h>
@@ -91,7 +92,7 @@ public:
         auto nested_storage = get_nested();
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
-        nested = nested_storage;
+        setNested(std::move(nested_storage));
         get_nested = {};
         return nested;
     }
@@ -188,7 +189,7 @@ public:
         /// right after `drop()` returns to decide whether to skip per-disk
         /// cleanup. Without this, an unloaded `MergeTree` with
         /// `leader_election = 1` would fall back to the unsafe default.
-        nested = std::move(nested_storage);
+        setNested(std::move(nested_storage));
     }
 
     void read(
@@ -245,14 +246,13 @@ public:
     /// that resolves another table of the same database, which needs that mutex again. A stand-in answers
     /// from its `CREATE` query instead: `StorageMergeTree` rejects every rename under `leader_election`, and
     /// `may_use_leader_election` tells whether this table is such a one. The other overrides of the hook
-    /// are asked only once the table is loaded, as before.
+    /// are asked only once the table is loaded, as before. The loaded table is read with
+    /// `tryGetLoadedNested`, not under `nested_mutex`: `getNested` holds `nested_mutex` while loading
+    /// the table, and the load may lock the database mutex, so taking `nested_mutex` under the
+    /// database mutex here would invert the lock order.
     void checkTableCanBeRenamed(const StorageID & new_name) const override
     {
-        StoragePtr loaded;
-        {
-            std::lock_guard lock{nested_mutex};
-            loaded = nested;
-        }
+        StoragePtr loaded = tryGetLoadedNested();
         if (loaded)
         {
             loaded->checkTableCanBeRenamed(new_name);
@@ -271,11 +271,7 @@ public:
     /// rename depend on each unrelated table starting successfully.
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
     {
-        StoragePtr loaded;
-        {
-            std::lock_guard lock{nested_mutex};
-            loaded = nested;
-        }
+        StoragePtr loaded = tryGetLoadedNested();
         if (loaded)
         {
             loaded->checkTableCanBeRenamedByDatabaseRename(new_database_name);
@@ -344,9 +340,29 @@ public:
     }
 
 private:
+    /// Requires `nested_mutex`.
+    void setNested(StoragePtr nested_storage) const
+    {
+        nested = std::move(nested_storage);
+        std::lock_guard lock{loaded_nested_mutex};
+        loaded_nested = nested;
+    }
+
+    /// Returns the materialized storage without locking `nested_mutex`, so it can be called while
+    /// holding a database mutex, which a concurrent load under `nested_mutex` may be waiting for.
+    StoragePtr tryGetLoadedNested() const
+    {
+        std::lock_guard lock{loaded_nested_mutex};
+        return loaded_nested;
+    }
+
     mutable std::recursive_mutex nested_mutex; /// Guards `get_nested`, `nested`, and `drop_load_failed`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    /// A copy of `nested` for `tryGetLoadedNested`. `loaded_nested_mutex` is a leaf: nothing else
+    /// is locked while it is held.
+    mutable std::mutex loaded_nested_mutex;
+    mutable StoragePtr loaded_nested;
     bool drop_load_failed = false; /// `drop()` could not load the lazy table; force fail-closed cleanup decision.
     /// Storage-free answer to "could this table be a `StorageMergeTree` with `leader_election`
     /// on?", resolved from the `CREATE` query's engine and settings and the server-wide
