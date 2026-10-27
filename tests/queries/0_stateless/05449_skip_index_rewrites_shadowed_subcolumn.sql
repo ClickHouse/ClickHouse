@@ -38,6 +38,15 @@ SELECT count() FROM t_shadow_part WHERE `m.key_k` = 9 SETTINGS use_partition_pru
 ALTER TABLE t_shadow_part DELETE WHERE `m.key_k` = 9 SETTINGS mutations_sync = 2;
 SELECT count() FROM t_shadow_part WHERE `m.key_k` = 9 SETTINGS use_partition_pruning = 0;
 
+-- Without the shadowing column, the subcolumn filter still uses the key.
+DROP TABLE IF EXISTS t_no_shadow;
+CREATE TABLE t_no_shadow (m Map(String, Int32))
+ENGINE = MergeTree ORDER BY m['k']
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_no_shadow SELECT map('k', toInt32(100 + number)) FROM numbers(100);
+SELECT count() FROM t_no_shadow WHERE m['k'] = 150 SETTINGS force_primary_key = 1;
+
 DROP TABLE t_shadow_pk;
 DROP TABLE t_shadow_idx;
 DROP TABLE t_shadow_part;
+DROP TABLE t_no_shadow;
