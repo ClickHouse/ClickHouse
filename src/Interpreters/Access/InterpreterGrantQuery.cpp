@@ -460,6 +460,15 @@ BlockIO InterpreterGrantQuery::execute()
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
+    /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
+    String current_database = getContext()->getCurrentDatabase();
+    query.access_rights_elements.replaceEmptyDatabase(current_database);
+
+    /// A hierarchical name (`GRANT SELECT ON a.b.c`) names the object the same name reads in a query.
+    /// It is resolved once, in the query: the elements that are checked below are copied from it, so they are exactly
+    /// the elements that are executed (and shipped ON CLUSTER), even if the catalog changes in the meantime.
+    resolveHierarchicalNamesForAccess(query.access_rights_elements, getContext());
+
     /// Collect access rights and roles we're going to grant or revoke.
     AccessRightsElements elements_to_grant;
     AccessRightsElements elements_to_revoke;
@@ -481,17 +490,6 @@ BlockIO InterpreterGrantQuery::execute()
                 entity ? entity->getName() : String{});
         }
     }
-
-    /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
-    String current_database = getContext()->getCurrentDatabase();
-    elements_to_grant.replaceEmptyDatabase(current_database);
-    elements_to_revoke.replaceEmptyDatabase(current_database);
-    query.access_rights_elements.replaceEmptyDatabase(current_database);
-
-    /// A hierarchical name (`GRANT SELECT ON a.b.c`) names the object the same name reads in a query.
-    resolveHierarchicalNamesForAccess(elements_to_grant, getContext());
-    resolveHierarchicalNamesForAccess(elements_to_revoke, getContext());
-    resolveHierarchicalNamesForAccess(query.access_rights_elements, getContext());
 
     /// Executing on cluster.
     if (!query.cluster.empty())
