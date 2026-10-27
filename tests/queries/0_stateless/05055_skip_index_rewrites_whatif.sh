@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_whatif_rewrites;"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_whatif_rewrites_mixed;
     CREATE TABLE t_whatif_rewrites_mixed (x Nullable(Int32), v Int32, id UInt32) ENGINE = MergeTree ORDER BY id
-    SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+    SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO t_whatif_rewrites_mixed SELECT NULL, number, number FROM numbers(100);
 "
 
@@ -54,7 +54,7 @@ $CLICKHOUSE_CLIENT -n -q "
 "
 $CLICKHOUSE_CLIENT -q "
     SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_whatif_rewrites_mixed WHERE if(isNull(x), multiIf(v > 0, v, 0), 0) = 51)
-    WHERE explain LIKE '%Name: idx_mixed%' OR explain LIKE '%Granules:%'
+    WHERE explain LIKE '%Name: idx_mixed%' OR explain LIKE '%Granules: %/%'
     SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0;
 "
 
