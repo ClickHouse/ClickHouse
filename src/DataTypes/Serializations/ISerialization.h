@@ -491,6 +491,9 @@ public:
 
         size_t low_cardinality_max_dictionary_size = 0;
         bool low_cardinality_use_single_dictionary_for_part = true;
+        /// A larger `low_cardinality_max_dictionary_size` a `LowCardinality` column may keep while its values change from
+        /// granule to granule, see `SerializationLowCardinality`. 0 - none. Used only in MergeTree merges.
+        size_t low_cardinality_raised_max_dictionary_size = 0;
 
         bool position_independent_encoding = true;
 

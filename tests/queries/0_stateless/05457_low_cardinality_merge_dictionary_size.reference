@@ -1,0 +1,29 @@
+t_off	1	0
+t_on	1	0
+t_split_off	1	0
+t_split_on	1	0
+t_off	1	1
+t_on	1	1
+t_split_off	1	1
+t_split_on	1	1
+eligible by statistics
+k	1
+kn	1
+m	1
+r	1
+s	0
+content
+t_off	400000	1
+t_on	400000	1
+t_split_off	400000	1
+t_split_on	400000	1
+dictionaries
+t_off	0	0	1	0
+t_on	1	1	1	1
+t_split_off	0	0	1	0
+t_split_on	1	1	1	1
+layout
+split	r	1
+split	s	1
+whole	r	1
+whole	s	1

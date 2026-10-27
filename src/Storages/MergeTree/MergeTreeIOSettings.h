@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -187,6 +188,7 @@ struct MergeTreeWriterSettings
 
     size_t low_cardinality_max_dictionary_size{};
     bool low_cardinality_use_single_dictionary_for_part{};
+    std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column;
     bool use_compact_variant_discriminators_serialization{};
     MergeTreeDynamicSerializationVersion dynamic_serialization_version{};
     MergeTreeObjectSerializationVersion object_serialization_version{};

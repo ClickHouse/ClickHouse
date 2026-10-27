@@ -255,6 +255,7 @@ private:
 
         MergedBlockOutputStream::GatheredData gathered_data{};
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
+        std::unordered_map<String, size_t> low_cardinality_raised_max_dictionary_size_by_column;
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;
