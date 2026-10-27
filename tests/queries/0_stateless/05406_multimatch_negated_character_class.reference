@@ -1,0 +1,44 @@
+[^A-Za-z]	abc	0	0
+[^A-Za-z]	a	0	0
+[^A-Za-z]	Z	0	0
+[^A-Za-z]	!	1	1
+[^a-zA-Z]	A	0	0
+[^ac]	c	0	0
+[^Xa]	a	0	0
+[^aX]	X	0	0
+[^XaY]	a	0	0
+[^XYa]	a	0	0
+[^0-9a]	a	0	0
+[^A-Za-z0-9]	5	0	0
+[^[:alnum:]]	a	0	0
+[^[:alnum:]]	0	0	0
+[^[:alnum:]]	_	1	1
+[[:^alnum:]]	z	0	0
+q[^Xa]	qa	0	0
+q[^Xa]	qb	1	1
+^[^\\p{L}]$	ê	0	0
+^[^\\p{L}]$	5	1	1
+[^éx]	é	0	0
+[^\\p{L}\\p{N}]	5	0	0
+[^\\w]	_	0	0
+\\W	a	0	0
+[^\\s\\d]	7	0	0
+[^bdfhjlnpa-z]	q	0	0
+[^bdfhjlnpa-z]	!	1	1
+[^13579\\d]	2	0	0
+[^acegikmoqsuwya-z0-9]	b	0	0
+[^acegikmoqsuwya-z0-9]	5	0	0
+(?i)[^a-z]	A	0	0
+[^\\d\\s\\w]	x	0	0
+[^\\w\\-.]	-	0	0
+[^\\p{Lu}\\p{Ll}]	a	0	0
+(?i)[^bdfa-z]	C	0	0
+[A-Za-z]	a	1	1
+[^ab]	b	0	0
+3
+[2,4]
+a	0
+Z	0
+5	0
+!	1
+_	1

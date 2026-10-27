@@ -56,28 +56,60 @@ ZZZugdqxgnwXZzrxlA1m4Y0mGW6rUBwqhPn376yu8a4vvBIMq0hojbSxXSYAZ0sb
 """
 
 requests_log = []
+# Requests to the mock storage endpoint, with whether each carried a bearer token.
+storage_log = []
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _send(self, code, body, content_type="application/json"):
+    def _send(self, code, body, content_type="application/json", headers=None):
         data = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(data)
+        if self.command != "HEAD":
+            self.wfile.write(data)
+
+    def _storage_request(self):
+        storage_log.append({"method": self.command, "path": self.path, "authorization": "Authorization" in self.headers})
+        # The container exists, so a table can be created on it; there are no blobs.
+        if "restype=container" in self.path:
+            self._send(200, "", headers={
+                "ETag": '"0x1"',
+                "Last-Modified": "Mon, 01 Jan 2024 00:00:00 GMT",
+                "x-ms-lease-state": "available",
+                "x-ms-lease-status": "unlocked",
+                "x-ms-has-immutability-policy": "false",
+                "x-ms-has-legal-hold": "false",
+            })
+        else:
+            self._send(404, "")
 
     def do_GET(self):
         if self.path == "/":
             self._send(200, "OK", "text/plain")
         elif self.path == "/hits":
             self._send(200, json.dumps(requests_log))
+        elif self.path == "/storage_hits":
+            self._send(200, json.dumps(storage_log))
         else:
-            self._send(404, "")
+            self._storage_request()
+
+    def do_HEAD(self):
+        self._storage_request()
 
     def do_POST(self):
+        # A blob batch, such as the deletes of `TRUNCATE`, is recorded like the other storage requests and denied.
+        if "comp=batch" in self.path:
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            storage_log.append({"method": self.command, "path": self.path, "authorization": "Authorization" in self.headers})
+            self._send(403, "")
+            return
+
         # Azure front ends reject body-carrying requests without `Content-Length`
         # with `411 Length Required` (the request body has no framing otherwise).
         # Mimic that instead of tolerating the missing header, so a transport

@@ -194,6 +194,14 @@ elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+# rustc refuses to combine a sanitizer with a statically linked libc (the musl Rust target
+# defaults to `crt-static`). Disabling it only switches Rust's thread-locals to the
+# general-dynamic TLS model, which calls __tls_get_addr - already provided by musl's static
+# libc for exactly this case - so the resulting staticlib still needs no dynamic loader.
+if (USE_MUSL AND NOT SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "-C" "target-feature=-crt-static")
+endif()
+
 # Force `rustix` to use its libc backend under sanitizers.
 # On Linux `rustix` defaults to the `linux_raw` backend, which issues `mmap`, `munmap` and
 # other syscalls directly via the `syscall` instruction, bypassing libc. The sanitizers
@@ -256,9 +264,9 @@ set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 # `opt-level = 0` — up to an order of magnitude slower at runtime (e.g. the `PCO` codec,
 # Delta Lake reads). CI was unaffected only because it always passes -DSANITIZE= explicitly.
 if (SANITIZE)
-    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 0
+    set(RUST_RELEASE_PROFILE_EXTRA "opt-level = 1
 codegen-units = 4")
-    message(STATUS "Rust release profile: unoptimized (opt-level = 0), to limit LLVM memory usage under sanitizers")
+    message(STATUS "Rust release profile: opt-level = 1, to limit LLVM memory usage under sanitizers")
 else()
     set(RUST_RELEASE_PROFILE_EXTRA "")
     message(STATUS "Rust release profile: optimized")
