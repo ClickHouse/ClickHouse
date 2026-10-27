@@ -262,11 +262,22 @@ void Reader::preBuffer(const std::vector<UInt32> & stripes, const std::vector<UI
                 ++j;
             }
 
-            CachedRange cached{.offset = begin, .length = end - begin, .buffer = std::make_shared<PODArray<char>>(end - begin), .future = {}};
-            cached.future = stream->readAsync(cached.buffer->data(), end - begin, begin);
+            auto buffer = std::make_shared<PODArray<char>>(end - begin);
             {
+                /// The entry must be owned by the cache before the background read starts, so that
+                /// the destructor waits for the read even if an exception is thrown in between.
                 std::lock_guard lock(cache_mutex);
-                cache.push_back(std::move(cached));
+                auto & cached = cache.emplace_back(CachedRange{.offset = begin, .length = end - begin, .buffer = std::move(buffer), .future = {}});
+                try
+                {
+                    cached.future = stream->readAsync(cached.buffer->data(), end - begin, begin);
+                }
+                catch (...)
+                {
+                    /// Nothing has been scheduled, so the entry can be removed safely.
+                    cache.pop_back();
+                    throw;
+                }
             }
             i = j;
         }

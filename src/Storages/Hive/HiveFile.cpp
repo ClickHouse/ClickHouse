@@ -103,7 +103,8 @@ void IHiveFile::loadSplitMinMaxIndexes()
 
 Range HiveORCFile::buildRange(const ORC::Proto::ColumnStatistics * col_stats)
 {
-    if (!col_stats || col_stats->has_null.value_or(false))
+    /// A missing `has_null` means that the column may contain nulls.
+    if (!col_stats || col_stats->has_null.value_or(true))
         return Range::createWholeUniverseWithoutNull();
 
     if (const auto & int_stats = col_stats->int_statistics)
@@ -128,9 +129,9 @@ Range HiveORCFile::buildRange(const ORC::Proto::ColumnStatistics * col_stats)
     }
     if (const auto & timestamp_stats = col_stats->timestamp_statistics)
     {
-        auto minimum = timestamp_stats->minimum_utc ? timestamp_stats->minimum_utc : timestamp_stats->minimum;
-        auto maximum = timestamp_stats->maximum_utc ? timestamp_stats->maximum_utc : timestamp_stats->maximum;
-        return createRangeFromOrcStatistics<UInt32>(minimum, maximum);
+        /// The deprecated `minimum` and `maximum` are in the local time zone of the writer, which is
+        /// unknown for the statistics of the whole file, so only the UTC bounds are usable.
+        return createRangeFromOrcStatistics<UInt32>(timestamp_stats->minimum_utc, timestamp_stats->maximum_utc);
     }
     if (const auto & date_stats = col_stats->date_statistics)
         return createRangeFromOrcStatistics<UInt16>(date_stats->minimum, date_stats->maximum);
