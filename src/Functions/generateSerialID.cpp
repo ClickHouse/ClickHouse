@@ -77,20 +77,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args
-        {
-            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"start_value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String, [const UInt]) -> UInt64";
     }
 
     /// Increments the counter and returns the old counter.
@@ -230,9 +219,9 @@ The series are stored in Keeper nodes under the path, which can be configured in
 SELECT generateSerialID('id1')
         )",
         R"(
-┌─generateSerialID('id1')──┐
-│                        1 │
-└──────────────────────────┘
+┌─generateSerialID('id1')─┐
+│                       0 │
+└─────────────────────────┘
         )"
     },
     {
@@ -241,24 +230,27 @@ SELECT generateSerialID('id1')
 SELECT generateSerialID('id1')
         )",
         R"(
-┌─generateSerialID('id1')──┐
-│                        2 │
-└──────────────────────────┘
+┌─generateSerialID('id1')─┐
+│                       1 │
+└─────────────────────────┘
         )"
     },
     {
         "column call",
         R"(
+CREATE TABLE test_table (CounterID UInt32, UserID UInt32, ver UInt32) ENGINE = Memory;
+INSERT INTO test_table VALUES (1, 3, 3), (1, 1, 1), (1, 2, 2), (1, 5, 5), (1, 4, 4);
+
 SELECT *, generateSerialID('id1') FROM test_table
         )",
         R"(
-┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')──┐
-│         1 │      3 │   3 │                        3 │
-│         1 │      1 │   1 │                        4 │
-│         1 │      2 │   2 │                        5 │
-│         1 │      5 │   5 │                        6 │
-│         1 │      4 │   4 │                        7 │
-└───────────┴────────┴─────┴──────────────────────────┘
+┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')─┐
+│         1 │      3 │   3 │                       2 │
+│         1 │      1 │   1 │                       3 │
+│         1 │      2 │   2 │                       4 │
+│         1 │      5 │   5 │                       5 │
+│         1 │      4 │   4 │                       6 │
+└───────────┴────────┴─────┴─────────────────────────┘
         )"
     },
     {
@@ -267,9 +259,9 @@ SELECT *, generateSerialID('id1') FROM test_table
 SELECT generateSerialID('id2', 100)
         )",
         R"(
-┌─generateSerialID('id2', 100)──┐
-│                           100 │
-└───────────────────────────────┘
+┌─generateSerialID('id2', 100)─┐
+│                          100 │
+└──────────────────────────────┘
         )"
     },
     {
@@ -278,9 +270,9 @@ SELECT generateSerialID('id2', 100)
 SELECT generateSerialID('id2', 100)
         )",
         R"(
-┌─generateSerialID('id2', 100)──┐
-│                           101 │
-└───────────────────────────────┘
+┌─generateSerialID('id2', 100)─┐
+│                          101 │
+└──────────────────────────────┘
         )"
 }
 };

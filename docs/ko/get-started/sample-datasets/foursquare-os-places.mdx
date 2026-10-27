@@ -1,113 +1,149 @@
 ---
-description: '상점, 
-음식점, 공원, 놀이터, 기념물 등 지도상의 장소 정보가 포함된 1억 건 이상의 레코드로 구성된 데이터셋입니다.'
-sidebarTitle: 'Foursquare 장소 데이터'
+description: 'ClickHouse로 Foursquare OS Places 지리 공간 데이터셋을 탐색하고 로드하는 방법을 알아봅니다.'
+sidebarTitle: 'Foursquare OS Places'
 slug: /getting-started/example-datasets/foursquare-places
-title: 'Foursquare 장소 데이터'
-keywords: ['시각화']
+title: 'Foursquare OS Places 데이터셋'
+keywords: ['예시 데이터셋', 'Foursquare', '지리 공간', 'Iceberg', '시작하기']
 doc_type: 'guide'
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-<div id="dataset">
-  ## 데이터셋
+Foursquare OS Places에는 상점, 레스토랑, 공원, 놀이터, 기념물 등 1억 개가 넘는 상업 시설 관심 지점(POI)이 포함되어 있습니다. 이 가이드에서는 ClickHouse를 Foursquare의 Iceberg 카탈로그에 연결하고, 데이터셋을 살펴본 다음 지리 공간 쿼리에 최적화된 테이블로 로드합니다.
+
+데이터셋은 [Foursquare Places Portal](https://places.foursquare.com/)에서 제공되며, Apache 2.0 라이선스에 따라 무료로 사용할 수 있습니다.
+
+<Note>
+  Foursquare는 OS Places 액세스 방식을 변경했습니다. 이 가이드의 이전 버전에서는 공개 S3 버킷에 있는 날짜별 고정 파일을 쿼리했지만, 이제는 Places Portal과 인증된 Iceberg 카탈로그를 통해 액세스합니다.
+  자세한 내용은 [Foursquare의 OS Places 액세스 문서](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)를 참조하십시오.
+</Note>
+
+<div id="before-you-begin">
+  ## 시작하기 전에
 </div>
 
-Foursquare에서 제공하는 이 데이터셋은 [다운로드](https://docs.foursquare.com/data-products/docs/access-fsq-os-places)할 수 있으며
-Apache 2.0 라이선스에 따라 무료로 사용할 수 있습니다.
+이 가이드의 쿼리를 실행하기 전에 다음이 필요합니다.
 
-상점, 음식점, 공원, 놀이터, 기념물 등 상업 시설과 관련된 관심 지점(POI) 데이터
-1억 건 이상이 포함되어 있습니다. 또한 이러한 장소의 카테고리, 소셜 미디어 정보 등의
-추가 메타데이터도 포함되어 있습니다.
+* [Foursquare Places Portal](https://places.foursquare.com/) 계정
+* **OS Places** 데이터셋의 **Access Data** 탭에서 생성한 액세스 토큰
 
-<div id="data-exploration">
-  ## 데이터 탐색
+<div id="connect-to-the-foursquare-catalog">
+  ## Foursquare 카탈로그에 연결
 </div>
 
-데이터를 탐색하기 위해 전체 ClickHouse engine을 제공하는 작은 명령줄 도구인 [`clickhouse-local`](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)을 사용하겠습니다.
-물론 ClickHouse Cloud, `clickhouse-client`, 또는 `chDB`를 사용할 수도 있습니다.
-
-데이터가 저장된 S3 버킷에서 데이터를 조회하려면 다음 쿼리를 실행하세요:
+액세스 토큰을 안전하게 보관하십시오. ClickHouse 클라이언트를 시작한 다음, 다음 쿼리에서
+`<YOUR_ACCESS_TOKEN>`을 액세스 토큰으로 대체하십시오:
 
 ```sql title="Query"
-SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*') LIMIT 1
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE places
+ENGINE = DataLakeCatalog('https://catalog.h3-hub.foursquare.com/iceberg')
+SETTINGS
+    catalog_type = 'rest',
+    warehouse = 'places',
+    auth_header = 'Authorization: Bearer <YOUR_ACCESS_TOKEN>',
+    vended_credentials = 1;
+```
+
+카탈로그 데이터베이스는 읽기 전용입니다. `places_os` 테이블은 날짜가 고정된 Parquet 릴리스가 아니라 Foursquare&#39;s 현재
+게시 릴리스를 반영하므로, 행과 스키마가 시간이 지남에 따라
+변경될 수 있습니다. 따라서 `ORDER BY` 절이 없는 쿼리는 이 가이드에 표시된 응답과 다른
+샘플 행을 반환할 수 있습니다.
+
+<div id="verify-the-connection">
+  ## 연결 확인
+</div>
+
+`places_os` Iceberg 테이블에서 행 1개를 쿼리합니다:
+
+```sql title="Query"
+SELECT *
+FROM places.`datasets.places_os`
+LIMIT 1;
 ```
 
 ```response title="Response"
 Row 1:
 ──────
-fsq_place_id:        4e1ef76cae60cd553dec233f
-name:                @VirginAmerica In-flight Via @Gogo
-latitude:            37.62120111687914
-longitude:           -122.39003793803701
-address:             ᴺᵁᴸᴸ
-locality:            ᴺᵁᴸᴸ
-region:              ᴺᵁᴸᴸ
-postcode:            ᴺᵁᴸᴸ
+fsq_place_id:        587711a138094df2b93ec3af
+name:                Iyang Tadon
+latitude:            ᴺᵁᴸᴸ
+longitude:           ᴺᵁᴸᴸ
+address:             2 38A Jalan Penrissen Batu 10 Pekan Batu 10 93250 Kuching Kuching Sarawak 93250 Malaysia Kuching Sarawak
+locality:            Kuching
+region:              Sarawak
+postcode:            93250
 admin_region:        ᴺᵁᴸᴸ
 post_town:           ᴺᵁᴸᴸ
 po_box:              ᴺᵁᴸᴸ
-country:             US
-date_created:        2011-07-14
-date_refreshed:      2018-07-05
-date_closed:         2018-07-05
-tel:                 ᴺᵁᴸᴸ
+country:             MY
+date_created:        2015-05-24
+date_refreshed:      2015-05-24
+date_closed:         ᴺᵁᴸᴸ
+tel:                 082-617 033
 website:             ᴺᵁᴸᴸ
 email:               ᴺᵁᴸᴸ
 facebook_id:         ᴺᵁᴸᴸ
 instagram:           ᴺᵁᴸᴸ
 twitter:             ᴺᵁᴸᴸ
-fsq_category_ids:    ['4bf58dd8d48988d1f7931735']
-fsq_category_labels: ['Travel and Transportation > Transport Hub > Airport > Plane']
-placemaker_url:      https://foursquare.com/placemakers/review-place/4e1ef76cae60cd553dec233f
-geom:                �^��a�^@Bσ���
-bbox:                (-122.39003793803701,37.62120111687914,-122.39003793803701,37.62120111687914)
-```
-
-꽤 많은 필드가 `ᴺᵁᴸᴸ`이므로, 좀 더 유용한 데이터를 반환하도록
-쿼리에 몇 가지 조건을 추가할 수 있습니다:
-
-```sql title="Query"
-SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
-   WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL LIMIT 1
-```
-
-```response
-Row 1:
-──────
-fsq_place_id:        59b2c754b54618784f259654
-name:                Villa 722
-latitude:            ᴺᵁᴸᴸ
-longitude:           ᴺᵁᴸᴸ
-address:             Gijzenveldstraat 75
-locality:            Zutendaal
-region:              Limburg
-postcode:            3690
-admin_region:        ᴺᵁᴸᴸ
-post_town:           ᴺᵁᴸᴸ
-po_box:              ᴺᵁᴸᴸ
-country:             ᴺᵁᴸᴸ
-date_created:        2017-09-08
-date_refreshed:      2020-01-25
-date_closed:         ᴺᵁᴸᴸ
-tel:                 ᴺᵁᴸᴸ
-website:             https://www.landal.be
-email:               ᴺᵁᴸᴸ
-facebook_id:         522698844570949 -- 5,227조
-instagram:           landalmooizutendaal
-twitter:             landalzdl
-fsq_category_ids:    ['56aa371be4b08b9a8d5734e1']
-fsq_category_labels: ['Travel and Transportation > Lodging > Vacation Rental']
-placemaker_url:      https://foursquare.com/placemakers/review-place/59b2c754b54618784f259654
+fsq_category_ids:    []
+fsq_category_labels: []
+placemaker_url:      https://foursquare.com/placemakers/review-place/587711a138094df2b93ec3af
+unresolved_flags:    []
 geom:                ᴺᵁᴸᴸ
 bbox:                (NULL,NULL,NULL,NULL)
 ```
 
-다음 쿼리를 실행하여 `DESCRIBE`로 데이터에서 자동 추론된 스키마를 확인하세요:
+<div id="explore-the-data">
+  ## 데이터 탐색
+</div>
+
+샘플 행에는 여러 null 필드가 있습니다. 더 완전한 행을 반환하도록 필터를 추가하세요:
 
 ```sql title="Query"
-DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
+SELECT *
+FROM places.`datasets.places_os`
+WHERE address IS NOT NULL AND postcode IS NOT NULL AND instagram IS NOT NULL
+LIMIT 1;
+```
+
+```response title="Response"
+Row 1:
+──────
+fsq_place_id:        4b9af2a9f964a52000e635e3
+name:                KFC
+latitude:            42.214429044404966
+longitude:           -83.5428035767019
+address:             2169 Rawsonville Rd
+locality:            Van Buren Township
+region:              MI
+postcode:            48111
+admin_region:        ᴺᵁᴸᴸ
+post_town:           ᴺᵁᴸᴸ
+po_box:              ᴺᵁᴸᴸ
+country:             US
+date_created:        2010-03-13
+date_refreshed:      2026-07-08
+date_closed:         ᴺᵁᴸᴸ
+tel:                 (734) 482-7256
+website:             https://locations.kfc.com/mi/belleville/2169-rawsonville-road
+email:               kfccares@kfc.com
+facebook_id:         159863790842385 -- 159.86 trillion
+instagram:           kfc
+twitter:             kfc
+fsq_category_ids:    ['4d4ae6fc7a7b7dea34424761','4bf58dd8d48988d16e941735']
+fsq_category_labels: ['Dining and Drinking > Restaurant > Fried Chicken Joint','Dining and Drinking > Restaurant > Fast Food Restaurant']
+placemaker_url:      https://foursquare.com/placemakers/review-place/4b9af2a9f964a52000e635e3
+unresolved_flags:    []
+geom:                [binary data]
+bbox:                (-83.5428035767019,42.214429044404966,-83.5428035767019,42.214429044404966)
+```
+
+`DESCRIBE`를 사용하여 테이블 스키마를 확인하세요:
+
+```sql title="Query"
+DESCRIBE places.`datasets.places_os`;
 ```
 
 ```response title="Response"
@@ -136,8 +172,9 @@ DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*
 22. │ fsq_category_ids    │ Array(Nullable(String))     │
 23. │ fsq_category_labels │ Array(Nullable(String))     │
 24. │ placemaker_url      │ Nullable(String)            │
-25. │ geom                │ Nullable(String)            │
-26. │ bbox                │ Tuple(                     ↴│
+25. │ unresolved_flags    │ Array(Nullable(String))     │
+26. │ geom                │ Nullable(String)            │
+27. │ bbox                │ Tuple(                     ↴│
     │                     │↳    xmin Nullable(Float64),↴│
     │                     │↳    ymin Nullable(Float64),↴│
     │                     │↳    xmax Nullable(Float64),↴│
@@ -146,127 +183,191 @@ DESCRIBE s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*
 ```
 
 <div id="loading-the-data">
-  ## ClickHouse에 데이터 로드하기
+  ## ClickHouse에 데이터 로드
 </div>
 
-데이터를 디스크에 영구 저장하려면 `clickhouse-server`
-또는 ClickHouse Cloud를 사용할 수 있습니다.
+데이터를 영구적으로 저장하려면 `clickhouse-server` 또는 ClickHouse Cloud에 테이블을 생성합니다.
 
-테이블을 생성하려면 다음 명령을 실행하세요:
+딕셔너리로 인코딩된 컬럼과 구체화된 Web Mercator 좌표가 포함된 `MergeTree` 테이블을 생성합니다:
 
 ```sql title="Query"
 CREATE TABLE foursquare_mercator
 (
-    fsq_place_id String,
-    name String,
+    fsq_place_id Nullable(String),
+    name Nullable(String),
     latitude Float64,
     longitude Float64,
-    address String,
-    locality String,
-    region LowCardinality(String),
-    postcode LowCardinality(String),
-    admin_region LowCardinality(String),
-    post_town LowCardinality(String),
-    po_box LowCardinality(String),
-    country LowCardinality(String),
+    address Nullable(String),
+    locality Nullable(String),
+    region LowCardinality(Nullable(String)),
+    postcode LowCardinality(Nullable(String)),
+    admin_region LowCardinality(Nullable(String)),
+    post_town LowCardinality(Nullable(String)),
+    po_box LowCardinality(Nullable(String)),
+    country LowCardinality(Nullable(String)),
     date_created Nullable(Date),
     date_refreshed Nullable(Date),
     date_closed Nullable(Date),
-    tel String,
-    website String,
-    email String,
-    facebook_id String,
-    instagram String,
-    twitter String,
-    fsq_category_ids Array(String),
-    fsq_category_labels Array(String),
-    placemaker_url String,
-    geom String,
+    tel Nullable(String),
+    website Nullable(String),
+    email Nullable(String),
+    facebook_id Nullable(Int64),
+    instagram Nullable(String),
+    twitter Nullable(String),
+    fsq_category_ids Array(Nullable(String)),
+    fsq_category_labels Array(Nullable(String)),
+    placemaker_url Nullable(String),
+    geom Nullable(String),
     bbox Tuple(
         xmin Nullable(Float64),
         ymin Nullable(Float64),
         xmax Nullable(Float64),
         ymax Nullable(Float64)
     ),
-    category LowCardinality(String) ALIAS fsq_category_labels[1],
+    category LowCardinality(Nullable(String)) ALIAS fsq_category_labels[1],
     mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
     mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
     INDEX idx_x mercator_x TYPE minmax,
     INDEX idx_y mercator_y TYPE minmax
 )
-ORDER BY mortonEncode(mercator_x, mercator_y)
+ENGINE = MergeTree
+ORDER BY mortonEncode(mercator_x, mercator_y);
 ```
 
-[`LowCardinality`](/ko/reference/data-types/lowcardinality) 데이터 타입이 여러 컬럼에 사용된 점에 주목하십시오. 이렇게 하면
-데이터 타입의 내부 표현이 딕셔너리 인코딩 방식으로 바뀝니다. 딕셔너리 인코딩된 데이터로 작업하면
-많은 애플리케이션에서 `SELECT` 쿼리 성능이 크게 향상됩니다.
+여러 컬럼은 반복되는 값을 딕셔너리 인코딩으로 저장하는 [`LowCardinality`](/ko/reference/data-types/lowcardinality) 데이터 타입을
+사용합니다. 이러한 표현 방식은 `SELECT` 쿼리 성능을 크게
+향상시킬 수 있습니다.
 
-또한, 지도를 타일로 더 쉽게 분할할 수 있도록 `lat/lon` 좌표를 [Web Mercator projection](https://en.wikipedia.org/wiki/Web_Mercator_projection)에 매핑하는
-두 개의 `UInt32` `MATERIALIZED` 컬럼인 `mercator_x`와 `mercator_y`를 생성합니다:
+두 `UInt32` `MATERIALIZED` 컬럼인 `mercator_x`와 `mercator_y`는 위도와
+경도를 [Web Mercator projection](https://en.wikipedia.org/wiki/Web_Mercator_projection)으로 매핑하여,
+지도를 타일로 더 쉽게 분할할 수 있도록 합니다:
 
 ```sql
 mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
 mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
 ```
 
-위에서 각 컬럼에서 어떤 일이 일어나는지 살펴보겠습니다.
+표현식은 다음 값을 계산합니다.
 
 **mercator&#95;x**
 
-이 컬럼은 경도 값을 메르카토르 도법의 X 좌표로 변환합니다:
+이 컬럼은 경도 값을 메르카토르 투영법의 X 좌표로 변환합니다.
 
-* `longitude + 180`은 경도 범위를 [-180, 180]에서 [0, 360]으로 이동시킵니다
-* 360으로 나누면 값을 0과 1 사이로 정규화합니다
-* `0xFFFFFFFF`(32비트 부호 없는 최대 정수의 16진수 표현)를 곱하면 이 정규화된 값을 32비트 정수의 전체 범위로 확장합니다
+* `longitude + 180`은 경도 범위를 [-180, 180]에서 [0, 360]으로 이동합니다.
+* 360으로 나누면 값이 0과 1 사이 범위로 정규화됩니다.
+* 최대 32비트 부호 없는 정수인 `0xFFFFFFFF`를 곱하면 정규화된 값이 32비트 정수의 전체 범위로 스케일링됩니다.
 
 **mercator&#95;y**
 
-이 컬럼은 위도 값을 메르카토르 도법의 Y 좌표로 변환합니다:
+이 컬럼은 위도 값을 메르카토르 투영법의 Y 좌표로 변환합니다.
 
-* `latitude + 90`은 위도 범위를 [-90, 90]에서 [0, 180]으로 이동시킵니다
-* 360으로 나눈 뒤 pi()를 곱하면 삼각 함수에 사용할 라디안으로 변환됩니다
-* `log(tan(...))` 부분은 메르카토르 도법 공식의 핵심입니다
-* `0xFFFFFFFF`를 곱하면 32비트 정수의 전체 범위로 확장합니다
+* `latitude + 90`은 위도 범위를 [-90, 90]에서 [0, 180]으로 이동합니다.
+* 360으로 나눈 뒤 `pi`를 곱하면 값이 삼각 함수에 사용할 라디안으로 변환됩니다.
+* `log(tan(...))`은 메르카토르 투영법의 핵심 공식을 적용합니다.
+* `0xFFFFFFFF`를 곱하면 결과가 32비트 정수의 전체 범위로 스케일링됩니다.
 
-`MATERIALIZED`를 지정하면 ClickHouse가 데이터를 `INSERT`할 때 이러한
-컬럼의 값을 계산하므로, 원본 데이터 스키마에 포함되지 않은 이 컬럼들을
-`INSERT statement`에서 별도로 지정할 필요가 없습니다.
+`MATERIALIZED`를 지정하면 원본 데이터에 컬럼이 없어도
+데이터 삽입 시 ClickHouse가 이러한 값을 계산합니다.
 
-테이블은 `mortonEncode(mercator_x, mercator_y)`를 기준으로 정렬되며, 이는
-지리공간 쿼리 성능을 크게 향상시키기 위해 `mercator_x`, `mercator_y`에 대한
-Z-order 공간 충전 곡선을 생성합니다. 이 Z-order 곡선 정렬은 데이터가
-공간적 인접성을 기준으로 물리적으로 구성되도록 합니다:
+테이블은 Z-순서 공간 충전 곡선을 생성하고 공간적 근접성에 따라 데이터를 구성하는 `mortonEncode(mercator_x, mercator_y)`를 기준으로
+정렬됩니다.
 
 ```sql
-ORDER BY mortonEncode(mercator_x, mercator_y)
+ORDER BY mortonEncode(mercator_x, mercator_y);
 ```
 
-검색 속도를 높이기 위해 `minmax` 인덱스 2개도 생성됩니다:
+두 개의 `minmax` 인덱스는 공간 필터링을 더욱 가속합니다:
 
 ```sql
 INDEX idx_x mercator_x TYPE minmax,
-INDEX idx_y mercator_y TYPE minmax
+INDEX idx_y mercator_y TYPE minmax;
 ```
 
-보시는 것처럼 ClickHouse에는 실시간
-매핑 애플리케이션에 필요한 모든 기능이 갖춰져 있습니다!
+현재 OS Places 릴리스를 테이블로 로드합니다:
 
-데이터를 불러오려면 다음 쿼리를 실행하세요:
+<Warning>
+  이 쿼리는 1억 개가 넘는 행을 읽어 저장합니다. 상당한 시간이 소요되고
+  스토리지를 사용하며 ClickHouse Cloud 사용 비용이 발생할 수 있습니다. 다시 실행하면 동일한 데이터가 추가되므로,
+  가져오기를 재시도하기 전에 `foursquare_mercator`가 비어 있는지 확인하십시오.
+</Warning>
 
-```sql
-INSERT INTO foursquare_mercator 
-SELECT * FROM s3('s3://fsq-os-places-us-east-1/release/dt=2025-04-08/places/parquet/*')
+```sql title="Query"
+INSERT INTO foursquare_mercator
+(
+    fsq_place_id,
+    name,
+    latitude,
+    longitude,
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+)
+SELECT
+    fsq_place_id,
+    name,
+    assumeNotNull(latitude),
+    assumeNotNull(longitude),
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+FROM places.`datasets.places_os`
+WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 ```
+
+명시적으로 지정한 소스 및 대상 컬럼 목록은 카탈로그의 컬럼 순서가 변경되더라도 가져온 값이 잘못 매핑되는 것을 방지합니다. 이 쿼리는 로컬 테이블에 필요하지 않은 `unresolved_flags`를 제외하고,
+좌표가 없는 행은 지도에 표시할 수 없으므로 필터링합니다. 널 허용 소스 값은 로컬 테이블에서도 null로 유지됩니다.
 
 <div id="data-visualization">
   ## 데이터 시각화
 </div>
 
-이 데이터셋으로 무엇을 할 수 있는지 보려면 [adsb.exposed](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219)를 확인해 보세요.
-adsb.exposed는 원래 공동 창립자이자 CTO인 Alexey Milovidov가 ADS-B(Automatic Dependent Surveillance-Broadcast)
-비행 데이터를 시각화하기 위해 만들었으며, 이 데이터는 규모가 1000배 더 큽니다. 이후 사내 해커톤에서 Alexey가 이 도구에 Foursquare 데이터를 추가했습니다.
+<Note>
+  이 시각화가 생성된 이후 Foursquare의 접근 모델이 변경되었습니다.
+  [기존 대화형 Places 보기](https://adsb.exposed/?dataset=Places\&zoom=5\&lat=52.3488\&lng=4.9219)는
+  현재 접근 모델이 도입되기 전에 만들어졌으며, 역사적 참고용으로 연결되어 있지만 더 이상
+  Places 데이터를 표시하지 않을 수 있습니다. 아래 이미지는 역사적 예시로 유지됩니다.
+</Note>
 
-특히 인상적인 시각화 몇 가지를 아래에 소개합니다.
+사내 해커톤에서 ClickHouse 공동 창립자이자 CTO인 Alexey Milovidov는 ClickHouse를 사용하여
+Foursquare 데이터셋에서 다음 시각화를 만들었습니다.
 
 <Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="유럽 내 관심 지점의 밀도 지도" />
 

@@ -27,6 +27,9 @@ static String trim(const char * text)
     return String(view);
 }
 
+/// Defined in StorageSystemDashboardsFilesystemCache.cpp.
+const std::vector<std::map<String, String>> & getFilesystemCacheDashboards();
+
 #if ENABLE_DISTRIBUTED_CACHE
 /// Defined in StorageSystemDashboardsDistributedCache.cpp, which exists only in the private repo.
 const std::vector<std::map<String, String>> & getDistributedCacheDashboards();
@@ -206,6 +209,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -463,6 +467,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -571,6 +576,7 @@ FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
+SETTINGS asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -982,7 +988,7 @@ FROM (
   GROUP BY event_time
 )
 GROUP BY t
-ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -1833,7 +1839,7 @@ FROM (
   GROUP BY event_time, hostname
 )
 GROUP BY t, hostname
-ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1
+ORDER BY t WITH FILL STEP {rounding:UInt32} SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -2119,7 +2125,7 @@ FROM clusterAllReplicas(default, merge('system', '^metric_log'))
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t, hostname
 ORDER BY t WITH FILL STEP {rounding:UInt32}
-SETTINGS skip_unavailable_shards = 1
+SETTINGS skip_unavailable_shards = 1, asterisk_include_alias_columns = 1
 )EOQ") }
         },
         {
@@ -2288,6 +2294,7 @@ SETTINGS skip_unavailable_shards = 1
     else
     {
         add_dashboards(default_dashboards);
+        add_dashboards(getFilesystemCacheDashboards());
 #if ENABLE_DISTRIBUTED_CACHE
         add_dashboards(getDistributedCacheDashboards());
 #endif

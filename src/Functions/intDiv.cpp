@@ -167,9 +167,9 @@ in the range of the dividend, or when dividing a minimal negative number by minu
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`"};
     FunctionDocumentation::Example example1 = {"Integer division of two floats", "SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)", R"(
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
+┌──res─┬─toTypeName(res)─┐
+│ 1000 │ Int64           │
+└──────┴─────────────────┘
     )"};
     FunctionDocumentation::Example example2 = {
         "Quotient does not fit in the range of the dividend",

@@ -4,6 +4,8 @@
 #include <cstddef>
 
 #include <base/defines.h>
+#include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -110,5 +112,107 @@ size_t findEqualRangeEndAssumeSorted(size_t begin, size_t end, size_t linear_pro
     checkEqualRangeEndAssumeSorted(begin, end, run_end, equals);
     return run_end;
 }
+
+/** Shared tail of compareTrackAt (see IColumn::compareTrackAt): given `compare_result` for lhs[n] vs
+  * rhs[m], find the end of the run of lesser rows on the lesser side by galloping. The predicate
+  * is_less(row) must report lhs[row] < rhs[m], and is_greater(row) must report lhs[n] > rhs[row];
+  * the sorted-tail precondition of compareTrackAt applies to the probed side.
+  *
+  * ALWAYS_INLINE: the merge joins call compareTrackAt once per loop iteration; leaving this as a
+  * separate call behind the virtual one costs ~10% on interleaved short-run keys.
+  */
+template <typename IsLess, typename IsGreater>
+ALWAYS_INLINE Int64 compareTrackAtImpl(
+    int compare_result,
+    size_t n,
+    size_t m,
+    size_t lhs_size,
+    size_t rhs_size,
+    size_t linear_probe,
+    IsLess && is_less,
+    IsGreater && is_greater)
+{
+    if (compare_result < 0)
+    {
+        /// Resolve a run of length one with a single comparison before paying the run-search setup cost.
+        if (n + 1 >= lhs_size || !is_less(n + 1))
+            return -1;
+        return -static_cast<Int64>(findEqualRangeEndAssumeSorted(n + 1, lhs_size, linear_probe, is_less) - n);
+    }
+    if (compare_result > 0)
+    {
+        if (m + 1 >= rhs_size || !is_greater(m + 1))
+            return 1;
+        return static_cast<Int64>(findEqualRangeEndAssumeSorted(m + 1, rhs_size, linear_probe, is_greater) - m);
+    }
+    return 0;
+}
+
+/** Returns the end of the run of rows whose multi-column key equals the key at `begin`, within `[begin, end)` sorted by
+  * that key. `search(i, from, bound)` must return the end of the run of column `i` at `from` within `[from, bound)`;
+  * column `i` is sorted there because `bound` is the end of the run of columns `0..i-1`.
+  */
+template <typename Search>
+ALWAYS_INLINE size_t findKeyRangeEndAssumeSorted(size_t key_size, size_t begin, size_t end, Search && search)
+{
+    size_t run_end = end;
+    for (size_t i = 0; i < key_size; ++i)
+    {
+        run_end = search(i, begin, run_end);
+        if (run_end <= begin + 1)
+            break;
+    }
+    return run_end;
+}
+
+/** Same result as `findKeyRangeEndAssumeSorted`, for callers that search the runs of one range one after another.
+  * Remembers the last run found for each key prefix: a search from a row inside it ends at the same row, so a column
+  * is searched again only when the search leaves its prefix's run. Call `reset` when the columns change, or when `end`
+  * changes and the next search may start before the previous `end`.
+  */
+class SortedKeyRuns
+{
+public:
+    SortedKeyRuns() = default;
+    explicit SortedKeyRuns(size_t key_size) : runs(key_size) {}
+
+    void reset(size_t key_size) { runs.assign(key_size, Run{}); }
+    size_t keySize() const { return runs.size(); }
+
+    template <typename Search>
+    ALWAYS_INLINE size_t findRunEnd(size_t begin, size_t end, Search && search)
+    {
+        const size_t key_size = runs.size();
+        if (key_size < 2)
+            return findKeyRangeEndAssumeSorted(key_size, begin, end, search);
+
+        size_t level = 0;
+        while (level < key_size && runs[level].begin <= begin && begin < runs[level].end)
+            ++level;
+
+        size_t run_end = level == 0 ? end : runs[level - 1].end;
+        for (; level < key_size; ++level)
+        {
+            run_end = search(level, begin, run_end);
+            if (run_end <= begin + 1)
+                break;
+            runs[level] = {begin, run_end};
+        }
+
+        chassert(
+            run_end == findKeyRangeEndAssumeSorted(key_size, begin, end, search),
+            "Equal values are not contiguous within the range assumed to be sorted");
+        return run_end;
+    }
+
+private:
+    struct Run
+    {
+        size_t begin = 0;
+        size_t end = 0;
+    };
+
+    VectorWithMemoryTracking<Run> runs;
+};
 
 }

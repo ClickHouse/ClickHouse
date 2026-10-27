@@ -1,0 +1,15 @@
+ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))	2	2	6	Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
+ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC'))	1	1	2
+ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-03-31 12:00:00', 'UTC'))	2	2	3
+ts GLOBAL IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))	2	2	6
+has([toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC')], ts)	2	2	6
+ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)	0	0	0
+ts NOT IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)	24	24	24
+has([], ts)	0	0	0
+ts NOT IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))	22	22	24	Condition: (ts notIn 2-element set)
+ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))	2	2	10	Condition: and((toYYYYMM(ts) in 2-element set), (toDate(ts) in 2-element set))
+x IN (1, 10000000000)	1	1	2	Condition: (x in 1-element set)
+x IN (1, NULL)	2	2	3	Condition: (x in 2-element set)
+tup IN ((1, 2), (3, 4))	2	2	2	Condition: (tup in 2-element set)
+(a, b) IN ((1, 2), (3, 0))	2	2	4	Condition: ((a, b) in 2-element set)
+(a, c) IN ((1, 2), (3, 0))	2	2	10	Condition: (a in 2-element set)

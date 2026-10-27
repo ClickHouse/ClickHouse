@@ -1,0 +1,6 @@
+-- the test part uses compact storage --
+1
+-- the selective read is wide enough for the cap to matter --
+1
+-- selective compact-part reads skip the bytes-aware cap --
+1

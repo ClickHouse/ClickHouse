@@ -36,6 +36,8 @@ El terminal web autentica al usuario con las mismas comprobaciones de `Session` 
 {"type": "auth", "user": "<user>", "password": "<password>"}
 ```
 
+El campo `user` es opcional: cuando se omite o está vacío, se utiliza el nombre de usuario definido por la [configuración del servidor](/es/reference/settings/server-settings/settings) `default_session_user` (o su sobrescritura por endpoint en una configuración de [protocolos componibles](/es/concepts/features/configuration/server-config/composable-protocols)); de forma predeterminada, `default`. Si `default_session_user` se establece como una cadena vacía, se prohíben las conexiones sin nombre de usuario: un mensaje `auth` con `user` omitido o vacío no supera la autenticación, el servidor cierra el WebSocket con el código `1008` y, cuando la sección `session_log` está habilitada en la configuración del servidor, el rechazo se registra en [`system.session_log`](/es/reference/system-tables/session_log) como un evento `LoginFailure` con un `user` vacío.
+
 Esto evita poner credenciales en los parámetros de consulta de la URL o en los encabezados `Authorization` enviados con la solicitud de actualización, donde podrían acabar en el historial del navegador, en los registros de acceso del servidor y en los registros del proxy inverso. Los parámetros de URL, HTTP Basic y los encabezados `X-ClickHouse-User`/`X-ClickHouse-Key` de la solicitud de actualización deliberadamente **no** se tienen en cuenta en `/webterminal`.
 
 Las credenciales no válidas hacen que el servidor cierre el WebSocket con el código `1008`; la interfaz de usuario del navegador vuelve a solicitar las credenciales.
@@ -58,6 +60,16 @@ La terminal usa [xterm.js](https://xtermjs.org/) para renderizar. Todos los recu
 </div>
 
 La interfaz web SQL [`/play`](/es/concepts/features/interfaces/http) incorpora el terminal web como un panel acoplable. Actívalo con el icono del terminal en la barra lateral o pulsa la tecla `~` cuando el editor de consultas esté vacío. La página `/play` detecta la disponibilidad de `/webterminal` al cargarse y oculta los controles del terminal cuando el endpoint no está disponible (por ejemplo, cuando `enable_webterminal` está configurado como `false`).
+
+<div id="docs-integration">
+  ## Integración con el sitio web de documentación
+</div>
+
+Este sitio web de documentación incorpora la misma terminal en una estrecha bandeja para desarrolladores situada en la parte inferior de la página, conectada al [ClickHouse playground](https://play.clickhouse.com) como el usuario de solo lectura `play`, para que pueda probar los ejemplos de cualquier página sin salir de ella. La bandeja fija reserva un espacio equivalente al final de la página para no ocultar los controles del pie de página. Mientras la terminal está abierta, la página de documentación queda bloqueada y su barra de desplazamiento se oculta. El desplazamiento sobre la terminal queda limitado a su búfer de desplazamiento y no mueve la página de documentación que hay detrás. Haga clic en la barra «ClickHouse terminal» o pulse la tecla `~` para abrir el panel con relleno situado sobre la barra. Vuelva a hacer clic en la barra, use su chevrón, pulse `~` o `Escape`, o arrastre hacia abajo el borde superior del panel para contraerlo; ese borde también permite cambiar su tamaño. Al finalizar la sesión —`exit` o `Ctrl+D`—, el panel también se contrae.
+
+Al cerrar el panel se conservan la sesión y su búfer de desplazamiento: al volver a abrir la terminal, regresará al mismo prompt. La sesión se mantiene en la página, por lo que persiste al navegar entre páginas de documentación, pero no al recargar la pestaña del navegador; tras recargarla, el panel vuelve con una sesión nueva.
+
+La bandeja de la terminal forma parte del diseño de escritorio del sitio web y no está disponible en ventanas gráficas estrechas.
 
 <div id="security">
   ## Consideraciones de seguridad

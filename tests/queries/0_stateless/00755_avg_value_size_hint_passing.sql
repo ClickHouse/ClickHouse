@@ -7,6 +7,10 @@ SET max_block_size = 1000;
 SET max_memory_usage = 1000000000;
 INSERT INTO size_hint SELECT arrayMap(x -> 'Hello', range(1000)) FROM numbers(10000);
 
+-- A query that populates the columns cache holds a copy of every range it reads until the range
+-- is complete, on top of the rows themselves, so it does not fit in the limit this test sets to
+-- assert that `avg_value_size_hint` is passed down.
+SET use_columns_cache = 0;
 SET max_memory_usage = 105000000, max_threads = 2;
 SELECT count(), sum(length(s)) FROM size_hint;
 

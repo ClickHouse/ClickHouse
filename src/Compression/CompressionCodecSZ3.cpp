@@ -11,14 +11,11 @@
 #    include <Compression/registerCompressionCodecs.h>
 #    include <Core/TypeId.h>
 #    include <DataTypes/IDataType.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Interpreters/Context.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
 #    include <Common/SipHash.h>
+#    include <Common/StringUtils.h>
 #    include "base/types.h"
 
 #    include <SZ3/api/sz.hpp>
@@ -35,6 +32,7 @@ public:
     CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 0; }
 
@@ -49,9 +47,7 @@ protected:
     bool isGenericCompression() const override { return false; }
     /// SZ3 is still under development, it writes its current version into the serialized compressed data.
     /// Therefore, update SZ3 with care to avoid breaking existing persistencies.
-    /// We mark it as experimental for now.
     bool isLossyCompression() const override { return true; }
-    bool isExperimental() const override { return true; }
     /// SZ3 must be applied to raw floating-point data, so it can not follow another (e.g. delta) codec;
     /// this flag makes the codec-stack validation reject such combinations (like ALP/Gorilla/FPC).
     bool isFloatingPointTimeSeriesCodec() const override { return true; }
@@ -105,7 +101,11 @@ CompressionCodecSZ3::CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_
     , error_bound_mode(error_bound_mode_)
     , error_value(error_value_)
 {
-    setCodecDescription(
+}
+
+ASTPtr CompressionCodecSZ3::getCodecDescription() const
+{
+    return makeCodecDescription(
         "SZ3",
         {make_intrusive<ASTLiteral>(getSZ3AlgorithmString(algorithm)),
          make_intrusive<ASTLiteral>(getSZ3ErrorBoundModeString(error_bound_mode)),
@@ -119,7 +119,7 @@ uint8_t CompressionCodecSZ3::getMethodByte() const
 
 void CompressionCodecSZ3::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, true);
+    getCodecDescription()->updateTreeHash(hash, true);
     hash.update(float_width);
 }
 
@@ -346,16 +346,19 @@ static UInt8 getFloatByteWidth(const IDataType & column_type)
     return static_cast<UInt8>(column_type.getSizeOfValueInMemory());
 }
 
+/// The algorithm and the error bound mode are keywords and are matched case-insensitively, like the codec name
+/// itself. A codec-valued setting such as `default_compression_codec` used to be upper-cased before parsing, so
+/// every spelling was accepted there; keep accepting them now that the setting is parsed as written.
 static SZ3::ALGO getSZ3Algorithm(const String & algorithm)
 {
     /// Only the algorithms that go through the default (interpolation/Lorenzo) decompression path are
     /// allowed. The other SZ3 algorithms (e.g. ALGO_BIOMD, ALGO_BIOMDXTC, ALGO_NOPRED, ALGO_LOSSLESS)
     /// use different decompositions/encoders that are neither tested nor hardened here.
-    if (algorithm == "ALGO_LORENZO_REG")
+    if (equalsCaseInsensitive(algorithm, "ALGO_LORENZO_REG"))
         return SZ3::ALGO_LORENZO_REG;
-    if (algorithm == "ALGO_INTERP_LORENZO")
+    if (equalsCaseInsensitive(algorithm, "ALGO_INTERP_LORENZO"))
         return SZ3::ALGO_INTERP_LORENZO;
-    if (algorithm == "ALGO_INTERP")
+    if (equalsCaseInsensitive(algorithm, "ALGO_INTERP"))
         return SZ3::ALGO_INTERP;
     throw Exception(
         ErrorCodes::ILLEGAL_CODEC_PARAMETER,
@@ -368,22 +371,22 @@ static SZ3::EB getSZ3ErrorBoundMode(const String & error_bound_mode)
 {
     /// Restrict to the documented error bound modes and reject anything else with a user-facing error
     /// (a raw `EB_MAP.at` would throw `std::out_of_range`, surfacing as a logical error).
-    if (error_bound_mode == "ABS")
+    if (equalsCaseInsensitive(error_bound_mode, "ABS"))
         return SZ3::EB_ABS;
-    if (error_bound_mode == "REL")
+    if (equalsCaseInsensitive(error_bound_mode, "REL"))
         return SZ3::EB_REL;
-    if (error_bound_mode == "PSNR")
+    if (equalsCaseInsensitive(error_bound_mode, "PSNR"))
         return SZ3::EB_PSNR;
-    if (error_bound_mode == "ABS_AND_REL")
+    if (equalsCaseInsensitive(error_bound_mode, "ABS_AND_REL"))
         return SZ3::EB_ABS_AND_REL;
     /// Legacy aliases: the original experimental SZ3 codec parsed the mode string directly through
     /// `SZ3::EB_MAP`, so it also accepted `NORM` (L2 norm) and `ABS_OR_REL`. Column codecs are reparsed
     /// on metadata load (including `ATTACH`, where sanity checks are relaxed), so a table created on an
     /// earlier build with one of these modes must stay loadable after an upgrade. Both are still
     /// implemented by `doCompressData`, so they keep working; they are just not advertised above.
-    if (error_bound_mode == "NORM")
+    if (equalsCaseInsensitive(error_bound_mode, "NORM"))
         return SZ3::EB_L2NORM;
-    if (error_bound_mode == "ABS_OR_REL")
+    if (equalsCaseInsensitive(error_bound_mode, "ABS_OR_REL"))
         return SZ3::EB_ABS_OR_REL;
     throw Exception(
         ErrorCodes::ILLEGAL_CODEC_PARAMETER,

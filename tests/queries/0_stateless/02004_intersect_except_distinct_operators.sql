@@ -1,3 +1,4 @@
+
 -- { echo }
 
 set intersect_default_mode = 'DISTINCT';

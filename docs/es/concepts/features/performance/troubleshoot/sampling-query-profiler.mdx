@@ -11,7 +11,9 @@ Con el perfilador, puede identificar las rutinas del código fuente que se usan 
 Puede rastrear el tiempo de CPU y el tiempo de reloj consumidos, incluido el tiempo inactivo.
 
 El perfilador de consultas se habilita automáticamente en ClickHouse Cloud.
-La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de una consulta perfilada, con los nombres de función resueltos y las ubicaciones en el código fuente:
+La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de una consulta perfilada, con los nombres de función resueltos y las ubicaciones en el código fuente.
+
+De forma predeterminada, el perfilador simboliza las trazas de pila durante la recopilación y almacena los resultados en las columnas `symbols` y `lines` de [`system.trace_log`](/es/reference/system-tables/trace_log), por lo que los siguientes ejemplos leen directamente esas columnas y no requieren funciones de introspección. La simbolización se controla mediante la configuración `symbolize` en la sección de configuración del servidor `trace_log` (habilitada de forma predeterminada) y es compatible con plataformas ELF (como Linux) y macOS; en FreeBSD, las columnas `symbols` y `lines` siempre están vacías. Los nombres de función de `symbols` proceden de la tabla de símbolos del binario y están disponibles de forma predeterminada. Las ubicaciones del código fuente en `lines` se resuelven según las posibilidades: requieren información de depuración (en macOS, un paquete `.dSYM` junto al binario) y, en plataformas ELF, solo se resuelven los marcos dentro del binario principal de ClickHouse, por lo que las entradas de marcos que no pueden resolverse (por ejemplo, en bibliotecas compartidas) se dejan vacías. Si la simbolización está deshabilitada, use las funciones de introspección `addressToSymbol`, `demangle` y `addressToLine` para resolver en su lugar las direcciones sin procesar de la columna `trace`. Estas funciones están disponibles en las mismas plataformas que la simbolización (plataformas ELF como Linux y macOS); en FreeBSD tampoco se compilan, por lo que las direcciones de `trace` deben resolverse fuera del servidor. Consulte también la documentación de las [funciones de introspección](/es/reference/functions/regular-functions/introspection).
 
 <Tip>
   Reemplace el valor de `query_id` por el ID de la consulta que quiere perfilar.
@@ -26,13 +28,12 @@ La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -40,13 +41,12 @@ La siguiente consulta de ejemplo encuentra las trazas de pila más frecuentes de
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
@@ -68,11 +68,11 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
   </Step>
 
   <Step title="Compruebe la configuración del servidor" id="server-config">
-    Asegúrese de que la sección [`trace_log`](/es/reference/settings/server-settings/settings#trace_log) de su [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) esté configurada. Está habilitada de forma predeterminada:
+    Asegúrese de que la sección [`trace_log`](/es/reference/settings/server-settings/settings/other#trace_log) de su [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) esté configurada. Está habilitada de forma predeterminada:
 
     ```xml
-    <!-- Registro de trazas. Almacena trazas de pila recopiladas por los perfiladores de consultas.
-         Consulte la configuración query_profiler_real_time_period_ns y query_profiler_cpu_time_period_ns. -->
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -82,19 +82,25 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- Indica si los logs deben volcarse al disco en caso de fallo -->
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     Esta sección configura la tabla del sistema [trace&#95;log](/es/reference/system-tables/trace_log), que contiene los resultados del funcionamiento del perfilador.
-    Recuerde que los datos de esta tabla solo son válidos mientras el servidor esté en ejecución.
-    Después de reiniciar el servidor, ClickHouse no limpia la tabla y todas las direcciones de memoria virtual almacenadas pueden quedar inválidas.
+    La opción `symbolize` (habilitada de forma predeterminada) hace que ClickHouse resuelva cada marco de pila durante la recopilación y almacene los nombres de función desmanglados y las ubicaciones en el código fuente en las columnas `symbols` y `lines`.
+    Los nombres de función de `symbols` proceden de la tabla de símbolos y están disponibles de forma predeterminada, mientras que las ubicaciones en el código fuente de `lines` requieren información de depuración (un paquete `.dSYM` en macOS) y, en plataformas ELF, solo se resuelven para los marcos del binario principal de ClickHouse; los marcos sin resolver tienen entradas vacías en `lines`.
+
+    Tenga en cuenta que las direcciones sin procesar de la columna `trace` son menos estables entre reinicios y actualizaciones que las columnas presimbolizadas.
+    En plataformas ELF, excepto FreeBSD, los marcos del binario principal de ClickHouse se almacenan como desplazamientos físicos dentro del archivo, por lo que pueden seguir resolviéndose tras los reinicios siempre que el binario no cambie; en macOS y FreeBSD, se almacenan como direcciones virtuales en tiempo de ejecución que pueden dejar de ser válidas después de un reinicio.
+    Los marcos fuera del binario principal (por ejemplo, en bibliotecas compartidas) siempre se almacenan como direcciones virtuales en tiempo de ejecución que pueden dejar de ser válidas después de un reinicio, y cualquier dirección sin procesar deja de poder resolverse después de una actualización del binario porque cambia la disposición del código.
+    ClickHouse no limpia la tabla al reiniciarse, por lo que pueden permanecer direcciones sin procesar obsoletas.
+    Por otro lado, las columnas presimbolizadas `symbols` y `lines` siguen siendo válidas tras reinicios y actualizaciones, por lo que debe preferirlas al analizar datos históricos.
   </Step>
 
   <Step title="Configure los temporizadores del perfilador" id="configure-profile-timers">
-    Configure las opciones [`query_profiler_cpu_time_period_ns`](/es/reference/settings/session-settings#query_profiler_cpu_time_period_ns) o [`query_profiler_real_time_period_ns`](/es/reference/settings/session-settings#query_profiler_real_time_period_ns).
+    Configure las opciones [`query_profiler_cpu_time_period_ns`](/es/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) o [`query_profiler_real_time_period_ns`](/es/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     Ambas opciones pueden usarse simultáneamente.
 
     Estas opciones le permiten configurar los temporizadores del perfilador.
@@ -106,7 +112,12 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
   </Step>
 
   <Step title={<>Analice la tabla del sistema <code>trace_log</code></>} id="analyze-trace-log-system-table">
-    Para analizar la tabla del sistema `trace_log`, habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions):
+    Para obtener un perfil de alguna consulta, necesita agregar datos de la tabla `trace_log`.
+    Puede agregar los datos por funciones individuales o por trazas de pila completas.
+
+    Cuando la simbolización está habilitada (de forma predeterminada), los nombres de función desmangleados y las ubicaciones de origen ya están disponibles en las columnas `symbols` y `lines`, por lo que no se requiere configuración adicional. La simbolización no es compatible con FreeBSD, donde estas columnas siempre están vacías. Las entradas de `lines` pueden estar vacías para los marcos que no tienen información de depuración o quedan fuera del binario principal de ClickHouse (consulte [anteriormente](#server-config)).
+
+    Si la simbolización está deshabilitada o desea resolver sobre la marcha las direcciones sin procesar de la columna `trace` (por ejemplo, para expandir marcos en línea), habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions):
 
     ```sql
     SET allow_introspection_functions=1
@@ -116,9 +127,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
       Por razones de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada
     </Note>
 
-    Use las [funciones de introspección](/es/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` y `demangle` para obtener los nombres de las funciones y sus posiciones en el código de ClickHouse.
-    Para obtener un perfil de alguna consulta, necesita agregar datos de la tabla `trace_log`.
-    Puede agregar los datos por funciones individuales o por trazas de pila completas.
+    Use las [funciones de introspección](/es/reference/functions/regular-functions/introspection) `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` y `demangle` para obtener los nombres de las funciones y sus posiciones en el código de ClickHouse. Al igual que la simbolización, estas funciones están disponibles en plataformas ELF (como Linux) y macOS, pero no en FreeBSD.
 
     <Tip>
       Si necesita visualizar la información de `trace_log`, pruebe [flamegraph](/es/integrations/connectors/tools/gui#clickhouse-flamegraph) y [speedscope](https://www.speedscope.app).
@@ -309,15 +318,15 @@ clickhouse client --allow_introspection_functions=1 \
 El siguiente fragmento de código:
 
 * Filtra los datos de `trace_log` por un identificador de consulta y la fecha actual.
-* Agrupa por traza de pila.
-* Usa funciones de introspección para obtener un informe de:
-  * Los nombres de los símbolos y las funciones correspondientes del código fuente.
-  * Las ubicaciones de estas funciones en el código fuente.
+* Lee las columnas `symbols` y `lines` presimbolizadas para generar un informe sobre:
+  * Los nombres de los símbolos y las funciones de código fuente correspondientes.
+  * Las ubicaciones en el código fuente de estas funciones.
+* Agrupa por la traza de pila sin procesar (la columna `trace`) y usa las columnas simbolizadas solo para mostrar, de modo que la simbolización aproximada nunca agrupe trazas de pila distintas.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

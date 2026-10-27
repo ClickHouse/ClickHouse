@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'クエリインサイト'
 title: 'Postgres のクエリインサイト'
-description: 'Managed Postgres 向けのステートメント単位のテレメトリーです。データベースで実行されるすべてのクエリパターンを影響度順に表示し、それぞれが遅い理由を示す診断カウンターを確認できます'
+description: 'ClickHouse Managed Postgres 向けのステートメント単位のテレメトリーです。データベースで実行されるすべてのクエリパターンを影響度順に表示し、それぞれが遅い理由を示す診断カウンターを確認できます'
 keywords: ['Managed Postgres', 'クエリインサイト', 'pg_stat_ch', '遅いクエリ', 'p99 レイテンシ', 'クエリパターン', 'Postgres パフォーマンス', 'temp blocks', '並列ワーカー', 'wal']
 doc_type: 'guide'
 ---
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
-クエリインサイトは、[Managed Postgres](/ja/products/managed-postgres/overview) インスタンスから
+クエリインサイトは、[ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) インスタンスから
 ステートメントごとのテレメトリーを取得し、すべてのクエリ
 パターンを影響度順にランク付けします。これにより、&quot;p99 がじわじわ悪化している&quot; という状態から &quot;このパターン
 はディスクにスピルしている&quot; という原因特定まで、Cloud Console を離れることなく行えます。
@@ -27,7 +27,7 @@ ClickHouse Cloud にストリーミングするオープンソースの Postgres
   ## クエリインサイトを開く
 </div>
 
-Cloud Console で Managed Postgres インスタンスを開き、左側のサイドバーで
+Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左側のサイドバーで
 **クエリインサイト** をクリックします。ページは、実際に使う順に
 4 つの領域に分かれています。
 
@@ -245,6 +245,6 @@ ClickHouse に送信できます。ソースコードと issue は
 
 * [監視ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのリソースおよびアクティビティのチャート
 * [Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) — ホストレベルのメトリクスを独自のオブザーバビリティスタックに取り込めます
-* [Managed Postgres OpenAPI](/ja/products/managed-postgres/openapi#query-insights) — スローパターンや最近の実行履歴をプログラムから取得できます
-* [拡張機能](/ja/products/managed-postgres/extensions) — Managed Postgres インスタンスで利用可能な拡張機能
+* [ClickHouse Managed Postgres OpenAPI](/ja/products/managed-postgres/openapi#query-insights) — 低速クエリパターンや最近の実行履歴をプログラムから取得できます
+* [拡張機能](/ja/products/managed-postgres/extensions) — ClickHouse Managed Postgres インスタンスで利用可能な拡張機能
 * [GitHub 上の `pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch) — クエリインサイトを支えるオープンソースの拡張機能

@@ -12,7 +12,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
 
-O Managed Postgres garante a segurança e a disponibilidade dos seus dados por meio de backups automatizados e recuperação em um ponto no tempo. Você pode ver o histórico de backups e iniciar restaurações na visualização **Backups** da sua instância.
+O ClickHouse Managed Postgres garante a segurança e a disponibilidade dos seus dados por meio de backups automatizados e recuperação em um ponto no tempo. Você pode ver o histórico de backups e iniciar restaurações na visualização **Backups** da sua instância.
 
 <Image img="/images/managed-postgres/backup-and-restore.webp" alt="Visualização Backups mostrando o histórico de backups e opções de recuperação em um ponto no tempo" size="lg" border />
 
@@ -24,7 +24,7 @@ O Managed Postgres garante a segurança e a disponibilidade dos seus dados por m
   ### Frequência de backup
 </div>
 
-O Managed Postgres faz backups completos diários do seu banco de dados. Além dos backups completos, os arquivos de Write-Ahead Log (WAL) são arquivados a cada 60 segundos ou quando 16 MB de dados de WAL se acumulam, o que ocorrer primeiro. Essa combinação de backups completos com o arquivamento contínuo de WAL permite a recuperação em um ponto no tempo para qualquer momento dentro da janela de retenção.
+O ClickHouse Managed Postgres faz backups completos diários do seu banco de dados. Além dos backups completos, os arquivos de Write-Ahead Log (WAL) são arquivados a cada 60 segundos ou quando 16 MB de dados de WAL se acumulam, o que ocorrer primeiro. Essa combinação de backups completos com o arquivamento contínuo de WAL permite a recuperação em um ponto no tempo para qualquer momento dentro da janela de retenção.
 
 <div id="retention-period">
   ### Período de retenção
@@ -36,7 +36,7 @@ Os backups são mantidos por 7 dias, o que oferece uma janela adequada para recu
   ### Armazenamento e durabilidade
 </div>
 
-Os backups são replicados em vários servidores usando codificação por apagamento, o que garante que continuem acessíveis mesmo que alguns servidores de armazenamento fiquem indisponíveis. O armazenamento de backups é isolado no nível do bucket — cada instância do Managed Postgres tem seu próprio storage bucket dedicado, e as credenciais são restritas para permitir acesso apenas aos backups dessa instância.
+Os backups são replicados em vários servidores usando codificação por apagamento, o que garante que continuem acessíveis mesmo que alguns servidores de armazenamento fiquem indisponíveis. O armazenamento de backups é isolado no nível do bucket — cada instância do ClickHouse Managed Postgres tem seu próprio storage bucket dedicado, e as credenciais são restritas para permitir acesso apenas aos backups dessa instância.
 
 <div id="point-in-time-recovery">
   ## Recuperação em um ponto no tempo
@@ -46,8 +46,8 @@ A recuperação em um ponto no tempo permite restaurar seu banco de dados para q
 
 Para executar uma recuperação em um ponto no tempo:
 
-1. Acesse a aba **Backups** da sua instância do Managed Postgres.
+1. Acesse a aba **Backups** da sua instância do ClickHouse Managed Postgres.
 2. Na seção **Point in time recovery**, selecione a data e a hora de destino (em UTC) para as quais deseja restaurar.
 3. Clique em **Restore to point in time**.
 
-A operação de restauração cria uma nova instância do Managed Postgres com o estado do seu banco de dados exatamente como estava no momento selecionado. Sua instância original permanece inalterada, permitindo que você verifique os dados restaurados antes de decidir qual instância manter.
+A operação de restauração cria uma nova instância do ClickHouse Managed Postgres com o estado do seu banco de dados exatamente como estava no momento selecionado. Sua instância original permanece inalterada, permitindo que você verifique os dados restaurados antes de decidir qual instância manter.

@@ -355,33 +355,34 @@ SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
 ```
 
 ```response title=Response
-┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
-│ 99 │ 01100011 │       140 │ 10001100                 │
-└────┴──────────┴───────────┴──────────────────────────┘
+┌──a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 99 │ 01100011 │       140 │ 10001100       │
+└────┴──────────┴───────────┴────────────────┘
 ```
 
 **Exemple d’utilisation avec encodage hexadécimal**
 
 ```sql title=Query
-SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
-│ abc │ 616263     │ &0        │ 06162630                    │
-└─────┴────────────┴───────────┴─────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 06162630  │
+└─────┴────────┴───────────┘
 ```
 
 **Exemple d&#39;utilisation avec un encodage Fixed String**
 
 ```sql title=Query
-SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftLeft(toFixedString('abc', 3), 4))─┐
-│ abc │ 616263                       │ &0        │ 162630                                        │
-└─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 162630    │
+└─────┴────────┴───────────┘
 ```
 
 <div id="bitShiftRight">
@@ -421,33 +422,34 @@ SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
 ```
 
 ```response title=Response
-┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
-│ 101 │ 01100101 │        25 │ 00011001                   │
-└─────┴──────────┴───────────┴────────────────────────────┘
+┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 101 │ 01100101 │        25 │ 00011001       │
+└─────┴──────────┴───────────┴────────────────┘
 ```
 
 **Exemple d’utilisation avec encodage hexadécimal**
 
 ```sql title=Query
-SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
-│ abc │ 616263     │           │ 0616                          │
-└─────┴────────────┴───────────┴───────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 0616      │
+└─────┴────────┴───────────┘
 ```
 
 **Exemple d’utilisation avec l’encodage Fixed String**
 
 ```sql title=Query
-SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
-│ abc │ 616263                       │           │ 000616                                          │
-└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 000616    │
+└─────┴────────┴───────────┘
 ```
 
 <div id="bitSlice">
@@ -582,9 +584,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAll(43, 0, 1, 3, 5)─┐
-│ 00101011 │                          1 │
-└──────────┴────────────────────────────┘
+┌─bitTestAll(43, 0, 1, 3, 5)─┐
+│                          1 │
+└────────────────────────────┘
 ```
 
 **Exemple d’utilisation 2**
@@ -594,9 +596,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAll(4⋯1, 3, 5, 2)─┐
-│ 00101011 │                        0 │
-└──────────┴──────────────────────────┘
+┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
+│                             0 │
+└───────────────────────────────┘
 ```
 
 <div id="bitTestAny">
@@ -634,9 +636,9 @@ SELECT bitTestAny(43, 0, 2);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAny(43, 0, 2)─┐
-│ 00101011 │                    1 │
-└──────────┴──────────────────────┘
+┌─bitTestAny(43, 0, 2)─┐
+│                    1 │
+└──────────────────────┘
 ```
 
 **Exemple d’utilisation 2**
@@ -646,9 +648,9 @@ SELECT bitTestAny(43, 4, 2);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAny(43, 4, 2)─┐
-│ 00101011 │                    0 │
-└──────────┴──────────────────────┘
+┌─bitTestAny(43, 4, 2)─┐
+│                    0 │
+└──────────────────────┘
 ```
 
 <div id="bitXor">

@@ -402,8 +402,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// early exit — the flag is checked before the partial split below.
     const bool reading_in_order = reading_step->readsInOrder();
 
-    /// Skip if projection was applied.
-    if (reading_step->getAnalyzedResult())
+    /// Skip if projection was applied. A non-null analysis result alone does not imply
+    /// a projection: join-order estimation runs index analysis for join relations and
+    /// memoizes the result (see estimateReadRowsCount in RelationStatisticsEstimator.cpp).
+    if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 
     /// Find a LIMIT that applies directly to the reading step's output (only Expression/Filter
@@ -426,11 +428,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                 break;
             continue;
         }
-        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is produced.
-        /// The DISTINCT transform honors the hint even when the enclosing limit has
-        /// always_read_till_end (e.g. exact_rows_before_limit), so any non-zero hint means the
-        /// query terminates reading early; if the hint seeding ever starts to account for that,
-        /// this check follows automatically.
+        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is
+        /// produced, so any non-zero hint means the query terminates reading early.
         if (const auto * distinct_step = typeid_cast<DistinctStep *>(step))
         {
             limit_above_reading = distinct_step->getLimitHint();
@@ -473,7 +472,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// both for the non-intersecting split and for the set/true-branch plans.
     /// The WHERE filter was already pushed by optimizePrimaryKeyConditionAndLimit,
     /// so selectRangesToRead uses the PK condition for index analysis.
-    auto analyzed_result = reading_step->selectRangesToRead();
+    /// Reuse the partition/PK/index ranges memoized on `ReadFromMergeTree` by join-order
+    /// estimation. This is an analysis-time range set, not an estimated join cardinality
+    /// or a row count observed during execution. The PK conditions were pushed before that
+    /// pass as well, so re-running the analysis would produce the same ranges.
+    auto analyzed_result = reading_step->getAnalyzedResult();
+    if (!analyzed_result)
+        analyzed_result = reading_step->selectRangesToRead();
     if (reading_step->getParts().empty())
         return;
 
@@ -492,6 +497,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (split_result.fully_replaced)
         return;
 
+    /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
+    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+        return;
+
     const auto & context = reading_step->getContext();
     const auto & storage_snapshot = reading_step->getStorageSnapshot();
     auto mutations_snapshot = reading_step->getMutationsSnapshot();
@@ -505,14 +514,22 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Build the set for primary key columns only (PK is a prefix of sorting key;
     /// the remaining sorting key columns are useless for index analysis).
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
-    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ false);
+    /// This set selects FINAL winners by key identity, so a NULL key must equal itself here.
+    const bool pk_has_nullable_column = std::any_of(
+        primary_key.data_types.begin(),
+        primary_key.data_types.end(),
+        [](const auto & type) { return isNullableOrLowCardinalityNullable(type); });
+    auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ pk_has_nullable_column);
     set->setHeader(primary_key.sample_block.cloneWithColumns(primary_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
     set->fillSetElements();
     auto set_and_key = std::make_shared<SetAndKey>(SetAndKey{.key = "__lazy_final_set", .set = set, .external_table = nullptr});
 
     /// Use FutureSetFromStorage — the Set will be filled by CreatingSetStep before
     /// LazyFinalKeyAnalysisStep runs (they are in the same pipeline).
-    auto future_set = std::make_shared<FutureSetFromStorage>(FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt);
+    /// Not mutable: the query owns this set, fills it once through the `CreatingSetStep` below, and
+    /// nothing outside the query can reach it.
+    auto future_set = std::make_shared<FutureSetFromStorage>(
+        FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt, /*is_mutable_during_query_=*/ false);
 
     /// Build the set-building sub-plan: read columns needed for predicates
     /// (prewhere, row policy, filter) and primary key, then project to PK columns.
@@ -682,7 +699,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
-    /// and can be dropped by tryRemoveUnusedColumns.
+    /// and can be dropped by `removeUnusedColumns`.
     {
         auto dag = primary_key_dag.clone();
         NamesWithAliases projection;
@@ -701,13 +718,21 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     }
 
     /// CreatingSetStep fills the Set from the pipeline.
+    /// Unlike the sets of `IN`, the set never spills to disk: it only serves index analysis, which needs its
+    /// values, and its own BREAK-mode size limits above bound its memory.
     set_plan.addStep(std::make_unique<CreatingSetStep>(
         set_plan.getCurrentHeader(),
         set_and_key,
         SizeLimits{},
-        nullptr));
+        nullptr,
+        FutureSetSettings{}));
 
-    set_plan.optimize(optimization_settings);
+    /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
+    /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits
+    /// above, so keep it out.
+    auto set_plan_optimization_settings = optimization_settings;
+    set_plan_optimization_settings.creating_set_partitions_independently = false;
+    set_plan.optimize(set_plan_optimization_settings);
 
     /// Shared state between LazyFinalKeyAnalysisTransform and LazyReadReplacingFinalSource.
     auto shared_state = std::make_shared<LazyFinalSharedState>();

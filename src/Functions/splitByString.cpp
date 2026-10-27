@@ -36,6 +36,7 @@ private:
 
 public:
     static constexpr auto name = "splitByString";
+    static constexpr auto signature = "(const String, String, [const NativeInteger]) -> Array(String)";
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
 
@@ -153,9 +154,9 @@ Empty substrings may be selected when:
 - There are multiple consecutive non-empty separators
 - The original string `s` is empty while the separator is not empty
 
-:::note
+<Note>
 Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "splitByString(separator, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
@@ -169,9 +170,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
         "Usage example",
         "SELECT splitByString(', ', '1, 2 3, 4,5, abcde');",
         R"(
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
         )"
     },
     {

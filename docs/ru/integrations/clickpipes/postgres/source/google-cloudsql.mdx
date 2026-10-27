@@ -87,13 +87,13 @@ Postgres 12 и новее
 [//]: # "TODO Add SSH Tunneling"
 
 <div id="add-clickpipes-ips-to-firewall">
-  ## Добавьте IP-адреса ClickPipes в межсетевой экран
+  ## Добавьте IP-адреса ClickPipes в брандмауэр
 </div>
 
 Выполните следующие действия, чтобы добавить IP-адреса ClickPipes в настройки сети.
 
 <Note>
-  Если вы используете SSH-туннелирование, добавьте [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) в правила межсетевого экрана jump server/бастиона.
+  Если вы используете SSH-туннелирование, добавьте [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) в правила брандмауэра jump server/бастиона.
 </Note>
 
 1. Перейдите в раздел **Connections**
@@ -104,11 +104,11 @@ Postgres 12 и новее
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Подраздел Networking в Cloud SQL" size="lg" border />
 
-3. Добавьте [публичные IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips)
+3. Добавьте [публичные IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="Добавление сетей ClickPipes в межсетевой экран" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="Добавление сетей ClickPipes в брандмауэр" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="Сети ClickPipes добавлены в межсетевой экран" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="Сети ClickPipes добавлены в брандмауэр" size="lg" border />
 
 <div id="whats-next">
   ## Что дальше?

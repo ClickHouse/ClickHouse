@@ -16,13 +16,13 @@ keywords: ['ユーザーロール']
   ## 回答
 </div>
 
-```sql
--- defaultとしてログイン中（管理者権限）
+管理者権限を持つ `default` ユーザーでログインし、現在のユーザーを確認します。
 
-clickhouse-cloud :) SELECT user()
-
+```sql title="Query"
 SELECT user()
+```
 
+```response title="Response"
 Query id: 9bc02d8b-ab05-4a63-b2dd-3e0093f36d31
 
 ┌─currentUser()─┐
@@ -30,87 +30,99 @@ Query id: 9bc02d8b-ab05-4a63-b2dd-3e0093f36d31
 └───────────────┘
 
 1 row in set. Elapsed: 0.001 sec.
+```
 
--- ユーザー 'foo' を作成
+ユーザー `foo` を作成します:
 
-clickhouse-cloud :) CREATE USER foo IDENTIFIED WITH sha256_password BY 'secretPassword123!'
+```sql title="Query"
+CREATE USER foo IDENTIFIED WITH sha256_password BY 'secretPassword123!';
+```
 
-CREATE USER foo IDENTIFIED WITH sha256_hash BY '4338B66A5F04244574CB9C872829F1FD8F696C658EC7A4BD22FEFBBCF331B665' SALT 'C2911CA1E4787227BBD0EBEF43066EF2EC4C54172C1AB3616E88050F2EC13475'
-
+```response title="Response"
 Query id: 9711f5fc-2b5c-43f0-a760-0c67764919a2
 
 Ok.
 
 0 rows in set. Elapsed: 0.102 sec.
+```
 
--- ユーザー 'bar' を作成
+ユーザー `bar` を作成します:
 
-clickhouse-cloud :) CREATE USER bar IDENTIFIED WITH sha256_password BY 'secretPassword123!'
+```sql title="Query"
+CREATE USER bar IDENTIFIED WITH sha256_password BY 'secretPassword123!';
+```
 
-CREATE USER bar IDENTIFIED WITH sha256_hash BY '14A1401822566260191F51BAE85C4740E650E1F9D02DEFFF086CD6A6A8B3164F' SALT '276AE4A32353D579894C83C230775568E501CCD696531EEF0006761D3BEE3F75'
-
+```response title="Response"
 Query id: 11a78bf5-f5e1-4f1d-bfe8-cf2aa0a1b15d
 
 Ok.
 
 0 rows in set. Elapsed: 0.103 sec.
+```
 
--- ロール 'role_a' を作成
+ロール `role_a` を作成します。
 
-clickhouse-cloud :) CREATE ROLE role_a;
+```sql title="Query"
+CREATE ROLE role_a;
+```
 
-CREATE ROLE role_a
-
+```response title="Response"
 Query id: 13ccc007-fa5a-4110-9a05-48e284cea45f
 
 Ok.
 
 0 rows in set. Elapsed: 0.104 sec.
+```
 
--- ロール 'role_b' を作成
+ロール `role_b` を作成します。
 
-clickhouse-cloud :) CREATE ROLE role_b;
+```sql title="Query"
+CREATE ROLE role_b;
+```
 
-CREATE ROLE role_b
-
+```response title="Response"
 Query id: 43f84376-76fa-4cd2-b8e2-2dcfbe41ec1b
 
 Ok.
 
 0 rows in set. Elapsed: 0.103 sec.
+```
 
--- ユーザー 'foo' と 'bar' に 'role_a' を付与
+ユーザー `foo` および `bar` に `role_a` を付与します:
 
-clickhouse-cloud :) GRANT role_a to foo,bar
+```sql title="Query"
+GRANT role_a TO foo, bar;
+```
 
-GRANT role_a TO foo, bar
-
+```response title="Response"
 Query id: 4fe91624-efb3-4091-b680-b6905ab445b4
 
 Ok.
 
 0 rows in set. Elapsed: 0.107 sec.
+```
 
--- ユーザー 'bar' に 'role_b' を付与
+ユーザー `bar` に `role_b` を付与します:
 
-clickhouse-cloud :) GRANT role_b TO bar
+```sql title="Query"
+GRANT role_b TO bar;
+```
 
-GRANT role_b TO bar
-
+```response title="Response"
 Query id: 7ea38b28-2719-4dd6-8abd-0241f7b34d5c
 
 Ok.
 
 0 rows in set. Elapsed: 0.102 sec.
+```
 
--- 'role_a' が割り当てられているユーザーは？
+どのユーザーに `role_a` が付与されているかを確認します:
 
-clickhouse-cloud :) SELECT * FROM system.role_grants WHERE granted_role_name='role_a';
+```sql title="Query"
+SELECT * FROM system.role_grants WHERE granted_role_name = 'role_a';
+```
 
-SELECT *
-FROM system.role_grants
-WHERE granted_role_name = 'role_a'
-
+```response title="Response"
 Query id: bf088776-f450-4150-b2e8-197b400573c1
 
 ┌─user_name─┬─role_name─┬─granted_role_name─┬─granted_role_is_default─┬─with_admin_option─┐
@@ -119,15 +131,15 @@ Query id: bf088776-f450-4150-b2e8-197b400573c1
 └───────────┴───────────┴───────────────────┴─────────────────────────┴───────────────────┘
 
 2 rows in set. Elapsed: 0.001 sec.
+```
 
--- ユーザー 'foo' と 'bar' に割り当てられているロールは？
+ユーザー `foo` と `bar` にどのロールが割り当てられているかを確認します:
 
-clickhouse-cloud :) SELECT * FROM system.role_grants WHERE user_name IN ('foo','bar');
+```sql title="Query"
+SELECT * FROM system.role_grants WHERE user_name IN ('foo', 'bar');
+```
 
-SELECT *
-FROM system.role_grants
-WHERE user_name IN ('foo', 'bar')
-
+```response title="Response"
 Query id: b81dbe1c-42f0-43bd-b237-1a6b1d81ae3d
 
 ┌─user_name─┬─role_name─┬─granted_role_name─┬─granted_role_is_default─┬─with_admin_option─┐
@@ -137,13 +149,15 @@ Query id: b81dbe1c-42f0-43bd-b237-1a6b1d81ae3d
 └───────────┴───────────┴───────────────────┴─────────────────────────┴───────────────────┘
 
 3 rows in set. Elapsed: 0.001 sec.
+```
 
--- ユーザー 'foo' としてログイン中
+ユーザー `foo` としてログインし、現在のユーザーとロールを確認します。
 
-clickhouse-cloud :) SELECT user()
+```sql title="Query"
+SELECT user();
+```
 
-SELECT user()
-
+```response title="Response"
 Query id: eee6eaaa-11bc-42c1-9258-fa3079ee6f80
 
 ┌─currentUser()─┐
@@ -151,11 +165,13 @@ Query id: eee6eaaa-11bc-42c1-9258-fa3079ee6f80
 └───────────────┘
 
 1 row in set. Elapsed: 0.001 sec.
+```
 
-clickhouse-cloud :) SHOW CURRENT ROLES
+```sql title="Query"
+SHOW CURRENT ROLES;
+```
 
-SHOW CURRENT ROLES
-
+```response title="Response"
 Query id: aa6a1ac1-3502-4960-bb34-f7d9f0d7986e
 
 ┌─role_name─┬─with_admin_option─┬─is_default─┐
@@ -163,13 +179,15 @@ Query id: aa6a1ac1-3502-4960-bb34-f7d9f0d7986e
 └───────────┴───────────────────┴────────────┘
 
 1 row in set. Elapsed: 0.002 sec.
+```
 
--- ユーザー 'bar' としてログイン中
+ユーザー `bar` としてログインし、現在のユーザーとロールを確認します。
 
-clickhouse-cloud :) SELECT user()
+```sql title="Query"
+SELECT user();
+```
 
-SELECT user()
-
+```response title="Response"
 Query id: fa9ba47f-efcf-4491-9b4e-2f1130dfa84b
 
 ┌─currentUser()─┐
@@ -177,11 +195,13 @@ Query id: fa9ba47f-efcf-4491-9b4e-2f1130dfa84b
 └───────────────┘
 
 1 row in set. Elapsed: 0.001 sec.
+```
 
-clickhouse-cloud :) SHOW CURRENT ROLES
+```sql title="Query"
+SHOW CURRENT ROLES;
+```
 
-SHOW CURRENT ROLES
-
+```response title="Response"
 Query id: fb3f2941-a8ce-481d-8fad-b775bfc5b532
 
 ┌─role_name─┬─with_admin_option─┬─is_default─┐

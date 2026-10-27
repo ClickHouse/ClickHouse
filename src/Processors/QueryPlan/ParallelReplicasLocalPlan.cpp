@@ -7,11 +7,14 @@
 #include <Common/FailPoint.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableJoin.h>
+#include <Planner/Utils.h>
+#include <Processors/QueryPlan/BlocksMarshallingStep.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -68,7 +71,10 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 /// Walk the plan using the same traversal as findReadingStep (following LEFT/RIGHT JOIN logic),
 /// but look for a UnionStep. If found, collect all ReadFromMergeTree steps from each child branch,
 /// recursively handling nested views with their own UNION ALL.
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree)
+///
+/// `right_branch_selected` (optional out-param) is set to true if the descent to any returned
+/// reading step went through the right child of a `RIGHT JOIN`.
+std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected)
 {
     auto * node = root;
     while (node)
@@ -89,7 +95,7 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
             std::vector<QueryPlan::Node *> result;
             for (auto * child : node->children)
             {
-                auto child_results = findReadingSteps(child, allow_view_over_mergetree);
+                auto child_results = findReadingSteps(child, allow_view_over_mergetree, right_branch_selected);
                 result.insert(result.end(), child_results.begin(), child_results.end());
             }
             return result;
@@ -101,7 +107,11 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
             const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
             if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
                 || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
+            {
+                if (right_branch_selected)
+                    *right_branch_selected = true;
                 node = node->children.at(1);
+            }
             else
                 node = node->children.at(0);
         }
@@ -125,11 +135,6 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto select_query_options = SelectQueryOptions(processed_stage);
     select_query_options.build_logical_plan = true;
 
-    /// Positional arguments in the outer query were already resolved by the initiator.
-    /// Use a context flag instead of disabling enable_positional_arguments so that
-    /// view-inner queries on this node are still processed correctly.
-    /// See https://github.com/ClickHouse/ClickHouse/issues/62289.
-    new_context->setPositionalArgumentsAlreadyResolved(true);
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
     /// Disable parallel replicas in every nested QueryNode/UnionNode context — otherwise
@@ -146,14 +151,14 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
             if (auto * query_node = current->as<QueryNode>())
             {
                 auto node_context = Context::createCopy(query_node->getContext());
-                node_context->setPositionalArgumentsAlreadyResolved(true);
+                node_context->increaseDistributedDepth();
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 query_node->getMutableContext() = std::move(node_context);
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
                 auto node_context = Context::createCopy(union_node->getContext());
-                node_context->setPositionalArgumentsAlreadyResolved(true);
+                node_context->increaseDistributedDepth();
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 union_node->getMutableContext() = std::move(node_context);
             }
@@ -200,12 +205,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// The local replica's plan is united into the parent pipeline in this process.
     select_query_options.is_local_plan_for_distributed_query = true;
 
-    /// Positional arguments in the outer query were already resolved by the initiator.
-    /// Use a context flag instead of disabling enable_positional_arguments so that
-    /// view-inner queries on this node are still processed correctly.
-    /// See https://github.com/ClickHouse/ClickHouse/issues/62289.
     auto new_context = Context::createCopy(context);
-    new_context->setPositionalArgumentsAlreadyResolved(true);
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
 
     /// Clone the query tree and disable parallel replicas in ALL QueryNode/UnionNode contexts.
@@ -227,14 +227,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             if (auto * query_node = current->as<QueryNode>())
             {
                 auto node_context = Context::createCopy(query_node->getContext());
-                node_context->setPositionalArgumentsAlreadyResolved(true);
+                node_context->increaseDistributedDepth();
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 query_node->getMutableContext() = std::move(node_context);
             }
             else if (auto * union_node = current->as<UnionNode>())
             {
                 auto node_context = Context::createCopy(union_node->getContext());
-                node_context->setPositionalArgumentsAlreadyResolved(true);
+                node_context->increaseDistributedDepth();
                 node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 union_node->getMutableContext() = std::move(node_context);
             }
@@ -251,7 +251,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     const bool allow_view_over_mergetree = context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree];
-    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree);
+    bool right_branch_selected = false;
+    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree, &right_branch_selected);
     if (reading_nodes.empty())
     {
         /// it can happen if merge tree table is empty — it'll be replaced with ReadFromPreparedSource
@@ -262,13 +263,22 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// is sent (either locally from here or from remote replicas over the network).
     coordinator->setSnapshotReplicaNum(replica_number);
 
-    /// For the first reading step, reuse the pre-analyzed result if available.
+    /// `analyzed_read_from_merge_tree` is always the leftmost leaf's scan, so it must not be reused
+    /// for a scan reached through a `RIGHT JOIN` right branch: that is a different table expression.
+    /// Passing no analysis makes the scan analyze itself.
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
-    if (analyzed_read_from_merge_tree.get())
+    if (!right_branch_selected && analyzed_read_from_merge_tree.get())
     {
         auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
         if (analyzed_merge_tree)
+        {
+            /// Best-effort bug catcher, not an invariant: the analysis is built by the caller from a
+            /// different plan, and a storage id cannot tell two occurrences of one table apart.
+            const auto * reused_by = typeid_cast<const ReadFromMergeTree *>(reading_nodes.front()->step.get());
+            chassert(reused_by && reused_by->getStorageID() == analyzed_merge_tree->getStorageID(),
+                     "pre-analyzed result belongs to a different table than the scan that reuses it");
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+        }
     }
 
     for (auto * reading_node : reading_nodes)
@@ -321,9 +331,30 @@ static void collectReadFromMergeTreeSteps(QueryPlan::Node * node, std::vector<Qu
         collectReadFromMergeTreeSteps(child, result);
 }
 
+/// The fragment was planned before it became a read on a replica, so its reads have no leaf limits.
+/// A remote replica derives them from its context when it deserializes the fragment; do the same here.
+static void addLeafLimits(QueryPlan::Node * node, const SizeLimits & leaf_limits)
+{
+    if (auto * source = dynamic_cast<SourceStepWithFilter *>(node->step.get()))
+    {
+        const auto & current = source->getQueryInfo().storage_limits;
+        auto storage_limits = current ? std::make_shared<StorageLimitsList>(*current) : std::make_shared<StorageLimitsList>();
+        StorageLimits limits;
+        limits.leaf_limits = leaf_limits;
+        storage_limits->push_back(std::move(limits));
+        source->setStorageLimits(std::move(storage_limits));
+    }
+
+    for (auto * child : node->children)
+        addLeafLimits(child, leaf_limits);
+}
+
 QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     ContextPtr context, QueryPlanPtr plan_fragment, ParallelReplicasReadingCoordinatorPtr coordinator, size_t replica_number)
 {
+    if (auto leaf_limits = buildStorageLimits(*context, SelectQueryOptions(QueryProcessingStage::FetchColumns)).leaf_limits; leaf_limits.hasLimits())
+        addLeafLimits(plan_fragment->getRootNode(), leaf_limits);
+
     std::vector<QueryPlan::Node *> reading_nodes;
     collectReadFromMergeTreeSteps(plan_fragment->getRootNode(), reading_nodes);
     if (reading_nodes.empty())
@@ -370,6 +401,25 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     const std::vector<ConnectionPoolPtr> & connection_pools,
     std::optional<size_t> exclude_pool_index)
 {
+    /// The replica runs this fragment from the plan alone, so nothing there repeats the decision
+    /// `Planner::buildPlanForQueryNode` makes for a shard that plans its own secondary query: the step
+    /// has to be put on the fragment here. The structural conditions of that gate hold by construction:
+    /// this fragment always runs as a secondary query on a replica, and its blocks always go back to the
+    /// initiator over the network. The branch that is executed in this process, where nothing unmarshalls
+    /// the blocks, is the sibling `createLocalPlanFragmentForParallelReplicas`.
+    ///
+    /// `context` is the per-replica context, so the depth `contextAllowsBlocksMarshalling` reads is the
+    /// one the replica will see.
+    if (contextAllowsBlocksMarshalling(*context))
+        plan_fragment->addStep(std::make_unique<BlocksMarshallingStep>(plan_fragment->getCurrentHeader()));
+
+    /// Serialize the fragment now, while a referenced `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`)
+    /// still holds its query plan. This runs during `applyParallelReplicas`, before `addStepsToBuildSets`
+    /// moves that plan out (`QueryPlan::optimize`), so the shipped fragment captures the subquery plan; at
+    /// execution `Connection::sendQueryPlan` reuses these cached bytes. Mirrors the eager `ensureSerialized`
+    /// on the query-tree-based path in `ClusterProxy::executeQueryWithParallelReplicas`.
+    plan_fragment->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
     auto read_from_remote = std::make_unique<ReadFromParallelReplicasStep>(
         std::move(plan_fragment), cluster, coordinator, context, connection_pools, exclude_pool_index, cluster->getShardsInfo().at(0).pool);
 

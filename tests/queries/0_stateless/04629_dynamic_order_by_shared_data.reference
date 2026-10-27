@@ -1,0 +1,41 @@
+asc
+12	Array(Int64)	[1,2]
+11	Array(Int64)	[1,2,3]
+4	Float64	1.5
+5	Float64	2.5
+1	Int64	10
+3	Int64	10
+2	Int64	20
+9	LowCardinality(String)	apple
+10	LowCardinality(String)	banana
+8	LowCardinality(String)	cherry
+6	String	apple
+7	String	banana
+13	None	
+desc
+7	String	banana
+6	String	apple
+8	LowCardinality(String)	cherry
+10	LowCardinality(String)	banana
+9	LowCardinality(String)	apple
+2	Int64	20
+1	Int64	10
+3	Int64	10
+5	Float64	2.5
+4	Float64	1.5
+11	Array(Int64)	[1,2,3]
+12	Array(Int64)	[1,2]
+13	None	
+float
+3	-inf
+5	0
+4	1.5
+2	inf
+1	nan
+merge
+5	Float64	1.5
+2	Int64	10
+4	Int64	20
+1	Int64	30
+6	String	abc
+3	String	zed

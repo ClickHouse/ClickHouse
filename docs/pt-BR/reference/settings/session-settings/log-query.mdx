@@ -28,7 +28,7 @@ Registra as configurações da consulta no query&#95;log e no log de spans do Op
 
 Configura o registro em log das threads de consulta.
 
-As threads de consulta são registradas na tabela [system.query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log). Esta configuração só tem efeito quando [log&#95;queries](/pt-BR/reference/settings/session-settings/log-queries#log_queries) é true. As threads de consulta executadas pelo ClickHouse com essa configuração são registradas de acordo com as regras definidas no parâmetro de configuração do servidor [query&#95;thread&#95;log](/pt-BR/reference/settings/server-settings/settings#query_thread_log).
+As threads de consulta são registradas na tabela [system.query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log). Esta configuração só tem efeito quando [log&#95;queries](/pt-BR/reference/settings/session-settings/log-queries#log_queries) é true. As threads de consulta executadas pelo ClickHouse com essa configuração são registradas de acordo com as regras definidas no parâmetro de configuração do servidor [query&#95;thread&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_thread_log).
 
 Valores possíveis:
 
@@ -49,7 +49,7 @@ log_query_threads=1
 
 Configura o registro das visualizações de consultas.
 
-Quando uma consulta executada pelo ClickHouse com essa configuração habilitada tiver visualizações associadas (materializadas ou visualizações em tempo real), elas serão registradas no parâmetro de configuração do servidor [query&#95;views&#95;log](/pt-BR/reference/settings/server-settings/settings#query_views_log).
+Quando uma consulta executada pelo ClickHouse com essa configuração habilitada tiver visualizações associadas (materializadas ou visualizações em tempo real), elas serão registradas no parâmetro de configuração do servidor [query&#95;views&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_views_log).
 
 Exemplo:
 

@@ -92,7 +92,7 @@ CPU の選択と同様に、メモリ対ストレージ比率およびメモリ�
 * クエリで処理されるデータ量
 
 ただし、一般的にはメモリが多いほどクエリは高速に実行されます。
-コストを重視するユースケースでは、データをディスクに書き出せるようにする設定 ([`max_bytes_before_external_group_by`](/ja/reference/settings/session-settings#max_bytes_before_external_group_by) と [`max_bytes_before_external_sort`](/ja/reference/settings/session-settings#max_bytes_before_external_sort)) を有効にすることで、少ないメモリ量でも運用できますが、クエリパフォーマンスに大きな影響を与える可能性がある点に注意してください。
+コストを重視するユースケースでは、データをディスクに書き出せるようにする設定 ([`max_bytes_before_external_group_by`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) と [`max_bytes_before_external_sort`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) を有効にすることで、少ないメモリ量でも運用できますが、クエリパフォーマンスに大きな影響を与える可能性がある点に注意してください。
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### メモリ対ストレージ比率はどの程度にすべきですか？

@@ -57,13 +57,13 @@ To Debug a s390x executable, run clickhouse using QEMU in debug mode:
 qemu-s390x-static -g 31338 -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
-In another shell run LLDB and attach, replace `<Clickhouse Parent Directory>` and `<build directory>` with the values corresponding to your environment.
+In another shell run LLDB and attach, replace `<ClickHouse Parent Directory>` and `<build directory>` with the values corresponding to your environment.
 
 ```bash
 lldb-15
 (lldb) target create ./clickhouse
-Current executable set to '/<Clickhouse Parent Directory>/ClickHouse/<build directory>/programs/clickhouse' (s390x).
-(lldb) settings set target.source-map <build directory> /<Clickhouse Parent Directory>/ClickHouse
+Current executable set to '/<ClickHouse Parent Directory>/ClickHouse/<build directory>/programs/clickhouse' (s390x).
+(lldb) settings set target.source-map <build directory> /<ClickHouse Parent Directory>/ClickHouse
 (lldb) gdb-remote 31338
 Process 1 stopped
 * thread #1, stop reason = signal SIGTRAP

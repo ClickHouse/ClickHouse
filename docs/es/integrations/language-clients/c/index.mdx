@@ -1,16 +1,16 @@
 ---
-sidebarTitle: 'C'
-keywords: ['c', 'protocolo nativo', 'formato nativo', 'solo de encabezado', 'embebido', 'tcp', 'decodificación de bloques']
+sidebarTitle: 'Resumen'
+keywords: ['c', 'protocolo nativo', 'formato nativo', 'solo de cabecera', 'embebido', 'tcp', 'decodificación de bloques']
 slug: /integrations/c
-description: 'Client de C solo de encabezado para el protocolo nativo de ClickHouse, diseñado para integrarse.'
+description: 'Client de C solo de cabecera para el protocolo nativo de ClickHouse, diseñado para integrarse.'
 title: 'Client de C de ClickHouse'
 doc_type: 'reference'
 ---
 
-`clickhouse-c` es un client de C solo de encabezado para el [protocolo nativo](/es/concepts/features/interfaces/tcp) de ClickHouse.
-El código fuente y la referencia de cada encabezado están en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-c).
+`clickhouse-c` es un client de C solo de cabecera para el [protocolo nativo](/es/concepts/features/interfaces/tcp) de ClickHouse.
+El código fuente y la referencia de cada cabecera están en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-c).
 
-A diferencia de los clients de más alto nivel, este está diseñado deliberadamente para hacer muy poco por usted. El encabezado principal decodifica y
+A diferencia de los clients de más alto nivel, este está diseñado deliberadamente para hacer muy poco por usted. La cabecera principal decodifica y
 codifica bloques en formato [Native](/es/reference/formats/Native) mediante un callback de E/S que usted proporciona. Usted gestiona
 el socket, el contexto de TLS, el asignador de memoria, los reintentos y la agrupación de conexiones. Eso hace que sea lo bastante pequeño como para
 integrarlo: incluir solo `clickhouse.h` no añade dependencias de enlazado más allá de libc.

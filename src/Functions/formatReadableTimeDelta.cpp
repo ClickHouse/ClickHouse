@@ -48,21 +48,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(
-                +[](const IDataType & type) { return isNumber(type) || isInterval(type); }), nullptr, "Number or Interval"},
-        };
-
-        FunctionArgumentDescriptors optional_args{
-            {"maximum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-            {"minimum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        return std::make_shared<DataTypeString>();
+        /// `Interval` arguments are accepted in addition to numbers (master added
+        /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
+        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
+               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -366,11 +357,11 @@ SELECT
     formatReadableTimeDelta(elapsed) AS time_delta
         )",
         R"(
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                        │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
-└────────────┴────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta──────────────────────────────────────────────────────┐
+│       100 │ 1 minute and 40 seconds                                         │
+│     12345 │ 3 hours, 25 minutes and 45 seconds                              │
+│ 432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└───────────┴─────────────────────────────────────────────────────────────────┘
         )"
     },
     {

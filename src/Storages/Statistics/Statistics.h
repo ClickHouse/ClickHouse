@@ -6,6 +6,8 @@
 #include <Storages/StatisticsDescription.h>
 #include <boost/core/noncopyable.hpp>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -19,8 +21,8 @@ enum class StatisticsFileVersion : UInt16
     V0 = 0,
     V1 = 1, /// modified the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
     V2 = 2, /// minmax statistics now serialize Field type and use Field instead of Float64
-    V3 = 3, /// reserved — never use this value. PR #102356 briefly wrote V3 before being reverted.
-            /// The deserializer rejects V3 to avoid attempting to read incompatible reverted-format files.
+    V3 = 3, /// PR #102356 added the `NullCount` statistic and wrote V3; it was reverted, so only
+            /// builds of `master` between the two commits produced such files (no stable release did).
     V4 = 4, /// per-statistic size prefix added (`stat_size: UInt64` precedes each stat payload),
             /// so unknown statistics types can be skipped on deserialize.
             /// Also stores the column type name (`stored_type_name: String`) immediately after
@@ -52,6 +54,18 @@ struct StatisticsUtils
     /// merged: a column type change (e.g. numeric → String) may preserve the state size while
     /// switching to a different hash function, producing wrong estimates if the states are mixed.
     static bool isSame(const IAggregateFunction & a, const IAggregateFunction & b);
+
+    /// Fold `value` into the running minimum (`updateMin`) or maximum (`updateMax`) accumulator.
+    ///
+    /// Statistics are accumulated chunk by chunk, so the raw `Field` ordering is not enough for
+    /// floating point columns: `IColumn::getExtremes` skips `NaN` and reports it only when every
+    /// value in the chunk is `NaN`, and every comparison against `NaN` is false, so an early
+    /// all-`NaN` chunk would keep `NaN` as the extremum forever. Use the same IEEE-754 rule as
+    /// `SingleValueDataFixed::setIfSmaller` / `SingleValueDataFixed::setIfGreater`, which the
+    /// `min` and `max` aggregate functions themselves use: `NaN` never replaces a non-`NaN`
+    /// accumulator, and anything replaces a `NaN` accumulator. A `NULL` `value` is ignored.
+    static void updateMin(Field & accumulator, const Field & value);
+    static void updateMax(Field & accumulator, const Field & value);
 };
 
 class IStatistics;
@@ -72,6 +86,9 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
+    /// Returns the exact number of bytes written by serialize(), if it can be computed
+    /// without serializing into a temporary buffer.
+    virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -85,13 +102,28 @@ public:
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
+    /// The approximate amount of memory retained by this object, including the object itself.
+    /// It is the weight of the object in the statistics cache, so it must not be underestimated.
+    /// It does not include the description of the statistics, see `descriptionAllocatedBytes`.
+    virtual size_t allocatedBytes() const = 0;
+
+    /// The memory retained by the description of the statistics (its AST), not including the object itself.
+    size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
+
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
     /// shifts the aggregate-function state layout) should return false so that
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
     virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
+    /// Makes this empty statistics object compatible with `other` (see `isCompatibleWith`), e.g. adopts
+    /// the set of sub-statistics of `other` deserialized from an older format.
+    virtual void copyStructureFrom(const IStatistics &) {}
+
 protected:
+    /// The memory allocated by a `Field` outside of the `Field` itself.
+    static size_t fieldAllocatedBytes(const Field & field);
+
     SingleStatisticsDescription stat;
 };
 
@@ -135,6 +167,10 @@ public:
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;
+    /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns a
+    /// fixed fraction of the row count, which callers dividing by the cardinality must not mistake for
+    /// a measurement.
+    bool hasCardinality() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 
@@ -150,6 +186,8 @@ public:
 
     Estimate getEstimate() const;
     String getNameForLogs() const;
+    /// The approximate amount of memory retained by this object and its statistics objects.
+    size_t allocatedBytes() const;
     DataTypePtr getDataType() const { return stats_desc.data_type; }
 
     const StatsMap & getStats() const { return stats; }
@@ -222,6 +260,13 @@ private:
 
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+
+/// Whether statistics record the exact minimum and maximum of a column of this type. Only
+/// numeric-like columns are tracked, and by both statistics types that store min/max: `minmax`
+/// declines the other types outright (`minMaxStatisticsValidator`), while `basic` is declared for
+/// every column type but leaves its min/max sub-statistics unpopulated
+/// (`StatisticsBasic::hasNumericMinMax`).
+bool canStatisticsTrackMinMax(const DataTypePtr & data_type);
 
 
 }

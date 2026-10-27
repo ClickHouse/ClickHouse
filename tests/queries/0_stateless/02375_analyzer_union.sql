@@ -1,4 +1,3 @@
-SET enable_analyzer = 0;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table

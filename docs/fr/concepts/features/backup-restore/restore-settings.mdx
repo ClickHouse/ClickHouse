@@ -1,0 +1,100 @@
+---
+description: 'Paramètres de la requête RESTORE qui déterminent les catégories d’objets restaurées à partir d’une sauvegarde.'
+sidebarTitle: 'Paramètres de restauration'
+slug: /operations/backup/restore-settings
+title: 'Paramètres de restauration'
+keywords: ['backup', 'restore', 'structure_only', 'restore_table_data', 'restore_access_entities', 'restore_functions']
+doc_type: 'reference'
+---
+
+La requête [`RESTORE`](/fr/concepts/features/backup-restore/overview#syntax) accepte
+des paramètres dans sa clause `SETTINGS` qui déterminent les catégories d’objets lues
+depuis une sauvegarde. Cette page décrit les paramètres qui déterminent les éléments restaurés : les données des tables,
+les entités d’accès et les fonctions définies par l’utilisateur.
+
+<div id="structure-only">
+  ## `structure_only`
+</div>
+
+Type : `Bool`. Par défaut : `false`.
+
+Lorsqu&#39;il est défini sur `true`, seules les requêtes `CREATE` sont lues depuis la sauvegarde, à l&#39;exclusion du
+contenu des objets restaurés. Il s&#39;agit d&#39;un raccourci pratique qui définit les
+valeurs par défaut effectives des trois paramètres de catégorie ci-dessous à `false` :
+
+* `restore_table_data`
+* `restore_access_entities`
+* `restore_functions`
+
+<div id="restore-table-data">
+  ## `restore_table_data`
+</div>
+
+Type : `Bool`. Facultatif ; s’il n’est pas défini, sa valeur par défaut est `!structure_only` (c.-à-d. `true`
+sauf si `structure_only` est défini).
+
+Indique si les données des tables doivent être restaurées. Lorsqu’il est défini explicitement, il surcharge
+`structure_only` : définissez-le sur `true` pour restaurer les données des tables même si
+`structure_only=true`, ou sur `false` pour les ignorer même si `structure_only`
+n’est pas défini.
+
+<div id="restore-access-entities">
+  ## `restore_access_entities`
+</div>
+
+Type : `Bool`. Facultatif ; s’il n’est pas défini, sa valeur par défaut est `!structure_only`.
+
+Indique s’il faut restaurer les entités d’accès — utilisateurs, rôles, profils de paramètres, politiques de lignes
+et quotas. Lorsqu’il est défini explicitement, il surcharge `structure_only`.
+
+<div id="restore-functions">
+  ## `restore_functions`
+</div>
+
+Type : `Bool`. Facultatif ; s’il n’est pas défini, sa valeur par défaut est `!structure_only`.
+
+Indique si les fonctions définies par l’utilisateur doivent être restaurées. Lorsqu’il est défini explicitement, il surcharge
+`structure_only`.
+
+<div id="effective-behavior">
+  ## Comportement effectif
+</div>
+
+Chaque catégorie est restaurée lorsque le paramètre correspondant est défini sur `true`. Lorsqu’un paramètre de catégorie
+n’est pas spécifié, sa valeur est déterminée par `structure_only` : les trois sont
+définis sur `true` par défaut et passent tous les trois à `false` lorsque `structure_only=true`.
+
+| `structure_only` | `restore_*` non défini | `restore_* = true` | `restore_* = false` |
+| :--------------: | :--------------------: | :----------------: | :-----------------: |
+|      `false`     |        restaurée       |      restaurée     |       ignorée       |
+|      `true`      |         ignorée        |      restaurée     |       ignorée       |
+
+Cette approche est entièrement rétrocompatible : une requête `RESTORE` qui ne définit aucun des
+nouveaux paramètres se comporte exactement comme auparavant.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Restaurez les définitions de tables et les entités d’accès, mais pas les données des tables, par exemple
+pour configurer un environnement de test ou de réexécution de requêtes sans copier les données :
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_access_entities = true
+```
+
+Restaurez uniquement les données des tables, sans recréer les entités d’accès ni les
+fonctions définies par l’utilisateur :
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_table_data = true
+```
+
+Restaurez tout, à l’exception des fonctions définies par l’utilisateur :
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS restore_functions = false
+```

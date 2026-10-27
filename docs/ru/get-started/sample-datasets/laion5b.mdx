@@ -1,5 +1,5 @@
 ---
-description: 'Датасет со 100 миллионами векторов из датасета LAION 5B'
+description: 'Датасет с 10 миллионами векторов из датасета LAION 5B'
 sidebarTitle: 'Датасет LAION 5B'
 slug: /getting-started/example-datasets/laion-5b-dataset
 title: 'Датасет LAION 5B'
@@ -26,8 +26,8 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Полный датасет можно скачать с помощью [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
 
-ClickHouse также предоставил подмножество из 100 миллионов векторов в бакете `S3`.
-Бакет `S3` содержит 10 файлов `Parquet`, каждый из которых включает 10 миллионов строк.
+ClickHouse также предоставил подмножество из 10 миллионов векторов в публичном бакете `S3`.
+Подмножество хранится в одном файле `Parquet`.
 
 Мы рекомендуем пользователям сначала оценить требуемые ресурсы, чтобы определить требования к хранилищу и памяти для этого датасета, обратившись к [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes).
 
@@ -36,11 +36,11 @@ ClickHouse также предоставил подмножество из 100 �
 </div>
 
 <Steps>
-  <Step title="Создание таблицы" id="create-table">
-    Создайте таблицу `laion_5b_100m` для хранения эмбеддингов и связанных с ними атрибутов:
+  <Step title="Создать таблицу" id="create-table">
+    Создайте таблицу `laion_5b_10m` для хранения эмбеддингов и связанных с ними атрибутов:
 
     ```sql
-    CREATE TABLE laion_5b_100m
+    CREATE TABLE laion_5b_10m
     (
         id UInt32,
         image_path String,
@@ -61,110 +61,75 @@ ClickHouse также предоставил подмножество из 100 �
     ) ENGINE = MergeTree ORDER BY (id)
     ```
 
-    The `id` — это просто целое число, которое увеличивается на единицу. Дополнительные атрибуты можно использовать в предикатах, чтобы понять,
-    как поиск по векторному сходству работает в сочетании с постфильтрацией/префильтрацией, как описано в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes)
+    `id` — это просто последовательное целое число. Дополнительные атрибуты можно использовать в предикатах, чтобы изучить
+    поиск по сходству векторов в сочетании с постфильтрацией/префильтрацией, как описано в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step title="Загрузите данные" id="load-table">
-    Чтобы загрузить данные из всех файлов `Parquet`, выполните следующий оператор SQL:
+  <Step title="Загрузить данные" id="load-table">
+    Чтобы загрузить набор данных, выполните следующий SQL-запрос:
 
     ```sql
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_*.parquet');
+    INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
     ```
 
-    Загрузка 100 миллионов строк в таблицу займет несколько минут.
-
-    Либо можно выполнить отдельные SQL-команды, чтобы загрузить определенное количество файлов / строк.
-
-    ```sql
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet');
-    INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_2_of_10.parquet');
-    ⋮
-    ```
+    Загрузка 10 миллионов строк в таблицу займет несколько минут.
   </Step>
 
-  <Step title="Выполнение полного перебора для векторного поиска по сходству" id="run-a-brute-force-vector-similarity-search">
-    Поиск KNN (k ближайших соседей), или метод полного перебора, предполагает вычисление расстояния от каждого вектора в наборе данных
-    до искомого эмбеддинг-вектора с последующей сортировкой расстояний для нахождения ближайших соседей. В качестве вектора поиска
-    можно использовать один из векторов самого набора данных. Например:
+  <Step title="Выполните поиск векторного сходства полным перебором" id="run-a-brute-force-vector-similarity-search">
+    Поиск методом k ближайших соседей (KNN) или полный перебор предполагает вычисление расстояния от каждого вектора в наборе данных
+    до поискового эмбеддинг-вектора с последующей сортировкой расстояний для определения ближайших соседей. В качестве поискового вектора можно использовать один из векторов
+    самого набора данных. Например:
 
     ```sql title="Query"
     SELECT id, url 
-    FROM laion_5b_100m
-    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
     LIMIT 20
 
     The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
     ```
 
-    ```response title="Response" highlight={24}
-        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-     1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
-     2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
-     3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
-     4. │ 51559839 │ https://img1.mashed.com/img/gallery/how-rich-is-the-mcalisters-deli-ceo-and-whats-the-average-pay-of-its-employees/intro-1619793841.jpg                                                                                           │
-     5. │ 22104014 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/04/Largest-McAlisters-Deli-Franchisee-to-Expand-into-Nebraska.jpg                                                                                                      │
-     6. │ 54337236 │ http://www.restaurantnews.com/wp-content/uploads/2015/11/McAlisters-Deli-Giving-Away-Gift-Cards-With-Win-One-Gift-One-Holiday-Promotion.jpg                                                                                       │
-     7. │ 20770867 │ http://www.restaurantnews.com/wp-content/uploads/2016/04/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Florida-as-Chain-Enters-New-Markets.jpg                                                                               │
-     8. │ 22493966 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/06/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Columbus-Ohio-as-Chain-Expands-feature.jpg                                                                       │
-     9. │  2224351 │ https://holttribe.com/wp-content/uploads/2019/10/60880046-879A-49E4-8E13-1EE75FB24980-900x675.jpeg                                                                                                                                │
-    10. │ 30779663 │ https://www.gannett-cdn.com/presto/2018/10/29/PMUR/685f3e50-cce5-46fb-9a66-acb93f6ea5e5-IMG_6587.jpg?crop=2166,2166,x663,y0&amp;width=80&amp;height=80&amp;fit=bounds                                                             │
-    11. │ 54939148 │ https://www.priceedwards.com/sites/default/files/styles/staff_property_listing_block/public/for-lease/images/IMG_9674%20%28Custom%29_1.jpg?itok=sa8hrVBT                                                                          │
-    12. │ 95371605 │ http://www.restaurantmagazine.com/wp-content/uploads/2015/08/McAlisters-Deli-Signs-Development-Agreement-with-Kingdom-Foods-to-Grow-in-Southern-Mississippi.jpg                                                                   │
-    13. │ 79564563 │ https://www.restaurantmagazine.com/wp-content/uploads/2016/05/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Denver-as-Chain-Expands.jpg                                                                                      │
-    14. │ 76429939 │ http://www.restaurantnews.com/wp-content/uploads/2016/08/McAlisters-Deli-Aims-to-Attract-New-Franchisees-in-Pennsylvania-as-Chain-Expands.jpg                                                                                     │
-    15. │ 96680635 │ https://img.claz.org/tc/400x320/9w3hll-UQNHGB9WFlhSGAVCWhheBQkeWh5SBAkUWh9SBgsJFxRcBUMNSR4cAQENXhJARwgNTRYcBAtDWh5WRQEJXR5SR1xcFkYKR1tYFkYGR1pVFiVyP0ImaTA                                                                        │
-    16. │ 48716846 │ http://tse2.mm.bing.net/th?id=OIP.nN2qJqGUJs_fVNdTiFyGnQHaEc                                                                                                                                                                      │
-    17. │  4472333 │ https://sgi.offerscdn.net/i/zdcs-merchants/05lG0FpXPIvsfiHnT3N8FQE.h200.w220.flpad.v22.bffffff.png                                                                                                                                │
-    18. │ 82667887 │ https://irs2.4sqi.net/img/general/200x200/11154479_OEGbrkgWB5fEGrrTkktYvCj1gcdyhZn7TSQSAqN2Yqw.jpg                                                                                                                                │
-    19. │ 57525607 │ https://knoji.com/images/logo/mcalistersdelicom.jpg                                                                                                                                                                               │
-    20. │ 15785896 │ https://www.groupnimb.com/mimg/merimg/mcalister-s-deli_1446088739.jpg                                                                                                                                                             │
-        └──────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-    20 rows in set. Elapsed: 3.968 sec. Processed 100.38 million rows, 320.81 GB (25.30 million rows/s., 80.84 GB/s.)
-    ```
-
-    Запишите задержку запроса, чтобы затем сравнить её с задержкой запроса ANN (с использованием векторного индекса).
-    При 100 миллионах строк приведённый выше запрос без векторного индекса может занять несколько секунд или минут.
+    Зафиксируйте время выполнения запроса, чтобы затем сравнить его со временем выполнения ANN-запроса (с использованием векторного индекса).
+    На 10 миллионах строк выполнение приведённого выше запроса без векторного индекса может занять от нескольких секунд до нескольких минут.
   </Step>
 
   <Step title="Создайте индекс векторного сходства" id="build-vector-similarity-index">
-    Выполните следующий SQL, чтобы задать и построить индекс векторного сходства для столбца `vector` таблицы `laion_5b_100m`:
+    Выполните следующий SQL-запрос, чтобы создать и построить индекс векторного сходства для столбца `vector` таблицы `laion_5b_10m`:
 
     ```sql
-    ALTER TABLE laion_5b_100m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+    ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
 
-    ALTER TABLE laion_5b_100m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ALTER TABLE laion_5b_10m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
     ```
 
-    Параметры и особенности производительности при создании индекса и выполнении поиска описаны в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes).
-    В операторе выше для гиперпараметров HNSW `M` и `ef_construction` используются значения 64 и 512 соответственно.
-    Вам нужно тщательно подобрать оптимальные значения этих параметров, оценивая время построения индекса и качество результатов поиска,
+    Параметры и особенности производительности при создании индекса и поиске по нему описаны в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes).
+    В приведённом выше операторе для гиперпараметров HNSW `M` и `ef_construction` используются значения 64 и 512 соответственно.
+    Необходимо тщательно подобрать оптимальные значения этих параметров, оценивая время построения индекса и качество результатов поиска,
     соответствующие выбранным значениям.
 
-    Построение и сохранение индекса для полного набора данных из 100 миллионов записей может занять несколько часов в зависимости от количества доступных процессорных ядер и пропускной способности хранилища.
+    Построение и сохранение индекса для подмножества из 10 миллионов строк может занять значительное время в зависимости от количества доступных ядер CPU и пропускной способности хранилища.
   </Step>
 
   <Step title="Выполните ANN-поиск" id="perform-ann-search">
-    После построения индекса векторного сходства запросы векторного поиска будут автоматически использовать этот индекс:
+    После создания индекса векторного сходства запросы векторного поиска будут автоматически использовать его:
 
     ```sql title="Query"
     SELECT id, url 
-    FROM laion_5b_100m
-    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
     LIMIT 20
 
     ```
 
-    Первая загрузка векторного индекса в память может занять от нескольких секунд до нескольких минут.
+    Первоначальная загрузка векторного индекса в память может занять от нескольких секунд до нескольких минут.
   </Step>
 
-  <Step title="Генерация эмбеддинг-векторов для поискового запроса" id="generating-embeddings-for-search-query">
-    Эмбеддинг-векторы набора данных `LAION 5b` были созданы с помощью модели `OpenAI CLIP` `ViT-L/14`.
+  <Step title="Создайте эмбеддинги для поискового запроса" id="generating-embeddings-for-search-query">
+    Эмбеддинг-векторы набора данных `LAION 5b` были сгенерированы с использованием модели `OpenAI CLIP` `ViT-L/14`.
 
     Ниже приведён пример скрипта на Python, показывающий, как программно генерировать
-    эмбеддинг-векторы с помощью API `CLIP`. Затем эмбеддинг-вектор поискового запроса
-    передаётся в качестве аргумента функции [`cosineDistance()`](/ru/reference/functions/regular-functions/distance-functions#cosineDistance) в запросе `SELECT`.
+    эмбеддинг-векторы с помощью API `CLIP`. Затем поисковый эмбеддинг-вектор
+    передаётся в качестве аргумента функции [`cosineDistance()`](/ru/reference/functions/regular-functions/distance-functions#cosineDistance) в SELECT-запросе.
 
     Чтобы установить пакет `clip`, обратитесь к [репозиторию OpenAI на GitHub](https://github.com/openai/clip).
 
@@ -189,7 +154,7 @@ ClickHouse также предоставил подмножество из 100 �
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
-        result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+        result = chclient.query("SELECT id, url FROM laion_5b_10m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
         # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
@@ -199,8 +164,8 @@ ClickHouse также предоставил подмножество из 100 �
         print("</html>")
     ```
 
-    Ниже показан результат поиска, выполненного выше:
+    Результат поиска показан ниже:
 
-    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Результаты поиска по векторному сходству" size="md" />
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="Результаты поиска по векторной схожести" size="md" />
   </Step>
 </Steps>

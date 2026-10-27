@@ -1,8 +1,8 @@
 ---
 slug: /use-cases/AI_ML/AIChat
-sidebarTitle: 'استخدام دردشة ClickHouse Assistant في ClickHouse Cloud'
-title: 'استخدام دردشة ClickHouse Assistant في ClickHouse Cloud'
-description: 'دليل لتمكين ميزة AI Chat واستخدامها في ClickHouse Cloud Console'
+sidebarTitle: 'ClickHouse Assistant'
+title: 'ClickHouse Assistant في ClickHouse Cloud'
+description: 'تعرّف على ClickHouse Assistant، ومكّنه واستخدمه في ClickHouse Cloud console'
 keywords: ['AI', 'ClickHouse Cloud', 'دردشة', 'SQL Console', 'Agent', 'Docs AI']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-> يشرح هذا الدليل كيفية تمكين ميزة AI Chat واستخدامها في ClickHouse Cloud Console.
+يتيح لك ClickHouse Assistant استخدام اللغة الطبيعية لتحليل البيانات في خدمة ClickHouse Cloud. ويمكنه إنشاء استعلامات وتصورات وملخصات باستخدام سياق مثل علامات التبويب النشطة والاستعلامات المحفوظة والمخططات ولوحات المعلومات.
+
+يتضمن Assistant أيضًا وضع Docs AI لطرح أسئلة تستند إلى وثائق ClickHouse. استخدم هذا الدليل لتمكين Assistant والعمل مع كلا الوضعين في وحدة تحكم ClickHouse Cloud.
 
 <Steps>
   <Step title="المتطلبات المسبقة" id="prerequisites">
@@ -18,7 +20,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="فتح لوحة AI Chat" id="open-panel">
-    1. انتقل إلى ClickHouse Cloud service.
+    1. انتقل إلى خدمة ClickHouse Cloud.
     2. في الشريط الجانبي الأيسر، انقر على أيقونة اللمعان المسمّاة “ClickHouse Assistant”.
     3. (اختصار) اضغط <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) أو <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) لفتح اللوحة أو إغلاقها.
 
@@ -35,10 +37,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="اختيار وضع الدردشة" id="modes">
     يدعم AI Chat حاليًا:
 
-    * **Agent**: استدلال متعدد الخطوات على schema وmetadata (يجب أن تكون service نشطة).
+    * **Agent**: استدلال متعدد الخطوات على مخطط وmetadata (يجب أن تكون خدمة نشطة).
     * **Docs AI (Ask)**: أسئلة وأجوبة مركّزة تستند إلى وثائق ClickHouse الرسمية ومراجع أفضل الممارسات.
 
-    استخدم mode selector في أسفل يسار اللوحة الجانبية للتبديل بين الأوضاع.
+    استخدم محدد الوضع في أسفل يسار اللوحة الجانبية للتبديل بين الأوضاع.
 
     <Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="اختيار الوضع" size="sm" />
   </Step>

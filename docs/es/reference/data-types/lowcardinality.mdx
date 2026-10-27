@@ -20,7 +20,7 @@ LowCardinality(data_type)
 
 **Parámetros**
 
-* `data_type` — [String](/es/reference/data-types/string), [FixedString](/es/reference/data-types/fixedstring), [Date](/es/reference/data-types/date), [DateTime](/es/reference/data-types/datetime) y números, excepto [Decimal](/es/reference/data-types/decimal). `LowCardinality` no es eficiente para algunos tipos de datos; consulta la descripción de la configuración [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/es/reference/settings/session-settings#allow_suspicious_low_cardinality_types).
+* `data_type` — [String](/es/reference/data-types/string), [FixedString](/es/reference/data-types/fixedstring), [Date](/es/reference/data-types/date), [DateTime](/es/reference/data-types/datetime) y números, excepto [Decimal](/es/reference/data-types/decimal). `LowCardinality` no es eficiente para algunos tipos de datos; consulta la descripción de la configuración [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/es/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types).
 
 <div id="description">
   ## Descripción
@@ -49,16 +49,16 @@ ORDER BY id
 ```
 
 <div id="related-settings-and-functions">
-  ## Configuración y funciones relacionadas
+  ## Ajustes y funciones relacionados
 </div>
 
-Configuración:
+Ajustes:
 
-* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/es/reference/settings/session-settings#low_cardinality_max_dictionary_size)
-* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/es/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
-* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/es/reference/settings/session-settings#low_cardinality_allow_in_native_format)
-* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/es/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
-* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/es/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/es/reference/settings/session-settings/low-cardinality#low_cardinality_max_dictionary_size)
+* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/es/reference/settings/session-settings/low-cardinality#low_cardinality_use_single_dictionary_for_part)
+* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/es/reference/settings/session-settings/low-cardinality#low_cardinality_allow_in_native_format)
+* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/es/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types)
+* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/es/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary)
 
 Funciones:
 

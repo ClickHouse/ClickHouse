@@ -106,12 +106,14 @@ message QueryInfo {
    bool next_query_info = 16;
 
    // Compression type for `input_data`.
-   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2, snappy.
+   // For snappy, the wire format is selected by the `snappy_mode` setting (see `settings` above).
    // The client is responsible to compress data before putting it into `input_data`.
    string input_compression_type = 20;
 
    // Compression type for `output_data`, `totals` and `extremes`.
-   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2, snappy.
+   // For snappy, the wire format is selected by the `snappy_mode` setting (see `settings` above).
    // The client receives compressed data and should decompress it by itself.
    // Consider also setting `output_compression_level`.
    string output_compression_type = 21;

@@ -24,9 +24,9 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 利用可能なクエリタイプは次のとおりです。
 
 * [Table](#table): データをテーブル形式で表示するための、最もシンプルなクエリタイプです。集計関数を含む単純なクエリにも複雑なクエリにも、汎用的に適しています。
-* [Logs](#logs): ログ用のクエリ作成に最適化されています。[デフォルトを設定](/ja/integrations/connectors/data-visualization/grafana/config#logs)した Explore ビューで最も効果を発揮します。
+* [ログ](#logs): ログ用のクエリ作成に最適化されています。[デフォルトを設定](/ja/integrations/connectors/data-visualization/grafana/config#logs)した Explore ビューで最も効果を発揮します。
 * [Time Series](#time-series): 時系列クエリの作成に最適です。専用の時刻カラムを選択し、集計関数を追加できます。
-* [Traces](#traces): トレースの検索や表示に最適化されています。[デフォルトを設定](/ja/integrations/connectors/data-visualization/grafana/config#traces)した Explore ビューで最も効果を発揮します。
+* [トレース](#traces): トレースの検索や表示に最適化されています。[デフォルトを設定](/ja/integrations/connectors/data-visualization/grafana/config#traces)した Explore ビューで最も効果を発揮します。
 * [SQL Editor](#sql-editor): クエリを完全に制御したい場合は SQL エディタを使用できます。このモードでは、あらゆる SQL クエリを実行できます。
 
 <div id="query-types">
@@ -36,9 +36,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 *クエリタイプ*設定を変更すると、作成するクエリの種類に合わせてクエリビルダーのレイアウトが変わります。
 また、クエリタイプによって、データの可視化に使用するパネルも決まります。
 
-<div id="table">
-  ### Table
-</div>
+### Table {#table}
 
 最も柔軟なクエリタイプは、テーブルクエリです。これは、シンプルなクエリや集約クエリを扱うために設計された、ほかのクエリビルダー全般を包括するクエリタイプです。
 
@@ -56,9 +54,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 このクエリタイプでは、データがテーブルとして表示されます。
 
-<div id="logs">
-  ### ログ
-</div>
+### ログ {#logs}
 
 ログのクエリタイプでは、ログデータのクエリに特化したクエリビルダーを利用できます。
 クエリビルダーでデフォルトのデータベース/テーブルやカラムをあらかじめ読み込めるように、デフォルト値はデータソースの[ログ設定](/ja/integrations/connectors/data-visualization/grafana/config#logs)で構成できます。
@@ -128,9 +124,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 このクエリタイプでは、データが時系列パネルで表示されます。
 
-<div id="traces">
-  ### トレース
-</div>
+### トレース {#traces}
 
 トレースクエリタイプには、トレースを簡単に検索して表示できるクエリビルダーが用意されています。
 これは OpenTelemetry データ向けに設計されていますが、別のスキーマのトレースを表示するためにカラムを選択することもできます。
@@ -167,9 +161,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 このクエリタイプでは、Trace Search モードではデータがテーブルビューで表示され、Trace ID モードではトレースパネルで表示されます。
 
-<div id="sql-editor">
-  ## SQL エディタ
-</div>
+## SQL エディタ {#sql-editor}
 
 クエリビルダーでは対応できないような複雑なクエリには、SQL エディタを使用できます。
 プレーンな ClickHouse SQL を記述して実行できるため、クエリを完全に制御できます。
@@ -183,9 +175,7 @@ SQL エディタは、クエリエディタ上部の &quot;SQL Editor&quot; を�
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="生の SQL クエリの例" border />
 
-<div id="data-links">
-  ## データリンク
-</div>
+## データリンク {#data-links}
 
 Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 を使うと、新しいクエリへリンクできます。
@@ -211,11 +201,11 @@ Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-
 
 [ログ](#logs) または [トレース](#traces) のクエリで OpenTelemetry が有効になっている場合、トレース ID カラムが自動的に含まれます。
 
-トレース ID カラムを含めると、データに「**View Trace**」および「**View Logs**」のリンクが追加されます。
+トレース ID カラムが存在する場合、プラグインはデータに「**View Trace**」および「**View Logs**」のリンクを追加できます。
 
-<div id="linking-abilities">
-  ### リンク機能
-</div>
+トグルはデフォルトで有効になっています。現在のクエリタイプのリンクにはデフォルトを設定する必要はありませんが、クロスシグナルリンクは、データソースにターゲットシグナル用のデフォルトが設定されている場合にのみ表示されます。データソースの[トレース](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links)および[ログ](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links)設定セクションにある **Show &quot;View trace&quot; links** と **Show &quot;View logs&quot; links** のトグルで非表示にできます。
+
+### リンク機能 {#linking-abilities}
 
 データリンクがあると、指定された トレース ID を使って トレース と ログ を開けます。
 

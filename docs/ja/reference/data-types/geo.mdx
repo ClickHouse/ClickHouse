@@ -34,6 +34,26 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
+<div id="multipoint">
+  ## MultiPoint
+</div>
+
+`MultiPoint` は、点 の Array として格納される 点 の集合です: [Array](/ja/reference/data-types/array)([Point](#point))。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE geo_multipoint (mp MultiPoint) ENGINE = Memory();
+INSERT INTO geo_multipoint VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT mp, toTypeName(mp) FROM geo_multipoint;
+```
+
+```text title="Response"
+┌─mp────────────────────────────┬─toTypeName(mp)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ MultiPoint     │
+└───────────────────────────────┴────────────────┘
+```
+
 <div id="ring">
   ## Ring
 </div>

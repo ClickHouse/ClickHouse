@@ -25,7 +25,7 @@
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/getRandomASCIIString.h>
+#include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ErrnoException.h>
@@ -38,6 +38,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
+    extern const char local_object_storage_network_error_during_every_remove[];
 }
 
 namespace ErrorCodes
@@ -48,6 +49,7 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int FAULT_INJECTED;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_LINK;
     extern const int CANNOT_STAT;
@@ -138,6 +140,14 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
+    /// A path with an embedded NUL cannot be validated: `std::string` and `fs::path` compare the whole
+    /// value, while every syscall the resolved path is later passed to (`open`, `mkdir`, `stat`) stops at
+    /// the NUL. A path shaped as `<target>\0/<traversal back into the base directory>` would therefore
+    /// pass the containment check below and still make the kernel operate on `<target>`, anywhere on the
+    /// filesystem. `listObjects` rejects such a path for its own reason - keep both checks.
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path contains an embedded NUL byte");
+
     auto configured_base = fs::path(base_path).lexically_normal();
 
     auto is_inside = [&](const String & candidate)
@@ -169,6 +179,7 @@ String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path)
 
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     return fs::exists(resolved_path);
 }
@@ -414,9 +425,20 @@ void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat 
         static_cast<Int64>(replaced_mtime.tv_nsec));
 }
 
-void publishConditionally(const String & temp_path, const String & target_path, const std::optional<String> & if_match_etag)
+/// How a fully written temporary file is published under the target name.
+enum class PublishMode : uint8_t
 {
-    if (!if_match_etag.has_value())
+    /// If-None-Match: `*`.
+    CreateIfAbsent,
+    /// If-Match: the etag of the current version.
+    ReplaceIfMatch,
+    /// Replace whatever is there, but at once, so that a reader sees either the previous version or the new one.
+    Replace,
+};
+
+void publishConditionally(const String & temp_path, const String & target_path, PublishMode mode, const std::optional<String> & if_match_etag)
+{
+    if (mode == PublishMode::CreateIfAbsent)
     {
         if (0 == ::link(temp_path.c_str(), target_path.c_str()))
             return;
@@ -443,6 +465,13 @@ void publishConditionally(const String & temp_path, const String & target_path, 
     struct stat file_stat{};
     if (0 != ::stat(target_path.c_str(), &file_stat))
     {
+        if (errno == ENOENT && mode == PublishMode::Replace)
+        {
+            if (0 != ::rename(temp_path.c_str(), target_path.c_str()))
+                ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, target_path, "Cannot rename {} to {}", temp_path, target_path);
+            return;
+        }
+
         if (errno == ENOENT)
             throw Exception(
                 ErrorCodes::STALE_VERSION,
@@ -452,7 +481,7 @@ void publishConditionally(const String & temp_path, const String & target_path, 
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, target_path, "Cannot stat file {}", target_path);
     }
 
-    if (auto etag = makeETag(file_stat); etag != *if_match_etag)
+    if (auto etag = makeETag(file_stat); mode == PublishMode::ReplaceIfMatch && etag != *if_match_etag)
         throw Exception(
             ErrorCodes::STALE_VERSION,
             "Object {} was modified concurrently (etag {}, expected {}), PreconditionFailed for If-Match",
@@ -471,12 +500,14 @@ public:
         const String & target_path_,
         const String & temp_path_,
         size_t buf_size,
+        PublishMode mode_,
         std::optional<String> if_match_etag_,
         const String & bucket_,
         BlobStorageLogWriterPtr blob_log_)
         : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(temp_path_, buf_size, O_WRONLY | O_CREAT | O_EXCL))
         , target_path(target_path_)
         , temp_path(temp_path_)
+        , mode(mode_)
         , if_match_etag(std::move(if_match_etag_))
         , bucket(bucket_)
         , blob_log(std::move(blob_log_))
@@ -496,7 +527,7 @@ private:
         WriteBufferFromFileDecorator::finalizeImpl();
 
         const size_t data_size = count();
-        publishConditionally(temp_path, target_path, if_match_etag);
+        publishConditionally(temp_path, target_path, mode, if_match_etag);
         removeTemporaryFile();
 
         if (blob_log)
@@ -528,6 +559,7 @@ private:
 
     const String target_path;
     const String temp_path;
+    const PublishMode mode;
     const std::optional<String> if_match_etag;
     const String bucket;
     BlobStorageLogWriterPtr blob_log;
@@ -543,6 +575,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     bool /* use_external_buffer */,
     bool /* restrict_seek */) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read object: {}", resolved_path);
     auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
@@ -573,6 +606,8 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "LocalObjectStorage doesn't support append to files");
 
+    /// Held until the file is created below, so that `removeObject` cannot prune the directory in the meantime.
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Write object: {}", resolved_path);
 
@@ -590,7 +625,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     if (!if_none_match.empty() && !if_match.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "If-None-Match and If-Match cannot be used together for object {}", object.remote_path);
 
-    if (!if_none_match.empty() || !if_match.empty())
+    if (!if_none_match.empty() || !if_match.empty() || write_settings.object_storage_write_atomically)
     {
         if (!if_none_match.empty() && if_none_match != "*")
             throw Exception(
@@ -598,9 +633,15 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
                 "Local object storage supports only `*` for If-None-Match, got `{}`",
                 if_none_match);
 
+        PublishMode publish_mode = PublishMode::Replace;
         std::optional<String> if_match_etag;
         if (!if_match.empty())
+        {
+            publish_mode = PublishMode::ReplaceIfMatch;
             if_match_etag = if_match;
+        }
+        else if (!if_none_match.empty())
+            publish_mode = PublishMode::CreateIfAbsent;
 
         /// Both filenames have to come out of `resolved_path`, exactly like the
         /// unconditional write below: a key relative to `settings.key_prefix` would
@@ -608,12 +649,15 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         /// giving conditional writes a different notion of a key than every other
         /// method of this storage.
         auto target_path = fs::path(resolved_path);
-        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8));
+        /// Not from `thread_local_rng`: an atomic write may happen inside an operation whose other random names are
+        /// expected to be reproducible from a seed.
+        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{:016x}", target_path.filename().string(), randomSeed());
 
         return std::make_unique<WriteBufferToConditionallyPublishedFile>(
             resolved_path,
             temp_path,
             buf_size,
+            publish_mode,
             std::move(if_match_etag),
             settings.key_prefix,
             std::move(blob_storage_log));
@@ -629,10 +673,13 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
 void LocalObjectStorage::removeObject(const StoredObject & object) const
 {
     throwIfReadonly();
+
+    /// Exclusive: see `directories_mutex`.
+    std::unique_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
 
     /// For local object storage files are actually removed when "metadata" is removed.
-    if (!exists(object))
+    if (!fs::exists(resolved_path))
         return;
 
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
@@ -674,8 +721,12 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
             error_code,
             error_message);
 
-    fs::path dir = fs::path(resolved_path).parent_path();
+    /// Both paths have to be brought into the same form before they are compared: `resolved_path` is
+    /// relative or otherwise not canonical when the `path` of the disk is (e.g. contains `..`), and then `dir`
+    /// never compares equal to the canonicalized `root`, so the loop below would remove the root directory
+    /// of the object storage itself.
     fs::path root = fs::weakly_canonical(settings.key_prefix);
+    fs::path dir = fs::weakly_canonical(fs::path(resolved_path).parent_path());
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
     {
         LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
@@ -684,7 +735,8 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
         std::string dir_str = dir;
         if (0 != rmdir(dir_str.data()))
         {
-            if (errno == ENOTDIR || errno == ENOTEMPTY)
+            /// ENOENT: the directory was already removed together with its last object by another remover.
+            if (errno == ENOTDIR || errno == ENOTEMPTY || errno == ENOENT)
                 break;
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, dir_str, "Cannot remove directory {}", dir_str);
         }
@@ -707,13 +759,24 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
     });
+
+    fiu_do_on(FailPoints::local_object_storage_network_error_during_every_remove, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
+    });
 }
 
-void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     throwIfReadonly();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
@@ -722,6 +785,7 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     /// this method only differs from it in tolerating an object that does not exist,
     /// so a caller must not be able to observe a different file or a differently
     /// shaped etag depending on which of the two it called.
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
@@ -734,6 +798,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
     size_t max_size_bytes,
     std::optional<size_t>) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     LOG_TEST(log, "Read small object: {}", resolved_path);
 
@@ -776,6 +841,7 @@ SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetad
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
 
@@ -785,8 +851,16 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     /// `PreconditionFailed`.
     struct stat file_stat{};
     if (0 != ::stat(resolved_path.c_str(), &file_stat))
-        throw fs::filesystem_error(
-            "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
+    {
+        const int stat_errno = errno;
+        const bool does_not_exist = isVanishedEntryError(std::error_code(stat_errno, std::generic_category()));
+        ErrnoException::throwFromPathWithErrno(
+            does_not_exist ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_STAT,
+            resolved_path,
+            stat_errno,
+            "Cannot get metadata of file {}",
+            resolved_path);
+    }
 
     return makeObjectMetadata(file_stat);
 }
@@ -805,9 +879,12 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             "Path contains an embedded NUL byte", path,
             std::make_error_code(std::errc::invalid_argument));
 
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     if (!fs::exists(resolved_path) || !fs::is_directory(resolved_path))
         return;
+    /// The traversal below tolerates entries vanishing, so removals may proceed during it.
+    lock.unlock();
 
     /// Listing is a best-effort snapshot driven with the non-throwing
     /// `error_code` overloads. Tolerate ONLY the concurrent-disappearance class
@@ -902,10 +979,11 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
+    std::shared_lock lock(directories_mutex);
     auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
     /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
-    return exists(StoredObject(resolved_path));
+    return fs::exists(resolved_path);
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
@@ -939,6 +1017,11 @@ void LocalObjectStorage::throwIfReadonly() const
 ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
     return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
+}
+
+ObjectStoragePtr LocalObjectStorage::cloneImpl() const
+{
+    return std::make_shared<LocalObjectStorage>(settings);
 }
 
 }

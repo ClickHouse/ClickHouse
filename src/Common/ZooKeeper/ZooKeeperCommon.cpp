@@ -1115,9 +1115,72 @@ size_t ZooKeeperErrorResponse::sizeImpl() const
     return Coordination::size(error);
 }
 
+ZooKeeperRequestPtr ZooKeeperRequest::cloneForMulti(const ACLs &) const
+{
+    throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+}
+
+ZooKeeperRequestPtr ZooKeeperCreateRequest::cloneForMulti(const ACLs & default_acls) const
+{
+    auto result = std::make_shared<ZooKeeperCreateRequest>(*this);
+    if (result->acls.empty())
+        result->acls = default_acls;
+    return result;
+}
+
+std::optional<ZooKeeperMultiRequest::OperationType> ZooKeeperMultiRequest::getOperationType(OpNum op_num)
+{
+    switch (op_num)
+    {
+        case OpNum::Create:
+        case OpNum::Create2:
+        case OpNum::CreateContainer:
+        case OpNum::CreateTTL:
+        case OpNum::CreateIfNotExists:
+        case OpNum::Remove:
+        case OpNum::TryRemove:
+        case OpNum::RemoveRecursive:
+        case OpNum::Set:
+        case OpNum::Check:
+        case OpNum::CheckNotExists:
+        case OpNum::CheckStat:
+            return OperationType::Write;
+
+        case OpNum::Get:
+        case OpNum::Exists:
+        case OpNum::SimpleList:
+        case OpNum::List:
+        case OpNum::FilteredList:
+        case OpNum::FilteredListWithStatsAndData:
+        case OpNum::ListRecursive:
+        case OpNum::ListWithOptions:
+            return OperationType::Read;
+
+        case OpNum::Close:
+        case OpNum::Error:
+        case OpNum::GetACL:
+        case OpNum::SetACL:
+        case OpNum::Sync:
+        case OpNum::Heartbeat:
+        case OpNum::Multi:
+        case OpNum::Reconfig:
+        case OpNum::CheckWatch:
+        case OpNum::RemoveWatch:
+        case OpNum::MultiRead:
+        case OpNum::Auth:
+        case OpNum::SetWatch:
+        case OpNum::SetWatch2:
+        case OpNum::AddWatch:
+        case OpNum::SessionID:
+            return std::nullopt;
+    }
+}
+
 void ZooKeeperMultiRequest::checkOperationType(OperationType type)
 {
-    chassert(!operation_type.has_value() || *operation_type == type);
+    if (operation_type.has_value() && *operation_type != type)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "Cannot mix read and write commands in a multi ZooKeeper request");
+
     operation_type = type;
 }
 
@@ -1136,64 +1199,18 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::Reque
     /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.
     requests.reserve(generic_requests.size());
 
-    using enum OperationType;
     for (const auto & generic_request : generic_requests)
     {
-        if (const auto * concrete_request_create = dynamic_cast<const ZooKeeperCreateRequest *>(generic_request.get()))
-        {
-            checkOperationType(Write);
-            auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
-            if (create->acls.empty())
-                create->acls = default_acls;
-            requests.push_back(create);
-        }
-        else if (const auto * concrete_request_remove = dynamic_cast<const ZooKeeperRemoveRequest *>(generic_request.get()))
-        {
-            checkOperationType(Write);
-            requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
-        }
-        else if (const auto * concrete_request_remove_recursive = dynamic_cast<const ZooKeeperRemoveRecursiveRequest *>(generic_request.get()))
-        {
-            checkOperationType(Write);
-            requests.push_back(std::make_shared<ZooKeeperRemoveRecursiveRequest>(*concrete_request_remove_recursive));
-        }
-        else if (const auto * concrete_request_set = dynamic_cast<const ZooKeeperSetRequest *>(generic_request.get()))
-        {
-            checkOperationType(Write);
-            requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
-        }
-        else if (const auto * concrete_request_check = dynamic_cast<const ZooKeeperCheckRequest *>(generic_request.get()))
-        {
-            checkOperationType(Write);
-            requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
-        }
-        else if (const auto * concrete_request_get = dynamic_cast<const ZooKeeperGetRequest *>(generic_request.get()))
-        {
-            checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperGetRequest>(*concrete_request_get));
-        }
-        else if (const auto * concrete_request_exists = dynamic_cast<const ZooKeeperExistsRequest *>(generic_request.get()))
-        {
-            checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperExistsRequest>(*concrete_request_exists));
-        }
-        else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(generic_request.get()))
-        {
-            checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperSimpleListRequest>(*concrete_request_simple_list));
-        }
-        else if (const auto * concrete_request_list_recursive = dynamic_cast<const ZooKeeperListRecursiveRequest *>(generic_request.get()))
-        {
-            checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperListRecursiveRequest>(*concrete_request_list_recursive));
-        }
-        else if (const auto * concrete_request_list = dynamic_cast<const ZooKeeperListRequest *>(generic_request.get()))
-        {
-            checkOperationType(Read);
-            requests.push_back(std::make_shared<ZooKeeperListRequest>(*concrete_request_list));
-        }
-        else
+        const auto * zk_request = dynamic_cast<const ZooKeeperRequest *>(generic_request.get());
+        if (!zk_request)
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+
+        const auto type = getOperationType(zk_request->getOpNum());
+        if (!type)
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+
+        checkOperationType(*type);
+        requests.push_back(zk_request->cloneForMulti(default_acls));
     }
 }
 
@@ -1286,6 +1303,13 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
 
         ZooKeeperRequestPtr request = ZooKeeperRequestFactory::instance().get(op_num);
         request->readImpl(in);
+
+        const auto type = getOperationType(request->getOpNum());
+        if (!type)
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+
+        checkOperationType(*type);
+
         if (request_validator)
             request_validator(*request);
         requests.push_back(request);
@@ -1341,21 +1365,17 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             response = std::make_shared<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
-        {
             response->error = op_error;
-
-            /// Set error for whole transaction.
-            /// If some operations fail, ZK send global error as zero and then send details about each operation.
-            /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
-            if (error == Error::ZOK && op_error != Error::ZRUNTIMEINCONSISTENCY)
-                error = op_error;
-        }
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
 
         response->zxid = zxid;
     }
+
+    /// The failed-multi aggregate error is not sent on the wire; derive it from the
+    /// per-operation errors just read.
+    promoteMultiResponseError(*this);
 
     /// Footer.
     {
@@ -1373,6 +1393,23 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected op_num received at the end of results for multi transaction");
         if (error_read != -1)
             throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Unexpected error value received at the end of results for multi transaction");
+    }
+}
+
+void promoteMultiResponseError(MultiResponse & response)
+{
+    if (response.error != Error::ZOK)
+        return;
+
+    /// A failed multi leaves the aggregate ZOK, with the real error on the failing operation
+    /// and ZRUNTIMEINCONSISTENCY on the operations after it; promote the first real error.
+    for (const auto & sub : response.responses)
+    {
+        if (sub->error != Error::ZOK && sub->error != Error::ZRUNTIMEINCONSISTENCY)
+        {
+            response.error = sub->error;
+            break;
+        }
     }
 }
 
@@ -1728,6 +1765,133 @@ void ZooKeeperListRecursiveResponse::writeImpl(WriteBuffer & out) const
     Coordination::write(children, out);
 }
 
+void ZooKeeperListWithOptionsRequest::writeImpl(WriteBuffer & out) const
+{
+    if (options_version != ListOptionsVersion::V1)
+        throw Exception::fromMessage(Error::ZUNIMPLEMENTED, "Unsupported ListWithOptions version");
+
+    options.validate();
+    Coordination::write(static_cast<int32_t>(options_version), out);
+    Coordination::write(path, out);
+    Coordination::write(has_watch, out);
+    Coordination::write(static_cast<uint8_t>(options.filter), out);
+    Coordination::write(options.with_stat, out);
+    Coordination::write(options.with_data, out);
+    Coordination::write(options.recursive, out);
+    Coordination::write(options.max_results, out);
+    Coordination::write(options.shuffle, out);
+}
+
+static bool readListWithOptionsBool(ReadBuffer & in)
+{
+    uint8_t value{};
+    Coordination::read(value, in);
+    if (value > 1)
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Invalid ListWithOptions Boolean value");
+    return value;
+}
+
+void ZooKeeperListWithOptionsRequest::readImpl(ReadBuffer & in)
+{
+    int32_t raw_version{};
+    uint8_t raw_filter{};
+    Coordination::read(raw_version, in);
+    if (raw_version != static_cast<int32_t>(ListOptionsVersion::V1))
+        throw Exception(raw_version > 0 ? Error::ZUNIMPLEMENTED : Error::ZMARSHALLINGERROR, "Unsupported ListWithOptions version {}", raw_version);
+
+    options_version = ListOptionsVersion::V1;
+    Coordination::read(path, in);
+    has_watch = readListWithOptionsBool(in);
+    Coordination::read(raw_filter, in);
+    options.with_stat = readListWithOptionsBool(in);
+    options.with_data = readListWithOptionsBool(in);
+    options.recursive = readListWithOptionsBool(in);
+    Coordination::read(options.max_results, in);
+    options.shuffle = readListWithOptionsBool(in);
+    options.filter = static_cast<ListRequestType>(raw_filter);
+
+    try
+    {
+        options.validate();
+        if (path.empty() || path[0] != '/')
+            throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Invalid ListWithOptions path");
+    }
+    catch (const Exception & e)
+    {
+        if (e.code == Error::ZMARSHALLINGERROR)
+            throw;
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, e.message());
+    }
+}
+
+std::string ZooKeeperListWithOptionsRequest::toStringImpl(bool /*short_format*/) const
+{
+    return fmt::format(
+        "options_version = {}\n"
+        "path = {}\n"
+        "has_watch = {}\n"
+        "filter = {}\n"
+        "with_stat = {}\n"
+        "with_data = {}\n"
+        "recursive = {}\n"
+        "max_results = {}\n"
+        "shuffle = {}",
+        static_cast<int32_t>(options_version),
+        path,
+        has_watch,
+        static_cast<uint8_t>(options.filter),
+        options.with_stat,
+        options.with_data,
+        options.recursive,
+        options.max_results,
+        options.shuffle);
+}
+
+size_t ZooKeeperListWithOptionsRequest::sizeImpl() const
+{
+    return Coordination::size(static_cast<int32_t>(options_version)) + Coordination::size(path) + Coordination::size(has_watch)
+        + Coordination::size(static_cast<uint8_t>(options.filter)) + Coordination::size(options.with_stat)
+        + Coordination::size(options.with_data) + Coordination::size(options.recursive) + Coordination::size(options.max_results)
+        + Coordination::size(options.shuffle);
+}
+
+ZooKeeperResponsePtr ZooKeeperListWithOptionsRequest::makeResponse() const
+{
+    auto response = std::make_shared<ZooKeeperListWithOptionsResponse>();
+    response->expected_options_version = options_version;
+    response->expected_with_stat = options.with_stat;
+    response->expected_with_data = options.with_data;
+    return response;
+}
+
+void ZooKeeperListWithOptionsResponse::readImpl(ReadBuffer & in)
+{
+    Coordination::read(names, in);
+    Coordination::read(stat, in);
+    Coordination::read(stats, in);
+    Coordination::read(data, in);
+    truncated = readListWithOptionsBool(in);
+
+    const bool valid_stats = expected_with_stat ? stats.size() == names.size() : stats.empty();
+    const bool valid_data = expected_with_data ? data.size() == names.size() : data.empty();
+    if (!valid_stats || !valid_data)
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Invalid ListWithOptions response vectors");
+}
+
+void ZooKeeperListWithOptionsResponse::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(names, out);
+    Coordination::write(stat, out);
+    Coordination::write(stats, out);
+    Coordination::write(data, out);
+    Coordination::write(truncated, out);
+}
+
+size_t ZooKeeperListWithOptionsResponse::sizeImpl() const
+{
+    return Coordination::size(names) + Coordination::size(stat) + Coordination::size(stats) + Coordination::size(data) + Coordination::size(truncated);
+}
+
 size_t ZooKeeperListRecursiveResponse::sizeImpl() const
 {
     return Coordination::size(children);
@@ -1860,6 +2024,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::FilteredListWithStatsAndData, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
     registerZooKeeperRequest<OpNum::ListRecursive, ZooKeeperListRecursiveRequest>(*this);
+    registerZooKeeperRequest<OpNum::ListWithOptions, ZooKeeperListWithOptionsRequest>(*this);
     registerZooKeeperRequest<OpNum::AddWatch, ZooKeeperAddWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::CheckWatch, ZooKeeperCheckWatchRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveWatch, ZooKeeperRemoveWatchRequest>(*this);

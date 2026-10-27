@@ -105,19 +105,19 @@ SHOW  wal_level;
   ## ネットワークアクセスを設定する
 </div>
 
-<Note>
-  ClickPipes は Private Service Connect (PSC) 接続をサポートしていません。AlloyDB インスタンスへのパブリックアクセスを許可しない場合は、[SSH トンネルを使用](#configure-network-access)して安全に接続できます。PSC は今後サポートされる予定です。
-</Note>
-
-次に、ClickPipes から AlloyDB インスタンスへの接続を許可する必要があります。
+次に、ClickPipes が AlloyDB インスタンスに接続する方法を選択します。
 
 <Tabs>
+  <Tab title="Private Service Connect を使用">
+    GCP でホストされている ClickHouse Cloud サービスからプライベート接続するには、[GCP Private Service Connect ガイド](/ja/integrations/clickpipes/networking/gcp-psc)に従って、AlloyDB インスタンス用のリバース プライベート エンドポイントを設定します。
+  </Tab>
+
   <Tab title="ClickPipes の IP を許可">
     1. Google Cloud Console で、AlloyDB の [Clusters](https://console.cloud.google.com/alloydb/clusters) ページに移動します。プライマリインスタンスを選択して、**概要** ページを開きます。
 
     2. **Instances in your cluster** までスクロールし、**Edit primary** をクリックします。
 
-    3. **Enable Public IP** チェックボックスをオンにして、パブリックインターネット経由でインスタンスへの接続を許可します。**Authorized external networks** で、サービスのデプロイ先リージョンに対応する [ClickPipes の静的 IP アドレス一覧](/ja/integrations/clickpipes/home#list-of-static-ips) を入力します。
+    3. **Enable Public IP** チェックボックスをオンにして、パブリックインターネット経由でインスタンスへの接続を許可します。**Authorized external networks** で、サービスのデプロイ先リージョンに対応する [ClickPipes の静的 IP アドレス一覧](/ja/integrations/clickpipes/networking/static-ips) を入力します。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="IP 許可リストを使用してパブリックアクセス用のネットワークを設定する" size="lg" border />
 
@@ -137,7 +137,7 @@ SHOW  wal_level;
        * GCE インスタンスが AlloyDB インスタンスと同じ Virtual Private Network (VPC) 内にあることを確認します。
        * GCE インスタンスに [静的パブリック IP アドレス](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address) が割り当てられていることを確認します。ClickPipes を SSH 踏み台サーバーに接続する際、この IP アドレスを使用します。
 
-    2. SSH 踏み台サーバーのファイアウォールルールを更新し、サービスのデプロイ先リージョンに対応する [ClickPipes の静的 IP アドレス一覧](/ja/integrations/clickpipes/home#list-of-static-ips) からのトラフィックを許可します。
+    2. SSH 踏み台サーバーのファイアウォールルールを更新し、サービスのデプロイ先リージョンに対応する [ClickPipes の静的 IP アドレス一覧](/ja/integrations/clickpipes/networking/static-ips) からのトラフィックを許可します。
 
     3. AlloyDB のファイアウォールルールを更新し、SSH 踏み台サーバーからのトラフィックを許可します。
   </Tab>

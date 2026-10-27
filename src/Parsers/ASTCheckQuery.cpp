@@ -41,9 +41,11 @@ void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
     /// downcast via `partition->as<ASTPartition>()` and raise `LOGICAL_ERROR` otherwise. Reject any
     /// other node type at the deserialization boundary instead.
     partition = r.readChildOfType<ASTPartition>("partition");
-    if (partition)
-        children.push_back(partition);
+    /// `partition` is deliberately member-only: `ParserCheckQuery` only puts database and table in
+    /// `children`. Keeping that shape is necessary for the JSON round trip to preserve the tree hash.
     part_name = r.getString("part_name");
+    if (r.has("part_name") && part_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'part_name' in `CheckTableQuery` during AST JSON deserialization");
     /// The parser produces either `PARTITION <expr>` or `PART '<name>'`, never both
     /// (`getPartitionOrPartitionID` returns only `partition` and ignores `part_name`). A JSON AST
     /// carrying both would format as two clauses while executing against the partition only, so

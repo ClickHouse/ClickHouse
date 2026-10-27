@@ -1,0 +1,14 @@
+Rejected --format_csv_null_representatio=
+Rejected --format-csv-null-representatio=
+Rejected --hilite=
+Rejected --no-system-tables=
+Rejected --unknown_client_option=
+Rejected --=
+Rejected --query before --format_csv_null_representation=
+Rejected --query before --format-csv-null-representation=
+Rejected --=value before --query
+Rejected --=value before positional query
+Rejected --=value after --format_csv_null_representation
+Rejected --=value after --max_threads
+Rejected --=value after --query
+--query=value=

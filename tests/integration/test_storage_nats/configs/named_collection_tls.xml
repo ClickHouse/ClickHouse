@@ -1,0 +1,44 @@
+<clickhouse>
+    <named_collections>
+        <!-- TLS material is accepted only from the server configuration file, so every combination
+             the tests need is a collection of its own. The paths are copied into the container by
+             the test fixture; the broker requires a client certificate. -->
+        <nats_tls>
+            <nats_url>nats1:4444</nats_url>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_secure>1</nats_secure>
+            <nats_ca_file>/etc/clickhouse-server/nats_ca.pem</nats_ca_file>
+            <nats_client_cert_file>/etc/clickhouse-server/nats_client_cert.pem</nats_client_cert_file>
+            <nats_client_key_file>/etc/clickhouse-server/nats_client_key.pem</nats_client_key_file>
+        </nats_tls>
+        <nats_tls_ca_only>
+            <nats_url>nats1:4444</nats_url>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_secure>1</nats_secure>
+            <nats_startup_connect_tries>1</nats_startup_connect_tries>
+            <nats_ca_file>/etc/clickhouse-server/nats_ca.pem</nats_ca_file>
+        </nats_tls_ca_only>
+        <nats_tls_cert_only>
+            <nats_url>nats1:4444</nats_url>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_secure>1</nats_secure>
+            <nats_startup_connect_tries>1</nats_startup_connect_tries>
+            <nats_client_cert_file>/etc/clickhouse-server/nats_client_cert.pem</nats_client_cert_file>
+            <nats_client_key_file>/etc/clickhouse-server/nats_client_key.pem</nats_client_key_file>
+        </nats_tls_cert_only>
+        <nats_tls_unreadable_ca>
+            <nats_url>nats1:4444</nats_url>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_secure>1</nats_secure>
+            <nats_ca_file>/etc/clickhouse-server/no_such_ca.pem</nats_ca_file>
+        </nats_tls_unreadable_ca>
+        <nats_tls_unreadable_chain>
+            <nats_url>nats1:4444</nats_url>
+            <nats_format>JSONEachRow</nats_format>
+            <nats_secure>1</nats_secure>
+            <nats_ca_file>/etc/clickhouse-server/nats_ca.pem</nats_ca_file>
+            <nats_client_cert_file>/etc/clickhouse-server/no_such_cert.pem</nats_client_cert_file>
+            <nats_client_key_file>/etc/clickhouse-server/nats_client_key.pem</nats_client_key_file>
+        </nats_tls_unreadable_chain>
+    </named_collections>
+</clickhouse>

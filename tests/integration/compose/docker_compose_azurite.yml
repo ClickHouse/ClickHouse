@@ -8,6 +8,18 @@ services:
     volumes:
       - data1-1:/data1
     command: azurite-blob --blobHost 0.0.0.0 --blobPort ${AZURITE_PORT} --debug /azurite_log
+    # The emulator is Node on musl (the upstream image is `node:22-alpine`), and that combination
+    # aborts the process outright now and then - seen as a `node[...] general protection fault ...
+    # in ld-musl-x86_64.so.1` in the host's dmesg. Without a restart policy the container stays
+    # exited: Docker tears down its port mapping, so every later Azure test served by the same
+    # session-scoped cluster fails with `Connection refused` on the blob port until the next
+    # cluster restart. One crash cost 13 tests and 22 minutes of a single `Integration tests
+    # (amd_msan, 8/8)` run that way. Restarting keeps the crash to the test that hit it: the blob
+    # data and the emulator's metadata live in the container's own filesystem (the command drops
+    # the image's `-l /data`, so the location is the `/opt/azurite` workdir), which a restart of
+    # the same container preserves. This matches every other support service here - mysql, mongo,
+    # postgres, keeper, redis, hdfs, hive, nginx, coredns and the rest all set it.
+    restart: always
     stop_grace_period: 5s
     cpus: 3
 volumes:

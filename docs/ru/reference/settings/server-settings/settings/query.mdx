@@ -47,11 +47,13 @@ import SystemLogParameters from '/snippets/ru/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-Настройка логирования запросов, полученных с параметром [log&#95;queries=1](/ru/reference/settings/session-settings).
+Настройка логирования запросов, полученных с параметром [log&#95;queries=1](/ru/reference/settings/session-settings/log-queries#log_queries).
 
 Запросы записываются в таблицу [system.query&#95;log](/ru/reference/system-tables/query_log), а не в отдельный файл. Имя таблицы можно изменить в параметре `table` (см. ниже).
 
 <SystemLogParameters />
+
+Параметр `enable_user_query_log` (включён по умолчанию) создаёт [`system.user_query_log`](/ru/reference/system-tables/user_query_log), которая позволяет каждому пользователю просматривать собственные записи в настроенной таблице журнала запросов без доступа к самой таблице. Это работает только при локальном хранении журнала запросов: если `engine` передаёт работу другому серверу (например, `Distributed`), отключите `enable_user_query_log`, поскольку `system.user_query_log` не может выполнять проверку прав доступа для каждого пользователя через границу сервера, работающего по протоколу ClickHouse, и отказывается читать из такого backend-соединения.
 
 Если таблица не существует, ClickHouse создаст её. Если при обновлении сервера ClickHouse изменилась структура журнала запросов, таблица со старой структурой переименовывается, а новая таблица создаётся автоматически.
 
@@ -67,6 +69,7 @@ import SystemLogParameters from '/snippets/ru/_system-log-parameters.mdx';
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -146,7 +149,7 @@ import SystemLogParameters from '/snippets/ru/_system-log-parameters.mdx';
   ## query_thread_log
 </div>
 
-Настройка для логирования потоков запросов, полученных с параметром [log&#95;query&#95;threads=1](/ru/reference/settings/session-settings#log_query_threads).
+Настройка для логирования потоков запросов, полученных с параметром [log&#95;query&#95;threads=1](/ru/reference/settings/session-settings/log-query#log_query_threads).
 
 Запросы записываются в таблицу [system.query&#95;thread&#95;log](/ru/reference/system-tables/query_thread_log), а не в отдельный файл. Имя таблицы можно изменить в параметре `table` (см. ниже).
 
@@ -173,7 +176,7 @@ import SystemLogParameters from '/snippets/ru/_system-log-parameters.mdx';
   ## query_views_log
 </div>
 
-Настройка логирования представлений (live, materialized и т. д.) в зависимости от запросов, полученных при включённой настройке [log&#95;query&#95;views=1](/ru/reference/settings/session-settings#log_query_views).
+Настройка логирования представлений (live, materialized и т. д.) в зависимости от запросов, полученных при включённой настройке [log&#95;query&#95;views=1](/ru/reference/settings/session-settings/log-query#log_query_views).
 
 Запросы записываются в таблицу [system.query&#95;views&#95;log](/ru/reference/system-tables/query_views_log), а не в отдельный файл. Имя таблицы можно изменить в параметре `table` (см. ниже).
 

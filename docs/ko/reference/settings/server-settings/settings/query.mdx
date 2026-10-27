@@ -47,11 +47,13 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-[log&#95;queries=1](/ko/reference/settings/session-settings) 설정으로 수신된 쿼리를 로깅하기 위한 설정입니다.
+[log&#95;queries=1](/ko/reference/settings/session-settings/log-queries#log_queries) 설정으로 수신된 쿼리를 로깅하기 위한 설정입니다.
 
 쿼리는 별도의 파일이 아니라 [system.query&#95;log](/ko/reference/system-tables/query_log) 테이블에 기록됩니다. 테이블 이름은 `table` 매개변수에서 변경할 수 있습니다(아래 참조).
 
 <SystemLogParameters />
+
+기본적으로 활성화된 `enable_user_query_log` 매개변수는 [`system.user_query_log`](/ko/reference/system-tables/user_query_log)를 생성합니다. 이를 통해 각 사용자는 테이블 자체에 대한 액세스 권한 없이 구성된 쿼리 로그 테이블에서 자신의 레코드를 확인할 수 있습니다. 이 기능은 쿼리 로그가 로컬에 저장된 경우에만 작동합니다. `engine`이 다른 서버에 위임하는 경우(예: `Distributed`)에는 ClickHouse 프로토콜 서버 경계를 넘어 사용자별 액세스 검사를 적용할 수 없고 이러한 백엔드에서 읽기를 거부하므로 `enable_user_query_log`를 비활성화하십시오.
 
 테이블이 없으면 ClickHouse가 생성합니다. ClickHouse 서버 업데이트로 쿼리 로그의 구조가 변경되면, 이전 구조의 테이블은 이름이 변경되고 새 테이블이 자동으로 생성됩니다.
 
@@ -67,6 +69,7 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -146,7 +149,7 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings#log_query_threads) 설정으로 수신된 쿼리 스레드를 로깅하기 위한 설정입니다.
+[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings/log-query#log_query_threads) 설정으로 수신된 쿼리 스레드를 로깅하기 위한 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;thread&#95;log](/ko/reference/system-tables/query_thread_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -173,7 +176,7 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ko/reference/settings/session-settings#log_query_views) 설정이 적용된 상태에서 수신된 쿼리와 관련된 뷰(라이브 뷰, 구체화된 뷰(Materialized View) 등)를 로깅하기 위한 설정입니다.
+[log&#95;query&#95;views=1](/ko/reference/settings/session-settings/log-query#log_query_views) 설정이 적용된 상태에서 수신된 쿼리와 관련된 뷰(라이브 뷰, 구체화된 뷰(Materialized View) 등)를 로깅하기 위한 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;views&#95;log](/ko/reference/system-tables/query_views_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 

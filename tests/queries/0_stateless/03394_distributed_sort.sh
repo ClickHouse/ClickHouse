@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
+# Tags: no-flaky-check
+# no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+# execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,7 +17,7 @@ SELECT dst_ip, src_ip, bytes
 FROM test
 WHERE bytes > 5 AND src_ip > 2
 ORDER BY dst_ip, src_ip, bytes
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3"
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_fallback_to_local_execution=0"
 
 # The WHERE step may appear as either Expression or Filter depending on optimizer settings.
 # Normalize to Expression so the test is deterministic with randomized settings.

@@ -102,7 +102,8 @@ std::string runCollapsedProfile(const std::string & input_filename, bool collaps
         DEFAULT_BLOCK_SIZE,
         JemallocProfileFormat::Collapsed,
         false, /* symbolize_with_inline */
-        collapsed_use_count);
+        collapsed_use_count,
+        /* remove_file= */ false);
 
     std::string output;
     WriteBufferFromString out(output);
@@ -211,6 +212,16 @@ TEST(JemallocProfileSource, CollapsedMalformedHeaderRawPassthrough)
         UInt64 total = sumCollapsedValues(collapsed_output);
         EXPECT_EQ(total, expected_raw_count_total);
     }
+
+    std::filesystem::remove(input);
+}
+
+/// jemalloc writes a bare `@` line for a sample whose stack it could not unwind.
+TEST(JemallocProfileSource, CollapsedEmptyStack)
+{
+    auto input = writeToTempFile("heap\n@\n  t*: 1: 128 [0: 0]\n  t5: 1: 128 [0: 0]\n", "gtest_jemalloc_profile_empty_stack.heap");
+
+    EXPECT_EQ(runCollapsedProfile(input, /* collapsed_use_count= */ false), "[unknown] 128\n");
 
     std::filesystem::remove(input);
 }

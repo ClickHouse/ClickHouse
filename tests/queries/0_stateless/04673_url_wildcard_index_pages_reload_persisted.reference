@@ -1,0 +1,38 @@
+--- A: explicit structure, created with the setting on, reloaded with it off
+created	URL
+gate refused: 0
+reloaded	URL
+plan	1	1
+gate refused: 0
+gate refused: 0
+--- A2: structure inferred, same cycle
+created	Proxy
+gate refused: 0
+reloaded	Proxy
+plan	1	1
+gate refused: 0
+gate refused: 0
+--- C: ENGINE = URL keeps its own behaviour
+created	URL
+gate refused: 0
+reloaded	URL
+gate refused: 0
+creating one with the setting off
+gate refused: 1
+--- D: a path without a listable glob never consults the setting
+created	URL
+gate refused: 0
+reloaded	URL
+gate refused: 0
+--- E: INSERT INTO FUNCTION reaches a writable storage
+insert ok: 1
+insert ok: 1
+gate refused: 0
+--- F: a scheme handled by a delegate is untouched
+created	File
+gate refused: 0
+reloaded	File
+gate refused: 0
+--- G: a query against url() still requires the setting
+gate refused: 1
+gate refused: 0

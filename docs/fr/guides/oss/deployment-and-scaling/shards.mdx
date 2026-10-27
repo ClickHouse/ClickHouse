@@ -109,7 +109,7 @@ Le traitement des requêtes fonctionne de manière similaire aux configurations 
 
 La suite fonctionne de la [même manière](#select-forwarding) que dans les configurations sans répliques et n’est pas représentée dans le schéma ci-dessus. Le serveur ClickHouse hébergeant la table distribuée initialement ciblée collecte tous les résultats locaux, les fusionne en un résultat global final, puis le renvoie à l’émetteur de la requête.
 
-Notez que ClickHouse permet de configurer la stratégie de transfert des requêtes pour ②. Par défaut — contrairement au schéma ci-dessus — la table distribuée [privilégie](/fr/reference/settings/session-settings#prefer_localhost_replica) une réplique locale si elle est disponible, mais d’autres [stratégies](/fr/reference/settings/session-settings#load_balancing) d’équilibrage de charge peuvent être utilisées.
+Notez que ClickHouse permet de configurer la stratégie de transfert des requêtes pour ②. Par défaut — contrairement au schéma ci-dessus — la table distribuée [privilégie](/fr/reference/settings/session-settings/prefer#prefer_localhost_replica) une réplique locale si elle est disponible, mais d’autres [stratégies](/fr/reference/settings/session-settings/load-balancing#load_balancing) d’équilibrage de charge peuvent être utilisées.
 
 <div id="where-to-find-more-information">
   ## Où trouver plus d’informations

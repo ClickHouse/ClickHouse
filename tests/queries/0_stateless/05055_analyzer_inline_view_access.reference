@@ -1,0 +1,26 @@
+-- DEFINER view without any grant, analyzer_inline_views = 1: must be denied --
+ACCESS_DENIED
+-- DEFINER view without any grant, analyzer_inline_views = 0: must be denied --
+ACCESS_DENIED
+-- base table directly: must be denied --
+ACCESS_DENIED
+-- after GRANT SELECT on the DEFINER view: rows returned (definer reads the base table) --
+api_key	AKIA-9999
+stripe	sk_live_2222
+-- INVOKER view: grant on the view but not on the base table, still denied on the base table --
+ACCESS_DENIED
+-- column-restricted grant on the DEFINER view: granted column is readable (non-inlined path) --
+api_key
+stripe
+-- column-restricted grant on the DEFINER view: ungranted column is denied --
+ACCESS_DENIED
+-- ALIAS column without a grant on it: must be denied even with inlining --
+ACCESS_DENIED
+-- granted ordinary column of the same view is still readable --
+api_key
+stripe
+-- SQL SECURITY NONE view without a grant: must be denied even with inlining --
+ACCESS_DENIED
+-- SQL SECURITY NONE view after GRANT SELECT: rows returned (inner table read with no user) --
+api_key	AKIA-9999
+stripe	sk_live_2222

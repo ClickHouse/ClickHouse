@@ -1,0 +1,32 @@
+<test>
+    <!--
+        The build side of an `ANY`/`SEMI`/`ANTI` join inserts every right row, but a row whose key is
+        already there stores nothing - the loop is then just a lookup. It used to reload
+        `join_any_take_last_row` from the join object twice per row on top of that, which a right side
+        of repeated keys pays for on every row.
+    -->
+
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <query_plan_join_swap_table>false</query_plan_join_swap_table>
+        <join_algorithm>hash</join_algorithm>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE join_dup_build (k UInt64, v UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE join_dup_probe (k UInt64) ENGINE = Memory</create_query>
+
+    <!-- 64M right rows over 1024 keys: 1024 of them insert, the rest only look the key up. -->
+    <fill_query>INSERT INTO join_dup_build SELECT number % 1024, number FROM numbers_mt(64000000)</fill_query>
+    <fill_query>INSERT INTO join_dup_probe SELECT number % 1024 FROM numbers_mt(1000000)</fill_query>
+
+    <!-- A right column is selected, so these stay on the mapped hash tables. -->
+    <query>SELECT sum(r.v) FROM join_dup_probe AS l ANY LEFT JOIN join_dup_build AS r ON l.k = r.k FORMAT Null</query>
+    <!-- With `join_any_take_last_row` every row stores its reference, so the branch always fires. -->
+    <query>SELECT sum(r.v) FROM join_dup_probe AS l ANY LEFT JOIN join_dup_build AS r ON l.k = r.k SETTINGS join_any_take_last_row = 1 FORMAT Null</query>
+    <!-- `SEMI` with a right column selected also builds a mapped table. -->
+    <query>SELECT sum(r.v) FROM join_dup_probe AS l SEMI LEFT JOIN join_dup_build AS r ON l.k = r.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS join_dup_build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_dup_probe</drop_query>
+</test>

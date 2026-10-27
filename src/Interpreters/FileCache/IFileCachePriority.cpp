@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -28,7 +29,7 @@ IFileCachePriority::Entry::Entry(
     : key(key_)
     , offset(offset_)
     , key_metadata(key_metadata_)
-    , size(size_)
+    , size(key_metadata_ && key_metadata_->useRealDiskSize() ? key_metadata_->alignFileSize(size_) : size_)
     , state(initial_state)
 {
 }
@@ -75,27 +76,6 @@ std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriorit
         ErrorCodes::NOT_IMPLEMENTED,
         "getUsageStatPerClient() is not implemented for {} policy",
         magic_enum::enum_name(getType()));
-}
-
-void IFileCachePriority::removeEntries(
-    const std::vector<InvalidatedEntryInfo> & entries,
-    const CachePriorityGuard::WriteLock & lock)
-{
-    if (entries.empty())
-        return;
-
-    for (const auto & [entry, it] : entries)
-    {
-        /// We store `entry` shared pointer in addition to `it`
-        /// (which is an iterator pointing to the same entry)
-        /// because `it` could become invalid,
-        /// so we use `entry` to check validity of the iterator.
-        const auto entry_state = entry->getState();
-        chassert(entry_state == Entry::State::Invalidated || entry_state == Entry::State::Removed,
-                 fmt::format("Unexpected state: {}", magic_enum::enum_name(entry_state)));
-        if (entry_state != Entry::State::Removed)
-            it->remove(lock);
-    }
 }
 
 IFileCachePriority::IPriorityDump::IPriorityDump() = default;

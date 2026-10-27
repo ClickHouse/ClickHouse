@@ -37,11 +37,13 @@ Os ClickPipes do Kafka podem ser implantados e gerenciados manualmente pela UI d
 
   <Step title="Configure um registro de esquemas (opcional)" id="4-configure-your-schema-registry">
     Um esquema válido é obrigatório para tópicos Avro e Protobuf. Consulte [Registros de esquemas](/pt-BR/integrations/clickpipes/kafka/schema-registries) para mais detalhes sobre como configurar um registro de esquemas.
+
+    Para Protobuf, você pode, em vez disso, deixar o **Schema registry** desabilitado e [enviar um esquema ao selecionar seu tópico](#7-select-your-topic).
   </Step>
 
   <Step title="Configure um endpoint privado reverso (opcional)" id="5-configure-reverse-private-endpoint">
     Configure um endpoint privado reverso para permitir que o ClickPipes se conecte ao seu cluster do Kafka usando o AWS PrivateLink.
-    Consulte nossa [documentação do AWS PrivateLink](/pt-BR/integrations/clickpipes/aws-privatelink) para mais informações.
+    Consulte nossa [documentação do AWS PrivateLink](/pt-BR/integrations/clickpipes/networking/aws-privatelink) para mais informações.
   </Step>
 
   <Step title="Configure o túnel SSH (opcional)" id="6-configure-ssh-tunneling">
@@ -59,12 +61,14 @@ Os ClickPipes do Kafka podem ser implantados e gerenciados manualmente pela UI d
     4. Clique em &quot;Verify Connection&quot; para verificar a conexão.
 
     <Note>
-      Certifique-se de adicionar os [endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips) à lista de permissões nas regras de firewall do host SSH bastion, para que o ClickPipes possa estabelecer o túnel SSH.
+      Certifique-se de adicionar os [endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/networking/static-ips) à lista de permissões nas regras de firewall do host SSH bastion, para que o ClickPipes possa estabelecer o túnel SSH.
     </Note>
   </Step>
 
   <Step title="Selecione seu tópico" id="7-select-your-topic">
-    Selecione seu tópico, e a UI exibirá um documento de exemplo desse tópico.
+    Selecione seu tópico. Se você não estiver usando um registro de esquemas, selecione o formato dos dados em **Schema format**. Para `Protobuf`, envie um arquivo `.proto` ou um `FileDescriptorSet` serializado (máximo de 768 KiB).
+
+    A UI então exibirá um documento de exemplo desse tópico.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Selecione seu tópico" size="md" />
   </Step>

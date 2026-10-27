@@ -1,0 +1,28 @@
+all ascii, every length up to 300
+300	300
+one high byte at every position, every length up to 200
+20100	20100
+20100	20100
+boundary bytes 0x00 and 0x7F are ascii at every position
+20100	20100
+per-row results do not bleed into neighbours
+1
+0
+0
+1
+0
+0
+1
+0
+0
+1
+0
+1
+0
+1
+0
+fixed string
+64	64
+10	10
+1
+0

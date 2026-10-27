@@ -16,7 +16,8 @@
         "chdb/install/go",
         "chdb/install/rust",
         "chdb/install/bun",
-        "chdb/install/c"
+        "chdb/install/c",
+        "chdb/install/adbc"
       ]
     },
     {

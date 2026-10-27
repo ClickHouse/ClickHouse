@@ -84,14 +84,9 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(arguments[0].type).get());
-
-        if (!tuple)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Tuple or Nullable(Tuple)", getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return "(MaybeNullable(Tuple)) -> Array(String)";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
@@ -119,7 +114,7 @@ REGISTER_FUNCTION(TupleNames)
 Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
 )",
         .syntax = "tupleNames(tuple)",
-        .examples{{"typical", "SELECT tupleNames(tuple(1 as a, 2 as b))", "['a','b']"}},
+        .examples{{"typical", "SELECT tupleNames(tuple(1 as a, 2 as b))", "['1','2']"}},
         .introduced_in = {24, 8},
         .category = FunctionDocumentation::Category::Tuple});
 }

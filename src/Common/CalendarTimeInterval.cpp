@@ -14,7 +14,7 @@ CalendarTimeInterval::CalendarTimeInterval(const CalendarTimeInterval::Intervals
 {
     for (auto [kind, val] : intervals)
     {
-        switch (kind.kind)
+        switch (kind.getKind())
         {
             case IntervalKind::Kind::Nanosecond:
             case IntervalKind::Kind::Microsecond:

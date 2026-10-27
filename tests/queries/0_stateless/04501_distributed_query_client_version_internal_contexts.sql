@@ -18,7 +18,10 @@ CREATE TABLE dst (s UInt64) ENGINE = MergeTree ORDER BY s;
 
 -- The refresh runs in a background context; `prefer_localhost_replica = 0` forces the read of the
 -- Distributed table through `RemoteQueryExecutor` so the version guard is exercised.
-CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 YEAR TO dst AS
+-- APPEND keeps this fixture creatable on a Replicated database, which refuses a non-APPEND
+-- refreshable view over a non-replicated target; `all_replicas = 1` keeps the refresh on the replica
+-- this client is connected to, and AFTER with EMPTY leaves `SYSTEM REFRESH VIEW` the only refresh.
+CREATE MATERIALIZED VIEW mv REFRESH AFTER 1 YEAR SETTINGS all_replicas = 1 APPEND TO dst EMPTY AS
     SELECT sum(x) AS s FROM src_dist SETTINGS prefer_localhost_replica = 0;
 
 SYSTEM REFRESH VIEW mv;

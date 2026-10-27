@@ -33,8 +33,8 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     for (const auto & processor : processors)
     {
         const auto & description = processor->getDescription();
-        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getUniqID() << (description.empty() ? "" : ":")
-            << description;
+        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getUniqID();
+        out << (description.empty() ? "" : ":") << description;
 
         if (statuses_iter != statuses.end())
         {

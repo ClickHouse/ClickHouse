@@ -1,0 +1,207 @@
+#!/usr/bin/expect -f
+
+# The `/`-commands of the client (`/clear`, `/help`, `/man`) are offered by the line editor as soon
+# as a `/` is typed at the beginning of the input:
+#   1. as as-you-type hints - the whole list for a bare `/`, an inline ghost for a unique prefix;
+#   2. as Tab completions, which is how they are completed when the instant hints are disabled.
+# A `/` elsewhere in the input, and the argument of a command, are not commands and offer nothing.
+# A mistake in the name of a command is reported with the similar commands instead of being parsed
+# as SQL, and so is an argument given to a command that takes none.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# `replxx` treats a `\r` that arrives in the same read as the characters before it as a newline
+# inside one input instead of as a submission - on a loaded machine the whole `send` is waiting in
+# the terminal by the time the client reads it - and the next input would then be appended to this
+# one. Every input is therefore typed first, awaited in its echo, which is the proof that the line
+# editor has consumed it, and only then submitted with a `\r` of its own.
+proc type_and_submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# `Ctrl-D` exits only from an empty prompt: sent together with the `Ctrl-C` that abandons the line
+# or cancels the running query, it is discarded on a loaded machine, and the client would then stay
+# open until the test times out. Wait for the prompt in between - unless the `Ctrl-C` itself ended
+# the client, which is what an empty input means to it. The prompt of that wait must be the one the
+# `Ctrl-C` redraws: a wait for a bare prompt can be satisfied by one that was printed before the
+# `Ctrl-C` was even sent - the previous command redraws it too - and the `Ctrl-D` would then be sent
+# into the same read as the `Ctrl-C` after all. The echo of the `^C` is what separates the two.
+# The line editor draws the hints of every state that is typed through, and on a loaded machine a
+# whole `send` can be consumed one character at a time, so the hints of a bare `/` may still be on
+# their way when the rest of the input is already typed. Where the absence of a hint is asserted,
+# the input is therefore typed up to its last character first and the drawing of it is drained, so
+# that the assertion sees the drawing of the final state alone.
+proc drain {} {
+    expect {
+        -timeout 1
+        -re {.+}  { exp_continue }
+        timeout   {}
+    }
+}
+
+proc interrupt {} {
+    send -- "\3"
+    expect {
+        eof      { return 0 }
+        -ex "^C" { return 1 }
+    }
+}
+
+proc clear_and_quit {} {
+    if {![interrupt]} { return }
+    expect {
+        eof   { return }
+        ":) " {}
+    }
+    send -- "\4"
+    expect eof
+}
+
+# The instant hints need color (the highlighter), while the `/`-commands themselves are a static
+# client-side list and do not need the asynchronous suggestion loader. The harness disables both,
+# so enable only highlighting where the hints are exercised.
+
+# ─── 1. A bare `/` shows the list of the commands as hints ───────────────────
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+expect ":) "
+
+send -- "/"
+expect "/clear"
+expect "/help"
+expect "/man"
+clear_and_quit
+
+# ─── 2. A unique prefix is shown inline and accepted with Tab ────────────────
+# `/cl` matches `/clear` only, so its remainder is shown as ghost text; Tab accepts the hint and
+# `/clear` then clears the terminal (\033[2J), which proves the whole line - not only the part
+# after the `/` word break - was replaced by the command.
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+expect ":) "
+
+send -- "/cl"
+expect "ear"
+send -- "\t"
+# The accepted hint is redrawn as the whole command; the `/` of it is colored apart from the name.
+expect -ex "clear"
+send -- "\r"
+expect -re {\x1b\[2J}
+clear_and_quit
+
+# ─── 3. Tab does not complete a command around text after the cursor ─────────
+# The callback receives only the prefix through the cursor. Completing `/cl|ear`
+# would otherwise insert `/clear` before the untouched suffix, producing
+# `/clearear`. The line remains `/clear`, so Enter executes it and clears the
+# terminal.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "/clear"
+expect -ex "/clear"
+send -- "\033\[D\033\[D"
+expect -re {\x1b\[[0-9]+G}
+send -- "\t"
+# A `Tab` that completes nothing may redraw nothing, so wait for the redraw only for a moment: the
+# point of the wait is that the `\r` below arrives in a read of its own.
+set timeout 5
+expect {
+    -re {\x1b\[[0-9]+G} {}
+    timeout                {}
+}
+set timeout 60
+send -- "\r"
+expect -re {\x1b\[2J}
+clear_and_quit
+
+# ─── 4. With the hints disabled, Tab completes the command ───────────────────
+# The options of the harness (`--highlight 0`, `--disable_suggestion`) leave the instant hints off.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "/hel"
+expect -ex "/hel"
+send -- "\t"
+expect -ex "/help"
+send -- "\r"
+expect "Usage: help <name>"
+
+# ─── 5. A mistake in the name of a command names the similar commands ────────
+# A bare `/` is not diagnosed: submitted alone it is the Oracle SQL*Plus shortcut of the interactive
+# client, which repeats the last input, and that keeps working as before.
+type_and_submit "SELECT 6011"
+expect "6011"
+expect ":) "
+type_and_submit "/"
+expect "6011"
+expect ":) "
+
+type_and_submit "/hepl"
+expect -ex {Unknown command `/hepl`}
+expect -ex {Maybe you meant: ['/help']}
+
+# An unfinished name is a prefix of the command, which `NamePrompter` alone would not suggest.
+type_and_submit {/cl}
+expect -ex {Maybe you meant: ['/clear']}
+
+# Nothing resembles it: the mistake is still reported instead of a syntax error at the `/`.
+type_and_submit {/nosuchcommand}
+expect -ex {Unknown command `/nosuchcommand`}
+
+# The name is right but the usage is not.
+type_and_submit {/clear now}
+expect -ex {The `/clear` command does not accept an argument}
+
+# A leading `/` that opens a comment is SQL, not a command.
+type_and_submit {/* comment */ SELECT 6759}
+expect "6759"
+clear_and_quit
+
+# ─── 6. Nothing is offered where a `/` is not a command ──────────────────────
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+expect ":) "
+
+# In the middle of a query it is an operator (or the beginning of a `/* comment */`).
+send -- "SELECT 1 "
+drain
+send -- "/"
+expect {
+    -timeout 1
+    "/clear"  { exit 1 }
+    timeout   {}
+}
+
+interrupt
+expect ":) "
+# After the name of a command, what is being typed is its argument.
+send -- "/man "
+drain
+send -- "f"
+expect {
+    -timeout 1
+    "/clear"  { exit 1 }
+    timeout   {}
+}
+
+clear_and_quit
+
+# ─── 7. `clickhouse-local` reports the mistake as well ───────────────────────
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_LOCAL -q '/hepl'"
+expect -ex {Unknown command `/hepl`}
+expect eof

@@ -25,6 +25,7 @@ public:
     String getID(char) const override { return "ProjectionSelectQuery"; }
 
     ASTPtr clone() const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTPtr & refSelect() { return getExpression(Expression::SELECT); }
 

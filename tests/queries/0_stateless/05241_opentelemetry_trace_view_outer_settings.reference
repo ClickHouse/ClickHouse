@@ -1,0 +1,14 @@
+=== additional_result_filter filters the output, the whole trace is read ===
+├─ child_a
+└─ child_b
+=== the filter setting filters the output ===
+├─ child_a
+└─ child_b
+=== max_result_rows counts the output rows, not the spans read ===
+3
+=== a session-level limit and offset shape the output only ===
+3
+├─ child_a
+└─ child_b
+=== the resource limits still apply to the spans read ===
+TOO_MANY_ROWS

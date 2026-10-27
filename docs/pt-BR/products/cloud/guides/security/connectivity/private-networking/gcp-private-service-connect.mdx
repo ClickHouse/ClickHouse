@@ -21,7 +21,7 @@ Os provedores de serviços disponibilizam seus aplicativos aos consumidores cria
 <Warning>
   O Private Service Connect do GCP oferece suporte apenas a conexões iniciadas da sua VPC do GCP para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VPC, como um [banco de dados privado](#connecting-to-a-remote-database).
 
-  Por padrão, um serviço do ClickHouse não fica disponível por uma conexão do Private Service, mesmo que a conexão PSC seja aprovada e estabelecida; é necessário adicionar explicitamente o ID do PSC à lista de permissões no nível da instância, concluindo o [passo](#add-endpoint-id-to-services-allow-list) abaixo.
+  Por padrão, um serviço ClickHouse não fica disponível por uma conexão do Private Service, mesmo que a conexão PSC seja aprovada e estabelecida; é necessário adicionar explicitamente o ID do PSC à lista de permissões no nível da instância, concluindo o [passo](#add-endpoint-id-to-services-allow-list) abaixo.
 </Warning>
 
 **Considerações importantes ao usar o Global Access do Private Service Connect**:
@@ -38,7 +38,7 @@ A conectividade entre regiões não é compatível. As regiões do provedor e do
 1. Obtenha o service attachment do GCP para o Private Service Connect.
 2. Crie um endpoint de serviço.
 3. Adicione o &quot;Endpoint ID&quot; ao serviço do ClickHouse Cloud.
-4. Adicione o &quot;Endpoint ID&quot; à lista de permissões do serviço do ClickHouse.
+4. Adicione o &quot;Endpoint ID&quot; à lista de permissões do serviço ClickHouse.
 
 <div id="attention">
   ## Atenção

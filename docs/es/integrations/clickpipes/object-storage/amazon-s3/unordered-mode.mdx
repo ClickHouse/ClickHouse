@@ -18,7 +18,9 @@ De forma predeterminada, el ClickPipe de S3 asume que los archivos se agregan a 
   ## Cómo funciona
 </div>
 
-En este modo, el ClickPipe de S3 realiza una carga inicial de **todos los archivos** de la ruta seleccionada y luego escucha eventos `ObjectCreated:*` en la cola que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Los archivos se ingestan cuando se alcanza el umbral configurado en `max insert bytes` o `max file count`, o después de un intervalo configurable (30 segundos de forma predeterminada). **No es posible** iniciar la ingestión desde un archivo concreto o un momento específico: ClickPipes siempre cargará todos los archivos de la ruta seleccionada.
+En este modo, el ClickPipe de S3 realiza una carga inicial de **todos los archivos** de la ruta seleccionada y luego escucha eventos `ObjectCreated:*` en la cola que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Los archivos se ingestan cuando se alcanza el umbral configurado en `max insert bytes` o `max file count`, o después de un intervalo configurable (30 segundos de forma predeterminada).
+
+Para ingestar únicamente los archivos entregados a través de la cola, active **Omitir carga inicial**. Cuando está activada, ClickPipes omite la exploración inicial de los archivos existentes en la ruta seleccionada y procesa únicamente los archivos entregados a través de la cola SQS.
 
 Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lugar a inserciones parciales o a datos duplicados. Object Storage ClickPipes tolera los fallos de inserción y proporciona semántica exactly-once mediante tablas temporales de staging. Los datos se insertan primero en una tabla de staging; si algo sale mal, la tabla de staging se trunca y la inserción se reintenta desde un estado limpio. Las particiones solo se mueven a la tabla de destino una vez que la inserción se ha completado correctamente.
 
@@ -196,10 +198,10 @@ Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lug
   <Step title="Crear un ClickPipe con modo no ordenado" id="create-clickpipe">
     **1.** En la consola de ClickHouse Cloud, vaya a **Data Sources &gt; Create ClickPipe** y seleccione **Amazon S3**. Introduzca la información necesaria para conectarse a su bucket de S3. En **Authentication method**, elija **IAM role** y proporcione el ARN del rol que creó en el paso anterior.
 
-    **2.** En **Incoming data**, active **Continuous ingestion**. Seleccione **Any order** como modo de ingestión y proporcione la **SQS queue URL** de la cola conectada a su bucket. La cola debe utilizarse exclusivamente para este ClickPipe; consulte [Crear una cola de Amazon SQS](#create-sqs-queue).
+    **2.** En **Incoming data**, active **Continuous ingestion**. Seleccione **Any order** como modo de ingestión y proporcione la **SQS queue URL** de la cola conectada a su bucket. Para procesar únicamente los archivos de la cola y omitir el escaneo inicial de los archivos existentes en la ruta seleccionada, habilite **Skip initial load**. La cola debe utilizarse exclusivamente para este ClickPipe; consulte [Crear una cola de Amazon SQS](#create-sqs-queue).
 
     **3.** En **Parse information**, defina una **Sorting key** para la tabla de destino. Haga los ajustes necesarios en el esquema asignado y, a continuación, configure un rol para el usuario de la base de datos de ClickPipes.
 
-    **4.** Revise la configuración y haga clic en **Create ClickPipe**. ClickPipes realizará un escaneo inicial de su bucket para cargar todos los archivos existentes que coincidan con la ruta especificada y luego comenzará a procesar los archivos a medida que lleguen nuevos eventos `ObjectCreated:*` a la cola.
+    **4.** Revise la configuración y haga clic en **Create ClickPipe**. A menos que esté habilitado **Skip initial load**, ClickPipes realizará un escaneo inicial de su bucket para cargar todos los archivos existentes que coincidan con la ruta especificada y luego comenzará a procesar los archivos a medida que se entreguen desde la cola eventos `ObjectCreated:*` coincidentes.
   </Step>
 </Steps>

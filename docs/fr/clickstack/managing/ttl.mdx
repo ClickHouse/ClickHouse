@@ -33,7 +33,7 @@ Le schéma de la table inclut également `TTL toDateTime(Timestamp) + ${TABLES_T
 <Warning>
   **`ttl_only_drop_parts`**
 
-  Nous recommandons de toujours utiliser le paramètre [`ttl_only_drop_parts=1`](/fr/reference/settings/merge-tree-settings#ttl_only_drop_parts). Lorsque ce paramètre est activé, ClickHouse supprime une part entière lorsque toutes les lignes qu’elle contient ont expiré. Supprimer des parts entières au lieu d’un nettoyage partiel des lignes expirées par TTL (obtenu via des mutations gourmandes en ressources lorsque `ttl_only_drop_parts=0`) permet d’utiliser des durées `merge_with_ttl_timeout` plus courtes et de réduire l’impact sur les performances du système. Si les données sont partitionnées selon la même unité que celle utilisée pour l’expiration TTL, par exemple le jour, les parts ne contiendront naturellement que des données de l’intervalle défini. Cela garantit que `ttl_only_drop_parts=1` peut être appliqué efficacement.
+  Nous recommandons de toujours utiliser le paramètre [`ttl_only_drop_parts=1`](/fr/reference/settings/merge-tree-settings/other#ttl_only_drop_parts). Lorsque ce paramètre est activé, ClickHouse supprime une part entière lorsque toutes les lignes qu’elle contient ont expiré. Supprimer des parts entières au lieu d’un nettoyage partiel des lignes expirées par TTL (obtenu via des mutations gourmandes en ressources lorsque `ttl_only_drop_parts=0`) permet d’utiliser des durées `merge_with_ttl_timeout` plus courtes et de réduire l’impact sur les performances du système. Si les données sont partitionnées selon la même unité que celle utilisée pour l’expiration TTL, par exemple le jour, les parts ne contiendront naturellement que des données de l’intervalle défini. Cela garantit que `ttl_only_drop_parts=1` peut être appliqué efficacement.
 </Warning>
 
 Par défaut, les données dont le TTL a expiré sont supprimées lorsque ClickHouse [fusionne les data parts](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). Lorsque ClickHouse détecte que des données ont expiré, il effectue une fusion hors planification.
@@ -50,7 +50,7 @@ Par défaut, les données dont le TTL a expiré sont supprimées lorsque ClickHo
 
 Pour modifier le TTL, vous avez deux possibilités :
 
-1. **Modifier les schémas des tables (recommandé)**. Pour cela, vous devez vous connecter à l’instance ClickHouse, par exemple avec [clickhouse-client](/fr/concepts/features/interfaces/cli) ou la [Cloud SQL Console](/fr/products/cloud/features/sql-console-features/sql-console). Par exemple, vous pouvez modifier le TTL de la table `otel_logs` à l’aide de l’instruction DDL suivante :
+1. **Modifier les schémas des tables (recommandé)**. Pour cela, vous devez vous connecter à l’instance ClickHouse, par exemple avec [clickhouse-client](/fr/concepts/features/interfaces/client) ou la [Cloud SQL Console](/fr/products/cloud/features/sql-console-features/sql-console). Par exemple, vous pouvez modifier le TTL de la table `otel_logs` à l’aide de l’instruction DDL suivante :
 
 ```sql
 ALTER TABLE default.otel_logs

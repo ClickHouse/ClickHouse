@@ -1,0 +1,260 @@
+--- hash ---
+hash	u8	RIGHT	0	0	255	0	[]
+hash	u8	RIGHT	0	1	255	0	[0]
+hash	u8	RIGHT	0	2	255	0	[200]
+hash	u8	FULL	0	0	256	1	[]
+hash	u8	FULL	0	1	256	1	[0]
+hash	u8	FULL	0	2	256	1	[200]
+hash	u16	RIGHT	0	0	1000	0	[]
+hash	u16	RIGHT	0	1	1000	0	[0]
+hash	u16	RIGHT	0	2	1000	0	[500]
+hash	u16	FULL	0	0	1001	1	[]
+hash	u16	FULL	0	1	1001	1	[0]
+hash	u16	FULL	0	2	1001	1	[500]
+hash	u64	RIGHT	0	0	1000	0	[]
+hash	u64	RIGHT	0	1	1000	0	[0]
+hash	u64	RIGHT	0	2	1000	0	[500]
+hash	u64	RIGHT	1	0	1000	0	[]
+hash	u64	RIGHT	1	1	1000	0	[0]
+hash	u64	RIGHT	1	2	1000	0	[500]
+hash	u64	FULL	0	0	1001	1	[]
+hash	u64	FULL	0	1	1001	1	[0]
+hash	u64	FULL	0	2	1001	1	[500]
+hash	u64	FULL	1	0	1001	1	[]
+hash	u64	FULL	1	1	1001	1	[0]
+hash	u64	FULL	1	2	1001	1	[500]
+hash	str	RIGHT	0	0	1000	0	[]
+hash	str	RIGHT	0	1	1000	0	['']
+hash	str	RIGHT	0	2	1000	0	['500']
+hash	str	FULL	0	0	1001	1	[]
+hash	str	FULL	0	1	1001	1	['']
+hash	str	FULL	0	2	1001	1	['500']
+hash	two	RIGHT	0	0	1000	0	[]
+hash	two	RIGHT	0	1	1000	0	[(0,0)]
+hash	two	RIGHT	0	2	1000	0	[(500,1000)]
+hash	two	FULL	0	0	1001	1	[]
+hash	two	FULL	0	1	1001	1	[(0,0)]
+hash	two	FULL	0	2	1001	1	[(500,1000)]
+hash	nullable	RIGHT	1001	0	1	1
+hash	nullable	FULL	1002	1	1	1
+hash	cond rejects	1000	[7]
+hash	cond passes	1000	[]
+hash	mixed rejects	1000	[7]
+hash	mixed passes	1000	[]
+hash	right any	0	1000	[]
+hash	right anti	0	0	[]
+hash	right any	1	1000	[0]
+hash	right anti	1	1	[0]
+hash	right any	2	1000	[500]
+hash	right anti	2	1	[500]
+--- parallel_hash ---
+parallel_hash	u8	RIGHT	0	0	255	0	[]
+parallel_hash	u8	RIGHT	0	1	255	0	[0]
+parallel_hash	u8	RIGHT	0	2	255	0	[200]
+parallel_hash	u8	FULL	0	0	256	1	[]
+parallel_hash	u8	FULL	0	1	256	1	[0]
+parallel_hash	u8	FULL	0	2	256	1	[200]
+parallel_hash	u16	RIGHT	0	0	1000	0	[]
+parallel_hash	u16	RIGHT	0	1	1000	0	[0]
+parallel_hash	u16	RIGHT	0	2	1000	0	[500]
+parallel_hash	u16	FULL	0	0	1001	1	[]
+parallel_hash	u16	FULL	0	1	1001	1	[0]
+parallel_hash	u16	FULL	0	2	1001	1	[500]
+parallel_hash	u64	RIGHT	0	0	1000	0	[]
+parallel_hash	u64	RIGHT	0	1	1000	0	[0]
+parallel_hash	u64	RIGHT	0	2	1000	0	[500]
+parallel_hash	u64	RIGHT	1	0	1000	0	[]
+parallel_hash	u64	RIGHT	1	1	1000	0	[0]
+parallel_hash	u64	RIGHT	1	2	1000	0	[500]
+parallel_hash	u64	FULL	0	0	1001	1	[]
+parallel_hash	u64	FULL	0	1	1001	1	[0]
+parallel_hash	u64	FULL	0	2	1001	1	[500]
+parallel_hash	u64	FULL	1	0	1001	1	[]
+parallel_hash	u64	FULL	1	1	1001	1	[0]
+parallel_hash	u64	FULL	1	2	1001	1	[500]
+parallel_hash	str	RIGHT	0	0	1000	0	[]
+parallel_hash	str	RIGHT	0	1	1000	0	['']
+parallel_hash	str	RIGHT	0	2	1000	0	['500']
+parallel_hash	str	FULL	0	0	1001	1	[]
+parallel_hash	str	FULL	0	1	1001	1	['']
+parallel_hash	str	FULL	0	2	1001	1	['500']
+parallel_hash	two	RIGHT	0	0	1000	0	[]
+parallel_hash	two	RIGHT	0	1	1000	0	[(0,0)]
+parallel_hash	two	RIGHT	0	2	1000	0	[(500,1000)]
+parallel_hash	two	FULL	0	0	1001	1	[]
+parallel_hash	two	FULL	0	1	1001	1	[(0,0)]
+parallel_hash	two	FULL	0	2	1001	1	[(500,1000)]
+parallel_hash	nullable	RIGHT	1001	0	1	1
+parallel_hash	nullable	FULL	1002	1	1	1
+parallel_hash	cond rejects	1000	[7]
+parallel_hash	cond passes	1000	[]
+parallel_hash	mixed rejects	1000	[7]
+parallel_hash	mixed passes	1000	[]
+parallel_hash	right any	0	1000	[]
+parallel_hash	right anti	0	0	[]
+parallel_hash	right any	1	1000	[0]
+parallel_hash	right anti	1	1	[0]
+parallel_hash	right any	2	1000	[500]
+parallel_hash	right anti	2	1	[500]
+--- grace_hash ---
+grace_hash	u8	RIGHT	0	0	255	0	[]
+grace_hash	u8	RIGHT	0	1	255	0	[0]
+grace_hash	u8	RIGHT	0	2	255	0	[200]
+grace_hash	u8	FULL	0	0	256	1	[]
+grace_hash	u8	FULL	0	1	256	1	[0]
+grace_hash	u8	FULL	0	2	256	1	[200]
+grace_hash	u16	RIGHT	0	0	1000	0	[]
+grace_hash	u16	RIGHT	0	1	1000	0	[0]
+grace_hash	u16	RIGHT	0	2	1000	0	[500]
+grace_hash	u16	FULL	0	0	1001	1	[]
+grace_hash	u16	FULL	0	1	1001	1	[0]
+grace_hash	u16	FULL	0	2	1001	1	[500]
+grace_hash	u64	RIGHT	0	0	1000	0	[]
+grace_hash	u64	RIGHT	0	1	1000	0	[0]
+grace_hash	u64	RIGHT	0	2	1000	0	[500]
+grace_hash	u64	RIGHT	1	0	1000	0	[]
+grace_hash	u64	RIGHT	1	1	1000	0	[0]
+grace_hash	u64	RIGHT	1	2	1000	0	[500]
+grace_hash	u64	FULL	0	0	1001	1	[]
+grace_hash	u64	FULL	0	1	1001	1	[0]
+grace_hash	u64	FULL	0	2	1001	1	[500]
+grace_hash	u64	FULL	1	0	1001	1	[]
+grace_hash	u64	FULL	1	1	1001	1	[0]
+grace_hash	u64	FULL	1	2	1001	1	[500]
+grace_hash	str	RIGHT	0	0	1000	0	[]
+grace_hash	str	RIGHT	0	1	1000	0	['']
+grace_hash	str	RIGHT	0	2	1000	0	['500']
+grace_hash	str	FULL	0	0	1001	1	[]
+grace_hash	str	FULL	0	1	1001	1	['']
+grace_hash	str	FULL	0	2	1001	1	['500']
+grace_hash	two	RIGHT	0	0	1000	0	[]
+grace_hash	two	RIGHT	0	1	1000	0	[(0,0)]
+grace_hash	two	RIGHT	0	2	1000	0	[(500,1000)]
+grace_hash	two	FULL	0	0	1001	1	[]
+grace_hash	two	FULL	0	1	1001	1	[(0,0)]
+grace_hash	two	FULL	0	2	1001	1	[(500,1000)]
+grace_hash	nullable	RIGHT	1001	0	1	1
+grace_hash	nullable	FULL	1002	1	1	1
+grace_hash	cond rejects	1000	[7]
+grace_hash	cond passes	1000	[]
+grace_hash	mixed rejects	1000	[7]
+grace_hash	mixed passes	1000	[]
+grace_hash	right any	0	1000	[]
+grace_hash	right anti	0	0	[]
+grace_hash	right any	1	1000	[0]
+grace_hash	right anti	1	1	[0]
+grace_hash	right any	2	1000	[500]
+grace_hash	right anti	2	1	[500]
+hash	or	0	1000	[]
+hash	or	1	1000	[500]
+grace_hash_mixed_passes	0	0
+grace_hash_str_FULL_0_0	1	0
+grace_hash_str_FULL_0_1	1	1
+grace_hash_str_FULL_0_2	1	1
+grace_hash_str_RIGHT_0_0	1	0
+grace_hash_str_RIGHT_0_1	1	1
+grace_hash_str_RIGHT_0_2	1	1
+grace_hash_two_FULL_0_0	1	0
+grace_hash_two_FULL_0_1	1	1
+grace_hash_two_FULL_0_2	1	1
+grace_hash_two_RIGHT_0_0	1	0
+grace_hash_two_RIGHT_0_1	1	1
+grace_hash_two_RIGHT_0_2	1	1
+grace_hash_u16_FULL_0_0	1	0
+grace_hash_u16_FULL_0_1	1	1
+grace_hash_u16_FULL_0_2	1	1
+grace_hash_u16_RIGHT_0_0	1	0
+grace_hash_u16_RIGHT_0_1	1	1
+grace_hash_u16_RIGHT_0_2	1	1
+grace_hash_u64_FULL_0_0	1	0
+grace_hash_u64_FULL_0_1	1	1
+grace_hash_u64_FULL_0_2	1	1
+grace_hash_u64_FULL_1_0	1	0
+grace_hash_u64_FULL_1_1	1	1
+grace_hash_u64_FULL_1_2	1	1
+grace_hash_u64_RIGHT_0_0	1	0
+grace_hash_u64_RIGHT_0_1	1	1
+grace_hash_u64_RIGHT_0_2	1	1
+grace_hash_u64_RIGHT_1_0	1	0
+grace_hash_u64_RIGHT_1_1	1	1
+grace_hash_u64_RIGHT_1_2	1	1
+grace_hash_u8_FULL_0_0	1	0
+grace_hash_u8_FULL_0_1	1	1
+grace_hash_u8_FULL_0_2	1	1
+grace_hash_u8_RIGHT_0_0	1	0
+grace_hash_u8_RIGHT_0_1	1	1
+grace_hash_u8_RIGHT_0_2	1	1
+hash_mixed_passes	0	0
+hash_str_FULL_0_0	1	0
+hash_str_FULL_0_1	0	1
+hash_str_FULL_0_2	0	1
+hash_str_RIGHT_0_0	1	0
+hash_str_RIGHT_0_1	0	1
+hash_str_RIGHT_0_2	0	1
+hash_two_FULL_0_0	1	0
+hash_two_FULL_0_1	0	1
+hash_two_FULL_0_2	0	1
+hash_two_RIGHT_0_0	1	0
+hash_two_RIGHT_0_1	0	1
+hash_two_RIGHT_0_2	0	1
+hash_u16_FULL_0_0	1	0
+hash_u16_FULL_0_1	0	1
+hash_u16_FULL_0_2	0	1
+hash_u16_RIGHT_0_0	1	0
+hash_u16_RIGHT_0_1	0	1
+hash_u16_RIGHT_0_2	0	1
+hash_u64_FULL_0_0	1	0
+hash_u64_FULL_0_1	0	1
+hash_u64_FULL_0_2	0	1
+hash_u64_FULL_1_0	1	0
+hash_u64_FULL_1_1	0	1
+hash_u64_FULL_1_2	0	1
+hash_u64_RIGHT_0_0	1	0
+hash_u64_RIGHT_0_1	0	1
+hash_u64_RIGHT_0_2	0	1
+hash_u64_RIGHT_1_0	1	0
+hash_u64_RIGHT_1_1	0	1
+hash_u64_RIGHT_1_2	0	1
+hash_u8_FULL_0_0	1	0
+hash_u8_FULL_0_1	0	1
+hash_u8_FULL_0_2	0	1
+hash_u8_RIGHT_0_0	1	0
+hash_u8_RIGHT_0_1	0	1
+hash_u8_RIGHT_0_2	0	1
+parallel_hash_mixed_passes	0	0
+parallel_hash_str_FULL_0_0	1	0
+parallel_hash_str_FULL_0_1	1	1
+parallel_hash_str_FULL_0_2	1	1
+parallel_hash_str_RIGHT_0_0	1	0
+parallel_hash_str_RIGHT_0_1	1	1
+parallel_hash_str_RIGHT_0_2	1	1
+parallel_hash_two_FULL_0_0	1	0
+parallel_hash_two_FULL_0_1	1	1
+parallel_hash_two_FULL_0_2	1	1
+parallel_hash_two_RIGHT_0_0	1	0
+parallel_hash_two_RIGHT_0_1	1	1
+parallel_hash_two_RIGHT_0_2	1	1
+parallel_hash_u16_FULL_0_0	1	0
+parallel_hash_u16_FULL_0_1	1	1
+parallel_hash_u16_FULL_0_2	1	1
+parallel_hash_u16_RIGHT_0_0	1	0
+parallel_hash_u16_RIGHT_0_1	1	1
+parallel_hash_u16_RIGHT_0_2	1	1
+parallel_hash_u64_FULL_0_0	1	0
+parallel_hash_u64_FULL_0_1	1	1
+parallel_hash_u64_FULL_0_2	1	1
+parallel_hash_u64_FULL_1_0	1	0
+parallel_hash_u64_FULL_1_1	1	1
+parallel_hash_u64_FULL_1_2	1	1
+parallel_hash_u64_RIGHT_0_0	1	0
+parallel_hash_u64_RIGHT_0_1	1	1
+parallel_hash_u64_RIGHT_0_2	1	1
+parallel_hash_u64_RIGHT_1_0	1	0
+parallel_hash_u64_RIGHT_1_1	1	1
+parallel_hash_u64_RIGHT_1_2	1	1
+parallel_hash_u8_FULL_0_0	1	0
+parallel_hash_u8_FULL_0_1	1	1
+parallel_hash_u8_FULL_0_2	1	1
+parallel_hash_u8_RIGHT_0_0	1	0
+parallel_hash_u8_RIGHT_0_1	1	1
+parallel_hash_u8_RIGHT_0_2	1	1

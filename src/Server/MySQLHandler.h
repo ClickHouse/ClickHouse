@@ -47,6 +47,7 @@ public:
         bool ssl_enabled,
         bool secure_required,
         uint32_t connection_id_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -85,11 +86,15 @@ protected:
     virtual void authPluginSSL();
     virtual void finishHandshakeSSL(size_t packet_size, char * buf, size_t pos, std::function<void(size_t)> read_bytes, MySQLProtocol::ConnectionPhase::HandshakeResponse & packet);
 
+
     IServer & server;
     TCPServer & tcp_server;
     LoggerPtr log;
     bool secure_required = false;
     uint32_t connection_id = 0;
+
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
 
     uint32_t server_capabilities = 0;
     uint32_t client_capabilities = 0;
@@ -131,6 +136,7 @@ public:
         bool ssl_enabled,
         bool secure_required_,
         uint32_t connection_id_,
+        std::optional<String> default_session_user_,
         KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());

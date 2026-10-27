@@ -24,14 +24,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="واجهة مستخدم ClickHouse Cloud مع تكاملات كتالوجات البيانات" />
 
-| الاسم                | تنسيق الجداول المفتوحة المدعوم              | طريقة المصادقة                         | الدعم                                                                              | الإصدار |
-| -------------------- | ------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------- | ------- |
-| AWS Glue Catalog     | Iceberg                                     | IAM/مفاتيح الوصول                      | Cloud &amp; [Core](/ar/guides/use-cases/data-warehousing/glue-catalog)                | 25.10+  |
-| Lakekeeper           | Iceberg                                     | بيانات اعتماد عميل OAuth               | [Core](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog)                      | 25.10+  |
-| Microsoft OneLake    | Iceberg                                     | Azure Active Directory (AAD)           | Cloud &amp; [Core](/ar/guides/use-cases/data-warehousing/onelake-catalog)             | 25.12+  |
-| Nessie               | Iceberg                                     | بيانات اعتماد عميل OAuth               | [Core](/ar/guides/use-cases/data-warehousing/nessie-catalog)                          | 25.10+  |
-| Polaris/Open Catalog | Iceberg                                     | بيانات اعتماد عميل OAuth               | [Core](/ar/guides/use-cases/data-warehousing/polaris-catalog)                         | 26.1+   |
-| REST catalog         | Iceberg                                     | بيانات اعتماد عميل OAuth, Bearer token | Cloud &amp; [Core](/ar/guides/use-cases/data-warehousing/rest-catalog)                | 25.10+  |
-| Unity Catalog        | Iceberg وDelta (مواقع التخزين الخارجية فقط) | بيانات اعتماد عميل OAuth               | Cloud (Iceberg فقط) &amp; [Core](/ar/guides/use-cases/data-warehousing/unity-catalog) | 25.10+  |
+للاطلاع على شرح إرشادي خطوة بخطوة لواجهة مستخدم Cloud، راجع [ربط كتالوج بيانات في ClickHouse Cloud](/ar/integrations/data-catalogs).
 
-لدينا خطط لإضافة المزيد من الكتالوجات، بما في ذلك Horizon وREST endpoint لجداول S3.
+| الاسم             | تنسيق الجداول المفتوحة | طريقة المصادقة                         | Cloud                                             | Core                                                          | الإصدار |
+| ----------------- | ---------------------- | -------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------- | ------- |
+| AWS Glue Catalog  | Iceberg                | دور IAM (26.2+)، مفاتيح الوصول         | [دليل](/ar/integrations/data-catalogs#aws-glue)      | [دليل](/ar/guides/use-cases/data-warehousing/glue-catalog)       | 25.12+  |
+| BigLake Metastore | Iceberg                | Google ADC (OAuth)                     | [دليل](/ar/integrations/data-catalogs#biglake)       | [دليل](/ar/guides/use-cases/data-warehousing/biglake-catalog)    | 26.2+   |
+| Lakekeeper        | Iceberg                | بيانات اعتماد عميل OAuth               | —                                                 | [دليل](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog) | 25.10+  |
+| Microsoft OneLake | Iceberg                | Azure Active Directory (AAD)           | [دليل](/ar/integrations/data-catalogs#onelake)       | [دليل](/ar/guides/use-cases/data-warehousing/onelake-catalog)    | 25.12+  |
+| Nessie            | Iceberg                | بيانات اعتماد عميل OAuth               | —                                                 | [دليل](/ar/guides/use-cases/data-warehousing/nessie-catalog)     | 25.10+  |
+| Polaris           | Iceberg                | بيانات اعتماد عميل OAuth               | [دليل](/ar/integrations/data-catalogs#polaris)       | [دليل](/ar/guides/use-cases/data-warehousing/polaris-catalog)    | 26.2+   |
+| Horizon           | Iceberg                | PAT / JWT / bearer token               | —                                                 | [دليل](/ar/guides/use-cases/data-warehousing/horizon-catalog)    | —       |
+| REST catalog      | Iceberg                | بيانات اعتماد عميل OAuth, Bearer token | [دليل](/ar/integrations/data-catalogs#rest)          | [دليل](/ar/guides/use-cases/data-warehousing/rest-catalog)       | 25.12+  |
+| Unity Catalog     | Iceberg                | بيانات اعتماد عميل OAuth               | [دليل](/ar/integrations/data-catalogs#unity-iceberg) | [دليل](/ar/guides/use-cases/data-warehousing/unity-catalog)      | 25.12+  |
+| Unity Catalog     | Delta                  | رمز الوصول الشخصي (PAT)                | [دليل](/ar/integrations/data-catalogs#unity-delta)   | [دليل](/ar/guides/use-cases/data-warehousing/unity-catalog)      | 25.12+  |
+
+لدينا خطط لإضافة المزيد من الكتالوجات، بما في ذلك REST endpoint لجداول S3.

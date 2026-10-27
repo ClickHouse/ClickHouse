@@ -6,24 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
 ---
 
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
 链路追踪和异常) 。链路追踪会通过自动插桩自动生成，因此无需手动
 插桩即可获得链路追踪能力。
 
-本指南涵盖：
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-* **日志**
-* **指标**
-* **链路追踪**
-* **异常**
+## 入门 {#getting-started}
 
-<div id="getting-started">
-  ## 入门
-</div>
-
-<div id="install-hyperdx-opentelemetry-instrumentation-package">
-  ### 安装 HyperDX OpenTelemetry 插桩包
-</div>
+### 安装 HyperDX OpenTelemetry 插桩包 {#install-hyperdx-opentelemetry-instrumentation-package}
 
 使用以下命令安装 [ClickStack OpenTelemetry 包](https://www.npmjs.com/package/@hyperdx/node-opentelemetry)。
 
@@ -41,9 +34,7 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
   </Tab>
 </Tabs>
 
-<div id="initializin-the-sdk">
-  ### 初始化 SDK
-</div>
+### 初始化 SDK {#initializin-the-sdk}
 
 要初始化 SDK，需要在应用程序入口文件的顶部调用 `init` 函数。
 
@@ -53,8 +44,8 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
     const HyperDX = require('@hyperdx/node-opentelemetry');
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略
         service: 'my-service'
     });
     ```
@@ -65,8 +56,8 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
     import * as HyperDX from '@hyperdx/node-opentelemetry';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略
         service: 'my-service'
     });
     ```
@@ -75,9 +66,7 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
 
 这样会自动采集 Node.js 应用程序中的链路追踪、指标和日志。
 
-<div id="setup-log-collection">
-  ### 设置日志收集
-</div>
+### 设置日志收集 {#setup-log-collection}
 
 默认情况下，会自动收集 `console.*` 日志。如果你使用的是 `winston` 或 `pino`
 等日志库，则需要为日志记录器添加一个 transport，才能将
@@ -137,9 +126,7 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志、指标、
   </Tab>
 </Tabs>
 
-<div id="setup-error-collection">
-  ### 设置错误收集
-</div>
+### 设置错误收集 {#setup-error-collection}
 
 ClickStack SDK 可以自动捕获应用中的未捕获异常和错误，并附带完整的堆栈跟踪和代码上下文。
 
@@ -150,8 +137,8 @@ ClickStack SDK 可以自动捕获应用中的未捕获异常和错误，并附�
     ```javascript
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略
         service: 'my-service'
     });
     const app = express();
@@ -172,8 +159,8 @@ ClickStack SDK 可以自动捕获应用中的未捕获异常和错误，并附�
     const Router = require("@koa/router");
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // 托管 ClickStack 可省略
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略
         service: 'my-service'
     });
 
@@ -200,9 +187,7 @@ ClickStack SDK 可以自动捕获应用中的未捕获异常和错误，并附�
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## 故障排查
-</div>
+## 故障排查 {#troubleshooting}
 
 如果你在使用 SDK 时遇到问题，可以将
 `OTEL_LOG_LEVEL` 环境变量设为 `debug`，以启用详细日志。
@@ -211,13 +196,9 @@ ClickStack SDK 可以自动捕获应用中的未捕获异常和错误，并附�
 export OTEL_LOG_LEVEL=debug
 ```
 
-<div id="advanced-instrumentation-configuration">
-  ## 高级插桩配置
-</div>
+## 高级插桩配置 {#advanced-instrumentation-configuration}
 
-<div id="capture-console-logs">
-  ### 捕获控制台日志
-</div>
+### 捕获控制台日志 {#capture-console-logs}
 
 默认情况下，ClickStack SDK 会捕获控制台日志。你可以通过
 将 `HDX_NODE_CONSOLE_CAPTURE` 环境变量设为 0 来禁用此功能。
@@ -226,9 +207,7 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-<div id="attach-user-information-or-metadata">
-  ### 附加用户信息或元数据
-</div>
+### 附加用户信息或元数据 {#attach-user-information-or-metadata}
 
 为了方便给与特定属性或标识符 (例如用户 id
 或电子邮件) 相关的所有事件打上标签，你可以调用 `setTraceAttributes` 函数。调用后，它会为与当前 trace 关联的每条
@@ -266,9 +245,7 @@ app.use((req, res, next) => {
 export HDX_NODE_BETA_MODE=1
 ```
 
-<div id="google-cloud-run">
-  ### Google Cloud Run
-</div>
+### Google Cloud Run {#google-cloud-run}
 
 如果您在 Google Cloud Run 上运行应用，Cloud Trace 会自动将采样请求头注入传入请求，目前会将每个实例的链路追踪采样限制为每秒 0.1 个请求。
 
@@ -281,9 +258,7 @@ export HDX_NODE_BETA_MODE=1
 如需了解更多信息，以及强制对特定请求启用链路追踪，请参阅
 [Google Cloud Run 文档](https://cloud.google.com/run/docs/trace)。
 
-<div id="auto-instrumented-libraries">
-  ### 自动插桩的库
-</div>
+### 自动插桩的库 {#auto-instrumented-libraries}
 
 以下库将由 SDK 自动插桩 (生成 trace) ：
 
@@ -305,13 +280,9 @@ export HDX_NODE_BETA_MODE=1
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-<div id="alternative-installation">
-  ## 其他安装方式
-</div>
+## 其他安装方式 {#alternative-installation}
 
-<div id="run-the-application-with-cli">
-  ### 使用 ClickStack OpenTelemetry CLI 运行应用
-</div>
+### 使用 ClickStack OpenTelemetry CLI 运行应用 {#run-the-application-with-cli}
 
 或者，你也可以使用 `opentelemetry-instrument` CLI 或 Node.js 的 `--require` 标志，无需修改任何代码即可为应用自动插桩。通过 CLI 安装可支持更多自动插桩的库和框架。
 
@@ -324,7 +295,7 @@ export HDX_NODE_BETA_MODE=1
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
     ```
   </Tab>
 
@@ -336,7 +307,7 @@ export HDX_NODE_BETA_MODE=1
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
     ```
   </Tab>
 
@@ -356,9 +327,7 @@ export HDX_NODE_BETA_MODE=1
 
 *`OTEL_SERVICE_NAME` 环境变量用于在 HyperDX 应用中标识你的服务，你可以将其设为任意名称。*
 
-<div id="enabling-exception-capturing">
-  ### 启用异常捕获
-</div>
+### 启用异常捕获 {#enabling-exception-capturing}
 
 要启用未捕获异常捕获功能，您需要将 `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` 环境变量设置为 1。
 
@@ -368,9 +337,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 之后，如需自动捕获来自 Express、Koa 的异常，或手动捕获异常，请按照上文 [设置错误收集](#setup-error-collection) 部分中的说明操作。
 
-<div id="auto-instrumented-libraries">
-  ### 自动插桩的库
-</div>
+### 自动插桩的库 {#auto-instrumented-libraries-2}
 
 以下库将通过上述安装方法自动插桩 (生成追踪) ：
 

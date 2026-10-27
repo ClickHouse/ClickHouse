@@ -68,6 +68,12 @@ private:
         std::string unit;
         while (it != end && Ascii::isAlpha(*it)) unit += *it++;
 
+        /// Return std::nullopt if n is 0
+        if (n == 0)
+            return std::nullopt;
+
+        while (it != end && Ascii::isSpace(*it)) ++it;
+
         UInt64 size = 0;
         if (unit == "K")
             size = n * 1024;
@@ -75,7 +81,7 @@ private:
             size = n * 1024 * 1024;
         else if (unit == "G")
             size = n * 1024 * 1024 * 1024;
-        else if (unit.empty())
+        else if (unit.empty() && (it == end || *it == ','))
             size = n;
         else
             return std::nullopt; /// Return std::nullopt if fails to parse
@@ -150,7 +156,7 @@ private:
             return res;
         }
 
-        auto res = std::string(str.substr(pos, comma_after_colon));
+        auto res = std::string(str.substr(pos, comma_after_colon - pos));
         pos = comma_after_colon + 1;
         return res;
     }
@@ -174,7 +180,14 @@ private:
         if (!res.size)
             res.size = parseSize(rotation, pos); /// To handle the case when an interval is specified before a size
 
-        if (!res.size && !res.interval && !res.time && !parseNever(rotation))
+        if (parseNever(rotation))
+            return res;
+
+        while (pos < rotation.size() && Ascii::isSpace(rotation[pos]))
+            ++pos;
+
+        /// Reject leftovers, e.g. `garbage` in `100M,12:00,garbage`
+        if ((!res.size && !res.interval && !res.time) || pos != rotation.size())
             throw InvalidArgumentException(
                 "Invalid rotation format '" + std::string(rotation) +
                 "'. Expected formats: <size>[K|M|G], <interval>, [<size>,]<interval>, or 'never'.");

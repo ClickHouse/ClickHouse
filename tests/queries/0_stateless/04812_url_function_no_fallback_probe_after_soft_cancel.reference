@@ -1,0 +1,5 @@
+the query timed out while the empty file was being served succeeded
+no rows were emitted after the cancellation
+returned soon after the empty file was served
+the next failover option was not probed after the cancellation
+a query which is not interrupted skips the empty file and reads the next option

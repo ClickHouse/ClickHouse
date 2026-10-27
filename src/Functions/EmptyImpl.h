@@ -23,6 +23,7 @@ struct EmptyImpl
 {
     /// If the function will return constant value for FixedString data type.
     static constexpr auto is_fixed_to_constant = false;
+    static constexpr auto is_volume_reducing = true;
 
     static constexpr bool has_information_about_monotonicity = true;
 

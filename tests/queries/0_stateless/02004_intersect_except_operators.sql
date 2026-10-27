@@ -1,3 +1,4 @@
+
 -- { echo }
 select 1 intersect select 1;
 select 2 intersect select 1;

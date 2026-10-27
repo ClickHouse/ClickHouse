@@ -7,13 +7,11 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'обёртка внешних данных', 'pg_clickhouse', 'расширение']
 ---
 
-<div id="introduction">
-  ## Введение
-</div>
+## Введение {#introduction}
 
 [pg&#95;clickhouse] — расширение PostgreSQL с открытым исходным кодом, которое позволяет выполнять аналитические запросы
 в ClickHouse прямо из PostgreSQL без какого-либо переписывания SQL. Оно поддерживает
-PostgreSQL 13 и более поздние версии, а также ClickHouse v23 и выше.
+PostgreSQL 14 и более поздние версии, а также ClickHouse v23 и выше.
 
 Когда [ClickPipes](/ru/integrations/clickpipes/home) начнет синхронизировать данные с ClickHouse,
 используйте pg&#95;clickhouse, чтобы быстро и просто выполнить [import foreign tables] в
@@ -21,9 +19,7 @@ PostgreSQL 13 и более поздние версии, а также ClickHous
 таблицам, сохраняя текущую кодовую базу и передавая выполнение в
 ClickHouse.
 
-<div id="getting-started">
-  ## Начало работы
-</div>
+## Начало работы {#getting-started}
 
 Самый простой способ попробовать pg&#95;clickhouse — воспользоваться [Docker-образом], который содержит
 стандартный Docker-образ PostgreSQL с расширениями pg&#95;clickhouse и [re2]:
@@ -37,57 +33,49 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 См. [руководство], чтобы начать импорт таблиц ClickHouse и перенос
 выполнения запросов в ClickHouse.
 
-<div id="test-case-tpc-h">
-  ## Тестовый пример: TPC-H
-</div>
+## Тестирование: TPC-H {#test-case-tpc-h}
 
-В этой таблице сравнивается производительность запросов [TPC-H] для обычных
-таблиц PostgreSQL и pg&#95;clickhouse, подключенного к ClickHouse; оба варианта загружены
-при коэффициенте масштабирования 1. ✔︎ означает полный pushdown, а тире —
-отмену запроса через 1 мин. Все тесты выполнялись на MacBook Pro M4 Max с 36 ГБ
-памяти.
+В этой таблице сравнивается производительность запросов [TPC-H] на обычных таблицах PostgreSQL
+и через pg&#95;clickhouse, подключённый к ClickHouse, в обоих случаях данные загружены с коэффициентом масштабирования
+1; ✔︎ обозначает полный pushdown как единое внешнее сканирование, а ✼ обозначает
+полный pushdown как несколько внешних сканирований. Все тесты выполнены на MacBook Pro M4 Max
+с 36 ГБ памяти.
 
-|       Query | PostgreSQL | pg&#95;clickhouse | Pushdown |
+|      Запрос | PostgreSQL | pg&#95;clickhouse | Pushdown |
 | ----------: | ---------: | ----------------: | :------: |
-|  [Запрос 1] |    4693 ms |            268 ms |    ✔︎    |
-|  [Запрос 2] |     458 ms |           3446 ms |          |
-|  [Запрос 3] |     742 ms |            111 ms |    ✔︎    |
-|  [Запрос 4] |     270 ms |            130 ms |    ✔︎    |
-|  [Запрос 5] |     337 ms |           1460 ms |    ✔︎    |
-|  [Запрос 6] |     764 ms |             53 ms |    ✔︎    |
-|  [Запрос 7] |     619 ms |             96 ms |    ✔︎    |
-|  [Запрос 8] |     342 ms |            156 ms |    ✔︎    |
-|  [Запрос 9] |    3094 ms |            298 ms |    ✔︎    |
-| [Запрос 10] |     581 ms |            197 ms |    ✔︎    |
-| [Запрос 11] |     212 ms |             24 ms |          |
-| [Запрос 12] |    1116 ms |             84 ms |    ✔︎    |
-| [Запрос 13] |     958 ms |           1368 ms |          |
-| [Запрос 14] |     181 ms |             73 ms |    ✔︎    |
-| [Запрос 15] |    1118 ms |            557 ms |          |
-| [Запрос 16] |     497 ms |           1714 ms |          |
-| [Запрос 17] |    1846 ms |          32709 ms |          |
-| [Запрос 18] |    5823 ms |          10649 ms |          |
-| [Запрос 19] |      53 ms |            206 ms |    ✔︎    |
-| [Запрос 20] |     421 ms |                 - |          |
-| [Запрос 21] |    1349 ms |           4434 ms |          |
-| [Запрос 22] |     258 ms |           1415 ms |          |
+|  [Запрос 1] |    4483 мс |             59 мс |     ✔    |
+|  [Запрос 2] |     588 мс |             24 мс |     ✔    |
+|  [Запрос 3] |     786 мс |             62 мс |     ✔    |
+|  [Запрос 4] |     550 мс |             38 мс |     ✔    |
+|  [Запрос 5] |     721 мс |           1439 мс |     ✔    |
+|  [Запрос 6] |     592 мс |             17 мс |     ✔    |
+|  [Запрос 7] |     639 мс |             29 мс |     ✔    |
+|  [Запрос 8] |     398 мс |            383 мс |     ✔    |
+|  [Запрос 9] |    2842 мс |            162 мс |     ✔    |
+| [Запрос 10] |     860 мс |            125 мс |     ✔    |
+| [Запрос 11] |     276 мс |             21 мс |     ✼    |
+| [Запрос 12] |     963 мс |             26 мс |     ✔    |
+| [Запрос 13] |    1037 мс |           1354 мс |          |
+| [Запрос 14] |     675 мс |             30 мс |     ✔    |
+| [Запрос 15] |    2520 мс |            387 мс |          |
+| [Запрос 16] |     539 мс |            823 мс |          |
+| [Запрос 17] |    2107 мс |             37 мс |     ✔    |
+| [Запрос 18] |    5230 мс |           7228 мс |          |
+| [Запрос 19] |      68 мс |             47 мс |     ✔    |
+| [Запрос 20] |     473 мс |             28 мс |          |
+| [Запрос 21] |    1145 мс |           4470 мс |          |
+| [Запрос 22] |     270 мс |             45 мс |     ✼    |
 
-<div id="compile-from-source">
-  ### Сборка из исходного кода
-</div>
+### Сборка из исходного кода {#compile-from-source}
 
-<div id="general-unix">
-  #### Unix в общем
-</div>
+#### Unix в общем {#general-unix}
 
 Пакеты разработки PostgreSQL и curl добавляют `pg_config` и
 `curl-config` в путь, поэтому вы можете просто выполнить `make` (или
 `gmake`), затем `make install`, а затем в своей базе данных
 `CREATE EXTENSION pg_clickhouse`.
 
-<div id="debian--ubuntu--apt">
-  #### Debian / Ubuntu / APT
-</div>
+#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
 
 См. [PostgreSQL Apt], чтобы узнать подробности о получении пакетов из репозитория PostgreSQL Apt.
 
@@ -102,9 +90,7 @@ sudo apt install \
   g++
 ```
 
-<div id="redhat--centos--yum">
-  #### RedHat / CentOS / Yum
-</div>
+#### RedHat / CentOS / Yum {#redhat--centos--yum}
 
 ```sh
 sudo yum install \
@@ -119,9 +105,7 @@ sudo yum install \
 
 Подробнее о загрузке из репозитория PostgreSQL Yum см. в [PostgreSQL Yum].
 
-<div id="install-from-pgxn">
-  #### Установка из PGXN
-</div>
+#### Установка из PGXN {#install-from-pgxn}
 
 После установки указанных выше зависимостей используйте [PGXN client] (доступный в виде пакетов [Homebrew], [Apt] и Yum под именем `pgxnclient`) для загрузки, компиляции и установки `pg_clickhouse`:
 
@@ -129,9 +113,7 @@ sudo yum install \
 pgxn install pg_clickhouse
 ```
 
-<div id="compile-and-install">
-  #### Сборка и установка
-</div>
+#### Сборка и установка {#compile-and-install}
 
 Чтобы собрать и установить библиотеку ClickHouse и `pg_clickhouse`, выполните:
 
@@ -139,18 +121,6 @@ pgxn install pg_clickhouse
 make
 sudo make install
 ```
-
-{/* XXX DSO в настоящее время отключён.
-  По умолчанию `make` выполняет динамическую компоновку с библиотекой `clickhouse-cpp` (кроме
-  macOS, где динамическая библиотека `clickhouse-cpp` пока не поддерживается). Чтобы
-  статически скомпилировать библиотеку ClickHouse в `pg_clickhouse`, передайте
-  `CH_BUILD=static`:
-
-  ```sh
-  make CH_BUILD=static
-  sudo make install CH_BUILD=static
-  ```
-  */}
 
 Если на вашем хосте установлено несколько версий PostgreSQL, может потребоваться указать
 подходящую версию `pg_config`:
@@ -215,9 +185,7 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-<div id="testing">
-  #### Тестирование
-</div>
+#### Тестирование {#testing}
 
 Чтобы запустить набор тестов после установки расширения, выполните
 
@@ -238,9 +206,7 @@ ERROR:  must be owner of database regression
 make installcheck PGUSER=postgres
 ```
 
-<div id="loading">
-  ### Подключение
-</div>
+### Подключение {#loading}
 
 После установки `pg_clickhouse` его можно подключить к базе данных, подключившись
 под суперпользователем и выполнив:
@@ -257,17 +223,13 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-<div id="dependencies">
-  ## Зависимости
-</div>
+## Зависимости {#dependencies}
 
-Для расширения `pg_clickhouse` требуются [PostgreSQL] 13 или новее, [libcurl],
+Для расширения `pg_clickhouse` требуются [PostgreSQL] 14 или новее, [libcurl],
 [libuuid]. Для сборки расширения требуются компиляторы C и C++, [libSSL], [GNU
 make] и [CMake].
 
-<div id="road-map">
-  ## Дорожная карта
-</div>
+## Дорожная карта {#road-map}
 
 Наш главный приоритет — полностью реализовать pushdown для аналитических рабочих нагрузок, прежде чем
 добавлять возможности DML. Наша дорожная карта:
@@ -286,17 +248,15 @@ make] и [CMake].
 * Добавить поддержку pushdown для запросов UNION, если все они обращаются к удалённой
   базе данных
 
-<div id="authors">
-  ## Авторы
-</div>
+## Авторы {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+* [Josh Ventura](https://github.com/JoshDreamland)
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-<div id="copyright">
-  ## Авторские права
-</div>
+## Авторские права {#copyright}
 
 * Авторские права (c) 2025-2026, ClickHouse
 * Отдельные части: авторские права (c) 2023-2025, Ildus Kurbangaliev

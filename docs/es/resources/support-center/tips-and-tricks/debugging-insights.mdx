@@ -149,7 +149,7 @@ Pruebe primero los cambios en el esquema con conjuntos de datos más pequeños.
   ### Agregación externa
 </div>
 
-Habilita la agregación externa para operaciones con un uso intensivo de memoria. Es más lenta, pero evita fallos por falta de memoria al volcar los datos en disco. Puedes hacerlo con `max_bytes_before_external_group_by`, lo que ayuda a evitar fallos por falta de memoria en operaciones `GROUP BY` de gran tamaño. Puedes obtener más información sobre esta configuración [aquí](/es/reference/settings/session-settings#max_bytes_before_external_group_by).
+Habilita la agregación externa para operaciones con un uso intensivo de memoria. Es más lenta, pero evita fallos por falta de memoria al volcar los datos en disco. Puedes hacerlo con `max_bytes_before_external_group_by`, lo que ayuda a evitar fallos por falta de memoria en operaciones `GROUP BY` de gran tamaño. Puedes obtener más información sobre esta configuración [aquí](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by).
 
 ```sql
 SELECT 
@@ -159,7 +159,7 @@ SELECT
     SUM(value) as total
 FROM large_table
 GROUP BY column1, column2
-SETTINGS max_bytes_before_external_group_by = 1000000000; -- umbral de 1 GB
+SETTINGS max_bytes_before_external_group_by = 1000000000; -- 1GB threshold
 ```
 
 <div id="async-insert-details">

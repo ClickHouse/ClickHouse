@@ -252,7 +252,7 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &
     {
         if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
         {
-            auto current_interval = interval_type->getKind().kind;
+            const IntervalKind::Kind current_interval = interval_type->getKind();
             if (current_interval > IntervalKind::Kind::Week)
                 is_higher_interval = true;
             if (current_interval < min_interval)
@@ -619,7 +619,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// - typed paths: intersection by path name with type promotion
             /// - paths to skip / path regexps to skip: intersection using sorted sets
             /// - max_dynamic_paths / max_dynamic_types: take the maximum
-            std::unordered_map<String, DataTypePtr> merged_typed_paths = first.getTypedPaths();
+            auto merged_typed_paths = first.getTypedPaths();
+            std::unordered_set<String> merged_shared_typed_paths = first.getSharedTypedPaths();
             std::set<String> merged_paths_to_skip(first.getPathsToSkip().begin(), first.getPathsToSkip().end());
             std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
             size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
@@ -634,7 +635,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
                 /// Typed paths intersection with type promotion.
                 const auto & current_typed_paths = current.getTypedPaths();
-                std::unordered_map<String, DataTypePtr> new_merged;
+                DataTypeObject::TypedPathsMap new_merged;
                 for (auto & [path, type] : merged_typed_paths)
                 {
                     auto it = current_typed_paths.find(path);
@@ -648,6 +649,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     new_merged.emplace(path, std::move(common_type));
                 }
                 merged_typed_paths = std::move(new_merged);
+
+                /// A path stays SHARED only if it is SHARED in every type, like the other intersections.
+                std::erase_if(merged_shared_typed_paths, [&](const String & path) { return !current.isSharedTypedPath(path); });
 
                 /// Paths to skip intersection.
                 std::set<String> skip_set(current.getPathsToSkip().begin(), current.getPathsToSkip().end());
@@ -671,13 +675,17 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
             }
 
+            /// A dropped typed path takes its SHARED mark with it.
+            std::erase_if(merged_shared_typed_paths, [&](const String & path) { return !merged_typed_paths.contains(path); });
+
             return std::make_shared<DataTypeObject>(
                 schema_format,
                 std::move(merged_typed_paths),
                 std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
                 std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
                 merged_max_dynamic_paths,
-                merged_max_dynamic_types);
+                merged_max_dynamic_types,
+                std::move(merged_shared_typed_paths));
         }
     }
 
@@ -1049,6 +1057,15 @@ String getNumericVariantSupertypeHint(const DataTypePtr & type)
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
 {
     return getLeastSupertype<LeastSupertypeOnError::Null>(types);
+}
+
+template<>
+DataTypePtr getLeastSupertype<LeastSupertypeOnError::Dynamic>(const DataTypes & types)
+{
+    auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
+    if (common_type)
+        return common_type;
+    return std::make_shared<DataTypeDynamic>();
 }
 
 template <LeastSupertypeOnError on_error>

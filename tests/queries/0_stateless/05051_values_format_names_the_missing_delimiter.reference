@@ -1,0 +1,23 @@
+=== a delimiter that is missing is reported as such
+--- (1, 'Alice')
+Code: 62. Expected ',' after the value of column `name` of type String here: 'Alice')
+--- (1, 'Alice', '2020-01-02', 7
+Code: 62. Expected ')' after the value of column `n` of type UInt8 here: 7
+--- (1 'Alice', '2020-01-02', 7)
+Code: 62. Expected ',' after the value of column `id` of type UInt32 here: 1 'Alice', '2020-01-02', 7)
+--- (1, 'Alice', '2020-01-02', 7, 8)
+Code: 62. Expected ')' after the value of column `n` of type UInt8 here: 7, 8)
+
+=== a value that really cannot be parsed is still reported as such
+--- (1, 'Alice', '2020-01-02', notafunction(2))
+Code: 46. Function with name `notafunction` does not exist. In scope notafunction(2)
+--- (*, 'Alice', '2020-01-02', 7)
+Code: 1. Unqualified matcher * cannot be resolved. There are no table sources. In scope *
+
+=== the optional trailing comma before ) is accepted for an expression too, as it is for a literal
+1	Alice	2020-01-02	7
+2	Bob	2020-01-03	8
+
+=== valid rows, including an expression and several rows at once
+1	Alice	2020-01-02	7
+2	Bob	2020-01-03	8

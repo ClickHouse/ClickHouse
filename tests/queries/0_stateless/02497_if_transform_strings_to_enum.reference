@@ -8,9 +8,7 @@ yahoo
 other
 other
 other
-SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
-FROM system.numbers
-LIMIT 10
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
@@ -52,9 +50,7 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')
-FROM system.numbers
-LIMIT 10
+SELECT if(greater(number, 5), \'censor.net\', \'google\')\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     if(greater(number, 5), \'censor.net\', \'google\') String
@@ -99,9 +95,7 @@ yahoo1
 other1
 other1
 other1
-SELECT CONCAT(transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\'), \'1\')
-FROM system.numbers
-LIMIT 10
+SELECT CONCAT(transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\'), \'1\')\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     CONCAT(transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\'), \'1\') String
@@ -147,9 +141,7 @@ censor.net1
 censor.net1
 censor.net1
 censor.net1
-SELECT CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\')
-FROM system.numbers
-LIMIT 10
+SELECT CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\')\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     CONCAT(if(greater(number, 5), \'censor.net\', \'google\'), \'1\') String
@@ -198,13 +190,7 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT t1.value
-FROM
-(
-    SELECT if(greater(number, 5), \'censor.net\', \'google\') AS value
-    FROM system.numbers
-    LIMIT 10
-) AS t1
+SELECT t1.value\nFROM\n(\n    SELECT if(greater(number, 5), \'censor.net\', \'google\') AS value\n    FROM system.numbers\n    LIMIT 10\n) AS t1
 QUERY id: 0
   PROJECTION COLUMNS
     value String
@@ -256,13 +242,7 @@ yahoo
 other
 other
 other
-SELECT t1.value
-FROM
-(
-    SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\') AS value
-    FROM system.numbers
-    LIMIT 10
-) AS t1
+SELECT t1.value\nFROM\n(\n    SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\') AS value\n    FROM system.numbers\n    LIMIT 10\n) AS t1
 QUERY id: 0
   PROJECTION COLUMNS
     value String
@@ -311,11 +291,7 @@ censor.net	censor.net
 censor.net	censor.net
 censor.net	censor.net
 censor.net	censor.net
-SELECT
-    if(greater(number, 5), \'censor.net\', \'google\') AS value,
-    value
-FROM system.numbers
-LIMIT 10
+SELECT\n    if(greater(number, 5), \'censor.net\', \'google\') AS value,\n    value\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     value String
@@ -386,11 +362,7 @@ yahoo	yahoo
 other	other
 other	other
 other	other
-SELECT
-    transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\') AS value,
-    value
-FROM system.numbers
-LIMIT 10
+SELECT\n    transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\') AS value,\n    value\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     value String
@@ -455,13 +427,7 @@ other
 other
 other
 other
-SELECT transform(number, _CAST([NULL], \'Array(Nullable(Nothing))\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
-FROM
-(
-    SELECT _CAST(NULL, \'Nullable(Nothing)\') AS number
-    FROM system.numbers
-    LIMIT 10
-)
+SELECT transform(number, _CAST([NULL], \'Array(Nullable(Nothing))\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')\nFROM\n(\n    SELECT _CAST(NULL, \'Nullable(Nothing)\') AS number\n    FROM system.numbers\n    LIMIT 10\n)
 QUERY id: 0
   PROJECTION COLUMNS
     transform(number, [NULL], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
@@ -510,9 +476,7 @@ yahoo
 other
 other
 other
-SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
-FROM system.numbers
-LIMIT 10
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\') String
@@ -539,9 +503,7 @@ censor.net
 censor.net
 censor.net
 censor.net
-SELECT if(greater(number, 5), \'censor.net\', \'google\')
-FROM system.numbers
-LIMIT 10
+SELECT if(greater(number, 5), \'censor.net\', \'google\')\nFROM system.numbers\nLIMIT 10
 QUERY id: 0
   PROJECTION COLUMNS
     if(greater(number, 5), \'censor.net\', \'google\') String

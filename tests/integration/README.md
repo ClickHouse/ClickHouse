@@ -44,6 +44,57 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 - `--path_1 PATH` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
 - `--workers N` to override automatic calculation of the recommended maximum number of parallel pytest workers. The value is passed to pytest-xdist as `-n N`. Use a lower number on resource-constrained machines or increase it to utilize more CPU cores.
 - `--param KEY=VALUE[,KEY=VALUE...]` to inject custom environment variables for pytest. Pass comma-separated KEY=VALUE pairs (e.g., `--param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1`).
+
+## Running on macOS with Apple container
+
+On Apple silicon with macOS 26, [Apple container](https://github.com/apple/container) can host a Docker Engine for the local CI runner. The CI runner uses Docker inside Apple's Linux VM. Install the Docker CLI and Apple container, and provide a Linux ARM64 ClickHouse binary in one of the locations listed above. A native macOS binary cannot run in this environment.
+
+The following setup was verified with Apple container 1.4.1 and `docker:28-dind`. Run it from the repository root:
+
+```bash
+repo=$(pwd -P)
+mkdir -p "$repo/tmp"
+socket="$repo/tmp/apple-docker.sock"
+
+container system start
+container run -d --name clickhouse-integration-docker --cpus 8 --memory 12G \
+    --cap-add ALL --masked-path NONE --read-only-path NONE \
+    --publish-socket "$socket:/var/run/docker.sock" \
+    -v "$repo:$repo" \
+    --entrypoint /bin/sh docker.io/library/docker:28-dind -ec '
+        printf -- "-cpuset -cpu -pids -memory -io -hugetlb\n" > /sys/fs/cgroup/cgroup.subtree_control
+        exec /usr/local/bin/dockerd-entrypoint.sh dockerd \
+            --host=unix:///var/run/docker.sock --storage-driver=overlay2
+    '
+
+export DOCKER_HOST="unix://$socket"
+docker info
+```
+
+If the engine is still starting, wait for `docker info` to succeed before running the job. Use `container logs clickhouse-integration-docker` to inspect startup failures.
+
+The engine has elevated privileges inside its Linux VM and write access to the checkout. Its Docker API is exposed through a local Unix socket. Mount the checkout at the same absolute path inside the VM so that the runner's bind mounts resolve correctly.
+
+The cgroup command clears the guest's inherited controller configuration before the image's standard Docker-in-Docker initialization enables controllers for nested containers. Starting `dockerd` directly skips that initialization and can make memory-limited containers fail with `cannot enter cgroupv2 ... with domain controllers — it is in threaded mode`.
+
+Once the engine is ready, use the local CI commands above, for example:
+
+```bash
+python -m ci.praktika run "Integration tests (arm_binary, distributed plan, targeted)" \
+    --workers 1 --test test_backward_compatibility/test_restore_sql_user_defined_functions.py
+```
+
+The first run downloads the runner and test images. If the outer runner image pull times out, pull that image with `docker pull` before retrying the job. Test images are cached separately by the runner's nested Docker Engine.
+
+Stop the engine when finished:
+
+```bash
+container stop clickhouse-integration-docker
+unset DOCKER_HOST
+```
+
+Use `container start clickhouse-integration-docker` to reuse it, then export `DOCKER_HOST` again. To remove it instead, run `container delete clickhouse-integration-docker`; this also removes its Docker image cache.
+
 ## Running Natively
 
 ### Prerequisites
@@ -61,7 +112,7 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 - [docker compose](https://docs.docker.com/compose/) and additional Python libraries:
   ```bash
   sudo -H pip install \
-      PyMySQL avro cassandra-driver confluent-kafka dicttoxml docker grpcio grpcio-tools kafka-python kazoo minio lz4 protobuf psycopg2-binary pymongo pytz pytest pytest-timeout redis tzlocal==2.1 urllib3 requests-kerberos dict2xml hypothesis pika nats-py pandas numpy jinja2 pytest-xdist==2.4.0 pyspark azure-storage-blob delta paramiko psycopg pyarrow boto3 deltalake snappy pyiceberg python-snappy thrift
+      PyMySQL avro cassandra-driver confluent-kafka dicttoxml docker grpcio grpcio-tools kafka-python kazoo minio lz4 protobuf psycopg2-binary pymongo pytz pytest pytest-timeout redis tzlocal==2.1 urllib3 requests-kerberos dict2xml hypothesis pika nats-py pandas numpy jinja2 pytest-xdist==2.4.0 pyspark azure-storage-blob delta paramiko psycopg pyarrow boto3 deltalake snappy pyiceberg python-snappy thrift pyhdfs
   ```
 - For Spark tests, install Spark and add its `bin` directory to your `PATH`. See `ci/docker/integration/runner/Dockerfile` for details. Set `JAVA_PATH` to the Java binary path.
 - To run tests as a non-privileged user, add the user to the `docker` group:

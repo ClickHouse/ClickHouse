@@ -1,0 +1,23 @@
+<test>
+    <!-- Sorting a JSON column whose paths live in shared data. Before the ColumnObject shared-data
+         comparison optimization every comparison materialized a temporary ColumnDynamic and ran a
+         full binary deserialization for both sides; this measures ORDER BY over such columns. -->
+    <create_query>CREATE TABLE test_json_order_by_shared_data (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE test_json_order_by_shared_data_prefix (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple()</create_query>
+
+    <!-- Row counts are bounded by the harness profile runs: those enable jemalloc allocation
+         sampling, which costs ~50x on the unoptimized path, so a fixture sized for the plain
+         2 s per-run budget alone would still exceed the 300 s query limit. Do not raise them. -->
+
+    <!-- 8 shared-data paths per row; the first path differs across rows (shallow walk). -->
+    <fill_query>INSERT INTO test_json_order_by_shared_data SELECT toJSONString(mapFromArrays(arrayMap(i -> 'p' || toString(i), range(8)), arrayMap(i -> toString(number * 8 + i), range(8)))) FROM numbers(12000)</fill_query>
+    <!-- 8 shared-data paths per row sharing a long common prefix; only the last path differs, so each
+         comparison walks all paths (the worst case, and the shape seen in the CI hung check). -->
+    <fill_query>INSERT INTO test_json_order_by_shared_data_prefix SELECT toJSONString(mapFromArrays(arrayMap(i -> 'p' || toString(i), range(8)), arrayMap(i -> if(i &lt; 7, 'shared_prefix', toString(number)), range(8)))) FROM numbers(2000)</fill_query>
+
+    <query>SELECT json FROM test_json_order_by_shared_data ORDER BY json FORMAT Null</query>
+    <query>SELECT json FROM test_json_order_by_shared_data_prefix ORDER BY json FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_json_order_by_shared_data</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_json_order_by_shared_data_prefix</drop_query>
+</test>

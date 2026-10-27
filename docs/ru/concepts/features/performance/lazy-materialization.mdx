@@ -51,7 +51,7 @@ keywords: ['оптимизация', 'ленивая материализаци�
 
 Рассмотрим следующий запрос, который находит отзывы Amazon с наибольшим числом полезных голосов независимо от даты, продукта, оценки или статуса верификации и возвращает 3 лучших вместе с их названием, заголовком и полным текстом.
 
-Сначала выполним запрос (с холодными кэшами файловой системы) при отключённой ленивой материализации (с использованием [`query_plan_optimize_lazy_materialization`](/ru/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
+Сначала выполним запрос (с холодными кэшами файловой системы) при отключённой ленивой материализации (с использованием [`query_plan_optimize_lazy_materialization`](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization)):
 
 ```sql title="Query"
 SELECT

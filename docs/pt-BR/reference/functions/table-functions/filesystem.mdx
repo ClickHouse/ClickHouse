@@ -14,7 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSuppo
 
 Percorre recursivamente um diretório e retorna uma tabela com metadados dos arquivos (caminhos, tamanhos, tipos, permissões e horários de modificação) e, opcionalmente, o conteúdo dos arquivos.
 
-No modo `clickhouse-server`, o caminho deve estar dentro do diretório [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings#user_files_path). Links simbólicos dentro de `user_files_path` que apontam para fora dele são seguidos, mas apenas as entradas cujo caminho (por meio do link simbólico) começa com `user_files_path` são retornadas.
+No modo `clickhouse-server`, o caminho deve estar dentro do diretório [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path). Links simbólicos dentro de `user_files_path` que apontam para fora dele são seguidos, mas apenas as entradas cujo caminho (por meio do link simbólico) começa com `user_files_path` são retornadas.
 
 No modo `clickhouse-local`, não há restrições de caminho.
 
@@ -34,7 +34,7 @@ filesystem([path])
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path`    | O diretório a ser listado. Pode ser um caminho absoluto (deve estar dentro de `user_files_path` no modo servidor) ou um caminho relativo a `user_files_path`. Se estiver vazio ou for omitido, o valor padrão é `user_files_path`. |
 
-<div id="returned_columns">
+<div id="returned-columns">
   ## Colunas retornadas
 </div>
 
