@@ -2667,7 +2667,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQueryForInsert();
+            receiveEndOfQueryForInsert(parsed_query);
         }
     }
     catch (...)
@@ -2678,7 +2678,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         try
         {
             if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert();
+                receiveEndOfQueryForInsert(parsed_query);
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
@@ -2984,14 +2984,20 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
 }
 
 
-/// Process Log packets, used when inserting data by blocks
+/// Process Log packets, used when inserting data by blocks.
+/// Also process the result of INSERT ... RETURNING, which is sent by the server while it receives the data.
 void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
     while (packet_type && (*packet_type == Protocol::Server::Log
             || *packet_type == Protocol::Server::ProfileEvents
-            || *packet_type == Protocol::Server::TimezoneUpdate))
+            || *packet_type == Protocol::Server::TimezoneUpdate
+            || *packet_type == Protocol::Server::Data
+            || *packet_type == Protocol::Server::Totals
+            || *packet_type == Protocol::Server::Extremes
+            || *packet_type == Protocol::Server::ProfileInfo
+            || *packet_type == Protocol::Server::Progress))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -2999,8 +3005,8 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 }
 
 
-/// Process Log packets, exit when receive Exception or EndOfStream
-bool ClientBase::receiveEndOfQueryForInsert()
+/// Process Log packets and the result of INSERT ... RETURNING, exit when receive Exception or EndOfStream
+bool ClientBase::receiveEndOfQueryForInsert(ASTPtr parsed_query)
 {
     while (true)
     {
@@ -3008,6 +3014,22 @@ bool ClientBase::receiveEndOfQueryForInsert()
 
         switch (packet.type)
         {
+            case Protocol::Server::Data:
+                onData(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::Totals:
+                onTotals(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::Extremes:
+                onExtremes(packet.block, parsed_query);
+                break;
+
+            case Protocol::Server::ProfileInfo:
+                onProfileInfo(packet.profile_info);
+                break;
+
             case Protocol::Server::EndOfStream:
                 onEndOfStream();
                 return true;
@@ -3037,7 +3059,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress, ProfileEvents, Data, Totals, Extremes or ProfileInfo. Got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -5223,16 +5245,16 @@ void ClientBase::runInteractive()
 
 
 #if USE_REPLXX
-    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
+    ReplxxLineReader::Highlighter highlight_callback{};
 
     if (ConfigHelper::getBool(getClientConfiguration(), "highlight", true))
     {
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
+        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos, bool & last_is_delimiter)
         {
             if (highlightClientCommand(query, colors, getInteractiveClientCommandNames()))
-                ReplxxLineReader::setLastIsDelimiter(true);
+                last_is_delimiter = true;
             else
-                highlight(query, colors, *client_context, pos, rainbow_parentheses);
+                highlight(query, colors, *client_context, pos, rainbow_parentheses, &last_is_delimiter);
         };
     }
 

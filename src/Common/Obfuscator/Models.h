@@ -548,6 +548,48 @@ public:
 };
 
 
+/// The wall-clock time `hour:minute:second` on the local day of `time`, never on a neighbouring day.
+/// `DateLUTImpl::makeDateTime` resolves a wall-clock time in the gap of a DST transition with the offset after
+/// the gap, moving it back by the length of the gap. On a day when DST starts at midnight, e.g. `2016-03-13` in
+/// 'America/Havana' that begins at 01:00, this moves a time from 00:00 to 00:59 to the previous day. Resolve
+/// such a time with the offset before the gap instead, which is the same time of day counted from the start of
+/// the day, e.g. 00:30 becomes 01:30. It does not need the offset change of the day, which the date lookup table
+/// does not provide outside of its range, e.g. for `DateTime64` values in the year 2300.
+static Int64 makeDateTimeOnDayOf(const DateLUTImpl & date_lut, Int64 time, UInt8 hour, UInt8 minute, UInt8 second)
+{
+    const auto values = date_lut.getValues(time);
+    const Int64 res = date_lut.makeDateTime(static_cast<Int16>(values.year), values.month, values.day_of_month, hour, minute, second);
+    if (res < values.date)
+        return values.date + hour * 3600 + minute * 60 + second;
+    return res;
+}
+
+/// The obfuscated `value` of a type with the range [`min`, `max`], in units of 1 / `scale_multiplier` seconds,
+/// kept on the local day of the source value `src_value`, whose whole seconds are `src_whole`.
+/// At the ends of the range of the type, the source local day can be representable only in part, e.g. `1970-01-01`
+/// in `DateTime('Asia/Tokyo')` or `2262-04-12` in `DateTime64(9, 'Pacific/Kiritimati')`, and the obfuscated time of
+/// day can fall outside of this part. Fold the value into the representable part of the source day. The range is
+/// extended to contain the source value, so it is never empty, even for a value outside of the date lookup table.
+static Int128 foldIntoRepresentablePartOfDay(
+    const DateLUTImpl & date_lut, Int128 value, Int64 src_whole, Int128 src_value, Int64 scale_multiplier, Int128 min, Int128 max)
+{
+    if (value >= min && value <= max)
+        return value;
+
+    Int128 day_begin = Int128(makeDateTimeOnDayOf(date_lut, src_whole, 0, 0, 0)) * scale_multiplier;
+    Int128 day_end = (Int128(makeDateTimeOnDayOf(date_lut, src_whole, 23, 59, 59)) + 1) * scale_multiplier - 1;
+
+    Int128 range_begin = std::min<Int128>(std::max<Int128>(day_begin, min), src_value);
+    Int128 range_end = std::max<Int128>(std::min<Int128>(day_end, max), src_value);
+    Int128 range_size = range_end - range_begin + 1;
+
+    Int128 offset = (value - range_begin) % range_size;
+    if (offset < 0)
+        offset += range_size;
+    return range_begin + offset;
+}
+
+
 /// Leave date part as is and apply pseudorandom permutation to time difference with previous value within the same log2 class.
 class DateTimeModel : public IModel
 {
@@ -587,13 +629,15 @@ public:
             /// time of `new_datetime` keeps it inside the source local day even across DST transitions,
             /// where day lengths differ from 24 hours and a raw "seconds since midnight" offset added to
             /// the source midnight could otherwise spill onto a neighbouring displayed date.
-            res_data[i] = static_cast<UInt32>(date_lut.makeDateTime(
-                date_lut.toYear(src_datetime),
-                date_lut.toMonth(src_datetime),
-                date_lut.toDayOfMonth(src_datetime),
+            const Int64 res_datetime = makeDateTimeOnDayOf(
+                date_lut,
+                src_datetime,
                 static_cast<UInt8>(date_lut.toHour(new_datetime)),
                 static_cast<UInt8>(date_lut.toMinute(new_datetime)),
-                static_cast<UInt8>(date_lut.toSecond(new_datetime))));
+                static_cast<UInt8>(date_lut.toSecond(new_datetime)));
+
+            res_data[i] = static_cast<UInt32>(foldIntoRepresentablePartOfDay(
+                date_lut, res_datetime, src_datetime, src_datetime, 1, 0, std::numeric_limits<UInt32>::max()));
 
             src_prev_value = src_datetime;
             res_prev_value = res_data[i];
@@ -660,14 +704,9 @@ public:
             const Int64 res_diff = transformSigned(src_diff, seed);
             const Int64 new_datetime = static_cast<Int64>(static_cast<UInt64>(res_prev_value) + static_cast<UInt64>(res_diff));
 
-            const auto year = date_lut.toYear(src_whole);
-            const auto month = date_lut.toMonth(src_whole);
-            const auto day_of_month = date_lut.toDayOfMonth(src_whole);
-
-            Int64 res_whole = date_lut.makeDateTime(
-                year,
-                month,
-                day_of_month,
+            Int64 res_whole = makeDateTimeOnDayOf(
+                date_lut,
+                src_whole,
                 static_cast<UInt8>(date_lut.toHour(new_datetime)),
                 static_cast<UInt8>(date_lut.toMinute(new_datetime)),
                 static_cast<UInt8>(date_lut.toSecond(new_datetime)));
@@ -677,29 +716,11 @@ public:
                 res_fraction = transform(res_fraction, seed);
             while (res_fraction >= static_cast<UInt64>(scale_multiplier));
 
-            Int128 res_value = Int128(res_whole) * scale_multiplier + Int128(res_fraction);
+            const Int128 res_value = Int128(res_whole) * scale_multiplier + Int128(res_fraction);
 
-            /// At the ends of the range of `Int64`, the source local day can be representable only in part,
-            /// e.g. `2262-04-12` in `DateTime64(9, 'Pacific/Kiritimati')`, and the obfuscated time of day can
-            /// fall outside of this part. Fold the value into the representable part of the source day.
-            /// The range is extended to contain the source value, so it is never empty, even for a value
-            /// outside of the date lookup table.
-            if (res_value < std::numeric_limits<Int64>::min() || res_value > std::numeric_limits<Int64>::max())
-            {
-                Int128 day_begin = Int128(date_lut.makeDateTime(year, month, day_of_month, 0, 0, 0)) * scale_multiplier;
-                Int128 day_end = (Int128(date_lut.makeDateTime(year, month, day_of_month, 23, 59, 59)) + 1) * scale_multiplier - 1;
-
-                Int128 range_begin = std::min<Int128>(std::max<Int128>(day_begin, std::numeric_limits<Int64>::min()), src_value);
-                Int128 range_end = std::max<Int128>(std::min<Int128>(day_end, std::numeric_limits<Int64>::max()), src_value);
-                Int128 range_size = range_end - range_begin + 1;
-
-                Int128 offset = (res_value - range_begin) % range_size;
-                if (offset < 0)
-                    offset += range_size;
-                res_value = range_begin + offset;
-            }
-
-            res_data[i] = static_cast<Int64>(res_value);
+            res_data[i] = static_cast<Int64>(foldIntoRepresentablePartOfDay(
+                date_lut, res_value, src_whole, src_value, scale_multiplier,
+                std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max()));
 
             src_prev_value = src_whole;
             res_prev_value = res_whole;
