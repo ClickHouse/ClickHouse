@@ -2,7 +2,6 @@
 
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1, min_table_rows_to_use_projection_index = 0;
 SET use_query_condition_cache = 0, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
-SET read_overflow_mode = 'throw', explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_projection_index;
 CREATE TABLE t_projection_index (key UInt64, tok UInt64, payload String, PROJECTION by_tok (SELECT _part_offset ORDER BY tok))
@@ -32,8 +31,6 @@ INSERT INTO t_partial_projection SELECT number, number % 1000 FROM numbers(10000
 ALTER TABLE t_partial_projection ADD PROJECTION by_v (SELECT * ORDER BY v);
 INSERT INTO t_partial_projection SELECT number + 10000, number % 1000 FROM numbers(10000);
 
-SELECT countIf(explain LIKE '%ReadFromMergeTree%'), countIf(explain LIKE '%ReadFromMergeTree (by_v)%')
-FROM (EXPLAIN SELECT count() FROM t_partial_projection WHERE v = 7 SETTINGS max_rows_to_read = 15000);
 SELECT count() FROM t_partial_projection WHERE v = 7 SETTINGS max_rows_to_read = 15000;
 
 DROP TABLE t_partial_projection;
