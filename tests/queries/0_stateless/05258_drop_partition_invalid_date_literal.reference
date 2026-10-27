@@ -1,7 +1,7 @@
 date, nothing dropped	[1,2,3,4,5]
-date, valid literals	[1]
+date, valid literals	[]
 date32, nothing dropped	[1,2,3]
-date32, valid literals	[3]
+date32, valid literals	[]
 datetime, nothing dropped	[1,2,3,4,5,6]
 datetime, valid literals	[1,6]
 datetime64, nothing dropped	[1,2,3,4,5]
@@ -13,5 +13,9 @@ dst, nothing dropped	[1,2]
 dst, valid literal	[1]
 tuple, nothing dropped	[1,2]
 tuple, valid literal	[1]
-conversion, nothing dropped	[1]	[1]
-conversion, valid literals	[]	[]
+tuple, named tuple cast	[]
+conversion, toDate rollover	0
+conversion, CAST rollover	0
+conversion, date with time	0
+conversion, toDateTime rollover	0
+conversion, time zone spelling	0
