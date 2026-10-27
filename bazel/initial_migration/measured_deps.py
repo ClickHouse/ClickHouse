@@ -35,12 +35,16 @@ FUNCTIONS_LLVM_COMPONENTS = ZOOKEEPER_LLVM_COMPONENTS + llvm_components(
     'BitstreamReader', 'CFGuard', 'CodeGenTypes', 'HipStdPar', 'IRPrinter', 'IRReader', 'SandboxIR',
 )
 
-# The retained implementation_dep publishes these libraries in its deps.
+# Keep the listed implementation_deps before removing libraries supplied through their deps.
 PRIVATE_PROVIDERS = {
     ('src/Access/Common', 'clickhouse_common_access'):
-        ('//src/Common', ['@clickhouse_openssl//:crypto']),
+        (['//src/Common'], ['@clickhouse_openssl//:crypto']),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_no_log'):
-        (':clickhouse_common_zookeeper_base', llvm_components('AArch64CodeGen', 'X86CodeGen')),
+        ([':clickhouse_common_zookeeper_base'],
+         llvm_components('AArch64CodeGen', 'X86CodeGen') + ['@clickhouse_boost//:_boost_context']),
+    ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'):
+        (['//src:dbms__compile_0', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic'],
+         [GLIBC_COMPATIBILITY, '@clickhouse_boost//:_boost_context', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai']),
 }
 
 # Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
@@ -471,10 +475,11 @@ def apply(root):
                 node = Field().visit(node)
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
                 omit = {canonical(v) for v in discard}
-                provider = PRIVATE_PROVIDERS.get((package, name)) if field == 'implementation_deps' else None
-                inherited = provider and all(canonical(provider[0]) in row for row in values)
+                required, supplied = PRIVATE_PROVIDERS.get((package, name), ((), ()))
+                inherited = field == 'implementation_deps' and required and all(
+                    canonical(dep) in row for dep in required for row in values)
                 if inherited:
-                    omit.update(canonical(v) for v in provider[1])
+                    omit.update(canonical(v) for v in supplied)
                 insert_after = None
                 if (package, name, field) == ('src', 'clickhouse_common_io__compile_0', 'implementation_deps'):
                     # Keep widechar_width, Minizip and clickhouse_common_config after FrequencyHolder.o in unit_tests_dbms.
