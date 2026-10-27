@@ -17,16 +17,20 @@ ClickHouse Cloud なら、パッチ適用やアップグレードを気にする
 * バージョンのリリース時期については、[release status](/ja/resources/changelogs/cloud/release-status) ページを参照してください
 
 <Note>
-  ClickHouse Cloud の [MBB](/ja/products/cloud/features/autoscaling/make-before-break) により、過去のシステムテーブルデータは、アップグレードイベントに関連して最大 30 日間保持されます。
+  現在、&quot;make before break&quot; (MBB) と呼ぶ新しいアップグレードの仕組みを導入しています。この新しい方式では、アップグレード中に古いレプリカを削除する前に、更新済みのレプリカを追加します。これにより、実行中のワークロードへの影響を抑えた、よりシームレスなアップグレードが可能になります。
+
+  この変更の一環として、過去のシステムテーブルデータは、アップグレードイベントに関連して最大 30 日間保持されます。さらに、新しい組織ティアへの移行に伴い、AWS または GCP 上のサービスでは 2024 年 12 月 19 日より前、Azure 上のサービスでは 2025 年 1 月 14 日より前のシステムテーブルデータは保持されません。
 </Note>
 
-## バージョン互換性 {#version-compatibility}
+<div id="version-compatibility">
+  ## バージョン互換性
+</div>
 
 サービスを作成すると、[`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定には、そのサービスが初回プロビジョニングされた時点で ClickHouse Cloud が提供している最新の ClickHouse バージョンが設定されます。
 
 `compatibility` 設定を使用すると、以前のバージョンにおける設定のデフォルト値を利用できます。サービスが新しいバージョンにアップグレードされても、`compatibility` 設定で指定したバージョンは変わりません。つまり、サービスを最初に作成した時点で存在していた設定のデフォルト値は変わりません (すでにそれらのデフォルト値を上書きしている場合は、その値がアップグレード後も維持されます) 。
 
-ClickHouse Cloud では、サービスレベルのデフォルト `compatibility` 設定を直接管理することはできません。サービスのデフォルト `compatibility` 設定に設定されているバージョンを変更したい場合は、[ClickHouse Support に問い合わせる](https://clickhouse.com/support/program)必要があります。ただし、セッションで `SET compatibility = '26.8'` を使用したり、クエリで `SETTINGS [other settings,] compatibility = '26.8'` を使用したりするなど、標準の ClickHouse 設定メカニズムを使って、ユーザー、ロール、profile、クエリ、またはセッションの各レベルで `compatibility` 設定を上書きできます。
+サービスレベルのデフォルト `compatibility` 設定は管理できません。サービスのデフォルト `compatibility` 設定に設定されているバージョンを変更したい場合は、[サポートに問い合わせる](https://clickhouse.com/support/program)必要があります。ただし、セッションで `SET compatibility = '22.3'` を使用したり、クエリで `SETTINGS compatibility = '22.3'` を使用したりするなど、標準の ClickHouse 設定メカニズムを使って、ユーザー、ロール、profile、クエリ、またはセッションの各レベルで `compatibility` 設定を上書きできます。
 
 <div id="maintenance-mode">
   ## メンテナンスモード

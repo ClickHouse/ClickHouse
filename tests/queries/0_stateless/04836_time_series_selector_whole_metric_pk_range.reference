@@ -53,7 +53,7 @@
 1970-01-01 00:01:40.000	1
 1970-01-01 00:02:30.000	10
 0
--- a series written with another id generator has an id outside the range: the probe detects it and falls back
+-- id_generator changed after ingestion: old series ids are outside the range, the probe detects them and falls back
 1970-01-01 00:01:40.000	1
 1970-01-01 00:03:20.000	2
 0

@@ -47,7 +47,6 @@ template <typename T>
 requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end);
 
-/// Return the first index of the MIN / MAX value. For floats NaN is skipped unless all values are NaN.
 template <typename T>
 requires(has_find_extreme_index_implementation<T>)
 std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end);

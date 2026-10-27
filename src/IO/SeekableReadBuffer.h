@@ -115,10 +115,6 @@ public:
     /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
     virtual bool supportsReadAtRetainCells() const { return false; }
 
-    /// Whether reads go through the userspace page cache, which reads whole cache cells
-    /// (page_cache_block_size) rather than only the requested range. Wrappers forward it.
-    virtual bool readsThroughPageCache() const { return false; }
-
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
     virtual bool isSeekCheap() { return false; }
@@ -132,7 +128,7 @@ public:
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 
-/// Wraps a reference to a SeekableReadBuffer into a unique pointer to SeekableReadBuffer.
+/// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
@@ -140,8 +136,5 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
 /// Helper for implementing readBigAt().
 /// Updates *out_bytes_copied after each call to the callback, as well as at the end.
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
-
-/// The same for a ReadBuffer source.
-void copyFromReadBufferWithProgressCallback(ReadBuffer & in, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

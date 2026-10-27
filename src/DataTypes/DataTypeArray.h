@@ -43,12 +43,7 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    size_t getNumberOfChildren() const override { return 1; }
-    const DataTypePtr & getChild(size_t index) const override
-    {
-        chassert(index == 0);
-        return nested;
-    }
+    void forEachChild(const ChildCallback & callback) const override;
 
     Field getDefault() const override;
 
@@ -66,10 +61,6 @@ public:
     bool hasDynamicSubcolumnsData() const override { return nested->hasDynamicSubcolumnsData(); }
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
     std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
-    void forEachKnownDynamicSubcolumnName(const SubcolumnNameCallback & callback, size_t array_level) const override
-    {
-        nested->forEachKnownDynamicSubcolumnName(callback, array_level + 1);
-    }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
     {
@@ -84,9 +75,6 @@ public:
 
     /// 1 for plain array, 2 for array of arrays and so on.
     size_t getNumberOfDimensions() const;
-
-private:
-    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 };
 
 }

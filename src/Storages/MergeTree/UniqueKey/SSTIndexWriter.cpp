@@ -47,7 +47,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int SUPPORT_IS_DISABLED;
@@ -393,10 +392,14 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
 
     openOutputStreamOnFirstEntry();
 
-    /// One INSERT block may not repeat a key; the commit's probe resolves conflicts only between blocks.
+    /// Detect a duplicate UNIQUE KEY within the block here, before RocksDB
+    /// rejects the non-increasing `Put` with a raw low-level error. Interim
+    /// fail-closed stance: no INSERT-time dedup yet, so a clear defined error.
     if (entries_added > 0 && encoded_key == impl->last_key)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "INSERT block contains duplicate UNIQUE KEY values (part rows {} and {}); deduplicate the block before inserting.",
+            "INSERT block contains duplicate UNIQUE KEY values (part rows {} and {}). "
+            "INSERT-time UNIQUE KEY deduplication is not yet implemented; "
+            "deduplicate the block before inserting.",
             impl->last_row_number, row_number);
 
     char value_buf[4];
@@ -407,18 +410,9 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
         rocksdb::Slice(value_buf, sizeof(value_buf)));
 
     if (!status.ok())
-    {
-        /// Keys are fed in sorted order, so RocksDB's `InvalidArgument` after a successful
-        /// Put means two rows share a unique key, not a misuse of the writer.
-        if (status.IsInvalidArgument() && entries_added > 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "UNIQUE KEY dense index: duplicate key encountered while building the index; "
-                "the unique-key columns must be distinct (enforced by the insert/upsert path)");
-
         throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
             "SSTIndexWriter::addEncoded failed (row_number={}): {}",
             row_number, status.ToString());
-    }
 
     impl->last_key.assign(encoded_key.data(), encoded_key.size());
     impl->last_row_number = row_number;
@@ -475,7 +469,7 @@ UInt64 SSTIndexWriter::writeDenseIndexOnInsert(
     /// The SST needs Full part storage: load-time rebuild calls `removeFileIfExists`
     /// + `writeFile`, but packed storage only supports these through the writer,
     /// which is not initialized at load/ATTACH time.
-    /// (`MergeTreeData::choosePartFormat` forces Full storage for UNIQUE KEY parts.)
+    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
     if (storage.getType() != MergeTreeDataPartStorageType::Full)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY dense index requires full part storage, got part storage type {}",

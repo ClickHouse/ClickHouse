@@ -91,28 +91,3 @@ buckets_per_window   recompute(ns)  two_stacks(ns)  ratio (recompute / two_stack
 
 AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (two-stacks first wins)   = 4
 BPW_TO_FORCE_TWO_STACKS (two-stacks > 2x faster)                 = 18
-
-timeSeriesStdvarToGrid: two-stacks vs recompute, measured on 2026-09-24.
-
-timeSeriesStdvarToGrid: two-stacks vs recompute, ns per grid point (32 series x 8000 buckets).
-
-buckets_per_window   recompute(ns)  two_stacks(ns)  ratio (recompute / two_stacks)      winner
-                 2           10.50           11.50                            0.91   recompute
-                 4           16.55           13.16                            1.26  two-stacks
-                 6           21.69           14.61                            1.48  two-stacks
-                 8           26.56           14.89                            1.78  two-stacks
-                10           31.72           15.45                            2.05  two-stacks
-                12           36.75           15.57                            2.36  two-stacks
-                14           41.44           15.81                            2.62  two-stacks
-                16           47.78           15.81                            3.02  two-stacks
-                18           55.02           15.84                            3.47  two-stacks
-                20           63.24           15.82                            4.00  two-stacks
-                22           71.13           15.86                            4.49  two-stacks
-                24           78.80           15.87                            4.97  two-stacks
-                28           95.39           15.99                            5.97  two-stacks
-                32          111.17           16.02                            6.94  two-stacks
-                36          127.88           16.22                            7.88  two-stacks
-                40          143.03           16.00                            8.94  two-stacks
-
-AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS (two-stacks first wins)   = 4
-BPW_TO_FORCE_TWO_STACKS (two-stacks > 2x faster)                 = 10

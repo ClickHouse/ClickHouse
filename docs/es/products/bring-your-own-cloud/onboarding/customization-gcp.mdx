@@ -9,31 +9,24 @@ doc_type: 'referencia'
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-## VPC administrada por el cliente (BYO-VPC) para GCP {#customer-managed-vpc-gcp}
+<div id="customer-managed-vpc-gcp">
+  ## VPC administrada por el cliente (BYO-VPC) para GCP
+</div>
 
 Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de dejar que ClickHouse Cloud aprovisione una nueva VPC, sigue los pasos que se indican a continuación. Este enfoque ofrece un mayor control sobre la configuración de red y te permite integrar ClickHouse BYOC en tu infraestructura de red existente.
 
 <Steps>
   <Step title="Configura tu VPC existente" id="configure-existing-vpc">
-    1. Asigna al menos 1 subred privada en una [región compatible con ClickHouse BYOC](/es/products/cloud/reference/supported-regions) para el cluster de Kubernetes (GKE) de ClickHouse. Asegúrate de que la subred tenga un rango CIDR mínimo de `/24` (por ejemplo, 10.0.0.0/24) para proporcionar suficientes direcciones IP a los nodos del cluster de GKE.
-    2. Dentro de la subred privada, asigna al menos 1 rango IPv4 secundario que se usará para los pods del cluster de GKE. El rango secundario debe ser de al menos `/21`. Los rangos más pequeños no proporcionan suficientes direcciones IP para los pods como para que el cluster de GKE complete el aprovisionamiento, y la configuración de la infraestructura fallará.
+    1. Asigna al menos 1 subred privada en una [región compatible con ClickHouse BYOC](/es/products/cloud/reference/supported-regions) para el clúster de Kubernetes (GKE) de ClickHouse. Asegúrate de que la subred tenga un rango CIDR mínimo de `/24` (por ejemplo, 10.0.0.0/24) para proporcionar suficientes direcciones IP a los nodos del clúster de GKE.
+    2. Dentro de la subred privada, asigna al menos 1 rango IPv4 secundario que se usará para los pods del clúster de GKE. El rango secundario debe ser de al menos `/21`. Los rangos más pequeños no proporcionan suficientes direcciones IP para los pods como para que el clúster de GKE complete el aprovisionamiento, y la configuración de la infraestructura fallará.
     3. Habilita **Private Google Access** en la subred. Esto permite que los nodos de GKE accedan a las API y los servicios de Google sin necesidad de direcciones IP externas.
-
-    <Note>
-      Para exponer servicios a través de [Private Service Connect](/es/cloud/reference/byoc/onboarding/network-gcp#setup-psc), también necesitas una subred dedicada con el propósito `PRIVATE_SERVICE_CONNECT` en esta VPC. Puedes crearla ahora o más adelante, antes de habilitar private link.
-    </Note>
 
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Detalles de la subred BYOC de GCP que muestran rangos IPv4 primarios y secundarios con Private Google Access habilitado" />
   </Step>
 
   <Step title="Garantiza la conectividad de red" id="ensure-network-connectivity">
     **Gateway NAT de Cloud**
-    Asegúrate de que haya un [gateway NAT de Cloud](https://cloud.google.com/nat/docs/overview) desplegado para la VPC. Proporciona conectividad saliente a las instancias que no tienen direcciones IP externas, y de él dependen dos cosas:
-
-    * **Tailscale.** Los componentes de ClickHouse BYOC se registran en el plano de control de Tailscale, que proporciona una red segura de confianza cero para las operaciones privadas de administración sin necesidad de acceso público entrante.
-    * **Imágenes de contenedor.** Algunas imágenes que ejecuta el despliegue no están replicadas en el registro de BYOC, como las imágenes de la comunidad, y se descargan de sus registros originales.
-
-    Una VPC sin ninguna ruta saliente no completará el aprovisionamiento; la validación previa comprueba que un gateway NAT de Cloud cubra la red. No existe una única lista publicada de endpoints; si tu política de red exige un inventario explícito, ponte en contacto con el soporte para revisar tu configuración.
+    Asegúrate de que haya un [gateway NAT de Cloud](https://cloud.google.com/nat/docs/overview) desplegado para la VPC. Los componentes de ClickHouse BYOC requieren acceso a Internet saliente para comunicarse con el plano de control de Tailscale. Tailscale se utiliza para proporcionar una red segura de confianza cero para las operaciones privadas de administración. El gateway NAT de Cloud proporciona esta conectividad saliente a las instancias que no tienen direcciones IP externas.
 
     **Resolución DNS**
     Asegúrate de que tu VPC tenga una resolución DNS funcional y de que no bloquee, interfiera ni sobrescriba los nombres DNS estándar. ClickHouse BYOC depende de DNS para resolver los servidores de control de Tailscale y los endpoints del servicio de ClickHouse. Si DNS no está disponible o está mal configurado, es posible que los servicios de BYOC no puedan conectarse o funcionar correctamente.
@@ -41,7 +34,7 @@ Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de d
 
   <Step title="Configura la infraestructura de BYOC" id="set-up-byoc-infrastructure">
     <Note>
-      Al hacer clic en **Set up Infrastructure**, ClickHouse Cloud ejecuta automáticamente la [validación previa](/es/products/bring-your-own-cloud/onboarding/standard#preflight-validation) antes del aprovisionamiento. Comprueba que la service account de administración tenga los permisos necesarios y que las API de Google Cloud requeridas estén habilitadas, y valida la VPC que aportas: que la red y la subred se resuelvan, que el rango primario de la subred y el rango secundario para los pods sean suficientemente amplios, y que un gateway NAT de Cloud cubra la red. Si falta algo, la configuración se detiene e indica los problemas concretos que debes corregir.
+      Al hacer clic en **Set up Infrastructure**, ClickHouse Cloud ejecuta automáticamente la [validación previa](/es/products/bring-your-own-cloud/onboarding/standard#preflight-validation) antes del aprovisionamiento, para comprobar que la cuenta de servicio de administración tenga los permisos necesarios y que las API de Google Cloud requeridas estén habilitadas. La validación automática de una VPC propia aún no forma parte de la comprobación previa de GCP, así que asegúrate de que tu VPC cumpla los [requisitos de red](#configure-existing-vpc) anteriores antes de comenzar.
     </Note>
 
     En la consola de ClickHouse Cloud, configura lo siguiente al crear una nueva infraestructura:
@@ -49,32 +42,8 @@ Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de d
     1. En **VPC configuration**, selecciona **Use existing VPC**.
     2. Introduce el **VPC network name**.
     3. Introduce el **Subnet name** que asignaste para ClickHouse.
-    4. De forma opcional, introduce **Secondary range names** para fijar cuáles de los rangos secundarios de la subred usa GKE para los pods. Déjalo vacío para usarlos todos; cada nombre que indiques debe existir ya en la subred.
-    5. Si tu VPC reside en un proyecto host de VPC compartida, introduce el **Shared VPC host project ID**. Déjalo vacío cuando la VPC esté en el mismo proyecto que la infraestructura. Consulta [VPC compartida desde un proyecto host](#shared-vpc-host-project) más abajo.
-    6. Haz clic en **Set up Infrastructure** para iniciar el aprovisionamiento.
+    4. Haz clic en **Set up Infrastructure** para iniciar el aprovisionamiento.
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="Interfaz de usuario de configuración de BYOC de ClickHouse Cloud con Use existing VPC seleccionado para GCP, que muestra los campos VPC network name, subnet name, secondary range names y Shared VPC host project ID" />
+    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="Interfaz de usuario de configuración de BYOC de ClickHouse Cloud con Use existing VPC seleccionado para GCP" />
   </Step>
 </Steps>
-
-### VPC compartida desde un proyecto host {#shared-vpc-host-project}
-
-Puede ejecutar BYOC en un proyecto de servicio sobre una red que reside en un proyecto host de [VPC compartida](https://cloud.google.com/vpc/docs/shared-vpc) independiente, lo que le permite mantener la red centralizada. La VPC y sus subredes pertenecen al proyecto **host**, mientras que la infraestructura BYOC se ejecuta en un proyecto de **servicio** adjunto. Los requisitos anteriores no cambian; simplemente se aplican a la subred del proyecto host.
-
-Dos prerequisitos son específicos de esta configuración:
-
-* **Habilite el proyecto host como host de VPC compartida y adjunte el proyecto de servicio a él antes de comenzar.** Ambos pasos son obligatorios e independientes: un proyecto que aún no sea host de VPC compartida debe habilitarse primero como tal, y solo entonces podrá adjuntarse el proyecto de servicio. Un cluster de GKE con VPC compartida requiere que esa asociación exista. La validación previa lee su red y su subred a través de los grants del proyecto host, exista o no dicha asociación, por lo que se supera en cualquier caso y el aprovisionamiento falla más adelante, al crear el cluster. Ambas operaciones son de nivel de organization y las realiza quien administre la VPC compartida en su organization; el Terraform de onboarding no puede hacerlas por usted.
-* **Ejecute el Terraform de onboarding con el proyecto host configurado.** Pase `shared_vpc_host_project_id`, `shared_vpc_host_subnet_region` y `shared_vpc_host_private_subnet_id` al [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp). `shared_vpc_host_private_subnet_id` es la subred del host en la que se ejecutan sus nodos de GKE —la que configuró arriba— y no la subred de Private Service Connect que se describe a continuación. Apuntarlo a la subred de PSC coloca el grant `roles/compute.networkUser` en la subred equivocada, con lo que el aprovisionamiento falla al crear el cluster. Una única invocación escribe en ambos proyectos, por lo que las credentials con las que se ejecuta necesitan permisos de administración de IAM tanto en el proyecto de servicio como en el proyecto host.
-
-Los grants que el módulo añade a su proyecto host son acotados, pero no todos son de solo lectura:
-
-| Grant en el proyecto host                                                                                                                                               | Otorgado a                                                                                                                                                                    | Motivo                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compute.networks.get`, `compute.subnetworks.get`, `compute.subnetworks.use`                                                                                            | Service account de administración de ClickHouse                                                                                                                               | Leer su red y su subred, y permitir que la asociación de Private Service Connect use su subred de PSC                                                                                                                                                                                                                                                                                                                            |
-| `roles/compute.networkUser` en la subred de nodos                                                                                                                       | Service account de administración de ClickHouse, el agente de servicio de GKE de su proyecto de servicio y la service account de las API de Google de su proyecto de servicio | Las tres identities que consumen la subred                                                                                                                                                                                                                                                                                                                                                                                       |
-| `roles/container.hostServiceAgentUser`                                                                                                                                  | El agente de servicio de GKE de su proyecto de servicio                                                                                                                       | Obligatorio para cualquier cluster de GKE con VPC compartida                                                                                                                                                                                                                                                                                                                                                                     |
-| `compute.firewalls.create`, `compute.firewalls.delete`, `compute.firewalls.get`, `compute.firewalls.list`, `compute.firewalls.update` y `compute.networks.updatePolicy` | El agente de servicio de GKE de su proyecto de servicio                                                                                                                       | Con VPC compartida, GKE crea las reglas de firewall de su cluster y de su balanceador de carga en el proyecto host y no en el proyecto de servicio. Sin esto, la regla de comprobación de health del balanceador de carga interno nunca se crea, los backends de ingreso permanecen en mal estado y el private link no funciona. Esta es la alternativa granular documentada por Google a otorgar `roles/compute.securityAdmin`. |
-
-La última fila es el único acceso de escritura, y se otorga al agente de servicio de GKE de su propio proyecto, no a ClickHouse. La service account de administración de ClickHouse nunca escribe en el proyecto host. El módulo también habilita la API `container.googleapis.com` en el proyecto host, lo que aprovisiona el agente de servicio de GKE propio de ese proyecto.
-
-A continuación, introduzca el proyecto host en el campo **Shared VPC host project ID** descrito anteriormente. Si desea private link, cree una subred `PRIVATE_SERVICE_CONNECT` independiente en el proyecto host, en la misma red y region que la subred de nodos. Convive con la subred de nodos en lugar de reemplazarla, y no es la subred que se pasa como `shared_vpc_host_private_subnet_id`.

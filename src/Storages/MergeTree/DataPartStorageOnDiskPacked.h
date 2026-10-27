@@ -81,19 +81,15 @@ public:
 
     void beginTransaction() override;
     void commitTransaction() override;
-    /// Keeps the temporary data set by setTemporaryDataForTransaction for the new transaction.
-    void checkpointTransaction() override;
 
     void setPreferredFileOrder(const Strings & file_names) override { preferred_file_order = file_names; }
 
     /// Finalizes writer and writes buffered data into transaction.
     void precommitTransaction() override;
-    void undoTransaction() override;
-
-    void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory) override;
 
 #if CLICKHOUSE_CLOUD
     TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
+    void undoTransaction() override;
 #endif
 
     bool cloneCopiesWholeArchive(const ClonePartParams & params) const override;
@@ -128,14 +124,6 @@ private:
     /// Writer is initialized after creating a disk transaction.
     std::optional<PackedFilesWriter> writer;
 
-    /// Where the writer moves the buffered data of the active transaction, see setTemporaryDataForTransaction.
-    struct TemporaryDataForTransaction
-    {
-        TemporaryDataOnDiskScopePtr tmp_data;
-        size_t max_bytes_in_memory = 0;
-    };
-    std::optional<TemporaryDataForTransaction> temporary_data_for_transaction;
-
     bool is_precommitted = false;
 
     Strings preferred_file_order;
@@ -146,12 +134,6 @@ private:
     /// True if any of the given files lives inside data.packed (rather than being written separately),
     /// which forces the whole archive to be copied rather than hardlinked during a clone/freeze.
     bool anyArchivedFileRequestedForCopy(const NameSet & files_to_copy_instead_of_hardlinks) const;
-
-    /// Copies the separately written invalidated_system_columns.txt of this part (if any) into
-    /// dest_storage. freeze/freezeRemote carry only data.packed, so the separately written files
-    /// need explicit treatment; see the call sites.
-    void copyInvalidatedSystemColumnsFile(
-        DataPartStorageOnDiskPacked & dest_storage, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
 
     /// Native file access hooks for the base storage. On packed-part storage skp_idx.packed is a
     /// virtual file inside data.packed, so the base file-read overlay (which reads a standalone
@@ -184,7 +166,6 @@ private:
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();
     void finalizeWriter();
-    void setTemporaryDataToWriter();
 
     /// Modifying of files is possible only with transaction.
 

@@ -55,9 +55,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(UInt64) -> String";
+        FunctionArgumentDescriptors mandatory_args{
+            {"address_of_binary_instruction", &isUInt64, nullptr, "UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+        return std::make_shared<DataTypeString>();
     }
 
     bool useDefaultImplementationForConstants() const override

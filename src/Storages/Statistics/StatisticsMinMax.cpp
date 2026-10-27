@@ -90,11 +90,6 @@ std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const
     return StatisticsUtils::interpolateLessLinear(val, min, max, row_count, data_type);
 }
 
-size_t StatisticsMinMax::allocatedBytes() const
-{
-    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max);
-}
-
 String StatisticsMinMax::getNameForLogs() const
 {
     return fmt::format("MinMax: ({}, {})", applyVisitor(FieldVisitorToString(), min), applyVisitor(FieldVisitorToString(), max));

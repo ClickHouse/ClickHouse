@@ -8,6 +8,8 @@
 -- planner either falls back to another enabled algorithm or reports it cleanly as a
 -- query exception.
 
+SET enable_analyzer = 1;
+
 -- full_sorting_merge is the only enabled algorithm and cannot do SEMI/ANTI. Assert via
 -- EXPLAIN: the fix declines at planning time so EXPLAIN already errors, while the unfixed
 -- server builds the plan and only errors later at execution (so its EXPLAIN succeeds).
@@ -35,7 +37,7 @@ SETTINGS join_algorithm = 'full_sorting_merge,hash';
 -- explicit SEMI/ANTI cases above already cover the clean-error path deterministically.
 SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a
 WHERE EXISTS (SELECT 1 FROM (SELECT number AS y FROM numbers(5)) AS b WHERE b.y = a.x)
-SETTINGS allow_correlated_subqueries = 1, join_algorithm = 'full_sorting_merge,hash';
+SETTINGS allow_experimental_correlated_subqueries = 1, join_algorithm = 'full_sorting_merge,hash';
 
 -- Supported strictness/kind still uses full_sorting_merge.
 SELECT count() FROM (SELECT number AS x FROM numbers(10)) AS a

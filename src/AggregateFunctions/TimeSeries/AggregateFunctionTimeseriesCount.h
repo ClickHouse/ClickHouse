@@ -13,16 +13,16 @@ namespace DB
 {
 
 /// Traits for `timeSeriesCountToGrid`, the ClickHouse counterpart of PromQL's `count_over_time`.
-template <typename TimestampType_, typename ValueType_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 struct AggregateFunctionTimeseriesCountTraits
 {
-    using GridScaleTimestampType = DateTime64;
-    using ValueType = ValueType_;
     using TimestampType = TimestampType_;
+    using IntervalType = IntervalType_;
+    using ValueType = ValueType_;
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-    using ResultType = UInt64;
+    using ResultType = ValueType;
 
     static String getName() { return "timeSeriesCountToGrid"; }
 
@@ -49,11 +49,11 @@ struct AggregateFunctionTimeseriesCountTraits
 
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
 
         static_assert(decltype(sliding_sum)::is_invertible);
 
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
@@ -66,12 +66,12 @@ struct AggregateFunctionTimeseriesCountTraits
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(GridScaleTimestampType cut_off)
+        void removeBefore(TimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
 
@@ -79,25 +79,25 @@ struct AggregateFunctionTimeseriesCountTraits
             if (combined.count == 0)
                 return std::nullopt;
 
-            return combined.count;
+            return static_cast<ResultType>(combined.count);
         }
     };
 
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 1;
 };
 
 
 /// Counts time series values on a grid; the counterpart of PromQL's `count_over_time`.
-template <typename TimestampType_, typename ValueType_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 class AggregateFunctionTimeseriesCount final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesCount<TimestampType_, ValueType_>,
-        AggregateFunctionTimeseriesCountTraits<TimestampType_, ValueType_>>
+        AggregateFunctionTimeseriesCount<TimestampType_, IntervalType_, ValueType_>,
+        AggregateFunctionTimeseriesCountTraits<TimestampType_, IntervalType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesCountTraits<TimestampType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesCountTraits<TimestampType_, IntervalType_, ValueType_>;
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesCount, Traits>;

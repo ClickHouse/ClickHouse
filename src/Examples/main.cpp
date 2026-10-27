@@ -10,8 +10,6 @@
 #include <filesystem>
 
 #include <Common/VectorWithMemoryTracking.h>
-#include <Interpreters/SecretArgumentsRegistry.h>
-#include <Parsers/SecretArguments.h>
 
 namespace
 {
@@ -141,8 +139,6 @@ void printHelp()
 
 int main(int argc, char ** argv)
 {
-    DB::setSecretArgumentsFinder(&DB::SecretArgumentsRegistry::instance());
-
     DB::VectorWithMemoryTracking<char *> args(argv, argv + argc);
 
     if (args.empty())

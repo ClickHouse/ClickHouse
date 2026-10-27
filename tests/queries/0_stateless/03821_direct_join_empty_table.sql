@@ -4,6 +4,8 @@ DROP TABLE IF EXISTS t_right;
 CREATE TABLE t_left (id UInt64, name String) ENGINE = MergeTree() ORDER BY id;
 CREATE TABLE t_right (id UInt64, val String) ENGINE = MergeTree() ORDER BY id;
 
+SET enable_analyzer = 1;
+
 SET join_algorithm = 'direct';
 
 SELECT l.id, l.name, r.val

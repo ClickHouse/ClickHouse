@@ -4,6 +4,8 @@
 #include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -27,12 +29,14 @@ bool ParserCheckGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     return true;
 }
+}
 
-std::map<String, Documentation> ParserCheckGrantQuery::getDocumentation() const
+namespace DB
 {
-    std::map<String, Documentation> documentation;
 
-    documentation["CHECK GRANT"] =
+void registerStatementCheckGrant(StatementFactory & factory)
+{
+    factory.registerStatement("CHECK GRANT",
     {
         .description = R"DOCS_MD(
 The `CHECK GRANT` query is used to check whether the current user/role has been granted a specific privilege.
@@ -79,9 +83,7 @@ Specifying privileges you can use asterisk (`*`) instead of a table or a databas
 CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
 )",
         .related = {"GRANT", "REVOKE", "SHOW"},
-    };
-
-    return documentation;
+    });
 }
 
 }

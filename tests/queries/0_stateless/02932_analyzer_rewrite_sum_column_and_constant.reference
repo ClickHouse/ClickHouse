@@ -1856,14 +1856,21 @@ QUERY id: 0
     sum(plus(decimal32, 2)) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
-          LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(9, 5)
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 2
+                LIST id: 5, nodes: 1
                   COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
-                  CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(2 + decimal32) From test_table);
@@ -1872,30 +1879,44 @@ QUERY id: 0
     sum(plus(2, decimal32)) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
-          LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(9, 5)
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
               ARGUMENTS
                 LIST id: 5, nodes: 2
                   CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
-                  COLUMN id: 7, column_name: decimal32, result_type: Decimal(9, 5), source_id: 8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
   JOIN TREE
-    TABLE id: 8, alias: __table1, table_name: default.test_table
+    TABLE id: 10, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(decimal32, 2)) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
-          LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 2
+                LIST id: 5, nodes: 1
                   COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
-                  CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+            FUNCTION id: 8, function_name: multiply, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  FUNCTION id: 11, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 12, nodes: 1
+                        COLUMN id: 6, column_name: decimal32, result_type: Decimal(9, 5), source_id: 7
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) From test_table);
@@ -1904,16 +1925,23 @@ QUERY id: 0
     sum(minus(2, decimal32)) Decimal(38, 5)
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+      FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
-          LIST id: 3, nodes: 1
-            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: multiply, function_type: ordinary, result_type: UInt64
               ARGUMENTS
                 LIST id: 5, nodes: 2
                   CONSTANT id: 6, constant_value: UInt64_2, constant_value_type: UInt8
-                  COLUMN id: 7, column_name: decimal32, result_type: Decimal(9, 5), source_id: 8
+                  FUNCTION id: 7, function_name: count, function_type: aggregate, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 8, nodes: 1
+                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 12, nodes: 1
+                  COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
   JOIN TREE
-    TABLE id: 8, alias: __table1, table_name: default.test_table
+    TABLE id: 10, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(decimal32) + 2 * count(decimal32) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS
@@ -2893,22 +2921,36 @@ QUERY id: 0
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 7, nodes: 2
+                      LIST id: 7, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
-            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 12, nodes: 1
-                  FUNCTION id: 13, function_name: plus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 14, nodes: 2
+                      LIST id: 18, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 15, constant_value: UInt64_3, constant_value_type: UInt8
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table);
@@ -2920,22 +2962,36 @@ QUERY id: 0
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: plus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 7, nodes: 2
+                      LIST id: 7, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
-            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 12, nodes: 1
-                  FUNCTION id: 13, function_name: plus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 14, nodes: 2
+                      LIST id: 18, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 15, constant_value: UInt64_3, constant_value_type: UInt8
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table);
@@ -2947,22 +3003,36 @@ QUERY id: 0
       FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 7, nodes: 2
+                      LIST id: 7, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
-            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 12, nodes: 1
-                  FUNCTION id: 13, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 14, nodes: 2
+                      LIST id: 18, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 15, constant_value: UInt64_3, constant_value_type: UInt8
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) - sum(decimal32 - 3) From test_table);
@@ -2974,22 +3044,36 @@ QUERY id: 0
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 7, nodes: 2
+                      LIST id: 7, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
-            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                  FUNCTION id: 10, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+                        FUNCTION id: 13, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 14, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 12, nodes: 1
-                  FUNCTION id: 13, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 14, nodes: 2
+                      LIST id: 18, nodes: 1
                         COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
-                        CONSTANT id: 15, constant_value: UInt64_3, constant_value_type: UInt8
+                  FUNCTION id: 19, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 20, nodes: 2
+                        CONSTANT id: 21, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 22, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 23, nodes: 1
+                              COLUMN id: 8, column_name: decimal32, result_type: Decimal(9, 5), source_id: 9
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) - sum(3 - decimal32) From test_table);
@@ -3001,24 +3085,38 @@ QUERY id: 0
       FUNCTION id: 2, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+            FUNCTION id: 4, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
               ARGUMENTS
-                LIST id: 5, nodes: 1
-                  FUNCTION id: 6, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+                LIST id: 5, nodes: 2
+                  FUNCTION id: 6, function_name: multiply, function_type: ordinary, result_type: UInt64
                     ARGUMENTS
                       LIST id: 7, nodes: 2
                         CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
-                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
-            FUNCTION id: 11, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
-              ARGUMENTS
-                LIST id: 12, nodes: 1
-                  FUNCTION id: 13, function_name: minus, function_type: ordinary, result_type: Decimal(9, 5)
+                        FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 10, nodes: 1
+                              COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+                  FUNCTION id: 13, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
                     ARGUMENTS
-                      LIST id: 14, nodes: 2
-                        CONSTANT id: 15, constant_value: UInt64_3, constant_value_type: UInt8
-                        COLUMN id: 9, column_name: decimal32, result_type: Decimal(9, 5), source_id: 10
+                      LIST id: 14, nodes: 1
+                        COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+            FUNCTION id: 15, function_name: minus, function_type: ordinary, result_type: Decimal(38, 5)
+              ARGUMENTS
+                LIST id: 16, nodes: 2
+                  FUNCTION id: 17, function_name: multiply, function_type: ordinary, result_type: UInt64
+                    ARGUMENTS
+                      LIST id: 18, nodes: 2
+                        CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+                        FUNCTION id: 20, function_name: count, function_type: aggregate, result_type: UInt64
+                          ARGUMENTS
+                            LIST id: 21, nodes: 1
+                              COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
+                  FUNCTION id: 22, function_name: sum, function_type: aggregate, result_type: Decimal(38, 5)
+                    ARGUMENTS
+                      LIST id: 23, nodes: 1
+                        COLUMN id: 11, column_name: decimal32, result_type: Decimal(9, 5), source_id: 12
   JOIN TREE
-    TABLE id: 10, alias: __table1, table_name: default.test_table
+    TABLE id: 12, alias: __table1, table_name: default.test_table
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) + (sum(decimal32) + 3 * count(decimal32)) From test_table);
 QUERY id: 0
   PROJECTION COLUMNS

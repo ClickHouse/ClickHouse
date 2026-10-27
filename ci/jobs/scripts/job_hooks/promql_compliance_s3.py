@@ -34,55 +34,20 @@ MASTER_BRANCH = "master"
 URL_TIMEOUT_SEC = 30
 
 
-SUITE_COMPLIANCE = "compliance"
-SUITE_EXTENDED = "extended_support"
-SCHEMA_VERSION = 2
-COUNT_KEYS = ("passed", "failed", "unsupported")
-
-
-def _counts_ok(data: dict[str, Any]) -> bool:
-    for k in COUNT_KEYS:
+def _baseline_payload_ok(data: dict[str, Any]) -> bool:
+    """Reject malformed or non-finite S3 JSON (same spirit as strict baseline checks)."""
+    for k in ("pct", "passed", "failed", "unsupported"):
         if k not in data:
             return False
     try:
         pct = float(data["pct"])
         if not math.isfinite(pct):
             return False
-        for k in COUNT_KEYS:
+        for k in ("passed", "failed", "unsupported"):
             int(data[k])
     except (TypeError, ValueError):
         return False
     return True
-
-
-def _baseline_payload_ok(data: dict[str, Any]) -> bool:
-    """Accept schema v2 named suites or the legacy flat payload."""
-    if not isinstance(data, dict):
-        return False
-    suites = suites_from_payload(data)
-    if SUITE_COMPLIANCE not in suites:
-        return False
-    return _counts_ok(suites[SUITE_COMPLIANCE])
-
-
-def suites_from_payload(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    if int(data.get("schema_version") or 0) >= SCHEMA_VERSION and isinstance(
-        data.get("suites"), dict
-    ):
-        return data["suites"]
-    if all(k in data for k in COUNT_KEYS + ("pct",)):
-        return {SUITE_COMPLIANCE: data}
-    return {}
-
-
-def build_result_payload(
-    compliance: dict[str, Any],
-    extended: Optional[dict[str, Any]] = None,
-) -> dict[str, Any]:
-    suites = {SUITE_COMPLIANCE: compliance}
-    if extended is not None:
-        suites[SUITE_EXTENDED] = extended
-    return {"schema_version": SCHEMA_VERSION, "suites": suites}
 
 
 def result_url_for_master_commit(sha: str) -> str:

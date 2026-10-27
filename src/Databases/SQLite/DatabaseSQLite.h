@@ -45,17 +45,15 @@ private:
 
     String database_path;
 
+    mutable SQLitePtr sqlite_db;
+
     LoggerPtr log;
 
-    /// Every metadata operation runs on a connection opened for that operation; see the comment in the
-    /// definition. The connection never creates a missing database file.
-    SQLitePtr openConnection() const;
+    bool checkSQLiteTable(const String & table_name) const;
 
-    static bool checkSQLiteTable(sqlite3 * sqlite_db, const String & table_name);
+    NameSet fetchTablesList() const TSA_REQUIRES(mutex);
 
-    static NameSet fetchTablesList(sqlite3 * sqlite_db);
-
-    StoragePtr fetchTable(const SQLitePtr & sqlite_db, const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
+    StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const TSA_REQUIRES(mutex);
 
 };
 

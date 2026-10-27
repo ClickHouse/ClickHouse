@@ -27,8 +27,6 @@ public:
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
-    bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
-    std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
@@ -59,15 +57,6 @@ public:
     /// which materializes the nested table anyway.
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
-    /// The same holds for `DELETE`, `UPDATE` and `ALTER ... DELETE/UPDATE`: their interpreters probe
-    /// these on the catalog object before handing the mutation to `mutate` or `updateLightweight`.
-    bool supportsDelete() const override { return getNested()->supportsDelete(); }
-    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
-    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
-    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
-    {
-        getNested()->checkMutationIsPossible(commands, settings);
-    }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
@@ -171,7 +160,6 @@ public:
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
-    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override { return getNested()->updateLightweight(commands, context); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
@@ -195,7 +183,6 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
-    bool hasUnreplicatedTableDataOnDisk() const override { return getNested()->hasUnreplicatedTableDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
@@ -256,24 +243,6 @@ std::shared_ptr<T> castStorage(const StoragePtr & storage, DeferredTable deferre
         resolved = nested;
     }
     return std::dynamic_pointer_cast<T>(resolved);
-}
-
-/// The storage behind any number of proxies, or the storage itself when it is not one. A proxy forwards
-/// many predicates but not its type, so code keyed on the concrete storage has to resolve it first.
-/// Resolving costs nothing once the nested storage has been materialized, which reading it already did.
-inline StoragePtr unwrapStorageProxy(const StoragePtr & storage)
-{
-    static constexpr size_t max_proxy_depth = 16;
-
-    StoragePtr nested_storage = storage;
-    for (size_t i = 0; i < max_proxy_depth && nested_storage; ++i)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
-        if (!proxy)
-            break;
-        nested_storage = proxy->getNested();
-    }
-    return nested_storage;
 }
 
 }

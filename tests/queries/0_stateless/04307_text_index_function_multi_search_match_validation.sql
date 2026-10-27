@@ -8,6 +8,8 @@
 -- raising the exception the function itself would raise. Every invalid case below must throw the same exception with
 -- and without the index.
 
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

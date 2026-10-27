@@ -1,5 +1,6 @@
 -- Test for LikePerfectAffixRewritePass optimization in analyzer
 
+SET enable_analyzer = 1;
 SET optimize_rewrite_like_perfect_affix = 1;
 
 DROP TABLE IF EXISTS tab;

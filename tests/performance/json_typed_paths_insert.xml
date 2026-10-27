@@ -1,9 +1,4 @@
 <test>
-    <settings>
-        <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
-        <async_insert>0</async_insert>
-    </settings>
-
     <substitutions>
         <substitution>
             <name>json_map</name>

@@ -23,7 +23,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char rmt_cancel_removed_parts_check_pause_in_gap[];
-    extern const char check_table_inject_part_check_cancelled[];
 }
 
 namespace MergeTreeSetting
@@ -36,7 +35,6 @@ namespace ErrorCodes
 {
     extern const int TABLE_DIFFERS_TOO_MUCH;
     extern const int LOGICAL_ERROR;
-    extern const int ABORTED;
 }
 
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
@@ -407,9 +405,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
                 [this] { return need_stop.load(); },
                 throw_on_broken_projection);
 
-            bool cancelled = need_stop;
-            fiu_do_on(FailPoints::check_table_inject_part_check_cancelled, { cancelled = true; });
-            if (cancelled)
+            if (need_stop)
             {
                 result.status = {part_name, false, "Checking part was cancelled"};
                 result.action = ReplicatedCheckResult::Cancelled;
@@ -476,8 +472,7 @@ ReplicatedCheckResult ReplicatedMergeTreePartCheckThread::checkPartImpl(const St
 }
 
 
-CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
-    const String & part_name, std::optional<time_t> * recheck_after, bool throw_on_broken_projection, bool throw_if_cancelled)
+CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after, bool throw_on_broken_projection)
 {
     LOG_INFO(log, "Checking part {}", part_name);
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecks);
@@ -488,10 +483,6 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPartAndFix(
         case ReplicatedCheckResult::None: UNREACHABLE();
         case ReplicatedCheckResult::DoNothing: break;
         case ReplicatedCheckResult::Cancelled:
-            /// Nothing was learned about the part. A foreground `CHECK TABLE` has to fail rather than certify
-            /// the part as broken with `is_passed = 0`; `ABORTED` is retryable, so the query fails as a whole.
-            if (throw_if_cancelled)
-                throw Exception(ErrorCodes::ABORTED, "Checking part {} was cancelled by table shutdown", part_name);
             LOG_INFO(log, "Checking part was cancelled.");
             break;
 

@@ -57,17 +57,6 @@ inline ALWAYS_INLINE const uint8_t * getVarintChecked(const uint8_t * p, const u
     }
 }
 
-/// Returns the residual that the blocks of a stream in `mode` encode for `value`, which follows `prev` in the
-/// stream. `bulkEncode` and `EncodedBytesBound` share it, so that the bound always matches the encoding.
-template <Delta mode, typename T>
-inline ALWAYS_INLINE T deltaResidual(T value, T prev) noexcept
-{
-    if constexpr (mode == Delta::none)
-        return value;
-    else
-        return static_cast<T>(value - prev - (mode == Delta::d1 ? 1 : 0));
-}
-
 template <typename T>
 inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noexcept
 {
@@ -88,7 +77,7 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
             case Delta::d0:
                 for (unsigned i = 0; i < cnt; ++i)
                 {
-                    residuals[i] = deltaResidual<Delta::d0>(in[s + i], prev);
+                    residuals[i] = static_cast<T>(in[s + i] - prev);
                     prev = in[s + i];
                 }
                 block = residuals;
@@ -96,7 +85,7 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
             case Delta::d1:
                 for (unsigned i = 0; i < cnt; ++i)
                 {
-                    residuals[i] = deltaResidual<Delta::d1>(in[s + i], prev);
+                    residuals[i] = static_cast<T>(in[s + i] - prev - 1);
                     prev = in[s + i];
                 }
                 block = residuals;

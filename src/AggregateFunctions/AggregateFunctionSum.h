@@ -266,13 +266,9 @@ struct AggregateFunctionSumData
         Impl::add(sum, rhs.sum);
     }
 
-    static constexpr size_t serialized_size_bound = sizeof(AccumulateResult);
-
-    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
-    template <typename Out>
-    void write(Out & out) const
+    void write(WriteBuffer & buf) const
     {
-        writeBinaryLittleEndian(sum, out);
+        writeBinaryLittleEndian(sum, buf);
     }
 
     void read(ReadBuffer & buf)
@@ -414,14 +410,10 @@ struct AggregateFunctionSumKahanData
         mergeImpl(sum, compensation, rhs.sum, rhs.compensation);
     }
 
-    static constexpr size_t serialized_size_bound = sizeof(T) * 2;
-
-    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
-    template <typename Out>
-    void write(Out & out) const
+    void write(WriteBuffer & buf) const
     {
-        writeBinary(sum, out);
-        writeBinary(compensation, out);
+        writeBinary(sum, buf);
+        writeBinary(compensation, buf);
     }
 
     void read(ReadBuffer & buf)
@@ -451,7 +443,6 @@ public:
     static constexpr bool DateTime64Supported = false;
 
     using ColVecType = ColumnVectorOrDecimal<T>;
-    using ResultType = TResult;
 
     String getName() const override
     {
@@ -471,12 +462,6 @@ public:
         : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(getDecimalScale(data_type)))
     {}
 
-    /// For result types that are backed by `TResult` but are not `TResult` itself, such as the
-    /// `Interval` data types, which are backed by `Int64`.
-    AggregateFunctionSum(const DataTypes & argument_types_, const DataTypePtr & result_type_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, result_type_)
-    {}
-
     static DataTypePtr createResultType(UInt32 scale_)
     {
         if constexpr (!is_decimal<T>)
@@ -489,18 +474,6 @@ public:
     }
 
     bool allocatesMemoryInArena() const override { return false; }
-
-    /// The sum of unsigned integers qualifies for the `Subadditive` bound: the merged value is
-    /// the modular sum of the partial values, which never exceeds their saturating sum - even
-    /// when the accumulator wraps around. Signed and floating-point sums do not qualify
-    /// (negative addends break the bound), and neither do the decimal and wide-integer results
-    /// (the bound's arithmetic works on `UInt64` values).
-    MergedValueBound getMergedValueBound() const override
-    {
-        if constexpr (is_unsigned_v<T> && std::is_same_v<TResult, UInt64>)
-            return MergedValueBound::Subadditive;
-        return MergedValueBound::Unknown;
-    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -592,17 +565,6 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
-    {
-        return Data::serialized_size_bound;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const override
-    {
-        this->data(place).write(dst);
-        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override

@@ -29,15 +29,13 @@
         FROM numbers(100000000)
         FORMAT Null
     </query>
-    <!-- 'e' wins every row, so the result is one byte per row: with a wide result the timing depends on how often realloc has to copy it. -->
     <query>
         SELECT sum(length(greatest(
             toString(number),
             repeat('a', 256),
             repeat('b', 256),
             repeat('c', 256),
-            repeat('d', 256),
-            'e')))
+            repeat('d', 256))))
         FROM numbers(5000000)
         FORMAT Null
     </query>

@@ -11,7 +11,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/Progress.h>
+#if CLICKHOUSE_CLOUD
 #include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
+#endif
 
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/SettingsChanges.h>
@@ -64,7 +66,9 @@ private:
     VectorWithMemoryTracking<WorkerAddress> worker_addresses;
     UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
-    StatelessWorkerAllocationPtr worker_allocation;  /// Keeps the allocated workers alive for the query lifetime
+#if CLICKHOUSE_CLOUD
+    StatelessWorkerAllocationPtr worker_allocation;  /// Keeps leased workers alive for the query lifetime
+#endif
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
@@ -127,14 +131,9 @@ public:
     /// The driving source is done, finished or torn down. Called right before it reports the recorded
     /// failure: a failure recorded later is reported by whoever records it.
     void markExecutionFinished();
-    bool isExecutionFinished() const;
 
     /// Fires on every state change here and on every task reaching a terminal state.
     const StageWakeupPtr & getWakeup() const { return wakeup; }
-
-    /// Readable from the cancellation on and never drained, for a waiter that must leave `wakeup` to
-    /// the driving source.
-    int getCancelledFd() const { return cancelled_wakeup->fd(); }
 
 private:
     void rethrowIfFailedLocked() const TSA_REQUIRES(mutex);
@@ -146,7 +145,6 @@ private:
     FailureRank failure_rank TSA_GUARDED_BY(mutex) = FailureRank::Consequence;
     bool execution_finished TSA_GUARDED_BY(mutex) = false;
     StageWakeupPtr wakeup;
-    StageWakeupPtr cancelled_wakeup;
 };
 
 using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancellation>;
@@ -173,8 +171,6 @@ protected:
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
-
-    virtual bool waitsForFilterOnlyStages() const { return false; }
 
     void checkCancelled() const;
 
@@ -229,11 +225,9 @@ struct DistributedQueryTaskDescription
 /// while `object_storage_path` locates this node's persisted temporary files.
 /// `execute_locally` is true only when the whole query runs in-process on the initiator, false on a
 /// worker. It selects the exchange transport, so the caller must pass it (see `createExchangeLookup`).
-/// `on_failure` is called while the task's exception is handled and before the task frees its resources.
 void doExecuteTask(const DistributedQueryTaskDescription & task, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr,
-    std::function<void()> on_failure = nullptr);
+    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
 
 /// Returns object storage and path for temporary files
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);

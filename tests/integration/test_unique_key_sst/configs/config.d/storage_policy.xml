@@ -9,16 +9,6 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <persistent_removal_log>true</persistent_removal_log>
             </s3_disk>
-            <local_plain_disk>
-                <type>local</type>
-                <path>/var/lib/clickhouse/uk_sst_plain/</path>
-            </local_plain_disk>
-            <encrypted_disk>
-                <type>encrypted</type>
-                <disk>local_plain_disk</disk>
-                <path>encrypted/</path>
-                <key>1234567812345678</key>
-            </encrypted_disk>
         </disks>
         <policies>
             <!-- Extends the built-in `default` policy so a UNIQUE KEY table can

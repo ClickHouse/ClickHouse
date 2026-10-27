@@ -6,8 +6,6 @@
 #include <Storages/StatisticsDescription.h>
 #include <boost/core/noncopyable.hpp>
 
-#include <optional>
-
 namespace DB
 {
 
@@ -86,9 +84,6 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
-    /// Returns the exact number of bytes written by serialize(), if it can be computed
-    /// without serializing into a temporary buffer.
-    virtual std::optional<UInt64> getSerializedSize() const { return std::nullopt; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
@@ -102,28 +97,13 @@ public:
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
 
-    /// The approximate amount of memory retained by this object, including the object itself.
-    /// It is the weight of the object in the statistics cache, so it must not be underestimated.
-    /// It does not include the description of the statistics, see `descriptionAllocatedBytes`.
-    virtual size_t allocatedBytes() const = 0;
-
-    /// The memory retained by the description of the statistics (its AST), not including the object itself.
-    size_t descriptionAllocatedBytes() const { return stat.allocatedBytes(); }
-
     /// Returns true iff `other` can be safely merged into this statistics object.
     /// Incompatible state layouts (e.g. a Nullable vs non-Nullable column type change that
     /// shifts the aggregate-function state layout) should return false so that
     /// ColumnStatistics::structureEquals routes the part to a rebuild instead of a corrupt merge.
     virtual bool isCompatibleWith(const IStatistics &) const { return true; }
 
-    /// Makes this empty statistics object compatible with `other` (see `isCompatibleWith`), e.g. adopts
-    /// the set of sub-statistics of `other` deserialized from an older format.
-    virtual void copyStructureFrom(const IStatistics &) {}
-
 protected:
-    /// The memory allocated by a `Field` outside of the `Field` itself.
-    static size_t fieldAllocatedBytes(const Field & field);
-
     SingleStatisticsDescription stat;
 };
 
@@ -186,8 +166,6 @@ public:
 
     Estimate getEstimate() const;
     String getNameForLogs() const;
-    /// The approximate amount of memory retained by this object and its statistics objects.
-    size_t allocatedBytes() const;
     DataTypePtr getDataType() const { return stats_desc.data_type; }
 
     const StatsMap & getStats() const { return stats; }

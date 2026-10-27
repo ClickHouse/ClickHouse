@@ -8,7 +8,6 @@
 #include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
-#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -110,9 +109,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
 );
 
-/// Schedules the query on the background query pool. The returned future becomes ready once the query
-/// passes all the checks and starts its execution, or holds the exception thrown before that.
-std::future<void> executeQueryInBackground(std::string_view query, ContextMutablePtr context);
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
@@ -124,13 +121,11 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
 /// If the callback throws, its exception is rethrown after io.onFinish().
 void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
 
-/// Rewrites `allow_experimental_analyzer = 0` (`enable_analyzer = 0`) to `1` in every SETTINGS clause
-/// and `SET` query anywhere in the AST. The setting is obsolete and frozen at `1`; a disabling value is
-/// accepted for backward compatibility and replaced by the only supported one, so that it is neither
-/// applied to a subquery context nor stored in the definition of a view. Applied to every query at the
-/// start of processing; also used for generated queries that bypass `executeQuery`, such as in the
-/// `eval` table function.
-void normalizeAnalyzerSettings(ASTPtr ast);
+/// Throws if a SETTINGS clause anywhere in the query changes the `allow_experimental_analyzer`
+/// (`enable_analyzer`) setting to a value different from `context_value`: the analyzer cannot be
+/// switched in the middle of query processing. Applied to every query at the start of processing;
+/// also used for generated queries that bypass `executeQuery`, such as in the `eval` table function.
+void validateAnalyzerSettings(ASTPtr ast, bool context_value);
 
 /// Parses the query only to produce text with secrets hidden; returns an empty string if the query does not parse.
 String formatQueryForLogging(const String & query, const Settings & settings);

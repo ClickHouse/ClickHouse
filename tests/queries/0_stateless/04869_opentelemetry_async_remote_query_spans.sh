@@ -10,9 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # RemoteQueryExecutorReadContext fiber, which starts with an empty fiber-local tracing
 # context; it used to lose the trace there: no CLIENT span was created and
 # client_trace_context was not overridden, so the remote SERVER spans did not parent
-# under the initiator. Now the fiber runs inside the executor's fragment span
-# (`RemoteQueryExecutor::execute`): AsyncTaskExecutor seeds it with that span's tracing
-# context, so the CLIENT span and the remote subtree nest under the fragment span.
+# under the initiator. Now AsyncTaskExecutor seeds the fiber with the tracing context
+# of the thread that created it and covers each task execution with one span.
 
 function poll_spans
 {
@@ -46,7 +45,7 @@ function trace_counts_query
             -- CLIENT span for sending the remote query
             countIf(operation_name = 'Connection::sendQuery()' and kind = 'CLIENT'),
             -- span covering the fiber task execution
-            countIf(operation_name = 'RemoteQueryExecutor::execute'),
+            countIf(operation_name = 'RemoteQueryExecutorReadContext'),
             -- remote SERVER handler parented under the CLIENT span
             (select count()
                 from system.opentelemetry_span_log server_span,
@@ -79,27 +78,10 @@ for async_send in 0 1; do
         select
             if(countIf(operation_name = 'Connection::sendQuery()' and kind = 'CLIENT') >= 1,
                'sendQuery CLIENT span: OK', 'sendQuery CLIENT span: FAIL'),
-            if(countIf(operation_name = 'RemoteQueryExecutor::execute' and parent_span_id != 0) >= 1,
+            if(countIf(operation_name = 'RemoteQueryExecutorReadContext' and parent_span_id != 0) >= 1,
                'task span: OK', 'task span: FAIL')
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
-        format TSV
-    "
-
-    # The CLIENT span must descend from the fragment span, so the remote subtree is
-    # attributable to a shard. On the synchronous sending path the fragment span is a
-    # detached object, so this pins the ParentSpanGuard / span-id handover wiring.
-    ${CLICKHOUSE_CLIENT} -q "
-        with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-        select if(count() >= 1, 'CLIENT span parents under fragment span: OK',
-                                'CLIENT span parents under fragment span: FAIL')
-        from system.opentelemetry_span_log client_span,
-             system.opentelemetry_span_log fragment_span
-        where client_span.finish_date >= yesterday() and client_span.trace_id = t
-          and fragment_span.finish_date >= yesterday() and fragment_span.trace_id = t
-          and client_span.operation_name = 'Connection::sendQuery()' and client_span.kind = 'CLIENT'
-          and fragment_span.operation_name = 'RemoteQueryExecutor::execute'
-          and client_span.parent_span_id = fragment_span.span_id
         format TSV
     "
 
@@ -160,35 +142,6 @@ for async_send in 0 1; do
     "
 done
 
-# Fully synchronous path (async_socket_for_remote=0): the fragment span lives and dies as a
-# detached object, so the CLIENT span parentage depends solely on the ParentSpanGuard.
-echo "=== async_socket_for_remote=0 ==="
-
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
-
-${CLICKHOUSE_CLIENT} \
-    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
-    --async_socket_for_remote=0 \
-    --async_query_sending_for_remote=0 \
-    --use_hedged_requests=0 \
-    --query "select * from remote('127.0.0.2', system, one) format Null"
-
-poll_spans "$(trace_counts_query "$trace_id")" "1 1 1" || exit 1
-
-${CLICKHOUSE_CLIENT} -q "
-    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-    select if(count() >= 1, 'CLIENT span parents under fragment span: OK',
-                            'CLIENT span parents under fragment span: FAIL')
-    from system.opentelemetry_span_log client_span,
-         system.opentelemetry_span_log fragment_span
-    where client_span.finish_date >= yesterday() and client_span.trace_id = t
-      and fragment_span.finish_date >= yesterday() and fragment_span.trace_id = t
-      and client_span.operation_name = 'Connection::sendQuery()' and client_span.kind = 'CLIENT'
-      and fragment_span.operation_name = 'RemoteQueryExecutor::execute'
-      and client_span.parent_span_id = fragment_span.span_id
-    format TSV
-"
-
 # ConnectionEstablisherAsync and PacketReceiver (hedged requests) are Linux-only and are
 # covered separately by 04926_opentelemetry_hedged_remote_query_spans.
 
@@ -205,32 +158,28 @@ ${CLICKHOUSE_CLIENT} \
     --async_socket_for_remote=1 \
     --async_query_sending_for_remote=1 \
     --query_id "$kill_query_id" \
-    --function_sleep_max_microseconds_per_block=30000000 \
-    --query "select * from remote('127.0.0.2', view(select sleep(30) from system.one)) format Null" \
+    --function_sleep_max_microseconds_per_block=10000000 \
+    --query "select * from remote('127.0.0.2', view(select sleep(3) from system.one)) format Null" \
     >/dev/null 2>&1 &
 
-# Wait until the remote leg is in flight before killing: the non-initial `SELECT` appears in
+# Wait until the remote leg is in flight before killing: the non-initial entry appears in
 # system.processes (127.0.0.2 loops back to this same server) only after
 # Connection::sendQuery succeeded, and with async_query_sending_for_remote=1 sendQuery
-# runs inside the RemoteQueryExecutorReadContext fiber (span `RemoteQueryExecutor::execute`), so its presence proves the fiber
+# runs inside the RemoteQueryExecutorReadContext fiber, so its presence proves the fiber
 # is created and suspended. Waiting only for the initiator query would race with query
 # startup: a kill landing before the first resume finds no fiber to unwind and no task
-# span is ever emitted. `remote` over a view first sends a `DESC TABLE` to infer the
-# structure; that entry is non-initial too and does not mean the `SELECT` was sent.
+# span is ever emitted.
 for _retry in {1..100}; do
-    started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where initial_query_id = '$kill_query_id' and query_id != initial_query_id and query_kind = 'Select'")
+    started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where initial_query_id = '$kill_query_id' and query_id != initial_query_id")
     [[ "$started" -ge 1 ]] && break
     sleep 0.1
 done
 ${CLICKHOUSE_CLIENT} -q "kill query where query_id = '$kill_query_id' sync format Null"
 wait
-# `sleep` never polls the socket the initiator's cancel arrives on, and the KILL above matched only
-# the initiator's own process-list entry, so the remote leg keeps sleeping: end it explicitly.
-${CLICKHOUSE_CLIENT} -q "kill query where initial_query_id = '$kill_query_id' and query_id != initial_query_id sync format Null"
 
 poll_spans "
     with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-    select countIf(operation_name = 'RemoteQueryExecutor::execute' and attribute['clickhouse.cancelled'] = '1')
+    select countIf(operation_name = 'RemoteQueryExecutorReadContext')
     from system.opentelemetry_span_log
     where finish_date >= yesterday() and trace_id = t" "1" \
 || exit 1

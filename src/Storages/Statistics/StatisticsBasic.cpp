@@ -228,11 +228,6 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
     return static_cast<Float64>(default_count);
 }
 
-size_t StatisticsBasic::allocatedBytes() const
-{
-    return sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
-}
-
 String StatisticsBasic::getNameForLogs() const
 {
     String result = "Basic: ";
@@ -286,14 +281,6 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
     return tracks_numeric == other_basic->tracks_numeric
         && tracks_string == other_basic->tracks_string
         && has_default_count == other_basic->has_default_count;
-}
-
-void StatisticsBasic::copyStructureFrom(const IStatistics & other)
-{
-    const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
-    if (!other_basic)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy the structure of Basic statistics from a different type");
-    has_default_count = other_basic->has_default_count;
 }
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)

@@ -34,8 +34,7 @@ ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_zk_race"
 #
 # Use clickhouse-benchmark for maximum ZK operations/sec on a single session.
 # --timelimit ensures the test runs long enough for TSAN to catch the race.
-# `replicas` has a single child, so each query stays one list + one get request while keeping system.zookeeper_log small.
-echo "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH/replicas' FORMAT Null" | \
+echo "SELECT count() FROM system.zookeeper WHERE path = '$ZK_PATH' FORMAT Null" | \
     ${CLICKHOUSE_BENCHMARK} --concurrency 30 --iterations 100000 --timelimit 10 2>&1 | grep -q "Executed" || true
 
 echo "OK"

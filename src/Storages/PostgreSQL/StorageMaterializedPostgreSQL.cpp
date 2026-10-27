@@ -40,7 +40,6 @@
 #include <Storages/StoragePostgreSQL.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -707,10 +706,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `enable_materialized_postgresql_table` setting");
 
-        /// Checked before the storage is constructed: the constructor starts replication, which creates the publication
-        /// and the replication slot in PostgreSQL and the nested table, and a rejected `CREATE` would not remove them.
-        throwIfUnreplicatedTableDataNotAllowed(args);
-
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
@@ -769,10 +764,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
-        /// A definition stored by an older version, which did not check it, must still be loaded.
-        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
-            postgresql_replication_settings->checkConsistencyForFreshDefinition();
-
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
         /// where the nested table structure is derived from PostgreSQL.
@@ -793,7 +784,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     factory.registerStorage(
         "MaterializedPostgreSQL",
         creator_fn,
-        mysqlPostgreSQLSecretArguments(4),
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,

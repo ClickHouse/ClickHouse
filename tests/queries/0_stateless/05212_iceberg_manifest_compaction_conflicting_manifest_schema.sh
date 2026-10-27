@@ -59,7 +59,7 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fata
 
 echo "strict read"
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --iceberg_tolerate_conflicting_manifest_schemas=0 \
-    --optimize_trivial_count_query=0 --query "SELECT count() FROM ${TABLE}" 2>&1 \
+    --query "SELECT count() FROM ${TABLE}" 2>&1 \
     | grep -oF 'ICEBERG_SPECIFICATION_VIOLATION' | head -n1
 
 # Start from an empty processor again, so the compaction registers the schemas that came from the manifests first

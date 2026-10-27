@@ -169,13 +169,6 @@ namespace
     using SettingFieldRestoreWorkloadsAndResourcesCreationMode = SettingFieldRestoreAccessCreationMode;
 }
 
-#if CLICKHOUSE_CLOUD
-#define LIST_OF_CLOUD_RESTORE_SETTINGS(M) \
-    M(Bool, allow_local_dictionary_source)
-#else
-#define LIST_OF_CLOUD_RESTORE_SETTINGS(M)
-#endif
-
 /// List of restore settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_RESTORE_SETTINGS(M) \
     M(String, id) \
@@ -205,39 +198,19 @@ namespace
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
     M(Bool, restore_broken_parts_as_detached) \
-    LIST_OF_CLOUD_RESTORE_SETTINGS(M) \
     M(Bool, internal) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
     M(OptionalUUID, restore_uuid)
 
-namespace
-{
-    /// `allow_unresolved_access_dependencies` is the obsolete name of `skip_unresolved_access_dependencies`;
-    /// a reset of either drops both.
-    std::string_view canonicalRestoreSettingName(std::string_view name)
-    {
-        if (name == "allow_unresolved_access_dependencies")
-            return "skip_unresolved_access_dependencies";
-        return name;
-    }
-
-    /// The restore-specific names. The obsolete name above is kept out of the macro, so it is canonicalized
-    /// rather than listed.
-    constexpr std::string_view RESTORE_SPECIFIC_SETTING_NAMES[] = {
-#define RESTORE_SETTING_NAME(TYPE, NAME) #NAME,
-        LIST_OF_RESTORE_SETTINGS(RESTORE_SETTING_NAME)
-#undef RESTORE_SETTING_NAME
-    };
-}
 
 RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
 {
     RestoreSettings res;
 
+    if (query.settings)
     {
-        const auto & settings
-            = resolveDefaultedSettings(query, RESTORE_SPECIFIC_SETTING_NAMES, canonicalRestoreSettingName).changes;
+        const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
         for (const auto & setting : settings)
         {
 #define GET_RESTORE_SETTINGS_FROM_QUERY(TYPE, NAME) \
@@ -269,9 +242,36 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
     return res;
 }
 
-CoreSettingsFromQuery RestoreSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
+SettingsChanges RestoreSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
 {
-    return extractCoreSettings(query, RESTORE_SPECIFIC_SETTING_NAMES, canonicalRestoreSettingName);
+    SettingsChanges core;
+
+    if (!query.settings)
+        return core;
+
+    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+    for (const auto & setting : settings)
+    {
+        /// `allow_unresolved_access_dependencies` is an obsolete name handled
+        /// specially in `fromRestoreQuery`, so it is not part of
+        /// `LIST_OF_RESTORE_SETTINGS` and must be listed explicitly.
+        if (setting.name == "allow_unresolved_access_dependencies")
+            continue;
+
+        bool is_restore_specific = false;
+
+#define CHECK_RESTORE_SETTING_NAME(TYPE, NAME) \
+        if (setting.name == #NAME) \
+            is_restore_specific = true;
+
+        LIST_OF_RESTORE_SETTINGS(CHECK_RESTORE_SETTING_NAME)
+#undef CHECK_RESTORE_SETTING_NAME
+
+        if (!is_restore_specific)
+            core.emplace_back(setting);
+    }
+
+    return core;
 }
 
 void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
@@ -290,9 +290,6 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
-
-    /// No reset is sent, only the overrides it cancels are dropped, as in `BackupSettings::copySettingsToQuery`.
-    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())
         query_settings = nullptr;
@@ -329,7 +326,7 @@ std::map<String, String> RestoreSettings::getSerializedSettings() const
 
     /// Never expose the password; drop purely internal fields that are not user-facing settings
     /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).
-    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid", "allow_local_dictionary_source"})
+    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid"})
         res.erase(key);
 
     return res;

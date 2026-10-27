@@ -1,5 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: counts the `Create` queries in `query_log`, and on a replicated database every replica logs its own
 -- The values of custom HTTP headers of an `HTTP` dictionary source often carry credentials,
 -- so they must be hidden in `SHOW CREATE DICTIONARY`, `system.tables` and `system.query_log`,
 -- the same way as the password. They are hidden as a whole, header names included.

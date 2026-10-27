@@ -5,7 +5,8 @@
 -- COUNT(P) + COUNT(NOT P) + COUNT(P IS NULL) = COUNT(*).
 -- Correlated subqueries require the analyzer, so keep it enabled.
 
-SET allow_correlated_subqueries = 1;
+SET enable_analyzer = 1;
+SET allow_experimental_correlated_subqueries = 1;
 
 DROP TABLE IF EXISTS posts;
 DROP TABLE IF EXISTS comments;

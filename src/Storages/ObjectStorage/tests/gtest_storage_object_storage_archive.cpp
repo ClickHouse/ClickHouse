@@ -55,7 +55,7 @@ public:
         const DB::StoredObjects &,
         DB::StoredObjects *) override {}
 
-    void copyObject(
+    String copyObject(
         const DB::StoredObject &,
         const DB::StoredObject &,
         const DB::ReadSettings &,

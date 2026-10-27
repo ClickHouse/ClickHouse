@@ -42,8 +42,9 @@ FROM t;
 
 DROP TABLE t;
 
--- Time and Time64 are native types. A `Time` branch lifted to `Time64` cannot overflow, so the
--- if/multiIf compilability check keeps it on the compiled path and it reaches the same scale multiplier.
+-- Time and Time64 are native types, and the if/multiIf compilability check only
+-- refuses to compile a mix of Date with DateTime. A Time/Time64 mix trips neither
+-- predicate, so it stays on the compiled path and reaches the same scale multiplier.
 
 SELECT '--- Time to Time64 via if ---';
 
@@ -70,7 +71,7 @@ INSERT INTO t_cond VALUES (0, 0, 1, 2), (1, 0, 3, 4);
 SELECT if(c1 = c2, toTime('01:00:00'), toTime64('12:00:00.250', 3)) FROM t_cond
     SETTINGS log_comment = '03916_time_if_shape' FORMAT Null;
 
-SELECT multiIf(c1 = c2, toTime('01:00:00'), c1 > c2, toTime('02:00:00'), toTime64('12:00:00.250', 3)) FROM t_cond
+SELECT multiIf(c1 = c2, toTime('01:00:00'), c1 > c2, toTime64('02:00:00.5', 1), toTime64('12:00:00.250', 3)) FROM t_cond
     SETTINGS log_comment = '03916_time_multiif_shape' FORMAT Null;
 
 -- Controls: the same shapes over UInt32 compile in any build that has the embedded compiler,

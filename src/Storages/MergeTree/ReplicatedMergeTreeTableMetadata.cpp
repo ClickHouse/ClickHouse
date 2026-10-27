@@ -6,9 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -274,42 +272,34 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
         || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
         return result;
 
-    ParserIndexDeclarationList parser;
-    ASTPtr list = parseQuery(parser, result.skip_indices, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
     constexpr bool escape_index_filenames = true; /// Does not matter here, we re-serialize the parsed result
-    IndicesDescription explicit_indices;
+    auto parsed = IndicesDescription::parse(result.skip_indices, columns, escape_index_filenames, context);
+
     bool has_implicit = false;
-    for (const auto & index : list->children)
+    for (auto & index : parsed)
     {
-        const auto & index_name = index->as<ASTIndexDeclaration &>().name;
-        bool is_implicit = false;
-        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+        if (!index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+            continue;
+
+        String column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+        if (!columns.has(column_name))
+            continue;
+
+        const auto & col_type = columns.get(column_name).type;
+
+        /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
+        /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
+        /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
+        if ((add_minmax_index_for_numeric_columns && isNumber(col_type))
+            || (add_minmax_index_for_string_columns && isString(col_type)))
         {
-            String column_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
-            if (columns.has(column_name))
-            {
-                const auto & col_type = columns.get(column_name).type;
-
-                /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
-                /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
-                /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
-                is_implicit = ((add_minmax_index_for_numeric_columns && isNumber(col_type))
-                        || (add_minmax_index_for_string_columns && isString(col_type)))
-                    && index->formatWithSecretsOneLine() == createImplicitMinMaxIndexAST(column_name)->formatWithSecretsOneLine();
-            }
-        }
-
-        /// An implicit index is stripped without analyzing its expression, which may use an object that is gone.
-        if (is_implicit)
+            index.is_implicitly_created = true;
             has_implicit = true;
-        else
-            explicit_indices.emplace_back(IndexDescription::getIndexFromAST(
-                index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
+        }
     }
 
     if (has_implicit)
-        result.skip_indices = explicit_indices.explicitToString();
+        result.skip_indices = parsed.explicitToString();
 
     return result;
 }
@@ -524,7 +514,6 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
     new_metadata.columns = new_columns;
-    const bool columns_changed = new_metadata.columns != old_metadata.columns;
 
     if (!empty())
     {
@@ -606,7 +595,23 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     }
 
     if (new_metadata.partition_key.definition_ast != nullptr)
+    {
+        auto old_partition_key_sample_block = new_metadata.partition_key.sample_block;
         new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
+
+        /// If partition key expression structure changed we must rebuild minmax_count_projection,
+        /// otherwise it retains stale column types (e.g. plain Int8 instead of LowCardinality(Int8))
+        /// and the aggregation engine hits a type mismatch. See #100175.
+        if (new_metadata.minmax_count_projection
+            && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
+        {
+            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
+            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_key_ast.get());
+            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
+        }
+    }
 
     if (!sorting_key_changed) /// otherwise already updated
         new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, virtuals, context);
@@ -623,16 +628,6 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     {
         new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, virtuals, context);
         new_metadata.primary_key.definition_ast = nullptr;
-    }
-
-    /// Derived inputs and types can change even when the partition key output structure does not.
-    if (new_metadata.minmax_count_projection && columns_changed)
-    {
-        auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer::visit(partition_key_ast.get());
-        new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
     }
 
     if (!sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)

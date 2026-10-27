@@ -17,14 +17,12 @@ namespace ErrorCodes
 class SerializationSubObject final : public SimpleTextSerialization
 {
 private:
-    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const SerializationPtr & typed_shared_data_serialization_);
+    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
 
 public:
-    static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const SerializationPtr & typed_shared_data_serialization_);
+    static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
 
-    /// typed_paths_serializations_ holds the typed paths under the prefix that are not SHARED; the SHARED ones
-    /// are read together by typed_shared_data_serialization_, which is null when there are none.
-    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const SerializationPtr & typed_shared_data_serialization_);
+    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
@@ -80,7 +78,6 @@ private:
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
-    SerializationPtr typed_shared_data_serialization;
 };
 
 }

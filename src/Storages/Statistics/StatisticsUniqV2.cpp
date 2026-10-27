@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
-#include <IO/NullWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -62,18 +61,6 @@ void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
-}
-
-size_t StatisticsUniqV2::allocatedBytes() const
-{
-    /// The aggregate function state keeps its hash table or HyperLogLog counters on the heap, outside of the arena,
-    /// and there is no interface to get their size. A hash table is kept between a quarter and a half full, so its
-    /// buffer is up to four times larger than the serialized elements; the HyperLogLog counters take about as much
-    /// memory as their serialized form. Take the upper bound, so the cache does not grow over its limit.
-    NullWriteBuffer serialized;
-    collector->serialize(data, serialized);
-    serialized.finalize();
-    return sizeof(*this) + sizeof(Arena) + arena->allocatedBytes() + 4 * serialized.count();
 }
 
 bool StatisticsUniqV2::isCompatibleWith(const IStatistics & other) const

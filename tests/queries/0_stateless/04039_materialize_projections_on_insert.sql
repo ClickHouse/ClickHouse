@@ -8,14 +8,13 @@ CREATE TABLE t (
 
 SYSTEM STOP MERGES t;
 
--- async_insert=0: system.projection_parts is checked right after the INSERT; async flush would race.
 -- Default (= 1): projection is built during insert
-INSERT INTO t SELECT number, number FROM numbers(10) SETTINGS async_insert = 0;
+INSERT INTO t SELECT number, number FROM numbers(10);
 SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't' AND active;
 
 -- Disabled (= 0): projection is NOT built during insert
 ALTER TABLE t MODIFY SETTING materialize_projections_on_insert = 0;
-INSERT INTO t SELECT number + 100, number FROM numbers(10) SETTINGS async_insert = 0;
+INSERT INTO t SELECT number + 100, number FROM numbers(10);
 -- Still 1: the second part has no projection
 SELECT count() FROM system.projection_parts WHERE database = currentDatabase() AND table = 't' AND active;
 

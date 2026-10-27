@@ -1,4 +1,5 @@
 -- { echoOn }
+set enable_analyzer=1;
 SYSTEM STOP MERGES tbl;
 
 -- simple test case

@@ -6,28 +6,15 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Common/quoteString.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool parallel_replicas_plan_based;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-/// Plan-based parallel replicas build an ordinary local plan and only later, in
-/// `QueryPlanOptimizations::applyParallelReplicas`, serialize a fragment of it for the replicas.
-static bool mayShipPlanFragmentToParallelReplicas(const ContextPtr & context)
-{
-    return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
 }
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
@@ -92,14 +79,12 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
     , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
-    , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(planner_context_->global_planner_context)
     , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
-    , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)

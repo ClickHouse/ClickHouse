@@ -15,7 +15,9 @@ Cette page répertorie toutes les métriques exposées par le
 [endpoint Prometheus de ClickHouse Managed Postgres](/fr/products/managed-postgres/monitoring/prometheus).
 Pour la configuration et l’authentification, consultez la page [endpoint Prometheus].
 
-## Labels communs {#common-labels}
+<div id="common-labels">
+  ## Labels communs
+</div>
 
 Chaque métrique comporte les labels suivants :
 
@@ -29,7 +31,9 @@ Certaines métriques ajoutent un label pour la dimension selon laquelle elles so
 `mode` pour les métriques CPU, `state` pour les connexions, `database` pour la
 taille de la base de données). Ces labels sont indiqués à côté de chaque métrique.
 
-## Métrique d’information {#information-metric}
+<div id="information-metric">
+  ## Métrique d’information
+</div>
 
 `PostgresServiceInfo` est une métrique de type gauge toujours égale à `1`, dont les label portent le
 statut actuel et la version du service. Utilisez-la pour joindre le
@@ -44,7 +48,9 @@ statut à d’autres métriques ou pour déclencher une alerte lorsqu’un servi
 (par exemple `running`, `creating`, `stopped`). `postgres_version`
 indique la version majeure de Postgres (par ex. `17`, `18`).
 
-## Capacité {#capacity}
+<div id="capacity">
+  ## Capacité
+</div>
 
 Limites statiques provisionnées pour le service. Elles ne changent que lorsque le
 service est redimensionné.
@@ -55,7 +61,9 @@ service est redimensionné.
 | `PostgresServer_MemoryLimitBytes`  | gauge | bytes | Mémoire allouée au service.   |
 | `PostgresServer_StorageLimitBytes` | gauge | bytes | Stockage alloué au service.   |
 
-## Utilisation des ressources {#resource-utilization}
+<div id="resource-utilization">
+  ## Utilisation des ressources
+</div>
 
 | Métrique                               | Type     | label supplémentaires | Description                                                                                                   |
 | -------------------------------------- | -------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
@@ -68,7 +76,9 @@ Pour calculer l’utilisation du CPU en pourcentage, calculez le taux de
 `PostgresServer_CPUSeconds_Total` pour les modes qui vous intéressent, puis
 divisez-le par `PostgresServer_CPUCores`.
 
-## E/S disque et réseau {#io}
+<div id="io">
+  ## E/S disque et réseau
+</div>
 
 | Métrique                                    | Type     | Unité | Description                                      |
 | ------------------------------------------- | -------- | ----- | ------------------------------------------------ |
@@ -77,7 +87,9 @@ divisez-le par `PostgresServer_CPUCores`.
 | `PostgresServer_NetworkReceiveBytes_Total`  | compteur | bytes | Octets reçus via le réseau.                      |
 | `PostgresServer_NetworkTransmitBytes_Total` | compteur | bytes | Octets transmis via le réseau.                   |
 
-## Activité de la base de données {#database-activity}
+<div id="database-activity">
+  ## Activité de la base de données
+</div>
 
 Compteurs cumulés depuis le démarrage du service. Utilisez `rate()` ou `irate()` pour
 obtenir des valeurs par seconde.
@@ -92,28 +104,9 @@ obtenir des valeurs par seconde.
 | `PostgresServer_TransactionsRolledBack_Total` | compteur | Transactions annulées.              |
 | `PostgresServer_Deadlocks_Total`              | compteur | Interblocages détectés.             |
 
-## Performance des requêtes {#query-performance}
-
-Compteurs issus des événements enregistrés par Query Insights, à l&#39;exclusion des opérations `UTILITY`.
-
-| Métrique                                   | Type    | Unité         | Description                                                                                 |
-| ------------------------------------------ | ------- | ------------- | ------------------------------------------------------------------------------------------- |
-| `PostgresQuery_Calls_Total`                | compteur | événements    | Événements de requête enregistrés.                                                          |
-| `PostgresQuery_DurationMicroseconds_Total` | compteur | microsecondes | Durée totale des requêtes enregistrées.                                                     |
-| `PostgresQuery_ErrorEvents_Total`          | compteur | événements    | Événements enregistrés dont la sévérité d&#39;erreur est non nulle, avertissements compris. |
-| `PostgresQuery_FailureEvents_Total`        | compteur | événements    | Événements enregistrés dont la sévérité est `ERROR` ou supérieure.                          |
-| `PostgresQuery_Rows_Total`                 | compteur | lignes        | Lignes renvoyées ou affectées par les requêtes enregistrées.                                |
-| `PostgresQuery_SharedBlocksHit_Total`      | compteur | blocs         | Blocs partagés servis depuis le cache pour les requêtes enregistrées.                       |
-| `PostgresQuery_SharedBlocksRead_Total`     | compteur | blocs         | Blocs partagés lus par les requêtes enregistrées.                                           |
-| `PostgresQuery_WALBytes_Total`             | compteur | octets        | Octets WAL générés par les requêtes enregistrées.                                           |
-| `PostgresQuery_SelectCalls_Total`          | compteur | événements    | Événements `SELECT` enregistrés.                                                            |
-| `PostgresQuery_InsertCalls_Total`          | compteur | événements    | Événements `INSERT` enregistrés.                                                            |
-| `PostgresQuery_UpdateCalls_Total`          | compteur | événements    | Événements `UPDATE` enregistrés.                                                            |
-| `PostgresQuery_DeleteCalls_Total`          | compteur | événements    | Événements `DELETE` enregistrés.                                                            |
-| `PostgresQuery_MergeCalls_Total`           | compteur | événements    | Événements `MERGE` enregistrés.                                                             |
-| `PostgresQuery_OtherCalls_Total`           | compteur | événements    | Événements enregistrés autres que `SELECT`, `INSERT`, `UPDATE`, `DELETE` et `MERGE`.        |
-
-## Connexions, cache et taille de la base de données {#connections-cache-size}
+<div id="connections-cache-size">
+  ## Connexions, cache et taille de la base de données
+</div>
 
 | Métrique                           | Type  | label supplémentaires | Description                                                                                                                                                  |
 | ---------------------------------- | ----- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -121,7 +114,9 @@ Compteurs issus des événements enregistrés par Query Insights, à l&#39;exclu
 | `PostgresServer_CacheHitRatio`     | gauge |                          | Taux de réussite du cache tampon : pourcentage de blocs servis depuis le cache par rapport au nombre total de blocs accédés.                                 |
 | `PostgresServer_DatabaseSizeBytes` | gauge | `database`               | Taille sur disque de chaque base de données, en octets. Inclut la base `postgres` par défaut ainsi que toutes les bases de données créées par l’utilisateur. |
 
-## Pages associées {#related}
+<div id="related">
+  ## Pages associées
+</div>
 
 * [Endpoint Prometheus] — configuration, authentification et scraping
 * [Tableau de bord](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés à la console cloud

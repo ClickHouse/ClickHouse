@@ -23,7 +23,6 @@
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -322,9 +321,6 @@ Field ColumnDynamic::operator[](size_t n) const
 
 void ColumnDynamic::get(size_t n, Field & res) const
 {
-    /// Object, Dynamic and Variant values nest into each other to a depth that comes from the data, not from the declared type.
-    checkStackSize();
-
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())

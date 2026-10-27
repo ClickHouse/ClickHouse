@@ -7,6 +7,7 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/ko/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -222,36 +223,15 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
   JWT는 항상 HTTPS를 통해 전송하십시오. 일반 HTTP로 전송된 Bearer 토큰은 네트워크 경로상의 누구에게나 노출될 수 있으며, 이는 자격 증명을 유출하는 것과 같습니다.
 </Warning>
 
-### OAuth2 디바이스 코드 로그인 {#oauth2-device-code-login}
+<div id="oauth2-device-code-login">
+  ### OAuth2 디바이스 코드 로그인
+</div>
 
-`clickhouse-client`는 `--login` 플래그를 통해 대화형 OAuth 2.0 디바이스 권한 부여(device authorization grant)([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628))를 지원합니다.
-
-ClickHouse Cloud 엔드포인트에 연결할 때 `--oauth-*` 옵션을 지정하지 않으면, 클라이언트는 ClickHouse Cloud IdP로 로그인한 뒤 자동으로 토큰 교환(token exchange)을 수행하여 ClickHouse 전용 JWT를 발급받습니다. 토큰은 세션 중에 사용자가 인지하지 못하는 사이 자동으로 갱신됩니다. 새 토큰을 발급받으면 클라이언트가 자동으로 다시 연결됩니다.
+`clickhouse-client`는 `--login` 플래그를 통해 대화형 OAuth2 디바이스 코드 인증 흐름을 지원합니다. ClickHouse Cloud endpoint의 경우, 클라이언트는 ClickHouse 전용 JWT를 얻기 위해 자동으로 토큰 교환을 수행합니다. 토큰은 세션 중 자동으로 갱신됩니다. 새 토큰을 받으면 클라이언트가 자동으로 재연결됩니다.
 
 ```bash
 clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
-
-사용자 정의 IdP를 사용하려면 OIDC issuer를 `--oauth-url`로 전달하십시오. `--oauth-*` 옵션을 하나라도 전달하면 ClickHouse Cloud 호스트에서도 사용자 정의 IdP 흐름이 사용됩니다(예: 서비스에 [사용자 지정 IdP(Identity Provider)를 사용한 JWT 인증](#enabling-jwt-authentication-for-your-service)이 활성화된 경우). 클라이언트는 issuer의 `/.well-known/openid-configuration`(및 관련 OAuth 메타데이터 URL)에서 `device_authorization_endpoint`와 `token_endpoint`를 찾습니다. `grant_types_supported`가 있는 경우 여기에 `urn:ietf:params:oauth:grant-type:device_code`가 반드시 포함되어야 합니다. 디스커버리에 실패하면 클라이언트가 오류를 보고합니다. 메타데이터를 사용할 수 없을 때는 `--oauth-device-uri`와 `--oauth-token-uri`를 모두 명시적으로 설정하십시오.
-
-로그인 과정에서 클라이언트는 짧은 `verification_uri`와 `user_code`(RFC 8628)를 출력합니다. IdP가 `verification_uri_complete`도 반환하면 해당 바로 가기 URL을 출력하고 브라우저에서 열며, `qrencode` 도구를 사용할 수 있으면 터미널에 QR 코드로도 표시합니다. ClickHouse Cloud IdP에서는 `verification_uri_complete`와 `user_code`만 출력됩니다. 기밀 클라이언트(Confidential Client)는 `--oauth-client-secret`을 `--oauth-client-auth basic|post`와 함께 전달할 수 있습니다.
-
-```bash
-# Microsoft Entra ID (issuer URL, not the device endpoint itself)
-clickhouse-client --host your-clickhouse-host --secure --login \
-  --oauth-client-id <app-client-id> \
-  --oauth-url https://login.microsoftonline.com/<TENANT_ID>/v2.0 \
-  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
-
-# Explicit endpoints when discovery is unavailable
-clickhouse-client --host your-clickhouse-host --secure --login \
-  --oauth-client-id <app-client-id> \
-  --oauth-device-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/devicecode \
-  --oauth-token-uri https://login.microsoftonline.com/<TENANT_ID>/oauth2/v2.0/token \
-  --oauth-scope "openid profile offline_access api://<app-client-id>/.default"
-```
-
-발급된 액세스 토큰(access token)은 JWT 형태로 ClickHouse에 전달됩니다. 역할 및 권한 부여 매핑은 여전히 서버 측 JWT 인증자 구성(예: `clickhouse:roles` 클레임)에 따라 결정됩니다.
 
 <div id="clickhouse-cloud-built-in">
   ## ClickHouse Cloud 내장 JWT 인증자
@@ -273,11 +253,13 @@ clickhouse-client --host your-clickhouse-host --secure --login \
   ## 서비스에 JWT 인증 활성화하기
 </div>
 
+<BetaBadge />
+
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="사용자 지정 IdP(Identity Provider)를 통한 JWT 인증" />
 
-기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있습니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
+기본 제공 인증자 외에도 자체 IdP(Identity Provider)(예: Microsoft Entra 또는 Okta)가 발급한 JWT를 허용하도록 ClickHouse Cloud 서비스를 구성할 수 있습니다. 이 기능은 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 Enterprise 플랜으로 이용할 수 있는 베타 기능입니다. **설정 → Security → JWT 인증**에서 Cloud Console을 통해 직접 구성할 수 있습니다. 단계별 지침은 [JWT 인증 설정](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)을 참조하십시오. 각 IdP(Identity Provider)는 다음으로 정의됩니다.
 
 | 매개변수          | 설명                                                                                                                                                                                                                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

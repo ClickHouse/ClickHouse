@@ -13,6 +13,7 @@
 -- produced `Nullable(Int64)` instead of the declared `Variant(Int64, UInt64)`,
 -- triggering the assertion in `executeActionForPartialResult` at planning time.
 
+SET enable_analyzer = 1;
 SET allow_experimental_variant_type = 1;
 SET use_variant_as_common_type = 1;
 
@@ -55,6 +56,6 @@ SELECT (
 FROM t_issue_105649 AS t
 ORDER BY t.a
 LIMIT 5
-SETTINGS allow_correlated_subqueries = 1;
+SETTINGS allow_experimental_correlated_subqueries = 1;
 
 DROP TABLE t_issue_105649;

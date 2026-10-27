@@ -6,8 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <optional>
-#include <type_traits>
-#include <utility>
+
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
@@ -22,40 +21,19 @@
 namespace DB
 {
 
-/// What the functions fitting a line to the samples in each window return for a grid point.
-enum class TimeseriesLinearRegressionReturnKind : UInt8
-{
-    Slope,          /// `timeSeriesDerivToGrid`: the slope per second.
-    Prediction,     /// `timeSeriesPredictLinearToGrid`: the value of the line at the grid point's timestamp plus a fixed `predict_offset`.
-    InterceptAndSlope,   /// `timeSeriesLinearRegressionToGrid`: both the value of the line at the grid point's timestamp (`intercept`) and the
-                    /// slope per second, so that the prediction for any offset is `intercept + slope * offset` (used by the PromQL
-                    /// `predict_linear` with a per-step offset).
-};
-
-template <typename TimestampType_, typename ValueType_, TimeseriesLinearRegressionReturnKind return_kind_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_predict_>
 struct AggregateFunctionTimeseriesLinearRegressionTraits
 {
-    static constexpr TimeseriesLinearRegressionReturnKind return_kind = return_kind_;
-    using GridScaleTimestampType = DateTime64;
-    using TimestampType = TimestampType_;
-    using ValueType = ValueType_;
+    static constexpr bool is_predict = is_predict_;
 
-    /// The results are calculated with double precision.
-    using ResultType = std::conditional_t<return_kind == TimeseriesLinearRegressionReturnKind::InterceptAndSlope, std::pair<Float64, Float64>, Float64>;
+    using TimestampType = TimestampType_;
+    using IntervalType = IntervalType_;
+    using ValueType = ValueType_;
+    using ResultType = ValueType_;
 
     static String getName()
     {
-        if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Slope)
-            return "timeSeriesDerivToGrid";
-        else if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Prediction)
-            return "timeSeriesPredictLinearToGrid";
-        else
-            return "timeSeriesLinearRegressionToGrid";
-    }
-
-    static Strings getResultTupleElementNames() requires (return_kind == TimeseriesLinearRegressionReturnKind::InterceptAndSlope)
-    {
-        return {"intercept", "slope"};
+        return is_predict ? "timeSeriesPredictLinearToGrid" : "timeSeriesDerivToGrid";
     }
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
@@ -76,8 +54,6 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
         /// The samples' timestamps are centered on a common base (the grid start) before accumulating,
         /// so x stays small. The centering is necessary because otherwise a raw `DateTime64(9)` timestamp (~1.7e18)
         /// would exceed the Float64 mantissa, so distinct timestamps collapse to the same x.
-        /// The timestamps keep the type of the input columns (`base` has the same type), the slope is converted to seconds
-        /// in `Aggregator::getResult`. The subtraction is done in Int128 to be overflow-safe for any timestamps.
         void add(TimestampType timestamp, ValueType value, TimestampType base)
         {
             const Float64 x = static_cast<Float64>(
@@ -117,37 +93,17 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
     /// running combine over the window in a `SlidingSum` (two-stacks or recompute, chosen by `createAggregator`).
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
-
-        /// The start of the grid converted to the type of the input columns: the samples are centered on it.
-        /// Any fixed origin works for the centered moments, the conversion is taken into account in `getResult`.
+        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
         TimestampType base;
-        Float64 predict_offset;         /// In seconds, can be non-finite.
-        Int64 column_to_grid_multiplier;
-        Int64 column_ticks_per_second;  /// Converts the slope per tick of the input columns to the slope per second.
-        GridScaleTimestampType base_in_grid_scale;  /// `base` at the scale of the grid (`base * column_to_grid_multiplier`); fits in Int64 because `base` is `grid_start` divided by the multiplier.
+        Float64 predict_offset;
+        TimestampType timestamp_scale_multiplier;
 
-        Aggregator(size_t stack_size, GridScaleTimestampType grid_start_, Float64 predict_offset_, Int64 column_to_grid_multiplier_, Int64 column_ticks_per_second_)
-            : sliding_sum(stack_size), base(getBase(grid_start_, column_to_grid_multiplier_))
-            , predict_offset(predict_offset_)
-            , column_to_grid_multiplier(column_to_grid_multiplier_), column_ticks_per_second(column_ticks_per_second_)
-            , base_in_grid_scale(static_cast<GridScaleTimestampType>(static_cast<Int64>(base) * column_to_grid_multiplier_))
+        Aggregator(size_t stack_size, TimestampType base_, Float64 predict_offset_, TimestampType timestamp_scale_multiplier_)
+            : sliding_sum(stack_size), base(base_), predict_offset(predict_offset_), timestamp_scale_multiplier(timestamp_scale_multiplier_)
         {
         }
 
-        /// Converts the start of the grid to the type of the input columns, rounding towards zero.
-        /// The grid can start outside the range of the type (for example, before 1970 for UInt32), then the nearest
-        /// representable timestamp is used: the samples are in the range, so their distances to it stay exact in Float64.
-        static TimestampType getBase(GridScaleTimestampType grid_start, Int64 column_to_grid_multiplier)
-        {
-            const Int64 base = static_cast<Int64>(grid_start) / column_to_grid_multiplier;
-            if constexpr (std::is_integral_v<TimestampType>)
-                return static_cast<TimestampType>(std::clamp<Int64>(base, std::numeric_limits<TimestampType>::min(), std::numeric_limits<TimestampType>::max()));
-            else
-                return TimestampType(base);
-        }
-
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
             /// Preaggregate the bucket's samples into centered moments; the accumulation is order-independent, so any iteration order would do.
             Summary summary;
@@ -158,63 +114,43 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
             add(std::move(summary), bucket_end_timestamp);
         }
 
-        void add(Summary summary, GridScaleTimestampType bucket_end_timestamp)
+        void add(Summary summary, TimestampType bucket_end_timestamp)
         {
             if (summary.count == 0)
                 return;
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(GridScaleTimestampType cut_off)
+        void removeBefore(TimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType grid_timestamp) const
+        std::optional<ValueType> getResult(TimestampType grid_timestamp) const
         {
-            const Summary & combined = sliding_sum.getCurrentSum();
+            const Summary combined = sliding_sum.getCurrentSum();
             if (combined.count < 2 || combined.m2_x == 0)
                 return std::nullopt;
 
-            /// The slope of the line per tick of the input columns, and per second.
-            const Float64 slope_per_column_tick = combined.c_xy / combined.m2_x;
-            const Float64 slope_per_second = slope_per_column_tick * static_cast<Float64>(column_ticks_per_second);
+            const Float64 slope = combined.c_xy / combined.m2_x;
+            if (!is_predict)
+                return static_cast<ValueType>(slope * static_cast<Float64>(timestamp_scale_multiplier));
 
-            if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Slope)
-            {
-                return slope_per_second;
-            }
-            else
-            {
-                /// The grid point in the centered coordinates of the samples (ticks of the input columns counted from `base`):
-                /// the distance is calculated exactly in Int128 at the scale of the grid to be overflow-safe, then converted.
-                const Float64 grid_x = static_cast<Float64>(
-                    static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - static_cast<Int128>(static_cast<Int64>(base_in_grid_scale)))
-                    / static_cast<Float64>(column_to_grid_multiplier);
-
-                if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Prediction)
-                {
-                    /// Line y = slope_per_column_tick * x + intercept with x centered on `base`; extrapolate to `grid_timestamp + predict_offset`
-                    /// expressed in the same centered coordinates. The offset is added in Float64, so Inf or NaN propagates to the result like in PromQL.
-                    const Float64 intercept_at_base = combined.mean_y - slope_per_column_tick * combined.mean_x;
-                    const Float64 predict_x = grid_x + predict_offset * static_cast<Float64>(column_ticks_per_second);
-                    return slope_per_column_tick * predict_x + intercept_at_base;
-                }
-                else
-                {
-                    /// The returned intercept is the one with time counted from the grid point, i.e. the value of the line
-                    /// there. This is how Prometheus's linearRegression() defines the intercept it returns.
-                    const Float64 intercept_at_grid_point = combined.mean_y + slope_per_column_tick * (grid_x - combined.mean_x);
-                    return ResultType{intercept_at_grid_point, slope_per_second};
-                }
-            }
+            /// Line y = slope * x + intercept with x centered on `base`; extrapolate to `grid_timestamp +
+            /// predict_offset`, expressed in the same centered coordinates (subtract `base` in `Int128`).
+            const Float64 intercept = combined.mean_y - slope * combined.mean_x;
+            const Float64 predict_x = static_cast<Float64>(
+                static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - static_cast<Int128>(static_cast<Int64>(base)))
+                + predict_offset;
+            const Float64 predicted = slope * predict_x + intercept;
+            return static_cast<ValueType>(predicted);
         }
     };
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 4;
+    static constexpr UInt16 FORMAT_VERSION = 3;
 
     /// `getStackSizeForTwoStacks` switches to the two-stack queue once the average number of populated buckets
     /// in a window reaches this value; below it, recomputing the window each grid point is cheaper. The
@@ -233,52 +169,50 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
 };
 
 
-template <typename TimestampType_, typename ValueType_, TimeseriesLinearRegressionReturnKind return_kind_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_predict_>
 class AggregateFunctionTimeseriesLinearRegression final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesLinearRegression<TimestampType_, ValueType_, return_kind_>,
-        AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, ValueType_, return_kind_>>
+        AggregateFunctionTimeseriesLinearRegression<TimestampType_, IntervalType_, ValueType_, is_predict_>,
+        AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, IntervalType_, ValueType_, is_predict_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, ValueType_, return_kind_>;
+    using Traits = AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, IntervalType_, ValueType_, is_predict_>;
 
-    static constexpr TimeseriesLinearRegressionReturnKind return_kind = Traits::return_kind;
+    static constexpr bool is_predict = Traits::is_predict;
 
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesLinearRegression, Traits>;
-    using Base::Base;
-    using GridScaleTimestampType = typename Base::GridScaleTimestampType;
-    using GridScaleIntervalType = typename Base::GridScaleIntervalType;
+    using TimestampType = typename Traits::TimestampType;
+    using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
     using Aggregator = typename Traits::Aggregator;
 
-    /// Constructor for timeSeriesPredictLinearToGrid (return_kind = Prediction).
-    /// The other functions reach the base constructor via `using Base::Base` above,
-    /// it takes the same arguments except predict_offset_.
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesLinearRegression, Traits>;
+    using Base::Base;
+
+    /// Constructor for timeSeriesPredictLinearToGrid (is_predict = true).
+    /// For timeSeriesDerivToGrid (is_predict = false) it reaches the base constructor via `using Base::Base` above.
+    /// The base constructor takes the same arguments except predict_offset_.
     explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_, const Array & parameters_,
-        GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, GridScaleIntervalType grid_step_, GridScaleIntervalType window_, UInt32 grid_scale_,
-        UInt32 column_timestamp_scale_, Float64 predict_offset_)
-        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, window_, grid_scale_, column_timestamp_scale_)
+        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 predict_offset_)
+        : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
         , predict_offset(predict_offset_)
     {
     }
 
     Aggregator createAggregator(size_t stack_size_for_two_stacks) const
     {
-        return Aggregator{stack_size_for_two_stacks, Base::grid_start, predict_offset, Base::column_to_grid_multiplier, Base::column_ticks_per_second};
+        return Aggregator{stack_size_for_two_stacks, Base::start_timestamp, predict_offset, Base::timestamp_scale_multiplier};
     }
 
 protected:
-    const Float64 predict_offset{};    /// Predict offset in seconds used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value
+    const Float64 predict_offset{};    /// Predict offset used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value
 };
 
-/// Each SQL function as a template with its variant baked in, so registration names the function directly.
-template <typename TimestampType, typename ValueType>
-using AggregateFunctionTimeseriesDerivToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, ValueType, TimeseriesLinearRegressionReturnKind::Slope>;
+/// Each SQL function as a 3-argument template with its is_predict variant baked in, so registration names the
+/// function directly.
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesDerivToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, false>;
 
-template <typename TimestampType, typename ValueType>
-using AggregateFunctionTimeseriesPredictLinearToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, ValueType, TimeseriesLinearRegressionReturnKind::Prediction>;
-
-template <typename TimestampType, typename ValueType>
-using AggregateFunctionTimeseriesLinearRegressionToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, ValueType, TimeseriesLinearRegressionReturnKind::InterceptAndSlope>;
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesPredictLinearToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, true>;
 
 }
