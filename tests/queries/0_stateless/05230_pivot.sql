@@ -176,11 +176,9 @@ SELECT
 SETTINGS max_query_size = 1024;
 
 -- Expansion-only aggregate arguments cannot be resolved into implicit grouping exclusions.
-SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
-PIVOT (sum(COLUMNS('^v$')) FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2)) PIVOT (sum(COLUMNS('^v$')) FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
 
-SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
-PIVOT (sum(* EXCEPT(k)) FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
+SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2)) PIVOT (sum(* EXCEPT(k)) FOR k IN ('a' AS a)); -- { clientError SYNTAX_ERROR }
 
 -- Plain count(*) is still a supported aggregate with no measure column.
 SELECT a FROM (SELECT k FROM values('k String, v UInt64', ('a', 1), ('a', 2)))
