@@ -363,9 +363,12 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     ColumnWithTypeAndName result;
     if (!mask_info.has_ones)
     {
-        /// If mask contains only zeros, we can just create a column with default values as it will be ignored
+        /// If mask contains only zeros, we can just create a column with default values as it will be ignored.
+        /// But it is still converted together with other columns, so the values must be valid values of the type.
         auto result_type = column_function->getResultType();
-        auto default_column = result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
+        auto default_column = hasInvalidColumnDefault(*result_type)
+            ? result_type->createColumnConst(original_size, getValidFillValue(*result_type))->convertToFullColumnIfConst()
+            : result_type->createColumnConstWithDefaultValue(original_size)->convertToFullColumnIfConst();
         column = {default_column, result_type, ""};
     }
     else if (mask_info.has_zeros)
