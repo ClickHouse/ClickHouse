@@ -176,8 +176,7 @@ public:
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
-    /// The sharding key analyzed for `columns`, which a query may have taken before or after a concurrent `ALTER`.
-    /// Null without a sharding key.
+    /// The sharding key analyzed for `columns`; null without a sharding key.
     DistributedShardingKeyPtr getAnalyzedShardingKey(const ColumnsDescription & columns) const;
     const String & getRelativeDataPath() const { return relative_data_path; }
 
