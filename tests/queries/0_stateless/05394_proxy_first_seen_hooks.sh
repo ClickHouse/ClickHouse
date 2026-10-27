@@ -96,11 +96,11 @@ READY=0
 for _ in $(seq 1 5); do
     if start_proxy; then READY=1; break; fi
     # A build without the fiber framework will never come up; do not retry it.
-    if grep -qiE "silk|SUPPORT_IS_DISABLED" "$LOG"; then break; fi
+    if grep -qF "the silk fiber framework, which is only available on Linux" "$LOG"; then break; fi
 done
 
 if [ "$READY" -ne 1 ]; then
-    if grep -qiE "silk|SUPPORT_IS_DISABLED" "$LOG"; then
+    if grep -qF "the silk fiber framework, which is only available on Linux" "$LOG"; then
         # The proxy is not available in this build; emit the expected output so the test passes.
         cat "$CUR_DIR/05394_proxy_first_seen_hooks.reference"
         exit 0

@@ -101,12 +101,14 @@ if not proc:
 def run(packet, count):
     with received:
         hits.clear()
-    for _ in range(count):
+    for i in range(count):
+        # Known before sending: a backend may count the request before this thread gets the lock.
+        expected = i + 1
         conn = socket.create_connection(('127.0.0.1', port), timeout=10)
         conn.sendall(packet)
         with received:
-            expected = sum(hits.values()) + 1
-            received.wait_for(lambda: sum(hits.values()) >= expected, timeout=30)
+            if not received.wait_for(lambda: sum(hits.values()) >= expected, timeout=30):
+                print(f'connection {expected} did not reach a backend')
         conn.close()
     with received:
         return sorted(hits.values())
