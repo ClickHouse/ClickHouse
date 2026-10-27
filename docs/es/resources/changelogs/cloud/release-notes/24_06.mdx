@@ -124,7 +124,7 @@ Cambios relevantes para los servicios de ClickHouse Cloud de la versión v24.6.
 * Se corrige un error: no se puede encontrar la columna en consultas distribuidas con un CTE constante en la clave de GROUP BY. #64519 (Nikolai Kochetov).
 * Se corrige la salida de la función formatDateTimeInJodaSyntax cuando un formatter genera un número impar de caracteres y el último carácter es 0. Por ejemplo, SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) ahora devuelve correctamente 150 en lugar de 15. #64614 (LiuNeng).
 * No reescribir la agregación si ya se utiliza el combinador -If. #64638 (Dmitry Novik).
-* Corrige la inferencia de tipos de `float` (en caso de que el búfer sea pequeño, p. ej., --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
+* Corrige la inferencia de tipos de `float` (en caso de que el búfer sea pequeño, p. ej., `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
 * Corrige un error que podía hacer que los TTL con expresiones no funcionaran. #64694 (alesapin).
 * Se corrige el problema por el que se eliminaban las expresiones WHERE y PREWHERE, que siempre son verdaderas (para el nuevo analizador). #64695 (Nikolai Kochetov).
 * Se corrigió la eliminación excesiva de partes por parte de índices de texto basados en tokens (ngrambf , full&#95;text) al filtrar según el resultado de startsWith, endsWith, match y multiSearchAny. #64720 (Eduard Karacharov).

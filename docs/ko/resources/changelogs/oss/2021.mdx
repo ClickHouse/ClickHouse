@@ -1908,7 +1908,7 @@ keywords: ['ClickHouse 2021', '2021 변경 내역', '릴리스 노트', '버전 
 * MSan으로 실행되는 통합 테스트를 추가했습니다. [#18974](https://github.com/ClickHouse/ClickHouse/pull/18974) ([alesapin](https://github.com/alesapin)).
 * cyrus-sasl 및 musl의 MemorySanitizer 오류를 수정했습니다. [#19821](https://github.com/ClickHouse/ClickHouse/pull/19821) ([Ilya Yatsishin](https://github.com/qoega)).
 * `positionCaseInsensitiveUTF8` 함수에서 인수 부족 검사 시 address sanitizer가 트리거되던 문제를 수정했습니다. [#19720](https://github.com/ClickHouse/ClickHouse/pull/19720) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* 통합 테스트에서 docker-compose용 --project-directory를 제거했습니다. Docker 컨테이너의 로그 포맷도 수정했습니다. [#19706](https://github.com/ClickHouse/ClickHouse/pull/19706) ([Ilya Yatsishin](https://github.com/qoega)).
+* 통합 테스트에서 docker-compose용 `--project-directory`를 제거했습니다. Docker 컨테이너의 로그 포맷도 수정했습니다. [#19706](https://github.com/ClickHouse/ClickHouse/pull/19706) ([Ilya Yatsishin](https://github.com/qoega)).
 * 통합 테스트용 macros.xml을 더 쉽게 생성할 수 있도록 했습니다. dicttoxml의 과도한 로깅도 더 이상 발생하지 않습니다. dicttoxml 프로젝트는 5년 넘게 활발히 유지보수되지 않았습니다. [#19697](https://github.com/ClickHouse/ClickHouse/pull/19697) ([Ilya Yatsishin](https://github.com/qoega)).
 * 환경 변수 `CLICKHOUSE_WATCHDOG_ENABLE`로 watchdog를 명시적으로 활성화하거나 비활성화할 수 있도록 했습니다. 기본적으로 server가 터미널에 연결되어 있지 않으면 활성화됩니다. [#19522](https://github.com/ClickHouse/ClickHouse/pull/19522) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * arm64에서 Kafka 지원을 포함해 ClickHouse를 빌드할 수 있도록 했습니다. [#19369](https://github.com/ClickHouse/ClickHouse/pull/19369) ([filimonov](https://github.com/filimonov)).

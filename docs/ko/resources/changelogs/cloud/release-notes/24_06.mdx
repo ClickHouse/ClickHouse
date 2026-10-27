@@ -124,7 +124,7 @@ v24.6 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니�
 * GROUP BY 키에 상수 CTE를 포함한 분산 쿼리에서 발생하던 Cannot find column 오류를 수정했습니다. #64519 (Nikolai Kochetov).
 * 포매터가 홀수 개의 문자를 생성하고 마지막 문자가 0인 경우 `formatDateTimeInJodaSyntax` 함수의 출력이 올바르게 수정되었습니다. 예를 들어 `SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;)`는 이전에는 15를 반환했지만, 이제는 올바르게 150을 반환합니다. #64614 (LiuNeng).
 * -If combinator를 이미 사용하는 경우 집계를 재작성하지 않습니다. #64638 (Dmitry Novik).
-* 작은 버퍼(즉, --max&#95;read&#95;buffer&#95;size 1)에서 float 타입 추론 문제를 수정했습니다. #64641 (Azat Khuzhin).
+* 작은 버퍼(즉, `--max_read_buffer_size` 1)에서 float 타입 추론 문제를 수정했습니다. #64641 (Azat Khuzhin).
 * 표현식이 포함된 TTL이 작동하지 않을 수 있는 버그를 수정했습니다. #64694 (alesapin).
 * `true`로 항상 평가되는 WHERE 및 PREWHERE 표현식이 제거되도록 수정했습니다(새 분석기 기준). #64695 (Nikolai Kochetov).
 * startsWith, endsWith, match, multiSearchAny의 결과로 필터링할 때 토큰 기반 텍스트 인덱스(ngrambf , full&#95;text)에서 데이터 파트가 과도하게 제외되던 문제를 수정했습니다. #64720 (Eduard Karacharov).

@@ -19,7 +19,7 @@ Changements pertinents pour les services ClickHouse Cloud dans la version v24.8.
 
 * La métrique KeeperOutstandingRequets a été renommée en KeeperOutstandingRequests. Cela corrige une faute de frappe signalée dans [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
 
-* clickhouse-client et clickhouse-local utilisent désormais par défaut le mode multi-requêtes (au lieu du mode requête unique). Par exemple, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; fonctionne désormais, alors qu’auparavant, les utilisateurs devaient ajouter --multiquery (ou -n). L’option --multiquery/-n est devenue obsolète. Les requêtes INSERT dans des instructions multi-requêtes sont traitées différemment selon leur clause FORMAT : si le FORMAT est VALUES (le cas le plus courant), la fin de l’instruction INSERT est marquée par un point-virgule ; à la fin de la requête. Pour tous les autres FORMATs (par ex. CSV ou JSONEachRow), la fin de l’instruction INSERT est marquée par deux sauts de ligne \n\n à la fin de la requête. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+* clickhouse-client et clickhouse-local utilisent désormais par défaut le mode multi-requêtes (au lieu du mode requête unique). Par exemple, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; fonctionne désormais, alors qu’auparavant, les utilisateurs devaient ajouter `--multiquery` (ou -n). L’option `--multiquery`/-n est devenue obsolète. Les requêtes INSERT dans des instructions multi-requêtes sont traitées différemment selon leur clause FORMAT : si le FORMAT est VALUES (le cas le plus courant), la fin de l’instruction INSERT est marquée par un point-virgule ; à la fin de la requête. Pour tous les autres FORMATs (par ex. CSV ou JSONEachRow), la fin de l’instruction INSERT est marquée par deux sauts de ligne \n\n à la fin de la requête. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
 
 * Dans les versions précédentes, il était possible d’utiliser une syntaxe alternative pour les types de données LowCardinality en ajoutant WithDictionary au nom du type de données. Il s’agissait d’une implémentation initiale fonctionnelle, qui n’a jamais été documentée ni exposée publiquement. Désormais, elle est dépréciée. Si vous avez utilisé cette syntaxe, vous devez ALTER vos tables et renommer les types de données en LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
 
@@ -57,7 +57,7 @@ Changements pertinents pour les services ClickHouse Cloud dans la version v24.8.
 
 * Ajoute automatiquement un caractère générique * à la fin d’un chemin de répertoire avec la fonction de table file. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
 
-* Ajoute l’option --memory-usage au client en mode non interactif. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+* Ajoute l’option `--memory-usage` au client en mode non interactif. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
 
 * Ajoute la colonne virtuelle &#95;etag pour le moteur de table S3. Corrige [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
 

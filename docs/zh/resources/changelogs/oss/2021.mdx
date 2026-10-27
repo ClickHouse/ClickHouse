@@ -744,7 +744,7 @@ keywords: ['ClickHouse 2021', '2021 更新日志', '发行说明', '版本历史
 * 对投影应用更激进的 IN 索引分析，以便选择更优的投影候选项。[#26218](https://github.com/ClickHouse/ClickHouse/pull/26218) ([Amos Bird](https://github.com/amosbird)) 。
 * 当传入标量函数时，移除 `IN` 的 `GLOBAL` 关键字。在之前的版本中，如果用户指定 `GLOBAL IN f(x)`，就会抛出异常。[#26217](https://github.com/ClickHouse/ClickHouse/pull/26217) ([Amos Bird](https://github.com/amosbird)).
 * 在异常消息中添加错误 ID (如 `BAD_ARGUMENTS`) 。此更改关闭了 [#25862](https://github.com/ClickHouse/ClickHouse/issues/25862)。[#26172](https://github.com/ClickHouse/ClickHouse/pull/26172) ([alexey-milovidov](https://github.com/alexey-milovidov)) 。
-* 修复了 `clickhouse-local` 使用 --progress 选项时输出错误的问题。进度条达到 100% 后会被清除，与 `clickhouse-client` 的处理方式相同。关闭了 [#17484](https://github.com/ClickHouse/ClickHouse/issues/17484)。[#26128](https://github.com/ClickHouse/ClickHouse/pull/26128) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 修复了 `clickhouse-local` 使用 `--progress` 选项时输出错误的问题。进度条达到 100% 后会被清除，与 `clickhouse-client` 的处理方式相同。关闭了 [#17484](https://github.com/ClickHouse/ClickHouse/issues/17484)。[#26128](https://github.com/ClickHouse/ClickHouse/pull/26128) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * 新增 `merge_selecting_sleep_ms` 设置。[#26120](https://github.com/ClickHouse/ClickHouse/pull/26120) ([lthaooo](https://github.com/lthaooo)) 。
 * 移除了 Linux AIO 配合单块预读这种复杂用法，改为使用 O&#95;DIRECT 的简单同步 IO。在此前的版本中，如果 `max_threads` 大于 1，设置 `min_bytes_to_use_direct_io` 可能无法正常生效。使用 direct IO 读取时 (对查询默认禁用，对大型合并默认启用) ，效率会较低。此更改修复了 [#25997](https://github.com/ClickHouse/ClickHouse/issues/25997)。[#26003](https://github.com/ClickHouse/ClickHouse/pull/26003) ([alexey-milovidov](https://github.com/alexey-milovidov)) 。
 * 在 `REPLACE TABLE` 查询时刷写 `Distributed` 表。解决了 [#24566](https://github.com/ClickHouse/ClickHouse/issues/24566) —— 如果向新表插入失败，则在 `[CREATE OR] REPLACE TABLE ... AS SELECT` 查询中不要替换 (或创建) 表。解决了 [#23175](https://github.com/ClickHouse/ClickHouse/issues/23175)。[#25895](https://github.com/ClickHouse/ClickHouse/pull/25895) ([tavplubix](https://github.com/tavplubix)).
@@ -1908,7 +1908,7 @@ keywords: ['ClickHouse 2021', '2021 更新日志', '发行说明', '版本历史
 * 添加了使用 MSan 运行的集成测试。[#18974](https://github.com/ClickHouse/ClickHouse/pull/18974) ([alesapin](https://github.com/alesapin)) 。
 * 修复了 cyrus-sasl 和 musl 中的 MemorySanitizer 错误。[#19821](https://github.com/ClickHouse/ClickHouse/pull/19821) ([Ilya Yatsishin](https://github.com/qoega)) 。
 * `positionCaseInsensitiveUTF8` 函数中对参数不足的检查触发了 AddressSanitizer。[#19720](https://github.com/ClickHouse/ClickHouse/pull/19720) ([alexey-milovidov](https://github.com/alexey-milovidov)) 。
-* 在集成测试中移除了 docker-compose 的 --project-directory。修复了来自 Docker 容器的日志格式。[#19706](https://github.com/ClickHouse/ClickHouse/pull/19706) ([Ilya Yatsishin](https://github.com/qoega)) 。
+* 在集成测试中移除了 docker-compose 的 `--project-directory`。修复了来自 Docker 容器的日志格式。[#19706](https://github.com/ClickHouse/ClickHouse/pull/19706) ([Ilya Yatsishin](https://github.com/qoega)) 。
 * 简化了集成测试中 macros.xml 的生成。不再出现 dicttoxml 产生的大量日志。dicttoxml 项目已超过 5 年未活跃。[#19697](https://github.com/ClickHouse/ClickHouse/pull/19697) ([Ilya Yatsishin](https://github.com/qoega)) 。
 * 允许通过环境变量 `CLICKHOUSE_WATCHDOG_ENABLE` 显式启用或禁用 watchdog。默认情况下，如果 server 未连接到终端，则会启用它。[#19522](https://github.com/ClickHouse/ClickHouse/pull/19522) ([alexey-milovidov](https://github.com/alexey-milovidov)) 。
 * 允许在 arm64 上构建支持 Kafka 的 ClickHouse。[#19369](https://github.com/ClickHouse/ClickHouse/pull/19369) ([filimonov](https://github.com/filimonov)) 。

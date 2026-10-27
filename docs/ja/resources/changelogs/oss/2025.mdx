@@ -1182,7 +1182,7 @@ doc_type: 'changelog'
 * `EXPLAIN indexes = 1` の出力に、読み取る範囲の数を表示する。[#79938](https://github.com/ClickHouse/ClickHouse/pull/79938) ([Christoph Wurm](https://github.com/cwurm)) 。
 * ORCの圧縮ブロックサイズを設定するためのオプションを導入し、SparkやHiveとの整合性を保つため、デフォルト値を64KBから256KBに変更しました。 [#80602](https://github.com/ClickHouse/ClickHouse/pull/80602) ([李扬](https://github.com/taiyang-li)).
 * パーツに格納されているすべてのサブストリームを追跡するため、Wide パーツに `columns_substreams.txt` ファイルを追加しました。これにより、JSON 型および Dynamic 型の動的ストリームを追跡できるようになり、動的ストリームの一覧を取得するためにこれらのカラムのサンプルを読み取る必要がなくなります (たとえば、カラムサイズの計算時) 。また、すべての動的ストリームが `system.parts_columns` に反映されるようになりました。[#81091](https://github.com/ClickHouse/ClickHouse/pull/81091) ([Pavel Kruglov](https://github.com/Avogar)).
-* clickhouse format に CLI フラグ --show&#95;secrets を追加し、デフォルトで機密データが非表示になるようにしました。[#81524](https://github.com/ClickHouse/ClickHouse/pull/81524) ([Nikolai Ryzhov](https://github.com/Dolaxom)) 。
+* clickhouse format に CLI フラグ `--show_secrets` を追加し、デフォルトで機密データが非表示になるようにしました。[#81524](https://github.com/ClickHouse/ClickHouse/pull/81524) ([Nikolai Ryzhov](https://github.com/Dolaxom)) 。
 * `max_remote_read_network_bandwidth_for_server` と `max_remote_write_network_bandwidth_for_server` によるスロットリングに関する問題を回避するため、S3 の読み取りおよび書き込みリクエストに対するレート制限は、S3 リクエスト全体ではなく HTTP ソケットレベルで適用されるようになりました。 [#81837](https://github.com/ClickHouse/ClickHouse/pull/81837) ([Sergei Trifonov](https://github.com/serxa)).
 * 異なるウィンドウで、同じカラムに対して異なる照合順序を混在して使用できるようになりました (ウィンドウ関数) 。[#82877](https://github.com/ClickHouse/ClickHouse/pull/82877) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * merge selector をシミュレート、可視化、比較するためのツールを追加しました。 [#71496](https://github.com/ClickHouse/ClickHouse/pull/71496) ([Sergei Trifonov](https://github.com/serxa)).

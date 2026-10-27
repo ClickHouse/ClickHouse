@@ -351,7 +351,7 @@ doc_type: 'changelog'
 * 允许在 cache 配置中使用易读的大小值 (如 `1TB`) 。[#41688](https://github.com/ClickHouse/ClickHouse/pull/41688) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
 * ClickHouse 可能会在一段时间内缓存已过期的 DNS 记录 (默认 15 秒) ，直到缓存完成异步更新。在此期间，ClickHouse 仍可能尝试建立连接并报错。此问题已修复。[#41707](https://github.com/ClickHouse/ClickHouse/pull/41707) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * 为 `clickhouse-client`/`clickhouse-local` 增加了基于类似 fzf 的工具 (fzf/sk) 的交互式历史记录搜索功能 (注意，还可以使用 `FZF_DEFAULT_OPTS`/`SKIM_DEFAULT_OPTIONS` 进一步配置其行为) 。[#41730](https://github.com/ClickHouse/ClickHouse/pull/41730) ([Azat Khuzhin](https://github.com/azat)) 。
-* 仅允许连接到使用无效证书的安全服务器的客户端在指定 &#39;--accept-certificate&#39; 标志时继续。 [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 仅允许连接到使用无效证书的安全服务器的客户端在指定 &#39;`--accept-certificate&#39;` 标志时继续。 [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * 新增函数 `tryBase58Decode`，类似于现有的 `tryBase64Decode` 函数。[#41824](https://github.com/ClickHouse/ClickHouse/pull/41824) ([Robert Schulze](https://github.com/rschu1ze)) 。
 * 改进了在使用不同主键替换分区时的反馈信息。修复了 [#34798](https://github.com/ClickHouse/ClickHouse/issues/34798)。[#41838](https://github.com/ClickHouse/ClickHouse/pull/41838) ([Salvatore](https://github.com/tbsal)) 。
 * 修复并行解析：segmentator 现在会检查 `max_block_size`。这修复了在并行解析且 LIMIT 较小时的内存过度分配问题。[#41852](https://github.com/ClickHouse/ClickHouse/pull/41852) ([Vitaly Baranov](https://github.com/vitlibar)).
@@ -1197,7 +1197,7 @@ doc_type: 'changelog'
 * 修复了栈帧过大导致编译失败的问题。[#37996](https://github.com/ClickHouse/ClickHouse/pull/37996) ([Han Shukai](https://github.com/KinderRiven)) 。
 * 启用 enable&#95;filesystem&#95;query&#95;cache&#95;limit 时，会抛出“预留缓存大小超过剩余缓存大小”异常。 [#38004](https://github.com/ClickHouse/ClickHouse/pull/38004) ([xiedeyantu](https://github.com/xiedeyantu)).
 * 修复了 UNION 查询中的类型转换问题 (可能导致 LOGICAL&#95;ERROR) 。 [#34775](https://github.com/ClickHouse/ClickHouse/pull/34775) ([Azat Khuzhin](https://github.com/azat)).
-* 如果 BackgroundExecutor 处于忙碌状态，生存时间 (TTL) merge 可能不会再次被调度。--merges&#95;with&#95;ttl&#95;counter 会在 selectPartsToMerge() 中增加；如果 BackgroundExecutor 处于忙碌状态，--merge 任务将被忽略；--merges&#95;with&#95;ttl&#95;counter 不会减少。 [#36387](https://github.com/ClickHouse/ClickHouse/pull/36387) ([lthaooo](https://github.com/lthaooo)).
+* 如果 BackgroundExecutor 处于忙碌状态，生存时间 (TTL) merge 可能不会再次被调度。`--merges_with_ttl_counter` 会在 selectPartsToMerge() 中增加；如果 BackgroundExecutor 处于忙碌状态，`--merge` 任务将被忽略；`--merges_with_ttl_counter` 不会减少。 [#36387](https://github.com/ClickHouse/ClickHouse/pull/36387) ([lthaooo](https://github.com/lthaooo)).
 * 修复 `normalize_function_names` 设置值被覆盖的问题。[#36937](https://github.com/ClickHouse/ClickHouse/pull/36937) ([李扬](https://github.com/taiyang-li)) 。
 * 修复了指数时间衰减窗口函数的问题，现在会正确遵循窗口边界。[#36944](https://github.com/ClickHouse/ClickHouse/pull/36944) ([Vladimir Chebotarev](https://github.com/excitoon)).
 * 修复读取 system.projection&#95;parts 和 system.projection&#95;parts&#95;columns 时可能出现的堆内存释放后仍被使用错误。此修复解决了 [#37184](https://github.com/ClickHouse/ClickHouse/issues/37184)。[#37185](https://github.com/ClickHouse/ClickHouse/pull/37185) ([Amos Bird](https://github.com/amosbird)) 。
@@ -1782,7 +1782,7 @@ doc_type: 'changelog'
 * 现在，CREATE/ALTER/DROP ROW POLICY 权限既可以在某个表上授予，也可以在 `database.*` 上授予，还可以全局授予到 `*.*`。[#34489](https://github.com/ClickHouse/ClickHouse/pull/34489) ([Vitaly Baranov](https://github.com/vitlibar)) 。
 * 支持将任意大的文件导出到 `s3`。新增两个设置：`s3_upload_part_size_multiply_factor` 和 `s3_upload_part_size_multiply_parts_count_threshold`。现在，对于单个查询上传到 S3 的数据，每当上传的分片数达到 `s3_upload_part_size_multiply_parts_count_threshold` 时，`s3_min_upload_part_size` 就会乘以 `s3_upload_part_size_multiply_factor`。修复 [#34244](https://github.com/ClickHouse/ClickHouse/issues/34244)。[#34422](https://github.com/ClickHouse/ClickHouse/pull/34422) ([alesapin](https://github.com/alesapin)) 。
 * 使用 URL 存储 / 表函数时，允许在使用通配符时跳过未找到 (404) 的 URL。另行关闭了 [#34359](https://github.com/ClickHouse/ClickHouse/issues/34359)。[#34392](https://github.com/ClickHouse/ClickHouse/pull/34392) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* `clickhouse-local` 的默认输入和输出格式，可通过 --input-format 和 --output-format 进行覆盖。已关闭 [#30631](https://github.com/ClickHouse/ClickHouse/issues/30631)。[#34352](https://github.com/ClickHouse/ClickHouse/pull/34352) ([李扬](https://github.com/taiyang-li)).
+* `clickhouse-local` 的默认输入和输出格式，可通过 `--input-format` 和 `--output-format` 进行覆盖。已关闭 [#30631](https://github.com/ClickHouse/ClickHouse/issues/30631)。[#34352](https://github.com/ClickHouse/ClickHouse/pull/34352) ([李扬](https://github.com/taiyang-li)).
 * 为 `clickhouse-format` 添加选项，解决了 [#30528](https://github.com/ClickHouse/ClickHouse/issues/30528)——`max_query_size` 和 `max_parser_depth`。[#34349](https://github.com/ClickHouse/ClickHouse/pull/34349) ([李扬](https://github.com/taiyang-li)) 。
 * 在客户端启动前，对预输入进行了更好的处理。这是为了解决 [#34308](https://github.com/ClickHouse/ClickHouse/issues/34308)。[#34336](https://github.com/ClickHouse/ClickHouse/pull/34336) ([Amos Bird](https://github.com/amosbird)) 。
 * 为兼容 PostgreSQL，新增了 `REGEXP_MATCHES` 和 `REGEXP_REPLACE` 函数别名。关闭 [#30885](https://github.com/ClickHouse/ClickHouse/issues/30885)。[#34334](https://github.com/ClickHouse/ClickHouse/pull/34334) ([李扬](https://github.com/taiyang-li)) 。

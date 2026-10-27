@@ -85,7 +85,7 @@ doc_type: 'changelog'
 
 * 引入 Text index format v3，并将其提升至 Beta 状态。
 * 引入了新逻辑，可在设置 `automatic_parallel_replicas_mode` 的控制下，自动使用并行副本执行查询。在正常的单节点执行期间，ClickHouse 会收集统计信息，这些信息随后会在规划阶段纳入考量。如果统计信息表明并行副本很可能带来收益，ClickHouse 将自动使用并行副本执行该查询。目前支持的查询类型仍然比较有限。[#87541](https://github.com/ClickHouse/ClickHouse/pull/87541) ([Nikita Taranov](https://github.com/nickitat)).
-* 使用 --login 通过 Cloud 凭据访问 ClickHouse Cloud 实例。[#89261](https://github.com/ClickHouse/ClickHouse/pull/89261) ([Krishna Mannem](https://github.com/kcmannem)).
+* 使用 `--login` 通过 Cloud 凭据访问 ClickHouse Cloud 实例。[#89261](https://github.com/ClickHouse/ClickHouse/pull/89261) ([Krishna Mannem](https://github.com/kcmannem)).
 * 新增会话级设置 `aggregate_function_input_format`，以改进向包含 `AggregateFunction` 列的表执行 `INSERT` 查询时的体验，支持以序列化状态、原始值或数组的形式插入数据。[#88088](https://github.com/ClickHouse/ClickHouse/pull/88088) ([Punith Nandyappa Subashchandra](https://github.com/punithns97)).
 
 <div id="performance-improvement">
@@ -1192,7 +1192,7 @@ doc_type: 'changelog'
 * 在 `EXPLAIN indexes = 1` 的输出中显示待读取的范围数量。[#79938](https://github.com/ClickHouse/ClickHouse/pull/79938) ([Christoph Wurm](https://github.com/cwurm)) 。
 * 新增了用于设置 ORC 压缩块大小的设置项，并将其默认值从 64KB 调整为 256KB，以与 Spark 和 Hive 保持一致。 [#80602](https://github.com/ClickHouse/ClickHouse/pull/80602) ([李扬](https://github.com/taiyang-li)).
 * 在 Wide part 中新增 `columns_substreams.txt` 文件，用于跟踪存储在该 part 中的所有子流。这样可以跟踪 JSON 和 Dynamic 类型中的动态流，从而无需为了获取动态流列表而读取这些列的样本 (例如在计算列大小时) 。此外，现在所有动态流都会显示在 `system.parts_columns` 中。[#81091](https://github.com/ClickHouse/ClickHouse/pull/81091) ([Pavel Kruglov](https://github.com/Avogar)).
-* 为 `clickhouse format` 新增 CLI 标志 --show&#95;secrets，以默认隐藏敏感数据。[#81524](https://github.com/ClickHouse/ClickHouse/pull/81524) ([Nikolai Ryzhov](https://github.com/Dolaxom)) 。
+* 为 `clickhouse format` 新增 CLI 标志 `--show_secrets`，以默认隐藏敏感数据。[#81524](https://github.com/ClickHouse/ClickHouse/pull/81524) ([Nikolai Ryzhov](https://github.com/Dolaxom)) 。
 * 为避免 `max_remote_read_network_bandwidth_for_server` 和 `max_remote_write_network_bandwidth_for_server` 限流带来的问题，S3 读写请求现在会在 HTTP 套接字层级进行限流 (而不是针对整个 S3 请求) 。[#81837](https://github.com/ClickHouse/ClickHouse/pull/81837) ([Sergei Trifonov](https://github.com/serxa)).
 * 允许在不同窗口 (用于窗口函数) 中对同一列混用不同的排序规则。[#82877](https://github.com/ClickHouse/ClickHouse/pull/82877) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * 新增了一个用于模拟、可视化和比较合并选择器的工具。[#71496](https://github.com/ClickHouse/ClickHouse/pull/71496) ([Sergei Trifonov](https://github.com/serxa)) 。

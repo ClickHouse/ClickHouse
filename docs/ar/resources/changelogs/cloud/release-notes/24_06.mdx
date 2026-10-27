@@ -124,7 +124,7 @@ doc_type: 'changelog'
 * إصلاح الخطأ Cannot find column في distributed queries مع CTE ثابت في مفتاح GROUP BY. #64519 (Nikolai Kochetov).
 * إصلاح ناتج function ‏formatDateTimeInJodaSyntax عندما يُنتج formatter عددًا فرديًا من المحارف ويكون المحرف الأخير هو 0. على سبيل المثال، أصبح SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) يُرجع الآن 150 بشكل صحيح بدلًا من 15 سابقًا. #64614 (LiuNeng).
 * لا تُجرِ Rewrite لـ aggregation إذا كان combinator ‏-If مستخدمًا بالفعل. #64638 (Dmitry Novik).
-* إصلاح type inference للقيم Float (في حالة buffer صغير، مثل --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
+* إصلاح type inference للقيم Float (في حالة buffer صغير، مثل `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
 * إصلاح خلل كان قد يؤدي إلى عدم عمل TTL مع التعبيرات. #64694 (alesapin).
 * إصلاح إزالة تعبيري WHERE وPREWHERE عندما تكون نتيجتهما true دائمًا (في المحلل الجديد). #64695 (Nikolai Kochetov).
 * إصلاح الاستبعاد المفرط للأجزاء بواسطة فهارس النص المعتمدة على الرموز (ngrambf , full&#95;text) عند التصفية بناءً على نتيجة startsWith وendsWith وmatch وmultiSearchAny. #64720 (Eduard Karacharov).

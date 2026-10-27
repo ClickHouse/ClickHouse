@@ -124,7 +124,7 @@ v24.6 リリースにおける ClickHouse Cloud サービス向けの主な変�
 * GROUP BY キーに定数 CTE がある分散クエリで発生する Cannot find column エラーを修正しました。 #64519 (Nikolai Kochetov).
 * フォーマッタが奇数文字数を生成し、末尾の文字が 0 の場合に、function formatDateTimeInJodaSyntax の出力が正しくなるよう修正しました。たとえば、SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) は、以前は 15 を返していましたが、現在は正しく 150 を返します。#64614 (LiuNeng)。
 * すでに -If コンビネータが使用されている場合は、集約の書き換えを行わないようにしました。 #64638 (Dmitry Novik).
-* float の型推論を修正 (バッファが小さい場合、つまり --max&#95;read&#95;buffer&#95;size 1 のとき) 。#64641 (Azat Khuzhin)。
+* float の型推論を修正 (バッファが小さい場合、つまり `--max_read_buffer_size` 1 のとき) 。#64641 (Azat Khuzhin)。
 * 式を含む有効期限 (TTL) が正常に動作しなくなる可能性がある不具合を修正しました。 #64694 (alesapin).
 * 常に true となる WHERE および PREWHERE 式が削除されてしまう問題を修正しました (新しいアナライザ向け) 。#64695 (Nikolai Kochetov) 。
 * startsWith、endsWith、match、multiSearchAny の結果でフィルタする際、トークンベースのテキスト索引 (ngrambf、full&#95;text) によってパートが過剰に除外される問題を修正しました。#64720 (Eduard Karacharov) 。

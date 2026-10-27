@@ -124,7 +124,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 * Corrigido o erro Cannot find column em consultas distribuídas com CTE constante na chave do GROUP BY. #64519 (Nikolai Kochetov).
 * Corrige a saída da função formatDateTimeInJodaSyntax quando um formatador gera um número ímpar de caracteres e o último caractere é 0. Por exemplo, SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) agora retorna corretamente 150, em vez de 15, como retornava antes. #64614 (LiuNeng).
 * Não reescreva a agregação se o combinador -If já estiver sendo usado. #64638 (Dmitry Novik).
-* Corrige a inferência de tipo de float (em caso de buffer pequeno, isto é, --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
+* Corrige a inferência de tipo de float (em caso de buffer pequeno, isto é, `--max_read_buffer_size` 1). #64641 (Azat Khuzhin).
 * Corrige um bug que poderia fazer com que TTLs com expressões deixassem de funcionar. #64694 (alesapin).
 * Correção da remoção das expressões WHERE e PREWHERE que são sempre true (no novo analisador). #64695 (Nikolai Kochetov).
 * Corrigida a eliminação excessiva de partes por índices de texto baseados em tokens (ngrambf , full&#95;text) ao filtrar com base no resultado de startsWith, endsWith, match, multiSearchAny. #64720 (Eduard Karacharov).

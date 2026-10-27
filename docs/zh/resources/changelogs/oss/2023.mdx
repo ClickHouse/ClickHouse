@@ -725,7 +725,7 @@ doc_type: 'changelog'
 * 现在，如果你尝试缓存包含 `now`、`randomString` 和 `dictGet` 等非确定性函数的查询结果，query cache 会返回错误。与之前的行为 (静默地不缓存结果) 相比，这样可以减少困惑和意外。 [#54801](https://github.com/ClickHouse/ClickHouse/pull/54801) ([Robert Schulze](https://github.com/rschu1ze)).
 * 禁止在 `file`/`s3`/`url`/... 存储中使用物化列/临时列/别名列，修复从文件向临时列插入数据的问题。关闭了 [#53477](https://github.com/ClickHouse/ClickHouse/issues/53477)。[#54803](https://github.com/ClickHouse/ClickHouse/pull/54803) ([Kruglov Pavel](https://github.com/Avogar)) 。
 * 备份元数据收集提供了更多可配置选项。[#54804](https://github.com/ClickHouse/ClickHouse/pull/54804) ([Vitaly Baranov](https://github.com/vitlibar)) 。
-* `clickhouse-local`&#39;的日志文件 (如果通过 --server&#95;logs&#95;file 标志启用) 现在会像 `clickhouse-server` 一样，在每行前加上时间戳、线程 ID 等信息。[#54807](https://github.com/ClickHouse/ClickHouse/pull/54807) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* `clickhouse-local`&#39;的日志文件 (如果通过 `--server_logs_file` 标志启用) 现在会像 `clickhouse-server` 一样，在每行前加上时间戳、线程 ID 等信息。[#54807](https://github.com/ClickHouse/ClickHouse/pull/54807) ([Michael Kolupaev](https://github.com/al13n321)) 。
 * `system.merge_tree_settings` 表中的字段 `is_obsolete`——对于已废弃的 MergeTree 设置，该字段的值现为 1。此前，只有在描述中才会表明该设置已废弃。[#54837](https://github.com/ClickHouse/ClickHouse/pull/54837) ([Robert Schulze](https://github.com/rschu1ze)) 。
 * 支持在使用时间间隔字面量时使用复数形式。`INTERVAL 2 HOURS` 应等同于 `INTERVAL 2 HOUR`。[#54860](https://github.com/ClickHouse/ClickHouse/pull/54860) ([Jordi Villar](https://github.com/jrdi)) 。
 * 始终允许创建主键为 `Nullable` 的投影。这修复了 [#54814](https://github.com/ClickHouse/ClickHouse/issues/54814)。[#54895](https://github.com/ClickHouse/ClickHouse/pull/54895) ([Amos Bird](https://github.com/amosbird)) 。
@@ -1277,7 +1277,7 @@ doc_type: 'changelog'
 * 新增 `Redis` 表引擎和 `redis` 表函数，可用于查询外部 Redis server。[#50150](https://github.com/ClickHouse/ClickHouse/pull/50150) ([JackyWoo](https://github.com/JackyWoo)) 。
 * 允许在 file/s3/url/hdfs 表函数中使用设置 `s3_skip_empty_files`、`hdfs_skip_empty_files`、`engine_file_skip_empty_files`、`engine_url_skip_empty_files` 跳过空文件。[#50364](https://github.com/ClickHouse/ClickHouse/pull/50364) ([Kruglov Pavel](https://github.com/Avogar)) 。
 * 新增名为 `use_mysql_types_in_show_columns` 的 setting，用于调整 `SHOW COLUMNS` SQL statement，使客户端通过 MySQL 兼容端口连接时显示对应的 MySQL 类型。[#49577](https://github.com/ClickHouse/ClickHouse/pull/49577) ([Thomas Panetti](https://github.com/tpanetti)) 。
-* 现在调用 Clickhouse-client 时，可以使用 connection string，而不必再通过 &quot;--host&quot;、&quot;--port&quot;、&quot;--user&quot; 等参数指定连接信息。[#50689](https://github.com/ClickHouse/ClickHouse/pull/50689) ([Alexey Gerasimchuck](https://github.com/Demilivor)) 。
+* 现在调用 Clickhouse-client 时，可以使用 connection string，而不必再通过 &quot;`--host`&quot;、&quot;`--port`&quot;、&quot;`--user`&quot; 等参数指定连接信息。[#50689](https://github.com/ClickHouse/ClickHouse/pull/50689) ([Alexey Gerasimchuck](https://github.com/Demilivor)) 。
 * 新增 setting `session_timezone`；在未显式指定时，它会作为 session 的默认 timezone。[#44149](https://github.com/ClickHouse/ClickHouse/pull/44149) ([Andrey Zvonov](https://github.com/zvonand)) 。
 * Codec DEFLATE&#95;QPL 现在通过 server setting &quot;enable&#95;deflate&#95;qpl&#95;codec&quot; (默认值：false) 控制，而不再通过 setting &quot;allow&#95;experimental&#95;codecs&quot; 控制。这意味着 DEFLATE&#95;QPL 不再属于 Experimental。[#50775](https://github.com/ClickHouse/ClickHouse/pull/50775) ([Robert Schulze](https://github.com/rschu1ze)) 。
 
@@ -1320,7 +1320,7 @@ doc_type: 'changelog'
 * 设置 `number_of_mutations_to_delay` 和 `number_of_mutations_to_throw` 现已默认启用，取值分别为 500 和 1000。[#50726](https://github.com/ClickHouse/ClickHouse/pull/50726) ([Anton Popov](https://github.com/CurtizJ)) 。
 * 仪表板现已能正确显示缺失值。此更改修复了 [#50831](https://github.com/ClickHouse/ClickHouse/issues/50831)。[#50832](https://github.com/ClickHouse/ClickHouse/pull/50832) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
 * 新增了在函数 `parseDateTimeBestEffort*` 和 `parseDateTime64BestEffort*` 中支持使用 syslog 时间戳格式的日期和时间参数。[#50925](https://github.com/ClickHouse/ClickHouse/pull/50925) ([Victor Krasnov](https://github.com/sirvickr)).
-* clickhouse-client 中的命令行参数 &quot;--password&quot; 现在仅可指定一次。[#50966](https://github.com/ClickHouse/ClickHouse/pull/50966) ([Alexey Gerasimchuck](https://github.com/Demilivor)) 。
+* clickhouse-client 中的命令行参数 &quot;`--password`&quot; 现在仅可指定一次。[#50966](https://github.com/ClickHouse/ClickHouse/pull/50966) ([Alexey Gerasimchuck](https://github.com/Demilivor)) 。
 * 在集群备份期间，使用 `system.parts` 中的 `hash_of_all_files` 来校验 parts 的标识。 [#50997](https://github.com/ClickHouse/ClickHouse/pull/50997) ([Vitaly Baranov](https://github.com/vitlibar)).
 * 系统表 zookeeper&#95;connection 的 connected&#95;time 用于标识连接建立的时间 (标准格式) ，并新增了 session&#95;uptime&#95;elapsed&#95;seconds，用于标示已建立连接会话的耗时 (以秒为单位) 。 [#51026](https://github.com/ClickHouse/ClickHouse/pull/51026) ([郭小龙](https://github.com/guoxiaolongzte)).
 * 通过利用源数据的块大小，并在每个线程中以增量方式统计总大小，改进了 file/S3/hdfs/url 表函数的进度条。修复了 *Cluster 函数的进度条。此更改关闭了 [#47250](https://github.com/ClickHouse/ClickHouse/issues/47250)。[#51088](https://github.com/ClickHouse/ClickHouse/pull/51088) ([Kruglov Pavel](https://github.com/Avogar)).
@@ -1418,10 +1418,10 @@ doc_type: 'changelog'
 * 在 users.xml 文件中新增 `grants` 字段，用于为用户指定授权。[#49381](https://github.com/ClickHouse/ClickHouse/pull/49381) ([pufit](https://github.com/pufit)) 。
 * 通过 grace hash join 算法支持 full/right join。[#49483](https://github.com/ClickHouse/ClickHouse/pull/49483) ([lgbo](https://github.com/lgbo-ustc)).
 * `WITH FILL` 修饰符会按排序前缀对填充进行分组。由 `use_with_fill_by_sorting_prefix` 设置控制 (默认启用) 。相关内容见 [#33203](https://github.com/ClickHouse/ClickHouse/issues/33203)#issuecomment-1418736794。[#49503](https://github.com/ClickHouse/ClickHouse/pull/49503) ([Igor Nikonov](https://github.com/devcrafter)) 。
-* 现在，如果未指定 &quot;--query&quot; (或 &quot;-q&quot;) ，Clickhouse-client 也支持在 &quot;--multiquery&quot; 后直接接收查询。示例：clickhouse-client --multiquery &quot;select 1; select 2;&quot;。[#49870](https://github.com/ClickHouse/ClickHouse/pull/49870) ([Alexey Gerasimchuk](https://github.com/Demilivor)) 。
+* 现在，如果未指定 &quot;`--query`&quot; (或 &quot;-q&quot;) ，Clickhouse-client 也支持在 &quot;`--multiquery`&quot; 后直接接收查询。示例：clickhouse-client `--multiquery` &quot;select 1; select 2;&quot;。[#49870](https://github.com/ClickHouse/ClickHouse/pull/49870) ([Alexey Gerasimchuk](https://github.com/Demilivor)) 。
 * 为接收来自副本的 Hello 数据包新增了单独的 `handshake_timeout`。关闭了 [#48854](https://github.com/ClickHouse/ClickHouse/issues/48854)。[#49948](https://github.com/ClickHouse/ClickHouse/pull/49948) ([Kruglov Pavel](https://github.com/Avogar))。
 * 新增了函数 &quot;space&quot;，可按指定次数重复输出空格。[#50103](https://github.com/ClickHouse/ClickHouse/pull/50103) ([Robert Schulze](https://github.com/rschu1ze)) 。
-* 新增了 --input&#95;format&#95;csv&#95;trim&#95;whitespaces 选项。[#50215](https://github.com/ClickHouse/ClickHouse/pull/50215) ([Alexey Gerasimchuk](https://github.com/Demilivor)) 。
+* 新增了 `--input_format_csv_trim_whitespaces` 选项。[#50215](https://github.com/ClickHouse/ClickHouse/pull/50215) ([Alexey Gerasimchuk](https://github.com/Demilivor)) 。
 * 允许 `dictGetAll` 函数对 regexp tree dictionaries 以数组形式返回多个匹配项的值。关闭 [#50254](https://github.com/ClickHouse/ClickHouse/issues/50254)。[#50255](https://github.com/ClickHouse/ClickHouse/pull/50255) ([Johann Gan](https://github.com/johanngan)).
 * 新增了 `toLastDayOfWeek` 函数，用于将日期或日期时间向上取整到最近的星期六或星期日。[#50315](https://github.com/ClickHouse/ClickHouse/pull/50315) ([Victor Krasnov](https://github.com/sirvickr)) 。
 * 可通过指定 `ignore_data_skipping_indices` 参数来忽略跳过索引。[#50329](https://github.com/ClickHouse/ClickHouse/pull/50329) ([Boris Kuschel](https://github.com/bkuschel)) 。

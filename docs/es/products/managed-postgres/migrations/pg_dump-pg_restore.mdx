@@ -120,7 +120,7 @@ Vemos que todas nuestras tablas, índices, vistas y secuencias están intactas, 
 * Asegúrese de que las versiones de PostgreSQL de las bases de datos de origen y de destino sean compatibles.
   Usar una versión de pg&#95;dump anterior a la del server de origen puede provocar la falta de algunas funcionalidades o problemas durante la restauración. Lo ideal es usar la misma versión principal de pg&#95;dump que la base de datos de origen, o una posterior.
 * Las bases de datos grandes pueden tardar bastante tiempo en generar el dump y en restaurarse.
-  Planifique en consecuencia para minimizar el tiempo de inactividad y, cuando sea posible, considere usar dumps/restauraciones en paralelo (--jobs).
+  Planifique en consecuencia para minimizar el tiempo de inactividad y, cuando sea posible, considere usar dumps/restauraciones en paralelo (`--jobs`).
 * Tenga en cuenta que pg&#95;dump / pg&#95;restore no replican todos los objetos relacionados con la base de datos ni todo el estado en tiempo de ejecución.
   Entre ellos se incluyen roles y membresías de roles, slots de replicación, la configuración a nivel de server (p. ej., postgresql.conf, pg&#95;hba.conf), tablespaces y estadísticas en tiempo de ejecución.
 

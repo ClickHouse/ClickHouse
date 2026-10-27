@@ -19,7 +19,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 
 * A métrica KeeperOutstandingRequets foi renomeada para KeeperOutstandingRequests. Isso corrige um erro de digitação relatado em [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
 
-* clickhouse-client e clickhouse-local agora usam o modo multi-query por padrão (em vez do modo single-query). Por exemplo, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; agora funciona, enquanto antes os usuários precisavam adicionar --multiquery (ou -n). A opção --multiquery/-n tornou-se obsoleta. Consultas INSERT em instruções multi-query recebem tratamento especial com base em sua cláusula FORMAT: se o FORMAT for VALUES (o caso mais comum), o fim da instrução INSERT é representado por um ponto e vírgula ; ao final da consulta. Para todos os outros FORMATs (por exemplo, CSV ou JSONEachRow), o fim da instrução INSERT é representado por duas quebras de linha \n\n ao final da consulta. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+* clickhouse-client e clickhouse-local agora usam o modo multi-query por padrão (em vez do modo single-query). Por exemplo, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; agora funciona, enquanto antes os usuários precisavam adicionar `--multiquery` (ou -n). A opção `--multiquery`/-n tornou-se obsoleta. Consultas INSERT em instruções multi-query recebem tratamento especial com base em sua cláusula FORMAT: se o FORMAT for VALUES (o caso mais comum), o fim da instrução INSERT é representado por um ponto e vírgula ; ao final da consulta. Para todos os outros FORMATs (por exemplo, CSV ou JSONEachRow), o fim da instrução INSERT é representado por duas quebras de linha \n\n ao final da consulta. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
 
 * Em versões anteriores, era possível usar uma sintaxe alternativa para tipos de dados LowCardinality acrescentando WithDictionary ao nome do tipo de dados. Era uma implementação inicial funcional e nunca foi documentada nem exposta publicamente. Agora, ela está obsoleta. Se você usou essa sintaxe, precisa executar ALTER em suas tabelas e renomear os tipos de dados para LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
 
@@ -57,7 +57,7 @@ Alterações relevantes para os serviços do ClickHouse Cloud com base no lança
 
 * Acrescenta automaticamente um caractere curinga * ao final de um caminho de diretório com a função de tabela file. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
 
-* Adiciona a opção --memory-usage ao cliente em modo não interativo. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+* Adiciona a opção `--memory-usage` ao cliente em modo não interativo. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
 
 * Adiciona a coluna virtual &#95;etag para o motor de tabela S3. Corrige [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
 

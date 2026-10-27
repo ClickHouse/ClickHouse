@@ -19,7 +19,7 @@ doc_type: 'changelog'
 
 * Метрика KeeperOutstandingRequets была переименована в KeeperOutstandingRequests. Это исправляет опечатку, о которой сообщалось в [#66179](https://github.com/ClickHouse/ClickHouse/issues/66179). [#66206](https://github.com/ClickHouse/ClickHouse/pull/66206) (Robert Schulze).
 
-* В clickhouse-client и clickhouse-local теперь по умолчанию используется режим multi-query (вместо режима single-query). Например, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; теперь работает, тогда как раньше пользователям нужно было добавлять --multiquery (или -n). Ключ --multiquery/-n устарел. Запросы INSERT в многооператорных запросах обрабатываются особым образом в зависимости от их предложения FORMAT: если FORMAT — VALUES (наиболее распространенный случай), конец оператора INSERT обозначается завершающей точкой с запятой ; в конце запроса. Для всех остальных форматов (например, CSV или JSONEachRow) конец оператора INSERT обозначается двумя символами новой строки \n\n в конце запроса. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
+* В clickhouse-client и clickhouse-local теперь по умолчанию используется режим multi-query (вместо режима single-query). Например, clickhouse-client -q &quot;SELECT 1; SELECT 2&quot; теперь работает, тогда как раньше пользователям нужно было добавлять `--multiquery` (или -n). Ключ `--multiquery`/-n устарел. Запросы INSERT в многооператорных запросах обрабатываются особым образом в зависимости от их предложения FORMAT: если FORMAT — VALUES (наиболее распространенный случай), конец оператора INSERT обозначается завершающей точкой с запятой ; в конце запроса. Для всех остальных форматов (например, CSV или JSONEachRow) конец оператора INSERT обозначается двумя символами новой строки \n\n в конце запроса. [#63898](https://github.com/ClickHouse/ClickHouse/pull/63898) (wxybear).
 
 * В предыдущих версиях можно было использовать альтернативный синтаксис для типов данных LowCardinality, добавляя WithDictionary к имени типа данных. Это была первоначальная рабочая реализация, и она никогда не документировалась и не была доступна публично. Теперь она устарела. Если вы использовали этот синтаксис, вам нужно изменить свои таблицы с помощью ALTER и переименовать типы данных в LowCardinality. [#66842](https://github.com/ClickHouse/ClickHouse/pull/66842)(Alexey Milovidov).
 
@@ -57,7 +57,7 @@ doc_type: 'changelog'
 
 * В конец пути каталога в табличной функции file теперь автоматически добавляется символ-шаблон *. [#66019](https://github.com/ClickHouse/ClickHouse/pull/66019) (Zhidong (David) Guo).
 
-* Добавлена опция --memory-usage для клиента в неинтерактивном режиме. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
+* Добавлена опция `--memory-usage` для клиента в неинтерактивном режиме. [#66393](https://github.com/ClickHouse/ClickHouse/pull/66393) (vdimir).
 
 * Добавлен виртуальный столбец &#95;etag для движка таблицы S3. Исправляет [#65312](https://github.com/ClickHouse/ClickHouse/issues/65312). [#65386](https://github.com/ClickHouse/ClickHouse/pull/65386) (skyoct)
 
