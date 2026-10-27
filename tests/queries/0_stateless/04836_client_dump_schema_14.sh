@@ -52,6 +52,17 @@ echo "eval: source before the literal query: $(dumped_before "$work/eval.sql" d.
 echo "eval: source before the folded query: $(dumped_before "$work/eval.sql" d.zzz_src d.aab_folded)"
 echo "eval: source before the joined query: $(dumped_before "$work/eval.sql" d.zzz_src d.aac_mv)"
 
+# A `WITH` subquery hides a table of its name only in its own scope: the query reads the table `zzz_src` in the other one.
+round_trip cte_scope "
+    SET allow_experimental_eval_table_function = 1;
+    CREATE DATABASE d;
+    USE d;
+    CREATE TABLE d.base (x UInt64) ENGINE = Memory;
+    CREATE VIEW d.zzz_src AS SELECT x FROM d.base;
+    CREATE TABLE d.aaa (x UInt64) ENGINE = Remote('127.0.0.1',
+        eval('SELECT x FROM (WITH zzz_src AS (SELECT 1 AS x) SELECT x FROM zzz_src) UNION ALL SELECT x FROM zzz_src'));"
+echo "cte_scope: source before the query: $(dumped_before "$work/cte_scope.sql" d.zzz_src d.aaa)"
+
 # A query read from a table is known only when the CREATE runs, so the tables it reads cannot be ordered before it.
 rm -rf "$work/opaque"
 $CLICKHOUSE_LOCAL --path "$work/opaque" -n -q "

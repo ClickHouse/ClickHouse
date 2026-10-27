@@ -1014,7 +1014,8 @@ ASTPtr tryParseEvalQuery(const ASTFunction & eval, const ContextPtr & context)
     }
 }
 
-/// The query an `eval` call generates, and the names of its `WITH` subqueries, which a table expression in it reads before a table.
+/// The query an `eval` call generates, and the names of the `WITH` subqueries anywhere in it, which a table expression in their
+/// scope reads before a table.
 struct EvalQuery
 {
     ASTPtr ast;
@@ -2410,12 +2411,15 @@ std::vector<TableInfo> resolveTables(
         const auto visit = [&](const IAST & node, bool in_table_expression, const EvalQuery * eval_query)
         {
             /// The server qualifies the tables a stored query names, but not the ones in the query `eval` generates: those
-            /// resolve against the session database like a database-less name, unless a `WITH` subquery has the name.
+            /// resolve against the session database like a database-less name, unless a `WITH` subquery has the name. That
+            /// subquery may be visible in another scope only, so a name it has still counts when the owning database has a
+            /// table of that name: ordering the table first is harmless where the subquery is read.
             if (const auto * table_id = node.as<ASTTableIdentifier>())
             {
                 if (!table_id->getDatabaseName().empty())
                     references.push_back({table_id->getDatabaseName(), table_id->shortName()});
-                else if (eval_query && !eval_query->cte_names.contains(table_id->shortName()))
+                else if (eval_query && (!eval_query->cte_names.contains(table_id->shortName())
+                    || known_tables.contains({row.database, table_id->shortName()})))
                     references.push_back({"", table_id->shortName()});
             }
             /// A bare name after `IN` there is read as a column or an alias first, so it counts only when it names a table
@@ -2423,7 +2427,7 @@ std::vector<TableInfo> resolveTables(
             if (const auto * function = node.as<ASTFunction>(); eval_query && function && functionIsInOrGlobalInOperator(function->name)
                 && function->arguments && function->arguments->children.size() == 2)
                 if (const auto * identifier = function->arguments->children[1]->as<ASTIdentifier>(); identifier && !identifier->compound()
-                    && !eval_query->cte_names.contains(identifier->name()) && known_tables.contains({row.database, identifier->name()}))
+                    && known_tables.contains({row.database, identifier->name()}))
                     references.push_back({"", identifier->name()});
             /// A parameterized view is called like a table function, by its `[db.]name`, which the analyzer splits at the dot.
             const auto * table_expression = node.as<ASTTableExpression>();
