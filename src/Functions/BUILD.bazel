@@ -691,8 +691,14 @@ cc_library(
     ],
 )
 
+_PRIVATE_HEADERS = [
+    "FunctionsNullSafeCmp.h",
+    "TransformTime64.h",
+]
+
 cc_library(
     name = "headers",
+    srcs = _PRIVATE_HEADERS,
     hdrs = glob(
         [
             "**/*.h",
@@ -703,7 +709,7 @@ cc_library(
             "registerFunctions.h",
             "PolygonUtils.h",
             "UserDefined/UserDefinedWebAssembly.h",
-        ],
+        ] + _PRIVATE_HEADERS,
     ),
     deps = [
         "//base/poco/Util:_poco_util",

@@ -58,9 +58,19 @@ ch_cc_library(
     ],
 )
 
+_PRIVATE_HEADERS = glob([
+    "*Visitor.h",
+    "I*.h",
+    "slice*.h",
+])
+
 cc_library(
     name = "headers",
-    hdrs = glob(["**/*.h"]),
+    srcs = _PRIVATE_HEADERS,
+    hdrs = glob(
+        ["**/*.h"],
+        exclude = _PRIVATE_HEADERS,
+    ),
     deps = [
         "//src:headers",
         "//base:common",

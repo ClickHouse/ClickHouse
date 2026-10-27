@@ -355,8 +355,16 @@ cc_library(
     ],
 )
 
+_PRIVATE_HEADERS = glob(["DDSketch/*.h"]) + [
+    "AggregateFunctionGroupNumericIndexedVectorDataBSI.h",
+    "Combinators/IAggregateFunctionCombinator.h",
+    "ThetaSketchData.h",
+    "UniqBatch.h",
+]
+
 cc_library(
     name = "headers",
+    srcs = _PRIVATE_HEADERS,
     hdrs = glob(
         [
             "**/*.h",
@@ -364,7 +372,7 @@ cc_library(
         exclude = _PRIVATE_AGGREGATE_FUNCTIONS_0_HEADERS + [
             "IAggregateFunction.h",
             "IAggregateFunction_fwd.h",
-        ],
+        ] + _PRIVATE_HEADERS,
     ),
     deps = [
         "@clickhouse_croaring//:_roaring",

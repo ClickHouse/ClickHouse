@@ -144,7 +144,7 @@ def declare_parser_interface(rows):
     ))
 
 
-def declare_compiled_headers(rows, files, compiler, headers, field="hdrs", *, when_compiling=None):
+def declare_compiled_headers(rows, files, compiler, headers, field="hdrs", *, when_compiling=None, shared=None):
     """Assign headers to their compiling target. Use srcs for implementation and test headers."""
     globs = GlobFiles(files)
 
@@ -181,11 +181,15 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs", *, wh
             if removed:
                 if removed == included:
                     return list_expr([])
+                omit = expr(shared) if shared and removed == selected else list_expr(sorted(removed))
                 if excluded is None:
-                    node.keywords.append(ast.keyword(arg="exclude", value=list_expr(sorted(removed))))
+                    node.keywords.append(ast.keyword(arg="exclude", value=omit))
                 else:
-                    values = [*files_in(excluded), *sorted(removed)]
-                    next(kw for kw in node.keywords if kw.arg == "exclude").value = list_expr(values)
+                    option = next(kw for kw in node.keywords if kw.arg == "exclude")
+                    if shared and removed == selected:
+                        option.value = ast.BinOp(left=excluded, op=ast.Add(), right=omit)
+                    else:
+                        option.value = list_expr([*files_in(excluded), *sorted(removed)])
             return node
 
     compilers = {ast.literal_eval(attributes(row.value)["name"]): row.value for row in rows
@@ -204,7 +208,7 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs", *, wh
         names = sorted(set(owners.values()))
     for name in names:
         owner = compilers[name]
-        value = deepcopy(headers)
+        value = expr(shared) if shared else deepcopy(headers)
         if when_compiling and len(names) > 1:
             value = expr("select(" + json.dumps({
                 "@platforms//cpu:" + cpu: sorted(selected) if target == name else []
@@ -217,6 +221,10 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs", *, wh
             attribute.value.elts.extend(value.elts)
         else:
             attribute.value = ast.BinOp(left=attribute.value, op=ast.Add(), right=value)
+    if shared:
+        first_use = next(i for i, row in enumerate(rows) if any(
+            isinstance(node, ast.Name) and node.id == shared for node in ast.walk(row)))
+        rows.insert(first_use, ast.Assign(targets=[ast.Name(id=shared, ctx=ast.Store())], value=deepcopy(headers)))
 
 
 # Public headers read outside dbms__compile_0 and clickhouse_common_io__compile_0.
@@ -1259,6 +1267,33 @@ class Migration:
             self.exports["src"].update(SERVER_PRIVATE_HEADERS)
         if self.from_generator:
             for package, compiler, headers in (
+                ("src", "headers", list_expr([
+                    "Backups/BackupOperationInfo.h",
+                    "Coordination/KeeperDelta.h",
+                    "Coordination/Storage/BlockPtr.h",
+                    "Interpreters/AsynchronousInsertQueueDataKind.h",
+                    "Interpreters/FileCache/ShardedMap.h",
+                    "Interpreters/SetKeys.h",
+                    "Processors/QueryPlan/RuntimeFilterTypes.h",
+                    "Storages/MergeTree/BackgroundProcessList.h",
+                    "Storages/MergeTree/ColumnSizeEstimator.h",
+                    "Storages/MergeTree/MergeTreeDataPartState.h",
+                    "Storages/MergeTree/ReplicatedTableStatus.h",
+                    "Storages/ObjectStorage/DataLakes/Iceberg/DeletionVectorObject.h",
+                    "Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h",
+                    "Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h",
+                    "Storages/ObjectStorage/DataLakes/Paimon/PaimonPersistentComponents.h",
+                    "Storages/RenamingRestrictions.h",
+                    "Storages/StreamingBackgroundControl.h",
+                ])),
+                ("src/AggregateFunctions", "headers", ast.BinOp(left=expr('glob(["DDSketch/*.h"])'), op=ast.Add(), right=list_expr([
+                    "AggregateFunctionGroupNumericIndexedVectorDataBSI.h",
+                    "Combinators/IAggregateFunctionCombinator.h",
+                    "ThetaSketchData.h",
+                    "UniqBatch.h",
+                ]))),
+                ("src/Functions", "headers", list_expr(["FunctionsNullSafeCmp.h", "TransformTime64.h"])),
+                ("src/Functions/GatherUtils", "headers", expr('glob(["*Visitor.h", "I*.h", "slice*.h"])')),
                 ("src/Compression", "clickhouse_compression",
                  list_expr(["PFor/bitpack.h", "PFor/block.h", "PFor/bulk.h", "PFor/vertical.h"])),
                 ("src/Functions/array", "clickhouse_functions_array__compile_0", list_expr(["arrayIndex.h"])),
@@ -1266,7 +1301,8 @@ class Migration:
                  expr('glob(["ASTs/*.h", "Generator/VisitorJSONPath*.h"])')),
             ):
                 if package in self.rows:
-                    declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, headers, field="srcs")
+                    declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, headers,
+                                             field="srcs", shared="_PRIVATE_HEADERS" if compiler == "headers" else None)
         if self.from_generator and "src/Dictionaries" in self.rows:
             declare_dictionary_private_headers(self.rows["src/Dictionaries"], self.package_inventory("src/Dictionaries"))
         data = self.rewrite_consumers()

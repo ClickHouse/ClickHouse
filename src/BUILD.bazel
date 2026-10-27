@@ -3680,8 +3680,29 @@ _COLUMN_TYPE_HEADERS = [
     "Core/ValuesWithType.h",
 ]
 
+_PRIVATE_HEADERS = [
+    "Backups/BackupOperationInfo.h",
+    "Coordination/KeeperDelta.h",
+    "Coordination/Storage/BlockPtr.h",
+    "Interpreters/AsynchronousInsertQueueDataKind.h",
+    "Interpreters/FileCache/ShardedMap.h",
+    "Interpreters/SetKeys.h",
+    "Processors/QueryPlan/RuntimeFilterTypes.h",
+    "Storages/MergeTree/BackgroundProcessList.h",
+    "Storages/MergeTree/ColumnSizeEstimator.h",
+    "Storages/MergeTree/MergeTreeDataPartState.h",
+    "Storages/MergeTree/ReplicatedTableStatus.h",
+    "Storages/ObjectStorage/DataLakes/Iceberg/DeletionVectorObject.h",
+    "Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h",
+    "Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h",
+    "Storages/ObjectStorage/DataLakes/Paimon/PaimonPersistentComponents.h",
+    "Storages/RenamingRestrictions.h",
+    "Storages/StreamingBackgroundControl.h",
+]
+
 ch_cc_library(
     name = "headers",
+    srcs = _PRIVATE_HEADERS,
     hdrs = glob(
         [
             "**/*.h",
@@ -3694,7 +3715,7 @@ ch_cc_library(
         ] + _IO_STRING_BUFFER_HEADERS + _COLUMN_TYPE_HEADERS + _UNIT_TEST_HEADERS + _SERVER_FACTORY_HEADERS + _DBMS_EMBEDDED_PRIVATE_HEADERS + [
             "Storages/StorageGenerateRandom.h",
             "Client/ClientApplicationBaseParser.h",
-        ] + _OBJECT_STORAGE_CONFIGURATION_HEADERS + ["Interpreters/ExternalDictionariesLoader.h"],
+        ] + _OBJECT_STORAGE_CONFIGURATION_HEADERS + ["Interpreters/ExternalDictionariesLoader.h"] + _PRIVATE_HEADERS,
     ) + select({
         "@platforms//cpu:x86_64": ["Storages/StorageGenerateRandom.h"],
         "@platforms//cpu:aarch64": [],
