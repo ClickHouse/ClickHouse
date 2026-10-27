@@ -3,13 +3,18 @@
 -- preceded the analyzer as well. A `Distributed` table resolves its read through a query tree that
 -- interpreter never builds, so reading one from there dereferenced a null query tree.
 
-DROP TABLE IF EXISTS in_subquery_source;
-DROP TABLE IF EXISTS in_subquery_dist;
-DROP TABLE IF EXISTS in_subquery_constraint;
-DROP TABLE IF EXISTS in_subquery_constraint_bare;
-DROP TABLE IF EXISTS in_subquery_child;
-DROP TABLE IF EXISTS in_subquery_merge;
+-- Under the stress profile a fuzzer copy of a `CREATE` or an ignored `DROP` can leave a table whose `TTL` reads
+-- `in_subquery_dist` after `in_subquery_source` is gone, and the server then cannot load it on restart.
+SET ast_fuzzer_any_query = 0;
+SET ignore_drop_queries_probability = 0;
+
 DROP TABLE IF EXISTS in_subquery_ttl;
+DROP TABLE IF EXISTS in_subquery_merge;
+DROP TABLE IF EXISTS in_subquery_child;
+DROP TABLE IF EXISTS in_subquery_constraint_bare;
+DROP TABLE IF EXISTS in_subquery_constraint;
+DROP TABLE IF EXISTS in_subquery_dist;
+DROP TABLE IF EXISTS in_subquery_source;
 
 CREATE TABLE in_subquery_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO in_subquery_source VALUES (1), (2);

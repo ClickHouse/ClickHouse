@@ -8,16 +8,14 @@ doc_type: 'reference'
 
 clickhouse-keeper とネイティブプロトコルでやり取りするためのクライアントアプリケーションです。
 
-<div id="clickhouse-keeper-client">
-  ## オプション
-</div>
+## オプション {#clickhouse-keeper-client}
 
 * `-q QUERY`, `--query=QUERY` — 実行するクエリ。このパラメーターを指定しない場合、`clickhouse-keeper-client` は対話型モードで起動します。
 * `-h HOST`, `--host=HOST` — サーバーのホスト。デフォルト値: `localhost`。
 * `-p N`, `--port=N` — サーバーのポート。デフォルト値: 9181
-* `-c FILE_PATH`, `--config-file=FILE_PATH` — 接続文字列の取得に使用する設定ファイルのパスを指定します。デフォルト値: `config.xml`。
-* `--password=PASSWORD` — 認証用のパスワード。`CLICKHOUSE_KEEPER_PASSWORD` 環境変数、または XML 設定ファイルの `<zookeeper><password>` でも設定できます。
-* `--identity=IDENTITY` — `digest` 認証スキームで使用する identity。`CLICKHOUSE_KEEPER_IDENTITY` 環境変数、または XML 設定ファイルの `<zookeeper><identity>` でも設定できます。
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — 接続文字列の取得に使用する設定ファイルのパスを指定します。デフォルトでは、現在のディレクトリにある `config.xml`、`config.yaml`、`config.yml` のうち、最初に見つかったものが使用されます。
+* `--password=PASSWORD` — 認証用のパスワード。`CLICKHOUSE_KEEPER_PASSWORD` 環境変数、または設定ファイルの `<zookeeper><password>` (YAML では `zookeeper.password`) でも設定できます。
+* `--identity=IDENTITY` — `digest` 認証スキームで使用する identity。`CLICKHOUSE_KEEPER_IDENTITY` 環境変数、または設定ファイルの `<zookeeper><identity>` (YAML では `zookeeper.identity`) でも設定できます。
 * `--connection-timeout=TIMEOUT` — 接続タイムアウトを秒単位で設定します。デフォルト値: 10s。
 * `--session-timeout=TIMEOUT` — セッションタイムアウトを秒単位で設定します。デフォルト値: 10s。
 * `--operation-timeout=TIMEOUT` — 操作タイムアウトを秒単位で設定します。デフォルト値: 10s。
@@ -26,26 +24,24 @@ clickhouse-keeper とネイティブプロトコルでやり取りするため�
 * `--no-confirmation` — 指定すると、いくつかのコマンドで確認を求めません。デフォルト値は、対話型では `false`、クエリでは `true` です。
 * `--help` — ヘルプメッセージを表示します。
 
-<div id="clickhouse-keeper-client-env">
-  ## 環境変数
-</div>
+## 環境変数 {#clickhouse-keeper-client-env}
 
 * `CLICKHOUSE_KEEPER_PASSWORD` — コマンドラインで `--password` が指定されていない場合のデフォルトパスワードとして使用されます。
 * `CLICKHOUSE_KEEPER_IDENTITY` — コマンドラインで `--identity` が指定されていない場合のデフォルトの identity として使用されます。
 
-<div id="clickhouse-keeper-client-auth">
-  ## 認証
-</div>
+## 認証 {#clickhouse-keeper-client-auth}
 
 認証が必要な Keeper サーバーに接続する場合、パスワードは次の優先順位で決定されます (最初に一致したものが使用されます) 。
 
 1. `--password` コマンドライン引数
 2. `CLICKHOUSE_KEEPER_PASSWORD` 環境変数
-3. `--config-file` で指定した XML 設定ファイル内の `<zookeeper><password>`
+3. 読み込まれた設定ファイル内の `<zookeeper><password>`
+
+手順 3 の設定ファイルとは、`--config-file` で指定したファイルです。このオプションを省略した場合は、現在のディレクトリ内で `config.xml`、`config.yaml`、`config.yml` のうち最初に見つかったものが使用されます。XML 形式と YAML 形式のどちらも読み込まれるため、`config.yaml` 内の `zookeeper.password` は `config.xml` 内の `<zookeeper><password>` とまったく同じように機能します。
 
 `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>` にも同じ優先順位が適用されます。
 
-認証設定を含む XML 設定ファイルの例:
+認証設定を含む設定ファイルの例:
 
 ```xml
 <clickhouse>
@@ -59,9 +55,7 @@ clickhouse-keeper とネイティブプロトコルでやり取りするため�
 </clickhouse>
 ```
 
-<div id="clickhouse-keeper-client-example">
-  ## 例
-</div>
+## 例 {#clickhouse-keeper-client-example}
 
 ```bash
 ./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
@@ -83,9 +77,7 @@ keeper foo bar
 2
 ```
 
-<div id="clickhouse-keeper-client-commands">
-  ## コマンド
-</div>
+## コマンド {#clickhouse-keeper-client-commands}
 
 * `ls '[path]' [watch_id]` -- 指定した path のノードを一覧表示します (デフォルト: cwd) 。必要に応じて、`watch_id` で識別される children watch を設定します
 * `cd '[path]'` -- 作業 path を変更します (デフォルト `.`) 

@@ -852,7 +852,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new setting to use geo columns in parquet file"}]}]}/>
 
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
@@ -918,9 +918,9 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to override the adaptive Parquet footer initial read size with a fixed number of bytes; 0 keeps the adaptive behavior."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting for the Parquet footer initial read size; 0 reads 64 KiB of a local file and sizes the read adaptively for other sources."}]}]}/>
 
-Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) sizes the read adaptively to the file - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
+Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) reads a 64 KiB tail when the file is read directly from the local filesystem, and for other sources (object storage, URL, HDFS) sizes the read adaptively - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
 
 ## input_format_parquet_local_file_min_bytes_for_seek {#input_format_parquet_local_file_min_bytes_for_seek}
 
@@ -1215,6 +1215,22 @@ For Values format: if the field could not be parsed by streaming parser, run SQL
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 For Values format: if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.
+
+## input_format_vortex_filter_push_down {#input_format_vortex_filter_push_down}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to push translatable parts of WHERE conditions on top-level integer, floating-point, string\/binary, `Bool`, `Date`, `Date32` and `DateTime64` columns down into the Vortex format scan, which may reduce the rows decoded; a condition that is only partly translatable is widened to one that keeps at least every matching row, and ClickHouse reapplies the full filter after the scan."}]}]}/>
+
+When reading Vortex files, push translatable parts of WHERE conditions on top-level integer, floating-point, string/binary, `Bool`, `Date`, `Date32` and `DateTime64` columns down into the scan, so that a selective query reads and decodes less data. Only the translated part of the condition is enforced inside the scan: a condition that is only partly translatable is widened to one that keeps at least every matching row, so rows that do not match can still be read and decoded. ClickHouse reapplies the full filter after the scan.
+
+## input_format_vortex_preserve_order {#input_format_vortex_preserve_order}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to return the rows of a Vortex file in file order; by default the file is decoded in parallel and the row order is not guaranteed."}]}]}/>
+
+Return the rows of a Vortex file in file order. By default the row splits of a file are decoded in parallel (see `max_parsing_threads`) and returned as soon as they are ready, so the row order is not guaranteed; with this setting a slow split holds back the ones after it. Not recommended as row ordering is generally not guaranteed, and other parts of the query pipeline may break it.
 
 ## input_format_with_names_use_header {#input_format_with_names_use_header}
 

@@ -161,12 +161,25 @@ void LimitRangeStep::serialize(Serialization & ctx) const
     if (limit)
         writeVarUInt(*limit, ctx.out);
 
+    /// The boundary columns are outputs of `conditions`, and their names are composed by the planner, so a
+    /// cache key refers to them by what they compute rather than by how this build named them - the same
+    /// choice `FilterStep` makes for its filter column.
     if (start_column_name)
-        writeStringBinary(*start_column_name, ctx.out);
+    {
+        if (ctx.for_cache_key)
+            writeIntBinary(conditions.getOutputIdentity(*start_column_name, ctx.input_header), ctx.out);
+        else
+            writeStringBinary(*start_column_name, ctx.out);
+    }
     if (end_column_name)
-        writeStringBinary(*end_column_name, ctx.out);
+    {
+        if (ctx.for_cache_key)
+            writeIntBinary(conditions.getOutputIdentity(*end_column_name, ctx.input_header), ctx.out);
+        else
+            writeStringBinary(*end_column_name, ctx.out);
+    }
 
-    conditions.serialize(ctx.out, ctx.registry);
+    conditions.serialize(ctx.out, ctx.registry, ctx.input_header);
 }
 
 QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)

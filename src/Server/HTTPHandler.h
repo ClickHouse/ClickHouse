@@ -81,6 +81,10 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
+    /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
+    /// not be lowered by request settings.
+    void setHasServerOwnedQuery() { has_server_owned_query = true; }
+
     /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
     /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
     /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
@@ -93,6 +97,8 @@ protected:
 
 private:
     String introspection_handler_name;
+
+    bool has_server_owned_query = false;
 
     /// Whether `consumes_request_body` carries a definitive answer. Only SQL-defined handlers set it: for them a
     /// `POST` request needs `Content-Length` up front only when the body is actually consumed. For the other

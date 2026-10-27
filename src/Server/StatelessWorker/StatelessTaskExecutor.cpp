@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/Block.h>
 #include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/QueryScope.h>
@@ -34,6 +35,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char distributed_plan_delay_root_cause_report[];
+    extern const char distributed_plan_delay_failed_task_release[];
 }
 
 namespace Setting
@@ -58,6 +60,18 @@ StatelessTaskExecutor::TaskFailure currentTaskFailure()
         getCurrentExceptionMessage(/*with_stacktrace=*/ false, /*check_embedded_stacktrace=*/ false, /*with_extra_info=*/ false, /*with_version=*/ false)};
 }
 
+}
+
+void StatelessTaskExecutor::FailureSlot::set(TaskFailure failure_)
+{
+    std::lock_guard lock(mutex);
+    failure = std::move(failure_);
+}
+
+std::optional<StatelessTaskExecutor::TaskFailure> StatelessTaskExecutor::FailureSlot::get() const
+{
+    std::lock_guard lock(mutex);
+    return failure;
 }
 
 StatelessTaskExecutor::StatelessTaskExecutor(size_t max_threads, size_t max_free_threads, size_t queue_size)
@@ -94,7 +108,10 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         ClientInfo client_info = query_context->getClientInfo();
         client_info.current_query_id = unique_task_id;
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.distributed_depth = 1;
         client_info.initial_query_id = task_description.initial_query_id;
+        /// The start request's trace context becomes the task's trace context.
+        client_info.client_trace_context = OpenTelemetry::CurrentContext();
         query_context->setClientInfo(client_info);
     }
 
@@ -148,8 +165,20 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         task_progress->incrementPiecewiseAtomically(progress);
     };
 
+    /// The coordinator learns the cause without waiting until the task frees its resources.
+    auto report_failure = [failure_slot = task_state->failure]
+    {
+        auto failure = currentTaskFailure();
+        fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
+        {
+            if (!DistributedQueryCancellation::isConsequence(failure.code))
+                sleepForMilliseconds(1000);
+        });
+        failure_slot->set(std::move(failure));
+    };
+
     auto task_function = [task_description, object_storage, object_storage_path, distributed_query_id = unique_temp_file_path, query_context, task_promise, is_task_cancelled, update_progress,
-        logs_queue = task_state->logs_queue, client_logs_level] mutable
+        report_failure, logs_queue = task_state->logs_queue, client_logs_level] mutable
     {
         /// The promise must be fulfilled strictly after the last log line of this task:
         /// `getStatus` treats a ready future as a terminal state
@@ -173,7 +202,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
                 /// A dispatched task is by definition not the initiator's in-process execution, so its
                 /// exchanges use the streaming/persisted transports rather than in-memory queues.
                 doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
-                    /*execute_locally=*/false, is_task_cancelled, update_progress);
+                    /*execute_locally=*/false, is_task_cancelled, update_progress, report_failure);
             }
             catch (...)
             {
@@ -184,11 +213,9 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
                     fmt::format("Task {} failed", task_description.task.task_id));
 
                 task_failure = currentTaskFailure();
-                fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
-                {
-                    if (!DistributedQueryCancellation::isConsequence(task_failure->code))
-                        sleepForMilliseconds(1000);
-                });
+                /// Models a task that frees its resources long after its exchange connections close.
+                if (!DistributedQueryCancellation::isConsequence(task_failure->code))
+                    fiu_do_on(FailPoints::distributed_plan_delay_failed_task_release, { sleepForMilliseconds(5000); });
             }
         }
         catch (...)
@@ -258,6 +285,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     std::shared_ptr<Progress> progress;
     InternalTextLogsQueuePtr logs_queue;
     std::shared_ptr<ForwardedLogsCounter> forwarded_logs;
+    std::shared_ptr<FailureSlot> failure_slot;
     TaskCollectors collectors;
     {
         std::lock_guard lock(tasks_mutex);
@@ -268,6 +296,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
         progress = it->second->progress;
         logs_queue = it->second->logs_queue;
         forwarded_logs = it->second->forwarded_logs;
+        failure_slot = it->second->failure;
         collectors = it->second->collectors;
     }
 
@@ -275,6 +304,8 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     {
         auto logs = drainLogs(logs_queue, *forwarded_logs);
         Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
+        if (auto failure = failure_slot->get())
+            return TaskStatus{Result::TaskFailing, failure->message, std::move(progress_delta), failure->code, std::move(logs), collectors};
         return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, std::move(logs), collectors};
     }
 
