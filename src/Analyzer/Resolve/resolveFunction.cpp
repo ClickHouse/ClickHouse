@@ -1476,6 +1476,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
+    /// Once no lambda in scope shadows the name, the call is committed to the function with this name,
+    /// built-in or user defined. Check the grant here, before any of the rewrites below can replace the
+    /// call (`if` with a constant condition, `IN` with an array, the early short-circuit of `and`/`or`, ...)
+    /// or rename it.
+    if (!lambda_expression_untyped)
+        checkFunctionAccess(scope.context, function_name);
+
     /** Early short-circuit optimization for ordinary builtin AND/OR functions. Perform this
       * only after checking scoped lambdas and registered UDFs, so a builtin cannot bypass a
       * user-defined function with the same name.
@@ -3058,12 +3065,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
-
-            /// Only here the identifier is committed to the SQL user defined function: up to this point
-            /// a column or lambda alias with the same name would have won, and `system.functions` reads
-            /// the same factory without invoking anything.
-            if (lambda_expression_untyped)
-                checkFunctionAccess(scope.context, function_name);
         }
 
         /** If function is resolved as lambda.
@@ -3243,9 +3244,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
     bool can_have_parameters = (function != nullptr);
 
-    if (function)
-        checkFunctionAccess(scope.context, function_name);
-
     if (!function)
     {
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
@@ -3253,7 +3251,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             UNUSED(create_function_query);
             UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
-            checkFunctionAccess(scope.context, function_name);
         }
     }
 
@@ -3263,9 +3260,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         function = FunctionFactory::instance().tryGet(function_name, scope.context);
         can_have_parameters = false;
-
-        if (function)
-            checkFunctionAccess(scope.context, function_name);
 
         /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
         /// A non-deterministic function like `randConstant` returns a different value on every `build`,

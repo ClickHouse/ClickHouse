@@ -179,6 +179,22 @@ def test_function_without_parentheses_requires_grant():
     assert instance.query("SELECT current_user", user="A") == "A\n"
 
 
+def test_rewritten_call_requires_grant():
+    """The grant applies to the call as written, even when the analyzer replaces it."""
+    instance.query("CREATE USER A")
+
+    for query, function, result in [
+        ("SELECT if(1, 7, missing_column)", "if", "7\n"),
+        ("SELECT materialize(1) IN [materialize(1)]", "in", "1\n"),
+    ]:
+        assert "Not enough privileges" in instance.query_and_get_error(
+            query, user="A"
+        ), query
+
+        instance.query(f"GRANT FUNCTION ON {function} TO A")
+        assert instance.query(query, user="A") == result, query
+
+
 def test_system_functions_readable_without_grant():
     """A listed SQL UDF must not break introspection for users who cannot execute it."""
     instance.query("CREATE USER A")

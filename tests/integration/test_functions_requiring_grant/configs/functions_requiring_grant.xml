@@ -12,6 +12,10 @@
             <function>listed_executable_udf</function>
             <!-- Can be called without parentheses: `SELECT currentUser`, `SELECT current_user`. -->
             <function>currentUser</function>
+            <!-- The analyzer may replace these calls before resolving the function itself:
+                 `if` with a constant condition by its branch, `IN` with an array by `has`. -->
+            <function>if</function>
+            <function>in</function>
         </functions_requiring_grant>
     </access_control_improvements>
 </clickhouse>
