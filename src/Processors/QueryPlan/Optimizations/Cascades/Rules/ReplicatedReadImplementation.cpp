@@ -45,6 +45,11 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;
 
+    /// Every node reads the whole table and keeps all of its rows: the bytes it scans and the
+    /// rows it outputs both have to fit the byte budget.
+    if (!decideReplicationOf(*memo.getGroup(expression->group_id), memo.getContext(), getName(), /*repeats_scan*/ true).allowed)
+        return {};
+
     LOG_TEST(getLogger("ReplicatedRead"), "Creating replicated read for '{}' at {} nodes",
         read_step->getStepDescription(), node_count);
 

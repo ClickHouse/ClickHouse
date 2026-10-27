@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/CostEstimationInfo.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <span>
 #include <string_view>
@@ -122,6 +123,11 @@ public:
     String getUniqID() const;
     /// The number in `getUniqID`, unique within the query.
     size_t getStepIndex() const { return step_index.value; }
+
+    /// The estimate the optimizer attached to this step's plan node, copied here when the pipeline is
+    /// built so that the processors can record it in `system.processors_profile_log`.
+    void setEstimation(const std::optional<CostEstimationInfo> & estimation_) { estimation = estimation_; }
+    const std::optional<CostEstimationInfo> & getEstimation() const { return estimation; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -263,6 +269,7 @@ private:
     };
 
     StepIndex step_index;
+    std::optional<CostEstimationInfo> estimation;
 };
 
 }

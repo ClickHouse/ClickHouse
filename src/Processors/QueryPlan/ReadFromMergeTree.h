@@ -413,6 +413,11 @@ public:
     /// Range analysis charges whole granules, so an estimate must not enforce a throwing read row limit.
     bool hasThrowingReadRowLimit() const;
 
+    /// Range analysis to size the read while the plan is still built. It never throws for a read row
+    /// limit: later planning, such as reading in order with a limit, can make the executed read smaller
+    /// than the analysis counts. It is the stored analysis of the read when that fits the limit.
+    AnalysisResultPtr getAnalyzedResultForEstimation() const;
+
     /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
     /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
     /// conservatively (e.g. a partial read of a compact part, which does not track per-column sizes),

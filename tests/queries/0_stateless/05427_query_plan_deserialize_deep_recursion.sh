@@ -34,6 +34,7 @@ REVISION = 54482
 # Plan serialization version gates for header fields (see Core/ProtocolDefines.h).
 WITH_EXECUTION_LIMITS = 11  # max_threads + concurrency_control
 WITH_STEP_VERSIONS = 19     # per-step version
+WITH_STEP_ESTIMATES = 21    # per-step row and cost estimates
 
 # ActionsDAG::ActionType (Interpreters/ActionsDAG.h)
 ACTION_COLUMN = 1
@@ -258,6 +259,8 @@ def buildQueryPlanPacket(plan_version, depth):
     if plan_version >= WITH_STEP_VERSIONS:
         writeVarUInt(0, body)      # step_version
     writeStringBinary("", body)    # step_description
+    if plan_version >= WITH_STEP_ESTIMATES:
+        body.append(0)             # no estimates
     writeVarUInt(0, body)          # output header: 0 columns
     writeVarUInt(0, body)          # settings: 0 changed
     # ExpressionStep::deserialize -> ActionsDAG::deserialize

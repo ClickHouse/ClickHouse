@@ -1,0 +1,5 @@
+-- the result is right
+900450
+900450
+-- the filter was sent, and the tasks prune granules with it
+1	1

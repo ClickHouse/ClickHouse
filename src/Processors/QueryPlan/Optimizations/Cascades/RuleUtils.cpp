@@ -1,19 +1,77 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <fmt/format.h>
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
 
+namespace
+{
+
+/// A partial result (a partial aggregation, a preliminary `DISTINCT`, a partial top-N) emits more rows than its group's
+/// logical result, as `GroupExpression::physical_copies` counts them, so the group's statistics do not size it.
+bool isPartialResult(const Group & group)
+{
+    if (group.logical_expressions.empty())
+        return false;
+    const auto * step = group.logical_expressions.front()->getQueryPlanStep();
+    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+        return !aggregating_step->isFinal() && !aggregating_step->getParams().only_merge;
+    if (const auto * distinct_step = typeid_cast<const DistinctStep *>(step))
+        return distinct_step->isPreliminary();
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
+        return sorting_step->isPartialTopN();
+    return false;
+}
+
+}
+
+ReplicationDecision decideReplicationOf(const Group & group, const OptimizerContext & context, const String & rule_name, bool repeats_scan)
+{
+    if (isPartialResult(group))
+        return ReplicationDecision{.allowed = false, .reason = "a partial result, whose physical size is not checked"};
+
+    /// Without statistics the size is unknown and has no bound.
+    ReplicationSize size;
+    if (group.statistics)
+    {
+        const auto & statistics = *group.statistics;
+        if (!statistics.rows_unknown)
+            size.estimated_rows = ceilToRowCount(statistics.estimated_row_count);
+        size.imprecise_estimate = statistics.estimate_from_defaults || statistics.imprecise_estimate;
+        if (statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max()))
+            size.max_rows = ceilToRowCount(statistics.max_row_count);
+        size.bytes_per_row = statistics.estimated_bytes_per_row;
+        if (repeats_scan && statistics.physical_read_bytes > 0)
+            size.scan_bytes = ceilToRowCount(statistics.physical_read_bytes);
+    }
+
+    const ReplicationBudget budget{.max_rows = std::nullopt, .max_bytes = context.max_bytes_to_broadcast};
+    const auto decision = decideReplication(size, budget);
+    LOG_TEST(getLogger(rule_name), "{}", decision.describe(size, budget));
+    return decision;
+}
+
 bool isTopNSort(const IQueryPlanStep & step)
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
-    return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() > 0;
+    /// A partitioned bounded sort keeps one stream per hash partition instead of merging to
+    /// a global top-N, so the top-N rules (which promise one sorted stream) must not take it.
+    return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full
+        && sorting_step->getLimit() > 0 && !sorting_step->hasPartitions();
 }
 
 bool isDistributionPassthroughStep(const IQueryPlanStep & step)

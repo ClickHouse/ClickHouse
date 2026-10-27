@@ -173,6 +173,10 @@ struct QueryPlanOptimizationSettings
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
+    size_t cascades_join_order_alternatives = 4;
+    /// Set by the second pass while the plan will go through Cascades: join reordering then also builds a
+    /// other join orders for Cascades to choose from, see `JoinGraphStep`.
+    mutable bool build_join_order_alternatives = false;
 
     bool make_distributed_plan = false;
     /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
@@ -188,6 +192,7 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
     String distributed_plan_force_exchange_kind; /// Force exchange kind for all exchanges in distributed query plan
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
+    UInt64 distributed_plan_max_bytes_to_broadcast = 1000000000; /// Byte budget for the data a distributed query plan replicates to every node; 0 for none
     bool distributed_plan_read_in_order = false; /// Allow read-in-order for ORDER BY in a distributed plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_plan_partial_aggregation_before_shuffle = true; /// Shuffle partial aggregation states instead of input rows

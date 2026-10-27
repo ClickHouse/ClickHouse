@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Interpreters/DistributedPlanLocalObject.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
@@ -279,6 +280,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
+            frame.node->step->setEstimation(frame.node->cost_estimation);
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
 
             if (limit_max_threads && max_threads)
@@ -460,7 +462,27 @@ static void explainStep(
     if (options.estimates)
     {
         if (cost_estimation.has_value())
-            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f})", cost_estimation->rows, cost_estimation->cost);
+        {
+            settings.out << " (rows: ";
+            if (cost_estimation->rows)
+                settings.out << fmt::format("~{:.1f}", *cost_estimation->rows);
+            else
+                settings.out << "<unknown>";
+            if (cost_estimation->cost)
+                settings.out << fmt::format(", cost: {:.1f}", *cost_estimation->cost);
+            if (auto source_name = rowEstimateSourceName(cost_estimation->source); !source_name.empty())
+                settings.out << ", source: " << source_name;
+            if (options.bounds)
+            {
+                if (cost_estimation->max_rows)
+                    settings.out << fmt::format(", bound: {:.0f}", *cost_estimation->max_rows);
+                if (cost_estimation->search_rows)
+                    settings.out << fmt::format(", search: {:.3g}", *cost_estimation->search_rows);
+                if (cost_estimation->estimate_from_defaults)
+                    settings.out << ", from defaults";
+            }
+            settings.out << ')';
+        }
         else
             settings.out << " (rows: <unknown>, cost: <unknown>)";
     }
@@ -1430,6 +1452,9 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
 
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
+            /// The row estimate of the step belongs to the node; without it the clone shows no
+            /// estimate in `EXPLAIN` and the profile log.
+            frame.clone->cost_estimation = frame.node->cost_estimation;
 
             original_to_clone[frame.node] = frame.clone;
             if (auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(frame.clone->step.get()))

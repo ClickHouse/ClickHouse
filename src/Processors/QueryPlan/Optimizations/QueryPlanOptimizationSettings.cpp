@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
+    extern const SettingsUInt64 cascades_join_order_alternatives;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
@@ -147,6 +148,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsUInt64 distributed_plan_max_bytes_to_broadcast;
     extern const SettingsBool distributed_plan_read_in_order;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsBool distributed_plan_join_runtime_filters;
@@ -399,6 +401,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_exchange_kind = "Persisted";
 #endif
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
+    distributed_plan_max_bytes_to_broadcast = from[Setting::distributed_plan_max_bytes_to_broadcast];
     distributed_plan_read_in_order = from[Setting::distributed_plan_read_in_order];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_plan_partial_aggregation_before_shuffle = from[Setting::distributed_plan_partial_aggregation_before_shuffle];
@@ -409,6 +412,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
+    cascades_join_order_alternatives = from[Setting::cascades_join_order_alternatives];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

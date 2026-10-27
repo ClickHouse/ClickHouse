@@ -140,6 +140,9 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 /// Move FilterStep down if possible.
 /// May split FilterStep and push down only part of it.
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+/// Moves a filter that applies join runtime filters below the exchange under it, so that the rows are filtered before
+/// they are sent. The filter then runs in another stage than the join, so the filter must be sent there.
+size_t tryPushDownRuntimeFilterOverExchange(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
 
 /// Fuse a FilterStep directly above an ArrayJoinStep: element-only conjuncts become the ArrayJoinStep's
 /// element filter, applied before expansion so filtered elements are never expanded or replicated.
@@ -240,6 +243,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// so that index pruning (MergeTree primary key) on the other side picks them up
 size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Marks each hash join whose build input is reduced by a runtime filter built outside that input.
+/// Such a join records the size of its build side, but join ordering does not reuse it. Runs after
+/// runtime filters are placed and pushed down.
+void markJoinBuildInputsFilteredFromOutside(QueryPlan::Node & root);
+
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
@@ -316,7 +324,8 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
+/// With `runtime_filters_only`, only join runtime filter conditions move, also into a PREWHERE the read already has.
+void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true, bool runtime_filters_only = false);
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);

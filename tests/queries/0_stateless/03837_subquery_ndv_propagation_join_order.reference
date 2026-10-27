@@ -1,9 +1,9 @@
   JoinLogical
-  Join: sq[50000] ⋈ pc[300] ⋈ rs[200]
-  ResultRows: 60000
+  Join: sq[10000] ⋈ pc[300] ⋈ rs[200]
+  ResultRows: 12000
     JoinLogical
-    Join: sq[50000] ⋈ pc[300]
-    ResultRows: 1500
+    Join: sq[10000] ⋈ pc[300]
+    ResultRows: 300
         Aggregating
             JoinLogical
             Join: s[50000] ⋈ p[10000]

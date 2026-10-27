@@ -37,9 +37,14 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
-    /// NDV-based selectivity of the join predicates, see `SelectivityEstimate::reported_value`; reported by `EXPLAIN` as `estimated (NDV)`.
+    /// One over the largest key NDV of the join predicates, a key without an NDV counting its relation's
+    /// rows; reported by `EXPLAIN` as `estimated (NDV)`. See `JoinKeyEstimate::selectivity`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
+    /// Rows the result cannot exceed; see `RelationStats::max_rows` and `estimateJoinRowsUpperBound`.
+    std::optional<UInt64> max_rows = {};
+    /// A default selectivity stood in for a predicate in some relation of this entry.
+    bool estimate_from_defaults = false;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// For join nodes
@@ -50,7 +55,7 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    DPJoinEntry(size_t id, const RelationStats & relation_stats);
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -92,6 +97,10 @@ struct QueryGraph
 
     std::vector<JoinActionRef> edges;
 
+    /// The graph is one semi or anti join whose probe side was built from the preserved side's
+    /// key values, see `JoinStepLogical::probeKeysWithinPreservedSide`.
+    bool probe_keys_within_preserved_side = false;
+
     /// For each of `edges`, the index in `conflict_ops` of the join step whose ON clause it comes
     /// from. An inner join's ON clause is split into conjuncts placed on their own, and a conjunct
     /// placed on its own still has to obey the conflict rules of its join step.
@@ -117,7 +126,8 @@ struct QueryGraph
 
     /// The strictness `chooseJoinOrder` stamps onto every join of this graph (unless a conflict
     /// detector reordered a semi/anti join, which keeps its own). DP entries are built as `All`
-    /// whatever it is, so an `ANY`/`SEMI`/`ANTI` graph is only recognisable from here.
+    /// whatever it is, so an `ANY`/`SEMI`/`ANTI` graph is only recognisable from here. A semi or
+    /// anti join estimated as an outer join would keep its whole preserved side.
     JoinStrictness join_strictness = JoinStrictness::All;
 
     /// Restriction for a null-supplying relation of an outer join.
@@ -164,6 +174,12 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
+    /// How many complete orders besides the best one the DP solvers keep: the cheapest plans over all
+    /// relations whose top joins split them in different ways (a swap of the two inputs is the same split).
+    size_t max_join_order_alternatives = 0;
+    /// The kept plans by cost, the best plan among them; filled while a solver runs.
+    mutable std::vector<DPJoinEntryPtr> full_set_alternatives;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
 
@@ -174,6 +190,14 @@ struct QueryGraph
 
 struct QueryPlanOptimizationSettings;
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
+struct JoinOrderResult
+{
+    DPJoinEntryPtr best;
+    /// Other complete orders by cost, see `QueryGraph::max_join_order_alternatives`. They share the entries of their
+    /// common subtrees with `best` and with each other.
+    std::vector<DPJoinEntryPtr> alternatives;
+};
+
+JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
 
 }

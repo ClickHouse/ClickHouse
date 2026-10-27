@@ -151,11 +151,72 @@ public:
     bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
     void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    std::optional<UInt64> getResultRowsUpperBound() const { return result_rows_upper_bound; }
+    /// Who estimated this join: the join order optimizer when it built the join (the estimate and
+    /// the bound are the ones it used), the estimate in place for a join it left as it was, or
+    /// nobody yet (a join marked optimized to forbid reordering). An estimate that came out unknown
+    /// still counts, so the join is not estimated again.
+    enum class EstimationOrigin : UInt8
+    {
+        None,
+        InPlace,
+        JoinOrder,
+    };
+    bool isEstimatedByJoinOrder() const { return estimation_origin == EstimationOrigin::JoinOrder; }
+    bool hasRowsEstimation() const { return estimation_origin != EstimationOrigin::None; }
+    /// A default selectivity stood in for a predicate somewhere in the inputs of the estimate.
+    bool isEstimateFromDefaults() const { return estimate_from_defaults; }
+
+    /// Called by the join order optimizer for every join it builds.
+    void setJoinOrderEstimation(
+        std::optional<UInt64> estimated_rows_,
+        std::unordered_map<String, ColumnStats> column_stats_,
+        bool imprecise_estimate_,
+        std::optional<double> estimated_cost_,
+        std::optional<double> estimated_selectivity_,
+        UInt64 cluster_id_,
+        std::optional<UInt64> rows_upper_bound_,
+        bool estimate_from_defaults_)
+    {
+        setOptimized(estimated_rows_, std::move(column_stats_), imprecise_estimate_, estimated_cost_, estimated_selectivity_, cluster_id_, rows_upper_bound_);
+        estimation_origin = EstimationOrigin::JoinOrder;
+        estimate_from_defaults = estimate_from_defaults_;
+    }
+
+    /// Called for a join the join order optimizer leaves in place, estimated from its inputs. The
+    /// input estimates are reported next to the join's own; the inputs keep their labels.
+    void setInPlaceEstimation(
+        std::optional<UInt64> estimated_rows_,
+        std::unordered_map<String, ColumnStats> column_stats_,
+        bool imprecise_estimate_,
+        std::optional<double> estimated_selectivity_,
+        std::optional<UInt64> rows_upper_bound_,
+        bool estimate_from_defaults_,
+        const RelationEstimateInfo & left_estimate_,
+        const RelationEstimateInfo & right_estimate_)
+    {
+        setOptimized(estimated_rows_, std::move(column_stats_), imprecise_estimate_, std::nullopt, estimated_selectivity_, 0, rows_upper_bound_);
+        estimation_origin = EstimationOrigin::InPlace;
+        estimate_from_defaults = estimate_from_defaults_;
+        setRelationEstimate(left_relation, left_estimate_);
+        setRelationEstimate(right_relation, right_estimate_);
+    }
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
+    /// The rows of an input, and whether they rest on a default selectivity, which makes them a guess.
+    struct InputEstimate
+    {
+        std::optional<UInt64> rows;
+        bool from_defaults = false;
+    };
+    /// The input estimates of the plan an optimizer chose for this join (Cascades), which can differ from the
+    /// estimates the join order optimizer stored in the relations; unknown stays unknown. Not serialized.
+    void setChosenInputEstimates(InputEstimate left, InputEstimate right) { chosen_inputs = {left, right}; }
+    /// The input estimate of the chosen plan if it was set, otherwise the stored estimate of the relation.
+    InputEstimate getChosenInputEstimate(JoinTableSide side) const;
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
@@ -163,10 +224,12 @@ public:
         bool imprecise_estimate_ = false,
         std::optional<double> estimated_cost_ = {},
         std::optional<double> estimated_selectivity_ = {},
-        UInt64 cluster_id_ = 0)
+        UInt64 cluster_id_ = 0,
+        std::optional<UInt64> rows_upper_bound_ = {})
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
+        result_rows_upper_bound = rows_upper_bound_;
         result_column_stats = std::move(column_stats_);
         imprecise_estimate = imprecise_estimate_;
         estimated_cost = estimated_cost_;
@@ -199,6 +262,11 @@ public:
 
     std::string_view getTableStatsHint() const { return table_stats_hint; }
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
+
+    /// The non-preserved side was built from the preserved side's key values (a decorrelated
+    /// subquery joined with the distinct correlation keys), so every key it has is a preserved key.
+    bool probeKeysWithinPreservedSide() const { return probe_keys_within_preserved_side; }
+    void setProbeKeysWithinPreservedSide() { probe_keys_within_preserved_side = true; }
 
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
@@ -295,6 +363,10 @@ protected:
     std::optional<double> estimated_selectivity = {};
     UInt64 cluster_id = 0;
     std::unordered_map<String, ColumnStats> result_column_stats = {};
+    /// Rows the join result cannot exceed, from the bounds of its inputs; see `estimateJoinRowsUpperBound`.
+    std::optional<UInt64> result_rows_upper_bound = {};
+    EstimationOrigin estimation_origin = EstimationOrigin::None;
+    bool estimate_from_defaults = false;
 
     /// True when the row count estimation used by join reordering was derived from the primary index
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
@@ -304,9 +376,20 @@ protected:
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
+    std::optional<std::pair<InputEstimate, InputEstimate>> chosen_inputs;
+
+    static void setRelationEstimate(RelationEstimateInfo & relation, const RelationEstimateInfo & estimate)
+    {
+        relation.estimated_rows = estimate.estimated_rows;
+        relation.max_rows = estimate.max_rows;
+        relation.source = estimate.source;
+        relation.imprecise_estimate = estimate.imprecise_estimate;
+        relation.estimate_from_defaults = estimate.estimate_from_defaults;
+    }
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
+    bool probe_keys_within_preserved_side = false;
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;

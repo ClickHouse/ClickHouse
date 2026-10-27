@@ -1,0 +1,19 @@
+-- statistics in one part: the join does not broadcast
+Shuffle
+-- statistics on all but 100 rows: the join broadcasts
+Broadcast
+-- 100 new values without statistics: the join of their DISTINCT does not broadcast
+Shuffle
+-- an INTERSECT with the new values: the join does not broadcast
+Shuffle
+-- a filter on the new values above a LIMIT: the join does not broadcast
+Shuffle
+-- the years of 100 new dates without statistics: the join of their DISTINCT does not broadcast
+Shuffle
+-- a comparison of two columns, one of them with rows without statistics: the join does not broadcast
+Shuffle
+Shuffle
+-- statistics in both parts: the join broadcasts
+Broadcast
+-- a join of keys without NDVs: the outer join does not replicate it (expect 0)
+0

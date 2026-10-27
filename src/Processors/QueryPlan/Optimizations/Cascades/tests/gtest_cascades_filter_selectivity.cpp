@@ -78,6 +78,28 @@ TEST(CascadesFilterSelectivity, TwoColumns)
     EXPECT_DOUBLE_EQ(f.estimate(f.function("equals", {f.inputs["u"], f.inputs["w"]})), 0.01);
 }
 
+TEST(CascadesFilterSelectivity, NdvThatRowsWithoutStatisticsCouldDouble)
+{
+    Fixture f;
+    /// `u` has one value and 100 rows without statistics, which could add 100 more; `w` has one value on all rows.
+    f.stats.column_statistics["u"] = ColumnStats{.num_distinct_values = 1, .rows_without_statistics = 100};
+    f.stats.column_statistics["w"] = ColumnStats{.num_distinct_values = 1};
+    /// Such an NDV counts as unknown: the defaults apply, also next to a column whose NDV is usable, in either order.
+    for (const auto & [left, right] : {std::pair{"u", "w"}, std::pair{"w", "u"}})
+    {
+        bool used_default = false;
+        EXPECT_DOUBLE_EQ(estimatePredicateSelectivity(f.function("notEquals", {f.inputs[left], f.inputs[right]}), f.stats, used_default), 0.99);
+        EXPECT_TRUE(used_default);
+    }
+    bool used_default = false;
+    EXPECT_DOUBLE_EQ(estimatePredicateSelectivity(f.function("equals", {f.inputs["u"], f.constant(7)}), f.stats, used_default), 0.01);
+    EXPECT_TRUE(used_default);
+    /// The precise column alone gives its NDV.
+    used_default = true;
+    EXPECT_DOUBLE_EQ(estimatePredicateSelectivity(f.function("equals", {f.inputs["w"], f.constant(7)}), f.stats, used_default), 1.0);
+    EXPECT_FALSE(used_default);
+}
+
 TEST(CascadesFilterSelectivity, BooleanCombinations)
 {
     Fixture f;

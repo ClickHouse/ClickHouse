@@ -16,6 +16,8 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -40,6 +42,8 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
 #include <fmt/format.h>
+
+#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -1177,6 +1181,40 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
+/// Moves the filter of `parent_node` below its child, a step that passes every input through unchanged,
+/// and puts a copy of the filter on every input. `new_child` replaces the child with the filtered input headers.
+///                - Something           - Filter - Something
+/// Filter - Union - Something   =>  Union - Filter - Something
+///                - Something           - Filter - Something
+static size_t pushDownFilterIntoEveryInput(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr new_child)
+{
+    auto & parent = parent_node->step;
+    auto * child_node = parent_node->children.front();
+    auto & child = child_node->step;
+
+    child = std::move(new_child);
+
+    std::swap(parent, child);
+    std::swap(parent_node->children, child_node->children);
+    std::swap(parent_node->children.front(), child_node->children.front());
+
+    const auto * filter = assert_cast<const FilterStep *>(child.get());
+    for (size_t i = 1; i < parent_node->children.size(); ++i)
+    {
+        auto & filter_node = nodes.emplace_back();
+        filter_node.children.push_back(parent_node->children[i]);
+        parent_node->children[i] = &filter_node;
+
+        filter_node.step = std::make_unique<FilterStep>(
+            filter_node.children.front()->step->getOutputHeader(),
+            filter->getExpression().clone(),
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn());
+    }
+
+    return 3;
+}
+
 /// Whether a conjunct might fix a column to a single value, and so let a read go in order:
 /// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. Any column counts, in the sorting
 /// key or not: the read is inside the fragment and its key is not looked up here. A superset of what
@@ -1218,6 +1256,66 @@ static bool mayFixColumn(const ActionsDAG::Node * conjunct)
     }
 
     return false;
+}
+
+/// Whether the conjunct gives the same result for a row wherever the row is: an exchange splits and merges streams,
+/// so a function that depends on the block or is not deterministic within the query must not move across it.
+static bool isDeterministicAcrossStreams(const ActionsDAG::Node * conjunct)
+{
+    std::vector<const ActionsDAG::Node *> stack{conjunct};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && (!node->function_base || !node->function_base->isDeterministicInScopeOfQuery()))
+            return false;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return true;
+}
+
+size_t tryPushDownRuntimeFilterOverExchange(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+{
+    auto * filter = typeid_cast<FilterStep *>(parent_node->step.get());
+    if (!filter || parent_node->children.size() != 1 || isFilterColumnConst(*filter))
+        return 0;
+
+    QueryPlan::Node * exchange_node = parent_node->children.front();
+    const auto * exchange = dynamic_cast<const LogicalExchangeStep *>(exchange_node->step.get());
+    if (!exchange || exchange_node->children.size() != 1)
+        return 0;
+
+    const auto * predicate = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+    if (!predicate || predicate->type == ActionsDAG::ActionType::COLUMN)
+        return 0;
+
+    /// Only the runtime filter conjuncts move: the other conjuncts stay where the optimizer placed them.
+    ActionsDAG::NodeRawConstPtrs to_push;
+    for (const auto * conjunct : ActionsDAG::extractConjunctionAtoms(predicate))
+        if (containsJoinRuntimeFilter(conjunct) && isDeterministicAcrossStreams(conjunct))
+            to_push.push_back(conjunct);
+    if (to_push.empty())
+        return 0;
+
+    auto split = filter->getExpression().splitActionsForFilterPushDown(
+        filter->getFilterColumnName(), filter->removesFilterColumn(), to_push,
+        exchange->getInputHeaders().front()->getColumnsWithTypeAndName());
+    if (!split)
+        return 0;
+    materializeFilterColumnIfNeededAfterPushDown(*filter, /*was_filter_const_before=*/ false, split->is_filter_const_after_push_down);
+
+    /// The filter below the exchange keeps the estimate of its input: it removes only rows the join drops anyway.
+    const auto input_estimation = exchange_node->children.front()->cost_estimation;
+    const size_t updated_steps = addNewFilterStepOrThrow(parent_node, nodes, std::move(*split));
+    exchange_node->children.front()->cost_estimation = input_estimation;
+    return updated_steps;
 }
 
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -1432,43 +1530,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
-        auto expected_output = filter->getOutputHeader();
-
         for (auto & input_header : union_input_headers)
-            input_header = expected_output;
+            input_header = filter->getOutputHeader();
 
-        ///                - Something
-        /// Filter - Union - Something
-        ///                - Something
-
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
-
-        std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
-
-        ///       - Filter - Something
-        /// Union - Something
-        ///       - Something
-
-        for (size_t i = 1; i < parent_node->children.size(); ++i)
-        {
-            auto & filter_node = nodes.emplace_back();
-            filter_node.children.push_back(parent_node->children[i]);
-            parent_node->children[i] = &filter_node;
-
-            filter_node.step = std::make_unique<FilterStep>(
-                filter_node.children.front()->step->getOutputHeader(),
-                filter->getExpression().clone(),
-                filter->getFilterColumnName(),
-                filter->removesFilterColumn());
-        }
-
-        ///       - Filter - Something
-        /// Union - Filter - Something
-        ///       - Filter - Something
-
-        return 3;
+        return pushDownFilterIntoEveryInput(
+            parent_node, nodes,
+            std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed()));
     }
 
     /// A filter left above the local fragment (see below) would keep this one from reaching it, while the

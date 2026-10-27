@@ -2385,7 +2385,7 @@ String formatStackTrace(const StackTrace & stack_trace)
     for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
     {
         const void * frame = stack_trace.getFramePointers()[i];
-        const auto resolved = StackTrace::tryResolveAddress(frame);
+        const auto resolved = StackTrace::resolveAddress(frame);
         const SymbolIndex::Symbol * symbol = symbol_index ? symbol_index->findSymbol(frame) : nullptr;
         String address = resolved.address ? fmt::format("{}", resolved.address) : "<unknown>";
         if (resolved.kind == StackTrace::AddressKind::OtherObject)

@@ -41,7 +41,8 @@ void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPl
     node.step = std::make_unique<ReadFromCommonBufferStep>(
         subplan_reference->getOutputHeader(),
         common_buffer,
-        settings.max_threads);
+        settings.max_threads,
+        subplan_reference_root);
     subplan_reference_root->step = std::make_unique<SaveSubqueryResultToBufferStep>(
         subplan_reference_root->step->getOutputHeader(),
         std::move(columns_to_use),

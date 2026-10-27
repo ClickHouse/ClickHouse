@@ -1,0 +1,30 @@
+-- the plan with its estimates
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: <unknown>, cost: <unknown>)
+    Expression (Before GROUP BY) (rows: <unknown>, cost: <unknown>)
+      Expression (Post Join Actions) (rows: ~100.0, cost: 100.0)
+        Join (JOIN FillRightFirst) (rows: ~100.0, cost: 100.0)
+          Expression (Left Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Change column names to column identifiers) (rows: ~1000.0, source: hint)
+              ReadFromMergeTree (default.t_est_a) (rows: <unknown>, cost: <unknown>)
+          Expression (Right Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Change column names to column identifiers) (rows: ~100.0, source: hint)
+              ReadFromMergeTree (default.t_est_b) (rows: <unknown>, cost: <unknown>)
+-- the same estimates in the profile log, next to the rows produced
+100
+Expression	100		100
+Expression	100	hint	100
+Join	100		100
+Expression	1000	hint	1000
+-- without hints and statistics the relations are estimated from the primary index
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: <unknown>, cost: <unknown>)
+    Expression ((Before GROUP BY + )) (rows: <unknown>, cost: <unknown>)
+      Expression (Post Join Actions) (rows: <unknown>, cost: 100.0)
+        Join (JOIN FillRightFirst) (rows: <unknown>, cost: 100.0)
+          Expression (Left Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Change column names to column identifiers) (rows: ~1000.0, source: primary_index)
+              ReadFromMergeTree (default.t_est_a) (rows: <unknown>, cost: <unknown>)
+          Expression (Right Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression ((WHERE + Change column names to column identifiers)) (rows: <unknown>, source: no_statistics)
+              ReadFromMergeTree (default.t_est_b) (rows: <unknown>, cost: <unknown>)

@@ -47,7 +47,7 @@ bool tryEstimateWithStatistics(
     {
         /// Every analyzed part counts towards the baseline row count, like in `getConditionSelectivityEstimator`,
         /// even if it has no statistics for the filter columns: `analysis.selected_marks` covers all parts.
-        builder.incrementRowCount(part.data_part->rows_count);
+        builder.addPart(part.data_part->rows_count);
         auto stats = part.data_part->loadStatistics(filter_input_columns, statistics_cache.get());
         if (!stats.empty())
         {

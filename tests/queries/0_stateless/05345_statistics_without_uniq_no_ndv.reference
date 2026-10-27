@@ -1,0 +1,13 @@
+-- every fact row meets one dimension row: 1000 rows
+Expression ((Project names + Projection)) (rows: <unknown>, cost: <unknown>)
+  Aggregating (rows: <unknown>, cost: <unknown>)
+    Expression (Before GROUP BY) (rows: <unknown>, cost: <unknown>)
+      Expression (Post Join Actions) (rows: ~1000.0, cost: 1000.0)
+        Join (JOIN FillRightFirst) (rows: ~1000.0, cost: 1000.0)
+          Expression (Left Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Change column names to column identifiers) (rows: ~1000.0, source: statistics)
+              ReadFromMergeTree (default.t_nu_fact) (rows: <unknown>, cost: <unknown>)
+          Expression (Right Pre Join Actions) (rows: <unknown>, cost: <unknown>)
+            Expression (Change column names to column identifiers) (rows: ~10.0, source: statistics)
+              ReadFromMergeTree (default.t_nu_dim) (rows: <unknown>, cost: <unknown>)
+1000

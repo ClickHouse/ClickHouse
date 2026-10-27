@@ -372,6 +372,7 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int TOO_MANY_ROWS;
     extern const int ILLEGAL_COLUMN;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
@@ -3020,6 +3021,28 @@ bool ReadFromMergeTree::hasThrowingReadRowLimit() const
             && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 }
 
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::getAnalyzedResultForEstimation() const
+{
+    if (analyzed_result_ptr)
+        return analyzed_result_ptr;
+    if (!hasThrowingReadRowLimit())
+        return selectRangesToRead();
+
+    /// The analysis of the executed read is kept when it fits the row limit, so the index is analyzed
+    /// once. When it does not fit, the plan can still make the executed read smaller than the analysis
+    /// counts, so the size comes from an analysis that does not enforce the limit and is not kept.
+    try
+    {
+        return selectRangesToRead();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::TOO_MANY_ROWS)
+            throw;
+    }
+    return selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true);
+}
+
 std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
 {
     const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
@@ -3139,6 +3162,11 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
 
     if (!is_primary_key_column && !has_applicable_skip_index)
         return;
+
+    /// The same filter is found again when the plan is optimized again or the read is copied.
+    for (const auto & descr : join_runtime_filters_for_index_analysis)
+        if (descr.filter_id == filter_id && descr.key_column_name == column_name)
+            return;
 
     join_runtime_filters_for_index_analysis.push_back({filter_id, column_name, column_type});
     LOG_DEBUG(log, "Registered join runtime filter {} on column {} (primary_key={}, skip_index={})",
@@ -5749,12 +5777,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
         || mutations_snapshot->hasPatchParts() || data.hasEnabledMaskingPolicies(context);
     MergeTreeIndices runtime_skip_indexes;
-    if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
-        /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
+    /// A join runtime filter exists only while the query runs, so it always prunes at read time.
+    /// `use_skip_indexes_on_data_read` decides only when the static skip indexes are evaluated; it is off
+    /// with `make_distributed_plan`, where the coordinator uses them to choose the marks of each task.
+    if (/// Not implemented for `FINAL` reads (which merge row versions across parts in their own
         /// pipeline), and `optimizeLazyFinal` rebuilds such a read without the descriptors anyway. The
         /// setting's description documents this no-op, and
         /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
-        && !query_info.isFinal()
+        !query_info.isFinal()
         && runtime_filter_lookup
         && !runtime_filters_for_data_read.empty()
         && !pending_mutations
@@ -5771,7 +5801,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// Descriptors are attached by a plan optimization, so a replica has them whether it planned the
         /// query itself or optimized a plan it deserialized. A read that has none leaves
         /// `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads its share unpruned,
-        /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
+        /// which costs coverage, not correctness.
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
@@ -5854,6 +5884,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
+    MergeTreeSkipIndexReader::DynamicPredicatePendingCounter dynamic_predicate_pending_counter;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
     if (runtime_filter_lookup && !runtime_filters_for_data_read.empty())
     {
@@ -5863,6 +5894,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
             };
+        dynamic_predicate_pending_counter = [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read]
+            { return countPendingRuntimeFilters(*lookup, descriptors); };
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
@@ -5908,6 +5941,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 context->getVectorSimilarityIndexCache(),
                 reader_settings,
                 dynamic_predicate_builder,
+                dynamic_predicate_pending_counter,
                 runtime_prune_primary_key,
                 runtime_skip_indexes,
                 dynamic_skip_index_filter,
@@ -5929,6 +5963,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context->getVectorSimilarityIndexCache(),
             reader_settings,
             dynamic_predicate_builder,
+            dynamic_predicate_pending_counter,
             runtime_prune_primary_key,
             runtime_skip_indexes,
             dynamic_skip_index_filter,
@@ -5948,6 +5983,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             context->getVectorSimilarityIndexCache(),
             reader_settings,
             MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
+            MergeTreeSkipIndexReader::DynamicPredicatePendingCounter{},
             /*prune_primary_key=*/false,
             MergeTreeIndices{},
             MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},

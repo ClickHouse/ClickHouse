@@ -389,11 +389,12 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     const IStatistics * uniq_stats = findUniqStats(stats);
     if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
     {
-        /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (uniq_stats->estimateCardinality() < 2048)
-        {
-            return stats.at(StatisticsType::TDigest)->estimateEqual(val);
-        }
+        /// 2048 is the default number of buckets in TDigest, so it can store one value (with many rows) in every bucket,
+        /// but only if it did not merge the buckets of neighbor values; `uniq` is exact for so few values.
+        const UInt64 distinct_values = uniq_stats->estimateCardinality();
+        const auto * tdigest = typeid_cast<const StatisticsTDigest *>(stats.at(StatisticsType::TDigest).get());
+        if (distinct_values < 2048 && tdigest && tdigest->hasCentroidPerValue(distinct_values))
+            return tdigest->estimateEqual(val);
     }
 #if USE_DATASKETCHES
     if (stats.contains(StatisticsType::CountMinSketch))

@@ -45,14 +45,18 @@ struct CostConfig
     /// phase holds one thread, so one serial row costs about `threads` work rows (Brent's law:
     /// wall-clock ~ work / threads + serial path).
     Float64 sequential_weight = 32.0;
-    /// Fixed per-exchange latency (connection setup, metadata), in sequential rows. The
-    /// weighted value (~1e5 work units) keeps a plan over a small input local: distribution
-    /// cannot pay for its setup there.
-    Float64 exchange_fixed_overhead = 3000.0;
+    /// Fixed cost of an exchange, in sequential rows: it starts a stage of tasks on the nodes and connects
+    /// them, about 10 ms on a cluster of 8 nodes. The weighted value (~3e6 work units) keeps a plan over a
+    /// small input local, and reads a small table on every node rather than reading it in parts, gathering
+    /// and broadcasting it: distribution cannot pay for its stages there.
+    Float64 exchange_fixed_overhead = 100000.0;
 
     /// Per-operator constants of the model. The defaults are the model; overrides are for experiments.
     Float64 expression_cost_per_row = 0.1;   /// Expressions and filters do little work per row.
-    Float64 hash_table_build_factor = 2.0;   /// A hash table insert costs about two probes.
+    /// Work per row put into a hash table, besides its bytes. Measured on TPC-H joins, an insert takes about
+    /// twice the CPU of scanning a row, which is priced at its bytes (tens of units); with a small value a
+    /// broadcast of a large table looks cheaper than shuffling a much smaller join result.
+    Float64 hash_table_build_factor = 40.0;
     /// Source steps the model knows nothing about. Large enough to dominate typical plans, so
     /// an unknown leaf is avoided when a modeled alternative exists, but finite, so a plan that
     /// has to contain one can still be built.
@@ -123,6 +127,8 @@ using GroupId = size_t;
 class IQueryPlanStep;
 struct IImplementationStrategy;
 
+struct ExpressionProperties;
+
 /// Everything the local (single-operator) cost functions may read. Deliberately holds no memo
 /// access, so operator costing stays a pure function of statistics and configuration.
 struct CostInputs
@@ -137,10 +143,21 @@ struct CostInputs
     Float64 parallelism = 1.0;
     /// Node count of the expression's own distribution property.
     Float64 node_count = 1.0;
-    /// Rows the selected input emits when they differ from its group statistics: a partial top-N emits up
-    /// to L rows per node, a preliminary `DISTINCT` a value once per node. Resolved by the caller from the
-    /// selected input for an exchange, which moves these rows, and for a final `DISTINCT`, which inserts them.
-    std::optional<Float64> input_physical_rows;
+    /// Copies of the logical rows each selected input emits, aligned with `input_stats`, and of the output
+    /// (`GroupExpression::physical_copies`); one when absent.
+    std::vector<Float64> input_copies;
+    Float64 output_copies = 1.0;
+    /// Rows a gather or scatter of an unknown join result is priced on when the result has no bound
+    /// below it: the largest known leaf of the query. Without it funnelling such a result through
+    /// one node looks free, its search value being a product of stand-in selectivities.
+    Float64 unknown_exchange_rows = 1.0;
+    /// Properties of the first input's selected implementation, null when none is resolved.
+    /// A sorted gather reads the stream layout from it: a sender with several streams per
+    /// node merges them before shipping, which costs like a sort's final merge.
+    const ExpressionProperties * first_input_properties = nullptr;
+    /// Step of the first input's selected implementation, null when none is resolved. A sorted gather over a
+    /// partial top-N funnels only the rows the limit above consumes.
+    const IQueryPlanStep * first_input_step = nullptr;
     const CostConfig & config;
 };
 

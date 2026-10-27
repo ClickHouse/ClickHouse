@@ -70,6 +70,15 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
+IMPLEMENT_SETTING_ENUM(MultiColumnDistinctModel, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",        MultiColumnDistinctModel::Default},
+     {"largest",        MultiColumnDistinctModel::Largest},
+     {"geometric_mean", MultiColumnDistinctModel::GeometricMean},
+     {"backoff",        MultiColumnDistinctModel::Backoff},
+     {"product",        MultiColumnDistinctModel::Product},
+     {"per_table",      MultiColumnDistinctModel::PerTable},
+     {"postgres",       MultiColumnDistinctModel::Postgres}})
+
 IMPLEMENT_SETTING_ENUM(JoinOrderConflictDetector, ErrorCodes::BAD_ARGUMENTS,
     {{"",  JoinOrderConflictDetector::NONE},
      {"a", JoinOrderConflictDetector::CD_A},

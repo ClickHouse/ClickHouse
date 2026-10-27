@@ -199,6 +199,10 @@ struct DecorrelationContext
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
+    /// The decorrelated plan joins the distinct correlation keys of the outer stream (see
+    /// buildCorrelatedDomainPlan), so its keys are a subset of the outer keys. Substitution of the
+    /// correlated columns leaves the subquery's own keys instead.
+    bool domain_joined = false;
 };
 
 /// How to convert an equivalent column to exactly the correlated column type.
@@ -414,6 +418,7 @@ bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
 /// `distinct_overflow_mode` can never truncate the domain, and no external `DISTINCT`.
 QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
 {
+    context.domain_joined = true;
     context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
     context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
 
@@ -1601,7 +1606,8 @@ QueryPlan buildLogicalJoin(
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery,
-    bool uses_in_memory_buffer
+    bool uses_in_memory_buffer,
+    bool domain_joined
 )
 {
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
@@ -1683,6 +1689,10 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
+    /// Joined with the outer stream's distinct keys, the decorrelated side only has keys the outer
+    /// stream has.
+    if (domain_joined)
+        result_join->setProbeKeysWithinPreservedSide();
 
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
     if (uses_in_memory_buffer)
@@ -1856,7 +1866,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.uses_in_memory_buffer);
+                context.uses_in_memory_buffer,
+                context.domain_joined);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -1906,7 +1917,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.uses_in_memory_buffer);
+                context.uses_in_memory_buffer,
+                context.domain_joined);
             break;
         }
         case CorrelatedSubqueryKind::LATERAL_JOIN:

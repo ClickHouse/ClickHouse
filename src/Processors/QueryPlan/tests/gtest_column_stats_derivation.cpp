@@ -494,3 +494,18 @@ TEST(ColumnStatsDerivation, ChainOfFunctionsPropagatesBound)
     EXPECT_EQ(stats["formatted_magnitude"].num_distinct_values, 1000u);
     EXPECT_EQ(stats.count("neg_doubled"), 0u);
 }
+
+TEST(ColumnStatsDerivation, NarrowedJoinKeysTakeRowsWithoutStatisticsOfBothSides)
+{
+    /// Keys of 1,000 values each from a domain of 10,000 share about 100 values. Each side has 80 rows without
+    /// statistics, which can add values that match the other side: 160 together, which could double the 100.
+    ColumnStats left{.num_distinct_values = 1000, .domain_distinct_values = 10000, .rows_without_statistics = 80};
+    ColumnStats right{.num_distinct_values = 1000, .domain_distinct_values = 10000, .rows_without_statistics = 80};
+    updateJoinKeyDistinctCounts(left, right, JoinKind::Inner, JoinStrictness::All);
+    EXPECT_EQ(left.num_distinct_values, 100);
+    EXPECT_EQ(right.num_distinct_values, 100);
+    EXPECT_EQ(left.rows_without_statistics, 160);
+    EXPECT_EQ(right.rows_without_statistics, 160);
+    EXPECT_TRUE(left.hasImpreciseDistinctValues());
+    EXPECT_TRUE(right.hasImpreciseDistinctValues());
+}

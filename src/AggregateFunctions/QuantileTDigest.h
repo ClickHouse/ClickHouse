@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <Common/Exception.h>
 #include <Common/RadixSort.h>
@@ -296,6 +297,23 @@ public:
     {
         for (const auto & c : other.centroids)
             addCentroid(c);
+    }
+
+    /// The number of different centroid means after compression; the state is not changed, see `serialize`. Rows of
+    /// one value can be in several centroids with the same mean.
+    size_t getCompressedDistinctMeanCount() const
+    {
+        QuantileTDigest tmp;
+        tmp.centroids.assign(centroids);
+        tmp.count = count;
+        tmp.unmerged = unmerged;
+        tmp.compress();
+        PODArray<Value> means;
+        means.reserve(tmp.centroids.size());
+        for (const auto & centroid : tmp.centroids)
+            means.push_back(centroid.mean);
+        std::sort(means.begin(), means.end());
+        return static_cast<size_t>(std::unique(means.begin(), means.end()) - means.begin());
     }
 
     void serialize(WriteBuffer & buf) const

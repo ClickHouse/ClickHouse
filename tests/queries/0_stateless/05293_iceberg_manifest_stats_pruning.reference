@@ -27,9 +27,9 @@ ResultRows: ~~229
 1
 --- T4: every file pruned, WHERE p.k >= 1000000
 Join: m[1000] ⋈ p[0]
-ResultRows: 1
+ResultRows: 0
 --- T5: a filter that prunes nothing, WHERE t.x = 5
-Join: m[1000] ⋈ t[no_stats~?]
+Join: m[1000] ⋈ t[no_stats<=10000]
 ResultRows: unknown
 --- T6: position deletes, 100 rows, 20 deleted
 Join: m[1000] ⋈ d[no_stats~100]
@@ -39,5 +39,5 @@ ResultRows: ~~100
 --- T7: files pruned by min/max when T2 runs
 3
 --- T8: GLOBAL IN with throwIf, EXPLAIN only
-Join: m[1000] ⋈ t[no_stats~?]
+Join: m[1000] ⋈ t[no_stats<=10000]
 ResultRows: unknown

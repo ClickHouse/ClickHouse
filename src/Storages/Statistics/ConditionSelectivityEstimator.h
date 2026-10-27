@@ -14,19 +14,59 @@ class RPNBuilderTreeNode;
 struct ColumnStats
 {
     UInt64 num_distinct_values = 0;
+    /// NDV of the column in the whole relation it comes from, before any filter; zero when unknown.
+    /// Two filtered sets of the column's values overlap in proportion to their shares of it.
+    UInt64 domain_distinct_values = 0;
+    /// Rows of the table the column is read from, and the rows of it that the read selects; zero when unknown.
+    UInt64 table_rows = 0;
+    UInt64 table_selected_rows = 0;
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
-    /// Value range from `basic`/`minmax` statistics; unset when unknown.
+    /// Value range, as values of `value_type`; unset when unknown. It comes from `basic`/`minmax` statistics and
+    /// a monotonic function can map it. A user must check the type: a `JOIN USING` can change the type of the
+    /// column and keep the range. A step that can add values outside the range clears it.
     std::optional<Field> min_value = {};
     std::optional<Field> max_value = {};
+    DataTypePtr value_type = nullptr;
     /// Fraction of NULL values; unset when unknown.
     std::optional<Float64> null_fraction = {};
+    /// Most distinct values the column can have, proven by a filter (`x = c`, `x IN (c1, ...)`) and kept
+    /// by what follows it; zero when nothing proves a limit. Unlike `num_distinct_values` it never
+    /// comes from a sketch, so the row bounds may use it.
+    UInt64 max_distinct_values = 0;
+    /// Rows of the column that its statistics do not describe (parts without statistics of the column); each can add
+    /// a value that `num_distinct_values` does not count.
+    UInt64 rows_without_statistics = 0;
+    /// Every value of the column is on at most one row: the column is the only key of an aggregation. A join on it
+    /// matches each row of the other side at most once. Whatever can repeat a row (a join, a union) drops the flag.
+    bool unique = false;
+
+    /// Whether the rows without statistics could add as many values as `num_distinct_values` counts, or more, within
+    /// the proven limit: a group count, a join or a filter that uses the NDV is then not precise.
+    bool hasImpreciseDistinctValues() const
+    {
+        if (rows_without_statistics == 0 || num_distinct_values == 0)
+            return false;
+        UInt64 new_values = rows_without_statistics;
+        if (max_distinct_values != 0)
+            new_values = std::min(new_values, max_distinct_values - std::min(max_distinct_values, num_distinct_values));
+        return new_values >= num_distinct_values;
+    }
+
+    void clearValueRange()
+    {
+        min_value.reset();
+        max_value.reset();
+        value_type = nullptr;
+    }
 };
 
 struct RelationProfile
 {
     UInt64 rows = 0;
     std::unordered_map<String, ColumnStats> column_stats = {};
+    /// A predicate the statistics could not estimate took the default selectivity, so `rows` is a guess.
+    bool estimate_from_defaults = false;
 };
 
 struct StorageInMemoryMetadata;
@@ -62,7 +102,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
+    /// `row_fraction` scales the rows the conditions keep: the share of the table an index analysis has
+    /// already selected for conditions left out of `nodes`.
+    RelationProfile estimateRelationProfile(
+        const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes, Float64 row_fraction = 1.0) const;
     RelationProfile estimateRelationProfile() const;
 
     struct RPNElement
@@ -95,6 +138,8 @@ public:
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
+        /// The default selectivity stood in for this element or for an atom it absorbed.
+        bool used_default = false;
         Selectivity selectivity;
         /// Selectivity of the atoms that were absorbed by a conjunctive merge without contributing
         /// any range - currently only `FUNCTION_UNKNOWN`. Merging carries ranges across, so such an
@@ -132,6 +177,10 @@ public:
     static const AtomMap atom_map;
 
     UInt64 getTotalRows() const { return total_rows; }
+    /// Rows without statistics (parts without statistics of a column) are estimated from the other rows, as from a
+    /// sample: they can change the row estimate by up to their number, and add up to their number of distinct values
+    /// to a column. Records them in the columns of `profile`, and returns whether they could double its rows.
+    bool recordRowsWithoutStatistics(RelationProfile & profile) const;
 
 private:
     friend class ColumnStatistics;
@@ -140,11 +189,12 @@ private:
     {
         ColumnStatisticsPtr stats;
 
-        Selectivity estimateRanges(const PlainRanges & ranges) const;
+        /// `used_default` is set when a range took a default factor because the statistics could not estimate it.
+        Selectivity estimateRanges(const PlainRanges & ranges, bool & used_default) const;
         UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, Float64 row_fraction = 1.0) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
@@ -153,7 +203,7 @@ private:
     /// set into ranges costs a `Field` per element, a sort and one probe per element.
     Selectivity estimateSelectivityFromSetSize(
         const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
-        const DataTypePtr & set_type, bool negative) const;
+        const DataTypePtr & set_type, bool negative, bool & used_default) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
@@ -169,12 +219,15 @@ private:
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;
+    /// The rows of the parts that lack the statistics of some column.
+    UInt64 rows_without_statistics = 0;
     ColumnEstimators column_estimators;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
-/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
+/// `equals(x, x)` or `isNotDistinctFrom(x, x)` of one node (aliases are looked through) whose type makes it
+/// true on every row: no NaN or composite values, and no NULL for `equals`.
 bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
 
 /// Builds an estimator for a set of data parts by merging their statistics column by column.
@@ -183,13 +236,16 @@ class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    /// Starts the next part; the statistics added after it are of this part.
+    void addPart(UInt64 rows);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
-    void incrementRowCount(UInt64 rows);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:
     bool has_data = false;
     ConditionSelectivityEstimatorPtr estimator;
+    /// The rows of each part and the number of columns it has statistics of.
+    std::vector<std::pair<UInt64, size_t>> parts_columns;
 };
 
 }

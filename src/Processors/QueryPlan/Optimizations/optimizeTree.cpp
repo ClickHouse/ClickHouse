@@ -1,5 +1,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/JoinGraphStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -282,6 +284,44 @@ void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, con
 /// creates a step it did not see; `convertToDistributed` throws if one slips through. Nothing is
 /// lost by skipping: every worker re-optimizes its fragment with `make_distributed_plan = 0` and
 /// applies these passes to its own part of the plan.
+/// Replaces every `JoinGraphStep` left in the plan, where Cascades did not run, by the plan of its chosen join order.
+static void expandJoinGraphs(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (typeid_cast<const JoinGraphStep *>(node->step.get()))
+            JoinGraphStep::expandToChosenOrder(*node);
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
+/// Join runtime filters change the running TopK threshold; a TopK read under such a filter must stop reusing and
+/// writing threshold-dependent query condition cache entries.
+static void disableTopKQueryConditionCacheUnderRuntimeFilters(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    Stack top_k_qcc_stack;
+    top_k_qcc_stack.push_back({.node = &root});
+    while (!top_k_qcc_stack.empty())
+    {
+        disableTopKQueryConditionCacheUnderNonDeterministicFilters(top_k_qcc_stack, optimization_settings);
+
+        auto & top_k_qcc_frame = top_k_qcc_stack.back();
+        if (top_k_qcc_frame.next_child < top_k_qcc_frame.node->children.size())
+        {
+            auto * next_node = top_k_qcc_frame.node->children[top_k_qcc_frame.next_child];
+            ++top_k_qcc_frame.next_child;
+            top_k_qcc_stack.push_back({.node = next_node});
+            continue;
+        }
+
+        top_k_qcc_stack.pop_back();
+    }
+}
+
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
@@ -376,8 +416,17 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
+    /// The same condition decides below whether Cascades runs on this plan.
+    const bool cascades_will_run = optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
+        && !planContainsLogicalExchange(root);
+
+    /// Join reordering also keeps other join orders when Cascades will choose between them, see `JoinGraphStep`.
+    optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives > 0 && cascades_will_run;
+
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
-    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
+    /// When Cascades distributes the plan, the filters are placed after it, on the join order it chooses.
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext()
+        && !cascades_will_run;
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -430,38 +479,24 @@ void optimizeTreeSecondPass(
                     trySplitFilter(&frame_node, nodes, extra_settings);
             });
 
-        /// After the __applyFilter conjuncts settled, register them on the reading steps
-        /// (both the read-time index analysis and seal-gated reading consume them).
-        if (join_runtime_filters_were_added
-            && (optimization_settings.enable_join_runtime_filters_index_analysis
-                || optimization_settings.join_seal_gated_reading))
-            traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
+
+    /// After the __applyFilter conjuncts settled, register them on the reading steps (both the read-time index analysis
+    /// and seal-gated reading consume them). Also when no filter was added here: a task's read can have a filter that the
+    /// coordinator placed in its PREWHERE.
+    const auto collect_applied_join_runtime_filters = [&]
+    {
+        if (optimization_settings.enable_join_runtime_filters_index_analysis || optimization_settings.join_seal_gated_reading)
+            traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
+    };
+    collect_applied_join_runtime_filters();
 
     /// The runtime `FilterStep`s added and pushed down just above are invisible to the
     /// `updateQueryConditionCache` walk at the beginning of this function, but they change the
     /// running TopK threshold. Re-walk the plan so a TopK read under such a filter stops reusing and
     /// writing threshold-dependent query condition cache entries.
     if (join_runtime_filters_were_added && optimization_settings.use_query_condition_cache)
-    {
-        Stack top_k_qcc_stack;
-        top_k_qcc_stack.push_back({.node = &root});
-        while (!top_k_qcc_stack.empty())
-        {
-            disableTopKQueryConditionCacheUnderNonDeterministicFilters(top_k_qcc_stack, optimization_settings);
-
-            auto & top_k_qcc_frame = top_k_qcc_stack.back();
-            if (top_k_qcc_frame.next_child < top_k_qcc_frame.node->children.size())
-            {
-                auto * next_node = top_k_qcc_frame.node->children[top_k_qcc_frame.next_child];
-                ++top_k_qcc_frame.next_child;
-                top_k_qcc_stack.push_back({.node = next_node});
-                continue;
-            }
-
-            top_k_qcc_stack.pop_back();
-        }
-    }
+        disableTopKQueryConditionCacheUnderRuntimeFilters(root, optimization_settings);
 
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
@@ -585,7 +620,61 @@ void optimizeTreeSecondPass(
         checkCascadesSupported(root);
         CascadesOptimizer cascades_optimizer(query_plan, optimization_settings);
         cascades_optimizer.optimize();
+
+        /// The joins of the chosen plan get their runtime filters here, whichever of the join orders Cascades chose. The
+        /// filters a task cannot receive from another task are placed by the task itself, when it optimizes its fragment.
+        if (optimization_settings.enable_join_runtime_filters && optimization_settings.distributed_plan_join_runtime_filters
+            && CurrentThread::tryGetQueryContext())
+        {
+            bool added = false;
+            traverseQueryPlan(stack, root, [&](auto & frame_node)
+                {
+                    chassert(!typeid_cast<const JoinGraphStep *>(frame_node.step.get()));
+                },
+                [&](auto & frame_node) { added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings); });
+
+            if (added)
+            {
+                /// Push the filters down through the exchanges Cascades added, the steps between them and the lower joins,
+                /// into both sides of a join on an equivalent key.
+                traverseQueryPlan(stack, root,
+                    [&](auto & frame_node)
+                    {
+                        while (true)
+                        {
+                            size_t changed_nodes = 0;
+                            changed_nodes += tryMergeExpressions(&frame_node, nodes, extra_settings);
+                            changed_nodes += tryMergeFilters(&frame_node, nodes, extra_settings);
+                            changed_nodes += tryPushDownFilter(&frame_node, nodes, extra_settings);
+                            changed_nodes += tryPushDownRuntimeFilterOverExchange(&frame_node, nodes);
+                            if (!changed_nodes)
+                                break;
+                        }
+                        if (typeid_cast<FilterStep *>(frame_node.step.get()))
+                            trySplitFilter(&frame_node, nodes, extra_settings);
+                    });
+
+                if (optimization_settings.use_query_condition_cache)
+                    disableTopKQueryConditionCacheUnderRuntimeFilters(root, optimization_settings);
+
+                if (optimization_settings.optimize_prewhere)
+                    traverseQueryPlan(stack, root,
+                        [&](auto & frame_node)
+                        {
+                            optimizePrewhere(frame_node, optimization_settings.remove_unused_columns,
+                                /*suppress_for_vector_search=*/ true, /*runtime_filters_only=*/ true);
+                        });
+
+                collect_applied_join_runtime_filters();
+                join_runtime_filters_were_added = true;
+            }
+        }
     }
+
+    /// Cascades chose between the join orders; a join graph left (Cascades did not run on this plan) keeps the chosen one.
+    if (optimization_settings.build_join_order_alternatives)
+        expandJoinGraphs(root);
+    optimization_settings.build_join_order_alternatives = false;
 
     stack.push_back({.node = &root});
     while (!stack.empty())
@@ -1013,6 +1102,10 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Runs when every runtime filter has reached its final place.
+    if (optimization_settings.collect_hash_table_stats_during_joins)
+        markJoinBuildInputsFilteredFromOutside(root);
 }
 
 void addStepsToBuildSets(

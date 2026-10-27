@@ -79,11 +79,13 @@ using BlockHashes = std::vector<UInt64>;
 
 void updateStatistics(
     const auto & hash_joins,
-    const DB::StatsCollectingParams & build_params,
-    const DB::StatsCollectingParams & match_params,
+    const DB::HashJoinStatsCollectingParams & params,
     bool probe_phase_finished,
     std::optional<size_t> hash_table_matches)
 {
+    const auto & build_params = params.build;
+    const auto & match_params = params.match;
+
     if (match_params.isCollectionAndUseEnabled() && probe_phase_finished && hash_table_matches.has_value())
         DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = *hash_table_matches}, match_params);
 
@@ -100,7 +102,7 @@ void updateStatistics(
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
     if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, build_params);
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update(DB::makeHashJoinEntry(ht_size, source_rows, params), build_params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -269,8 +271,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!build_phase_finished)
             return;
 
-        updateStatistics(
-            hash_joins, stats_collecting_params.build, stats_collecting_params.match, probe_phase_finished, hash_table_matches);
+        updateStatistics(hash_joins, stats_collecting_params, probe_phase_finished, hash_table_matches);
 
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;

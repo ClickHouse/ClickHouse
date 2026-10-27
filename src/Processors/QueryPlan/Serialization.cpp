@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -67,6 +68,68 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
         column.column = column.type->createColumn();
 
     return Block(std::move(columns));
+}
+
+namespace
+{
+
+/// The estimate a node carries travels with the plan: the processors a task builds from the fragment
+/// log the same `plan_step_estimated_rows` as the coordinator's own.
+void serializeCostEstimation(const std::optional<CostEstimationInfo> & estimation, WriteBuffer & out)
+{
+    writeBinary(estimation.has_value(), out);
+    if (!estimation)
+        return;
+
+    writeBinary(estimation->rows.has_value(), out);
+    if (estimation->rows)
+        writeBinary(*estimation->rows, out);
+
+    writeBinary(estimation->cost.has_value(), out);
+    if (estimation->cost)
+        writeBinary(*estimation->cost, out);
+
+    /// The reader rejects a source it does not know, so a new source needs a new plan version and must be
+    /// written as a known one for an older reader.
+    writeBinary(static_cast<UInt8>(estimation->source), out);
+}
+
+std::optional<CostEstimationInfo> deserializeCostEstimation(ReadBuffer & in)
+{
+    bool has_estimation = false;
+    readBinary(has_estimation, in);
+    if (!has_estimation)
+        return std::nullopt;
+
+    CostEstimationInfo estimation;
+
+    bool has_rows = false;
+    readBinary(has_rows, in);
+    if (has_rows)
+    {
+        Float64 rows = 0;
+        readBinary(rows, in);
+        estimation.rows = rows;
+    }
+
+    bool has_cost = false;
+    readBinary(has_cost, in);
+    if (has_cost)
+    {
+        Float64 cost = 0;
+        readBinary(cost, in);
+        estimation.cost = cost;
+    }
+
+    UInt8 source = 0;
+    readBinary(source, in);
+    if (!isRowEstimateSource(source))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown row estimate source {} in a serialized query plan", static_cast<UInt32>(source));
+    estimation.source = static_cast<RowEstimateSource>(source);
+
+    return estimation;
+}
+
 }
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -167,6 +230,9 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         }
 
         writeStringBinary(node->step->getStepDescription(), out);
+
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_ESTIMATES)
+            serializeCostEstimation(node->cost_estimation, out);
 
         if (node->step->hasOutputHeader())
             serializeHeader(*node->step->getOutputHeader(), out);
@@ -283,6 +349,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         std::string step_description;
         readStringBinary(step_description, in);
 
+        std::optional<CostEstimationInfo> cost_estimation;
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_ESTIMATES)
+            cost_estimation = deserializeCostEstimation(in);
+
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
@@ -315,6 +385,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
                 step_name, output_header->dumpStructure());
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
+        node.cost_estimation = cost_estimation;
         frame.to_fill = &node;
 
         for (const auto & storage : ctx.storage_holders)

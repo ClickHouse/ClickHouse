@@ -457,6 +457,11 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     if (!allowsHashFamilyAlgorithm(join_step.getJoinSettings().join_algorithms))
         return result;
 
+    /// The enforcer applies the same byte budget to the broadcast, so a variant that asked for an
+    /// oversized replication would get no plan; skipping it here saves the search.
+    const bool broadcast_within_budget = decideReplicationOf(
+        *memo.getGroup(expression->inputs[1].group_id), memo.getContext(), getName(), /*repeats_scan*/ false).allowed;
+
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
@@ -464,7 +469,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         /// driven by the partitioned left side: `RIGHT` and `FULL` emit unmatched right-side rows
         /// on every node, and `PASTE` pairs rows by position. `JoinCommutativity` can turn `RIGHT`
         /// Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
-        if (strategies.isBroadcastSafe())
+        if (strategies.isBroadcastSafe() && broadcast_within_budget)
             strategies.addBroadcastJoins(candidate_node_count);
 
         if (strategies.hasEquiKeys())

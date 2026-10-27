@@ -11,12 +11,15 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+struct JoinBuildInputMark;
+
 struct LogicalJoinInfo
 {
     String readable_relation_name;
     JoinEstimation estimation;
     JoinLocality locality{};
     UInt64 cluster_id = 0;
+    std::shared_ptr<JoinBuildInputMark> build_input_mark = {};
 };
 
 /// Join two data streams.
@@ -100,6 +103,12 @@ public:
     const JoinEstimation & getEstimation() const { return estimation; }
     UInt64 getClusterId() const { return cluster_id; }
 
+    /// The input the hash table is built from: the right one, or the left one when the inputs are swapped.
+    size_t getBuildInputIndex() const { return swap_streams ? 0 : 1; }
+    /// Tells the join that a runtime filter built outside its build input reduces that input, so the
+    /// recorded size of the build side is not reused to order joins. Does nothing if the join records no size.
+    void markBuildInputFilteredFromOutside();
+
 private:
     bool optimized = false;
     void updateOutputHeader() override;
@@ -113,6 +122,7 @@ private:
     JoinPtr join;
     JoinEstimation estimation;
     UInt64 cluster_id = 0;
+    std::shared_ptr<JoinBuildInputMark> build_input_mark;
     size_t max_block_size;
     size_t min_block_size_rows;
     size_t min_block_size_bytes;

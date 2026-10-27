@@ -1,8 +1,8 @@
 -- canary: variant A with a Shuffle merge (shuffle below the merge, gather above it)
 Expression (Project names)
-  GatherExchange
-    Expression ((Before ORDER BY + Projection))
-      Sorting
+  Sorting
+    GatherExchange
+      Expression ((Before ORDER BY + Projection))
         Aggregating
           JoinLogical (Shuffle HashJoin )
             ShuffleExchange

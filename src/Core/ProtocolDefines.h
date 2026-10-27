@@ -140,6 +140,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
+/// Version 21 also writes the optimizer's row estimate next to every step, so the processors a task builds
+/// from a plan fragment log the same `plan_step_estimated_rows` as the coordinator's own.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
 ///
@@ -178,6 +180,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOUR
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that writes the optimizer's estimate next to every step. Below it the
+/// bytes are not written: the older peer would read them as the step header.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_ESTIMATES = 21;
 /// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
 /// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
 /// aggregation with its own two-level decision.

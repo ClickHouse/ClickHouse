@@ -21,7 +21,7 @@ setting_off	100000	1000
 setting_on	1000	100000
 --- T3: a table with no snapshot
 Join: m[1000] ⋈ t[0]
-ResultRows: 1
+ResultRows: 0
 --- T4: first snapshot by iceberg_snapshot_id
 Join: m[1000] ⋈ b[10]
 ResultRows: 10
@@ -29,7 +29,7 @@ ResultRows: 10
 Join: m[1000] ⋈ b[15]
 ResultRows: 15
 --- T5: aggregation over an Iceberg read
-Join: ice_agg[no_stats~100000] ⋈ m[1000]
-ResultRows: ~~100000
+Join: m[1000] ⋈ ice_agg[no_stats<=100000]
+ResultRows: unknown
 data lake hint lines naming ice_agg: 1
 column statistics hint lines naming ice_agg: 0

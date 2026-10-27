@@ -1,4 +1,5 @@
 #include <memory>
+#include <unordered_set>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -17,6 +18,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
@@ -357,8 +360,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)
     {
-        auto probe_size = join_step->getInputRowsEstimation(JoinTableSide::Left);
-        if (probe_size && *probe_size <= optimization_settings.join_runtime_filter_min_probe_rows)
+        /// A probe size that rests on a default selectivity is a guess, too weak to give up the filter for.
+        const auto probe = join_step->getChosenInputEstimate(JoinTableSide::Left);
+        if (probe.rows && !probe.from_defaults && *probe.rows <= optimization_settings.join_runtime_filter_min_probe_rows)
         {
             join_step->setRuntimeFilterDeclinedForSmallProbe();
             return false;
@@ -664,6 +668,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         apply_filter_node->step->getOutputHeader(), std::move(filter_dag), filter_column_name, true);
     new_apply_filter_node->step->setStepDescription("Apply runtime join filter");
     new_apply_filter_node->children = {apply_filter_node};
+    /// A runtime filter only drops rows the join would drop anyway, so the logical row count of the
+    /// input is also the row count of this step; without the copy the estimate recorded on the input
+    /// is lost when the two steps are merged.
+    new_apply_filter_node->cost_estimation = apply_filter_node->cost_estimation;
     apply_filter_node = new_apply_filter_node;
 
     node.children = {apply_filter_node, build_filter_node};
@@ -681,6 +689,12 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
     auto * read_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_step)
         return;
+
+    /// The filters already in the read's PREWHERE: a filter the coordinator placed reaches a task there, and the
+    /// task places no filter of its own for a join it does not run.
+    if (const auto & prewhere_info = read_step->getPrewhereInfo(); prewhere_info && prewhere_info->need_filter)
+        for (const auto & descr : findAppliedRuntimeFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+            read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
 
     /// Walk up from the reading step composing the filters through the expression steps,
     /// exactly like optimizePrimaryKeyConditionAndLimit does for the index analysis, so a
@@ -709,6 +723,72 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
         }
         else
             break;
+    }
+}
+
+namespace
+{
+
+/// The names of the runtime filters a subtree applies and of the ones it builds.
+struct RuntimeFilterNames
+{
+    std::unordered_set<String> applied;
+    std::unordered_set<String> built;
+};
+
+void collectAppliedRuntimeFilters(const ActionsDAG & dag, std::unordered_set<String> & applied)
+{
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type == ActionsDAG::ActionType::FUNCTION && dag_node.function_base
+            && dag_node.function_base->getName() == "__applyFilter" && !dag_node.children.empty())
+            applied.insert(dag_node.children[0]->result_name);
+    }
+}
+
+void collectRuntimeFilterNames(const QueryPlan::Node & node, RuntimeFilterNames & names)
+{
+    const auto * step = node.step.get();
+    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+        collectAppliedRuntimeFilters(filter_step->getExpression(), names.applied);
+    else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+        collectAppliedRuntimeFilters(expression_step->getExpression(), names.applied);
+    else if (const auto * build_step = typeid_cast<const BuildRuntimeFilterStep *>(step))
+        names.built.insert(build_step->getFilterName());
+    else if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(step))
+    {
+        if (const auto & filter_dag = source_step->getFilterActionsDAG())
+            collectAppliedRuntimeFilters(*filter_dag, names.applied);
+        if (const auto prewhere_info = source_step->getPrewhereInfo())
+            collectAppliedRuntimeFilters(prewhere_info->prewhere_actions, names.applied);
+    }
+
+    for (const auto * child : node.children)
+        collectRuntimeFilterNames(*child, names);
+}
+
+}
+
+void markJoinBuildInputsFilteredFromOutside(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        auto * join_step = typeid_cast<JoinStep *>(node->step.get());
+        if (!join_step || node->children.size() != 2)
+            continue;
+
+        RuntimeFilterNames names;
+        collectRuntimeFilterNames(*node->children[join_step->getBuildInputIndex()], names);
+        const bool filtered_from_outside = std::ranges::any_of(
+            names.applied, [&](const String & filter_name) { return !names.built.contains(filter_name); });
+        if (filtered_from_outside)
+            join_step->markBuildInputFilteredFromOutside();
     }
 }
 

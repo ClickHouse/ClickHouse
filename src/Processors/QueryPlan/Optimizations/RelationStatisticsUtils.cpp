@@ -51,9 +51,10 @@ RelationStats parseTableStatsHint(const String & stats_hint_json, const String &
         if (!stat_object)
             return {};
 
+        /// A hint stands in for the statistics of a table in a test, so its estimate counts as precise: the decisions
+        /// that take only precise estimates, such as a broadcast, can then be tested with it.
         RelationStats stats;
         stats.table_name = table_name;
-        stats.imprecise_estimate = true;
         stats.source = RowEstimateSource::Hint;
 
         if (stat_object->has("cardinality"))

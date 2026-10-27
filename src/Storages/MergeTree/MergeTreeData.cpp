@@ -1223,7 +1223,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         },
         [&](size_t part_index)
         {
-            estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+            estimator_builder.addPart(parts[part_index].data_part->rows_count);
             for (const auto & [column_name, stat] : parts_statistics[part_index])
                 estimator_builder.addStatistics(column_name, stat);
             parts_statistics[part_index] = {};

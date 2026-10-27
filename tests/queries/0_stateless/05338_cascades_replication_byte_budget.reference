@@ -1,0 +1,100 @@
+-- 5 rows of 18 bytes fit the budget: the dimension is broadcast
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            Expression (Change column names to column identifiers)
+              BroadcastExchange
+                ReadFromMergeTree (default.t_cb_dim)
+-- a budget of 50 bytes fits neither side: no replication, the join shuffles
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_dim)
+-- a filter the primary key cannot prune leaves the rows unknown; the bound of 100 rows times the 8 bytes of the key fits a budget of 2000 bytes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            Expression ((WHERE + Change column names to column identifiers))
+              BroadcastExchange
+                ReadFromMergeTree (default.t_cb_unk)
+-- and does not fit a budget of 500 bytes: no replication of the unknown side
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + ))
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            Expression ((WHERE + Change column names to column identifiers))
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_unk)
+-- a small result over a large scan: the broadcast ships the result and fits, the scan is read once
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            BroadcastExchange
+              GatherExchange
+                Expression ((Change column names to column identifiers + (Project names + Projection)))
+                  Expression ((WHERE + Change column names to column identifiers))
+                    ReadFromMergeTree (ParallelRead default.t_cb_scan)
+-- a default in one of two AND-ed predicates of a filter makes the side a guess: its bound does not fit, no broadcast
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Filter ((Propagated equi-join filter + Change column names to column identifiers))
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            Expression ((Change column names to column identifiers + (Project names + Projection)))
+              Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+                MergingAggregated
+                  ShuffleExchange
+                    Aggregating
+                      Expression ((Before GROUP BY + Change column names to column identifiers))
+                        ReadFromMergeTree (ParallelRead default.t_cb_scan)
+-- a UNION ALL is as wide as its inputs weighted by their rows: 5 rows of 18 and 5 of 2000 bytes do not fit a budget of 2000 bytes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            ScatterExchange
+              Union
+                Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                  ReadFromMergeTree (default.t_cb_dim)
+                Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                  ReadFromMergeTree (default.t_cb_wide)
+-- results do not depend on the shape
+1000	nm_0
+1000

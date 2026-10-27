@@ -14,6 +14,9 @@ namespace DB
 /// outside the conjunction — under an OR or a NOT, or in an unrelated expression of the same
 /// DAG — is not applied to every row and is not reported. The overload takes the filter
 /// column of a FilterStep by name.
+/// Whether the node or anything it is computed from is an `__applyFilter` call: unlike `findAppliedRuntimeFilters`,
+/// this also counts a filter on a computed key and one under `OR` (the `isNull` bypass of an anti join).
+bool containsJoinRuntimeFilter(const ActionsDAG::Node * node);
 std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
 std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
 

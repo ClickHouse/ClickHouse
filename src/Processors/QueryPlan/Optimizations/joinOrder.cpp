@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
@@ -41,11 +42,13 @@ LoggerPtr getJoinOrderOptimizerLogger()
     return log;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, const RelationStats & relation_stats)
     : relations()
     , cost(0.0)
-    , estimated_rows(rows)
-    , column_stats(std::move(column_stats_))
+    , estimated_rows(relation_stats.estimated_rows)
+    , max_rows(relation_stats.max_rows)
+    , estimate_from_defaults(relation_stats.estimate_from_defaults)
+    , column_stats(relation_stats.column_stats)
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -64,17 +67,88 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , cost(cost_)
     , selectivity(selectivity_)
     , estimated_rows(cardinality_)
+    , max_rows(estimateJoinRowsUpperBound(left->max_rows, right->max_rows, join_operator_.kind, join_operator_.strictness))
+    , estimate_from_defaults(left->estimate_from_defaults || right->estimate_from_defaults)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
-    /// Merge column stats from both children, then update NDVs for equi-join key columns.
+    /// An equality on a unique column of one side matches each row of the other side at most once.
+    if (join_operator.strictness != JoinStrictness::Semi && join_operator.strictness != JoinStrictness::Anti)
+    {
+        for (const auto & predicate : join_operator.expression)
+        {
+            auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+            if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+                continue;
+            /// The sources are relation ids of the whole graph, not the two sides of this join.
+            if (isSubsetOf(left_node.getSourceRelations(), right->relations) && isSubsetOf(right_node.getSourceRelations(), left->relations))
+                std::swap(left_node, right_node);
+            if (!isSubsetOf(left_node.getSourceRelations(), left->relations) || !isSubsetOf(right_node.getSourceRelations(), right->relations))
+                continue;
+            const auto is_unique = [](const DPJoinEntry & side, const String & column)
+            {
+                const auto it = side.column_stats.find(column);
+                return it != side.column_stats.end() && it->second.unique;
+            };
+            const auto narrow = [&](const std::optional<UInt64> & other_side_max)
+            {
+                if (other_side_max)
+                    max_rows = max_rows ? std::min(*max_rows, *other_side_max) : *other_side_max;
+            };
+            const auto kind = join_operator.kind;
+            if (is_unique(*right, right_node.getColumnName()) && (kind == JoinKind::Inner || kind == JoinKind::Left))
+                narrow(left->max_rows);
+            if (is_unique(*left, left_node.getColumnName()) && (kind == JoinKind::Inner || kind == JoinKind::Right))
+                narrow(right->max_rows);
+        }
+    }
+
+    /// Merge column stats from both children, then update NDVs for equi-join key columns. A join can repeat the rows
+    /// of either side, so no column stays unique.
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
+    for (auto & [_, stats] : column_stats)
+        stats.unique = false;
+
+    /// NULLs or defaults in place of the values of a side can be outside the value range of its columns.
+    const auto drop_value_ranges = [&](const std::unordered_map<String, ColumnStats> & filled_side)
+    {
+        for (const auto & [column, _] : filled_side)
+        {
+            auto & stats = column_stats[column];
+            stats.clearValueRange();
+            stats.null_fraction.reset();
+        }
+    };
+    /// An outer join pads the unmatched rows of one side with NULLs or defaults for the other side's
+    /// columns: one more value each.
+    const auto add_padding_value = [&](const std::unordered_map<String, ColumnStats> & padded_side)
+    {
+        for (const auto & [column, _] : padded_side)
+            if (auto & values = column_stats[column].max_distinct_values; values != 0)
+                values = saturatingAdd(values, UInt64{1});
+        drop_value_ranges(padded_side);
+    };
+    if (join_operator.strictness == JoinStrictness::Anti)
+    {
+        /// The columns of the other side, when the output has them, hold only NULLs or defaults.
+        if (join_operator.kind == JoinKind::Left)
+            drop_value_ranges(right->column_stats);
+        if (join_operator.kind == JoinKind::Right)
+            drop_value_ranges(left->column_stats);
+    }
+    else if (join_operator.strictness != JoinStrictness::Semi)
+    {
+        if (join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Full)
+            add_padding_value(right->column_stats);
+        if (join_operator.kind == JoinKind::Right || join_operator.kind == JoinKind::Full)
+            add_padding_value(left->column_stats);
+    }
 
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
             continue;
 
         if (left_node.fromRight() && right_node.fromLeft())
@@ -86,15 +160,17 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         const auto & right_col = right_node.getColumnName();
         auto left_it = column_stats.find(left_col);
         auto right_it = column_stats.find(right_col);
+        const bool left_known = left_it != column_stats.end() && left_it->second.num_distinct_values > 0;
+        const bool right_known = right_it != column_stats.end() && right_it->second.num_distinct_values > 0;
+        if (!left_known && !right_known)
+            continue;
 
-        if (left_it != column_stats.end() && right_it != column_stats.end())
-        {
-            QueryPlanOptimizations::updateJoinKeyDistinctCounts(
-                left_it->second,
-                right_it->second,
-                join_operator.kind,
-                join_operator.strictness);
-        }
+        /// A key without an entry gets one, so that the known side's values bound it.
+        QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+            column_stats[left_col],
+            column_stats[right_col],
+            join_operator.kind,
+            join_operator.strictness);
     }
 
     /// Cap all NDVs at the estimated output rows.
@@ -194,12 +270,17 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///      and right subtrees that the remaining predicates do not connect. If predicates remain,
 ///      only for classes whose members have one type up to Nullable and LowCardinality
 ///      (equality across types is not transitive), and not when a side is a prepared storage.
+using JoinEquivalenceClasses = EquivalenceClasses<JoinActionRef>;
+
+/// The join orders of one search share the entries of their common subtrees; each entry is cleaned once, and
+/// `cleaned` keeps the equivalence classes of the entries already cleaned.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
     const EquivalenceClasses<JoinActionRef> & column_equivalences,
-    const BitSet & prepared_storage_relations)
+    const BitSet & prepared_storage_relations,
+    std::unordered_map<const DPJoinEntry *, JoinEquivalenceClasses> & cleaned)
 {
-    using EquivClasses = EquivalenceClasses<JoinActionRef>;
+    using EquivClasses = JoinEquivalenceClasses;
 
     auto is_prepared_storage = [&](const DPJoinEntryPtr & side)
     {
@@ -221,6 +302,8 @@ static void cleanupJoinPredicates(
     {
         if (entry->isLeaf())
             return {};
+        if (auto it = cleaned.find(entry.get()); it != cleaned.end())
+            return it->second;
 
         /// Merge equivalence classes from both children.
         auto equiv = process(entry->left);
@@ -325,6 +408,7 @@ static void cleanupJoinPredicates(
             }
         }
 
+        cleaned.emplace(entry.get(), equiv);
         return equiv;
     };
 
@@ -355,6 +439,8 @@ public:
     }
 
     std::shared_ptr<DPJoinEntry> solve();
+
+    const std::vector<DPJoinEntryPtr> & getFullSetAlternatives() const { return query_graph.full_set_alternatives; }
 
 private:
     QueryGraph query_graph;
@@ -400,6 +486,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
                 "This graph should not have reached it. Join graph: {}", toString(algorithm), dumpJoinGraph(query_graph));
 
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
+        /// The other orders belong to the algorithm that returns the plan.
+        query_graph.full_set_alternatives.clear();
         switch (algorithm)
         {
             case JoinOrderAlgorithm::DPSUB:
@@ -432,7 +520,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     return best_plan;
 }
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
+JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (query_graph.relation_stats.size() <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
@@ -458,9 +546,25 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
+    std::vector<DPJoinEntryPtr> alternatives;
+    for (const auto & found : reorderer.getFullSetAlternatives())
+    {
+        if (alternatives.size() == optimization_settings.cascades_join_order_alternatives)
+            break;
+        if (found->left->relations == best_plan->left->relations || found->left->relations == best_plan->right->relations)
+            continue;
+        alternatives.push_back(found);
+        LOG_TRACE(getJoinOrderOptimizerLogger(), "Other join order '{}', cost: {}", alternatives.back()->dump(), alternatives.back()->cost);
+    }
+
     if (optimization_settings.enable_join_transitive_predicates)
-        cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations);
-    return best_plan;
+    {
+        std::unordered_map<const DPJoinEntry *, JoinEquivalenceClasses> cleaned;
+        cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations, cleaned);
+        for (auto & alternative : alternatives)
+            cleanupJoinPredicates(alternative, column_equivalences, prepared_storage_relations, cleaned);
+    }
+    return {.best = best_plan, .alternatives = std::move(alternatives)};
 }
 
 }

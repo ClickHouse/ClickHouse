@@ -178,10 +178,10 @@ TEST(Statistics, Estimator)
     stats_c->build(std::move(c));
 
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addPart(10000);
     estimator_builder.addStatistics("a", stats_a);
     estimator_builder.addStatistics("b", stats_b);
     estimator_builder.addStatistics("c", stats_c);
-    estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();
     NamesAndTypesList columns{{"a", data_type}, {"b", data_type}, {"c", data_type}};
@@ -321,9 +321,9 @@ TEST(Statistics, NullableEstimatorWithBasic)
     ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
 
     ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addPart(1000);
     builder.addStatistics("a", stats_a);
     builder.addStatistics("b", stats_b);
-    builder.incrementRowCount(1000);
     auto estimator = builder.getEstimator();
 
     DataTypePtr nullable_int32 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
@@ -424,8 +424,8 @@ TEST(Statistics, LikeSelectivity)
     stats->build(std::move(col));
 
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addPart(10000);
     estimator_builder.addStatistics("a", stats);
-    estimator_builder.incrementRowCount(10000);
     auto estimator = estimator_builder.getEstimator();
     ASSERT_NE(estimator, nullptr);
 
@@ -920,10 +920,10 @@ TEST(Statistics, BasicWithoutDefaultCountCloneEmpty)
 
     /// The same through the estimator: `x = 0` is not estimated as matching no rows, and both parts are used.
     ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addPart(1000);
     builder.addStatistics("x", part1);
-    builder.incrementRowCount(1000);
+    builder.addPart(1000);
     builder.addStatistics("x", part2);
-    builder.incrementRowCount(1000);
     auto estimator = builder.getEstimator();
     NamesAndTypesList columns{{"x", data_type}};
     EXPECT_GT(estimateRowsFor(estimator, "x = 0", columns), 0u);

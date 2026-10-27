@@ -4,6 +4,9 @@
 -- e.g. a partial aggregation created for `WITH TOTALS` reaches `TotalsHaving`
 -- unmerged and produces duplicate groups.
 
+-- The join order optimizer's randomization replaces the relation statistics with random ones, and
+-- the plan shapes below depend on the estimates.
+SET query_plan_optimize_join_order_randomize = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;

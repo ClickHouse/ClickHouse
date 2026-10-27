@@ -124,7 +124,17 @@ Each physical expression has **properties** describing what it produces:
   - `{4 nodes, by custkey}` — data hash-partitioned by `custkey` across 4 nodes
   - `{4 nodes, replicated}` — full copy on every node
 
-- **Sorting**: Whether the output is sorted and by which columns.
+- **Sorting**: Whether the output is sorted and by which columns. The sorting describes
+  each stream on its own; with one stream per node it is the node's total order.
+
+- **Stream layout**: How one node's streams relate to each other. `Unknown` — several
+  streams with no relation (reads, joins, exchange receive sides). `Single` — one stream
+  per node (a plain full sort, a sorted gather). `Disjoint` on a column set — rows equal
+  on those columns share a stream (a sort partitioned by the columns), so an operator
+  that works per group, such as a `PARTITION BY` window, can run on every stream at once.
+  One stream keeps every group whole, so `Single` satisfies every requirement; `Disjoint`
+  on a subset of the required columns satisfies a `Disjoint` requirement (a coarser split
+  never tears a required group apart).
 
 A parent step **requires** specific properties from its child. For example, a
 `ShuffleHashJoin` on `custkey` requires both inputs to be distributed `{4 nodes, by custkey}`.
@@ -335,12 +345,16 @@ funnels every row through one endpoint, so its transfer stays undivided and each
 also pays `funnel_sequential_cost_per_row`. A hash-table build counts as work, not as
 a sequential phase: `parallel_hash` shards the build across the threads of a node
 (a broadcast join still builds the full table on every node, a shuffle join `1/N`).
+Each built row costs `hash_table_build_factor` plus its bytes; an insert takes about
+twice the CPU of scanning a row, which costs its bytes, so the factor is about twice
+the bytes of a typical scanned row.
 `sequential_weight` is the per-node thread count: a serial phase holds one thread
 while work spreads over all of them, so one serial row costs about `threads` work
 rows (Brent's law).
 
 In addition, every exchange adds a fixed `exchange_fixed_overhead` to `sequential`
-(connection setup and metadata), which keeps a plan over a small input local. A
+(the stage of tasks it starts and their connections), which keeps a plan over a small
+input local and reads a small table on every node instead of gathering and broadcasting it. A
 partial top-N is charged for scanning its whole input while its sorted gather carries
 up to `limit * node_count` rows.
 
@@ -383,7 +397,14 @@ on TPC-H and would multiply the search space. The rule-based planner's
 `distributed_plan_default_shuffle_join_bucket_count`,
 `distributed_plan_default_reader_bucket_count`, and
 `distributed_plan_max_rows_to_broadcast` heuristics are not used: fan-out and
-broadcast-vs-shuffle are decided by estimated cost.
+broadcast-vs-shuffle are decided by estimated cost. The byte budget
+`distributed_plan_max_bytes_to_broadcast` does apply, as an admission check before the cost
+comparison: a result is replicated to every node (a broadcast join side, a replicated read, a
+replicated subplan) only when its estimated rows, or its proven row bound when the rows are
+unknown, times the row width fit the budget; a result with neither an estimate nor a bound is
+never replicated, and a replicated read also has to fit the bytes it scans. The check lives in
+`decideReplicationOf` (`RuleUtils.h`) over the shared `decideReplication`
+(`Optimizations/ReplicationEligibility.h`), which the rule-based planner uses as well.
 
 The per-query environment (cluster size, cost configuration, and the query settings the
 rules honor) is fixed before the search starts and lives on the memo
@@ -456,6 +477,11 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ANY`/`RightAny` joins are not replication-safe: with duplicate build-side keys the
   kept row depends on the parallel build order, so nodes could produce different rows
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
+- `WindowImplementation` — a window on a single node, or on each node for a `PARTITION BY`
+  window: the input is required hashed by the partition keys, sorted on each node, and
+  with streams disjoint on the partition keys, so the enforcers add the keyed shuffle and
+  a per-node sort partitioned by the keys, and every node runs the window on several
+  streams at once with each partition whole in one stream
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
 - `DistributionPassthrough` — propagates distribution through steps that run on any split
@@ -469,7 +495,10 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   `ShuffleExchange`, `ScatterExchange` (keyed, or column-less round-robin for a
   multi-node requirement with no partitioning constraint). Produces both regular
   and sorted-merge gather variants.
-- `SortingEnforcer` — adds `SortingStep` with required sort description.
+- `SortingEnforcer` — adds `SortingStep` with the required sort description. It also
+  closes stream-layout gaps: for a `Disjoint` requirement whose columns cover a prefix of
+  the sort it builds the sort partitioned by those columns (streams stay split per
+  partition), otherwise a plain sort whose single merged stream satisfies every layout.
 
 **Key files**: `Rules/*.cpp`, `DagNameTranslation.h/cpp`
 
@@ -598,23 +627,21 @@ branch-and-bound pruning as the primary bound.
 9. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-10. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
-   (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
-   `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
-   receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
-   of Gretscher & Dittrich, PVLDB 2025) is future work.
-11. **Window function distribution**: `WindowStep` currently goes through
-   `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
-   that sets distribution by PARTITION BY key.
-12. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+10. **Join ordering in Cascades**: the pre-Cascades join orderer (`dphyp`, `dpsub`, `dpsize`, `greedy`) chooses a
+   join order. With `cascades_join_order_alternatives`, DPhyp and DPsize also keep the cheapest complete orders that
+   split the joined relations differently at the top join; the graph then reaches Cascades as one `JoinGraphStep`
+   over its inputs, and the import adds the joins of every order over input groups imported once, sharing the group
+   of a set of inputs between orders whose joins have equal output headers. Orders that differ only below the top
+   join are not offered yet, and Cascades has no join associativity rule.
+11. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-13. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+12. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
-14. **Width through same-type value-changing functions**: a deterministic `String` ->
+13. **Width through same-type value-changing functions**: a deterministic `String` ->
    `String` function (`substring`, `hex`) keeps the source column's average width even
    though the bytes change; width preservation needs a value-pass-through rule separate
    from the NDV rule.
-15. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
+14. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
    `cluster` table functions) with genuinely remote shards is rejected up front
    (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
    Supporting it as a coordinator-pinned single-task source is future work.

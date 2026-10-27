@@ -69,6 +69,10 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(mergeStepDescriptions(parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
 
+        /// An expression keeps the row count of its input, so an estimate recorded on the child is
+        /// also the estimate of the merged step.
+        if (!parent_node->cost_estimation)
+            parent_node->cost_estimation = child_node->cost_estimation;
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
         return 1;
