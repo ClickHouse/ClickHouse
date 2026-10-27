@@ -270,8 +270,8 @@ bool canGroupByOnDevice(const IDataType * argument_type, const IDataType & resul
             return elementTypeOf(result_type) == GPUElementType::UInt64;
         case GPUAggregationKind::Mean:
         {
-            /// cuDF averages integers through a sum in an `Int64`, which a group of 64-bit integers overflows where
-            /// ClickHouse's `avg` does not; one of narrower integers does not, below 2^31 rows.
+            /// The device averages integers through a sum in an `Int64`, which a group of 64-bit integers overflows
+            /// where ClickHouse's `avg` does not; one of narrower integers does not.
             const auto element_type = argument_type ? elementTypeOf(*argument_type) : std::nullopt;
             return element_type && (!isInteger(*element_type) || sizeOf(*element_type) <= 4)
                 && elementTypeOf(result_type) == GPUElementType::Float64;

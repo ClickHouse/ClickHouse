@@ -4,6 +4,7 @@
 #include <GPU/GPUExpression.cuh>
 #include <GPU/GPUFilter.cuh>
 
+#include <cudf/binaryop.hpp>
 #include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
 #include <cudf/concatenate.hpp>
@@ -179,10 +180,19 @@ struct CudfGroupBy::State
         std::vector<cudf::groupby::streaming_aggregation_request> requests;
         requests.reserve(aggregates.size());
         for (const auto & aggregate : aggregates)
-            requests.push_back({
-                .column_index = aggregate.column == GPUGroupByAggregate::no_column ? 0 : static_cast<cudf::size_type>(keys.size() + aggregate.column),
-                .aggregation = groupByAggregationFor(aggregate.aggregation),
-            });
+        {
+            const cudf::size_type column
+                = aggregate.column == GPUGroupByAggregate::no_column ? 0 : static_cast<cudf::size_type>(keys.size() + aggregate.column);
+            /// cuDF's own mean divides by a count it reads as a `size_type`, which a group of 2^31 rows or more turns
+            /// into a null. An `avg` is asked as its sum and its count, divided in `tableOf`.
+            if (aggregate.aggregation == GPUAggregationKind::Mean)
+            {
+                requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(GPUAggregationKind::Sum)});
+                requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(GPUAggregationKind::Count)});
+                continue;
+            }
+            requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(aggregate.aggregation)});
+        }
 
         /// The keys have no nulls but what a `WHERE` leaves out.
         return guarded("making a `streaming_groupby` of at most " + std::to_string(new_capacity) + " groups", [&]
@@ -192,13 +202,28 @@ struct CudfGroupBy::State
         });
     }
 
-    /// The keys, then the values, as cuDF returned them, checked to be as wide as what they are taken as.
-    __host__ std::unique_ptr<cudf::table> tableOf(std::unique_ptr<cudf::table> group_keys, std::vector<cudf::groupby::aggregation_result> results) const
+    /// The keys, then the values, as cuDF returned them, checked to be as wide as what they are taken as. From
+    /// `streaming_groupby`, made by `make`, an `avg` comes as two results, its sum and its count (`means_split`).
+    __host__ std::unique_ptr<cudf::table> tableOf(
+        std::unique_ptr<cudf::table> group_keys, std::vector<cudf::groupby::aggregation_result> results, bool means_split) const
     {
         std::vector<std::unique_ptr<cudf::column>> columns = group_keys->release();
+        size_t next_result = 0;
         for (size_t i = 0; i < aggregates.size(); ++i)
         {
-            std::unique_ptr<cudf::column> & result = results[i].results.front();
+            std::unique_ptr<cudf::column> result;
+            if (means_split && aggregates[i].aggregation == GPUAggregationKind::Mean)
+            {
+                const cudf::column_view sum = results[next_result].results.front()->view();
+                const cudf::column_view count = results[next_result + 1].results.front()->view();
+                next_result += 2;
+                result = guarded("dividing the sums of an `avg` by its counts", [&]
+                {
+                    return cudf::binary_operation(sum, count, cudf::binary_operator::TRUE_DIV, cudf::data_type{cudf::type_id::FLOAT64}, stream);
+                });
+            }
+            else
+                result = std::move(results[next_result++].results.front());
             const GPUElementType result_type = aggregates[i].result_type;
             /// cuDF counts into a `cudf::size_type`, where ClickHouse counts into a `UInt64`.
             if (aggregates[i].aggregation == GPUAggregationKind::Count && cudf::size_of(result->type()) != sizeOf(result_type))
@@ -665,12 +690,12 @@ __host__ size_t CudfGroupBy::finalize()
         {
             return std::move(*state->grouping).finalize_and_release(state->stream);
         });
-        state->groups = state->tableOf(std::move(group_keys), std::move(results));
+        state->groups = state->tableOf(std::move(group_keys), std::move(results), true);
     }
     else if (!state->reduced_runs.empty())
     {
         auto [group_keys, results] = state->combineRuns();
-        state->groups = state->tableOf(std::move(group_keys), std::move(results));
+        state->groups = state->tableOf(std::move(group_keys), std::move(results), false);
     }
     state->grouping.reset();
     state->finalized = true;
