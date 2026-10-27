@@ -2378,18 +2378,21 @@ namespace
 /// always correspond to the last completed command.
 std::mutex replicated_ddl_queries_mutex;
 
-/// Names of the Keepers where `SYSTEM STOP REPLICATED DDL QUERIES` has created the flag. `START` removes the flag
-/// from all of them, even if their `Replicated` databases were detached or dropped in the meantime.
-std::set<String> fenced_zookeeper_names TSA_GUARDED_BY(replicated_ddl_queries_mutex);
+/// Keeper name and path of the flag in Keeper, see `DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath`.
+using StopReplicatedDDLQueriesFlag = std::pair<String, String>;
 
-/// Names of the Keepers of all `Replicated` databases: their initial DDL entries check the stop flag through them.
-std::set<String> getZooKeeperNamesOfReplicatedDatabases()
+/// Flags that `SYSTEM STOP REPLICATED DDL QUERIES` has created. `START` removes all of them,
+/// even if their `Replicated` databases were detached or dropped in the meantime.
+std::set<StopReplicatedDDLQueriesFlag> created_stop_flags TSA_GUARDED_BY(replicated_ddl_queries_mutex);
+
+/// Flags for all `Replicated` databases: their initial DDL entries check the flag in their replica path.
+std::set<StopReplicatedDDLQueriesFlag> getStopFlagsOfReplicatedDatabases()
 {
-    std::set<String> zookeeper_names;
+    std::set<StopReplicatedDDLQueriesFlag> flags;
     for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
         if (const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get()))
-            zookeeper_names.insert(replicated->getZooKeeperName());
-    return zookeeper_names;
+            flags.emplace(replicated->getZooKeeperName(), DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(*replicated));
+    return flags;
 }
 
 }
@@ -2406,15 +2409,14 @@ void InterpreterSystemQuery::stopReplicatedDDLQueries()
     /// flag does not survive a restart of the server either.
     DatabaseCatalog::instance().stopReplicatedDDLQueries();
 
-    for (const auto & name : getZooKeeperNamesOfReplicatedDatabases())
+    for (const auto & flag : getStopFlagsOfReplicatedDatabases())
     {
-        String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(name);
-        /// Remember the Keeper before creating the flag, so `START` removes it even if this command fails midway.
-        fenced_zookeeper_names.insert(name);
-        auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(name);
-        zookeeper->createAncestors(path);
-        auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+        const auto & [zookeeper_name, path] = flag;
+        /// Remember the flag before creating it, so `START` removes it even if this command fails midway.
+        created_stop_flags.insert(flag);
+        auto code = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
+        /// `ZNONODE` means that the replica was dropped from Keeper, so its DDL entries cannot be committed anyway.
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(code, path);
     }
 }
@@ -2426,16 +2428,16 @@ void InterpreterSystemQuery::startReplicatedDDLQueries()
 
     std::lock_guard lock(replicated_ddl_queries_mutex);
 
-    std::set<String> zookeeper_names = getZooKeeperNamesOfReplicatedDatabases();
-    zookeeper_names.insert(fenced_zookeeper_names.begin(), fenced_zookeeper_names.end());
+    std::set<StopReplicatedDDLQueriesFlag> flags = getStopFlagsOfReplicatedDatabases();
+    flags.insert(created_stop_flags.begin(), created_stop_flags.end());
 
-    for (const auto & name : zookeeper_names)
+    for (const auto & flag : flags)
     {
-        String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(name);
-        auto code = getContext()->getDefaultOrAuxiliaryZooKeeper(name)->tryRemove(path, -1);
+        const auto & [zookeeper_name, path] = flag;
+        auto code = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name)->tryRemove(path, -1);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException::fromPath(code, path);
-        fenced_zookeeper_names.erase(name);
+        created_stop_flags.erase(flag);
     }
 
     DatabaseCatalog::instance().startReplicatedDDLQueries();

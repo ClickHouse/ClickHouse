@@ -27,7 +27,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/config_version.h>
-#include <Common/escapeForFileName.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
@@ -836,8 +835,7 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         if (!DatabaseCatalog::instance().canPerformReplicatedDDLQueries())
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Replicated DDL queries are disabled");
 
-        String stop_flag_path = getStopReplicatedDDLQueriesFlagPath(database->getZooKeeperName());
-        zookeeper->createAncestors(stop_flag_path);
+        String stop_flag_path = getStopReplicatedDDLQueriesFlagPath(*database);
         txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
     }
@@ -851,12 +849,12 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     return query_context;
 }
 
-String DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(const String & zookeeper_name)
+String DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath(const DatabaseReplicated & database)
 {
-    /// The server UUID persists across restarts, but the ephemeral flag of a killed server stays in Keeper until its session
-    /// expires, so the path also identifies the current process to not mistake that flag for the flag of this process.
+    /// The ephemeral flag of a killed server stays in Keeper until its session expires, so the path identifies
+    /// the current process to not mistake that flag for the flag of this process after a restart.
     static const String process_id = toString(UUIDHelpers::generateV4());
-    return fmt::format("/clickhouse/stop_replicated_ddl_queries/{}_{}_{}", toString(ServerUUID::get()), process_id, escapeForFileName(zookeeper_name));
+    return fmt::format("{}/stop_replicated_ddl_queries_{}", database.replica_path, process_id);
 }
 
 Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()

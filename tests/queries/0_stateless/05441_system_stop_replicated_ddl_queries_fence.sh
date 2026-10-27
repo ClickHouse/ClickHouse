@@ -25,13 +25,15 @@ $CLICKHOUSE_CLIENT -m --query "
     GRANT SYSTEM REPLICATION QUEUES ON *.* TO $USER_GLOBAL;
 "
 
-# Prints whether the stop flag of this server (named '<server UUID>_<process ID>_<Keeper name>') exists in the default and in the auxiliary Keeper, and whether it is ephemeral.
+# Prints whether the stop flag of this server (named 'stop_replicated_ddl_queries_<process ID>' in the replica path) exists in the default and in the auxiliary Keeper, and whether it is ephemeral.
 print_flags() {
     for keeper in default zookeeper2; do
+        local name=fence_default
+        [ "$keeper" = zookeeper2 ] && name=fence_aux
         $CLICKHOUSE_CLIENT --query "
             SELECT '$keeper', count(), sum(ephemeralOwner != 0)
             FROM system.zookeeper
-            WHERE path = '/clickhouse/stop_replicated_ddl_queries' AND startsWith(name, toString(serverUUID()) || '_') AND endsWith(name, '_$keeper') AND zookeeperName = '$keeper'
+            WHERE path = '/test/databases/$CLICKHOUSE_DATABASE/$name/replicas/s1|r1' AND startsWith(name, 'stop_replicated_ddl_queries_') AND zookeeperName = '$keeper'
             HAVING count() > 0"
     done
     echo "--"
