@@ -1363,7 +1363,8 @@ class CHServer:
         # command line (a documented config override, see Server.cpp) with a
         # distinct port per server, so that shell-script tests can talk to the
         # server over HTTP.
-        self.start_cmd = f"{taskset_prefix}{NO_ASLR_PREFIX}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
+        # exec: self.proc is the server's watchdog (or the server), which exits only after the server.
+        self.start_cmd = f"exec {taskset_prefix}{NO_ASLR_PREFIX}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
@@ -1486,12 +1487,11 @@ class CHServer:
         print("Terminate ClickHouse process")
         timeout = 10
         if self.proc:
-            Utils.terminate_process_group(self.proc.pid)
-
+            # One SIGTERM only: the server exits without shutting down on a second termination signal.
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=10)
-                print(f"Process {self.proc.pid} terminated gracefully.")
+                print(f"Process {self.proc.pid} exited with code {self.proc.returncode}.")
             except Exception:
                 print(
                     f"Process {self.proc.pid} did not terminate in {timeout} seconds, killing it..."
