@@ -27,6 +27,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE 
 SELECT count() FROM tab WHERE hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%';
-SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT count() FROM tab WHERE NOT hasAnyTokens(msg, ['alpha', 'beta']) AND msg LIKE '%alpha%' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
