@@ -1608,7 +1608,7 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
 
     /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
     /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
-    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
+    /// all data files are Parquet or Vortex, none needs schema evolution, and there are no equality deletes.
     /// The manifest files are cached, and the read itself traverses them anyway.
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
@@ -1894,6 +1894,8 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
+    /// `vortex.preserve_order` is not forced as well: position deletes are only supported for
+    /// Parquet data and delete files, so a Vortex data file never reaches the streaming transform.
     if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
         /// data reader and the deletes reader.
@@ -2098,7 +2100,9 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (!iceberg_object_info)
         return nullptr;
     chassert(object_info->getFileFormat().has_value());
-    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
+    /// Only these readers resolve columns through a mapper: `Parquet` for the columns it reads
+    /// and for its filters, `Vortex` for the filters it pushes into the scan.
+    if (const auto format = Poco::toLower(*object_info->getFileFormat()); format != "parquet" && format != "vortex")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
@@ -2107,8 +2111,13 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
-    if (Poco::toLower(write_format) != "parquet")
+    if (const auto format = Poco::toLower(write_format); format != "parquet" && format != "vortex")
         return nullptr;
+    return getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+}
+
+ColumnMapperPtr IcebergMetadata::getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     // This is a temporary cludge for cluster functions because now the state on replicas is not synchronized with the primary state on the coordinator
     if (!iceberg_table_state)
