@@ -1669,7 +1669,11 @@ namespace
                         *pid_file_seen_locked = true;
                     else if (locked == false && *pid_file_seen_locked)
                     {
-                        fmt::print("The server process with pid = {} has terminated: {} is no longer locked.\n", pid, pid_file.string());
+                        fmt::print(
+                            "The server process with pid = {} has terminated: {} is no longer locked (the file will be removed).\n",
+                            pid,
+                            pid_file.string());
+                        (void)fs::remove(pid_file);
                         return 0;
                     }
                 }
