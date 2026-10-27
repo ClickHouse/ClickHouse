@@ -1676,14 +1676,17 @@ def test_move_copies_the_generation_its_provenance_names(started_cluster):
     assert head["ContentType"] == "text/csv"
     assert head["Metadata"]["clickhouse_move_source_version_id"] == ingested
     assert read_s3_object(started_cluster, bucket, destination_key) == data
-    # The delete removed the generation that was copied, and only it.
-    versions = {
-        version["VersionId"]
-        for version in client.list_object_versions(
-            Bucket=bucket, Prefix=source_key
-        ).get("Versions", [])
-    }
-    assert versions == {rewritten}
+    # The delete removed the generation that was copied, and only it. The copy is published before
+    # the source is deleted, so wait for the deletion.
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    wait_until(lambda: source_versions() == {rewritten})
     assert move_collisions(node) == collisions_before
 
 
