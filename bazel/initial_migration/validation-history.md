@@ -2835,3 +2835,36 @@ Across the native builds, including their validation targets, BuildBuddy recorde
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/a576b859-b469-45d2-85eb-f325fba38de6) exited 1. For ZooKeeper with logging disabled, the analyzer could not establish whether nine dependencies were needed for linking. The report reader rejected the JSON ordering of the seven Rust archive names; this comparison credits none of the six selected targets with a verified report.
 
 [ARM64 DWYU](https://app.buildbuddy.io/invocation/198ad727-b17f-46e0-896f-09a254289676) exited 1. For ZooKeeper with logging disabled, the analyzer could not establish whether nine dependencies were needed for linking. The report reader rejected the JSON ordering of the seven Rust archive names; this comparison credits none of the six selected targets with a verified report.
+
+## 8e9777ae2
+
+At [8e9777ae2](https://github.com/dzbarsky/clickhouse/commit/8e9777ae287c9e44cdc486123f2226e22cc29693), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. Unstripped ClickHouse and unit-test binaries are compared with the [preceding published build](https://github.com/dzbarsky/clickhouse/commit/516678a35313629982c599f768d3943263786d16).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/7931882f-066c-4f96-bf4a-16dbb6f5fb4f) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/7931882f-066c-4f96-bf4a-16dbb6f5fb4f) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/7931882f-066c-4f96-bf4a-16dbb6f5fb4f) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/fd8531df-2953-40ee-80bb-7c9e70b3cdd0) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/fd8531df-2953-40ee-80bb-7c9e70b3cdd0) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/fd8531df-2953-40ee-80bb-7c9e70b3cdd0) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+Each native build completed all 19 targets and passed 26 runtime checks. The [upstream uniqTheta SQL test](../../tests/queries/0_stateless/01798_uniq_theta_union_intersect_not.sql) returned all 18 reference rows. Three compiler checks verified the ZooKeeper object with logging disabled and the radix-sort and wrap-in-nullable benchmark objects.
+
+On x86-64, Bazel selected the 25 Ubuntu inputs in place of the ClickHouse sysroot files. The file contents match the pinned sysroot, including all 14 used by the final link. On ARM64, the corresponding 24 Cargo inputs and 14 native link inputs still came from the ClickHouse sysroot. On both CPUs the SHA-256 and byte counts of all seven processed Rust archives matched the [preceding archive digests](#516678a35).
+
+Five program libraries (benchmark, client, format, local and server) dropped the redundant `//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0` dependency. UniqTheta, the radix-sort benchmark and the wrap-in-nullable benchmark dropped `//src:dbms__compile_1`.
+
+### ARM64 glibc link experiment
+
+The experimental ARM64 link uses six generated glibc interfaces and retains the sysroot’s `libc_nonshared.a` and GCC startup objects. The [earlier x86-64 experiment](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) matched native CMake. The [earlier ARM64 experiment](https://app.buildbuddy.io/invocation/b5caccff-384d-4f95-b3d0-602a852c69e5) differed. In the [current ARM64 build](https://app.buildbuddy.io/invocation/fd8531df-2953-40ee-80bb-7c9e70b3cdd0), the experimental linker and strip exited zero. Its stripped SHA-256 was `2e1036e58552cd96a069bb932d322096b6d92a9a0416505a3684c23117a22335` (637,316,696 bytes); it differed from native CMake. The first difference was at file offset `0x3280` (`.dynsym` in the production ELF, `.dynsym` in the experimental ELF). The comparison found 2 differing file regions; 0 parsed dynamic-symbol entries and 0 version entries differed. The first changed field was a symbol name offset: `0x1afb` in production and `0x1b0b` in the experiment. Only `.dynsym` and `.dynstr` changed. Code, parsed symbols and their order, symbol versions, needed libraries, relocations, section layout and program headers matched. Swapping the adjacent strings `pthread_setcanceltype` and `__shm_directory` in the CMake binary and adjusting their two symbol name offsets reproduced both experimental section hashes.
+
+### Dependency reports
+
+Correction to the [preceding DWYU results](#516678a35): the [x86-64](https://app.buildbuddy.io/invocation/a576b859-b469-45d2-85eb-f325fba38de6) and [ARM64](https://app.buildbuddy.io/invocation/198ad727-b17f-46e0-896f-09a254289676) runs each had five verified clean targets (`darts_clone`, `heks`, `morton_nd`, `pocketfft`, `wyhash`). The original report reader had rejected the ordering of Rust archive names. The same runs left nine ZooKeeper link dependencies unresolved.
+
+BuildBuddy recorded 20 remote executions and 55,814 remote cache hits on x86-64 and 12 remote executions and 56,293 remote cache hits on ARM64.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/666eb9b0-bd8b-4148-a9f7-f24213291632): all six analyzer reports contained no findings and BuildBuddy reported all six targets built. The collector expects a number for every per-target measurement; it rejected the structured `symbol_inputs_if_added` field (`invalid per-owner charge`) and credited no targets.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/64fe995e-bd0e-4864-afe2-2fa65424e46c): all six analyzer reports contained no findings and BuildBuddy reported all six targets built. The collector expects a number for every per-target measurement; it rejected the structured `symbol_inputs_if_added` field (`invalid per-owner charge`) and credited no targets.

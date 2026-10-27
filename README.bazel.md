@@ -58,39 +58,31 @@ so Clang uses the libc++ overloads of `memchr` and `strchr`, as it does in the n
 CMake build. The glibc overloads declare these functions `noexcept`; selecting them
 changed code in ClickHouse, Boost.Asio, and ICU.
 
-The final ClickHouse link takes `Scrt1.o`, `crti.o`, and `crtn.o` from
-`@llvm//runtimes/glibc:pie_startup_objects`: glibc 2.31 on x86-64 and glibc 2.28 on ARM64.
-On each CPU, it also declares 12 glibc link and
-loader files plus GCC's `crtbeginS.o` and `crtendS.o` from the
-[pinned ClickHouse sysroot](https://github.com/ClickHouse/sysroot/tree/6dd29c222896e54de24e7af1b191c92e4cf2e229).
-In [focused link fixtures](bazel/initial_migration/validation-history.md#5d0f29e2c), the LLVM 0.8.26 glibc stubs bound 12 of 519 native ClickHouse imports on x86-64 and 6 of 521 on ARM64 to `libpthread.so.0` instead of `libc.so.6`, including `pthread_self`. The link keeps the 12 glibc library and loader files to preserve those bindings. The production links still use the ClickHouse sysroot. In a [separate full-executable link](bazel/initial_migration/validation-history.md#516678a35), replacing five glibc libraries and the ELF loader with generated interfaces preserved the stripped hash on [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea). On [ARM64](https://app.buildbuddy.io/invocation/b5caccff-384d-4f95-b3d0-602a852c69e5) the link and strip succeeded, but the SHA-256 differed from native CMake at the same file size.
+The x86-64 build of `//:clickhouse` no longer needs the ClickHouse sysroot. The ARM64 build still uses it for the final link and for Cargo.
 
-GCC's `crtbeginS.o` adds weak references to `_ITM_registerTMCloneTable` and
-`_ITM_deregisterTMCloneTable` that are present in the native CMake binaries.
-LLVM's compiler-rt `crtbegin` does not emit them.
+The final ClickHouse link takes `Scrt1.o`, `crti.o` and `crtn.o` from `@llvm//runtimes/glibc:pie_startup_objects`: glibc 2.31 on x86-64 and 2.28 on ARM64. [`//bazel/link_runtime`](bazel/link_runtime/BUILD.bazel) selects the other link inputs by target CPU:
 
-[ClickHouseNativeLink](bazel/rules/cmake_link.bzl) passes two `-B` directories to Clang. The directory containing
-the glibc outputs supplies `Scrt1.o`, `crti.o` and `crtn.o`; the GCC directory inside
-`@clickhouse_sysroot` supplies `crtbeginS.o` and `crtendS.o`. The link uses these five inputs
-directly, removing the five symlink actions that staged them under `clickhouse.crt/`.
+| Target | Source of glibc, loader and GCC link inputs | Files available to each Cargo action |
+| --- | --- | ---: |
+| x86-64 | [Three pinned Ubuntu 20.04 packages](bazel/link_runtime/ubuntu.bzl): `libc6`, `libc6-dev` and `libgcc-9-dev` | 25 |
+| ARM64 | [Pinned ClickHouse sysroot](https://github.com/ClickHouse/sysroot/tree/6dd29c222896e54de24e7af1b191c92e4cf2e229) | 24 |
 
-The [Rust archive rule](bazel/rules/rust_archive.bzl) now reads libm function and data names from GNU glibc’s `@glibc//:libm_abi`. All seven processed archives retained their previous SHA-256 on both architectures.
+On x86-64 Clang’s `--sysroot` points into the Ubuntu repository. The native link on each CPU uses 12 glibc and loader files plus GCC’s `crtbeginS.o` and `crtendS.o` from the selected source. GCC’s `crtbeginS.o` supplies the weak `_ITM_registerTMCloneTable` and `_ITM_deregisterTMCloneTable` references present in native CMake.
 
-The seven [Cargo archive rules](bazel/rules/rust_archives.bzl) each declare
-[`cargo_link_files`](bazel/dependencies/clickhouse_sysroot.BUILD.bazel): 25 sysroot files on
-x86-64 and 24 on ARM64. Delta's OpenSSL build [passes `-lgcc`](bazel/rules/cmake_cargo.py),
-which requires the sysroot's `libgcc.a`.
+The seven [Cargo rules](bazel/rules/rust_archives.bzl) also use the selected source, including `libgcc.a` for Delta’s OpenSSL build. To localize symbols, the [Rust archive rule](bazel/rules/rust_archive.bzl) reads names from GNU glibc’s `@glibc//:libm_abi`.
+
+A [separate experiment](bazel/initial_migration/validation-history.md#8e9777ae2) replaces five glibc shared libraries and the ELF loader with generated link interfaces. The ARM64 experiment differed from the stripped native CMake binary. Only the ELF dynamic symbol table (`.dynsym`) and its string table (`.dynstr`) differed. Production uses the original glibc library and loader inputs on both CPUs.
 
 ## Binary comparison
 
-At [516678a35](https://github.com/dzbarsky/clickhouse/commit/516678a35313629982c599f768d3943263786d16), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [8e9777ae2](https://github.com/dzbarsky/clickhouse/commit/8e9777ae287c9e44cdc486123f2226e22cc29693), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/0c580598-4dc8-4e50-a564-fb72932edc4c) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/8c423a35-84d5-4585-8b5e-246885630ffe) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/7931882f-066c-4f96-bf4a-16dbb6f5fb4f) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/fd8531df-2953-40ee-80bb-7c9e70b3cdd0) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#516678a35) records the unstripped ClickHouse, unit-test and Rust archive hashes.
+The [validation history](bazel/initial_migration/validation-history.md#8e9777ae2) records the unstripped ClickHouse and unit-test hashes and the Rust archive comparisons.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -209,4 +201,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-The [validation history](bazel/initial_migration/validation-history.md#516678a35) for [516678a35](https://github.com/dzbarsky/clickhouse/commit/516678a35313629982c599f768d3943263786d16) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
+The [validation history](bazel/initial_migration/validation-history.md#8e9777ae2) for [8e9777ae2](https://github.com/dzbarsky/clickhouse/commit/8e9777ae287c9e44cdc486123f2226e22cc29693) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
