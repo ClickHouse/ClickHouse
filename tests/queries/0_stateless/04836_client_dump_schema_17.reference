@@ -31,5 +31,6 @@ SET allow_suspicious_fixed_string_types = 1;
 SET allow_suspicious_variant_types = 1;
 SET allow_experimental_url_wildcard_from_index_pages = 1;
 SET enable_nullable_tuple_type = 1;
+SET allow_archive_path_syntax = 1;
 SET data_type_default_nullable = 0;
 named_collection: replay rc=0
