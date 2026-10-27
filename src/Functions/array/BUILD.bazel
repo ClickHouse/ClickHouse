@@ -312,7 +312,7 @@ cc_library(
         "@clickhouse_re2//:_re2",
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_rocksdb//:_rocksdb",
-        "@clickhouse_s2geometry//:_s2",
+        "//src:s2_link",
         "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_silk//:_silk_util",

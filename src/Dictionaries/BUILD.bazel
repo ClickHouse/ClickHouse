@@ -378,7 +378,6 @@ cc_library(
         "@clickhouse_replxx//:_replxx",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_rocksdb//:_rocksdb",
-        "@clickhouse_s2geometry//:_s2",
         "@clickhouse_sha3iuf//:_sha3iuf",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_silk//:_silk_util",

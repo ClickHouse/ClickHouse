@@ -1746,7 +1746,7 @@ _DBMS_IMPLEMENTATION_DEPS_BEFORE_ARCH = [
     "@clickhouse_nats_io//:_nats_io",
     "@clickhouse_openldap//:_ldap",
     "@clickhouse_openldap//:_lber",
-    "@clickhouse_s2geometry//:_s2",
+    ":s2_link",
     "@clickhouse_usearch//:usearch",
     "@clickhouse_vectorscan//:_vectorscan__compile_0",
     "@clickhouse_wordnet_blast//:_wnb",
@@ -1879,6 +1879,15 @@ ch_cc_library(
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
     local_defines = DBMS_LOCAL_DEFINES,
     deps = ["//base:common"],
+)
+
+cc_library(
+    name = "s2_link",
+    implementation_deps = ["@clickhouse_s2geometry//:_s2"],
+    visibility = [
+        "//src/Functions:__pkg__",
+        "//src/Functions/array:__pkg__",
+    ],
 )
 
 ch_cc_library(
@@ -2940,7 +2949,7 @@ ch_cc_library(
             "@clickhouse_thrift//:_thrift",
             "@clickhouse_avro//:_avrocpp",
             "@clickhouse_hive_metastore//:_hivemetastore",
-            "@clickhouse_s2geometry//:_s2",
+            ":s2_link",
             "@clickhouse_vectorscan//:_vectorscan__compile_0",
             "@clickhouse_simsimd//:_simsimd",
             "@clickhouse_amqp_cpp//:_amqp-cpp",
@@ -3465,7 +3474,6 @@ cc_test(
         "@clickhouse_re2//:_re2",
         "@clickhouse_croaring//:_roaring",
         "@clickhouse_rocksdb//:_rocksdb",
-        "@clickhouse_s2geometry//:_s2",
         "@clickhouse_cyrus_sasl//:_sasl2",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_silk//:_silk_util",

@@ -15,6 +15,7 @@ UNWIND = '@clickhouse_llvm_project//:unwind'
 TZDATA = '@clickhouse_cctz//:tzdata'
 SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
 MINIZIP = '@clickhouse_minizip_ng//:_minizip'
+S2 = '@clickhouse_s2geometry//:_s2'
 UPB_WIRE = '@clickhouse_grpc//:upb_wire_lib'
 ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
@@ -84,9 +85,9 @@ DEPENDENCIES = {
         '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
     ], [], []),
     ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
-    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP, UPB_WIRE], [], []),
-    ('src/Dictionaries', 'clickhouse_dictionaries'): ([MINIZIP], [], []),
-    ('src/Storages/System', 'clickhouse_storages_system'): ([MINIZIP, UPB_WIRE], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP, S2, UPB_WIRE], [], []),
+    ('src/Dictionaries', 'clickhouse_dictionaries'): ([MINIZIP, S2], [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([MINIZIP, S2, UPB_WIRE], [], []),
     ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
     ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
@@ -114,7 +115,7 @@ DEPENDENCIES = {
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
     ], ['//src:headers'], []),
     ('src/Functions/URL', 'clickhouse_functions_url'): ([
-        MINIZIP,
+        MINIZIP, S2,
         '@clickhouse_mongo_c_driver//:_libbson',
         '@clickhouse_arrow//:_orc',
     ], [], []),
@@ -186,7 +187,7 @@ DEPENDENCIES = {
         [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
     ('src', 'unit_tests_dbms'): (
-        [MINIZIP, '@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
+        [MINIZIP, S2, '@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
          *LLVM_RUNTIME_HEADERS, '@llvm-project//third-party/siphash'], [], [TZDATA]),
 }
 
@@ -316,6 +317,27 @@ def editable_dependency_lists(build, node, drop, canonical, replacements=None, *
     return edits if visit(node, True) else None
 
 
+def declare_s2_link(root):
+    """Only the S2 functions compile against S2; dbms still links the S2 objects."""
+    path = root / 'src/BUILD.bazel'
+    build = Build(root, path, (), ())
+    source = build.source
+    rules = {attributes(rule)['name'].value: rule for _, rule in source.rules()}
+    edits = []
+    if 's2_link' not in rules:
+        start = source.span(rules['dbms__compile_0'])[0]
+        edits.append((start, start, 'cc_library(name = "s2_link", implementation_deps = [' + json.dumps(S2) +
+                      '], visibility = ["//src/Functions:__pkg__", "//src/Functions/array:__pkg__"])\n\n'))
+    for target in ('dbms__compile_0', 'dbms__compile_4'):
+        deps = attributes(rules[target])['implementation_deps']
+        changed = editable_dependency_lists(build, deps, set(), lambda label: label, {S2: ':s2_link'})
+        if changed is None:
+            raise ValueError(f'{target}: cannot preserve the S2 dependency order')
+        edits.extend(changed)
+    if edits:
+        path.write_text(source.rewrite(edits))
+
+
 def usearch_implementation_dep(root):
     """USearch supplies dbms's SimSIMD link input at its original position."""
     path = root / 'src/BUILD.bazel'
@@ -426,9 +448,9 @@ def apply(root):
                 continue
             if (package, name) in {('src/Functions', 'clickhouse_functions_obj'),
                                    ('src/Functions/array', 'clickhouse_functions_array')}:
-                # Keep Minizip's LinkerInput at its original position in both Functions libraries.
+                # Keep both linker inputs in their original positions without exporting their headers.
                 link = ':minizip_link' if package == 'src/Functions' else '//src/Functions:minizip_link'
-                replacements = {MINIZIP: link}
+                replacements = {MINIZIP: link, S2: '//src:s2_link'}
                 if package == 'src/Functions' and not any(
                         attributes(other)['name'].value == 'minizip_link' for _, other in source.rules()):
                     start = source.span(rule)[0]
@@ -439,7 +461,7 @@ def apply(root):
                 unused = {UPB_WIRE, '@clickhouse_capnproto//:_kj', '@clickhouse_icu//:_icuuc'}
                 direct = editable_dependency_lists(build, attrs['deps'], unused, canonical, replacements)
                 if direct is None:
-                    raise ValueError(f'{name}: cannot replace the Minizip dependency in place')
+                    raise ValueError(f'{name}: cannot preserve the Minizip and S2 dependency order')
                 edits.extend(direct)
             spec = DEPENDENCIES.get((package, name))
             if spec is None:
@@ -609,3 +631,4 @@ def apply(root):
             path.write_text(source.rewrite(dict.fromkeys(edits)))
 
     usearch_implementation_dep(root)
+    declare_s2_link(root)
