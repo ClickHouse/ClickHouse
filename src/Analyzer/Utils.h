@@ -152,6 +152,11 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
   */
 bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name);
 
+/** Returns true if the resolved tree evaluates an ordinary, aggregate or window function that is not deterministic,
+  * or contains a constant folded from such a function. Visits subqueries.
+  */
+bool queryTreeHasNonDeterministicFunction(const QueryTreeNodePtr & node);
+
 /** Replace columns in node children.
   * If there is column node and its source is specified table expression node and there is
   * node for column name in map replace column node with node from map.

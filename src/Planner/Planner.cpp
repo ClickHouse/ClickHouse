@@ -2478,31 +2478,6 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 {
 }
 
-/// Whether the analyzed query evaluates an ordinary, aggregate or window function that is not deterministic.
-static bool queryTreeHasNonDeterministicFunction(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return false;
-
-    if (const auto * function_node = node->as<FunctionNode>())
-    {
-        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
-            return true;
-        if (auto aggregate_function = function_node->getAggregateFunction(); aggregate_function && !aggregate_function->isDeterministic())
-            return true;
-    }
-    else if (const auto * constant_node = node->as<ConstantNode>(); constant_node && !constant_node->isDeterministic())
-    {
-        return true;
-    }
-
-    for (const auto & child : node->getChildren())
-        if (queryTreeHasNonDeterministicFunction(child))
-            return true;
-
-    return false;
-}
-
 void Planner::buildQueryPlanIfNeeded()
 {
     if (query_plan.isInitialized())
