@@ -34,19 +34,37 @@ for case in control held; do
     [ "$pending" = "1" ] || echo "$case FAIL: the mutation never reached the queue with both parts"
     $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_older_insert"
 
-    state=""
+    failed=""
     for _ in {1..300}; do
-        state=$($CLICKHOUSE_CLIENT -q "SELECT parts_to_do, progress IS NULL, progress BETWEEN 0.3 AND 0.7 FROM system.mutations
+        failed=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations
             WHERE database = currentDatabase() AND table = 't_older_insert' AND parts_to_do = 1 AND latest_fail_reason != ''")
-        [ -n "$state" ] && break
+        [ "$failed" = "1" ] && break
         sleep 0.2
     done
-    echo "$case ${state:-FAIL: the mutation never reached one failing part}"
+    [ "$failed" = "1" ] || echo "$case FAIL: the mutation never reached one failing part"
+
+    # The failing part is retried, and an attempt counts the rows it has read as done until its row
+    # leaves `system.merges` after it fails, so `progress` can read close to 1 meanwhile. Stop the
+    # retries and wait for the last attempt to go: a newer one cannot report progress once merges stop.
+    $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_older_insert"
+    merging=""
+    for _ in {1..300}; do
+        merging=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_older_insert'")
+        [ "$merging" = "0" ] && break
+        sleep 0.2
+    done
+    [ "$merging" = "0" ] || echo "$case FAIL: the failing part was still being rewritten"
+
+    state=$($CLICKHOUSE_CLIENT -q "SELECT parts_to_do, progress IS NULL, progress BETWEEN 0.3 AND 0.7 FROM system.mutations
+        WHERE database = currentDatabase() AND table = 't_older_insert' AND parts_to_do = 1 AND latest_fail_reason != ''")
+    echo "$case ${state:-FAIL: the failing part is no longer the only one to do}"
 
     if [ "$case" = "held" ]; then
-        # Transition from an older committing insert to an unpulled log entry:
-        # The block lock is deleted in Keeper while log pulling is stopped on this replica.
-        # Progress must remain NULL until the replica can pull fresh logs.
+        # The block lock goes away while this replica cannot pull the replication log. A read that
+        # cannot bring its queue up to date does not know whether the INSERT published a part, so
+        # `progress` stays NULL and is not remembered as free of older INSERTs: it is known again
+        # once pulling resumes. 05455 covers a real INSERT that publishes a part this replica has
+        # not pulled yet.
         $CLICKHOUSE_CLIENT -q "SYSTEM STOP PULLING REPLICATION LOG t_older_insert"
         $CLICKHOUSE_KEEPER_CLIENT -q "rm '$zk_path/block_numbers/0/block-0000000000'"
 
