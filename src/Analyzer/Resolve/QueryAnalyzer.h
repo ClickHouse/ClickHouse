@@ -27,6 +27,7 @@ class QueryExpressionsAliasVisitor ;
 class QueryNode;
 class JoinNode;
 class ColumnNode;
+class FunctionNode;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
@@ -248,6 +249,8 @@ private:
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
     ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
+
+    bool isLambdaCall(const FunctionNode & function_node, IdentifierResolveScope & scope);
 
     bool expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 

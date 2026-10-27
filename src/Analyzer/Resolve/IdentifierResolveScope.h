@@ -261,8 +261,10 @@ struct IdentifierResolveScope
 
     void popExpressionNode();
 
-    /// Whether the name is bound to a lambda by an alias in this scope or in one of its parents,
-    /// so that a function call with this name resolves to the lambda instead of an ordinary function.
+    /// Whether the name may be bound to a lambda by an alias in this scope or in one of its parents,
+    /// so that a function call with this name may resolve to the lambda instead of an ordinary function.
+    /// This is an over-approximation: the aliases of short identifiers and the aliases of the outer scopes
+    /// that are not visible are counted as well. See `QueryAnalyzer::isLambdaCall` for the exact check.
     bool hasFunctionAlias(const std::string & name) const;
 
     /// Identifier resolution cache — prevents AST explosion by sharing resolved alias nodes.

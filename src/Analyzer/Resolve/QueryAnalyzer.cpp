@@ -3137,7 +3137,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
     /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
     /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
-    auto has_aggregate_function_in_tree = [&scope](const IQueryTreeNode * root) -> bool
+    auto has_aggregate_function_in_tree = [this, &scope](const IQueryTreeNode * root) -> bool
     {
         if (!root)
             return false;
@@ -3155,7 +3155,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// The arguments of `grouping` are compared with the GROUP BY keys in their original form as well,
                 /// unless the name is bound to a lambda by an alias, which `resolveFunction` calls instead.
                 if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName())
-                    || (func->getFunctionName() == "grouping" && !scope.hasFunctionAlias("grouping")))
+                    || (func->getFunctionName() == "grouping" && !isLambdaCall(*func, scope)))
                     return true;
             }
 
@@ -3809,6 +3809,18 @@ std::optional<std::pair<std::vector<size_t>, std::vector<bool>>> getConstantCond
 
 }
 
+/** Whether `resolveFunction` calls a lambda bound to the name of the function, instead of the function itself.
+  * The name is looked up exactly as in `resolveFunction`: the provisional map of the lambda aliases holds the aliases
+  * of short identifiers as well (`SELECT a AS count, count(*)`), and some aliases of the outer scopes are not visible.
+  */
+bool QueryAnalyzer::isLambdaCall(const FunctionNode & function_node, IdentifierResolveScope & scope)
+{
+    if (function_node.isWindowFunction())
+        return false;
+
+    return tryResolveIdentifier({Identifier{function_node.getFunctionName()}, IdentifierLookupContext::FUNCTION}, scope).isResolved();
+}
+
 /** Expand the matchers nested inside a projection expression, in place.
   *
   * A matcher does not have to be the root of a projection item: its output can be consumed by a
@@ -3844,7 +3856,7 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
       */
     /// As in `resolveFunction`: a lambda bound to the function name by an alias disables the special handling
     /// of the builtin functions, and its arguments are resolved from left to right.
-    const bool is_lambda_call = !function_node->isWindowFunction() && scope.hasFunctionAlias(function_node->getFunctionName());
+    const bool is_lambda_call = isLambdaCall(*function_node, scope);
 
     const bool drops_unqualified_matchers = !is_lambda_call && functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName());
 
@@ -8279,6 +8291,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         window_rewrites_to_replay.erase(query_node_ptr);
     });
 
+    /** The aliases whose definition in the scope is a projection expression, and not a different expression of another
+      * clause, as `cnt` in `WITH 42 AS cnt SELECT count() OVER w AS cnt`. Only these definitions are replaced with
+      * the copies of the projection items, see `rebind_projection_aliases` below, so that the check of the duplicated
+      * aliases still compares the projection expression with the conflicting definition.
+      */
+    std::unordered_set<std::string> projection_alias_definitions;
+
     if (!scope.group_by_use_nulls)
     {
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
@@ -8303,6 +8322,30 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           */
         auto unexpanded_projection = query_node_typed.getProjectionNode()->clone();
         auto unexpanded_window = query_node_typed.hasWindow() ? query_node_typed.getWindowNode()->clone() : nullptr;
+
+        /// The scope aliases hold copies of the expressions made before anything is resolved, so they are compared
+        /// with the projection expressions now. As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
+        std::vector<const IQueryTreeNode *> aliased_nodes_to_process{query_node_typed.getProjectionNode().get()};
+        while (!aliased_nodes_to_process.empty())
+        {
+            const auto * aliased_node = aliased_nodes_to_process.back();
+            aliased_nodes_to_process.pop_back();
+
+            if (aliased_node->hasAlias())
+            {
+                auto it = scope.aliases.alias_name_to_expression_node.find(aliased_node->getAlias());
+                if (it != scope.aliases.alias_name_to_expression_node.end() && it->second->isEqual(*aliased_node))
+                    projection_alias_definitions.insert(aliased_node->getAlias());
+            }
+
+            auto node_type = aliased_node->getNodeType();
+            if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                continue;
+
+            for (const auto & child : aliased_node->getChildren())
+                if (child)
+                    aliased_nodes_to_process.push_back(child.get());
+        }
 
         /** The expressions produced by the transformers in the first expansion are discarded, unless GROUP BY ALL
           * or a positional argument of GROUP BY refers to them: they are GROUP BY keys and have to be resolved
@@ -8330,8 +8373,34 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 const auto * node = nodes_to_process.back();
                 nodes_to_process.pop_back();
 
-                if (const auto * replace_transformer = node->as<ReplaceColumnTransformerNode>())
-                    replaced_column_names.insert(replace_transformer->getReplacementsNames().begin(), replace_transformer->getReplacementsNames().end());
+                /** Only the replacements that may apply to a column produced by the matcher: as in `resolveMatcher`,
+                  * a column has to match the matcher itself, a `REPLACE` after an `APPLY` is ignored, and a column
+                  * removed by a preceding `EXCEPT` is not replaced, as `c` in `* EXCEPT (c) REPLACE (1 AS c)`.
+                  */
+                if (const auto * matcher_node = node->as<MatcherNode>())
+                {
+                    std::vector<const ExceptColumnTransformerNode *> preceding_except_transformers;
+                    for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
+                    {
+                        if (transformer->as<ApplyColumnTransformerNode>())
+                            break;
+
+                        if (const auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
+                        {
+                            preceding_except_transformers.push_back(except_transformer);
+                        }
+                        else if (const auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+                        {
+                            for (const auto & replaced_column_name : replace_transformer->getReplacementsNames())
+                            {
+                                if (matcher_node->isMatchingColumn(replaced_column_name)
+                                    && std::ranges::none_of(preceding_except_transformers, [&](const auto * except)
+                                        { return except->isColumnMatching(replaced_column_name); }))
+                                    replaced_column_names.insert(replaced_column_name);
+                            }
+                        }
+                    }
+                }
 
                 /// The `REPLACE` transformers of a subquery do not rewrite the `GROUP BY` of this query.
                 for (const auto & child : node->getChildren())
@@ -8536,7 +8605,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         if (node->hasAlias())
         {
-            if (visited_alias_names.insert(node->getAlias()).second)
+            if (projection_alias_definitions.contains(node->getAlias()) && visited_alias_names.insert(node->getAlias()).second)
             {
                 auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
                 if (it != scope.aliases.alias_name_to_expression_node.end())
