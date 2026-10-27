@@ -1,7 +1,7 @@
 -- type name and parser
 JSON(a UInt32, SHARED b String, SHARED REGEXP \'^c\', SHARED REGEXP \'^z\')
 JSON(SHARED REGEXP String, SHARED REGEXP \'^c\')	r
-CREATE TABLE f\n(\n    `j` JSON(SHARED REGEXP String, SHARED a UInt32, SHARED REGEXP \'^c\')\n)\nENGINE = Memory
+CREATE TABLE f\n(\n    `j` JSON(SHARED REGEXP String, SHARED a UInt32,     SHARED REGEXP \'^c\')\n)\nENGINE = Memory
 -- binary type encoding
 3000	3001	3002	3002
 30028008200101610103000001025E63
