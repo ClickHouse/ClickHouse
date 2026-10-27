@@ -128,3 +128,34 @@ TEST(VarInt, UInt64ReadIsUnchanged)
 
     EXPECT_EQ(readVarUIntValue<UInt64>(value), value);
 }
+
+TEST(VarInt, VarUIntBoolIsStrict)
+{
+    EXPECT_FALSE(readVarUIntValue<bool>(0));
+    EXPECT_TRUE(readVarUIntValue<bool>(1));
+    EXPECT_THROW(readVarUIntValue<bool>(2), Exception);
+}
+
+namespace
+{
+
+template <typename T>
+concept CanReadVarUInt = requires(T & x, ReadBuffer & in) { readVarUInt(x, in); };
+
+enum class TestEnum : UInt8
+{
+    A,
+};
+
+}
+
+static_assert(CanReadVarUInt<bool>);
+static_assert(CanReadVarUInt<UInt8>);
+static_assert(CanReadVarUInt<UInt16>);
+static_assert(CanReadVarUInt<UInt32>);
+static_assert(CanReadVarUInt<UInt64>);
+static_assert(!CanReadVarUInt<Int8>);
+static_assert(!CanReadVarUInt<Int32>);
+static_assert(!CanReadVarUInt<Int64>);
+static_assert(!CanReadVarUInt<TestEnum>);
+static_assert(!CanReadVarUInt<Float64>);

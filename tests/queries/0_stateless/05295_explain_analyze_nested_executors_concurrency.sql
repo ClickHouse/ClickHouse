@@ -6,7 +6,6 @@
 -- test asserts only that the plan took that path, that concurrency lines were printed, and that
 -- with a single thread the reported concurrency never exceeds one.
 
-SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 
 SELECT

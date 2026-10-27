@@ -338,7 +338,7 @@ private:
     template <typename Sink>
     void flushRun(Window window, Sink && sink);
 
-    /// Flushes the row ids to the sink directly if they are a aligned with append_granularity, otherwise buffers them.
+    /// Flushes the row ids to the sink directly if they are aligned with append_granularity, otherwise buffers them.
     template <typename Sink>
     void flushDirect(std::span<const UInt32> row_ids, Sink && sink);
 
@@ -410,23 +410,10 @@ void MergeTextIndexesTask::PositionsMerge::start()
         if (info.cardinality == 0)
             continue;
 
-        if (!(info.header & PostingsSerialization::Flags::HasPositions))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a source of a token with positions has no positions");
-
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         auto * data_buffer = stream->getDataBuffer();
 
-        /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-        const size_t file_size = stream->getFileSize();
-        if ((info.position_bytes == 0)
-            || (info.position_offset > file_size)
-            || (info.position_bytes > file_size - info.position_offset))
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-                info.position_bytes, info.position_offset, file_size);
-        }
-
+        validateTokenPositions(info, stream->getFileSize());
         stream->seekToMark({info.position_offset, 0});
         reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*data_buffer, info.position_offset, info.cardinality, info.position_bytes);
         reader.in = data_buffer;
@@ -522,6 +509,17 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
+    /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
+    /// segments into a different directory and must claim nothing in this part.
+    if (writer_settings.stream_base_manifest)
+    {
+        const String index_file_name = index_ptr->getFileName();
+        for (const auto & substream : index_ptr->getSubstreams())
+            writer_settings.stream_base_manifest->registerStreamBase(
+                index_file_name + substream.suffix,
+                {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
+    }
+
     std::tie(output_streams, output_streams_holders) = makeOutputStreams(
         index_ptr->getSubstreams(),
         index_ptr->getFileName(),
@@ -593,7 +591,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, /*with_postings=*/ true);
     const auto & tokens = inputs[source_num].tokens;
     tokens_cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     tokens_queue.push(tokens_cursors[source_num]);
@@ -953,7 +951,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
             postings_queue->push(source);
     }
 
-    const bool has_positions = params.positions && std::ranges::any_of(current_token_sources,
+    const bool has_positions = params.enable_positions && std::ranges::any_of(current_token_sources,
         [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
 
     if (has_positions)
@@ -1185,7 +1183,7 @@ void MergeTextIndexesTask::finalize()
     {
         .version = params.serialization_version,
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
-        .has_positions = params.positions != 0,
+        .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
     };

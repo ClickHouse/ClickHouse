@@ -3,6 +3,13 @@
 <test run_all_queries="1">
 
 <settings file="../benchmarks/tpc-ds/settings.json"/>
+<!-- The hash table sizes cached for join reordering are measured under the plan of the previous run
+     (after its runtime filters), so they can flip the join order on every other run: Q64 then
+     alternates between two plans, one of them over 2x slower. The test measures the queries, not
+     that feedback, so keep the estimates the same on every run. -->
+<settings>
+    <use_hash_table_stats_for_join_reordering>0</use_hash_table_stats_for_join_reordering>
+</settings>
 
 <substitutions>
     <substitution>

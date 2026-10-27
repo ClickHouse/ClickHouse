@@ -31,7 +31,8 @@ enum class StoreMethod
     SINGLE_SCALAR,
 
     /// Data are stored in one row and one column named `values` (Array(Float64)).
-    /// The values are aligned to the time grid.
+    /// The values are aligned to the time grid, and there is a value at every point of the grid (NaN is a value too).
+    /// A grid with missing values must be stored as VECTOR_GRID, SCALAR_GRID is never nullable.
     /// SCALAR_GRID is produced by functions returning a scalar, for example scalar().
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     SCALAR_GRID,

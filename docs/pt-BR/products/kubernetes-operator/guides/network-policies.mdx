@@ -23,9 +23,7 @@ desabilitados por padrão:
   erro. Confirme que sua CNI aplica políticas antes de depender delas.
 </Note>
 
-<div id="cluster-network-policies">
-  ## NetworkPolicies do cluster
-</div>
+## NetworkPolicies do cluster {#cluster-network-policies}
 
 Habilite a política gerenciada em cada cluster:
 
@@ -44,7 +42,7 @@ spec:
 ```
 
 As políticas gerenciadas abrangem **somente o tráfego interno do cluster**. Ao selecionar os pods,
-elas passam a negar por padrão o tráfego de entrada, e o operator permite exatamente o necessário
+elas passam a aplicar bloqueio por padrão para tráfego de entrada, e o operator permite exatamente o necessário
 para o funcionamento dos clusters:
 
 | Cluster    | Origem permitida                                                                       | Portas permitidas                               |
@@ -56,11 +54,10 @@ para o funcionamento dos clusters:
 
 Um keeper admite clusters do ClickHouse com base em seu `keeperClusterRef` — adicionar
 ou remover uma referência atualiza automaticamente a política do keeper, inclusive
-referências de outros espaços de nomes.
+referências de outros espaços de nomes. Clusters que usam `externalKeeper` nunca são
+admitidos, mesmo que seus nós apontem para os pods do keeper.
 
-<div id="allowing-clients">
-  ### Permitir clientes e monitoramento
-</div>
+### Permitir clientes e monitoramento {#allowing-clients}
 
 As conexões de clientes e a coleta de métricas **não** são contempladas: com a
 política gerenciada habilitada, nada pode acessar as portas de cliente (`9000`/`8123` ou as
@@ -95,9 +92,7 @@ Definir `networkPolicy.policy: Disabled` (o padrão) remove a política gerencia
 as políticas definidas pelo usuário nunca são alteradas pelo operator, a menos que
 tenham o rótulo `app` do cluster.
 
-<div id="np-cluster-wide-disable">
-  ### Desativação em todo o cluster
-</div>
+### Desativação em todo o cluster {#np-cluster-wide-disable}
 
 O gerenciamento de NetworkPolicy também pode ser desabilitado em todo o cluster por meio da variável de ambiente `ENABLE_NETWORK_POLICY` do operator. Com `ENABLE_NETWORK_POLICY=false`,
 o operator ignora a etapa de reconciliação de NetworkPolicy para **todos os**
@@ -123,18 +118,14 @@ controller:
     enabled: false
 ```
 
-<div id="operator-pod-policies">
-  ## Políticas de pod do Kubernetes do operator
-</div>
+## Políticas de pod do Kubernetes do operator {#operator-pod-policies}
 
 O chart também fornece políticas opcionais que restringem quais tráfegos podem alcançar o
 **pod do Kubernetes do controller manager** — o próprio processo do operator. Elas abrangem as duas
 portas que o operator expõe a outros clientes: o endpoint de métricas e o
 admission webhook.
 
-<div id="what-the-helm-chart-creates">
-  ## O que o chart do Helm cria
-</div>
+## O que o chart do Helm cria {#what-the-helm-chart-creates}
 
 Quando habilitado, o chart cria até duas políticas somente de entrada, ambas selecionando
 o pod do controller-manager:
@@ -147,9 +138,7 @@ o pod do controller-manager:
 Ambas as políticas declaram apenas `policyTypes: [Ingress]`. Elas não restringem o tráfego de saída
 do operator e não afetam os pods do servidor ClickHouse nem do Keeper.
 
-<div id="default-deny">
-  ## Comportamento de bloqueio por padrão
-</div>
+## Comportamento de bloqueio por padrão {#default-deny}
 
 Ao selecionar um pod do Kubernetes com uma `NetworkPolicy` de entrada, esse pod do Kubernetes passa a ter **bloqueio
 por padrão para tráfego de entrada**: assim que qualquer uma das políticas se aplica, todo tráfego de entrada para o
@@ -163,9 +152,7 @@ Todo o restante destinado ao pod do Kubernetes é bloqueado. Esse é o reforço 
 significa que um scraper ou chamador de webhook sem o rótulo deixa de funcionar no momento em que as
 políticas entram em vigor.
 
-<div id="enabling">
-  ## Habilitando as políticas
-</div>
+## Habilitando as políticas {#enabling}
 
 Com o Helm, defina o gate em seus values:
 
@@ -189,9 +176,7 @@ Com os `manifests` brutos do `kubectl`, descomente a seção `[NETWORK POLICY]` 
 descrito no [guia de instalação do kubectl](/pt-BR/products/kubernetes-operator/install/kubectl).
 Os manifests brutos incluem as mesmas duas políticas.
 
-<div id="labeling-namespaces">
-  ## Rotulando espaços de nomes de cliente
-</div>
+## Rotulando espaços de nomes de cliente {#labeling-namespaces}
 
 Como ambas as políticas correspondem à origem por meio de `namespaceSelector`, todo espaço de nomes
 que precisa se comunicar com o operator deve ter o rótulo correspondente. Uma coleta ou
@@ -222,9 +207,7 @@ a autorização. Ambos precisam estar em vigor para que uma coleta protegida fun
   regra de permissão explícita para o API server, se necessário.
 </Warning>
 
-<div id="verifying">
-  ## Verificação
-</div>
+## Verificação {#verifying}
 
 ```bash
 NS=clickhouse-operator-system
@@ -246,9 +229,7 @@ Após habilitar, confirme que:
 Se uma coleta não retornar dados ou a aplicação de um CR ficar travada, a causa mais provável é
 um espaço de nomes de origem sem rótulo ou a ressalva sobre a acessibilidade do servidor de API mencionada acima.
 
-<div id="related-guides">
-  ## Guias relacionados
-</div>
+## Guias relacionados {#related-guides}
 
 * [Monitorando o operator](/pt-BR/products/kubernetes-operator/guides/monitoring) — o endpoint de métricas, seu RBAC e como proteger a coleta.
 * [Instalar com kubectl](/pt-BR/products/kubernetes-operator/install/kubectl) — onde descomentar a seção de política de rede.

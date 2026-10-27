@@ -4,7 +4,6 @@
 -- to parent joins, because outer joins produce NULLs for non-matching rows,
 -- invalidating the equality.
 
-SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;

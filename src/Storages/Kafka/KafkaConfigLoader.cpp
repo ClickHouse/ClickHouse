@@ -10,6 +10,7 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -579,7 +580,7 @@ void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr &
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? "[HIDDEN]" : property.second);
+            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
 }
 
 }

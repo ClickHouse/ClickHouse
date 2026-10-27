@@ -2,8 +2,6 @@
 -- no-azure-blob-storage: too slow
 -- Random settings limits: index_granularity=(1000, None); index_granularity_bytes=(1000000, None)
 
-SET enable_analyzer=1;
-
 {% for (min_bytes, shared_data_serialization) in [(0, 'map'), (1000000000, 'map'), (0, 'map_with_buckets'), (1000000000, 'map_with_buckets'), (0, 'advanced'), (1000000000, 'advanced')] -%}
 
     DROP TABLE IF EXISTS test;
@@ -25,15 +23,16 @@ SET enable_analyzer=1;
     SELECT distinctJSONPaths(json) FROM test;
 
     SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation) FROM test;
-    SELECT json, arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation) FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0 FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a2 FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a10 FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a2 FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a10 FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a2, json.a10 FROM test;
-    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a2, json.a10 FROM test;
+    -- The paths of one read call land in its first row; the columns cache splits a read when another column is cached for only some granules.
+    SELECT json, arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation) FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0 FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a2 FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a10 FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a2 FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a10 FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a2, json.a10 FROM test SETTINGS use_columns_cache = 0;
+    SELECT arraySort(json.__special_subcolumn_name_for_distinct_paths_calculation), json.a0, json.a2, json.a10 FROM test SETTINGS use_columns_cache = 0;
 
     DROP TABLE test;
 
