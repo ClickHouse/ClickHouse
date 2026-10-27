@@ -311,6 +311,13 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+
+/// Moves the expressions of an `Expression` step above `Window` steps that read a `String` / `FixedString` column
+/// and have a small fixed-size result below the `Window` steps and the `Sorting` steps for them, so that they buffer
+/// the result instead of the column. It is a second pass optimization because it needs the steps above (it is not
+/// applied below a `LIMIT`, which may need the projection only for a few rows) and so that `liftUpFunctions`
+/// does not move the expressions back above the `Sorting` steps.
+void tryPushDownExpressionsBelowWindow(const Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 /// Register the applied `__applyFilter` conjuncts on the reading step at the top of the stack.
 void collectAppliedJoinRuntimeFilters(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(

@@ -1744,6 +1744,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
     {"query_plan_optimize_count_from_text_index", trueOrFalseSetting},
     {"query_plan_optimize_lazy_materialization_for_file", trueOrFalseSetting},
+    {"query_plan_push_down_expressions_below_window", trueOrFalseSetting},
     {"query_plan_push_down_volume_reducing_functions", trueOrFalseSetting},
     {"query_plan_read_in_order_through_join", trueOrFalseSetting},
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
