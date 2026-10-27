@@ -193,9 +193,9 @@ CMAKE_LINK = {
     "@clickhouse_openldap//:_ldap",
     "@clickhouse_openldap//:_lber",
     "//src/Server/grpc_protos:clickhouse_grpc_protos",
-    "@clickhouse_libhdfs3//:_hdfs3__compile_2",
-    "@clickhouse_libhdfs3//:_hdfs3__compile_0",
-    "@clickhouse_libhdfs3//:_hdfs3__compile_1",
+    "@clickhouse_libhdfs3//:_hdfs3_crc32",
+    "@clickhouse_libhdfs3//:_hdfs3",
+    "//src/Common:int_exp",
     "@clickhouse_libgsasl//:_gsasl",
     "@clickhouse_krb5//:_krb5",
     "@clickhouse_isa_l//:_isal__compile_0",
@@ -451,7 +451,6 @@ CMAKE_LINK = {
     "//src:with_context",
     "//src:io_string_buffers",
     "//src/Common:load_balancing_priority",
-        "//src/Common:int_exp",
   ],
   "expected_objects": [
     170,
@@ -645,7 +644,7 @@ CMAKE_LINK = {
     11,
     2,
     1,
-    88,
+    89,
     1,
     84,
     432,
@@ -902,7 +901,6 @@ CMAKE_LINK = {
     1,
     2,
     1,
-        1,
   ],
   "archives": [
     {
@@ -1101,7 +1099,7 @@ CMAKE_LINK = {
           1
         ],
         [5, 182, 204],
-            [448, 0, 1],
+            [192, 0, 1],
             [5, 204, 325],
         [
           446,
@@ -2338,7 +2336,7 @@ CMAKE_LINK = {
       "name": "src/Server/grpc_protos/libclickhouse_grpc_protos.a"
     },
     {
-      "objects": [[190, 0, 1], [191, 2, 3], [191, 1, 2], [191, 0, 1], [191, 3, 53], [192, 0, 1], [191, 53, 62], [191, 64, 65], [191, 62, 64], [191, 65, 88]],
+      "objects": [[190, 0, 1], [191, 2, 3], [191, 1, 2], [191, 0, 1], [191, 3, 53], [191, 88, 89], [191, 53, 62], [191, 64, 65], [191, 62, 64], [191, 65, 88]],
       "name": "contrib/libhdfs3-cmake/lib_hdfs3.a"
     },
     {

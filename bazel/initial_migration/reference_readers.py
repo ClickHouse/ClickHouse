@@ -38,6 +38,22 @@ def read_file_api(path, include_target=None):
     return model, targets
 
 
+def bazel_compile_groups(target):
+    """Return CMake compilation groups in the source order of the Bazel library."""
+    groups = target.get("compileGroups", [])
+    if target["name"] != "_hdfs3":
+        return groups
+    main, rpc = groups
+    rpc_source, = rpc["sourceIndexes"]
+    # Boost UUID uses std::random_device on Linux. Its pinned headers no longer
+    # read the old backend define on RpcClient.cpp. Keep the ordinary linker order.
+    fragments = main["compileCommandFragments"] + [{"fragment": "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1"}]
+    if (not target["sources"][rpc_source]["path"].endswith("/src/rpc/RpcClient.cpp")
+            or rpc != {**main, "sourceIndexes": [rpc_source], "compileCommandFragments": fragments}):
+        raise ValueError("Unexpected CMake compiler options for RpcClient.cpp")
+    return [{**main, "sourceIndexes": main["sourceIndexes"] + [rpc_source]}]
+
+
 def ninja_words(text):
     # The captured link reference does not support escaped Ninja separators.
     if '$ ' in text or '$:' in text or '\n' in text.rstrip('\n'):

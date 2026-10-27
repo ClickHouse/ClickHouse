@@ -28,7 +28,6 @@ GENERATED = '@clickhouse//bazel:gen/'
 PB_FILES = ('.pb.h', '.pb.cc')
 PROTECTED_KINDS = ('srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps')
 OTHER_CPU = 'unknown_unsupported_cpu'
-PREFERRED = {'@clickhouse_libhdfs3//:_hdfs3__compile_0': '@clickhouse_libhdfs3//:_hdfs3'}
 
 
 def source_stem(ref):
@@ -152,13 +151,7 @@ def plan_transfers(graph):
                     for owner in sorted(typed_owners):
                         if graph.reaches(owner,target,cpu):
                             continue
-                        chosen = PREFERRED.get(owner,owner)
-                        if chosen != owner:
-                            if not (graph.public(chosen,cpu) & types):
-                                raise ValueError(f'{chosen} does not forward {owner} public {types}')
-                            if graph.reaches(chosen,target,cpu):
-                                raise ValueError(f'{chosen} wrapper creates cycle to {target}')
-                        acyclic.append(chosen)
+                        acyclic.append(owner)
                     if not acyclic:
                         candidates[target,cpu,field].remove(ref)
                         decisions['would_cycle'] += 1

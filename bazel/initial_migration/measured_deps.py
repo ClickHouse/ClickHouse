@@ -76,7 +76,6 @@ DEPENDENCIES = {
     ], [], []),
     ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
-    ('@clickhouse_libhdfs3', '_hdfs3__compile_0'): ([], ['@clickhouse_google_protobuf//:_libprotobuf'], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     **{('contrib/libfuzzer-cmake', name): (['@clickhouse_llvm_project//:cxxabi'], [], [])
        for name in ('_fuzzer', '_fuzzer_no_main')},

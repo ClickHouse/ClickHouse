@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from initial_migration.build_file import EMBEDDED_SOURCES, compile_group_name, embedded_indices, native_source_owner, source_compile_label, target_label, target_owner
 from initial_migration import llvm_targets
-from initial_migration.reference_readers import read_file_api, ninja_edges, ninja_words as words
+from initial_migration.reference_readers import bazel_compile_groups, read_file_api, ninja_edges, ninja_words as words
 from initial_migration.repository_inputs import REPOSITORIES, ROOT
 from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 
@@ -119,7 +119,7 @@ class Plan:
         for name, t in self.targets.items():
             actual_group = 0
             first = {}
-            for g in t.get("compileGroups", []):
+            for g in bazel_compile_groups(t):
                 srcs = [os.path.normpath(t["sources"][s]["path"]) for s in g["sourceIndexes"]]
                 omitted = [s for s in srcs if s.endswith("/contrib/icu-cmake/empty.cpp")]
                 self.omitted.update((name, s) for s in omitted)
@@ -176,8 +176,9 @@ class Plan:
                 key = (name, source)
                 if key in self.slots:
                     raise ValueError("Duplicate generated object: " + str(key))
-                self.slots[key] = (target_label(name, self.owners) + "__compile_" + str(actual_group),
-                                   i, len(generated))
+                owner = target_label(name, self.owners)
+                label = owner + "_crc32" if name == "_hdfs3" else owner + "__compile_" + str(actual_group)
+                self.slots[key] = label, i, len(generated)
 
     def split_embedded_slots(self):
         for name, (parent, sources, positions) in sorted(self.embedded_groups.items()):

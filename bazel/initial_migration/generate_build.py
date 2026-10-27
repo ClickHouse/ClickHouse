@@ -19,7 +19,7 @@ from initial_migration.codegen import (
 )
 from initial_migration.cmake_metadata import read_metadata, write_metadata
 from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
-from initial_migration.reference_readers import read_file_api
+from initial_migration.reference_readers import bazel_compile_groups, read_file_api
 from initial_migration.configuration import read_configurations
 from initial_migration import llvm_targets
 from initial_migration.arrow_inputs import foreign_arrow_dependencies
@@ -1194,7 +1194,7 @@ class Graph:
             return {'groups': [], 'deps': BCR_DEPENDENCIES[name]['deps'],
                     'linkopts': [], 'kind': target['type'], 'alwayslink': False}
         groups = []
-        for index, cg in enumerate(target.get('compileGroups', [])):
+        for index, cg in enumerate(bazel_compile_groups(target)):
             sources = []
             for i in cg['sourceIndexes']:
                 path = target['sources'][i]['path']
@@ -1530,6 +1530,7 @@ def main():
     read_only = {abseil, arrow, msgpack, google_cloud, zxc,
                  ROOT / 'bazel/dependencies/clickhouse_capnproto.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_grpc.BUILD.bazel',
+                 ROOT / 'bazel/dependencies/clickhouse_libhdfs3.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_postgres.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_rocksdb.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_vectorscan.BUILD.bazel'}

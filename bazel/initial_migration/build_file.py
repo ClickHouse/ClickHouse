@@ -1079,6 +1079,8 @@ class BuildFile:
         })
 
     def target(self, name, variants, input_name=None):
+        if (self.owner, name) == ('contrib/libhdfs3', '_hdfs3'):
+            return  # clickhouse_libhdfs3.BUILD.bazel is maintained directly.
         if (self.owner, name) == ('contrib/croaring', '_roaring'):
             self.croaring(variants)
             return
@@ -1220,8 +1222,6 @@ class BuildFile:
             implementation_deps = {'@platforms//cpu:' + arch: list(group['implementation_deps'])
                                    for arch, group in groups.items() if group.get('implementation_deps')}
             for arch, group in groups.items():
-                if self.owner == 'contrib/libhdfs3' and name == '_hdfs3' and group['language'] == 'CXX':
-                    implementation_deps.setdefault('@platforms//cpu:' + arch, []).append(':hdfs3_proto_headers')
                 if group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime'):
                     native_includes[arch] = []
                     system_includes[arch] = []
@@ -1308,12 +1308,6 @@ class BuildFile:
                             value = remove_global_compile_options(value, language, only={'-DOS_LINUX'})
                     if field == 'local_defines':
                         value = compile_defines.get(arch, []) + value
-                    if self.owner == 'contrib/libhdfs3' and name == '_hdfs3' and field in {
-                        'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs',
-                    }:
-                        prefix = '//bazel:gen/' + arch + '/contrib/libhdfs3-cmake/'
-                        value = [v for v in value if not (isinstance(v, str) and v.startswith(prefix)
-                                                          and v.endswith('.pb.h'))]
                     if (field == 'hdrs' and name == 'clickhouse_aggregate_functions' and arch == 'x86_64'
                             and group.get('srcs') == ['//:src/AggregateFunctions/AggregateFunctionUniq.cpp']):
                         # The -mno-bmi group consumes the package headers privately.
@@ -1329,17 +1323,13 @@ class BuildFile:
                             '@clickhouse_llvm_project//:runtime_source_inputs',
                             '@clickhouse_llvm_project//:runtime_generated_headers',
                         ]
-                    if self.owner in {'contrib/krb5', 'contrib/libhdfs3'}:
+                    if self.owner == 'contrib/krb5':
                         public = ('contrib/krb5-cmake/include/com_err.h', 'contrib/krb5-cmake/include/krb5/krb5.h')
                         if field in {'hdrs', 'textual_hdrs', 'additional_compiler_inputs'}:
                             value = [label for label in value if not label.endswith(public)]
                             if name == '_krb5' and field == 'hdrs':
                                 value += ['@clickhouse_krb5//:config/' + arch + '/' + public[0],
                                           '@clickhouse_krb5//:config/' + public[1]]
-                        elif name == '_hdfs3' and index == 0 and field == 'deps':
-                            value = [label for label in value if label != '@clickhouse_krb5//:_krb5']
-                            implementation_deps.setdefault('@platforms//cpu:' + arch, []).append(
-                                '@clickhouse_krb5//:_krb5')
                     if field in LABEL_ATTRIBUTES:
                         value = self.label_inputs(value, source_files=field == 'srcs')
                         if field == 'deps' and collapse_single:
