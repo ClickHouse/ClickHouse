@@ -47,6 +47,13 @@ namespace
         return secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort();
     }
 
+    /// The port this server listens on, shifted by `port_offset`, unlike the default port of the source
+    /// above, which is the one of the destination server. Used to decide whether the source is local.
+    inline UInt16 getBoundPortFromContext(ContextPtr context, bool secure)
+    {
+        return secure ? context->getBoundTCPPortSecure().value_or(0) : context->getBoundTCPPort();
+    }
+
     ConnectionPoolWithFailoverPtr createPool(const ClickHouseDictionarySource::Configuration & configuration)
     {
         if (configuration.is_local)
@@ -303,7 +310,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
+                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), getBoundPortFromContext(global_context, secure)),
                 .secure = secure,
             });
         }
@@ -329,7 +336,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
+                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), getBoundPortFromContext(global_context, secure)),
                 .secure = secure,
             });
         }
