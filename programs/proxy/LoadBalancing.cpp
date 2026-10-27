@@ -148,7 +148,8 @@ public:
 
         /// Backends with unknown resource usage (not polled yet, or without monitoring credentials)
         /// rank after every backend with known usage, so a mixed pool does not favor unmonitored
-        /// backends. Ties, and pools with no known usage at all, are broken by active connections.
+        /// backends. Ties, and pools with no known usage at all, are broken by active connections per weight,
+        /// as in `least_connections`.
         BackendPtr best;
         bool best_known = false;
         double best_score = 0;
@@ -162,7 +163,8 @@ public:
             else if (backend_score != best_score)
                 better = backend_score < best_score;
             else
-                better = backend->activeConnections() < best->activeConnections();
+                better = static_cast<double>(backend->activeConnections()) / backend->config().weight
+                    < static_cast<double>(best->activeConnections()) / best->config().weight;
 
             if (better)
             {
