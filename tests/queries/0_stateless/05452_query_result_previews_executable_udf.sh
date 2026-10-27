@@ -26,3 +26,7 @@ run()
 
 run "plus(c, 1)"
 run "test_function(c, 1)"
+# The `Dynamic` and `Variant` adaptors build the executable UDF only during execution, so they must
+# carry over its side effects.
+run "test_function(c::Dynamic, 1)"
+run "test_function(c::Variant(UInt64, String), 1)"

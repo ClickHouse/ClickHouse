@@ -67,6 +67,8 @@ public:
 
     bool isStateful() const override { return function_overload_resolver->isStateful(); }
 
+    bool hasObservableSideEffects() const override { return function_overload_resolver->hasObservableSideEffects(); }
+
     bool isDeterministic() const override { return function_overload_resolver->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() const override { return function_overload_resolver->isDeterministicInScopeOfQuery(); }
