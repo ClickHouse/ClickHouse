@@ -46,6 +46,12 @@ INSERT INTO t_compact_prefetch_budget (c1, s) SELECT number, randomString(64) FR
 SELECT sum(length(s)) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = 200000, log_comment = '05404_uneven_small_budget';
 SELECT sum(length(s)) FROM t_compact_prefetch_budget SETTINGS filesystem_prefetch_max_memory_usage = '1Gi', log_comment = '05404_uneven_large_budget';
 
+-- The buffers of a Compact part are not limited by `prefetch_buffer_size`, but by the read buffer size: a budget above
+-- `prefetch_buffer_size`, but below the read buffer of the big column, must not allow to prefetch it.
+SELECT sum(length(s)) FROM t_compact_prefetch_budget
+SETTINGS prefetch_buffer_size = 65536, max_read_buffer_size_remote_fs = 1048576, filesystem_prefetch_max_memory_usage = 200000,
+    log_comment = '05404_uneven_small_prefetch_buffer';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, asynchronous_read_counters['total_prefetch_tasks'] > 0
