@@ -336,8 +336,8 @@ TEST(PerCPUMemory, CallerReleasesContributionOnBudgetFlush)
     resetTrackers();
 }
 
-/// A free that flushes pending allocations because the per-CPU budget is exceeded does not check the limit, so the next
-/// allocation of the thread checks it.
+/// A free that flushes pending allocations because the per-CPU budget is exceeded does not check the limit, and an
+/// allocation whose flush only frees does not check it either, so the next allocation of the thread checks it.
 TEST(PerCPUMemory, BudgetFlushOnFreeIsCheckedByNextAllocation)
 {
     resetTrackers();
@@ -345,6 +345,8 @@ TEST(PerCPUMemory, BudgetFlushOnFreeIsCheckedByNextAllocation)
     constexpr Int64 limit = 1024 * 1024;
     constexpr Int64 pending = 900 * 1024;
     constexpr Int64 freed = 64 * 1024;
+    constexpr Int64 returned = 200 * 1024;
+    constexpr Int64 reallocated = 64 * 1024;
     MemoryTracker query(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/ false);
     query.setHardLimit(limit);
 
@@ -365,6 +367,15 @@ TEST(PerCPUMemory, BudgetFlushOnFreeIsCheckedByNextAllocation)
             per_cpu_memory.setBudgetCapacity(1);
             std::ignore = CurrentMemoryTracker::free(freed);
             per_cpu_memory.setBudgetCapacity(PerCPUMemory::DEFAULT_BUDGET);
+
+            /// Leaves `returned - reallocated` bytes freed; the budget failure makes the allocation flush only that free.
+            if (round == 0)
+            {
+                std::ignore = CurrentMemoryTracker::free(returned);
+                per_cpu_memory.setBudgetCapacity(1);
+                std::ignore = CurrentMemoryTracker::alloc(reallocated);
+                per_cpu_memory.setBudgetCapacity(PerCPUMemory::DEFAULT_BUDGET);
+            }
         }
 
         try
@@ -377,7 +388,7 @@ TEST(PerCPUMemory, BudgetFlushOnFreeIsCheckedByNextAllocation)
             limit_hit = true;
         }
 
-        std::ignore = CurrentMemoryTracker::free(2 * (pending - freed));
+        std::ignore = CurrentMemoryTracker::free(2 * (pending - freed) - (returned - reallocated));
         CurrentThread::flushUntrackedMemory();
         thread.untracked_memory_flushed_unchecked = 0;
         thread.untracked_memory_limit = saved_thread_limit;

@@ -364,23 +364,26 @@ TEST(MemoryTracker, SuppressedLimitCheckIsMadeByNextAllocation)
     });
 }
 
-/// A free charged to another tracker does not settle the allocations the query holds without a check.
+/// Frees charged to another tracker, flushed by `free` or by `~MemoryTrackerSwitcher`, do not settle the allocations the
+/// query holds without a check.
 TEST(MemoryTracker, FreeInSwitchedScopeKeepsUncheckedAllocations)
 {
     MemoryTrackerHierarchy hierarchy;
-    hierarchy.process.setHardLimit(LIMIT);
+    hierarchy.process.setHardLimit(MB);
+    MemoryTracker other(&total_memory_tracker, VariableContext::User, /*log_peak_memory_usage_in_destructor_=*/ false);
+    other.adjustWithUntrackedMemory(2 * MB);
 
     runInThread(hierarchy, [&](MemoryTracker &)
     {
         DB::CurrentThread::get().untracked_memory_limit = MB;
-        std::ignore = CurrentMemoryTracker::allocNoThrow(OVER_LIMIT);
+        std::ignore = CurrentMemoryTracker::allocNoThrow(MB + MB / 2);
         {
-            DB::MemoryTrackerSwitcher switcher(&total_memory_tracker);
-            std::ignore = CurrentMemoryTracker::alloc(OVER_LIMIT);
-            std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+            DB::MemoryTrackerSwitcher switcher(&other);
+            std::ignore = CurrentMemoryTracker::free(MB + MB / 4);
+            std::ignore = CurrentMemoryTracker::free(3 * MB / 4);
         }
         expectMemoryLimitExceeded(1);
-        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
+        std::ignore = CurrentMemoryTracker::free(MB + MB / 2);
     });
 }
 
