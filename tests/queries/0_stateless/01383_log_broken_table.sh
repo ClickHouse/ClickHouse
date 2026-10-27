@@ -18,7 +18,7 @@ function test_func()
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS log";
     $CLICKHOUSE_CLIENT --query "CREATE TABLE log (x UInt64, y UInt64, z UInt64) ENGINE = $ENGINE";
 
-    while true; do
+    while clickhouse_test_time_left; do
         MAX_MEM=$((2 * $MAX_MEM))
 
         $CLICKHOUSE_CLIENT --query "INSERT INTO log SELECT number, number, number FROM numbers(1000000)" --max_memory_usage $MAX_MEM > "${CLICKHOUSE_TMP}"/insert_result 2>&1

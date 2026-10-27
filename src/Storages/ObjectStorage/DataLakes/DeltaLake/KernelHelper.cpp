@@ -10,6 +10,7 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -222,6 +223,9 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
     const auto & endpoint = connection_params.endpoint;
 
+    /// Given no credentials, the kernel's object store falls back to the machine's managed identity by itself.
+    const bool drop_credentials = connection_params.checkOrDropServerManagedCredentials();
+
     /// Supported options
     /// https://github.com/apache/arrow-rs-object-store/blob/main/src/azure/builder.rs#L390
     set_option("azure_container_name", endpoint.container_name);
@@ -337,6 +341,15 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
 
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
+
+    /// Given no key or SAS token, the kernel would use the managed identity. A connection string without them is
+    /// anonymous for the Azure SDK, so it is unsigned whatever the session; the helper outlives the session that built it.
+    const bool has_credential = std::ranges::any_of(options, [](const auto & option)
+        { return option.first == "azure_storage_account_key" || option.first == "azure_storage_sas_key"; });
+    const bool is_connection_string = std::holds_alternative<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
+
+    if (drop_credentials || (!has_credential && (is_connection_string || connection_params.forbid_implicit_credentials)))
+        set_option("azure_skip_signature", "true");
 
     /// If the configuration carries an endpoint URL, pass it to the kernel explicitly, which
     /// otherwise derives the public `<account>.blob.core.windows.net` host from the account

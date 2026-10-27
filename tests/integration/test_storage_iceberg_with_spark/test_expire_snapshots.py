@@ -189,7 +189,7 @@ def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type
 
     result = expire_snapshots(instance, TABLE_NAME, expire_timestamp)
     counts = parse_expire_result(result)
-    assert len(counts) == 7, f"Expected 7 metrics, got {counts}"
+    assert len(counts) == 8, f"Expected 8 metrics, got {counts}"
     assert all(v >= 0 for v in counts.values()), f"All counts should be non-negative, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 4)
 
@@ -216,7 +216,7 @@ def test_expire_snapshots_positional_timestamp(started_cluster_iceberg_with_spar
         settings=ICEBERG_SETTINGS,
     )
     counts = parse_expire_result(result)
-    assert len(counts) == 7, f"Expected 7 metrics, got {counts}"
+    assert len(counts) == 8, f"Expected 8 metrics, got {counts}"
     assert all(v >= 0 for v in counts.values()), f"All counts should be non-negative, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 4)
 

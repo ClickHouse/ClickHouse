@@ -1,0 +1,93 @@
+--- round trip
+id	UInt64					
+pt	Point					
+ls	LineString					
+pg	Polygon					
+mls	MultiLineString					
+mpg	MultiPolygon					
+mpt	MultiPoint					
+geom	Geometry					
+0	(0,0)	[(0,0),(1,1)]	[[(0,0),(1,0),(1,1),(0,0)]]	[[(0,0),(1,0)],[(2,2),(3,3)]]	[[[(0,0),(1,0),(1,1),(0,0)]]]	[(0,0),(-1,-1)]	(1,2)
+1	(1,-0.5)	[(1,0),(2,1)]	[[(0,0),(2,0),(2,1),(0,0)]]	[[(0,1),(1,1)],[(2,2),(3,3)]]	[[[(0,0),(1,0),(1,2),(0,0)]]]	[(1,1),(-1,-1)]	[(0,0),(5,5)]
+2	(2,-1)	[(2,0),(3,1)]	[[(0,0),(3,0),(3,1),(0,0)]]	[[(0,2),(1,2)],[(2,2),(3,3)]]	[[[(0,0),(1,0),(1,3),(0,0)]]]	[(2,2),(-1,-1)]	\N
+3	(3,-1.5)	[(3,0),(4,1)]	[[(0,0),(4,0),(4,1),(0,0)]]	[[(0,3),(1,3)],[(2,2),(3,3)]]	[[[(0,0),(1,0),(1,4),(0,0)]]]	[(3,3),(-1,-1)]	[[(0,0),(1,0),(0,1),(0,0)]]
+0
+--- ParquetMetadata: logical types
+id	INT64	Int(bitWidth=64, isSigned=false)
+pt	BYTE_ARRAY	Geometry(crs=)
+ls	BYTE_ARRAY	Geometry(crs=)
+pg	BYTE_ARRAY	Geometry(crs=)
+mls	BYTE_ARRAY	Geometry(crs=)
+mpg	BYTE_ARRAY	Geometry(crs=)
+mpt	BYTE_ARRAY	Geometry(crs=)
+geom	BYTE_ARRAY	Geometry(crs=)
+--- ParquetMetadata: statistics
+id	true	\N	0	3	false	(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,[])
+pt	true	\N	\N	\N	true	(0,3,-1.5,0,NULL,NULL,NULL,NULL,[1])
+ls	true	\N	\N	\N	true	(0,4,0,1,NULL,NULL,NULL,NULL,[2])
+pg	true	\N	\N	\N	true	(0,4,0,1,NULL,NULL,NULL,NULL,[3])
+mls	true	\N	\N	\N	true	(0,3,0,3,NULL,NULL,NULL,NULL,[5])
+mpg	true	\N	\N	\N	true	(0,1,0,4,NULL,NULL,NULL,NULL,[6])
+mpt	true	\N	\N	\N	true	(-1,3,-1,3,NULL,NULL,NULL,NULL,[4])
+geom	true	1	\N	\N	true	(0,5,0,5,NULL,NULL,NULL,NULL,[1,2,3])
+--- GeoParquet metadata
+geom WKB [] None
+ls WKB ['LineString'] None
+mls WKB ['MultiLineString'] None
+mpg WKB ['MultiPolygon'] None
+mpt WKB ['MultiPoint'] None
+pg WKB ['Polygon'] None
+pt WKB ['Point'] None
+--- pyarrow: logical types, statistics and column index
+id Int(bitWidth=64, isSigned=false) min_max column_index None
+pt Geometry(crs=) no_min_max no_column_index ([1], 0.0, 3.0, -1.5, 0.0, None, None)
+ls Geometry(crs=) no_min_max no_column_index ([2], 0.0, 4.0, 0.0, 1.0, None, None)
+pg Geometry(crs=) no_min_max no_column_index ([3], 0.0, 4.0, 0.0, 1.0, None, None)
+mls Geometry(crs=) no_min_max no_column_index ([5], 0.0, 3.0, 0.0, 3.0, None, None)
+mpg Geometry(crs=) no_min_max no_column_index ([6], 0.0, 1.0, 0.0, 4.0, None, None)
+mpt Geometry(crs=) no_min_max no_column_index ([4], -1.0, 3.0, -1.0, 3.0, None, None)
+geom Geometry(crs=) no_min_max no_column_index ([1, 2, 3], 0.0, 5.0, 0.0, 5.0, None, None)
+--- default: no logical type
+id	UInt64					
+pt	Point					
+ls	LineString					
+pg	Polygon					
+mls	MultiLineString					
+mpg	MultiPolygon					
+mpt	MultiPoint					
+geom	Nullable(String)					
+id	true	1	false
+pt	true	1	false
+ls	true	1	false
+pg	true	1	false
+mls	true	1	false
+mpg	true	1	false
+mpt	true	1	false
+geom	true	1	false
+id	Int(bitWidth=64, isSigned=false)
+pt	String
+ls	String
+pg	String
+mls	String
+mpg	String
+mpt	String
+geom	String
+ls EPSG:4326
+mls EPSG:4326
+mpg EPSG:4326
+mpt EPSG:4326
+pg EPSG:4326
+pt EPSG:4326
+--- output_format_parquet_geometadata = 0
+1	DOUBLE	None
+2	DOUBLE	None
+--- statistics of NULLs and empty geometries
+geom	0	true	(1,1,2,2,NULL,NULL,NULL,NULL,[1])
+ls	\N	true	(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,[2])
+geom	1	true	(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,[])
+ls	\N	true	(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,[2])
+id	UInt64					
+geom	Geometry					
+ls	LineString					
+0	(1,2)	[]
+1	\N	[]
