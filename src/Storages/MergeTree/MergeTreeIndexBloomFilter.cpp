@@ -979,6 +979,12 @@ static ColumnPtr createColumnFromConstantArray(
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
             element_type = value_array_type->getNestedType();
 
+    /// Without the element type - the array comes in a `Variant` or `Dynamic` constant - the layout of
+    /// `UUID` / `UUID2` elements is unknown, and hashing the other layout could skip matching granules.
+    const auto actual_type_decayed = removeNullable(removeLowCardinality(actual_type));
+    if (!element_type && (isUUID(actual_type_decayed) || isUUID2(actual_type_decayed)))
+        return nullptr;
+
     const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
     /// Keep the source element type for layout-changing conversions, such as `UUID` to `UUID2`.
     const IDataType * element_type_hint = element_type ? removeNullable(removeLowCardinality(element_type)).get() : nullptr;

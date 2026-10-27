@@ -423,7 +423,7 @@ ColumnPtr convertColumnToTypeOrNull(
     /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
     /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
     /// `Field` fallback reads the value directly.
-    const ColumnPtr full = value.convertToFullColumnIfConst();
+    ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
     /// The value is already of the destination type. Extracting it into a `Field` would also lose the discriminators

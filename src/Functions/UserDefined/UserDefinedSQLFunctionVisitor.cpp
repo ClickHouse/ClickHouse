@@ -86,6 +86,9 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 
         if (apply_transformer->lambda)
             visit(apply_transformer->lambda, context_);
+        /// The parameters of an aggregate function, as in `APPLY(quantile(f()))`.
+        if (apply_transformer->parameters)
+            visit(apply_transformer->parameters, context_);
     }
 
     if (const auto * function = ast->template as<ASTFunction>())

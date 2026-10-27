@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -779,7 +780,10 @@ namespace
 
         /// A cast between `UUID` and `UUID2` (also nested, e.g. `Tuple(UUID)` to `Tuple(UUID2)`) keeps the value but
         /// swaps the halves of its representation, so compare both entries with their `UUID` values in the same layout.
-        const bool cast_between_uuid_types = typesHaveDifferentUUIDLayouts(*from_type, *from_array_nested_type);
+        /// A `Field` of a `Dynamic` value has its `UUID2` values in the `UUID` layout (see `ColumnDynamic::get`), so a
+        /// `Dynamic` entry is compared in the same way.
+        const bool cast_between_uuid_types = typesHaveDifferentUUIDLayouts(*from_type, *from_array_nested_type)
+            || anyInTypeTree(*from_array_nested_type, [](const IDataType & t) { return isDynamic(t); });
 
         const auto entry_converted_exactly = [&](size_t i)
         {

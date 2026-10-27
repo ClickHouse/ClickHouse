@@ -21,6 +21,7 @@
 
 #include <limits>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 
@@ -60,7 +61,10 @@ bool isBareUUIDTypeName(const String & name)
     return equalsCaseInsensitiveString(name, "uuid");
 }
 
-bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std::string_view replacement);
+using LambdaNames = std::unordered_set<String>;
+
+bool substituteBareUUIDInPlace(
+    IAST & ast, bool in_table_function_position, std::string_view replacement, const LambdaNames * lambda_names = nullptr);
 bool foldConstantStringExpression(ASTPtr & argument);
 
 /// Position of the type name argument of a function, or `last_type_name_argument` when the type name is
@@ -561,7 +565,23 @@ const ASTPtr * getNamedTableFunctionArgument(const ASTPtr & argument)
   * `replacement` is the explicit type name a bare `UUID` is rewritten to: `UUID2` to materialize
   * `uuid_type_version = 2`, or `UUID1` to pin the historical type.
   */
-bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std::string_view replacement)
+/// Names of the lambdas declared with an alias, as in `WITH (x -> x) AS f`. Such a lambda takes precedence over
+/// a function of the same name, so a call `f('UUID')` passes an ordinary string, not a type name.
+void collectLambdaNames(const IAST & ast, LambdaNames & lambda_names)
+{
+    if (const auto * function = ast.as<ASTFunction>(); function && function->name == "lambda")
+        if (auto alias = function->tryGetAlias(); !alias.empty())
+            lambda_names.insert(std::move(alias));
+
+    for (const auto & child : ast.children)
+        if (child)
+            collectLambdaNames(*child, lambda_names);
+}
+
+/// `lambda_names` are the names of the lambdas declared in the whole definition (see `collectLambdaNames`). A call of
+/// such a name is not considered a call of a function with a type name argument. This is conservative: the scope of
+/// the lambda is not taken into account.
+bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std::string_view replacement, const LambdaNames * lambda_names)
 {
     bool substituted = false;
 
@@ -581,21 +601,21 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std:
     {
         for (const auto & expression : ttl_element->group_by_key)
             if (expression)
-                substituted |= substituteBareUUIDInPlace(*expression, false, replacement);
+                substituted |= substituteBareUUIDInPlace(*expression, false, replacement, lambda_names);
         for (const auto & assignment : ttl_element->group_by_assignments)
             if (assignment)
-                substituted |= substituteBareUUIDInPlace(*assignment, false, replacement);
+                substituted |= substituteBareUUIDInPlace(*assignment, false, replacement, lambda_names);
     }
     else if (auto * apply_transformer = ast.as<ASTColumnsApplyTransformer>())
     {
         if (apply_transformer->parameters)
-            substituted |= substituteBareUUIDInPlace(*apply_transformer->parameters, false, replacement);
+            substituted |= substituteBareUUIDInPlace(*apply_transformer->parameters, false, replacement, lambda_names);
         if (apply_transformer->lambda)
-            substituted |= substituteBareUUIDInPlace(*apply_transformer->lambda, false, replacement);
+            substituted |= substituteBareUUIDInPlace(*apply_transformer->lambda, false, replacement, lambda_names);
     }
 
     auto * function = ast.as<ASTFunction>();
-    if (function)
+    if (function && !(lambda_names && lambda_names->contains(function->name)))
     {
         substituted |= substituteBareUUIDInTypeNameLiteral(*function, replacement);
         substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function, replacement);
@@ -633,7 +653,7 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std:
 
         if (!table_function_argument_index || child != function->arguments)
         {
-            substituted |= substituteBareUUIDInPlace(*child, child.get() == table_function_child, replacement);
+            substituted |= substituteBareUUIDInPlace(*child, child.get() == table_function_child, replacement, lambda_names);
             continue;
         }
 
@@ -646,12 +666,12 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std:
             if (const auto * value = getNamedTableFunctionArgument(arguments[i]))
             {
                 const auto & equals_arguments = arguments[i]->as<ASTFunction &>().arguments->children;
-                substituted |= substituteBareUUIDInPlace(*equals_arguments[0], false, replacement);
-                substituted |= substituteBareUUIDInPlace(**value, true, replacement);
+                substituted |= substituteBareUUIDInPlace(*equals_arguments[0], false, replacement, lambda_names);
+                substituted |= substituteBareUUIDInPlace(**value, true, replacement, lambda_names);
             }
             else
             {
-                substituted |= substituteBareUUIDInPlace(*arguments[i], i == *table_function_argument_index, replacement);
+                substituted |= substituteBareUUIDInPlace(*arguments[i], i == *table_function_argument_index, replacement, lambda_names);
             }
         }
     }
@@ -667,7 +687,9 @@ ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version)
         return type_ast;
 
     auto cloned = type_ast->clone();
-    if (substituteBareUUIDInPlace(*cloned, false, "UUID2"))
+    LambdaNames lambda_names;
+    collectLambdaNames(*cloned, lambda_names);
+    if (substituteBareUUIDInPlace(*cloned, false, "UUID2", &lambda_names))
         return cloned;
     return type_ast;
 }
@@ -677,12 +699,16 @@ bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version)
     if (uuid_type_version != 2)
         return false;
 
-    return substituteBareUUIDInPlace(ast, false, "UUID2");
+    LambdaNames lambda_names;
+    collectLambdaNames(ast, lambda_names);
+    return substituteBareUUIDInPlace(ast, false, "UUID2", &lambda_names);
 }
 
 bool pinHistoricalUUIDTypeNamesInPlace(IAST & ast)
 {
-    return substituteBareUUIDInPlace(ast, false, "UUID1");
+    LambdaNames lambda_names;
+    collectLambdaNames(ast, lambda_names);
+    return substituteBareUUIDInPlace(ast, false, "UUID1", &lambda_names);
 }
 
 String ASTDataType::getID(char delim) const
