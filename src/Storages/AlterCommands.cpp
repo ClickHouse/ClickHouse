@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -2294,7 +2295,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
         /// Reject a `CHECK` constraint that can never be evaluated before it gets into the metadata.
         /// The companion row-count check (`checkExpressionsPreserveRowCount`) runs earlier in this loop.
-        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+        /// Only on the initiating execution: a secondary replay of a committed `Replicated` database entry
+        /// (e.g. one accepted by an older server during a rolling upgrade) must not fail on it, like the
+        /// fresh-definition check of `CREATE TABLE`.
+        if ((command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            && !isSecondaryDDLReplay(context))
             ConstraintsDescription::validateNoSubqueries({command.constraint_decl}, context);
 
         const auto & column_name = command.column_name;
