@@ -513,8 +513,7 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 
 ## iceberg_manifest_decode_thread_pool_queue_size {#iceberg_manifest_decode_thread_pool_queue_size}
 
-<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
+<SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files. The setting is deprecated and has no effect: Iceberg manifest files are read on the IO thread pool.
 
 ## ignore_empty_sql_security_in_create_view_query {#ignore_empty_sql_security_in_create_view_query}
 
