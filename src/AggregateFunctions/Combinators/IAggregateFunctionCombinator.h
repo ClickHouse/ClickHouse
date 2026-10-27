@@ -85,9 +85,17 @@ public:
       */
     virtual VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const { return VariantArgumentsOfNestedFunction::ConvertedByNested; }
 
+    /** The arguments of the nested function, for which the conversion of the `Variant` arguments is decided
+      *  if `getVariantArgumentsOfNestedFunction` returns `ConvertedAround`. By default, `transformArguments`.
+      *  It differs if the combinator passes more arguments to the nested function than `transformArguments` returns
+      *  (ex: the value arrays of the legacy form of -Map, `sumMap(keys, values1, values2)`).
+      */
+    virtual DataTypes transformArgumentsForVariantConversion(const DataTypes & arguments) const { return transformArguments(arguments); }
+
     /** Converts the arguments of the combined function (ex: `Array(Variant(UInt8, UInt16))` for -ForEach),
-      *  so that `transformArguments` returns `converted_nested_arguments` (ex: `Nullable(UInt16)`) instead of `nested_arguments`.
-      *  They differ only by the converted `Variant` arguments. By default, the arguments are passed at the same positions.
+      *  so that `transformArgumentsForVariantConversion` returns `converted_nested_arguments` (ex: `Nullable(UInt16)`)
+      *  instead of `nested_arguments`. They differ only by the converted `Variant` arguments.
+      *  By default, the arguments are passed at the same positions.
       */
     virtual void convertVariantArgumentsAround(
         DataTypes & arguments, const DataTypes & nested_arguments, const DataTypes & converted_nested_arguments) const

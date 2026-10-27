@@ -566,7 +566,7 @@ DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
             types_without_nullable.push_back(type->onlyNull() ? type : removeNullable(type));
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
-        DataTypes nested_types = combinator->transformArguments(types_without_nullable);
+        DataTypes nested_types = combinator->transformArgumentsForVariantConversion(types_without_nullable);
         DataTypes converted_nested_types = getVariantArgumentsConversion(nested_name, action, nested_types, /* including_nested = */ true);
         if (!converted_nested_types.empty())
         {
