@@ -3047,3 +3047,32 @@ In the [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/af58af00-00ad-453c-ba28-e0a2dcc794e9) did not start an analyzer. The parent recorded `no configured owners fit`. All 8 offered targets remain ungraded.
 
 [ARM64 DWYU](https://app.buildbuddy.io/invocation/76f70f3b-9f85-438a-bdbd-4fa0a403fa1c) did not start an analyzer. The parent recorded `no configured owners fit`. All 9 offered targets remain ungraded.
+
+## 4cffdfba7
+
+At [4cffdfba7](https://github.com/dzbarsky/clickhouse/commit/4cffdfba78d0e51a3b9d1507b21116a01e329b1c), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The table compares the unstripped executables with the [previous Bazel build](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/f7b205e1-c018-461f-aa83-0c432c96c0e6) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/f7b205e1-c018-461f-aa83-0c432c96c0e6) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/f7b205e1-c018-461f-aa83-0c432c96c0e6) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/1e5cfe92-25c1-4fa9-9a73-a76772e8f2a0) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/1e5cfe92-25c1-4fa9-9a73-a76772e8f2a0) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/1e5cfe92-25c1-4fa9-9a73-a76772e8f2a0) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[The Mongo C driver](https://github.com/dzbarsky/clickhouse/commit/ec3fa83c8298c6027b8e4d7c1fc507919639ae89) now declares 23 headers and seven C sources shared by `_libbson` and `_libmongoc` once in `_MONGO_COMMON_SRCS`. Both libraries list the headers in `srcs`, keeping them private.
+
+[Six libraries that compile no sources](https://github.com/dzbarsky/clickhouse/commit/3c989ab3ff9715c72875de14cffa8ca25d5e5d3a) drop seven redundant runtime dependencies. Their remaining dependencies provide the same libc++ objects and, for `clickhouse_common_io`, the glibc compatibility objects.
+
+[The glibc compatibility target](https://github.com/dzbarsky/clickhouse/commit/4cffdfba78d0e51a3b9d1507b21116a01e329b1c) now directly compiles its C sources and owns their private headers. Its two assembly objects remain in their existing target.
+
+Both builds completed 19 targets. Nine original status files per CPU verified 30 runtime checks and three compile checks. The seven processed Rust archives on each CPU retained their SHA-256 values and byte counts; the ARM64 build verified all seven `llvm-strip --strip-debug` input/output pairs.
+
+The ClickHouse link command stayed unchanged. The unit-test response kept the original object order, with 67 glibc C object names on x86-64 and 66 on ARM64 moving to the public target’s directory. The verified archive still contains those C objects and two assembly objects. On each CPU, `clock_gettime.pic.o` defines the global `clock_gettime` symbol and `Stopwatch.pic.o` references it.
+
+Bazel reported these counts for the native builds: [x86-64](https://app.buildbuddy.io/invocation/f7b205e1-c018-461f-aa83-0c432c96c0e6): 162 remote executions and 55,672 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/1e5cfe92-25c1-4fa9-9a73-a76772e8f2a0): 160 remote executions and 56,152 remote cache hits.
+
+### Dependency reports
+
+DWYU found no unused or missing dependencies on [x86-64](https://app.buildbuddy.io/invocation/3ecf58c6-f8bd-4864-ba95-4586879f05c5) and [ARM64](https://app.buildbuddy.io/invocation/aec602ba-0a90-4b8c-b6ce-7a9b26e4ba35) for these six targets: `//src/Access/Common:headers`, `//src/Common/ZooKeeper:headers`, `@clickhouse_fast_float//:fast_float`, `@clickhouse_magic_enum//:magic_enum`, `@clickhouse_mapbox_geometry//:mapbox_geometry`, `@clickhouse_miniselect//:miniselect`. The ARM64 run also verified `//src/Common:exception_api`.

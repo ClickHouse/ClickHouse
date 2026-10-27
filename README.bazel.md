@@ -73,14 +73,14 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [2871135c1](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [4cffdfba7](https://github.com/dzbarsky/clickhouse/commit/4cffdfba78d0e51a3b9d1507b21116a01e329b1c), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/967fb67f-8a75-4b5a-9a27-897ff79a6230) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/4cb2f160-fd9d-4bd5-8d40-1da9553ff5a8) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/f7b205e1-c018-461f-aa83-0c432c96c0e6) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/1e5cfe92-25c1-4fa9-9a73-a76772e8f2a0) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#2871135c1) records the unstripped hashes, runtime checks and dependency reports.
+The [validation history](bazel/initial_migration/validation-history.md#4cffdfba7) records the unstripped hashes, runtime checks and dependency reports.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -199,4 +199,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-The [validation history](bazel/initial_migration/validation-history.md#2871135c1) for [2871135c1](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
+DWYU found no unused or missing dependencies in the six x86-64 targets and seven ARM64 targets it checked. The [validation history](bazel/initial_migration/validation-history.md#4cffdfba7) lists the targets and links to both analyses.
