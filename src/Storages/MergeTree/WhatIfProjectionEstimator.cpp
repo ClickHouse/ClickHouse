@@ -34,6 +34,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PartDirIntent.h>
+#include <Storages/MergeTree/StatisticsCache.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
@@ -605,6 +607,8 @@ struct ScanPlan
     std::vector<MarkRanges> ranges;
     /// the marks of a full scan
     UInt64 marks_to_scan = 0;
+    /// for a sampled aggregate projection: the groups of each part, from the statistics of its GROUP BY key
+    std::vector<UInt64> part_groups;
 };
 
 /// plans the scan, or returns false with the reason if a query limit forbids it
@@ -764,9 +768,12 @@ bool buildScenarios(
         }
 
         /// a sample stands for the whole part, and the filter of the projection keeps the same share of its rows
-        const size_t part_rows = plan.sample_step > 1
-            ? static_cast<size_t>(UInt128(part->rows_count) * part_data.rows / part_data.read_rows)
-            : part_data.rows;
+        /// a sample of an aggregate projection has at least the groups it saw
+        size_t part_rows = part_data.rows;
+        if (!plan.part_groups.empty())
+            part_rows = std::max<size_t>(plan.part_groups[part_idx], part_data.rows);
+        else if (plan.sample_step > 1)
+            part_rows = static_cast<size_t>(UInt128(part->rows_count) * part_data.rows / part_data.read_rows);
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
         out.scenarios[0]->parts[part->name] = parts[primary];
@@ -786,7 +793,11 @@ bool buildScenarios(
 
 /// widens the mark range by the sampling error: range ends and the selected share
 void widenForSamples(
-    const std::vector<SampledPart> & samples, const HypotheticalProjection::Outcome & outcome, UInt64 & marks_low, UInt64 & marks_high)
+    const std::vector<SampledPart> & samples,
+    const HypotheticalProjection::Outcome & outcome,
+    bool groups,
+    UInt64 & marks_low,
+    UInt64 & marks_high)
 {
     /// the estimate knows a range end only up to the gap between neighbouring sample rows
     /// that gap is a sampling step if the key follows the parent order
@@ -801,6 +812,21 @@ void widenForSamples(
         const auto pruned_it = outcome.ranges.find(sampled.name);
         const MarkRanges pruned = pruned_it == outcome.ranges.end() ? MarkRanges{} : pruned_it->second;
         layout_marks += granularity.getMarksCount();
+
+        /// a sample group stands for the part groups over the sample groups, and the share of selected sample groups is binomial
+        if (groups)
+        {
+            size_t selected = 0;
+            for (const auto & range : pruned)
+                selected += whole_part.firstSampleRowFrom(granularity.getMarkStartingRow(range.end))
+                    - whole_part.firstSampleRowFrom(granularity.getMarkStartingRow(range.begin));
+            const double share = static_cast<double>(selected) / static_cast<double>(sample.rows);
+            const double marks_per_sample_row = static_cast<double>(granularity.getMarksCount()) / static_cast<double>(sample.rows);
+            range_end_spread += 2.0 * static_cast<double>(std::max<size_t>(1, pruned.size())) * (1.0 + marks_per_sample_row);
+            range_end_spread += 2.0 * std::sqrt(share * (1.0 - share) / static_cast<double>(sample.rows))
+                * static_cast<double>(granularity.getMarksCount());
+            continue;
+        }
 
         /// the sampled granule each sample row came from, and the rows of each
         const auto & parent_granularity = *sampled.parent->index_granularity;
@@ -928,6 +954,32 @@ void setVerdict(
     }
 }
 
+/// the groups of each part from the `uniq` statistics of the one GROUP BY key column, false if a part does not have them
+bool groupsFromStatistics(
+    std::vector<UInt64> & part_groups, const ProjectionDescription & projection, const RangesInDataParts & parts, const ContextPtr & context)
+{
+    const auto & keys = projection.metadata->getSortingKey().column_names;
+    if (keys.size() != 1 || projection.where_clause_ast)
+        return false;
+    /// the statistics do not count NULL as a value, but NULL is a group
+    const auto key_column = projection.metadata->getColumns().tryGetPhysical(keys.front());
+    if (!key_column || removeLowCardinality(key_column->type)->isNullable())
+        return false;
+
+    const auto statistics_cache = context->getStatisticsCache();
+    for (const auto & part : parts)
+    {
+        if (part.data_part->hasLightweightDelete())
+            return false;
+        const auto statistics = part.data_part->loadStatistics({keys.front()}, statistics_cache.get());
+        const auto it = statistics.find(keys.front());
+        if (it == statistics.end() || !it->second->hasCardinality())
+            return false;
+        part_groups.push_back(it->second->estimateCardinality());
+    }
+    return true;
+}
+
 bool tryEstimateProjection(
     WhatIfCandidateResult & result,
     const ProjectionDescription & projection,
@@ -944,11 +996,13 @@ bool tryEstimateProjection(
     ScanPlan plan;
     if (!planScan(result, plan, baseline_parts, filters_on_offsets, projection_scan_budget_rows, context->getSettingsRef()))
         return false;
-    /// the groups of a sample do not scale to the groups of the part
-    if (projection.type == ProjectionDescription::Type::Aggregate && plan.sample_step > 1)
+    /// the groups of a sample do not scale to the groups of the part, the `uniq` statistics of the GROUP BY key give them
+    if (projection.type == ProjectionDescription::Type::Aggregate && plan.sample_step > 1
+        && !groupsFromStatistics(plan.part_groups, projection, baseline_parts, context))
     {
-        result.empirical_unsupported_reason = "EXPLAIN WHATIF estimates an aggregate projection only from a full scan, because a sample "
-                                              "cannot show the number of groups of a part (see projection_scan_budget_rows)";
+        result.empirical_unsupported_reason = "A sample cannot show the number of groups of a part, and EXPLAIN WHATIF takes them from statistics "
+                                              "only for one GROUP BY key column with `uniq` statistics in every part, a projection without WHERE "
+                                              "and parts without lightweight deletes (see projection_scan_budget_rows)";
         return false;
     }
 
@@ -1005,7 +1059,7 @@ bool tryEstimateProjection(
     const UInt64 base_table_marks = *outcome.marks > projection_marks ? *outcome.marks - projection_marks : 0;
     marks_low += base_table_marks;
     marks_high += base_table_marks;
-    widenForSamples(built.samples, outcome, marks_low, marks_high);
+    widenForSamples(built.samples, outcome, !plan.part_groups.empty(), marks_low, marks_high);
 
     result.estimated_marks = outcome.marks;
     result.estimated_rows = outcome.rows;

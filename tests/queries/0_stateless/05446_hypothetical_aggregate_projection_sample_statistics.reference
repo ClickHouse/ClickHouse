@@ -1,0 +1,27 @@
+-- 2000 groups
+marks: 600
+rows: 60000
+With p (aggregate projection, hypothetical):
+status: applicable
+marks: 4
+rows: 400
+marks_span: 1 to 7
+verdict: chosen
+empirical_status: ok
+sampled_marks: 60 / 600
+real: 3 marks, 300 rows
+-- about 40000 groups
+marks: 600
+rows: 60000
+With p (aggregate projection, hypothetical):
+status: applicable
+marks: 31
+rows: 3100
+marks_span: 26 to 36
+verdict: chosen
+empirical_status: ok
+sampled_marks: 60 / 600
+real: 31 marks, 3100 rows
+-- no statistics
+empirical_status: unsupported
+empirical_reason: A sample cannot show the number of groups of a part, and EXPLAIN WHATIF takes them from statistics only for one GROUP BY key column with `uniq` statistics in every part, a projection without WHERE and parts without lightweight deletes (see projection_scan_budget_rows)

@@ -37,7 +37,7 @@ reason: the projection cannot compute the aggregation keys and functions of the 
 status: not_applicable
 reason: The optimizer weighs an aggregate projection only for a query with GROUP BY or DISTINCT on this table
 empirical_status: unsupported
-empirical_reason: EXPLAIN WHATIF estimates an aggregate projection only from a full scan, because a sample cannot show the number of groups of a part (see projection_scan_budget_rows)
+empirical_reason: A sample cannot show the number of groups of a part, and EXPLAIN WHATIF takes them from statistics only for one GROUP BY key column with `uniq` statistics in every part, a projection without WHERE and parts without lightweight deletes (see projection_scan_budget_rows)
 -- states of different sizes
 Baseline (after PK + partition + existing indexes):
 marks: 30
