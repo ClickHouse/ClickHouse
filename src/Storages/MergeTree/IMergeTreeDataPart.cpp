@@ -1581,7 +1581,7 @@ std::optional<Estimates> IMergeTreeDataPart::getEstimatesImpl(bool only_from_mem
             loaded_estimates.emplace(column_name, stats->getEstimate());
         estimates = std::move(loaded_estimates);
     }
-    return *estimates;
+    return estimates;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
