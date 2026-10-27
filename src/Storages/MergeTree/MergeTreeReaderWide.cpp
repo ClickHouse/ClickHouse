@@ -459,12 +459,10 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     /// So nothing is claimed unless the block is sized to whole stripes, as `canReadWholeColumnsCacheStripe`
     /// makes it for the reads that write to the cache.
     std::vector<ColumnsCache::Key> needed;
-    std::vector<size_t> needed_positions;
     std::vector<ColumnsCache::Key> to_claim;
     auto collect = [&]
     {
         needed.clear();
-        needed_positions.clear();
         to_claim.clear();
         for (size_t stripe = first_stripe; stripe < end_stripe; ++stripe)
         {
@@ -487,8 +485,9 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
                 if (!missing)
                     continue;
                 needed.push_back(ColumnsCache::Key{column_identities[pos], stripe});
-                needed_positions.push_back(pos);
-                if (claim)
+                /// Only a column that has no granule of the stripe in the cache is read from the part over the
+                /// whole stripe, so that its entry is finished, and written, by the end of the block.
+                if (claim && !cachedEntryFor(pos, stripes.firstMark(stripe)))
                     to_claim.push_back(needed.back());
             }
         }
@@ -516,7 +515,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
         /// cache: a reader that trails another one through a part finds most of its stripes written so.
         if (!stripes_current)
         {
-            refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
+            refreshColumnsCacheStripes(first_stripe, end_stripe);
             std::ranges::fill(stripes_seen, released_fills);
         }
         if (!claims.empty())
@@ -537,7 +536,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     /// Nothing is claimed yet: a reader never waits while it holds claims.
     ColumnsCache::waitForFills(in_progress, max_wait_ns);
     std::ranges::fill(stripes_seen, columns_cache->releasedFills());
-    refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
+    refreshColumnsCacheStripes(first_stripe, end_stripe);
     collect();
 
     /// What is still missing - the other reader could not write it, is still at it, or someone else
@@ -549,9 +548,23 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     return remaining_claims;
 }
 
-void MergeTreeReaderWide::refreshColumnsCacheStripes(
-    size_t first_stripe, size_t end_stripe, const std::vector<ColumnsCache::Key> & keys, const std::vector<size_t> & positions)
+void MergeTreeReaderWide::refreshColumnsCacheStripes(size_t first_stripe, size_t end_stripe)
 {
+    /// Every regular column, not only those the block misses: the stripes are current afterwards, and a column
+    /// that a later block of the stripe misses must not keep an entry looked up before.
+    std::vector<ColumnsCache::Key> keys;
+    std::vector<size_t> positions;
+    for (size_t pos = 0; pos < column_kinds.size(); ++pos)
+    {
+        if (!column_kinds[pos].regular)
+            continue;
+        for (size_t stripe = first_stripe; stripe < end_stripe; ++stripe)
+        {
+            keys.push_back(ColumnsCache::Key{column_identities[pos], stripe});
+            positions.push_back(pos);
+        }
+    }
+
     auto entries = columns_cache->getMany(keys);
     for (size_t i = 0; i < entries.size(); ++i)
     {

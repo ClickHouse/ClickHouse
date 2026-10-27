@@ -357,11 +357,9 @@ private:
     /// average over its reads, 0 before the first one. See `ColumnsCache::waitForFills`.
     double read_nanoseconds_per_value = 0;
 
-    /// Look the keys of the stripes [first_stripe, end_stripe) of the current range up again, after other
-    /// readers wrote them, and update the entries and the counts of the range. `positions` are the result
-    /// columns of the keys.
-    void refreshColumnsCacheStripes(
-        size_t first_stripe, size_t end_stripe, const std::vector<ColumnsCache::Key> & keys, const std::vector<size_t> & positions);
+    /// Look the stripes [first_stripe, end_stripe) of the current range up again, after other readers wrote
+    /// them, and update the entries and the counts of the range.
+    void refreshColumnsCacheStripes(size_t first_stripe, size_t end_stripe);
 
     /// Whether the granules [begin, end) of a lookup can be served from the cache as a whole.
     bool allGranulesServed(const std::vector<UInt32> & cached_columns, size_t begin, size_t end) const;
