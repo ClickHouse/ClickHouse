@@ -19,6 +19,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -742,16 +743,30 @@ private:
             argument = make_intrusive<ASTIdentifier>(std::vector<String>{bound_database, bound_table});
     }
 
-    /// Whether the subtree consists of functions and literals only: a constant expression that can be evaluated now.
-    /// An identifier (a column, an alias) or a query parameter (of a parameterized view) is only known later.
-    static bool isFunctionOfLiterals(const IAST & ast)
+    /// Whether the subtree consists of deterministic functions and literals only: a constant expression that can be
+    /// evaluated now, with the same result as when the query is executed. An identifier (a column, an alias) or a query
+    /// parameter (of a parameterized view) is only known later, and a function that depends on the context of the call
+    /// (`getSetting`, `currentUser`, `hostName`) may give another result then. `currentDatabase` is the exception: it is
+    /// substituted with the database the names are qualified with.
+    bool isDeterministicFunctionOfLiterals(const IAST & ast) const
     {
         if (ast.as<ASTLiteral>())
             return true;
-        if (!ast.as<ASTFunction>() && !ast.as<ASTExpressionList>())
+        if (const auto * function = ast.as<ASTFunction>())
+        {
+            if (!isCurrentDatabaseFunction(*function))
+            {
+                auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+                if (!resolver || !resolver->isDeterministic() || resolver->isServerConstant())
+                    return false;
+            }
+        }
+        else if (!ast.as<ASTExpressionList>())
+        {
             return false;
+        }
         for (const auto & child : ast.children)
-            if (!isFunctionOfLiterals(*child))
+            if (!isDeterministicFunctionOfLiterals(*child))
                 return false;
         return true;
     }
@@ -765,7 +780,7 @@ private:
         if (!bind_qualified_names || database_name.empty())
             return;
 
-        if (!argument->as<ASTFunction>() || !isFunctionOfLiterals(*argument))
+        if (!argument->as<ASTFunction>() || !isDeterministicFunctionOfLiterals(*argument))
             return;
 
         ASTPtr expression = argument->clone();
