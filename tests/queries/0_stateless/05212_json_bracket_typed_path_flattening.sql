@@ -58,7 +58,7 @@ SELECT 'dotted_typed_path';
 SELECT json['c']['d'], json.c.d FROM test_json_dotted_typed SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT json['c']['d'], json.c.d FROM test_json_dotted_typed SETTINGS optimize_functions_to_subcolumns = 0;
 
-DROP TABLE test_json_typed_object;
-DROP TABLE test_json_untyped_object;
-DROP TABLE test_json_deep_typed_prefix;
-DROP TABLE test_json_dotted_typed;
+DROP TABLE IF EXISTS test_json_typed_object;
+DROP TABLE IF EXISTS test_json_untyped_object;
+DROP TABLE IF EXISTS test_json_deep_typed_prefix;
+DROP TABLE IF EXISTS test_json_dotted_typed;
