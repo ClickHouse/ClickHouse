@@ -73,14 +73,14 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [e78106451](https://github.com/dzbarsky/clickhouse/commit/e78106451da198cf6a5bdf82b5448d751d6a3539), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [5549bc23a](https://github.com/dzbarsky/clickhouse/commit/5549bc23a19eafb121bda4d10f49620e4fb9fd9f), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-49ed-bc88-173739d74571) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/c0f9b61f-6a30-4dd5-b314-75edff78f54e) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/6deb8a2a-8d90-454e-87d2-5f2924902250) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/cda3f046-ecc8-4d3f-99bd-9c2daaba8026) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#e78106451) records the unstripped hashes, native checks and dependency reports.
+The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -199,4 +199,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-Neither build ran DWYU. Earlier runs graded 429 of 627 x86-64 targets and 417 of 612 ARM64 targets. The [validation history](bazel/initial_migration/validation-history.md#e78106451) records each CPU’s DWYU result.
+This revision produced verified DWYU reports for 3 x86-64 targets and 4 ARM64 targets. Across recorded revisions, DWYU has graded 432 of 627 x86-64 targets and 421 of 612 ARM64 targets. The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) lists this revision’s results.

@@ -3130,3 +3130,36 @@ BuildBuddy reported [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-
 ### Dependency reports
 
 The [x86-64](https://app.buildbuddy.io/invocation/25ddeb68-503e-48a0-ae94-a1de51b4929b) and [ARM64](https://app.buildbuddy.io/invocation/a66bf0e7-99c6-459e-bfed-152044ccf8a5) workers each reported that none of their five targets fit the DWYU limits. Neither started a DWYU build. The result checker could not reproduce the workers’ estimates; these runs produced no dependency reports.
+
+## 5549bc23a
+
+At [5549bc23a](https://github.com/dzbarsky/clickhouse/commit/5549bc23a19eafb121bda4d10f49620e4fb9fd9f), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The unstripped ClickHouse and unit-test binaries also matched the [previous Bazel build](https://github.com/dzbarsky/clickhouse/commit/e78106451da198cf6a5bdf82b5448d751d6a3539).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/6deb8a2a-8d90-454e-87d2-5f2924902250) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/6deb8a2a-8d90-454e-87d2-5f2924902250) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/6deb8a2a-8d90-454e-87d2-5f2924902250) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/cda3f046-ecc8-4d3f-99bd-9c2daaba8026) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/cda3f046-ecc8-4d3f-99bd-9c2daaba8026) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/cda3f046-ecc8-4d3f-99bd-9c2daaba8026) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[Thirty database headers and two I/O headers](https://github.com/dzbarsky/clickhouse/commit/8ab47a41e623a8a8a16e3d6549ff2f06e04315c1) moved from `//src:headers` to the public headers of the libraries that compile their corresponding C++ files. [Four headers used only by unit tests](https://github.com/dzbarsky/clickhouse/commit/5f5c6fd64040b4e66a90b6dbc5e64c7073ec9b88) moved to `unit_tests_dbms`. [Another 34 headers](https://github.com/dzbarsky/clickhouse/commit/3a011f9bfa4f73551de275682a3106ada704f66d) moved from `hdrs` to `srcs` on their existing libraries, where public headers can still include them.
+
+[`//src:headers` explicitly sets `local_defines = []`](https://github.com/dzbarsky/clickhouse/commit/5549bc23a19eafb121bda4d10f49620e4fb9fd9f) so adding private headers does not give its public headers four extra preprocessor definitions. The migration generator reproduces the five changed BUILD files; all 302 BUILD files passed the Buildifier formatting check.
+
+The native checks confirmed all 70 header declarations. On each CPU, four unit-test depfiles and the `GatherUtils.cpp` depfile named their expected headers, including the DDSketch and GatherUtils private headers. The sixth compile, `YAMLParser.cpp`, neither declared nor read the 32 database/I/O headers or the four unit-test headers.
+
+Each native build completed all 19 targets and returned nine status files covering 30 runtime checks and three compile checks. The seven processed Rust archives per CPU and all seven ARM64 `llvm-strip --strip-debug` input/output pairs matched their previous SHA-256 values and sizes. The ClickHouse and unit-test link arguments also matched.
+
+BuildBuddy reported [x86-64](https://app.buildbuddy.io/invocation/6deb8a2a-8d90-454e-87d2-5f2924902250): 4,533 remote executions and 51,301 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/cda3f046-ecc8-4d3f-99bd-9c2daaba8026): 4,533 remote executions and 51,779 remote cache hits. Compared with the previous [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-49ed-bc88-173739d74571) and [ARM64](https://app.buildbuddy.io/invocation/c0f9b61f-6a30-4dd5-b314-75edff78f54e) builds, 3,846 more remote executions per CPU and an equal drop in cache hits are consistent with a one-time cache invalidation from moving widely declared headers; the logs did not identify which actions missed for that reason.
+
+### Dependency reports
+
+The original report reader rebuilt its two CPU entries in a different order and rejected the worker. An offline check reproduced the submitted bytes and matched the analyzer reports to BuildBuddy’s per-target results.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/33d08c60-4115-47ea-8c4f-a51612e87a86): 4 of 4 offered targets selected. The analyzer build reported `BUILD_FAILURE`. Verified clean: `//src/Common:memory_tracking_api`, `//src/Storages/System:headers`, `//src:column_types`. Ungraded: `@clickhouse_zxc//:_zxc`.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/3131d043-cd69-4ee5-926e-55dab188a95d): 5 of 5 offered targets selected. The analyzer build reported `BUILD_FAILURE`. Verified clean: `//src/Common:memory_tracking_api`, `//src/Storages/System:headers`, `//src:column_types`, `//src:core_types`. Ungraded: `@clickhouse_zxc//:_zxc`.
+
+The ZXC analyzer could not verify nine internal link dependencies on x86-64 and three on ARM64; it identified no unused dependency.
