@@ -659,10 +659,12 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             if (stop_replication)
             {
-                /// The replication can create, drop and rename tables until it is stopped.
-                database->stopReplication();
+                /// The replication can create, drop and rename tables until it is stopped, and its
+                /// `DROP TABLE ... SYNC` waits for the last reference to the table, so none is held here.
                 tables_to_prepare.clear();
+                tables_to_prepare_early.clear();
                 tables_to_drop.clear();
+                database->stopReplication();
                 collect_and_check_tables();
             }
 
