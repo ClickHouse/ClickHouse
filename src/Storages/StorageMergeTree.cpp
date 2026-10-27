@@ -6,6 +6,7 @@
 #include <set>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1672,32 +1673,57 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// `selectPartsToMutate` skips non-affecting entries, and a part never changes its
     /// partition. Moreover, a mutation waits for another one only while there is a part
     /// that the other mutation still has to process, i.e. a currently visible part whose
-    /// data version is below the other mutation's version. So the cycle above exists only
-    /// when both of its wait edges really exist. Each edge is validated separately: the
-    /// `current -> intermediate` edge needs a part in a partition affected by both the
-    /// current and the intermediate mutation, and the `intermediate -> earlier` edge needs
-    /// a part in a partition affected by both the intermediate and the earlier mutation.
-    /// A single check on the partition common to all three mutations would be wrong in
-    /// both directions: it reports a false positive when no part is waiting at all (for
-    /// example when the partition is empty), and it masks a genuine multi-partition
-    /// deadlock, because the two edges may go through different partitions. Note that the
-    /// earlier mutation does not have to be the most recent mutation of the transaction,
-    /// so all pairs are checked.
+    /// data version is below the other mutation's version. Since a mutation processes each
+    /// part independently, the intermediate mutation blocks the current one only in the
+    /// partitions where the current mutation waits for it, and it can finish its work in
+    /// every other partition regardless of the transaction. So the cycle above exists only
+    /// when both of its wait edges really exist in the same partition: there must be a
+    /// partition with a part for which the current mutation waits for the intermediate one
+    /// (a part visible to the transaction whose data version is below the intermediate
+    /// mutation's version), and with a part for which the intermediate mutation waits for
+    /// the earlier one (a committed part whose data version is below the earlier mutation's
+    /// version). A purely structural check on the partitions affected by all three mutations
+    /// would report a false positive when no part is waiting at all (for example when the
+    /// partition is empty), and checking the two edges in arbitrary partitions would report
+    /// a false positive when they go through different partitions. Note that the earlier
+    /// mutation does not have to be the most recent mutation of the transaction, so all
+    /// pairs are checked.
     auto data_parts = getVisibleDataPartsVector(txn);
 
-    /// Whether the `waiter` mutation is actually waiting for the `blocker` mutation (of
-    /// version `blocker_version`): there must be a part visible to the waiter, in a partition
+    /// The partitions where the `waiter` mutation is actually waiting for the `blocker` mutation
+    /// (of version `blocker_version`): those with a part visible to the waiter, in a partition
     /// affected by both of them, that the blocker still has to mutate.
-    auto is_waiting_for = [](
+    auto get_waiting_partitions = [](
         const DataPartsVector & parts_visible_to_waiter,
         const MergeTreeMutationEntry & waiter,
         const MergeTreeMutationEntry & blocker,
         Int64 blocker_version)
     {
+        std::unordered_set<String> partition_ids;
         for (const auto & data_part : parts_visible_to_waiter)
         {
             const auto & partition_id = data_part->info.getPartitionId();
             if (data_part->info.getDataVersion() < blocker_version
+                && waiter.affectsPartition(partition_id)
+                && blocker.affectsPartition(partition_id))
+                partition_ids.insert(partition_id);
+        }
+        return partition_ids;
+    };
+
+    /// Whether the `waiter` mutation waits for the `blocker` mutation in one of `partition_ids`.
+    auto is_waiting_for_in_partitions = [](
+        const DataPartsVector & parts_visible_to_waiter,
+        const MergeTreeMutationEntry & waiter,
+        const MergeTreeMutationEntry & blocker,
+        Int64 blocker_version,
+        const std::unordered_set<String> & partition_ids)
+    {
+        for (const auto & data_part : parts_visible_to_waiter)
+        {
+            const auto & partition_id = data_part->info.getPartitionId();
+            if (data_part->info.getDataVersion() < blocker_version
+                && partition_ids.contains(partition_id)
                 && waiter.affectsPartition(partition_id)
                 && blocker.affectsPartition(partition_id))
                 return true;
@@ -1720,16 +1746,18 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             if (intermediate_mutation.tid == mutation_entry.tid)
                 continue;
 
-            if (!is_waiting_for(data_parts, mutation_entry, intermediate_mutation, intermediate_it->first))
+            auto waiting_partitions = get_waiting_partitions(data_parts, mutation_entry, intermediate_mutation, intermediate_it->first);
+            if (waiting_partitions.empty())
                 continue;
 
             /// Is there an earlier mutation of the same transaction that blocks the
-            /// intermediate mutation, which in turn blocks the current mutation?
+            /// intermediate mutation in a partition where the latter blocks the current mutation?
             for (auto earlier_it = current_mutations_by_version.begin(); earlier_it != intermediate_it; ++earlier_it)
             {
                 const auto & earlier_mutation = earlier_it->second;
                 if (earlier_mutation.tid == mutation_entry.tid
-                    && is_waiting_for(committed_data_parts, intermediate_mutation, earlier_mutation, earlier_it->first))
+                    && is_waiting_for_in_partitions(
+                        committed_data_parts, intermediate_mutation, earlier_mutation, earlier_it->first, waiting_partitions))
                 {
                     result.latest_failed_part = "";
                     result.latest_fail_reason = fmt::format(
