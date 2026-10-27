@@ -730,7 +730,8 @@ static bool usesBearerAuthentication(const ObjectStoragePtr & object_storage)
 
     /// Read from the live client because `applyNewSettings` can rebuild it without changing
     /// the `StorageS3Configuration` that was created with the table.
-    const auto & client_configuration = object_storage->getS3StorageClient()->getClientConfiguration();
+    const auto client = object_storage->getS3StorageClient();
+    const auto & client_configuration = client->getClientConfiguration();
     if (Poco::icompare(client_configuration.http_client, "gcp_oauth") == 0)
         return true;
 
