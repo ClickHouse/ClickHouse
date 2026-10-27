@@ -813,6 +813,19 @@ String DatabaseCatalog::formatHierarchicalName(const String & database_name, con
     return format_part(database_name) + '.' + format_part(table_name);
 }
 
+std::optional<QualifiedTableName> DatabaseCatalog::tryParseFormattedHierarchicalName(const String & name)
+{
+    if (!name.contains('`'))
+        return QualifiedTableName::tryParseFromString(name);
+
+    auto quoted_parts = tryParseQuotedHierarchicalName(name);
+    if (!quoted_parts || quoted_parts->size() > 2)
+        return {};
+    if (quoted_parts->size() == 1)
+        return QualifiedTableName{.database = {}, .table = quoted_parts->front()};
+    return QualifiedTableName{.database = (*quoted_parts)[0], .table = (*quoted_parts)[1]};
+}
+
 StorageID DatabaseCatalog::parseHierarchicalName(const String & name)
 {
     if (auto quoted_parts = tryParseQuotedHierarchicalName(name))
@@ -906,6 +919,12 @@ StorageID DatabaseCatalog::resolveHierarchicalName(const StorageID & table_id, c
 {
     StorageID as_written(table_id.database_name.empty() ? current_database : table_id.database_name, table_id.table_name);
 
+    /// The temporary tables of all sessions are only reachable through the context that owns them
+    /// (`Context::resolveStorageID`). An explicitly written name in this database is returned without a UUID, so that
+    /// `getTable` rejects it instead of taking the UUID shortcut to a table of another session.
+    if (as_written.database_name == TEMPORARY_DATABASE)
+        return as_written;
+
     /// Fast path: the name as written. A table with a UUID exists for sure. Without a UUID, an extra existence check
     /// is only needed when the name has other candidates, i.e. contains dots.
     if (auto database = as_written.database_name.empty() ? nullptr : tryGetDatabase(as_written.database_name))
@@ -925,6 +944,9 @@ StorageID DatabaseCatalog::resolveHierarchicalName(const StorageID & table_id, c
     for (auto & candidate : getHierarchicalNameCandidates(table_id, current_database))
     {
         if (candidate.database_name == as_written.database_name && candidate.table_name == as_written.table_name)
+            continue;
+
+        if (candidate.database_name == TEMPORARY_DATABASE)
             continue;
 
         auto database = tryGetDatabase(candidate.database_name);

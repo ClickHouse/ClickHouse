@@ -241,6 +241,12 @@ public:
     /// `joinGet` or `dictGet` in a view), so that it keeps naming that table when a database `db.ns` appears later.
     static String formatHierarchicalName(const String & database_name, const String & table_name);
 
+    /// Parses a name stored by `formatHierarchicalName` back into the database and the table, keeping that split.
+    /// A name without backquotes is parsed by `QualifiedTableName::tryParseFromString`, as before hierarchical names.
+    /// Returns nothing for a name of another form. For the readers of stored definitions (the dependencies of a view
+    /// on the tables and dictionaries in `joinGet` and `dictGet`, the renaming of a restored backup).
+    static std::optional<QualifiedTableName> tryParseFormattedHierarchicalName(const String & name);
+
     DatabasePtr getDatabaseForTemporaryTables() const;
     DatabasePtr getSystemDatabase() const;
 
