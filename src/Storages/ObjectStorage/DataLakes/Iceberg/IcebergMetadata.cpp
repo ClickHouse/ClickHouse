@@ -2268,7 +2268,7 @@ void IcebergMetadata::drop(ContextPtr context)
     bool unauthorized_path = false;
     auto check_authorized = [&](const Iceberg::IcebergPathFromMetadata & path)
     {
-        const auto serialized_path = path.serialize();
+        const auto & serialized_path = path.serialize();
         if (authorized.contains(serialized_path))
             return;
         unauthorized_path = true;
