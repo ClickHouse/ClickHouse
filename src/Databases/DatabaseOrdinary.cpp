@@ -581,6 +581,31 @@ void DatabaseOrdinary::loadTableFromMetadata(
 
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
+    /// A table that fails to load is left out of the catalog, but its metadata stays and is loaded again
+    /// at the next server start, like the one of a detached table. With `async_load_databases` the server
+    /// keeps running after such a failure, and the failure may have happened before the storage registered
+    /// its named collection dependencies (e.g. while a collection it references does not exist, after a
+    /// drop with `check_named_collection_dependencies = 0`), so record them from the metadata: otherwise a
+    /// collection recreated later could be dropped while the metadata still references it.
+    try
+    {
+        loadTableFromMetadataImpl(local_context, file_path, name, query, mode);
+    }
+    catch (...)
+    {
+        for (const auto & collection_name : getNamedCollectionsReferencedByTableDefinition(query))
+            NamedCollectionFactory::instance().addDetachedDependency(collection_name, name.database, name.table);
+        throw;
+    }
+}
+
+void DatabaseOrdinary::loadTableFromMetadataImpl(
+    ContextMutablePtr local_context,
+    const String & file_path,
+    const QualifiedTableName & name,
+    const ASTCreateQuery & query,
+    LoadingStrictnessLevel mode)
+{
     constexpr size_t max_tries = 3;
     size_t tries = 0;
     time_t sleep_time = 1;

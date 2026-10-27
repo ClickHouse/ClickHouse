@@ -1353,6 +1353,63 @@ def test_drop_collection_recreated_under_lazily_loaded_table(cluster):
     node.query("DROP DATABASE lazy_recreate_db")
 
 
+def test_drop_collection_recreated_under_table_failed_to_load(cluster):
+    """The eager counterpart of `test_drop_collection_recreated_under_lazily_loaded_table`: a table
+    whose load at startup fails because the collection it references does not exist is left out of
+    the catalog without registering any dependency, while its metadata is loaded again at the next
+    start. If the collection is recreated, dropping it must still be refused."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS eager_recreate_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS eager_recreated_collection")
+
+    node.query(
+        "CREATE DATABASE eager_recreate_db ENGINE = Atomic SETTINGS lazy_load_tables = 0"
+    )
+    node.query(
+        "CREATE NAMED COLLECTION eager_recreated_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    node.query(
+        "CREATE TABLE eager_recreate_db.t (x UInt32) ENGINE = URL(eager_recreated_collection)"
+    )
+
+    # An unchecked drop removes the collection while the table still references it.
+    node.query(
+        "DROP NAMED COLLECTION eager_recreated_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+    # With `async_load_databases` (the default), the server starts, but the table fails to load.
+    node.restart_clickhouse()
+
+    assert "NAMED_COLLECTION_DOESNT_EXIST" in node.query_and_get_error(
+        "SELECT count() FROM eager_recreate_db.t"
+    )
+
+    node.query(
+        "CREATE NAMED COLLECTION eager_recreated_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION eager_recreated_collection"
+    )
+
+    # The failed load is not retried before the next start, where the table is loaded with the
+    # recreated collection and keeps holding it until it is dropped.
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'eager_recreate_db' AND name = 't'"
+        ).strip()
+        == "URL"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION eager_recreated_collection"
+    )
+
+    node.query("DROP DATABASE eager_recreate_db SYNC")
+    node.query("DROP NAMED COLLECTION eager_recreated_collection")
+
+
 def test_drop_not_used_by_lazily_loaded_remote_table(cluster):
     """Unlike `Distributed`, the `Remote` engine resolves its arguments through named collections, but
     an identifier first argument is still a valid positional argument for it — a cluster name — when
