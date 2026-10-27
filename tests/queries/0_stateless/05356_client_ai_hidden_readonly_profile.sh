@@ -13,7 +13,10 @@ profile="profile_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE IF EXISTS ${profile}"
-$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE ${profile} SETTINGS readonly = 1"
+# Parallel replicas are pinned off: a configuration whose default profile turns them on would
+# otherwise leave a `readonly = 1` session that cannot turn them off for the internal queries of the
+# agent, which then refuse to run (see `ClientBase::fetchInternalQueryResult`).
+$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE ${profile} SETTINGS readonly = 1, enable_parallel_replicas = 0"
 $CLICKHOUSE_CLIENT -q "CREATE USER ${user} SETTINGS PROFILE '${profile}'"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON *.* TO ${user}"
 
