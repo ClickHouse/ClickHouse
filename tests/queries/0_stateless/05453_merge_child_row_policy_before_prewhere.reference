@@ -3,6 +3,11 @@ mt where	2
 mt rows	20
 mt rows	30
 memory prewhere	2
+memory plan	1
+memory default rows	20
+memory default rows	30
+memory default rows	5
+memory default plan	0
 final prewhere	2
 final prewhere, policy before final	2
 final order, policy after final	0

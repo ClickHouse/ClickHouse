@@ -6,6 +6,7 @@ SET query_plan_optimize_prewhere = 1;
 
 DROP ROW POLICY IF EXISTS p_05453_mt ON t_mt;
 DROP ROW POLICY IF EXISTS p_05453_memory ON t_memory;
+DROP ROW POLICY IF EXISTS p_05453_memory_default ON t_memory_default;
 DROP ROW POLICY IF EXISTS p_05453_final ON t_final;
 DROP ROW POLICY IF EXISTS p_05453_final_ver ON t_final_ver;
 DROP ROW POLICY IF EXISTS p_05453_in ON t_in;
@@ -15,7 +16,7 @@ DROP ROW POLICY IF EXISTS p_05453_both_merge ON m_both;
 DROP ROW POLICY IF EXISTS p_05453_nested ON m_nested_inner;
 DROP ROW POLICY IF EXISTS p_05453_nested_both_child ON t_nested_both;
 DROP ROW POLICY IF EXISTS p_05453_nested_both_merge ON m_nested_both_inner;
-DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
+DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_memory_default, t_memory_default, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
     m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;
 
 CREATE TABLE t_mt (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
@@ -34,6 +35,14 @@ INSERT INTO t_memory VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30'
 CREATE TABLE m_memory AS t_memory ENGINE = Merge(currentDatabase(), '^t_memory$');
 CREATE ROW POLICY p_05453_memory ON t_memory USING tenant = 'a' TO ALL;
 SELECT 'memory prewhere', count() FROM m_memory PREWHERE toUInt64(payload) > 10;
+SELECT 'memory plan', count() > 0 FROM (EXPLAIN actions = 1 SELECT payload FROM m_memory) WHERE explain ILIKE '%Row level filter column%';
+
+CREATE TABLE t_memory_default (tenant String DEFAULT 'a', payload String) ENGINE = Memory;
+INSERT INTO t_memory_default VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_memory_default (tenant String, payload String) ENGINE = Merge(currentDatabase(), '^t_memory_default$');
+CREATE ROW POLICY p_05453_memory_default ON t_memory_default USING tenant = 'a' TO ALL;
+SELECT 'memory default rows', payload FROM m_memory_default ORDER BY payload;
+SELECT 'memory default plan', count() > 0 FROM (EXPLAIN actions = 1 SELECT payload FROM m_memory_default) WHERE explain ILIKE '%Row level filter column%';
 
 CREATE TABLE t_final (k UInt64, tenant String, payload String) ENGINE = ReplacingMergeTree ORDER BY k;
 INSERT INTO t_final VALUES (1, 'a', '5'), (2, 'a', '20'), (3, 'b', 'secret'), (4, 'a', '30');
@@ -93,6 +102,7 @@ SELECT 'nested both prewhere', count() FROM m_nested_both_outer PREWHERE toUInt6
 
 DROP ROW POLICY p_05453_mt ON t_mt;
 DROP ROW POLICY p_05453_memory ON t_memory;
+DROP ROW POLICY p_05453_memory_default ON t_memory_default;
 DROP ROW POLICY p_05453_final ON t_final;
 DROP ROW POLICY p_05453_final_ver ON t_final_ver;
 DROP ROW POLICY p_05453_in ON t_in;
@@ -102,5 +112,5 @@ DROP ROW POLICY p_05453_both_merge ON m_both;
 DROP ROW POLICY p_05453_nested ON m_nested_inner;
 DROP ROW POLICY p_05453_nested_both_child ON t_nested_both;
 DROP ROW POLICY p_05453_nested_both_merge ON m_nested_both_inner;
-DROP TABLE m_mt, t_mt, m_memory, t_memory, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
+DROP TABLE m_mt, t_mt, m_memory, t_memory, m_memory_default, t_memory_default, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
     m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;
