@@ -426,6 +426,11 @@ ColumnPtr convertColumnToTypeOrNull(
     const ColumnPtr full = value.convertToFullColumnIfConst();
     const IColumn & unwrapped = *full;
 
+    /// The value is already of the destination type. Extracting it into a `Field` would also lose the discriminators
+    /// of nested `Variant` values, e.g. which of the `UUID` and `UUID2` alternatives of `Array(Variant(UUID, UUID2))`.
+    if (from->equals(*to))
+        return full;
+
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
         return std::move(*native);
 

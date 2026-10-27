@@ -524,8 +524,13 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function, std:
   */
 std::optional<size_t> getTableFunctionArgumentIndex(const ASTFunction & function)
 {
+    /// `loop(database, table)` takes a scalar database name, only `loop(table_function(...))` takes a table function.
     if (equalsCaseInsensitiveString(function.name, "loop"))
-        return 0;
+    {
+        if (function.arguments && function.arguments->children.size() == 1)
+            return 0;
+        return std::nullopt;
+    }
     for (const auto * name : {"viewIfPermitted", "remote", "remoteSecure", "cluster", "clusterAllReplicas"})
         if (equalsCaseInsensitiveString(function.name, name))
             return 1;

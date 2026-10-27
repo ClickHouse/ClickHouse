@@ -9,6 +9,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -65,6 +66,26 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
             visit(key, context_);
         for (auto & assignment : ttl_element->group_by_assignments)
             visit(assignment, context_);
+    }
+
+    /// The function of an `APPLY` transformer is not among its children either.
+    if (auto * apply_transformer = ast->template as<ASTColumnsApplyTransformer>())
+    {
+        /// `APPLY f` with a SQL UDF `f` is rewritten to `APPLY(x -> f(x))`, so that the body of `f` can be expanded.
+        const auto user_defined_function = apply_transformer->lambda || apply_transformer->parameters
+            ? nullptr : UserDefinedSQLFunctionFactory::instance().tryGet(apply_transformer->func_name);
+        if (user_defined_function && user_defined_function->as<ASTCreateSQLFunctionQuery>())
+        {
+            static constexpr auto lambda_argument = "x";
+            apply_transformer->lambda = makeASTFunction("lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>(lambda_argument)),
+                makeASTFunction(apply_transformer->func_name, make_intrusive<ASTIdentifier>(lambda_argument)));
+            apply_transformer->lambda_arg = lambda_argument;
+            apply_transformer->func_name.clear();
+        }
+
+        if (apply_transformer->lambda)
+            visit(apply_transformer->lambda, context_);
     }
 
     if (const auto * function = ast->template as<ASTFunction>())
