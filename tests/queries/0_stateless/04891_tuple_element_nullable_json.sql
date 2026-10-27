@@ -16,9 +16,7 @@ select cast(null, 'Nullable(JSON(a UInt32))').a as x, toTypeName(x);
 select cast(['{"a":1}', null], 'Array(Nullable(JSON))').a as x, toTypeName(x);
 
 -- Chained access through a nullable sub-object, from issue #111234. Ordered by a companion Int rather
--- than by the result, which is Dynamic and so rejected in ORDER BY keys by default. `enable_analyzer` is
--- pinned because the old analyzer resolves the `^` sub-object subcolumn of a subquery column by looking up
--- a column of that literal name in the block, which fails with `NOT_FOUND_COLUMN_IN_BLOCK`.
+-- than by the result, which is Dynamic and so rejected in ORDER BY keys by default.
 select Doc.^Value::Nullable(JSON).Id as x
 from
 (
@@ -26,13 +24,10 @@ from
     union all
     select 2 as n, '{"Value": {"Id": "dorki"}}'::JSON as Doc
 )
-order by n
-settings enable_analyzer = 1;
+order by n;
 
 -- The query exactly as filed: Doc.Value is the leaf Dynamic of a sub-object path, so it is NULL on both
--- rows. It must return NULL rather than throw. `enable_analyzer` is pinned for the same reason as above:
--- the old analyzer looks up a column literally named `Doc.Value` in the block instead of extracting the
--- path from the JSON column, so any subcolumn of a subquery column fails there regardless of this change.
+-- rows. It must return NULL rather than throw.
 select Doc.Value::Nullable(JSON).Id as x
 from
 (
@@ -40,8 +35,7 @@ from
     union all
     select 2 as n, '{"Value": {"Id": "dorki"}}'::JSON as Doc
 )
-order by n
-settings enable_analyzer = 1;
+order by n;
 
 -- A typed `Array(...)` / `Map(...)` path can neither be wrapped in `Nullable` nor carry NULL itself, so
 -- outer-NULL rows must read as the path default ([] / {}) -- matching a stored subcolumn and the

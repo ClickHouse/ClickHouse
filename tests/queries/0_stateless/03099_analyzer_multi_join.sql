@@ -1,5 +1,4 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/56503
-SET enable_analyzer = 1;
 
 SELECT
     tb1.owner_id AS owner_id,
