@@ -2488,7 +2488,7 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// The frozen kernel does not consult the heap, so a running collated heap keeps its stream off the adaptive path.
     if (adaptive && adaptive->isLearning() && top_k_heap && params.top_k->hasCollators() && !top_k_heap->frozen && !top_k_waits)
-        adaptive->standDown();
+        adaptive->standDownForTopK();
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
@@ -2621,7 +2621,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         {
             heap.start_allowed = true;
             if (learning)
-                adaptive->standDown();
+                adaptive->standDownForTopK();
         }
         else if (learning)
         {
@@ -2630,6 +2630,11 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
     }
     const bool top_k_still_waits = top_k_waits && topKHeapWaits(params, *result.topKHeap());
+
+    /// Once the collated heap gives up, its stream learns again, and freezes below if its table is past the bounds. Until
+    /// then the table stays single-level (see below), unless it went to disk: a learning table must be single-level.
+    if (adaptive && adaptive->stoodDownForTopK() && result.isConvertibleToTwoLevel() && result.topKHeap()->frozen)
+        adaptive->learnAgain();
 
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     const bool over_external_threshold = params.max_bytes_before_external_group_by
@@ -2667,11 +2672,20 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
+    /// A stream stood down for a running collated heap converts only to go to disk, or when it finishes.
+    const bool keeps_single_level = adaptive && adaptive->stoodDownForTopK() && !over_external_threshold && !top_k_still_waits
+        && !result.topKHeap()->frozen;
+
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
-        result.convertToTwoLevel();
+    {
+        if (keeps_single_level)
+            std::get<AdaptiveAggregationProducer::BaselineState>(adaptive->phase).two_level_deferred = true;
+        else
+            result.convertToTwoLevel();
+    }
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))

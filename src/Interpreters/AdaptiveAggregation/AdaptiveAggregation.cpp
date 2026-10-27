@@ -334,6 +334,9 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         if (local_variants.isConvertibleToTwoLevel())
             local_variants.convertToTwoLevel();
     }
+    else if (const auto * baseline = std::get_if<AdaptiveAggregationProducer::BaselineState>(&adaptive.phase);
+             baseline && baseline->two_level_deferred && local_variants.isConvertibleToTwoLevel())
+        local_variants.convertToTwoLevel();
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;

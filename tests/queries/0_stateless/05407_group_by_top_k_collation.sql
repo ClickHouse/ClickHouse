@@ -309,6 +309,50 @@ SELECT s, count() FROM (SELECT multiIf(number < 2200000, concat('m', toString(nu
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 16384, group_by_top_k_optimization_observation_rows = 1,
     enable_group_by_top_k_optimization = 1, log_comment = '05407_run_after_sample';
+-- The repeats case in two streams, one per side of the `UNION ALL`, with the adaptive aggregator: each heap starts and
+-- stands its stream down, gives up on the repeated n... keys, and then the stream learns again and freezes. The tables
+-- pass `group_by_two_level_threshold` while the heaps run, and stay single-level so that they can freeze.
+SELECT s, count() FROM (
+    SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('n', toString(number % 2000))) AS s FROM numbers(80000)
+    UNION ALL
+    SELECT multiIf(number < 33792, concat('p', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('n', toString(number % 2000))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 65536, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (
+    SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('n', toString(number % 2000))) AS s FROM numbers(80000)
+    UNION ALL
+    SELECT multiIf(number < 33792, concat('p', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('n', toString(number % 2000))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 1024, group_by_two_level_threshold = 1000,
+    group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_adaptive';
+-- The new keys case in two streams: both heaps keep running, and their tables convert to two-level when they finish.
+SELECT s, count() FROM (
+    SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('n', toString(number))) AS s FROM numbers(80000)
+    UNION ALL
+    SELECT multiIf(number < 33792, concat('p', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('o', toString(number))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 65536, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (
+    SELECT multiIf(number < 33792, concat('m', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('n', toString(number))) AS s FROM numbers(80000)
+    UNION ALL
+    SELECT multiIf(number < 33792, concat('p', toString(number)), number % 97 = 0, concat('a', toString(number % 5)),
+        concat('o', toString(number))) AS s FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 1024, group_by_two_level_threshold = 1000,
+    group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_adaptive_new_keys';
 
 -- Every key comes twice, so the start check would fail; with `observation_rows = 0` the heap runs from the first block
 -- and keeps each stream off the adaptive aggregator. Keys descend, so the prefix heap evicts on every new key.
@@ -364,6 +408,16 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
     AND log_comment = '05407_forced_repeats'
 GROUP BY log_comment;
+
+SELECT 'adaptive with a started heap';
+SELECT log_comment, sum(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS pruned,
+    sum(ProfileEvents['AggregationTopKHeapsFrozen']) > 0 AS gave_up, sum(ProfileEvents['AdaptiveAggregationLocalFreezes']) > 0 AS froze,
+    sum(ProfileEvents['AggregationConvertedToTwoLevel']) > 0 AS two_level
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment IN ('05407_run_adaptive', '05407_run_adaptive_new_keys')
+GROUP BY log_comment
+ORDER BY log_comment;
 
 DROP TABLE t_05407;
 DROP TABLE t_05407_spill;

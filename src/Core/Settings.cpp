@@ -2314,7 +2314,7 @@ The optimization is disabled when the requested `LIMIT` is higher than [query_pl
 
 The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
 
-With `COLLATE` on a ranked key, each aggregation stream starts the heap only once its hash table is large and a block still inserts mostly new keys, and gives it up when it stops keeping new keys out of the hash table, because otherwise the comparisons under the collation cost more than they save. A stream that starts such a heap does not use the adaptive aggregator (see `enable_adaptive_aggregator`), and a stream whose start check fails while the adaptive aggregator still learns gives the heap up at that point.
+With `COLLATE` on a ranked key, each aggregation stream starts the heap only once its hash table is large and a block still inserts mostly new keys, and gives it up when it stops keeping new keys out of the hash table, because otherwise the comparisons under the collation cost more than they save. A stream that starts such a heap does not use the adaptive aggregator (see `enable_adaptive_aggregator`) until the heap gives up, and a stream whose start check fails while the adaptive aggregator still learns gives the heap up at that point.
 
 Possible values:
 

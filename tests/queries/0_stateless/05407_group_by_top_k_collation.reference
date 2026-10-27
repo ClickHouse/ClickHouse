@@ -297,6 +297,26 @@ m1	1
 m10	1
 m100	1
 m1000	1
+a0	190
+a1	190
+a2	190
+a3	192
+a4	190
+a0	190
+a1	190
+a2	190
+a3	192
+a4	190
+a0	190
+a1	190
+a2	190
+a3	192
+a4	190
+a0	190
+a1	190
+a2	190
+a3	192
+a4	190
 forced heap
 l20000	1	2
 l20001	0	2
@@ -333,3 +353,6 @@ running heap engaged
 05407_run_repeats	1	1
 forced heap engaged
 05407_forced_repeats	1	0
+adaptive with a started heap
+05407_run_adaptive	1	1	1	1
+05407_run_adaptive_new_keys	1	0	0	1
