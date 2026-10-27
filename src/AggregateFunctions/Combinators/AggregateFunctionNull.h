@@ -182,6 +182,16 @@ public:
 
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
+    {
+        return nested_function->getEstimatedMergeWork(nestedPlace(place));
+    }
+    size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
+
+    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    {
+        return nested_function->isLargeMergePair(nestedPlace(place), nestedPlace(rhs));
+    }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -363,6 +373,17 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+
+    /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
+    /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
+    /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
+    /// nullable result is excluded because its NULLs do not take part in the nested comparison.
+    MergedValueBound getMergedValueBound() const override
+    {
+        if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
+            return MergedValueBound::Subadditive;
+        return MergedValueBound::Unknown;
+    }
 
 #if USE_EMBEDDED_COMPILER
 

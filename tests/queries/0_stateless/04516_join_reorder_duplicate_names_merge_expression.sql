@@ -23,7 +23,6 @@ CREATE VIEW v0_04516 AS
     FROM t4_04516, t0_04516
     HAVING (NOT CAST((NOT t4_04516.c0) AS Bool));
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 16;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_merge_expression_into_join = 1;

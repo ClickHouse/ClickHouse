@@ -21,6 +21,11 @@ ALTER TABLE t_date DROP PARTITION '9999-01-01'; -- { serverError VALUE_IS_OUT_OF
 -- The setting does not matter.
 ALTER TABLE t_date DROP PARTITION '2024-02-30' SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError INVALID_PARTITION_VALUE }
 ALTER TABLE t_date DROP PARTITION '9999-01-01' SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- A time of day is ignored like by `toDate`, but the date is still checked, and other text after the date is rejected like by `toDate`.
+ALTER TABLE t_date DROP PARTITION '2024-02-30 12:00:00'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_date DROP PARTITION '2024-02-30T25:00:00.5'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_date DROP PARTITION '2024-02-29 12:00'; -- { serverError TYPE_MISMATCH }
+ALTER TABLE t_date DROP PARTITION '2024-02-29garbage'; -- { serverError TYPE_MISMATCH }
 SELECT 'date, nothing dropped', groupArray(x) FROM (SELECT x FROM t_date ORDER BY x);
 
 -- Valid literals keep working: a valid date that names no partition is a no-op, and the other accepted forms still drop.
@@ -29,6 +34,8 @@ ALTER TABLE t_date DROP PARTITION '2024-02-29';
 ALTER TABLE t_date DROP PARTITION '2024-3-1';
 ALTER TABLE t_date DROP PARTITION '20241201';
 ALTER TABLE t_date DROP PARTITION '2149-06-06';
+-- `toDate('1970-01-01 25:00:00')` is `1970-01-01`.
+ALTER TABLE t_date DROP PARTITION '1970-01-01 25:00:00';
 SELECT 'date, valid literals', groupArray(x) FROM (SELECT x FROM t_date ORDER BY x);
 DROP TABLE t_date;
 
@@ -40,6 +47,7 @@ ALTER TABLE t_date32 DROP PARTITION '2024-13-01'; -- { serverError CANNOT_PARSE_
 SELECT 'date32, nothing dropped', groupArray(x) FROM (SELECT x FROM t_date32 ORDER BY x);
 ALTER TABLE t_date32 DROP PARTITION '1900-01-01';
 ALTER TABLE t_date32 DROP PARTITION '2024/03/01';
+ALTER TABLE t_date32 DROP PARTITION '2299-12-31T12:00:00.5';
 SELECT 'date32, valid literals', groupArray(x) FROM (SELECT x FROM t_date32 ORDER BY x);
 DROP TABLE t_date32;
 
@@ -139,31 +147,39 @@ DROP TABLE IF EXISTS t_tuple;
 CREATE TABLE t_tuple (d Date, k UInt8, x UInt8) ENGINE = MergeTree PARTITION BY (d, k) ORDER BY x;
 INSERT INTO t_tuple VALUES ('2024-03-01', 1, 1), ('2024-02-29', 1, 2);
 ALTER TABLE t_tuple DROP PARTITION ('2024-02-30', 1); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_tuple DROP PARTITION (toDate('2024-02-30'), 1); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_tuple DROP PARTITION (CAST('2024-02-30', 'Date'), 1); -- { serverError INVALID_PARTITION_VALUE }
 SELECT 'tuple, nothing dropped', groupArray(x) FROM (SELECT x FROM t_tuple ORDER BY x);
 ALTER TABLE t_tuple DROP PARTITION ('2024-02-29', 1);
 SELECT 'tuple, valid literal', groupArray(x) FROM (SELECT x FROM t_tuple ORDER BY x);
+-- A cast between named tuples uses the names to match the elements.
+ALTER TABLE t_tuple DROP PARTITION (tupleElement(CAST(CAST(('2024-02-29', '2024-03-01'), 'Tuple(b String, a String)'), 'Tuple(a Date, b Date)'), 'a'), 1);
+SELECT 'tuple, named tuple cast', groupArray(x) FROM (SELECT x FROM t_tuple ORDER BY x);
 DROP TABLE t_tuple;
 
--- The string argument of a conversion is checked too: it used to be folded into another value first.
+-- Explicit conversions use their normal SQL result.  Unlike a raw partition string,
+-- a rollover inside `toDate` or `CAST` is chosen by the caller.
 DROP TABLE IF EXISTS t_conversion;
-DROP TABLE IF EXISTS t_conversion_datetime64;
 CREATE TABLE t_conversion (d Date, x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
-CREATE TABLE t_conversion_datetime64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
 INSERT INTO t_conversion VALUES ('2024-03-01', 1);
-INSERT INTO t_conversion_datetime64 VALUES ('2024-03-01 00:00:00', 1);
-ALTER TABLE t_conversion DROP PARTITION CAST('2024-02-30', 'Date'); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion DROP PARTITION CAST('2024-02-30' AS Date); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-30')); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion DROP PARTITION tuple(toDate(concat('2024-02-', '30'))); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion DROP PARTITION CAST(tuple(toDate(concat('2024-02-', '30'))), 'Tuple(Date)'); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion DROP PARTITION CAST(tuple('2024-02-30'), 'Tuple(Date)'); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-02-29 24:00:00', 3, 'UTC')); -- { serverError INVALID_PARTITION_VALUE }
-ALTER TABLE t_conversion_datetime64 DROP PARTITION CAST('2024-03-01 00:00:00.0001', 'DateTime64(3, \'UTC\')'); -- { serverError INVALID_PARTITION_VALUE }
-SELECT 'conversion, nothing dropped', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
-ALTER TABLE t_conversion DROP PARTITION CAST(tuple(toDate(concat('2024-03-', '01'))), 'Tuple(Date)');
-ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-03-01 00:00:00', 3, 'UTC'));
-SELECT 'conversion, valid literals', (SELECT groupArray(x) FROM t_conversion), (SELECT groupArray(x) FROM t_conversion_datetime64);
+ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-30'));
+SELECT 'conversion, toDate rollover', count() FROM t_conversion;
+INSERT INTO t_conversion VALUES ('2024-03-01', 1);
+ALTER TABLE t_conversion DROP PARTITION CAST('2024-02-30' AS Date);
+SELECT 'conversion, CAST rollover', count() FROM t_conversion;
+INSERT INTO t_conversion VALUES ('2024-02-29', 1);
+ALTER TABLE t_conversion DROP PARTITION tuple(toDate('2024-02-29 12:00:00'));
+SELECT 'conversion, date with time', count() FROM t_conversion;
 DROP TABLE t_conversion;
+
+DROP TABLE IF EXISTS t_conversion_datetime;
+CREATE TABLE t_conversion_datetime (d DateTime('UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_conversion_datetime VALUES ('2024-03-01 01:00:00', 1);
+ALTER TABLE t_conversion_datetime DROP PARTITION tuple(toDateTime('2024-02-29 25:00:00', 'UTC'));
+SELECT 'conversion, toDateTime rollover', count() FROM t_conversion_datetime;
+DROP TABLE t_conversion_datetime;
+
+DROP TABLE IF EXISTS t_conversion_datetime64;
+CREATE TABLE t_conversion_datetime64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_conversion_datetime64 VALUES ('2024-03-01 00:00:00', 1);
+ALTER TABLE t_conversion_datetime64 DROP PARTITION tuple(toDateTime64('2024-03-01 00:00:00Z', 3, 'UTC'));
+SELECT 'conversion, time zone spelling', count() FROM t_conversion_datetime64;
 DROP TABLE t_conversion_datetime64;
