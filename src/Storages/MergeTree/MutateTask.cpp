@@ -604,6 +604,11 @@ static void splitAndModifyMutationCommands(
         return name;
     };
 
+    NameSet columns_read_for_patch;
+    for (const auto & command : commands)
+        if (command.type == MutationCommand::READ_COLUMN && command.read_for_patch)
+            columns_read_for_patch.insert(command.column_name);
+
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
         || part->getDataPartStorage().getType() != future_storage_type)
@@ -627,11 +632,13 @@ static void splitAndModifyMutationCommands(
                     mutated_columns.emplace(command.column_name);
                 }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
-                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
+                /// So we only mutate column if `command.column_name` is a default/materialized column or if neither the part nor a patch part stores it
                 else
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    if (!column_ordinary
+                        || ((!part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                            && !columns_read_for_patch.contains(command.column_name)))
                     {
                         for_interpreter.push_back(command);
                         mutated_columns.emplace(command.column_name);
@@ -956,11 +963,13 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(std::move(materialize_frozen));
                 }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
-                /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
+                /// So we only mutate column if `command.column_name` is a default/materialized column or if neither the part nor a patch part stores it
                 else
                 {
                     auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    if (!column_ordinary
+                        || ((!part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                            && !columns_read_for_patch.contains(command.column_name)))
                         for_interpreter.push_back(command);
                 }
 
