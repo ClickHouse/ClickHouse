@@ -351,7 +351,7 @@ doc_type: 'changelog'
 * cache 설정에서 `1TB`처럼 읽기 쉬운 크기 값을 허용합니다. [#41688](https://github.com/ClickHouse/ClickHouse/pull/41688) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * ClickHouse는 캐시가 비동기적으로 업데이트되기 전까지 일정 시간(기본값은 15초) 오래된 DNS 항목을 캐시할 수 있었습니다. 이 기간에도 ClickHouse는 연결을 설정하려고 시도해 오류를 발생시킬 수 있었습니다. 이 동작은 수정되었습니다. [#41707](https://github.com/ClickHouse/ClickHouse/pull/41707) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * `clickhouse-client`/`clickhouse-local`에 fzf 유사 유틸리티(fzf/sk)를 사용한 대화형 이력 검색 기능을 추가했습니다(동작을 추가로 구성하려면 `FZF_DEFAULT_OPTS`/`SKIM_DEFAULT_OPTIONS`를 사용할 수 있습니다). [#41730](https://github.com/ClickHouse/ClickHouse/pull/41730) ([Azat Khuzhin](https://github.com/azat)).
-* 유효하지 않은 인증서가 있는 보안 서버에 연결하는 클라이언트는 &#39;`--accept-certificate&#39;` 플래그를 지정한 경우에만 계속 진행할 수 있도록 허용합니다. [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 유효하지 않은 인증서가 있는 보안 서버에 연결하는 클라이언트는 &#39;`--accept-certificate`&#39; 플래그를 지정한 경우에만 계속 진행할 수 있도록 허용합니다. [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * 기존 `tryBase64Decode` 함수와 유사한 `tryBase58Decode` 함수를 추가했습니다. [#41824](https://github.com/ClickHouse/ClickHouse/pull/41824) ([Robert Schulze](https://github.com/rschu1ze)).
 * 기본 키가 다른 파티션으로 교체할 때 표시되는 피드백을 개선했습니다. [#34798](https://github.com/ClickHouse/ClickHouse/issues/34798)를 수정했습니다. [#41838](https://github.com/ClickHouse/ClickHouse/pull/41838) ([Salvatore](https://github.com/tbsal)).
 * 병렬 파싱 수정: 이제 segmentator가 `max_block_size`를 확인합니다. 이로써 병렬 파싱 시 LIMIT가 작을 때 발생하던 메모리 과할당 문제가 해결되었습니다. [#41852](https://github.com/ClickHouse/ClickHouse/pull/41852) ([Vitaly Baranov](https://github.com/vitlibar)).

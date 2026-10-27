@@ -351,7 +351,7 @@ doc_type: 'changelog'
 * 允许在 cache 配置中使用易读的大小值 (如 `1TB`) 。[#41688](https://github.com/ClickHouse/ClickHouse/pull/41688) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
 * ClickHouse 可能会在一段时间内缓存已过期的 DNS 记录 (默认 15 秒) ，直到缓存完成异步更新。在此期间，ClickHouse 仍可能尝试建立连接并报错。此问题已修复。[#41707](https://github.com/ClickHouse/ClickHouse/pull/41707) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
 * 为 `clickhouse-client`/`clickhouse-local` 增加了基于类似 fzf 的工具 (fzf/sk) 的交互式历史记录搜索功能 (注意，还可以使用 `FZF_DEFAULT_OPTS`/`SKIM_DEFAULT_OPTIONS` 进一步配置其行为) 。[#41730](https://github.com/ClickHouse/ClickHouse/pull/41730) ([Azat Khuzhin](https://github.com/azat)) 。
-* 仅允许连接到使用无效证书的安全服务器的客户端在指定 &#39;`--accept-certificate&#39;` 标志时继续。 [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 仅允许连接到使用无效证书的安全服务器的客户端在指定 &#39;`--accept-certificate`&#39; 标志时继续。 [#41743](https://github.com/ClickHouse/ClickHouse/pull/41743) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * 新增函数 `tryBase58Decode`，类似于现有的 `tryBase64Decode` 函数。[#41824](https://github.com/ClickHouse/ClickHouse/pull/41824) ([Robert Schulze](https://github.com/rschu1ze)) 。
 * 改进了在使用不同主键替换分区时的反馈信息。修复了 [#34798](https://github.com/ClickHouse/ClickHouse/issues/34798)。[#41838](https://github.com/ClickHouse/ClickHouse/pull/41838) ([Salvatore](https://github.com/tbsal)) 。
 * 修复并行解析：segmentator 现在会检查 `max_block_size`。这修复了在并行解析且 LIMIT 较小时的内存过度分配问题。[#41852](https://github.com/ClickHouse/ClickHouse/pull/41852) ([Vitaly Baranov](https://github.com/vitlibar)).
