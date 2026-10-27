@@ -2915,3 +2915,34 @@ Correction to the [preceding ARM64 DWYU run](https://app.buildbuddy.io/invocatio
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/e1db9cdb-bba5-44e5-bff2-64a0377e8306): three targets built successfully and produced DWYU reports: `@clickhouse_croaring//:_roaring`, `@clickhouse_fp16//:fp16`, `@clickhouse_nlohmann_json//:nlohmann_json`. `@clickhouse_ai_sdk_cpp//:sdk` was not selected. The report reader called `str.removeprefix` on Python 3.8, so this comparison records no new per-target DWYU grades.
 
 [ARM64 DWYU](https://app.buildbuddy.io/invocation/9a1b8dad-6cb0-42b5-8e16-acb17260e90f): three targets built successfully and produced DWYU reports: `@clickhouse_croaring//:_roaring`, `@clickhouse_fp16//:fp16`, `@clickhouse_nlohmann_json//:nlohmann_json`. `@clickhouse_ai_sdk_cpp//:sdk` was not selected. The report reader called `str.removeprefix` on Python 3.8, so this comparison records no new per-target DWYU grades.
+
+## 9035fe568
+
+At [9035fe568](https://github.com/dzbarsky/clickhouse/commit/9035fe568ad5dc1cf309b9a4c6dedc88d0f2412e), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. Unstripped ClickHouse and unit-test hashes are compared with the [preceding build](https://github.com/dzbarsky/clickhouse/commit/ecd39e5e3712bcb8f3567cea7c82837616081067).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/537a877a-971f-4b73-933a-30b2ec831138) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/537a877a-971f-4b73-933a-30b2ec831138) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/537a877a-971f-4b73-933a-30b2ec831138) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/896acc60-fd2e-4a4b-ad13-c8ab009c539b) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/896acc60-fd2e-4a4b-ad13-c8ab009c539b) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/896acc60-fd2e-4a4b-ad13-c8ab009c539b) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[The repository removal](https://github.com/dzbarsky/clickhouse/commit/3983e5c5071ce0aa15128294cde2a60018bc0d00) deletes the Bazel declaration of `@clickhouse_sysroot`, its entry in `MODULE.bazel.lock`, and its BUILD file. The upstream CMake gitlink `contrib/sysroot` and the four individually pinned ARM64 GCC files used by Bazel stay at the same revision.
+
+[TimeSeries](https://github.com/dzbarsky/clickhouse/commit/9035fe568ad5dc1cf309b9a4c6dedc88d0f2412e) dropped direct private dependencies on `//base/glibc-compatibility`, `@clickhouse_boost//:_boost_context` and `@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai`. `//src/Common/ZooKeeper:clickhouse_common_zookeeper_no_log` also dropped its direct Boost.Context dependency. The existing dependencies still supply those libraries.
+
+Both builds completed 19 targets and passed 28 runtime checks. The first SELECT in [`03254_timeseries_range.sql`](../../tests/queries/0_stateless/03254_timeseries_range.sql#L1) returned the upstream reference row: four timestamps from midnight to 00:01:30, at 30-second intervals. Three compiler checks verified `ZooKeeperImpl.cpp` with logging disabled and the radix-sort and wrap-in-nullable benchmark objects.
+
+Each Cargo action still received 25 runtime files on x86-64 and 24 on ARM64. On both CPUs the seven processed Rust archives kept their previous SHA-256 values and byte counts. PRQL read the updated `bazel/rules/contrib_repositories.json`; its `contrib/rust_vendor` entry was unchanged. The [ARM64 build](https://app.buildbuddy.io/invocation/896acc60-fd2e-4a4b-ad13-c8ab009c539b) confirmed that all seven registered `llvm-strip --strip-debug` actions used the same input and output files as in the [preceding digest table](#ecd39e5e3).
+
+A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) replaced five glibc libraries and the loader with generated interfaces; its stripped ClickHouse matched native CMake. These builds used the packaged libraries and loader and did not rerun that experiment.
+
+### Dependency reports
+
+In the preceding DWYU builds ([ARM64](https://app.buildbuddy.io/invocation/9a1b8dad-6cb0-42b5-8e16-acb17260e90f), [x86-64](https://app.buildbuddy.io/invocation/e1db9cdb-bba5-44e5-bff2-64a0377e8306)), Python 3.8 could not call `str.removeprefix`. Rechecking the original Bazel reports and action records confirmed zero findings for CRoaring, nlohmann/json and FP16. The AI SDK was not tested.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/ea467415-2211-4a99-8fd1-9cb7c323f535): The analyzer build reported `SUCCESS`. Bazel recorded report files for `//contrib/arrow-cmake:arrow_cmake_headers`, `@clickhouse_usearch//:usearch`. This comparison records no new per-target grades.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/5e8c448d-fb30-4bd9-bfc2-894a7829dad3): The analyzer build reported `SUCCESS`. Bazel recorded report files for `//base:pcg_random`, `//contrib/arrow-cmake:arrow_cmake_headers`, `@clickhouse_usearch//:usearch`. This comparison records no new per-target grades.

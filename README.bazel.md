@@ -58,7 +58,7 @@ so Clang uses the libc++ overloads of `memchr` and `strchr`, as it does in the n
 CMake build. The glibc overloads declare these functions `noexcept`; selecting them
 changed code in ClickHouse, Boost.Asio, and ICU.
 
-Neither Bazel build of `//:clickhouse` needs the full ClickHouse sysroot. x86-64 uses Ubuntu packages; ARM64 uses Arm GNU glibc and still downloads four GCC files from the pinned ClickHouse sysroot.
+Bazel no longer registers `@clickhouse_sysroot`. Neither build of `//:clickhouse` needs the full ClickHouse SDK. Upstream CMake retains its `contrib/sysroot` gitlink; the Bazel ARM64 build fetches four GCC files from that pinned revision.
 
 The final link takes `Scrt1.o`, `crti.o` and `crtn.o` from `@llvm//runtimes/glibc:pie_startup_objects` (glibc 2.31 on x86-64, 2.28 on ARM64). [The selected link runtime](bazel/link_runtime/BUILD.bazel) supplies 12 glibc and loader files plus GCC’s `crtbeginS.o` and `crtendS.o`. Clang points `--sysroot` into that runtime.
 
@@ -69,18 +69,18 @@ The final link takes `Scrt1.o`, `crti.o` and `crtn.o` from `@llvm//runtimes/glib
 
 The seven [Cargo rules](bazel/rules/rust_archives.bzl) use the files above. The [Rust archive rule](bazel/rules/rust_archive.bzl) reads libm symbol names from `@glibc//:libm_abi`.
 
-A [separate link experiment](bazel/initial_migration/validation-history.md#ecd39e5e3) replaces five glibc libraries and the loader with generated interfaces. The experimental ARM64 binary matched stripped native CMake.
+A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) replaced five glibc libraries and the loader with generated interfaces; its stripped ClickHouse matched native CMake. The builds below used the packaged libraries and loader and did not rerun that experiment.
 
 ## Binary comparison
 
-At [ecd39e5e3](https://github.com/dzbarsky/clickhouse/commit/ecd39e5e3712bcb8f3567cea7c82837616081067), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [9035fe568](https://github.com/dzbarsky/clickhouse/commit/9035fe568ad5dc1cf309b9a4c6dedc88d0f2412e), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/879c2b9f-8701-4c3e-bb98-3eb34ea4f026) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/537a877a-971f-4b73-933a-30b2ec831138) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/896acc60-fd2e-4a4b-ad13-c8ab009c539b) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#ecd39e5e3) records the unstripped ClickHouse and unit-test hashes and the Rust archive comparisons.
+The [validation history](bazel/initial_migration/validation-history.md#9035fe568) records the unstripped ClickHouse and unit-test hashes and the Rust archive comparisons.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -199,4 +199,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-The [validation history](bazel/initial_migration/validation-history.md#ecd39e5e3) for [ecd39e5e3](https://github.com/dzbarsky/clickhouse/commit/ecd39e5e3712bcb8f3567cea7c82837616081067) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
+The [validation history](bazel/initial_migration/validation-history.md#9035fe568) for [9035fe568](https://github.com/dzbarsky/clickhouse/commit/9035fe568ad5dc1cf309b9a4c6dedc88d0f2412e) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
