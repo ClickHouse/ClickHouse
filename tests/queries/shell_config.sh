@@ -187,6 +187,19 @@ function clickhouse_client_removed_host_parameter()
     $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
+# `clickhouse-test` kills a test after `CLICKHOUSE_TEST_TIMEOUT` seconds, but a loop must also end on its own: when
+# the runner dies before that kill, an unbounded loop spins forever on the host. Use `while clickhouse_test_time_left`
+# instead of `while true`. Exported, so that loops in `bash -c` workers and in nested `shell_config.sh` share it.
+export CLICKHOUSE_TEST_DEADLINE=${CLICKHOUSE_TEST_DEADLINE:-$((EPOCHSECONDS + ${CLICKHOUSE_TEST_TIMEOUT:-600}))}
+function clickhouse_test_time_left()
+{
+    ((EPOCHSECONDS < CLICKHOUSE_TEST_DEADLINE)) && return 0
+    # A loop that reaches the deadline did not get what it was waiting for: fail the test instead of going on.
+    echo "The ${CLICKHOUSE_TEST_TIMEOUT:-600}s test deadline expired in a 'while clickhouse_test_time_left' loop" >&2
+    return 1
+}
+export -f clickhouse_test_time_left
+
 function wait_for_query_to_start()
 {
     local query_id="$1"
