@@ -7948,7 +7948,6 @@ void Context::reloadClusterConfig() const
                                 name);
                         }
 
-                        /// Rebuild so `is_local` is recomputed.
                         new_clusters->setCluster(name, SQLClusterFactory::rematerialize(*cluster, getGlobalContext()));
                     }
                 }
