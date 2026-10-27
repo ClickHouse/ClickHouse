@@ -23,13 +23,18 @@ namespace DB
   *
   * Formula: H = XOR_{j=0}^{W-1} rotl(T[b_j], W-1-j)
   * Rolling update: H_new = rotl(H_old, 1) ^ rotl(T[b_out], W mod 64) ^ T[b_in]
+  *
+  * The window size is limited to HASH_BITS: with a larger window, positions HASH_BITS bytes apart
+  * get identical rotations, so equal bytes at such positions cancel each other. For example, with
+  * window 128 any input with a period dividing 64 hashes to zero in every window, which makes
+  * boundaries depend on the distance from the chunk start rather than on content.
   */
 class BuzhashImpl
 {
 public:
     static constexpr size_t HASH_BITS = 64;
     static constexpr size_t MIN_WINDOW_SIZE = 1;
-    static constexpr size_t MAX_WINDOW_SIZE = 256;
+    static constexpr size_t MAX_WINDOW_SIZE = HASH_BITS;
 
     BuzhashImpl() = default;
 

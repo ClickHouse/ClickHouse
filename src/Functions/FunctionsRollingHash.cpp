@@ -379,7 +379,7 @@ ColumnPtr FunctionContentDefinedChunkOffsetsUTF8::executeImpl(const ColumnsWithT
 
 REGISTER_FUNCTION(RollingHash)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 11};
     FunctionDocumentation::Category category_cdc = FunctionDocumentation::Category::StringSplitting;
 
     /// Fields map to generated reference (docs website, `system.functions`): description, syntax line, args, notes, return type, examples, version, category.
@@ -389,7 +389,7 @@ Hash boundaries are only considered after at least `window_size` bytes of the cu
 )";
     FunctionDocumentation::Arguments cdc_args = {
         {"string", "Input string or binary data.", {"String", "FixedString"}},
-        {"window_size", "Sliding window size in bytes. Must be a constant native unsigned integer in range [1, 256].", {"const UInt8/16/32/64"}},
+        {"window_size", "Sliding window size in bytes. Must be a constant native unsigned integer in range [1, 64].", {"const UInt8/16/32/64"}},
         {"reverse_probability",
          "Unsigned divisor: cut when `(buzhash % reverse_probability) == 0`. Must be a constant native unsigned integer >= 2. Typical values: 256–65536.",
          {"const UInt8/16/32/64"}},
