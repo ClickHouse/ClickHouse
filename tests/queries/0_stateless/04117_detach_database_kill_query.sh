@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-detach
+# Tags: no-parallel, no-random-settings, no-random-detach
+# Tag no-parallel: killing the `SELECT` does not stop its remote part (the follower, under parallel replicas),
+# which keeps sleeping until the hung check at the end of the run reports it. Remove once a query cancelled
+# by its client stops sleeping: https://github.com/ClickHouse/ClickHouse/pull/127149
 # Tag no-random-settings: relies on predictable per-row execution timing of `sleepEachRow`
 # Tag no-random-detach: reattaching the table before the query keeps `DETACH DATABASE` from being blocked, so there is nothing to kill
 
