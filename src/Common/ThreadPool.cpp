@@ -248,9 +248,9 @@ public:
     CurrentMetrics::Increment metric_increment;
     ScopedDecrement available_threads_decrement;
 
-    /// Set only for jobs scheduled through `scheduleThreadOrThrow`. Holds the worker slot that such a
-    /// job occupies until it finishes; destroying the job (after it ran, or when the queue is drained
-    /// on shutdown) gives the slot back.
+    /// Set only for jobs scheduled through `scheduleThreadOrThrow` or `scheduleThreadOrQueueOrThrow`.
+    /// Holds the worker slot that such a job occupies until it finishes; destroying the job (after it
+    /// ran, or when the queue is drained on shutdown) gives the slot back.
     std::optional<ScopedDecrement> thread_job_slot;
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
@@ -427,7 +427,12 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
-    Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context, bool job_occupies_thread)
+    Job job,
+    Priority priority,
+    std::optional<Int64> wait_microseconds,
+    bool propagate_opentelemetry_tracing_context,
+    bool job_occupies_thread,
+    bool thread_job_may_queue)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -581,8 +586,12 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// into that particular worker (see `initial_job`) instead of the shared queue: a job in the
         /// queue competes with the jobs scheduled concurrently by other threads, and a higher-priority
         /// ordinary job could take the woken worker while the long-lived job stays queued.
+        ///
+        /// A job scheduled through `scheduleThreadOrQueueOrThrow` skips all of this and is queued as an
+        /// ordinary one: only its slot is required.
+        const bool thread_job_needs_worker = job_occupies_thread && !thread_job_may_queue;
         ThreadFromThreadPool * idle_thread_for_job = nullptr;
-        if (job_occupies_thread && !adding_new_thread)
+        if (thread_job_needs_worker && !adding_new_thread)
         {
             while (true)
             {
@@ -677,7 +686,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
 
         try
         {
-            if (job_occupies_thread)
+            if (thread_job_needs_worker)
             {
                 auto initial_job = std::make_unique<JobWithPriority>(
                     std::move(job),
@@ -739,7 +748,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         }
 
         /// The long-lived job has already been handed to its worker directly.
-        if (job_occupies_thread)
+        if (thread_job_needs_worker)
         {
             ProfileEvents::increment(std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobs : ProfileEvents::LocalThreadPoolJobs);
             return static_cast<ReturnType>(true);
@@ -847,6 +856,18 @@ void ThreadPoolImpl<Thread>::scheduleThreadOrThrow(Job job, Priority priority, b
     /// be freed by another long-lived thread is not something it can usefully do.
     scheduleImpl<void>(
         std::move(job), priority, /* wait_microseconds= */ 0, propagate_opentelemetry_tracing_context, /* job_occupies_thread= */ true);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleThreadOrQueueOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(
+        std::move(job),
+        priority,
+        /* wait_microseconds= */ 0,
+        propagate_opentelemetry_tracing_context,
+        /* job_occupies_thread= */ true,
+        /* thread_job_may_queue= */ true);
 }
 
 template <typename Thread>
@@ -1091,7 +1112,13 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
     }
     else
     {
-        thread = Thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &ThreadFromThreadPool::worker, this);
+        /// The worker of a local pool lives as long as it finds jobs, so it takes a slot of the global pool
+        /// and is rejected when all of them are held by other long-lived threads. But it may wait in the
+        /// queue behind ordinary jobs: the local pool keeps its own jobs queued until the worker starts,
+        /// and nobody relies on the worker running before that. Failing here instead would turn a
+        /// transient saturation of the global pool into an error for callers that cannot handle one,
+        /// such as the mandatory spawn of a worker in `AsyncLoader`.
+        thread = Thread(ThreadFromGlobalPoolScheduleMode::ReserveSlot, &ThreadFromThreadPool::worker, this);
     }
 
     ProfileEvents::increment(
@@ -1569,6 +1596,10 @@ void startThreadFromGlobalPool(
     if (schedule_mode == ThreadFromGlobalPoolScheduleMode::FailIfNoWorker)
     {
         GlobalThreadPool::instance().scheduleThreadOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::ReserveSlot)
+    {
+        GlobalThreadPool::instance().scheduleThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
     }
     else
     {

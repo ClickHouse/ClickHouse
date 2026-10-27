@@ -1657,6 +1657,52 @@ TEST(AsyncLoader, SpawnFailureFromFinishDoesNotTerminate)
     t.loader.wait();
 }
 
+// An idle loader must spawn a worker, and the spawn is not allowed to fail. When every thread of the
+// global pool is busy with an ordinary job but its queue has room, the worker of the loader's pool
+// waits in that queue and starts once an ordinary job finishes, instead of failing the spawn and
+// terminating the process.
+TEST(AsyncLoader, MandatorySpawnWaitsBehindOrdinaryGlobalJobs)
+{
+    GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    std::atomic<size_t> started{0};
+    std::atomic<size_t> finished{0};
+    std::atomic<bool> release{false};
+    for (size_t i = 0; i < capacity; i++)
+    {
+        limits.pool.scheduleOrThrow([&]
+        {
+            started++;
+            while (!release.load())
+                std::this_thread::yield();
+            finished++;
+        });
+    }
+    while (started != capacity)
+        std::this_thread::yield();
+
+    std::atomic<size_t> jobs_done{0};
+    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    const size_t jobs_done_while_busy = jobs_done;
+
+    release = true;
+    waitLoad(task);
+    while (finished != capacity)
+        std::this_thread::yield();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done_while_busy, 0);
+    ASSERT_EQ(jobs_done, 1);
+    t.loader.wait();
+}
+
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits
 // for a job of another pool, a case that priority inheritance does not convert into a same-pool wait.
 // Treating it as a drainer leaves that pool's queue with nobody to run it.

@@ -1,9 +1,9 @@
 #include <atomic>
-#include <optional>
 
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <base/scope_guard.h>
 
 #include <gtest/gtest.h>
 
@@ -19,18 +19,25 @@ namespace CurrentMetrics
 /// return, unlike the `ThreadFromGlobalPool` workers of `ThreadPool.GlobalFullLargeQueue`) while its
 /// queue still has room.
 ///
-/// Reserving one of the `max_threads` slots for every `ThreadFromGlobalPool` at scheduling time is not
-/// enough on its own: the slots may be free while every worker is occupied by an ordinary job. If one
-/// of those jobs is the one waiting for the new thread to make progress, queueing that thread has the
-/// same effect as before - its creator believes the thread is running, but its function has not even
-/// started, and nothing will ever free a worker. So scheduling a thread must fail when the pool is at
-/// `max_threads` and none of its workers can take the job right away.
+/// A permanent thread created with `ThreadFromGlobalPoolScheduleMode::FailIfNoWorker` must be rejected
+/// in this state: its creator relies on it running, and one of the ordinary jobs may be the one waiting
+/// for it. But the worker of a local `ThreadPool` must wait in the queue instead: the local pool keeps
+/// its jobs queued until the worker starts, and some callers cannot handle a failure caused by such a
+/// transient saturation - `AsyncLoader` treats a failure of a mandatory spawn of its worker as fatal.
 
 TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
 {
     GlobalThreadPool & global_pool = GlobalThreadPool::instance();
 
     static constexpr size_t capacity = 5;
+
+    /// Restore the global pool even if the test fails, otherwise the following test cases would run
+    /// with a global pool of a few threads and fail (or hang) for no reason of their own.
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
 
     global_pool.setMaxThreads(capacity);
     global_pool.setMaxFreeThreads(1);
@@ -56,39 +63,45 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
     while (started != capacity)
         ;
 
-    /// This creates a `ThreadFromGlobalPool` for the worker of the local pool. There is no thread to
-    /// run it, so it has to fail instead of being parked in the queue behind the jobs above.
-    std::optional<ThreadPool> another_pool(
-        std::in_place,
-        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
-    bool threw = false;
+    bool direct_thread_threw = false;
     try
     {
-        another_pool->scheduleOrThrowOnError([] {});
+        ThreadFromGlobalPool direct_thread(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [] {});
     }
     catch (const DB::Exception &)
     {
-        threw = true;
+        direct_thread_threw = true;
     }
-    EXPECT_TRUE(threw) << "scheduling a thread while all the threads of the global pool are busy must throw";
+    EXPECT_TRUE(direct_thread_threw) << "a permanent thread with no free global-pool worker must throw";
 
-    /// Let the occupying jobs finish. Do it before destroying `another_pool`: on the unfixed pool its
-    /// worker is sitting in the global queue, and joining a "thread" whose function never started is
-    /// the very hang this test covers. Waiting for the jobs with `global_pool.wait()` is not an option
-    /// either, because on the unfixed pool the queued worker of `another_pool` is a job that does not
-    /// return until that pool is destroyed.
-    release = true;
+    /// This creates a `ThreadFromGlobalPool` for the worker of the local pool. It has a free slot, so
+    /// it is queued and runs the job as soon as one of the ordinary jobs above finishes.
+    std::atomic<bool> local_job_ran = false;
+    bool threw = false;
+    {
+        ThreadPool another_pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+        try
+        {
+            another_pool.scheduleOrThrowOnError([&] { local_job_ran = true; });
+        }
+        catch (const DB::Exception &)
+        {
+            threw = true;
+        }
+        EXPECT_FALSE(threw) << "the worker of a local pool must wait for a global-pool thread busy with an ordinary job";
+        EXPECT_FALSE(local_job_ran);
+
+        release = true;
+        another_pool.wait();
+    }
+    EXPECT_EQ(local_job_ran, !threw);
+
     while (finished != capacity)
         ;
 
-    another_pool.reset();
-
     /// Now no job of this test is left in the global pool.
     global_pool.wait();
-
-    global_pool.setMaxThreads(10000);
-    global_pool.setMaxFreeThreads(1000);
-    global_pool.setQueueSize(10000);
 }
 
 TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)

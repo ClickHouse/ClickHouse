@@ -178,6 +178,13 @@ public:
     /// thread.
     void scheduleThreadOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
+    /// Like `scheduleThreadOrThrow`, the job takes one of the `max_threads` slots and is rejected when
+    /// all of them are already taken by long-lived jobs, but it may wait in the queue when the workers
+    /// are only busy with ordinary jobs. This is for a thread whose creator does not rely on it having
+    /// started, such as a worker of a local `ThreadPool`: the local pool keeps its jobs queued until the
+    /// worker comes, so a worker delayed by a transient saturation of the global pool is not an error.
+    void scheduleThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
@@ -259,7 +266,8 @@ private:
     // If negative, it means that we have more jobs than threads.
     std::atomic<int64_t> available_threads;
 
-    // Number of worker slots not yet taken by jobs scheduled through `scheduleThreadOrThrow`.
+    // Number of worker slots not yet taken by jobs scheduled through `scheduleThreadOrThrow` or
+    // `scheduleThreadOrQueueOrThrow`.
     // Originally equals to max_threads and is adjusted by setMaxThreads together with
     // `remaining_pool_capacity`. Such a job holds its slot from the moment it is scheduled until it
     // finishes, because it occupies a worker for the whole lifetime of that worker. Once this reaches
@@ -290,7 +298,8 @@ private:
         Priority priority,
         std::optional<Int64> wait_microseconds,
         bool propagate_opentelemetry_tracing_context = true,
-        bool job_occupies_thread = false);
+        bool job_occupies_thread = false,
+        bool thread_job_may_queue = false);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -386,9 +395,13 @@ struct ThreadFromGlobalPoolState
     Poco::Event event;
 };
 
-enum class ThreadFromGlobalPoolScheduleMode : bool
+enum class ThreadFromGlobalPoolScheduleMode : uint8_t
 {
+    /// An ordinary job of the global pool (`scheduleOrThrow`).
     Queue,
+    /// Takes a slot for a long-lived job, but may wait in the queue (`scheduleThreadOrQueueOrThrow`).
+    ReserveSlot,
+    /// Takes a slot for a long-lived job and a worker right away (`scheduleThreadOrThrow`).
     FailIfNoWorker,
 };
 
