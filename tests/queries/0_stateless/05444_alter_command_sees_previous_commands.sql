@@ -194,6 +194,13 @@ ALTER TABLE t_alter_previous_commands_single ADD COLUMN n Nested(a UInt32), RENA
 SELECT * FROM t_alter_previous_commands_single;
 DROP TABLE t_alter_previous_commands_single;
 
+-- With flatten_nested = 1 the added Nested is the column `n.a`, so `x`, the only stored column, can be renamed to `n` and dropped.
+CREATE TABLE t_alter_previous_commands_single (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_single VALUES (42);
+ALTER TABLE t_alter_previous_commands_single ADD COLUMN n Nested(a UInt32), RENAME COLUMN x TO n, DROP COLUMN n SETTINGS flatten_nested = 1, alter_sync = 2; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM t_alter_previous_commands_single;
+DROP TABLE t_alter_previous_commands_single;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/117824: ADD COLUMN IF NOT EXISTS adds back the column that DROP COLUMN
 -- IF EXISTS of the same statement drops.
 CREATE TABLE t_alter_previous_commands_if (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;

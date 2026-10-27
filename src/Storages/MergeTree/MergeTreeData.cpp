@@ -5801,7 +5801,6 @@ void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & comm
         return;
     if (command.type == AlterCommand::ADD_COLUMN)
     {
-        old_names.try_emplace(command.column_name, std::nullopt);
         if (command.data_type && flatten_nested)
         {
             ColumnsDescription added;
@@ -5810,6 +5809,8 @@ void advanceColumnOldNames(ColumnOldNames & old_names, const AlterCommand & comm
             for (const auto & column : added)
                 old_names.try_emplace(column.name, std::nullopt);
         }
+        else
+            old_names.try_emplace(command.column_name, std::nullopt);
     }
     else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
         old_names.erase(command.column_name);
