@@ -193,6 +193,9 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version{};
     size_t object_shared_data_buckets = 1;
     size_t object_shared_data_target_chunk_rows = 8192;
+    /// 0 is reserved, so the field is not value-initialized.
+    MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
+        = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;
@@ -212,6 +215,7 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
+    float max_memory_ratio_to_activate_adaptive_write_buffer{};
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
 };
