@@ -1180,6 +1180,8 @@ class BuildFile:
                     **attrs,
                     'target_compatible_with': group_compatible,
                 })
+                if name == 'clang_rt_xray':
+                    continue
                 archive_objects = [':' + object_name]
                 if name == 'clang_rt_builtins' and index > 0:
                     if index > 1:
@@ -1486,6 +1488,18 @@ class BuildFile:
                 self.rule('cc_library', name + '_embedded', embedded)
             if collapse_single:
                 return
+        if llvm_runtime and name == 'clang_rt_xray':
+            self.rule('cc_library', 'xray_runtime', {
+                'srcs': [f':clang_rt_xray__runtime_objects_{i}' for i in range(group_count)],
+                'alwayslink': True,
+                'visibility': ['@clickhouse//:__pkg__'],
+            })
+            self.rule('cc_library', name, {
+                'deps': select({'@platforms//cpu:' + arch: [self.label(d) for d in v['deps']]
+                                for arch, v in variants.items()}),
+                'implementation_deps': [':xray_runtime'],
+            })
+            return
         if fastops:
             return
         if llvm_support:

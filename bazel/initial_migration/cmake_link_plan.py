@@ -154,6 +154,11 @@ class Plan:
                         # Register only references reachable from the final link.
                         self.slots[key] = (group_label, index, size)
                 actual_group += 1
+            if name == "clang_rt_xray":
+                owner = target_label(name, self.owners).removesuffix(name) + "xray_runtime"
+                objects = [key for key in self.slots if key[0] == name]
+                for index, key in enumerate(objects):
+                    self.slots[key] = (owner, index, len(objects))
             if name == "clang_rt_builtins":
                 # __compile_1 archives the nonzero CMake groups in File API order.
                 owner = target_label(name, self.owners)

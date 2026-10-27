@@ -4761,14 +4761,6 @@ llvm_runtime_objects(
     ],
 )
 
-cc_library(
-    name = "clang_rt_xray__compile_0",
-    srcs = [
-        ":clang_rt_xray__runtime_objects_0",
-    ],
-    alwayslink = True,
-)
-
 llvm_runtime_objects(
     name = "clang_rt_xray__runtime_objects_1",
     srcs = select({
@@ -4824,19 +4816,18 @@ llvm_runtime_objects(
 )
 
 cc_library(
-    name = "clang_rt_xray__compile_1",
+    name = "xray_runtime",
     srcs = [
+        ":clang_rt_xray__runtime_objects_0",
         ":clang_rt_xray__runtime_objects_1",
     ],
+    visibility = ["@clickhouse//:__pkg__"],
     alwayslink = True,
 )
 
 cc_library(
     name = "clang_rt_xray",
-    implementation_deps = [
-        ":clang_rt_xray__compile_0",
-        ":clang_rt_xray__compile_1",
-    ],
+    implementation_deps = [":xray_runtime"],
     deps = [":libllvmlibc"],
 )
 

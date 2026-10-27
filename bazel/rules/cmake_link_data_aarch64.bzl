@@ -5,8 +5,7 @@ CMAKE_LINK = {
   "refs": [
     "@clickhouse_llvm_project//:clang_rt_builtins__compile_0",
     "@clickhouse_llvm_project//:clang_rt_builtins__compile_1",
-    "@clickhouse_llvm_project//:clang_rt_xray__compile_0",
-    "@clickhouse_llvm_project//:clang_rt_xray__compile_1",
+    "@clickhouse_llvm_project//:xray_runtime",
     "@clickhouse_llvm_project//:libllvmlibc",
     "//src/Common:clickhouse_new_delete",
     "//src:clickhouse_common_io__compile_0",
@@ -441,8 +440,7 @@ CMAKE_LINK = {
   "expected_objects": [
     157,
     126,
-    60,
-    1,
+    61,
     47,
     1,
     418,
@@ -903,9 +901,9 @@ CMAKE_LINK = {
           7
         ],
         [
-          3,
-          0,
-          1
+          2,
+          60,
+          61
         ],
         [
           2,
@@ -916,24 +914,74 @@ CMAKE_LINK = {
       "name": "contrib/compiler-rt-cmake/libclang_rt_xray.a"
     },
     {
-      "file": 4,
+      "file": 3,
       "name": "contrib/libllvmlibc-cmake/liblibllvmlibc.a"
     },
     {
-      "file": 5,
+      "file": 4,
       "name": "src/libclickhouse_new_delete.a"
     },
     {
       "objects": [
+        [
+          422,
+          0,
+          1
+        ],
+        [
+          5,
+          0,
+          17
+        ],
+        [
+          6,
+          0,
+          1
+        ],
+        [
+          5,
+          17,
+          26
+        ],
         [
           423,
           0,
           1
         ],
         [
-          6,
+          5,
+          26,
+          44
+        ],
+        [
+          417,
           0,
-          17
+          1
+        ],
+        [
+          5,
+          44,
+          60
+        ],
+        [
+          418,
+          0,
+          1
+        ],
+        [
+          5,
+          60,
+          62
+        ],
+        [
+          431,
+          0,
+          1
+        ],
+        [
+          5,
+          62,
+          71
         ],
         [
           7,
@@ -941,9 +989,19 @@ CMAKE_LINK = {
           1
         ],
         [
-          6,
-          17,
-          26
+          5,
+          71,
+          116
+        ],
+        [
+          417,
+          1,
+          2
+        ],
+        [
+          5,
+          116,
+          136
         ],
         [
           424,
@@ -951,260 +1009,9 @@ CMAKE_LINK = {
           1
         ],
         [
-          6,
-          26,
-          44
-        ],
-        [
-          418,
-          0,
-          1
-        ],
-        [
-          6,
-          44,
-          60
-        ],
-        [
-          419,
-          0,
-          1
-        ],
-        [
-          6,
-          60,
-          62
-        ],
-        [
-          432,
-          0,
-          1
-        ],
-        [
-          6,
-          62,
-          71
-        ],
-        [
-          8,
-          0,
-          1
-        ],
-        [
-          6,
-          71,
-          116
-        ],
-        [
-          418,
-          1,
-          2
-        ],
-        [
-          6,
-          116,
-          136
-        ],
-        [
-          425,
-          0,
-          1
-        ],
-        [
-          6,
+          5,
           136,
           148
-        ],
-        [
-          422,
-          0,
-          1
-        ],
-        [
-          6,
-          148,
-          149
-        ],
-        [
-          428,
-          0,
-          1
-        ],
-        [
-          6,
-          149,
-          158
-        ],
-        [
-          429,
-          0,
-          1
-        ],
-        [
-          6,
-          158,
-          160
-        ],
-        [
-          9,
-          0,
-          1
-        ],
-        [
-          6,
-          160,
-          182
-        ],
-        [
-          427,
-          0,
-          1
-        ],
-        [6, 182, 204],
-            [433, 0, 1],
-            [6, 204, 325],
-        [
-          431,
-          0,
-          1
-        ],
-        [6, 325, 372],
-        [
-          431,
-          1,
-          2
-        ],
-        [6, 372, 418]
-      ],
-      "name": "src/libclickhouse_common_io.a"
-    },
-    {
-      "file": 10,
-      "name": "programs/keeper/libclickhouse-keeper-lib.a"
-    },
-    {
-      "file": 11,
-      "name": "programs/keeper-converter/libclickhouse-keeper-converter-lib.a"
-    },
-    {
-      "file": 12,
-      "name": "programs/keeper-client/libclickhouse-keeper-client-lib.a"
-    },
-    {
-      "file": 13,
-      "name": "programs/install/libclickhouse-install-lib.a"
-    },
-    {
-      "file": 14,
-      "name": "programs/benchmark/libclickhouse-benchmark-lib.a"
-    },
-    {
-      "file": 15,
-      "name": "programs/check-marks/libclickhouse-check-marks-lib.a"
-    },
-    {
-      "file": 16,
-      "name": "programs/checksum-for-compressed-block/libclickhouse-checksum-for-compressed-block-lib.a"
-    },
-    {
-      "file": 17,
-      "name": "programs/client/libclickhouse-client-lib.a"
-    },
-    {
-      "file": 18,
-      "name": "programs/compressor/libclickhouse-compressor-lib.a"
-    },
-    {
-      "file": 19,
-      "name": "programs/disks/libclickhouse-disks-lib.a"
-    },
-    {
-      "file": 20,
-      "name": "programs/docker-init/libclickhouse-docker-init-lib.a"
-    },
-    {
-      "file": 21,
-      "name": "programs/extract-from-config/libclickhouse-extract-from-config-lib.a"
-    },
-    {
-      "file": 22,
-      "name": "programs/format/libclickhouse-format-lib.a"
-    },
-    {
-      "file": 23,
-      "name": "programs/git-import/libclickhouse-git-import-lib.a"
-    },
-    {
-      "file": 24,
-      "name": "programs/local/libclickhouse-local-lib.a"
-    },
-    {
-      "file": 25,
-      "name": "programs/obfuscator/libclickhouse-obfuscator-lib.a"
-    },
-    {
-      "file": 26,
-      "name": "programs/oom-canary/libclickhouse-oom-canary-lib.a"
-    },
-    {
-      "file": 27,
-      "name": "programs/packed-io/libclickhouse-packed-io-lib.a"
-    },
-    {
-      "file": 28,
-      "name": "programs/server/libclickhouse-server-lib.a"
-    },
-    {
-      "file": 29,
-      "name": "programs/static-files-disk-uploader/libclickhouse-static-files-disk-uploader-lib.a"
-    },
-    {
-      "file": 30,
-      "name": "programs/su/libclickhouse-su-lib.a"
-    },
-    {
-      "file": 31,
-      "name": "programs/zookeeper-dump-tree/libclickhouse-zookeeper-dump-tree-lib.a"
-    },
-    {
-      "file": 32,
-      "name": "programs/zookeeper-remove-by-list/libclickhouse-zookeeper-remove-by-list-lib.a"
-    },
-    {
-      "file": 33,
-      "name": "programs/keeper-data-dumper/libclickhouse-keeper-data-dumper-lib.a"
-    },
-    {
-      "file": 34,
-      "name": "programs/keeper-utils/libclickhouse-keeper-utils-lib.a"
-    },
-    {
-      "file": 35,
-      "name": "programs/keeper-bench/libclickhouse-keeper-bench-lib.a"
-    },
-    {
-      "file": 36,
-      "name": "base/readpassphrase/libreadpassphrase.a"
-    },
-    {
-      "file": 37,
-      "name": "src/AggregateFunctions/libclickhouse_aggregate_functions.a"
-    },
-    {
-      "file": 38,
-      "name": "src/TableFunctions/libclickhouse_table_functions.a"
-    },
-    {
-      "objects": [
-        [
-          39,
-          0,
-          1
-        ],
-        [
-          40,
-          0,
-          144
         ],
         [
           421,
@@ -1212,7 +1019,198 @@ CMAKE_LINK = {
           1
         ],
         [
-          40,
+          5,
+          148,
+          149
+        ],
+        [
+          427,
+          0,
+          1
+        ],
+        [
+          5,
+          149,
+          158
+        ],
+        [
+          428,
+          0,
+          1
+        ],
+        [
+          5,
+          158,
+          160
+        ],
+        [
+          8,
+          0,
+          1
+        ],
+        [
+          5,
+          160,
+          182
+        ],
+        [
+          426,
+          0,
+          1
+        ],
+        [5, 182, 204],
+            [432, 0, 1],
+            [5, 204, 325],
+        [
+          430,
+          0,
+          1
+        ],
+        [5, 325, 372],
+        [
+          430,
+          1,
+          2
+        ],
+        [5, 372, 418]
+      ],
+      "name": "src/libclickhouse_common_io.a"
+    },
+    {
+      "file": 9,
+      "name": "programs/keeper/libclickhouse-keeper-lib.a"
+    },
+    {
+      "file": 10,
+      "name": "programs/keeper-converter/libclickhouse-keeper-converter-lib.a"
+    },
+    {
+      "file": 11,
+      "name": "programs/keeper-client/libclickhouse-keeper-client-lib.a"
+    },
+    {
+      "file": 12,
+      "name": "programs/install/libclickhouse-install-lib.a"
+    },
+    {
+      "file": 13,
+      "name": "programs/benchmark/libclickhouse-benchmark-lib.a"
+    },
+    {
+      "file": 14,
+      "name": "programs/check-marks/libclickhouse-check-marks-lib.a"
+    },
+    {
+      "file": 15,
+      "name": "programs/checksum-for-compressed-block/libclickhouse-checksum-for-compressed-block-lib.a"
+    },
+    {
+      "file": 16,
+      "name": "programs/client/libclickhouse-client-lib.a"
+    },
+    {
+      "file": 17,
+      "name": "programs/compressor/libclickhouse-compressor-lib.a"
+    },
+    {
+      "file": 18,
+      "name": "programs/disks/libclickhouse-disks-lib.a"
+    },
+    {
+      "file": 19,
+      "name": "programs/docker-init/libclickhouse-docker-init-lib.a"
+    },
+    {
+      "file": 20,
+      "name": "programs/extract-from-config/libclickhouse-extract-from-config-lib.a"
+    },
+    {
+      "file": 21,
+      "name": "programs/format/libclickhouse-format-lib.a"
+    },
+    {
+      "file": 22,
+      "name": "programs/git-import/libclickhouse-git-import-lib.a"
+    },
+    {
+      "file": 23,
+      "name": "programs/local/libclickhouse-local-lib.a"
+    },
+    {
+      "file": 24,
+      "name": "programs/obfuscator/libclickhouse-obfuscator-lib.a"
+    },
+    {
+      "file": 25,
+      "name": "programs/oom-canary/libclickhouse-oom-canary-lib.a"
+    },
+    {
+      "file": 26,
+      "name": "programs/packed-io/libclickhouse-packed-io-lib.a"
+    },
+    {
+      "file": 27,
+      "name": "programs/server/libclickhouse-server-lib.a"
+    },
+    {
+      "file": 28,
+      "name": "programs/static-files-disk-uploader/libclickhouse-static-files-disk-uploader-lib.a"
+    },
+    {
+      "file": 29,
+      "name": "programs/su/libclickhouse-su-lib.a"
+    },
+    {
+      "file": 30,
+      "name": "programs/zookeeper-dump-tree/libclickhouse-zookeeper-dump-tree-lib.a"
+    },
+    {
+      "file": 31,
+      "name": "programs/zookeeper-remove-by-list/libclickhouse-zookeeper-remove-by-list-lib.a"
+    },
+    {
+      "file": 32,
+      "name": "programs/keeper-data-dumper/libclickhouse-keeper-data-dumper-lib.a"
+    },
+    {
+      "file": 33,
+      "name": "programs/keeper-utils/libclickhouse-keeper-utils-lib.a"
+    },
+    {
+      "file": 34,
+      "name": "programs/keeper-bench/libclickhouse-keeper-bench-lib.a"
+    },
+    {
+      "file": 35,
+      "name": "base/readpassphrase/libreadpassphrase.a"
+    },
+    {
+      "file": 36,
+      "name": "src/AggregateFunctions/libclickhouse_aggregate_functions.a"
+    },
+    {
+      "file": 37,
+      "name": "src/TableFunctions/libclickhouse_table_functions.a"
+    },
+    {
+      "objects": [
+        [
+          38,
+          0,
+          1
+        ],
+        [
+          39,
+          0,
+          144
+        ],
+        [
+          420,
+          0,
+          1
+        ],
+        [
+          39,
           144,
           147
         ]
@@ -1220,68 +1218,68 @@ CMAKE_LINK = {
       "name": "src/Storages/System/libclickhouse_storages_system.a"
     },
     {
-      "file": 41,
+      "file": 40,
       "name": "contrib/libfarmhash/lib_farmhash.a"
     },
     {
       "objects": [
         [
-          42,
+          41,
           0,
           1
         ],
         [
-          43,
+          42,
           0,
           9
         ],
         [
-          42,
+          41,
           1,
           2
         ],
         [
-          43,
+          42,
           9,
           13
         ],
         [
-          42,
+          41,
           2,
           3
         ],
         [
-          43,
+          42,
           13,
           14
         ],
         [
-          44,
+          43,
           0,
           2
         ],
         [
-          43,
+          42,
           14,
           25
         ],
         [
-          44,
+          43,
           2,
           3
         ],
         [
-          43,
+          42,
           25,
           40
         ],
         [
-          42,
+          41,
           3,
           4
         ],
         [
-          43,
+          42,
           40,
           50
         ]
@@ -1290,6 +1288,11 @@ CMAKE_LINK = {
     },
     {
       "objects": [
+        [
+          44,
+          0,
+          1
+        ],
         [
           45,
           0,
@@ -1303,11 +1306,6 @@ CMAKE_LINK = {
         [
           47,
           0,
-          1
-        ],
-        [
-          48,
-          0,
           118
         ]
       ],
@@ -1315,29 +1313,29 @@ CMAKE_LINK = {
     },
     {
       "name": "contrib/xgboost-cmake/lib_xgboost.a",
-      "objects": [[49, 68, 69], [49, 54, 55], [49, 48, 49], [49, 53, 54], [49, 51, 52], [49, 49, 50], [49, 61, 62], [49, 57, 58], [49, 60, 61], [49, 59, 60], [49, 58, 59], [49, 52, 53], [49, 47, 48], [49, 56, 57], [49, 62, 63], [49, 50, 51], [49, 46, 47], [49, 55, 56], [49, 44, 46], [49, 13, 14], [49, 12, 13], [49, 14, 15], [49, 5, 6], [49, 11, 12], [49, 8, 9], [49, 7, 8], [49, 3, 4], [49, 9, 11], [49, 6, 7], [49, 4, 5], [49, 97, 98], [49, 106, 107], [49, 100, 101], [49, 105, 106], [49, 96, 97], [49, 95, 96], [49, 94, 95], [49, 102, 103], [49, 92, 93], [49, 104, 105], [49, 103, 104], [49, 101, 102], [49, 93, 94], [49, 98, 100], [49, 107, 108], [49, 91, 92], [49, 90, 91], [49, 89, 90], [49, 69, 70], [49, 80, 82], [49, 85, 86], [49, 83, 84], [49, 87, 88], [49, 86, 87], [49, 84, 85], [49, 88, 89], [49, 82, 83], [49, 2, 3], [49, 1, 2], [49, 0, 1], [49, 71, 72], [49, 70, 71], [49, 72, 73], [49, 26, 27], [49, 21, 22], [49, 18, 19], [49, 29, 30], [49, 23, 24], [49, 31, 32], [49, 15, 16], [49, 27, 28], [49, 16, 17], [49, 36, 37], [49, 40, 41], [49, 17, 18], [49, 42, 43], [49, 37, 38], [49, 39, 40], [49, 22, 23], [49, 25, 26], [49, 35, 36], [49, 19, 20], [49, 24, 25], [49, 20, 21], [49, 38, 39], [49, 28, 29], [49, 34, 35], [49, 33, 34], [49, 41, 42], [49, 32, 33], [49, 30, 31], [49, 76, 77], [49, 75, 76], [49, 79, 80], [49, 77, 78], [49, 74, 75], [49, 78, 79], [49, 73, 74], [49, 65, 66], [49, 67, 68], [49, 64, 65], [49, 66, 67], [49, 63, 64], [49, 43, 44]]
+      "objects": [[48, 68, 69], [48, 54, 55], [48, 48, 49], [48, 53, 54], [48, 51, 52], [48, 49, 50], [48, 61, 62], [48, 57, 58], [48, 60, 61], [48, 59, 60], [48, 58, 59], [48, 52, 53], [48, 47, 48], [48, 56, 57], [48, 62, 63], [48, 50, 51], [48, 46, 47], [48, 55, 56], [48, 44, 46], [48, 13, 14], [48, 12, 13], [48, 14, 15], [48, 5, 6], [48, 11, 12], [48, 8, 9], [48, 7, 8], [48, 3, 4], [48, 9, 11], [48, 6, 7], [48, 4, 5], [48, 97, 98], [48, 106, 107], [48, 100, 101], [48, 105, 106], [48, 96, 97], [48, 95, 96], [48, 94, 95], [48, 102, 103], [48, 92, 93], [48, 104, 105], [48, 103, 104], [48, 101, 102], [48, 93, 94], [48, 98, 100], [48, 107, 108], [48, 91, 92], [48, 90, 91], [48, 89, 90], [48, 69, 70], [48, 80, 82], [48, 85, 86], [48, 83, 84], [48, 87, 88], [48, 86, 87], [48, 84, 85], [48, 88, 89], [48, 82, 83], [48, 2, 3], [48, 1, 2], [48, 0, 1], [48, 71, 72], [48, 70, 71], [48, 72, 73], [48, 26, 27], [48, 21, 22], [48, 18, 19], [48, 29, 30], [48, 23, 24], [48, 31, 32], [48, 15, 16], [48, 27, 28], [48, 16, 17], [48, 36, 37], [48, 40, 41], [48, 17, 18], [48, 42, 43], [48, 37, 38], [48, 39, 40], [48, 22, 23], [48, 25, 26], [48, 35, 36], [48, 19, 20], [48, 24, 25], [48, 20, 21], [48, 38, 39], [48, 28, 29], [48, 34, 35], [48, 33, 34], [48, 41, 42], [48, 32, 33], [48, 30, 31], [48, 76, 77], [48, 75, 76], [48, 79, 80], [48, 77, 78], [48, 74, 75], [48, 78, 79], [48, 73, 74], [48, 65, 66], [48, 67, 68], [48, 64, 65], [48, 66, 67], [48, 63, 64], [48, 43, 44]]
     },
     {
-      "file": 50,
+      "file": 49,
       "name": "contrib/xgboost-cmake/lib_dmlc_core.a"
     },
     {
-      "file": 51,
+      "file": 50,
       "name": "contrib/libmetrohash/lib_metrohash.a"
     },
     {
-      "file": 52,
+      "file": 51,
       "name": "contrib/murmurhash/lib_murmurhash.a"
     },
     {
       "objects": [
         [
-          53,
+          52,
           0,
           2
         ],
         [
-          54,
+          53,
           0,
           1
         ]
@@ -1345,181 +1343,181 @@ CMAKE_LINK = {
       "name": "contrib/fastops-cmake/lib_fastops.a"
     },
     {
-      "file": 55,
+      "file": 54,
       "name": "contrib/bech32/lib_bech32.a"
     },
     {
-      "file": 56,
+      "file": 55,
       "name": "contrib/cld2-cmake/lib_cld2.a"
     },
     {
-      "file": 57,
+      "file": 56,
       "name": "contrib/idna-cmake/lib_idna.a"
     },
     {
       "name": "contrib/h3-cmake/lib_h3.a",
-      "objects": [[58, 0, 2], [58, 4, 5], [58, 3, 4], [58, 15, 16], [58, 14, 15], [58, 8, 9], [58, 7, 8], [58, 16, 18], [58, 11, 13], [58, 10, 11], [58, 5, 6], [58, 13, 14], [58, 9, 10], [58, 6, 7], [58, 2, 3]]
+      "objects": [[57, 0, 2], [57, 4, 5], [57, 3, 4], [57, 15, 16], [57, 14, 15], [57, 8, 9], [57, 7, 8], [57, 16, 18], [57, 11, 13], [57, 10, 11], [57, 5, 6], [57, 13, 14], [57, 9, 10], [57, 6, 7], [57, 2, 3]]
     },
     {
-      "file": 59,
+      "file": 58,
       "name": "contrib/ipcrypt2-cmake/lib_ipcrypt2.a"
     },
     {
-      "file": 60,
+      "file": 59,
       "name": "src/Functions/GatherUtils/libclickhouse_functions_gatherutils.a"
     },
     {
-      "file": 61,
+      "file": 60,
       "name": "src/Functions/JSONPath/libclickhouse_functions_jsonpath.a"
     },
     {
-      "file": 62,
+      "file": 61,
       "name": "src/Daemon/libdaemon.a"
     },
     {
       "objects": [
         [
-          63,
+          62,
           0,
           5
         ],
         [
-          64,
+          63,
           0,
           1
         ],
         [
-          63,
+          62,
           5,
           9
         ],
         [
-          64,
+          63,
           1,
           9
         ],
         [
-          63,
+          62,
           9,
           44
         ],
         [
-          64,
+          63,
           9,
           10
         ],
         [
-          63,
+          62,
           44,
           47
         ],
         [
-          64,
+          63,
           10,
           15
         ],
         [
-          63,
+          62,
           47,
           806
         ],
         [
-          65,
+          64,
           0,
           1
         ],
         [
-          63,
+          62,
           806,
           833
         ],
         [
-          430,
+          429,
           0,
           1
         ],
         [
-          63,
+          62,
           833,
           1200
         ],
         [
-          65,
+          64,
           1,
           2
         ],
         [
-          63,
+          62,
           1200,
           1626
         ],
         [
-          66,
+          65,
           0,
           1
         ],
         [
-          63,
+          62,
           1626,
           1666
         ],
         [
-          420,
+          419,
           0,
           1
         ],
         [
-          63,
+          62,
           1666,
           1667
         ],
         [
-          420,
+          419,
           1,
           2
         ],
         [
-          63,
+          62,
           1667,
           1669
         ],
         [
-          420,
+          419,
           2,
           3
         ],
         [
-          63,
+          62,
           1669,
           1689
         ],
         [
-          420,
+          419,
           3,
           5
         ],
         [
-          63,
+          62,
           1689,
           1998
         ],
         [
-          65,
+          64,
           2,
           3
         ],
         [
-          63,
+          62,
           1998,
           2000
         ],
         [
-          65,
+          64,
           3,
           18
         ],
         [
-          63,
+          62,
           2000,
           2346
         ]
@@ -1527,35 +1525,35 @@ CMAKE_LINK = {
       "name": "src/libdbms.a"
     },
     {
-      "file": 67,
+      "file": 66,
       "name": "src/Loggers/libloggers.a"
     },
     {
-      "file": 68,
+      "file": 67,
       "name": "src/Common/Config/libclickhouse_common_config.a"
     },
     {
-      "file": 69,
+      "file": 68,
       "name": "contrib/yaml-cpp-cmake/lib_yaml_cpp.a"
     },
     {
-      "file": 70,
+      "file": 69,
       "name": "src/Common/ZooKeeper/libclickhouse_common_zookeeper.a"
     },
     {
-      "file": 71,
+      "file": 70,
       "name": "src/Common/ZooKeeper/libclickhouse_common_zookeeper_base.a"
     },
     {
-      "file": 72,
+      "file": 71,
       "append": [
         [
-          73,
+          72,
           0,
           2
         ],
         [
-          74,
+          73,
           0,
           1
         ]
@@ -1563,39 +1561,44 @@ CMAKE_LINK = {
       "name": "rust/workspace/lib_ch_rust_skim_rust.a"
     },
     {
-      "file": 75,
+      "file": 74,
       "name": "src/libclickhouse_compression.a"
     },
     {
-      "file": 76,
+      "file": 75,
       "name": "src/Parsers/libclickhouse_parsers.a"
     },
     {
-      "file": 77,
+      "file": 76,
       "name": "src/Access/Common/libclickhouse_common_access.a"
     },
     {
-      "file": 78,
+      "file": 77,
       "name": "contrib/libcotp-cmake/lib_libcotp.a"
     },
     {
-      "file": 79,
+      "file": 78,
       "name": "rust/workspace/lib_ch_rust_prql.a"
     },
     {
-      "file": 80,
+      "file": 79,
       "name": "rust/workspace/lib_ch_rust_polyglot.a"
     },
     {
-      "file": 81,
+      "file": 80,
       "name": "src/Parsers/Prometheus/grammar/libclickhouse_antlr4_grammars.a"
     },
     {
-      "file": 82,
+      "file": 81,
       "name": "contrib/antlr4-cpp-runtime-cmake/lib_ch_contrib_antlr4_cpp_runtime.a"
     },
     {
       "objects": [
+        [
+          82,
+          0,
+          1
+        ],
         [
           83,
           0,
@@ -1609,273 +1612,268 @@ CMAKE_LINK = {
         [
           85,
           0,
-          1
-        ],
-        [
-          86,
-          0,
           7
         ]
       ],
       "name": "contrib/zxc-cmake/lib_zxc.a"
     },
     {
-      "file": 87,
+      "file": 86,
       "name": "rust/workspace/lib_ch_rust_pco.a"
     },
     {
-      "file": 88,
+      "file": 87,
       "name": "src/Dictionaries/Embedded/libclickhouse_dictionaries_embedded.a"
     },
     {
-      "file": 89,
+      "file": 88,
       "name": "contrib/xxHash-cmake/libxxHash.a"
     },
     {
-      "file": 90,
+      "file": 89,
       "name": "contrib/icu-cmake/lib_icui18n.a"
     },
     {
-      "file": 91,
+      "file": 90,
       "name": "contrib/icu-cmake/lib_icuuc.a"
     },
     {
-      "file": 92,
+      "file": 91,
       "name": "contrib/icu-cmake/lib_icudata.a"
     },
     {
-      "file": 93,
+      "file": 92,
       "name": "contrib/llvm-project-cmake/libLLVMExecutionEngine.a"
     },
     {
-      "file": 94,
+      "file": 93,
       "name": "contrib/llvm-project-cmake/libLLVMRuntimeDyld.a"
     },
     {
-      "file": 95,
+      "file": 94,
       "name": "contrib/llvm-project-cmake/libLLVMDebugInfoDWARF.a"
     },
     {
-      "file": 96,
+      "file": 95,
       "name": "contrib/llvm-project-cmake/libLLVMPasses.a"
     },
     {
-      "file": 97,
+      "file": 96,
       "name": "contrib/llvm-project-cmake/libLLVMInstrumentation.a"
     },
     {
-      "file": 98,
+      "file": 97,
       "name": "contrib/llvm-project-cmake/libLLVMAggressiveInstCombine.a"
     },
     {
-      "file": 99,
+      "file": 98,
       "name": "contrib/llvm-project-cmake/libLLVMVectorize.a"
     },
     {
-      "file": 100,
+      "file": 99,
       "name": "contrib/llvm-project-cmake/libLLVMObjCARCOpts.a"
     },
     {
-      "file": 101,
+      "file": 100,
       "name": "contrib/llvm-project-cmake/libLLVMIRPrinter.a"
     },
     {
-      "file": 102,
+      "file": 101,
       "name": "contrib/llvm-project-cmake/libLLVMCFGuard.a"
     },
     {
-      "file": 103,
+      "file": 102,
       "name": "contrib/llvm-project-cmake/libLLVMCoroutines.a"
     },
     {
-      "file": 104,
+      "file": 103,
       "name": "contrib/llvm-project-cmake/libLLVMipo.a"
     },
     {
-      "file": 105,
+      "file": 104,
       "name": "contrib/llvm-project-cmake/libLLVMInstCombine.a"
     },
     {
-      "file": 106,
+      "file": 105,
       "name": "contrib/llvm-project-cmake/libLLVMFrontendOpenMP.a"
     },
     {
-      "file": 107,
+      "file": 106,
       "name": "contrib/llvm-project-cmake/libLLVMFrontendAtomic.a"
     },
     {
-      "file": 108,
+      "file": 107,
       "name": "contrib/llvm-project-cmake/libLLVMFrontendOffloading.a"
     },
     {
-      "file": 109,
+      "file": 108,
       "name": "contrib/llvm-project-cmake/libLLVMHipStdPar.a"
     },
     {
-      "file": 110,
+      "file": 109,
       "name": "contrib/llvm-project-cmake/libLLVMSandboxIR.a"
     },
     {
-      "file": 111,
+      "file": 110,
       "name": "contrib/llvm-project-cmake/libLLVMObjectYAML.a"
     },
     {
-      "file": 112,
+      "file": 111,
       "name": "contrib/llvm-project-cmake/libLLVMIRReader.a"
     },
     {
-      "file": 113,
+      "file": 112,
       "name": "contrib/llvm-project-cmake/libLLVMAsmParser.a"
     },
     {
-      "file": 114,
+      "file": 113,
       "name": "contrib/llvm-project-cmake/libLLVMLinker.a"
     },
     {
-      "file": 115,
+      "file": 114,
       "name": "contrib/llvm-project-cmake/libLLVMAArch64CodeGen.a"
     },
     {
-      "file": 116,
+      "file": 115,
       "name": "contrib/llvm-project-cmake/libLLVMAsmPrinter.a"
     },
     {
-      "file": 117,
+      "file": 116,
       "name": "contrib/llvm-project-cmake/libLLVMMCParser.a"
     },
     {
-      "file": 118,
+      "file": 117,
       "name": "contrib/llvm-project-cmake/libLLVMDebugInfoCodeView.a"
     },
     {
-      "file": 119,
+      "file": 118,
       "name": "contrib/llvm-project-cmake/libLLVMGlobalISel.a"
     },
     {
-      "file": 120,
+      "file": 119,
       "name": "contrib/llvm-project-cmake/libLLVMSelectionDAG.a"
     },
     {
-      "file": 121,
+      "file": 120,
       "name": "contrib/llvm-project-cmake/libLLVMCodeGen.a"
     },
     {
-      "file": 122,
+      "file": 121,
       "name": "contrib/llvm-project-cmake/libLLVMCodeGenTypes.a"
     },
     {
-      "file": 123,
+      "file": 122,
       "name": "contrib/llvm-project-cmake/libLLVMBitWriter.a"
     },
     {
-      "file": 124,
+      "file": 123,
       "name": "contrib/llvm-project-cmake/libLLVMScalarOpts.a"
     },
     {
-      "file": 125,
+      "file": 124,
       "name": "contrib/llvm-project-cmake/libLLVMTransformUtils.a"
     },
     {
-      "file": 126,
+      "file": 125,
       "name": "contrib/llvm-project-cmake/libLLVMBitReader.a"
     },
     {
-      "file": 127,
+      "file": 126,
       "name": "contrib/llvm-project-cmake/libLLVMCGData.a"
     },
     {
-      "file": 128,
+      "file": 127,
       "name": "contrib/llvm-project-cmake/libLLVMTarget.a"
     },
     {
-      "file": 129,
+      "file": 128,
       "name": "contrib/llvm-project-cmake/libLLVMAnalysis.a"
     },
     {
-      "file": 130,
+      "file": 129,
       "name": "contrib/llvm-project-cmake/libLLVMProfileData.a"
     },
     {
-      "file": 131,
+      "file": 130,
       "name": "contrib/llvm-project-cmake/libLLVMFrontendHLSL.a"
     },
     {
-      "file": 132,
+      "file": 131,
       "name": "contrib/llvm-project-cmake/libLLVMAArch64Desc.a"
     },
     {
-      "file": 133,
+      "file": 132,
       "name": "contrib/llvm-project-cmake/libLLVMMCDisassembler.a"
     },
     {
-      "file": 134,
+      "file": 133,
       "name": "contrib/llvm-project-cmake/libLLVMAArch64Info.a"
     },
     {
-      "file": 135,
+      "file": 134,
       "name": "contrib/llvm-project-cmake/libLLVMXRay.a"
     },
     {
-      "file": 136,
+      "file": 135,
       "name": "contrib/llvm-project-cmake/libLLVMObject.a"
     },
     {
-      "file": 137,
+      "file": 136,
       "name": "contrib/llvm-project-cmake/libLLVMCore.a"
     },
     {
-      "file": 138,
+      "file": 137,
       "name": "contrib/llvm-project-cmake/libLLVMRemarks.a"
     },
     {
-      "file": 139,
+      "file": 138,
       "name": "contrib/llvm-project-cmake/libLLVMBitstreamReader.a"
     },
     {
-      "file": 140,
+      "file": 139,
       "name": "contrib/llvm-project-cmake/libLLVMMC.a"
     },
     {
-      "file": 141,
+      "file": 140,
       "name": "contrib/llvm-project-cmake/libLLVMTextAPI.a"
     },
     {
-      "file": 142,
+      "file": 141,
       "name": "contrib/llvm-project-cmake/libLLVMBinaryFormat.a"
     },
     {
-      "file": 143,
+      "file": 142,
       "name": "contrib/llvm-project-cmake/libLLVMTargetParser.a"
     },
     {
       "objects": [
         [
-          144,
+          143,
           0,
           114
         ],
         [
-          145,
+          144,
           0,
           2
         ],
         [
-          144,
+          143,
           114,
           115
         ],
         [
-          145,
+          144,
           2,
           5
         ],
         [
-          144,
+          143,
           115,
           169
         ],
         [
-          145,
+          144,
           5,
           9
         ]
@@ -1883,223 +1881,223 @@ CMAKE_LINK = {
       "name": "contrib/llvm-project-cmake/libLLVMSupport.a"
     },
     {
-      "file": 146,
+      "file": 145,
       "name": "contrib/llvm-project-cmake/libLLVMDemangle.a"
     },
     {
       "objects": [
         [
-          147,
+          146,
           0,
           3
         ],
         [
-          148,
+          147,
           0,
           2
         ],
         [
-          147,
+          146,
           3,
           8
         ],
         [
-          148,
+          147,
           2,
           6
         ],
         [
-          147,
+          146,
           8,
           9
         ],
         [
-          148,
+          147,
           6,
           15
         ],
         [
-          147,
+          146,
           9,
           10
         ],
         [
-          148,
+          147,
           15,
           19
         ],
         [
-          147,
+          146,
           10,
           11
         ],
         [
-          148,
+          147,
           19,
           21
         ],
         [
-          147,
+          146,
           11,
           12
         ],
         [
-          148,
+          147,
           21,
           24
         ],
         [
-          147,
+          146,
           12,
           13
         ],
         [
-          148,
+          147,
           24,
           27
         ],
         [
-          147,
+          146,
           13,
           16
         ],
         [
-          148,
+          147,
           27,
           28
         ],
         [
-          147,
+          146,
           16,
           22
         ],
         [
-          148,
+          147,
           28,
           30
         ],
         [
-          147,
+          146,
           22,
           23
         ],
         [
-          148,
+          147,
           30,
           31
         ],
         [
-          147,
+          146,
           23,
           25
         ],
         [
-          148,
+          147,
           31,
           32
         ],
         [
-          147,
+          146,
           25,
           26
         ],
         [
-          148,
+          147,
           32,
           36
         ],
         [
-          147,
+          146,
           26,
           27
         ],
         [
-          148,
+          147,
           36,
           37
         ],
         [
-          147,
+          146,
           27,
           28
         ],
         [
-          148,
+          147,
           37,
           40
         ],
         [
-          147,
+          146,
           28,
           29
         ],
         [
-          148,
+          147,
           40,
           125
         ],
         [
-          147,
+          146,
           29,
           34
         ],
         [
-          148,
+          147,
           125,
           149
         ],
         [
-          147,
+          146,
           34,
           35
         ],
         [
-          148,
+          147,
           149,
           151
         ],
         [
-          147,
+          146,
           35,
           37
         ],
         [
-          148,
+          147,
           151,
           158
         ],
         [
-          147,
+          146,
           37,
           38
         ],
         [
-          148,
+          147,
           158,
           160
         ],
         [
-          147,
+          146,
           38,
           39
         ],
         [
-          148,
+          147,
           160,
           162
         ],
         [
-          149,
+          148,
           0,
           2
         ],
         [
-          147,
+          146,
           39,
           40
         ],
         [
-          148,
+          147,
           162,
           163
         ]
@@ -2109,17 +2107,17 @@ CMAKE_LINK = {
     {
       "objects": [
         [
-          150,
+          149,
           0,
           5
         ],
         [
-          151,
+          150,
           0,
           1
         ],
         [
-          150,
+          149,
           5,
           21
         ]
@@ -2128,278 +2126,278 @@ CMAKE_LINK = {
     },
     {
       "name": "contrib/cppkafka-cmake/lib_cppkafka.a",
-      "objects": [[152, 0, 1], [152, 2, 3], [152, 1, 2], [152, 3, 9], [152, 10, 12], [152, 9, 10], [152, 12, 15], [152, 16, 17], [152, 18, 19], [152, 17, 18], [152, 15, 16]]
+      "objects": [[151, 0, 1], [151, 2, 3], [151, 1, 2], [151, 3, 9], [151, 10, 12], [151, 9, 10], [151, 12, 15], [151, 16, 17], [151, 18, 19], [151, 17, 18], [151, 15, 16]]
     },
     {
-      "objects": [[153, 0, 53], [153, 55, 56], [153, 54, 55], [153, 53, 54], [153, 57, 58], [153, 56, 57], [153, 58, 84], [154, 0, 1], [153, 84, 88]],
+      "objects": [[152, 0, 53], [152, 55, 56], [152, 54, 55], [152, 53, 54], [152, 57, 58], [152, 56, 57], [152, 58, 84], [153, 0, 1], [152, 84, 88]],
       "name": "contrib/librdkafka-cmake/lib_rdkafka.a"
     },
     {
-      "file": 155,
+      "file": 154,
       "name": "contrib/nats-io-cmake/lib_nats_io.a"
     },
     {
-      "file": 156,
+      "file": 155,
       "name": "contrib/cyrus-sasl-cmake/lib_sasl2.a"
     },
     {
       "name": "contrib/nuraft-cmake/lib_nuraft.a",
-      "objects": [[157, 13, 14], [157, 2, 3], [157, 20, 21], [157, 7, 8], [157, 1, 2], [157, 0, 1], [157, 9, 10], [157, 21, 23], [157, 10, 11], [157, 6, 7], [157, 5, 6], [157, 14, 15], [157, 26, 27], [157, 12, 13], [157, 16, 17], [157, 11, 12], [157, 17, 20], [157, 25, 26], [157, 24, 25], [157, 23, 24], [157, 15, 16], [157, 8, 9], [157, 4, 5], [157, 3, 4]]
+      "objects": [[156, 13, 14], [156, 2, 3], [156, 20, 21], [156, 7, 8], [156, 1, 2], [156, 0, 1], [156, 9, 10], [156, 21, 23], [156, 10, 11], [156, 6, 7], [156, 5, 6], [156, 14, 15], [156, 26, 27], [156, 12, 13], [156, 16, 17], [156, 11, 12], [156, 17, 20], [156, 25, 26], [156, 24, 25], [156, 23, 24], [156, 15, 16], [156, 8, 9], [156, 4, 5], [156, 3, 4]]
     },
     {
-      "file": 158,
+      "file": 157,
       "name": "contrib/boost-cmake/lib_boost_coroutine.a"
     },
     {
-      "file": 159,
+      "file": 158,
       "name": "base/poco/Redis/lib_poco_redis.a"
     },
     {
-      "file": 160,
+      "file": 159,
       "name": "contrib/mongo-cxx-driver-cmake/lib_mongocxx.a"
     },
     {
-      "file": 161,
+      "file": 160,
       "name": "contrib/mongo-c-driver-cmake/lib_libmongoc.a"
     },
     {
-      "file": 162,
+      "file": 161,
       "name": "contrib/mongo-cxx-driver-cmake/lib_bsoncxx.a"
     },
     {
-      "file": 163,
+      "file": 162,
       "name": "contrib/mongo-c-driver-cmake/lib_libbson.a"
     },
     {
-      "file": 164,
+      "file": 163,
       "name": "src/Common/mysqlxx/libmysqlxx.a"
     },
     {
-      "file": 165,
+      "file": 164,
       "name": "contrib/mariadb-connector-c-cmake/lib_mariadbclient.a"
     },
     {
       "name": "contrib/Jieba-CPP-cmake/lib_jieba.a",
-      "objects": [[166, 0, 2], [166, 3, 4], [166, 2, 3]]
+      "objects": [[165, 0, 2], [165, 3, 4], [165, 2, 3]]
     },
     {
-      "file": 167,
+      "file": 166,
       "name": "contrib/MeCab-cmake/lib_mecab.a"
     },
     {
-      "file": 168,
+      "file": 167,
       "name": "contrib/capnproto-cmake/lib_capnpc.a"
     },
     {
-      "file": 169,
+      "file": 168,
       "name": "contrib/capnproto-cmake/lib_capnp.a"
     },
     {
-      "file": 170,
+      "file": 169,
       "name": "contrib/capnproto-cmake/lib_kj.a"
     },
     {
-      "file": 171,
+      "file": 170,
       "name": "contrib/arrow-cmake/lib_parquet.a"
     },
     {
       "name": "contrib/avro-cmake/lib_avrocpp.a",
-      "objects": [[172, 2, 3], [172, 8, 9], [172, 7, 8], [172, 9, 10], [172, 11, 13], [172, 14, 16], [172, 17, 18], [172, 1, 2], [172, 0, 1], [172, 13, 14], [172, 4, 7], [172, 3, 4], [172, 22, 24], [172, 20, 22], [172, 19, 20], [172, 18, 19], [172, 10, 11], [172, 16, 17]]
+      "objects": [[171, 2, 3], [171, 8, 9], [171, 7, 8], [171, 9, 10], [171, 11, 13], [171, 14, 16], [171, 17, 18], [171, 1, 2], [171, 0, 1], [171, 13, 14], [171, 4, 7], [171, 3, 4], [171, 22, 24], [171, 20, 22], [171, 19, 20], [171, 18, 19], [171, 10, 11], [171, 16, 17]]
     },
     {
-      "file": 173,
+      "file": 172,
       "name": "contrib/boost-cmake/lib_boost_iostreams.a"
     },
     {
       "name": "contrib/ai-sdk-cpp-cmake/lib_ai-sdk-cpp-openai.a",
-      "objects": [[174, 0, 1], [174, 2, 5], [174, 1, 2]]
+      "objects": [[173, 0, 1], [173, 2, 5], [173, 1, 2]]
     },
     {
       "name": "contrib/ai-sdk-cpp-cmake/lib_ai-sdk-cpp-anthropic.a",
-      "objects": [[175, 0, 1], [175, 2, 5], [175, 1, 2]]
+      "objects": [[174, 0, 1], [174, 2, 5], [174, 1, 2]]
     },
     {
-      "file": 176,
+      "file": 175,
       "name": "contrib/ai-sdk-cpp-cmake/lib_ai-sdk-cpp-core.a"
     },
     {
-      "file": 177,
+      "file": 176,
       "name": "contrib/openldap-cmake/lib_ldap.a"
     },
     {
-      "file": 178,
+      "file": 177,
       "name": "contrib/openldap-cmake/lib_lber.a"
     },
     {
-      "file": 179,
+      "file": 178,
       "name": "src/Server/grpc_protos/libclickhouse_grpc_protos.a"
     },
     {
-      "objects": [[180, 2, 3], [180, 1, 2], [180, 0, 1], [180, 3, 53], [181, 0, 1], [180, 53, 62], [180, 64, 65], [180, 62, 64], [180, 65, 88]],
+      "objects": [[179, 2, 3], [179, 1, 2], [179, 0, 1], [179, 3, 53], [180, 0, 1], [179, 53, 62], [179, 64, 65], [179, 62, 64], [179, 65, 88]],
       "name": "contrib/libhdfs3-cmake/lib_hdfs3.a"
     },
     {
       "name": "contrib/libgsasl-cmake/lib_gsasl.a",
-      "objects": [[182, 0, 23], [182, 25, 27], [182, 28, 29], [182, 23, 25], [182, 27, 28], [182, 29, 61], [182, 62, 63], [182, 61, 62], [182, 64, 66], [182, 63, 64], [182, 66, 84]]
+      "objects": [[181, 0, 23], [181, 25, 27], [181, 28, 29], [181, 23, 25], [181, 27, 28], [181, 29, 61], [181, 62, 63], [181, 61, 62], [181, 64, 66], [181, 63, 64], [181, 66, 84]]
     },
     {
       "name": "contrib/krb5-cmake/lib_krb5.a",
-      "objects": [[183, 0, 3], [183, 37, 38], [183, 48, 49], [183, 60, 61], [183, 55, 56], [183, 26, 28], [183, 65, 66], [183, 7, 8], [183, 44, 45], [183, 6, 7], [183, 54, 55], [183, 38, 39], [183, 34, 35], [183, 47, 48], [183, 52, 53], [183, 15, 16], [183, 12, 13], [183, 25, 26], [183, 39, 40], [183, 61, 62], [183, 21, 22], [183, 30, 31], [183, 3, 4], [183, 62, 63], [183, 57, 58], [183, 41, 42], [183, 40, 41], [183, 11, 12], [183, 63, 64], [183, 35, 36], [183, 46, 47], [183, 31, 32], [183, 24, 25], [183, 53, 54], [183, 4, 6], [183, 28, 29], [183, 36, 37], [183, 56, 57], [183, 32, 33], [183, 22, 23], [183, 43, 44], [183, 33, 34], [183, 14, 15], [183, 13, 14], [183, 10, 11], [183, 49, 50], [183, 29, 30], [183, 19, 20], [183, 23, 24], [183, 64, 65], [183, 50, 51], [183, 59, 60], [183, 58, 59], [183, 8, 10], [183, 18, 19], [183, 16, 18], [183, 51, 52], [183, 45, 46], [183, 20, 21], [183, 42, 43], [183, 73, 74], [183, 97, 98], [183, 76, 77], [183, 80, 81], [183, 106, 107], [183, 92, 93], [183, 68, 69], [183, 89, 90], [183, 79, 80], [183, 90, 91], [183, 99, 100], [183, 94, 95], [183, 108, 109], [183, 84, 85], [183, 78, 79], [183, 98, 99], [183, 104, 105], [183, 102, 103], [183, 95, 96], [183, 81, 82], [183, 75, 76], [183, 83, 84], [183, 91, 92], [183, 66, 67], [183, 85, 86], [183, 100, 101], [183, 74, 75], [183, 116, 117], [183, 96, 97], [183, 111, 112], [183, 107, 108], [183, 77, 78], [183, 103, 104], [183, 114, 115], [183, 70, 71], [183, 72, 73], [183, 82, 83], [183, 71, 72], [183, 87, 88], [183, 86, 87], [183, 88, 89], [183, 112, 114], [183, 69, 70], [183, 105, 106], [183, 93, 94], [183, 67, 68], [183, 101, 102], [183, 110, 111], [183, 115, 116], [183, 109, 110], [183, 117, 140], [183, 184, 185], [183, 157, 158], [183, 165, 166], [183, 159, 160], [183, 155, 156], [183, 154, 155], [183, 143, 144], [183, 166, 167], [183, 177, 178], [183, 150, 151], [183, 180, 181], [183, 153, 154], [183, 182, 183], [183, 148, 149], [183, 152, 153], [183, 141, 142], [183, 190, 191], [183, 192, 193], [183, 156, 157], [183, 185, 186], [183, 193, 194], [183, 147, 148], [183, 158, 159], [183, 172, 173], [183, 181, 182], [183, 178, 179], [183, 151, 152], [183, 161, 162], [183, 142, 143], [183, 140, 141], [183, 163, 164], [183, 149, 150], [183, 167, 168], [183, 160, 161], [183, 171, 172], [183, 146, 147], [183, 170, 171], [183, 169, 170], [183, 179, 180], [183, 188, 189], [183, 144, 145], [183, 162, 163], [183, 145, 146], [183, 174, 175], [183, 189, 190], [183, 175, 176], [183, 173, 174], [183, 187, 188], [183, 191, 192], [183, 176, 177], [183, 164, 165], [183, 168, 169], [183, 183, 184], [183, 186, 187], [183, 194, 196], [183, 197, 198], [183, 196, 197], [183, 198, 199], [183, 202, 203], [183, 199, 202], [183, 203, 432]]
+      "objects": [[182, 0, 3], [182, 37, 38], [182, 48, 49], [182, 60, 61], [182, 55, 56], [182, 26, 28], [182, 65, 66], [182, 7, 8], [182, 44, 45], [182, 6, 7], [182, 54, 55], [182, 38, 39], [182, 34, 35], [182, 47, 48], [182, 52, 53], [182, 15, 16], [182, 12, 13], [182, 25, 26], [182, 39, 40], [182, 61, 62], [182, 21, 22], [182, 30, 31], [182, 3, 4], [182, 62, 63], [182, 57, 58], [182, 41, 42], [182, 40, 41], [182, 11, 12], [182, 63, 64], [182, 35, 36], [182, 46, 47], [182, 31, 32], [182, 24, 25], [182, 53, 54], [182, 4, 6], [182, 28, 29], [182, 36, 37], [182, 56, 57], [182, 32, 33], [182, 22, 23], [182, 43, 44], [182, 33, 34], [182, 14, 15], [182, 13, 14], [182, 10, 11], [182, 49, 50], [182, 29, 30], [182, 19, 20], [182, 23, 24], [182, 64, 65], [182, 50, 51], [182, 59, 60], [182, 58, 59], [182, 8, 10], [182, 18, 19], [182, 16, 18], [182, 51, 52], [182, 45, 46], [182, 20, 21], [182, 42, 43], [182, 73, 74], [182, 97, 98], [182, 76, 77], [182, 80, 81], [182, 106, 107], [182, 92, 93], [182, 68, 69], [182, 89, 90], [182, 79, 80], [182, 90, 91], [182, 99, 100], [182, 94, 95], [182, 108, 109], [182, 84, 85], [182, 78, 79], [182, 98, 99], [182, 104, 105], [182, 102, 103], [182, 95, 96], [182, 81, 82], [182, 75, 76], [182, 83, 84], [182, 91, 92], [182, 66, 67], [182, 85, 86], [182, 100, 101], [182, 74, 75], [182, 116, 117], [182, 96, 97], [182, 111, 112], [182, 107, 108], [182, 77, 78], [182, 103, 104], [182, 114, 115], [182, 70, 71], [182, 72, 73], [182, 82, 83], [182, 71, 72], [182, 87, 88], [182, 86, 87], [182, 88, 89], [182, 112, 114], [182, 69, 70], [182, 105, 106], [182, 93, 94], [182, 67, 68], [182, 101, 102], [182, 110, 111], [182, 115, 116], [182, 109, 110], [182, 117, 140], [182, 184, 185], [182, 157, 158], [182, 165, 166], [182, 159, 160], [182, 155, 156], [182, 154, 155], [182, 143, 144], [182, 166, 167], [182, 177, 178], [182, 150, 151], [182, 180, 181], [182, 153, 154], [182, 182, 183], [182, 148, 149], [182, 152, 153], [182, 141, 142], [182, 190, 191], [182, 192, 193], [182, 156, 157], [182, 185, 186], [182, 193, 194], [182, 147, 148], [182, 158, 159], [182, 172, 173], [182, 181, 182], [182, 178, 179], [182, 151, 152], [182, 161, 162], [182, 142, 143], [182, 140, 141], [182, 163, 164], [182, 149, 150], [182, 167, 168], [182, 160, 161], [182, 171, 172], [182, 146, 147], [182, 170, 171], [182, 169, 170], [182, 179, 180], [182, 188, 189], [182, 144, 145], [182, 162, 163], [182, 145, 146], [182, 174, 175], [182, 189, 190], [182, 175, 176], [182, 173, 174], [182, 187, 188], [182, 191, 192], [182, 176, 177], [182, 164, 165], [182, 168, 169], [182, 183, 184], [182, 186, 187], [182, 194, 196], [182, 197, 198], [182, 196, 197], [182, 198, 199], [182, 202, 203], [182, 199, 202], [182, 203, 432]]
     },
     {
       "name": "contrib/hive-metastore-cmake/lib_hivemetastore.a",
-      "objects": [[184, 1, 3], [184, 0, 1]]
+      "objects": [[183, 1, 3], [183, 0, 1]]
     },
     {
-      "file": 185,
+      "file": 184,
       "name": "contrib/thrift-cmake/lib_thrift.a"
     },
     {
-      "file": 186,
+      "file": 185,
       "name": "contrib/s2geometry-cmake/lib_s2.a"
     },
     {
-      "file": 187,
+      "file": 186,
       "name": "contrib/amqpcpp-cmake/lib_amqp-cpp.a"
     },
     {
-      "file": 188,
+      "file": 187,
       "name": "contrib/libuv-cmake/lib_uv.a"
     },
     {
-      "file": 189,
+      "file": 188,
       "name": "contrib/sqlite-cmake/lib_sqlite.a"
     },
     {
       "name": "contrib/rocksdb-cmake/lib_rocksdb.a",
-      "objects": [[190, 0, 39], [190, 41, 42], [190, 39, 40], [190, 42, 47], [190, 40, 41], [190, 47, 53], [190, 61, 62], [190, 53, 54], [190, 56, 59], [190, 54, 56], [190, 59, 61], [190, 62, 101], [190, 102, 103], [190, 101, 102], [190, 103, 225], [190, 226, 228], [190, 225, 226], [190, 228, 297], [190, 298, 299], [190, 297, 298], [190, 299, 332]]
+      "objects": [[189, 0, 39], [189, 41, 42], [189, 39, 40], [189, 42, 47], [189, 40, 41], [189, 47, 53], [189, 61, 62], [189, 53, 54], [189, 56, 59], [189, 54, 56], [189, 59, 61], [189, 62, 101], [189, 102, 103], [189, 101, 102], [189, 103, 225], [189, 226, 228], [189, 225, 226], [189, 228, 297], [189, 298, 299], [189, 297, 298], [189, 299, 332]]
     },
     {
-      "file": 191,
+      "file": 190,
       "name": "contrib/libpqxx-cmake/lib_libpqxx.a"
     },
     {
-      "file": 192,
+      "file": 191,
       "name": "contrib/postgres-cmake/lib_libpq.a"
     },
     {
       "name": "contrib/libstemmer-c-cmake/lib_stemmer.a",
-      "objects": [[193, 24, 26], [193, 4, 5], [193, 26, 27], [193, 5, 6], [193, 27, 28], [193, 6, 7], [193, 28, 29], [193, 7, 8], [193, 29, 30], [193, 8, 9], [193, 30, 31], [193, 9, 10], [193, 31, 34], [193, 10, 11], [193, 34, 35], [193, 11, 12], [193, 35, 36], [193, 12, 13], [193, 36, 39], [193, 21, 22], [193, 39, 40], [193, 13, 14], [193, 40, 41], [193, 14, 15], [193, 41, 42], [193, 15, 16], [193, 42, 45], [193, 16, 17], [193, 45, 46], [193, 17, 18], [193, 46, 47], [193, 18, 19], [193, 47, 48], [193, 22, 23], [193, 48, 49], [193, 23, 24], [193, 49, 51], [193, 19, 20], [193, 51, 52], [193, 20, 21], [193, 52, 56], [193, 2, 4], [193, 0, 2]]
+      "objects": [[192, 24, 26], [192, 4, 5], [192, 26, 27], [192, 5, 6], [192, 27, 28], [192, 6, 7], [192, 28, 29], [192, 7, 8], [192, 29, 30], [192, 8, 9], [192, 30, 31], [192, 9, 10], [192, 31, 34], [192, 10, 11], [192, 34, 35], [192, 11, 12], [192, 35, 36], [192, 12, 13], [192, 36, 39], [192, 21, 22], [192, 39, 40], [192, 13, 14], [192, 40, 41], [192, 14, 15], [192, 41, 42], [192, 15, 16], [192, 42, 45], [192, 16, 17], [192, 45, 46], [192, 17, 18], [192, 46, 47], [192, 18, 19], [192, 47, 48], [192, 22, 23], [192, 48, 49], [192, 23, 24], [192, 49, 51], [192, 19, 20], [192, 51, 52], [192, 20, 21], [192, 52, 56], [192, 2, 4], [192, 0, 2]]
     },
     {
-      "file": 194,
+      "file": 193,
       "name": "contrib/wordnet-blast-cmake/lib_wnb.a"
     },
     {
-      "file": 195,
+      "file": 194,
       "name": "contrib/boost-cmake/lib_boost_graph.a"
     },
     {
-      "file": 196,
+      "file": 195,
       "name": "contrib/boost-cmake/lib_boost_regex.a"
     },
     {
-      "file": 197,
+      "file": 196,
       "name": "contrib/lemmagen-c-cmake/lib_lemmagen.a"
     },
     {
-      "file": 198,
+      "file": 197,
       "name": "contrib/ulid-c-cmake/lib_ulid.a"
     },
     {
-      "file": 199,
+      "file": 198,
       "name": "contrib/SimSIMD-cmake/lib_simsimd.a"
     },
     {
-      "file": 200,
+      "file": 199,
       "name": "contrib/prometheus-protobufs-cmake/lib_prometheus_protobufs.a"
     },
     {
-      "file": 201,
+      "file": 200,
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_storage.a"
     },
     {
-      "file": 202,
+      "file": 201,
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_rest_internal.a"
     },
     {
-      "file": 203,
+      "file": 202,
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_common.a"
     },
     {
-      "objects": [[404, 0, 1], [204, 0, 1]],
+      "objects": [[403, 0, 1], [203, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_storage_protos.a"
     },
     {
-      "objects": [[405, 0, 1], [205, 0, 1]],
+      "objects": [[404, 0, 1], [204, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_routing_protos.a"
     },
     {
-      "objects": [[406, 0, 1], [206, 0, 1]],
+      "objects": [[405, 0, 1], [205, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_iam_v1_iam_policy_protos.a"
     },
     {
-      "objects": [[407, 0, 1], [207, 0, 1]],
+      "objects": [[406, 0, 1], [206, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_client_protos.a"
     },
     {
-      "objects": [[408, 0, 1], [208, 0, 1]],
+      "objects": [[407, 0, 1], [207, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_launch_stage_protos.a"
     },
     {
-      "objects": [[409, 0, 1], [209, 0, 1]],
+      "objects": [[408, 0, 1], [208, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_field_behavior_protos.a"
     },
     {
-      "objects": [[410, 0, 1], [210, 0, 1]],
+      "objects": [[409, 0, 1], [209, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_resource_protos.a"
     },
     {
-      "objects": [[411, 0, 1], [211, 0, 1]],
+      "objects": [[410, 0, 1], [210, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_iam_v1_options_protos.a"
     },
     {
-      "objects": [[412, 0, 1], [212, 0, 1]],
+      "objects": [[411, 0, 1], [211, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_iam_v1_policy_protos.a"
     },
     {
-      "objects": [[413, 0, 1], [213, 0, 1]],
+      "objects": [[412, 0, 1], [212, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_annotations_protos.a"
     },
     {
-      "objects": [[414, 0, 1], [214, 0, 1]],
+      "objects": [[413, 0, 1], [213, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_api_http_protos.a"
     },
     {
-      "objects": [[403, 0, 1], [215, 0, 1]],
+      "objects": [[402, 0, 1], [214, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_type_date_protos.a"
     },
     {
-      "objects": [[415, 0, 1], [216, 0, 1]],
+      "objects": [[414, 0, 1], [215, 0, 1]],
       "name": "contrib/google-cloud-cpp-cmake/libgoogle_cloud_cpp_type_expr_protos.a"
     },
     {
-      "file": 217,
+      "file": 216,
       "name": "contrib/sha3iuf-cmake/lib_sha3iuf.a"
     },
     {
-      "file": 218,
+      "file": 217,
       "name": "contrib/arrow-cmake/lib_arrow_flight.a"
     },
     {
       "objects": [
         [
-          219,
+          218,
           0,
           211
         ],
         [
-          220,
+          219,
           0,
           16
         ],
         [
-          219,
+          218,
           211,
           212
         ]
@@ -2407,186 +2405,186 @@ CMAKE_LINK = {
       "name": "contrib/arrow-cmake/lib_arrow.a"
     },
     {
-      "file": 221,
+      "file": 220,
       "name": "contrib/boost-cmake/lib_boost_filesystem.a"
     },
     {
-      "file": 222,
+      "file": 221,
       "name": "contrib/flatbuffers-cmake/lib_flatbuffers.a"
     },
     {
       "name": "contrib/arrow-cmake/lib_orc.a",
-      "objects": [[223, 0, 35], [223, 36, 38], [223, 35, 36], [223, 38, 44]]
+      "objects": [[222, 0, 35], [222, 36, 38], [222, 35, 36], [222, 38, 44]]
     },
     {
-      "file": 224,
+      "file": 223,
       "name": "contrib/grpc-cmake/libgrpc++.a"
     },
     {
-      "objects": [[225, 0, 16], [225, 18, 19], [225, 16, 18], [225, 19, 167], [226, 0, 348], [225, 167, 560]],
+      "objects": [[224, 0, 16], [224, 18, 19], [224, 16, 18], [224, 19, 167], [225, 0, 348], [224, 167, 560]],
       "name": "contrib/grpc-cmake/libgrpc.a"
     },
     {
-      "file": 227,
+      "file": 226,
       "name": "contrib/grpc-cmake/libupb_json_lib.a"
     },
     {
-      "file": 228,
+      "file": 227,
       "name": "contrib/grpc-cmake/libupb_textformat_lib.a"
     },
     {
-      "file": 229,
+      "file": 228,
       "name": "contrib/grpc-cmake/libupb.a"
     },
     {
-      "file": 230,
+      "file": 229,
       "name": "contrib/grpc-cmake/libupb_reflection_lib.a"
     },
     {
-      "file": 231,
+      "file": 230,
       "name": "contrib/grpc-cmake/libupb_mini_descriptor_lib.a"
     },
     {
-      "file": 232,
+      "file": 231,
       "name": "contrib/grpc-cmake/libupb_wire_lib.a"
     },
     {
-      "file": 233,
+      "file": 232,
       "name": "contrib/grpc-cmake/libutf8_range_lib.a"
     },
     {
-      "file": 234,
+      "file": 233,
       "name": "contrib/grpc-cmake/libupb_message_lib.a"
     },
     {
-      "file": 235,
+      "file": 234,
       "name": "contrib/grpc-cmake/libupb_mini_table_lib.a"
     },
     {
-      "file": 236,
+      "file": 235,
       "name": "contrib/grpc-cmake/libgpr.a"
     },
     {
-      "file": 237,
+      "file": 236,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_distributions.a"
     },
     {
-      "file": 238,
+      "file": 237,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_entropy_pool.a"
     },
     {
-      "file": 239,
+      "file": 238,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_randen.a"
     },
     {
-      "file": 240,
+      "file": 239,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_randen_hwaes.a"
     },
     {
-      "file": 241,
+      "file": 240,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_randen_hwaes_impl.a"
     },
     {
-      "file": 242,
+      "file": 241,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_randen_slow.a"
     },
     {
-      "file": 243,
+      "file": 242,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_platform.a"
     },
     {
-      "file": 244,
+      "file": 243,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_seed_sequences.a"
     },
     {
-      "file": 245,
+      "file": 244,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_internal_seed_material.a"
     },
     {
-      "file": 246,
+      "file": 245,
       "name": "contrib/abseil-cpp-cmake/libabsl_random_seed_gen_exception.a"
     },
     {
-      "file": 247,
+      "file": 246,
       "name": "contrib/grpc-cmake/libaddress_sorting.a"
     },
     {
-      "file": 248,
+      "file": 247,
       "name": "base/base/libcommon.a"
     },
     {
-      "objects": [[249, 0, 115], [417, 0, 1], [249, 115, 137]],
+      "objects": [[248, 0, 115], [416, 0, 1], [248, 115, 137]],
       "name": "base/poco/Foundation/lib_poco_foundation.a"
     },
     {
-      "file": 250,
+      "file": 249,
       "name": "base/poco/Net/lib_poco_net.a"
     },
     {
-      "objects": [[251, 0, 4], [252, 0, 1], [251, 4, 18], [416, 0, 1], [251, 18, 23]],
+      "objects": [[250, 0, 4], [251, 0, 1], [250, 4, 18], [415, 0, 1], [250, 18, 23]],
       "name": "base/poco/NetSSL_OpenSSL/lib_poco_net_ssl.a"
     },
     {
-      "file": 253,
+      "file": 252,
       "name": "base/poco/Util/lib_poco_util.a"
     },
     {
-      "file": 254,
+      "file": 253,
       "name": "base/poco/XML/lib_poco_xml.a"
     },
     {
-      "file": 255,
+      "file": 254,
       "name": "base/poco/JSON/lib_poco_json.a"
     },
     {
-      "file": 256,
+      "file": 255,
       "name": "contrib/jemalloc-cmake/lib_jemalloc.a"
     },
     {
       "name": "contrib/StringZilla-cmake/lib_stringzilla.a",
-      "objects": [[257, 5, 6], [257, 0, 1], [257, 4, 5], [257, 2, 3], [257, 1, 2], [257, 6, 7], [257, 3, 4], [257, 9, 11], [257, 12, 13], [257, 15, 16], [257, 7, 8], [257, 11, 12], [257, 8, 9], [257, 14, 15], [257, 13, 14]]
+      "objects": [[256, 5, 6], [256, 0, 1], [256, 4, 5], [256, 2, 3], [256, 1, 2], [256, 6, 7], [256, 3, 4], [256, 9, 11], [256, 12, 13], [256, 15, 16], [256, 7, 8], [256, 11, 12], [256, 8, 9], [256, 14, 15], [256, 13, 14]]
     },
     {
-      "file": 258,
+      "file": 257,
       "name": "contrib/consistent-hashing/lib_consistent_hashing.a"
     },
     {
-      "file": 259,
+      "file": 258,
       "name": "base/widechar_width/libwidechar_width.a"
     },
     {
-      "file": 260,
+      "file": 259,
       "name": "contrib/zmij-cmake/lib_zmij.a"
     },
     {
-      "file": 261,
+      "file": 260,
       "name": "contrib/boost-cmake/lib_boost_program_options.a"
     },
     {
-      "file": 262,
+      "file": 261,
       "name": "contrib/re2-cmake/lib_re2.a"
     },
     {
       "name": "contrib/libdeflate-cmake/lib_libdeflate.a",
-      "objects": [[263, 7, 8], [263, 1, 2], [263, 8, 9], [263, 3, 5], [263, 0, 1], [263, 9, 11], [263, 2, 3], [263, 5, 7]]
+      "objects": [[262, 7, 8], [262, 1, 2], [262, 8, 9], [262, 3, 5], [262, 0, 1], [262, 9, 11], [262, 2, 3], [262, 5, 7]]
     },
     {
-      "file": 264,
+      "file": 263,
       "name": "contrib/libfiu-cmake/lib_libfiu.a"
     },
     {
-      "file": 265,
+      "file": 264,
       "name": "contrib/silk-cmake/lib_silk_fibers.a"
     },
     {
       "objects": [
         [
-          266,
+          265,
           0,
           3
         ],
         [
-          267,
+          266,
           0,
           3
         ]
@@ -2594,365 +2592,365 @@ CMAKE_LINK = {
       "name": "contrib/boost-cmake/lib_boost_context.a"
     },
     {
-      "file": 268,
+      "file": 267,
       "name": "contrib/silk-cmake/lib_silk_util.a"
     },
     {
-      "file": 269,
+      "file": 268,
       "name": "contrib/librseq-cmake/lib_librseq.a"
     },
     {
-      "file": 270,
+      "file": 269,
       "name": "contrib/libssh-cmake/lib_ssh.a"
     },
     {
-      "file": 271,
+      "file": 270,
       "name": "contrib/c-ares-cmake/lib_c-ares.a"
     },
     {
-      "file": 272,
+      "file": 271,
       "name": "contrib/google-protobuf-cmake/lib_libprotobuf.a"
     },
     {
-      "file": 273,
+      "file": 272,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_check_op.a"
     },
     {
-      "file": 274,
+      "file": 273,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_internal.a"
     },
     {
-      "file": 275,
+      "file": 274,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_marshalling.a"
     },
     {
-      "file": 276,
+      "file": 275,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_reflection.a"
     },
     {
-      "file": 277,
+      "file": 276,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_config.a"
     },
     {
-      "file": 278,
+      "file": 277,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_program_name.a"
     },
     {
-      "file": 279,
+      "file": 278,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_private_handle_accessor.a"
     },
     {
-      "file": 280,
+      "file": 279,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_commandlineflag.a"
     },
     {
-      "file": 281,
+      "file": 280,
       "name": "contrib/abseil-cpp-cmake/libabsl_flags_commandlineflag_internal.a"
     },
     {
-      "file": 282,
+      "file": 281,
       "name": "contrib/google-protobuf-cmake/libutf8_validity.a"
     },
     {
-      "file": 283,
+      "file": 282,
       "name": "contrib/abseil-cpp-cmake/libabsl_die_if_null.a"
     },
     {
-      "file": 284,
+      "file": 283,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_conditions.a"
     },
     {
-      "file": 285,
+      "file": 284,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_message.a"
     },
     {
-      "file": 286,
+      "file": 285,
       "name": "contrib/abseil-cpp-cmake/libabsl_leak_check.a"
     },
     {
-      "file": 287,
+      "file": 286,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_nullguard.a"
     },
     {
-      "file": 288,
+      "file": 287,
       "name": "contrib/abseil-cpp-cmake/libabsl_examine_stack.a"
     },
     {
-      "file": 289,
+      "file": 288,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_format.a"
     },
     {
-      "file": 290,
+      "file": 289,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_structured_proto.a"
     },
     {
-      "file": 291,
+      "file": 290,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_proto.a"
     },
     {
-      "file": 292,
+      "file": 291,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_log_sink_set.a"
     },
     {
-      "file": 293,
+      "file": 292,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_sink.a"
     },
     {
-      "file": 294,
+      "file": 293,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_initialize.a"
     },
     {
-      "file": 295,
+      "file": 294,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_globals.a"
     },
     {
-      "file": 296,
+      "file": 295,
       "name": "contrib/abseil-cpp-cmake/libabsl_vlog_config_internal.a"
     },
     {
-      "file": 297,
+      "file": 296,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_fnmatch.a"
     },
     {
-      "file": 298,
+      "file": 297,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_internal_globals.a"
     },
     {
-      "file": 299,
+      "file": 298,
       "name": "contrib/abseil-cpp-cmake/libabsl_raw_hash_set.a"
     },
     {
-      "file": 300,
+      "file": 299,
       "name": "contrib/abseil-cpp-cmake/libabsl_hash.a"
     },
     {
-      "file": 301,
+      "file": 300,
       "name": "contrib/abseil-cpp-cmake/libabsl_city.a"
     },
     {
-      "file": 302,
+      "file": 301,
       "name": "contrib/abseil-cpp-cmake/libabsl_hashtablez_sampler.a"
     },
     {
-      "file": 303,
+      "file": 302,
       "name": "contrib/abseil-cpp-cmake/libabsl_statusor.a"
     },
     {
-      "file": 304,
+      "file": 303,
       "name": "contrib/abseil-cpp-cmake/libabsl_status.a"
     },
     {
-      "file": 305,
+      "file": 304,
       "name": "contrib/abseil-cpp-cmake/libabsl_cord.a"
     },
     {
-      "file": 306,
+      "file": 305,
       "name": "contrib/abseil-cpp-cmake/libabsl_cordz_info.a"
     },
     {
-      "file": 307,
+      "file": 306,
       "name": "contrib/abseil-cpp-cmake/libabsl_cord_internal.a"
     },
     {
-      "file": 308,
+      "file": 307,
       "name": "contrib/abseil-cpp-cmake/libabsl_cordz_functions.a"
     },
     {
-      "file": 309,
+      "file": 308,
       "name": "contrib/abseil-cpp-cmake/libabsl_exponential_biased.a"
     },
     {
-      "file": 310,
+      "file": 309,
       "name": "contrib/abseil-cpp-cmake/libabsl_cordz_handle.a"
     },
     {
-      "file": 311,
+      "file": 310,
       "name": "contrib/abseil-cpp-cmake/libabsl_synchronization.a"
     },
     {
-      "file": 312,
+      "file": 311,
       "name": "contrib/abseil-cpp-cmake/libabsl_stacktrace.a"
     },
     {
-      "file": 313,
+      "file": 312,
       "name": "contrib/abseil-cpp-cmake/libabsl_graphcycles_internal.a"
     },
     {
-      "file": 314,
+      "file": 313,
       "name": "contrib/abseil-cpp-cmake/libabsl_kernel_timeout_internal.a"
     },
     {
-      "file": 315,
+      "file": 314,
       "name": "contrib/abseil-cpp-cmake/libabsl_symbolize.a"
     },
     {
-      "file": 316,
+      "file": 315,
       "name": "contrib/abseil-cpp-cmake/libabsl_debugging_internal.a"
     },
     {
-      "file": 317,
+      "file": 316,
       "name": "contrib/abseil-cpp-cmake/libabsl_malloc_internal.a"
     },
     {
-      "file": 318,
+      "file": 317,
       "name": "contrib/abseil-cpp-cmake/libabsl_demangle_internal.a"
     },
     {
-      "file": 319,
+      "file": 318,
       "name": "contrib/abseil-cpp-cmake/libabsl_time.a"
     },
     {
-      "file": 320,
+      "file": 319,
       "name": "contrib/abseil-cpp-cmake/libabsl_civil_time.a"
     },
     {
-      "file": 321,
+      "file": 320,
       "name": "contrib/abseil-cpp-cmake/libabsl_time_zone.a"
     },
     {
-      "file": 322,
+      "file": 321,
       "name": "contrib/abseil-cpp-cmake/libabsl_crc_cord_state.a"
     },
     {
-      "file": 323,
+      "file": 322,
       "name": "contrib/abseil-cpp-cmake/libabsl_crc32c.a"
     },
     {
-      "file": 324,
+      "file": 323,
       "name": "contrib/abseil-cpp-cmake/libabsl_str_format_internal.a"
     },
     {
-      "file": 325,
+      "file": 324,
       "name": "contrib/abseil-cpp-cmake/libabsl_strings.a"
     },
     {
-      "file": 326,
+      "file": 325,
       "name": "contrib/abseil-cpp-cmake/libabsl_hardening.a"
     },
     {
-      "file": 327,
+      "file": 326,
       "name": "contrib/abseil-cpp-cmake/libabsl_throw_delegate.a"
     },
     {
-      "file": 328,
+      "file": 327,
       "name": "contrib/abseil-cpp-cmake/libabsl_int128.a"
     },
     {
-      "file": 329,
+      "file": 328,
       "name": "contrib/abseil-cpp-cmake/libabsl_strings_internal.a"
     },
     {
-      "file": 330,
+      "file": 329,
       "name": "contrib/abseil-cpp-cmake/libabsl_crc_internal.a"
     },
     {
-      "file": 331,
+      "file": 330,
       "name": "contrib/abseil-cpp-cmake/libabsl_base_cpu_detect.a"
     },
     {
-      "file": 332,
+      "file": 331,
       "name": "contrib/abseil-cpp-cmake/libabsl_base.a"
     },
     {
-      "file": 333,
+      "file": 332,
       "name": "contrib/abseil-cpp-cmake/libabsl_raw_logging_internal.a"
     },
     {
-      "file": 334,
+      "file": 333,
       "name": "contrib/abseil-cpp-cmake/libabsl_log_severity.a"
     },
     {
-      "file": 335,
+      "file": 334,
       "name": "contrib/abseil-cpp-cmake/libabsl_spinlock_wait.a"
     },
     {
-      "file": 336,
+      "file": 335,
       "name": "contrib/abseil-cpp-cmake/libabsl_strerror.a"
     },
     {
       "objects": [
         [
-          337,
+          336,
           0,
           607
         ],
         [
-          338,
+          337,
           0,
           37
         ],
         [
-          339,
+          338,
           0,
           19
         ],
         [
-          340,
+          339,
           0,
           5
         ],
         [
-          341,
+          340,
           0,
           79
         ],
         [
-          342,
+          341,
           0,
           7
         ],
         [
-          343,
+          342,
           0,
           1
         ],
         [
-          342,
+          341,
           7,
           8
         ],
         [
-          344,
+          343,
           0,
           21
         ],
         [
-          345,
+          344,
           0,
           1
         ],
         [
-          344,
+          343,
           21,
           28
         ],
         [
-          346,
+          345,
           0,
           34
         ],
         [
-          347,
+          346,
           0,
           28
         ],
         [
-          348,
+          347,
           0,
           3
         ],
         [
-          349,
+          348,
           0,
           24
         ],
         [
-          350,
+          349,
           0,
           12
         ],
         [
-          337,
+          336,
           607,
           1834
         ]
@@ -2960,123 +2958,123 @@ CMAKE_LINK = {
       "name": "contrib/aws-cmake/lib_aws.a"
     },
     {
-      "file": 351,
+      "file": 350,
       "name": "contrib/azure-cmake/lib_azure_sdk.a"
     },
     {
-      "file": 352,
+      "file": 351,
       "name": "contrib/libxml2-cmake/lib_libxml2.a"
     },
     {
-      "file": 353,
+      "file": 352,
       "name": "contrib/brotli-cmake/lib_brotli.a"
     },
     {
-      "file": 354,
+      "file": 353,
       "name": "contrib/snappy-cmake/lib_snappy.a"
     },
     {
-      "file": 355,
+      "file": 354,
       "name": "contrib/crc32c-cmake/lib_crc32c.a"
     },
     {
-      "file": 356,
+      "file": 355,
       "name": "contrib/libbcrypt-cmake/lib_bcrypt.a"
     },
     {
-      "file": 357,
+      "file": 356,
       "name": "contrib/liburing-cmake/lib_liburing.a"
     },
     {
-      "file": 358,
+      "file": 357,
       "name": "contrib/simdutf-cmake/lib_simdutf.a"
     },
     {
-      "file": 359,
+      "file": 358,
       "name": "contrib/libarchive-cmake/lib_libarchive.a"
     },
     {
       "name": "contrib/minizip-ng-cmake/lib_minizip.a",
-      "objects": [[360, 0, 17], [360, 19, 20], [360, 18, 19], [360, 17, 18]]
+      "objects": [[359, 0, 17], [359, 19, 20], [359, 18, 19], [359, 17, 18]]
     },
     {
-      "objects": [[361, 0, 22], [362, 0, 1], [361, 22, 24], [361, 25, 26], [361, 24, 25], [361, 26, 37]],
+      "objects": [[360, 0, 22], [361, 0, 1], [360, 22, 24], [360, 25, 26], [360, 24, 25], [360, 26, 37]],
       "name": "contrib/zstd-cmake/lib_zstd.a"
     },
     {
-      "file": 363,
+      "file": 362,
       "name": "contrib/xz-cmake/lib_liblzma.a"
     },
     {
-      "file": 364,
+      "file": 363,
       "name": "contrib/bzip2-cmake/lib_bzip2.a"
     },
     {
-      "file": 365,
+      "file": 364,
       "name": "contrib/simdjson-cmake/lib_simdjson.a"
     },
     {
-      "file": 366,
+      "file": 365,
       "name": "contrib/delta-kernel-rs-cmake/libdelta_kernel_ffi.a"
     },
     {
-      "file": 367,
+      "file": 366,
       "name": "rust/workspace/lib_ch_rust_wasmtime.a"
     },
     {
-      "file": 368,
+      "file": 367,
       "name": "contrib/cityhash102/lib_cityhash.a"
     },
     {
-      "file": 369,
+      "file": 368,
       "name": "contrib/replxx-cmake/lib_replxx.a"
     },
     {
-      "file": 370,
+      "file": 369,
       "name": "contrib/cctz-cmake/lib_cctz.a"
     },
     {
-      "file": 371,
+      "file": 370,
       "name": "contrib/cctz-cmake/libtzdata.a"
     },
     {
-      "file": 372,
+      "file": 371,
       "name": "contrib/fmtlib-cmake/lib_fmt.a"
     },
     {
-      "file": 373,
+      "file": 372,
       "name": "contrib/double-conversion-cmake/lib_double-conversion.a"
     },
     {
-      "file": 374,
+      "file": 373,
       "name": "contrib/zlib-ng-cmake/lib_zlib.a"
     },
     {
-      "file": 375,
+      "file": 374,
       "name": "contrib/lz4-cmake/lib_lz4.a"
     },
     {
-      "file": 376,
+      "file": 375,
       "name": "base/poco/Foundation/lib_poco_foundation_pcre.a"
     },
     {
-      "file": 377,
+      "file": 376,
       "name": "contrib/openssl-cmake/libssl.a"
     },
     {
       "objects": [
         [
-          378,
+          377,
           0,
           966
         ],
         [
-          379,
+          378,
           0,
           22
         ],
         [
-          378,
+          377,
           966,
           980
         ]
@@ -3084,26 +3082,26 @@ CMAKE_LINK = {
       "name": "contrib/openssl-cmake/libcrypto.a"
     },
     {
-      "file": 380,
+      "file": 379,
       "name": "base/poco/XML/lib_poco_xml_expat.a"
     },
     {
-      "file": 381,
+      "file": 380,
       "name": "base/poco/JSON/lib_poco_json_pdjson.a"
     },
     {
-      "file": 382,
+      "file": 381,
       "name": "base/glibc-rseq/libglibc-rseq.a"
     },
     {
       "objects": [
         [
-          383,
+          382,
           0,
           66
         ],
         [
-          384,
+          383,
           0,
           2
         ]
@@ -3111,31 +3109,31 @@ CMAKE_LINK = {
       "name": "base/glibc-compatibility/libglibc-compatibility.a"
     },
     {
-      "file": 385,
+      "file": 384,
       "name": "contrib/chdig-cmake/libchdig.a"
     },
     {
-      "file": 386,
+      "file": 385,
       "name": "contrib/libcxx-cmake/libcxx.a"
     },
     {
-      "file": 387,
+      "file": 386,
       "name": "contrib/libcxxabi-cmake/libcxxabi.a"
     },
     {
       "objects": [
         [
-          388,
+          387,
           0,
           3
         ],
         [
-          389,
+          388,
           0,
           4
         ],
         [
-          390,
+          389,
           0,
           2
         ]
@@ -3530,33 +3528,33 @@ CMAKE_LINK = {
       "-Wl,--keep-unique=__jit_debug_register_code"
     ],
     ["objects", [
-      [391, 0, 1],
-      [392, 0, 1]
+      [390, 0, 1],
+      [391, 0, 1]
     ]],
     [
       "arg",
       "-Wl,-rpath,/home/buildbuddy/workspace/repo-root/build_bazel_reference_aarch64/contrib/libllvmlibc-cmake:"
     ],
     ["objects", [
-      [393, 0, 457],
-      [394, 0, 1],
-      [393, 457, 691],
-      [395, 0, 26],
+      [392, 0, 457],
+      [393, 0, 1],
+      [392, 457, 691],
+      [394, 0, 26],
+      [395, 0, 1],
+      [394, 26, 27],
       [396, 0, 1],
-      [395, 26, 27],
       [397, 0, 1],
+      [396, 1, 12],
       [398, 0, 1],
-      [397, 1, 12],
+      [396, 12, 13],
       [399, 0, 1],
-      [397, 12, 13],
-      [400, 0, 1],
-      [397, 13, 35],
-      [399, 1, 2],
-      [397, 35, 59],
-      [426, 0, 1],
-      [397, 59, 70],
-      [401, 0, 20],
-      [402, 0, 1]
+      [396, 13, 35],
+      [398, 1, 2],
+      [396, 35, 59],
+      [425, 0, 1],
+      [396, 59, 70],
+      [400, 0, 20],
+      [401, 0, 1]
     ]],
     [
       "archive",

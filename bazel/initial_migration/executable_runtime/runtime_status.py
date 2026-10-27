@@ -134,7 +134,7 @@ def main():
         raise ValueError("exec link_extra_libs forwarded nonempty linker inputs")
     shard_owners = {r["owner"] for r in required if
                     ":clang_rt_builtins__compile_" in r["owner"] or
-                    ":clang_rt_xray__compile_" in r["owner"]}
+                    r["owner"].endswith("clickhouse_llvm_project//:xray_runtime")}
     if not shard_owners or any(r["owner"] in shard_owners and has_link_data(r)
                                for r in cfg["zlib_library"]):
         raise ValueError("zlib's CcInfo still forwards compiler-rt or XRay libraries")
