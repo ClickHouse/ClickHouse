@@ -18,6 +18,7 @@
 #include <fmt/format.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
@@ -297,12 +298,43 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
     return fields;
 }
 
-/// The smallest and the largest integer among the values of one field, see `checkValuesFitColumns`.
+/** The smallest and the largest integer among the values of one field, see `checkValuesFitColumns`,
+  * and the first of its string values that is not the text of an integer, if any.
+  */
 struct IntegerRange
 {
-    Int128 min = 0;
-    Int128 max = 0;
+    std::optional<Int128> min;
+    std::optional<Int128> max;
+    std::optional<String> non_integer;
 };
+
+/** The integer a string is the text of: the `JSONEachRow` reader reads a quoted number into a number
+  * column, and the serialization of a `$numberDecimal` is such a string. Its magnitude is saturated
+  * at `10^30`, which is out of the range of every integer type checked here anyway.
+  */
+std::optional<Int128> parseIntegerText(std::string_view text)
+{
+    bool negative = false;
+    if (!text.empty() && (text.front() == '-' || text.front() == '+'))
+    {
+        negative = text.front() == '-';
+        text.remove_prefix(1);
+    }
+    if (text.empty())
+        return std::nullopt;
+
+    static constexpr Int128 saturation = Int128(1'000'000'000'000'000ULL) * Int128(1'000'000'000'000'000ULL);
+    Int128 number = 0;
+    for (char c : text)
+    {
+        if (!isNumericASCII(c))
+            return std::nullopt;
+        if (number < saturation)
+            number = number * 10 + (c - '0');
+    }
+    number = std::min(number, saturation);
+    return negative ? -number : number;
+}
 
 void recordIntegers(const String & name, const rapidjson::Value & value, std::map<String, IntegerRange> & integer_ranges)
 {
@@ -314,21 +346,36 @@ void recordIntegers(const String & name, const rapidjson::Value & value, std::ma
         return;
     }
 
-    if (!value.IsInt64() && !value.IsUint64())
-        return;
-    const Int128 number = value.IsInt64() ? Int128(value.GetInt64()) : Int128(value.GetUint64());
-
-    auto [it, inserted] = integer_ranges.emplace(name, IntegerRange{.min = number, .max = number});
-    if (!inserted)
+    std::optional<Int128> number;
+    if (value.IsInt64())
+        number = value.GetInt64();
+    else if (value.IsUint64())
+        number = value.GetUint64();
+    else if (value.IsString())
     {
-        it->second.min = std::min(it->second.min, number);
-        it->second.max = std::max(it->second.max, number);
+        std::string_view text(value.GetString(), value.GetStringLength());
+        number = parseIntegerText(text);
+        if (!number)
+        {
+            auto & range = integer_ranges[name];
+            if (!range.non_integer)
+                range.non_integer = String(text);
+            return;
+        }
     }
+    else
+        return;
+
+    auto & range = integer_ranges[name];
+    range.min = range.min ? std::min(*range.min, *number) : *number;
+    range.max = range.max ? std::max(*range.max, *number) : *number;
 }
 
-/// Records the range of the integers of every field of an already flattened document, including
-/// the integer elements of its arrays. A nested document of an array is a value of a `JSON`
-/// element, which has no fixed integer type to check, so it is not descended into.
+/** Records the range of the integers of every field of an already flattened document, including
+  * the integer elements of its arrays, and of the strings that are the text of an integer, which is
+  * what a `$numberDecimal` becomes. A nested document of an array is a value of a `JSON` element,
+  * which has no fixed integer type to check, so it is not descended into.
+  */
 void recordIntegerRanges(const rapidjson::Value & flattened, std::map<String, IntegerRange> & integer_ranges)
 {
     for (auto it = flattened.MemberBegin(); it != flattened.MemberEnd(); ++it)
@@ -336,29 +383,29 @@ void recordIntegerRanges(const rapidjson::Value & flattened, std::map<String, In
 }
 
 /// The range of the values of an integer type of at most 64 bits, nothing for any other type.
-std::optional<IntegerRange> getIntegerTypeRange(const DataTypePtr & type)
+std::optional<std::pair<Int128, Int128>> getIntegerTypeRange(const DataTypePtr & type)
 {
     /// `Bool` is a `UInt8` that holds only `0` and `1`.
     if (isBool(type))
-        return IntegerRange{.min = 0, .max = 1};
+        return std::pair<Int128, Int128>(0, 1);
 
     WhichDataType which(type);
     if (which.isInt8())
-        return IntegerRange{.min = std::numeric_limits<Int8>::min(), .max = std::numeric_limits<Int8>::max()};
+        return std::pair<Int128, Int128>(std::numeric_limits<Int8>::min(), std::numeric_limits<Int8>::max());
     if (which.isInt16())
-        return IntegerRange{.min = std::numeric_limits<Int16>::min(), .max = std::numeric_limits<Int16>::max()};
+        return std::pair<Int128, Int128>(std::numeric_limits<Int16>::min(), std::numeric_limits<Int16>::max());
     if (which.isInt32())
-        return IntegerRange{.min = std::numeric_limits<Int32>::min(), .max = std::numeric_limits<Int32>::max()};
+        return std::pair<Int128, Int128>(std::numeric_limits<Int32>::min(), std::numeric_limits<Int32>::max());
     if (which.isInt64())
-        return IntegerRange{.min = std::numeric_limits<Int64>::min(), .max = std::numeric_limits<Int64>::max()};
+        return std::pair<Int128, Int128>(std::numeric_limits<Int64>::min(), std::numeric_limits<Int64>::max());
     if (which.isUInt8())
-        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt8>::max()};
+        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt8>::max());
     if (which.isUInt16())
-        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt16>::max()};
+        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt16>::max());
     if (which.isUInt32())
-        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt32>::max()};
+        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt32>::max());
     if (which.isUInt64())
-        return IntegerRange{.min = 0, .max = std::numeric_limits<UInt64>::max()};
+        return std::pair<Int128, Int128>(0, std::numeric_limits<UInt64>::max());
     return std::nullopt;
 }
 
@@ -442,8 +489,8 @@ void checkValuesFitColumns(
         if (it == column_types.end())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The field '{}' holds an integer value, but the collection '{}.{}' has no visible column of that name to check its range "
-                "against",
+                "The field '{}' holds an integer value or a string, but the collection '{}.{}' has no visible column of that name to "
+                "check the value against",
                 name,
                 collection.database,
                 collection.collection);
@@ -451,14 +498,26 @@ void checkValuesFitColumns(
         auto type_range = getIntegerTypeRange(get_value_type(it->second));
         if (!type_range)
             continue;
+        const auto [type_min, type_max] = *type_range;
 
-        if (range.min < type_range->min || range.max > type_range->max)
+        /// The reader would read the leading digits of a decimal such as `1.5` or fail on other text,
+        /// and neither is the value.
+        if (range.non_integer)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds the value '{}', which is not an integer, while its column is of the type {}: the value cannot "
+                "be stored",
+                name,
+                *range.non_integer,
+                it->second);
+
+        if (*range.min < type_min || *range.max > type_max)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The field '{}' holds the integer value {}, which is out of the range of its column of the type {}: the value cannot "
                 "be stored",
                 name,
-                range.min < type_range->min ? range.min : range.max,
+                *range.min < type_min ? *range.min : *range.max,
                 it->second);
     }
 
@@ -671,13 +730,14 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
             data.str()),
         insert_settings);
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(to_insert.size()));
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

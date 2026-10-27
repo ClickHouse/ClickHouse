@@ -2748,6 +2748,19 @@ def test_insert_rejects_integers_out_of_the_range_of_the_column(started_cluster)
         arrays.insert_one({"xs": [3, 2147483648]})
     assert [doc["xs"] for doc in arrays.find({})] == [[1, 2]]
 
+    # A `Decimal128` and a numeric string reach the column as the text of the number, which is
+    # checked the same way; a fraction is not an integer at all.
+    from bson.decimal128 import Decimal128
+
+    for value in [Decimal128("2147483648"), "2147483648", [Decimal128("2147483648")]]:
+        collection, document = (arrays, {"xs": value}) if isinstance(value, list) else (scalars, {"x": value})
+        with pytest.raises(pymongo.errors.OperationFailure, match="out of the range"):
+            collection.insert_one(document)
+    with pytest.raises(pymongo.errors.OperationFailure, match="not an integer"):
+        scalars.insert_one({"x": Decimal128("1.5")})
+    assert sorted(doc["x"] for doc in scalars.find({})) == [-2147483648, 1]
+    assert [doc["xs"] for doc in arrays.find({})] == [[1, 2]]
+
     scalars.drop()
     arrays.drop()
 
