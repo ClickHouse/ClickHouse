@@ -10589,6 +10589,11 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
+        /// Validate all restored parts against the destination metadata before committing any of them.
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+        for (const auto & part : parts)
+            storage->checkTTLInputsOfAdoptedPart(*part, *metadata_snapshot);
+
         storage->attachRestoredParts(std::move(parts), query_context, zookeeper_retries_info);
         parts.clear();
         temp_part_dirs.clear();
