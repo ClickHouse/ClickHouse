@@ -12,6 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: the request counts depend on the granules a key range selects in the file
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 SHARED="JSON(SHARED a UInt64, SHARED b String, SHARED c Array(UInt8), SHARED d.x UInt64, SHARED d.y String)"
 PLAIN="JSON(a UInt64, b String, c Array(UInt8), d.x UInt64, d.y String)"
 ROW="concat('{\"a\":', toString(number * 10), ',\"b\":\"', repeat('x', number % 7), '\",\"c\":', toString(range(number % 4)), ',\"d\":{\"x\":', toString(number), ',\"y\":\"', repeat('y', number % 5), '\"}', if(number % 2 = 0, concat(',\"e\":', toString(number)), ''), '}')"
