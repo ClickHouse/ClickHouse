@@ -103,6 +103,21 @@ write("dense_extra", pa.dense_union([opaque, other], [0, 1]),
 write("sparse", pa.sparse_union([opaque, other], [0, 1]),
       [None, types],
       [child, pa.array([0, 7], type=pa.uint64())])
+
+# A union may also be dictionary-encoded, and a dictionary nested in a container is declared by
+# `fieldToCHType` recursing through that container, which cannot see a type settled while decoding. Reading
+# a tag there would leave the values carrying an alternative their declaration does not name.
+union = pa.UnionArray.from_buffers(
+    pa.dense_union([opaque, other], [0, 1]), 2,
+    [None, types, pa.py_buffer(b"".join(x.to_bytes(4, "little") for x in (0, 0)))],
+    children=[pa.array([payload], type=pa.binary()), pa.array([7], type=pa.uint64())])
+nested = pa.ListArray.from_arrays(
+    pa.array([0, 2, 3], type=pa.int32()),
+    pa.DictionaryArray.from_arrays(pa.array([0, 1, 0], type=pa.int8()), union))
+schema = pa.schema([pa.field("v", nested.type)])
+writer = pa.ipc.new_stream(f"{stem}.dict_nested", schema)
+writer.write(pa.record_batch([nested], schema=schema))
+writer.close()
 PY
 
 for shape in dense_extra sparse; do
@@ -110,5 +125,13 @@ for shape in dense_extra sparse; do
         SELECT '${shape}' AS shape, variantType(v) AS type, toString(v) AS value
         FROM file('${FILE}.${shape}', 'ArrowStream', 'v Variant(JSON, UInt64)');"
 done
+
+# The values keep the alternative their declaration names, and the payload stays the bytes it was written
+# as. Recovering the tag here instead put a `JSON` column under a declaration saying `String`, which the
+# variant-extension cast then read as a `String` - a segmentation fault in a release build.
+echo "=== a dictionary-encoded union nested in a container ==="
+${CLICKHOUSE_LOCAL} --query "
+    SELECT arrayMap(x -> variantType(x), v) AS alternatives, v
+    FROM file('${FILE}.dict_nested', 'ArrowStream', 'v Array(Variant(JSON, String, UInt64))');"
 
 rm -f "${FILE}".*

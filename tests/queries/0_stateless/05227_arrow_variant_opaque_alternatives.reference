@@ -98,3 +98,6 @@ dense_extra	JSON	{"x":1}
 dense_extra	UInt64	7
 sparse	JSON	{"x":1}
 sparse	UInt64	7
+=== a dictionary-encoded union nested in a container ===
+['String','UInt64']	['x\n\0\0\0\0\0\0\0',7]
+['String']	['x\n\0\0\0\0\0\0\0']
