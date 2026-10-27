@@ -13,17 +13,20 @@ DROP TABLE IF EXISTS t_file;
 DROP TABLE IF EXISTS t_order_sensitive_policy;
 DROP TABLE IF EXISTS t_stateful_policy;
 DROP TABLE IF EXISTS t_no_policy;
+DROP TABLE IF EXISTS t_numbers;
 
 CREATE TABLE t_memory (tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE t_file (tenant String DEFAULT 'a', payload String) ENGINE = File(Parquet);
 CREATE TABLE t_order_sensitive_policy (tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE t_stateful_policy (tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE t_no_policy (tenant String DEFAULT 'a', payload String) ENGINE = Memory;
+CREATE TABLE t_numbers (x UInt64) ENGINE = Memory;
 INSERT INTO t_memory VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 INSERT INTO t_file VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 INSERT INTO t_order_sensitive_policy VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 INSERT INTO t_stateful_policy VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 INSERT INTO t_no_policy VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+INSERT INTO t_numbers SELECT number FROM numbers(10);
 CREATE TABLE m_child_policy AS t_memory ENGINE = Merge(currentDatabase(), '^t_memory$');
 CREATE TABLE m_own_policy AS t_no_policy ENGINE = Merge(currentDatabase(), '^t_no_policy$');
 
@@ -63,8 +66,13 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM t_order_sensitive_p
     SETTINGS query_plan_enable_optimizations = 1, query_plan_merge_filters = 1) WHERE explain ILIKE '%Prewhere filter column%';
 SELECT count() FROM t_order_sensitive_policy;
 
-SELECT '-- a stateful policy';
+SELECT '-- a stateful policy or a stateful condition of the query';
 SELECT count() FROM t_stateful_policy WHERE toUInt64(payload) > 10 SETTINGS short_circuit_function_evaluation = 'disable';
+SELECT count() FROM t_memory WHERE rowNumberInBlock() >= 0 AND toUInt64(payload) > 10 SETTINGS short_circuit_function_evaluation = 'disable';
+
+SELECT '-- a stateful condition is not merged into the filter below it';
+SELECT groupArray(x) FROM (SELECT x FROM (SELECT x FROM t_numbers WHERE x % 2 = 1) WHERE rowNumberInAllBlocks() < 2)
+    SETTINGS max_threads = 1, query_plan_merge_filters = 1, optimize_move_to_prewhere = 0;
 
 SELECT '-- without a policy the row is in scope';
 SELECT count() FROM t_no_policy WHERE toUInt64(payload) > 10; -- { serverError CANNOT_PARSE_TEXT }
@@ -81,3 +89,4 @@ DROP TABLE t_file;
 DROP TABLE t_order_sensitive_policy;
 DROP TABLE t_stateful_policy;
 DROP TABLE t_no_policy;
+DROP TABLE t_numbers;

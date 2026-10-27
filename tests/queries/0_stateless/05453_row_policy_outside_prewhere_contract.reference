@@ -19,6 +19,9 @@
 -- an order-sensitive policy
 0
 3
--- a stateful policy
+-- a stateful policy or a stateful condition of the query
 2
+2
+-- a stateful condition is not merged into the filter below it
+[1,3]
 -- without a policy the row is in scope
