@@ -1252,13 +1252,13 @@ TEST(StreamingExchangeTransport, BufferSizesAboveIntMaxAreRejected)
     ASSERT_EQ(published.rcvbuf, 32768u);
 
     /// 2^32 narrowed to int becomes 0: an explicit setsockopt that locks the buffer at the kernel
-    /// minimum. Rejection must keep both published values, not only the out-of-range one.
-    StreamingExchangeProtocol::setSocketBufferSizes(4294967296, 32768);
+    /// minimum. Reject the invalid configuration rather than silently retaining stale values.
+    EXPECT_THROW(StreamingExchangeProtocol::setSocketBufferSizes(4294967296, 32768), Exception);
     auto after = StreamingExchangeProtocol::getSocketBufferSizes();
     EXPECT_EQ(after.sndbuf, published.sndbuf);
     EXPECT_EQ(after.rcvbuf, published.rcvbuf);
 
-    StreamingExchangeProtocol::setSocketBufferSizes(65536, 4294967296);
+    EXPECT_THROW(StreamingExchangeProtocol::setSocketBufferSizes(65536, 4294967296), Exception);
     after = StreamingExchangeProtocol::getSocketBufferSizes();
     EXPECT_EQ(after.sndbuf, published.sndbuf);
     EXPECT_EQ(after.rcvbuf, published.rcvbuf);

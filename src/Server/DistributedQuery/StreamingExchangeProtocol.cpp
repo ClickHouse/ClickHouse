@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
@@ -39,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int EXCHANGE_PEER_DISCONNECTED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
@@ -47,10 +47,11 @@ namespace ErrorCodes
 namespace StreamingExchangeProtocol
 {
 
-/// The socket buffer sizes pushed by the server from the `streaming_exchange_sndbuf` and
-/// `streaming_exchange_rcvbuf` server settings (see `Server.cpp`). 0 = kernel TCP autotuning.
-std::atomic<UInt64> socket_sndbuf{0};
-std::atomic<UInt64> socket_rcvbuf{0};
+namespace
+{
+    std::atomic<UInt64> socket_sndbuf{0};
+    std::atomic<UInt64> socket_rcvbuf{0};
+}
 
 UInt64 SourceHelloBody::readVersion(ReadBuffer & in)
 {
@@ -86,8 +87,6 @@ void SinkHelloBody::write(WriteBuffer & out) const
 
 namespace
 {
-    LoggerPtr log = getLogger("StreamingExchangeProtocol");
-
     /// The errors `recv` and `send` report when the other side of an established connection is gone.
     bool isPeerGoneError(int socket_errno)
     {
@@ -374,14 +373,9 @@ void applySocketBufferSizes(Poco::Net::StreamSocket & socket)
 
 void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf)
 {
-    /// setsockopt takes int, so a setting above INT_MAX would wrap to an unrelated size instead of
-    /// asking the kernel to clamp a large buffer; a wrap to 0 would even disable autotuning. Reject
-    /// such a configuration like the HTTP connection pools do, keeping both published values.
     if (sndbuf > static_cast<UInt64>(INT_MAX) || rcvbuf > static_cast<UInt64>(INT_MAX))
-    {
-        LOG_ERROR(log, "streaming_exchange_sndbuf={} and streaming_exchange_rcvbuf={} exceed the maximum {}; ignoring both", sndbuf, rcvbuf, INT_MAX);
-        return;
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`streaming_exchange_sndbuf` and `streaming_exchange_rcvbuf` must not exceed {}", INT_MAX);
     socket_sndbuf.store(sndbuf, std::memory_order_relaxed);
     socket_rcvbuf.store(rcvbuf, std::memory_order_relaxed);
 }
