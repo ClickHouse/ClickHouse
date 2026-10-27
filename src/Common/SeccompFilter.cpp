@@ -22,7 +22,6 @@ std::atomic<int> requested_mode{-1};
 /// The mode of the filter in force: the requested one, or `Disabled` if no filter was installed.
 /// -1 if `installSeccompFilter` has not returned.
 std::atomic<int> installed_mode{-1};
-/// The `allow_io_uring` `installSeccompFilter` was called with, or -1 if it has not been called.
 std::atomic<int> requested_allow_io_uring{-1};
 
 void rememberRequestedConfiguration(SeccompMode mode, bool allow_io_uring)
@@ -138,11 +137,8 @@ namespace DB
 /// action - see `refused_with_enosys`). Making a device node with `mknodat` is refused too, while
 /// its other uses - a FIFO for an executable user defined function among them - are not.
 ///
-/// One of the allowed calls is worth calling out, because it is the largest remaining surface and is
-/// here only because ClickHouse genuinely uses it: `perf_event_open` (for
-/// `metrics_perf_events_enabled`). The `io_uring` calls are refused unless the server asks for them
-/// (see `io_uring_syscall_numbers`): the filter sees `io_uring_enter` but not the operations queued
-/// in a ring, so a ring reaches the operations whose own system calls are refused here.
+/// `perf_event_open` (for `metrics_perf_events_enabled`) is worth calling out: it is the largest
+/// remaining allowed surface and is here only because ClickHouse genuinely uses it.
 /// clang-format off
 #define SECCOMP_ALLOWED_SYSCALLS_COMMON(M) \
     /* Reading and writing data. */ \
@@ -292,7 +288,7 @@ constexpr int removexattrat_syscall_number = 466;
 /// nothing in ClickHouse uses them, but the NSS modules of the host are loaded into the process by
 /// every name lookup, and `nss-resolve` of `systemd` tags its socket to `systemd-resolved` with an
 /// attribute after probing whether the kernel lets it, treating `ENOSYS` as "it does not" and
-/// carrying on without the tag. So are the `io_uring` calls, unless allowed (below).
+/// carrying on without the tag.
 constexpr int refused_with_enosys[] = {
     clone3_syscall_number,
     __NR_setxattr, __NR_lsetxattr, __NR_fsetxattr,
@@ -302,9 +298,8 @@ constexpr int refused_with_enosys[] = {
     setxattrat_syscall_number, getxattrat_syscall_number, listxattrat_syscall_number, removexattrat_syscall_number,
 };
 
-/// `io_uring_setup`, `io_uring_enter` and `io_uring_register`, with the same numbers on every
-/// architecture. Allowed only when the server asks for them, otherwise refused with `ENOSYS`, the
-/// answer of a kernel without `io_uring`, which liburing, libuv and RocksDB fall back from.
+/// `io_uring_setup`, `io_uring_enter` and `io_uring_register`, numbered alike on every architecture.
+/// Refused with `ENOSYS` like the calls above unless allowed: the filter does not see a ring's operations.
 constexpr int io_uring_syscall_numbers[] = {425, 426, 427};
 
 constexpr int allowed_syscalls[] =

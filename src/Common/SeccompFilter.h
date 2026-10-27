@@ -49,7 +49,6 @@ std::optional<SeccompMode> getInstalledSeccompMode();
 /// The `allow_io_uring` the server passed to `installSeccompFilter` at startup, or nothing if it has not called it.
 std::optional<bool> getRequestedSeccompAllowIOUring();
 
-/// Whether the filter in force refuses the `io_uring` system calls: it enforces its policy and was installed without `allow_io_uring`.
 bool isIOUringRefusedBySeccomp();
 
 struct SeccompFilterStatus
@@ -72,8 +71,8 @@ struct SeccompFilterStatus
 /// install a filter with that action: the `Log` mode refuses nothing, so running without it takes
 /// away nothing a filter would have enforced, and a server that used to start must not stop
 /// starting because of it. Throws if one of the enforcing modes was requested but its filter could
-/// not be installed. Unless `allow_io_uring`, the `io_uring` system calls are refused with `ENOSYS`
-/// in every mode but `Log`.
+/// not be installed.
+/// Unless `allow_io_uring`, the `io_uring` system calls are refused with `ENOSYS` in every mode but `Log`.
 ///
 /// Call this once, as early in the startup as the configuration allows: the filter takes effect
 /// immediately and there is no way to widen it afterwards.
