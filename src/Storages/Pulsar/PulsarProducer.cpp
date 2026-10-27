@@ -81,7 +81,9 @@ void PulsarProducer::finish()
 
     /// Unregister the publisher on the broker: each `INSERT` creates its own producer
     /// on the connection shared by the table, so an unclosed one would stay there.
-    closed = true;
+    /// The producer is marked as closed only on success, so the destructor still tries to close it
+    /// after a failure. The failure cases leave nothing on the broker anyway: a timed out
+    /// `CloseProducer` request has already been sent, and a broken connection drops its producers.
     result = producer->close();
     if (result != pulsar::ResultOk)
         throw Exception(
@@ -89,6 +91,7 @@ void PulsarProducer::finish()
             "Failed to close the producer for Pulsar topic {}: {}",
             topic,
             pulsar::strResult(result));
+    closed = true;
 }
 
 void PulsarProducer::cancel() noexcept
