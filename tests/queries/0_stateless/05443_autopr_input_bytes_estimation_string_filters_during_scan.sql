@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- no-parallel: the checks of the reads served from the uncompressed and the columns caches need the entries to stay there,
+-- and the caches are shared with the other tests, which evict them.
+
 -- `apply_string_filters_during_scan` reads the values that do not match a substring condition of PREWHERE
 -- as empty strings. The input-bytes estimate is based on the in-memory size of the read columns, so it
 -- has to account for the replaced values, which were read from disk all the same. Otherwise it is many
