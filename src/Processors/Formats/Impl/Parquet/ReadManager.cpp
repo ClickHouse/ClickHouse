@@ -595,6 +595,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 /// Main step finished. Move to Deliver.
                 LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} main step finished, moving to Deliver, advancing read_ptr",
                           row_group_idx, row_subgroup_idx);
+                if (reader.track_matched_row_blocks)
+                    reader.recordMatchedRowBlocks(row_subgroup, row_group);
                 row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
 
                 /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.

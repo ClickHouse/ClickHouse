@@ -47,6 +47,8 @@ public:
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
     bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
+    std::optional<std::vector<bool>> getMatchedRowBlocks() const override { return underlying->getMatchedRowBlocks(); }
+    void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> row_blocks) override { underlying->setRowBlocksToRead(std::move(row_blocks)); }
     void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 
 protected:

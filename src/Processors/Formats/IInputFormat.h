@@ -151,6 +151,15 @@ public:
     /// Called after the file was read, if its version provably did not change during the read.
     virtual void cacheFilterColumnStatistics() {}
 
+    /// Query condition cache row blocks: consecutive ranges of this many rows, numbered from the first row of the file.
+    static constexpr size_t QUERY_CONDITION_CACHE_ROWS_PER_BLOCK = 8192;
+
+    /// After the whole file was read: whether each row block had a row passing the format's filter. `nullopt` if unknown.
+    virtual std::optional<std::vector<bool>> getMatchedRowBlocks() const { return std::nullopt; }
+
+    /// Read only the row blocks marked `true`. Must be called before the first `read`. Formats may ignore it.
+    virtual void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> /*row_blocks*/) {}
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
