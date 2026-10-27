@@ -643,14 +643,29 @@ class BuildFile:
                     )]
                     fields['hdrs'].append(Glob(['lib/cpp/src/**/*.h', 'lib/cpp/src/**/*.tcc'], excluded))
                     continue
+                if (old_field == 'hdrs' and owner == self.owner == 'contrib/s2geometry' and name == '_s2'
+                        and directory == 'contrib/s2geometry/src'):
+                    # _s2 builds s2random.cc and s2testing.cc; the remaining test helpers have no _s2 readers.
+                    prefix = 'src/s2/'
+                    private = [prefix + header for header in (
+                        's2random.h', 's2testing.h', 'util/bitmap/bitmap.h', 'util/bits/bit-interleave.h',
+                        'util/coding/nth-derivative.h', 'util/coding/transforms.h', 'util/task/status_macros.h',
+                    )]
+                    tests = [prefix + header for header in (
+                        '*_testing.h', 'base/timer.h', 'gmock_matchers.h', 'util/random/shared_bit_gen.h',
+                    )]
+                    fields['srcs'].extend(private)
+                    fields['hdrs'].append(Glob(['src/**/*.h'], tests + private))
+                    continue
                 if (old_field == 'hdrs' and owner == self.owner == 'contrib/icu' and name == '_icuuc'
                         and directory == 'contrib/icu/icu4c/source/common'):
                     # ICU installs unicode/*.h. Its genbrk tool also includes rbbidata.h.
                     common = 'icu4c/source/common/'
                     private = [common + header for header in (
-                        '*_data.h', 'bmpset.h', 'brkeng.h', 'charstrmap.h', 'dictbe.h', 'localsvc.h',
-                        'locdistance.h', 'loclikelysubtags.h', 'lsr.h', 'lstmbe.h', 'mlbe.h', 'norm2allmodes.h',
-                        'rbbi*.h', 'ruleiter.h', 'ubidiimp.h', 'ubrkimpl.h', 'ucnv*.h', 'ucptrie_impl.h',
+                        '*_data.h', 'bmpset.h', 'brkeng.h', 'charstrmap.h', 'cwchar.h', 'dictbe.h',
+                        'localeprioritylist.h', 'localsvc.h', 'locdistance.h', 'loclikelysubtags.h', 'lsr.h',
+                        'lstmbe.h', 'mlbe.h', 'norm2allmodes.h', 'pluralmap.h', 'punycode.h', 'rbbi*.h',
+                        'ruleiter.h', 'ubidiimp.h', 'ubrkimpl.h', 'ucnv*.h', 'ucptrie_impl.h',
                         'uniquecharstr.h', 'unisetspan.h', 'utrie2_impl.h',
                     )]
                     shared = common + 'rbbidata.h'

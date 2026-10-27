@@ -6,6 +6,7 @@ _S2_PRIVATE_HEADERS = [
     "src/s2/s2random.h",
     "src/s2/s2testing.h",
     "src/s2/util/bitmap/bitmap.h",
+    "src/s2/util/bits/bit-interleave.h",
     "src/s2/util/coding/nth-derivative.h",
     "src/s2/util/coding/transforms.h",
     "src/s2/util/task/status_macros.h",
@@ -121,16 +122,12 @@ ch_cc_library(
     ] + _S2_PRIVATE_HEADERS,
     hdrs = glob(
         ["src/**/*.h"],
-        # These belong to upstream s2_testing_headers; only the two compiled
-        # ClickHouse S2 implementations above need their private headers.
+        # Exclude headers used only by upstream S2 tests.
         exclude = [
+            "src/s2/*_testing.h",
+            "src/s2/base/timer.h",
             "src/s2/gmock_matchers.h",
-            "src/s2/s2builderutil_testing.h",
-            "src/s2/s2cell_iterator_testing.h",
-            "src/s2/s2closest_edge_query_testing.h",
-            "src/s2/s2coder_testing.h",
-            "src/s2/s2shapeutil_testing.h",
-            "src/s2/thread_testing.h",
+            "src/s2/util/random/shared_bit_gen.h",
         ] + _S2_PRIVATE_HEADERS,
     ),
     implementation_deps = [
