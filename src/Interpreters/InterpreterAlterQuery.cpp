@@ -583,6 +583,20 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             bindHierarchicalNameOfOperand(command.to_database, command.to_table);
     }
 
+    /// The names in the query of `MODIFY QUERY` are bound here as well, before the query is dispatched `ON CLUSTER` or
+    /// enqueued to a `Replicated` database: the hosts replaying it take a qualified name exactly as shipped (see
+    /// `DatabaseCatalog::isBoundHierarchicalName`), so `db.ns.t` must already be the table `db`.`ns.t` it denotes here.
+    /// This is the same expansion and qualification as below, which is idempotent; the table is qualified with the
+    /// database of the altered table, as each host does.
+    if (modify_query && table_id)
+    {
+        ExpandedASTBudget binding_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
+        ApplyWithSubqueryVisitor::visit(*modify_query, binding_budget);
+        AddDefaultDatabaseVisitor binding_visitor(getContext(), table_id.getDatabaseName());
+        ASTPtr modify_query_ptr = modify_query->ptr();
+        binding_visitor.visit(modify_query_ptr);
+    }
+
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         /// NOLINT(storage-cast): `table` is resolved above.
