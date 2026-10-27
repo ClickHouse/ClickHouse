@@ -64,6 +64,11 @@ def test_scheduled_refresh_of_definer_view_carries_definer_to_remote_shard(
         "SELECT * FROM tenant_db.dist", **TENANT
     )
 
+    # The shard also checks the allowed hosts of the definer against `initial_address`. A scheduled
+    # refresh has no client, so it must present itself as coming from the local host of the
+    # initiator rather than from the unspecified address, which only `HOST ANY` users accept.
+    node2.query("ALTER USER tenant HOST LOCAL")
+
     # The refresh runs under the definer's identity and must be denied on the remote shard too.
     # Before the fix, the refresh query was sent with an empty `initial_user`, which the remote
     # shard treated as interserver mode and executed without any access checks.

@@ -261,7 +261,15 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
                 if (current_user_empty)
                     new_context->setCurrentUserName(definer_name);
                 if (initial_user_empty)
+                {
                     new_context->setInitialUserName(definer_name);
+                    /// The shard authenticates the definer by `initial_user` and checks `initial_address`
+                    /// against the allowed hosts of that user. Without an invoker, the address is the
+                    /// unspecified `0.0.0.0`, which only matches users with `HOST ANY`. The query is
+                    /// produced by this server itself, so present it as coming from the local host.
+                    if (!new_client_info.initial_address || new_client_info.initial_address->host().isWildcard())
+                        new_context->setInitialAddress(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+                }
                 if (authenticated_user_empty)
                     new_context->setAuthenticatedUserName(definer_name);
             }
