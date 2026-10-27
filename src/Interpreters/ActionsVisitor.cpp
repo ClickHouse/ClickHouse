@@ -1588,7 +1588,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 auto table_id = identifier->getTableId();
                 table_id = data.getContext()->resolveStorageID(table_id, Context::ResolveOrdinary);
                 auto column_string = ColumnString::create();
-                column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
+                /// Keeps the split into the database and the table of a hierarchical name (`db.`ns.j``), which the function
+                /// parses back with `DatabaseCatalog::parseHierarchicalName`.
+                column_string->insert(DatabaseCatalog::formatHierarchicalName(table_id.getDatabaseName(), table_id.getTableName()));
                 ColumnConstPtr column = ColumnConst::create(std::move(column_string), 1);
                 auto type = std::make_shared<DataTypeString>();
                 auto name = data.getUniqueName("__" + node.name);
