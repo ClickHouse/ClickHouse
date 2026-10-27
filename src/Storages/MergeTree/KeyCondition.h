@@ -695,6 +695,12 @@ private:
         const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
         AtomGroup & group);
+    /// For a key `ifNull(expr, c)` or `coalesce(expr, c)` with a constant `c`, `expr IS NULL` implies
+    /// `key = c`, so it produces a relaxed `equals` atom (the converse does not hold).
+    void extractIsNullAtomForIfNullKey(
+        const RPNBuilderTreeNode & expr,
+        const BuildInfo & info,
+        AtomGroup & group) const;
     /// The shared core of comparison-atom extraction; the comparison is already in
     /// `key_expr <op> const` form. `constant` holds a `ColumnConst` whose value is neither NULL nor NaN.
     void extractComparisonAtomsForKeyArgument(
@@ -748,13 +754,15 @@ private:
     /// `allow_key_function`-approved functions through which that key column computes
     /// from the key subexpression `expr_name`. Each chain records whether it preserves
     /// or reverses comparison order (see `KeyWrappingChain::chain_is_positive`).
+    /// `allow_key_function` also receives whether the subexpression enters the function as its
+    /// first argument, which matters for a function like `ifNull`.
     /// When `first_match_only` is set, the search stops at the first collected chain.
     std::vector<KeyWrappingChain> collectKeyWrappingChains(
         ContextPtr context,
         const String & expr_name,
         const BuildInfo & info,
         bool first_match_only,
-        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
+        std::function<bool(const IFunctionBase &, const IDataType &, bool is_first_argument)> allow_key_function) const;
 
     /// For every key column that is computed from the predicate expression `node` by a
     /// chain of `allow_key_function`-approved monotonic functions, this function
@@ -772,7 +780,7 @@ private:
         const BuildInfo & info,
         const std::string & func_name,
         const ColumnWithTypeAndName & constant,
-        std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
+        std::function<bool(const IFunctionBase &, const IDataType &, bool is_first_argument)> allow_key_function) const;
 
     /// This is the same transformation (including the single-key-column behavior of
     /// `multiple_key_columns_per_condition`), but through arbitrary deterministic
