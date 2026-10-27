@@ -25,4 +25,6 @@
 -- parts pruned by statistics in memory do not load the primary index
 0
 0
-0	0
+0
+05407_cached_statistics	0	0
+05407_cached_statistics_prewhere	0	0

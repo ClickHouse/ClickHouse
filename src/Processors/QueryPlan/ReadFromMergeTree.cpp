@@ -6860,13 +6860,15 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
         getParts(), *indexes, getStorageMetadata(), data, getContext(),
         max_block_numbers_to_read.get(), log, unused_stats);
 
-    /// Only pruning parts can use statistics: let it decide by itself whether the read is large enough.
+    /// Pruning parts decides by itself whether the read is large enough to load statistics.
+    /// It prunes the parts whose statistics are in memory regardless, before the primary key is probed below.
+    res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+        res.parts, getStorageMetadata(), query_info, mutations_snapshot, indexes->key_condition,
+        min_marks_per_part_to_use_statistics, getContext(), log, unused_stats);
+
     if (!selectivity_estimator_columns || !settings[Setting::use_statistics] || !getStorageMetadata()->hasStatistics())
     {
         res.use_statistics = false;
-        res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
-            res.parts, getStorageMetadata(), query_info, mutations_snapshot, indexes->key_condition,
-            min_marks_per_part_to_use_statistics, getContext(), log, unused_stats);
         return res;
     }
 
@@ -6875,6 +6877,7 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     res.use_statistics = !MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
         res.parts, getStorageMetadata(), indexes->key_condition, min_marks_to_use_statistics(res.parts), settings, log);
 
+    /// The statistics are loaded for ordering the conditions anyway, so prune the parts skipped above as well.
     if (res.use_statistics)
         res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
             res.parts, getStorageMetadata(), query_info, mutations_snapshot, /*key_condition=*/nullptr,

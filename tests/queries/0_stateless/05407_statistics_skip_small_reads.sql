@@ -102,8 +102,12 @@ SELECT sum(k) FROM statistics_small_reads_cached WHERE k >= 1 AND v = 1
 SETTINGS optimize_move_to_prewhere = 0, use_primary_key = 0, min_marks_per_part_to_use_statistics = 0;
 SELECT sum(k) FROM statistics_small_reads_cached WHERE k >= 1 AND v = 1
 SETTINGS optimize_move_to_prewhere = 0, log_comment = '05407_cached_statistics';
+-- The same with `PREWHERE`: the parts are pruned by the statistics in memory before the primary key is probed.
+SELECT sum(k) FROM statistics_small_reads_cached WHERE k >= 1 AND v = 1
+SETTINGS optimize_move_to_prewhere = 1, log_comment = '05407_cached_statistics_prewhere';
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['LoadedPrimaryIndexFiles'], ProfileEvents['SelectedParts']
+SELECT log_comment, ProfileEvents['LoadedPrimaryIndexFiles'], ProfileEvents['SelectedParts']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05407_cached_statistics';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '05407_cached_statistics')
+ORDER BY log_comment;
 DROP TABLE statistics_small_reads_cached;

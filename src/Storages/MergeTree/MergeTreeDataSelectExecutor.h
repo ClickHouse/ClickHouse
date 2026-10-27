@@ -263,9 +263,9 @@ public:
 
     /// Filter parts using column statistics.
     /// Returns filtered parts and updates index_stats with statistics pruning info.
-    /// Loading statistics costs a few reads per part, so it is skipped if `key_condition` leaves fewer than
-    /// `min_marks_per_part_to_use_statistics` marks to read per part whose statistics are not in memory
-    /// (see `getMinMarksToUseStatistics` and `hasFewerMarksToReadThan`).
+    /// Parts whose statistics are in memory are always pruned. Loading statistics costs a few reads per part,
+    /// so the other parts are not pruned if `key_condition` leaves fewer than `min_marks_per_part_to_use_statistics`
+    /// marks to read in them per part (see `getMinMarksToUseStatistics` and `hasFewerMarksToReadThan`).
     static RangesInDataParts filterPartsByStatistics(
         const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,

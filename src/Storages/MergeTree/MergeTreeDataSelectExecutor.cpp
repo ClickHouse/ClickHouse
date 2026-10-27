@@ -922,24 +922,39 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
-    /// Statistics that are already in memory cost nothing, so only the parts whose statistics would be loaded count.
-    const size_t min_marks_to_use_statistics = getMinMarksToUseStatistics(
-        min_marks_per_part_to_use_statistics,
-        std::ranges::count_if(
-            parts, [&](const RangesInDataPart & part) { return !part.data_part->areEstimatesInMemory(required_columns); }));
-
-    if (hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
+    /// Statistics that are already in memory cost nothing, so the parts with them are always pruned.
+    /// Only the parts whose statistics would be loaded count for the size of the read.
+    std::vector<bool> estimates_in_memory(parts.size());
+    RangesInDataParts parts_to_load_statistics;
+    for (size_t i = 0; i < parts.size(); ++i)
     {
-        LOG_TRACE(log, "Not pruning parts by statistics, because fewer than {} marks are left to read by the primary key",
-            min_marks_to_use_statistics);
-        return parts;
+        estimates_in_memory[i] = parts[i].data_part->areEstimatesInMemory(required_columns);
+        if (!estimates_in_memory[i])
+            parts_to_load_statistics.push_back(parts[i]);
     }
+
+    const size_t min_marks_to_use_statistics = getMinMarksToUseStatistics(
+        min_marks_per_part_to_use_statistics, parts_to_load_statistics.size());
+
+    const bool load_statistics = !hasFewerMarksToReadThan(
+        parts_to_load_statistics, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log);
+
+    if (!load_statistics)
+        LOG_TRACE(log, "Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key",
+            parts_to_load_statistics.size(), min_marks_to_use_statistics);
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
 
-    for (const auto & part : parts)
+    for (size_t i = 0; i < parts.size(); ++i)
     {
+        const auto & part = parts[i];
+        if (!load_statistics && !estimates_in_memory[i])
+        {
+            res_parts.push_back(part);
+            continue;
+        }
+
         auto estimates = part.data_part->getEstimates(required_columns);
         try
         {
