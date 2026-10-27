@@ -36,6 +36,7 @@ configure_file(${LIBRARY_DIR}/include/pqxx/internal/config.h.in ${CMAKE_CURRENT_
 
 add_library(_libpqxx ${SRCS})
 target_link_libraries(_libpqxx PUBLIC ch_contrib::libpq)
-target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include" ${CMAKE_CURRENT_BINARY_DIR})
+# The generated `config.h` must take precedence over a stale one that an in-tree build of `libpqxx` may have left in its source tree.
+target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC ${CMAKE_CURRENT_BINARY_DIR} "${LIBRARY_DIR}/include")
 
 add_library(ch_contrib::libpqxx ALIAS _libpqxx)
