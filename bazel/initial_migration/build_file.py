@@ -1059,7 +1059,8 @@ class BuildFile:
         self.rule('ch_cc_library', '_roaring', {
             'srcs': [*aligned, '@clickhouse//contrib/croaring-cmake:page_aligned_functions.h'],
             'hdrs': Glob(['cpp/**/*.hh']), 'includes': ['cpp'], 'deps': [':_roaring__compile_0'],
-            'language': 'C', 'copts': [*aligned_flags, '-include', header],
+            'language': 'C', 'copts': [f for f in aligned_flags if not f.startswith('-std=')],
+            'conlyopts': [f for f in aligned_flags if f.startswith('-std=')] + ['-include', header],
         })
 
     def target(self, name, variants, input_name=None):

@@ -33,11 +33,13 @@ ch_cc_library(
         "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
     ],
     hdrs = glob(["cpp/**/*.hh"]),
-    copts = [
-        "-w",
+    conlyopts = [
         "-std=gnu11",
         "-include",
         "contrib/croaring-cmake/page_aligned_functions.h",
+    ],
+    copts = [
+        "-w",
     ],
     includes = [
         "cpp",
