@@ -4,8 +4,6 @@
 -- referencing hidden inner aliases (e.g. `SELECT ll.Date FROM (SELECT * FROM t AS ll
 -- LEFT JOIN x ... LEFT JOIN y ...)`) resolve again.
 
-SET enable_analyzer = 1;
-
 -- ============================================================
 -- Family 2 reproducers (the point of the feature)
 -- ============================================================

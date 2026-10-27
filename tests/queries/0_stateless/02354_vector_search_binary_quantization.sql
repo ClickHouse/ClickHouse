@@ -6,8 +6,6 @@
 -- Also has good number of calls to reinterpret() to test conversion of native floats to Array(Float32)
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS dbpedia;
 
 CREATE TABLE dbpedia
