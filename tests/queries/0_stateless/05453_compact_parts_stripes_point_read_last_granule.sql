@@ -18,9 +18,9 @@ INSERT INTO t_compact_point_read SELECT number, randomString(4096), number FROM 
 SET max_threads = 1, enable_parallel_replicas = 0;
 
 -- The granules are: 2 (in the middle of the first stripe), 3 (the last one of the first stripe), 31 (the last one of the part).
-SELECT sum(b) FROM t_compact_point_read PREWHERE a = 300 SETTINGS log_comment = '05452_middle';
-SELECT sum(b) FROM t_compact_point_read PREWHERE a = 400 SETTINGS log_comment = '05452_stripe_end';
-SELECT sum(b) FROM t_compact_point_read PREWHERE a = 4000 SETTINGS log_comment = '05452_part_end';
+SELECT sum(b) FROM t_compact_point_read PREWHERE a = 300 SETTINGS log_comment = '05453_middle';
+SELECT sum(b) FROM t_compact_point_read PREWHERE a = 400 SETTINGS log_comment = '05453_stripe_end';
+SELECT sum(b) FROM t_compact_point_read PREWHERE a = 4000 SETTINGS log_comment = '05453_part_end';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -28,7 +28,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ReadBufferFromS3Bytes'] < 100000
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-    AND current_database = currentDatabase() AND log_comment LIKE '05452_%'
+    AND current_database = currentDatabase() AND log_comment LIKE '05453_%'
 ORDER BY log_comment;
 
 DROP TABLE t_compact_point_read;
