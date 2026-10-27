@@ -495,6 +495,60 @@ TEST(DistinctLowCardinalityFilter, RetainsUsefulDictionaryState)
     EXPECT_EQ((*mask)[0], 1);
 }
 
+TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    const size_t num_chunks = 50;
+    const size_t num_rows = 100;
+    /// Every chunk has a dictionary of its own, `{"", "u<i>", "v<i % 10>"}`: a unique value in the first row and
+    /// a value shared with other chunks in the rest.
+    const auto make_column = [&](size_t i)
+    {
+        auto column = type->createColumn();
+        const auto unique_value = "u" + std::to_string(i);
+        column->insertData(unique_value.data(), unique_value.size());
+        const auto repeated_value = "v" + std::to_string(i % 10);
+        for (size_t row = 1; row < num_rows; ++row)
+            column->insertData(repeated_value.data(), repeated_value.size());
+        return ColumnPtr(std::move(column));
+    };
+
+    DistinctLowCardinalityFilter lc_filter;
+    size_t bytes_before_last_chunk = 0;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        if (i + 1 == num_chunks)
+            bytes_before_last_chunk = lc_filter.getTotalByteCount();
+        const auto mask = lc_filter.buildMaskIfApplicable(*make_column(i), num_rows);
+        ASSERT_TRUE(mask.has_value());
+        ASSERT_EQ(mask->size(), num_rows);
+        for (size_t row = 0; row < num_rows; ++row)
+            ASSERT_EQ((*mask)[row], static_cast<UInt8>(row < 2)) << "chunk " << i << ", row " << row;
+    }
+    EXPECT_EQ(lc_filter.getTotalByteCount(), bytes_before_last_chunk);
+    EXPECT_EQ(lc_filter.estimateGrowthMemory(*make_column(num_chunks)), 0);
+
+    const Block header = {ColumnWithTypeAndName(type, "k")};
+    DistinctSetFilter filter(header, {}, SizeLimits{});
+    std::set<String> emitted;
+    size_t emitted_count = 0;
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        const auto result = filter.filter(Chunk({make_column(i)}, num_rows));
+        emitted_count += result.getNumRows();
+        for (size_t row = 0; row < result.getNumRows(); ++row)
+            emitted.insert((*result.getColumns().front())[row].safeGet<String>());
+    }
+
+    std::set<String> expected;
+    for (size_t i = 0; i < num_chunks; ++i)
+        expected.insert("u" + std::to_string(i));
+    for (size_t i = 0; i < 10; ++i)
+        expected.insert("v" + std::to_string(i));
+    EXPECT_EQ(emitted_count, expected.size());
+    EXPECT_EQ(emitted, expected);
+}
+
 TEST(DistinctSetFilterSemantics, DisabledLowCardinalityStateDoesNotConsumeByteLimit)
 {
     const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());

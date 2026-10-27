@@ -114,13 +114,19 @@ std::optional<IColumn::Filter> DistinctLowCardinalityFilter::buildMaskIfApplicab
     return std::optional<IColumn::Filter>(std::move(mask));
 }
 
+bool DistinctLowCardinalityFilter::isIdentifiedByContent(const ColumnLowCardinality & column) const
+{
+    return column.isSharedDictionary() || non_shared_dictionary_recurred
+        || new_non_shared_dictionaries < NON_SHARED_DICTIONARY_OBSERVATION_COUNT;
+}
+
 size_t DistinctLowCardinalityFilter::estimateGrowthMemory(const IColumn & column) const
 {
     if (!lc_optimization_controller.isEnabled() || column.empty())
         return 0;
 
     const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column);
-    if (!lc)
+    if (!lc || !isIdentifiedByContent(*lc))
         return 0;
 
     const auto & dictionary = lc->getDictionary();
@@ -136,15 +142,34 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
 
-    const DictionariesState::LCDictionaryKey dict_key{dictionary.getHash(), dict_size};
+    /// A state that is not kept only marks the rows repeating an index within this chunk; the set still
+    /// removes the duplicates of earlier chunks.
+    std::optional<DictionariesState::LCDictState> chunk_state;
+    DictionariesState::LCDictState * state_ptr = nullptr;
+    if (isIdentifiedByContent(column))
+    {
+        const DictionariesState::LCDictionaryKey dict_key{dictionary.getHash(), dict_size};
 
-    /// The dictionary identity includes its size, so each bitmap is allocated once and never resized.
-    auto [it, inserted] = dictionaries_state->lc_dict_states.try_emplace(dict_key, dict_size);
-    auto & state = it->second;
+        /// The dictionary identity includes its size, so each bitmap is allocated once and never resized.
+        auto [it, inserted] = dictionaries_state->lc_dict_states.try_emplace(dict_key, dict_size);
+        state_ptr = &it->second;
+        if (inserted)
+            total_byte_count += state_ptr->seen_indices.allocated_bytes();
+
+        if (!column.isSharedDictionary())
+        {
+            if (inserted)
+                ++new_non_shared_dictionaries;
+            else
+                non_shared_dictionary_recurred = true;
+        }
+    }
+    else
+        state_ptr = &chunk_state.emplace(dict_size);
+
+    auto & state = *state_ptr;
     chassert(state.seen_indices.size() == dict_size);
     chassert(state.seen_count <= dict_size);
-    if (inserted)
-        total_byte_count += state.seen_indices.allocated_bytes();
 
     /// If we've already seen all dictionary indices for this dictionary, then no row in this chunk
     /// (and also other chunks with the same dictionary) can produce a new distinct value.
