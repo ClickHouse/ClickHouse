@@ -1545,8 +1545,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
-                /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-                /// that depend on it. We should rebuild such projections and indices
+                /// Check if the type of this column is changed and there are projections or indices that depend on it.
+                /// We should rebuild such projections and indices
                 DataTypePtr old_type;
                 if (const auto column = merge_tree_data_part->tryGetColumn(command.column_name))
                     old_type = column->type;
@@ -1565,8 +1565,27 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
+                        /// A projection keeps what it computed from the column: its order and primary index for a sorting key
+                        /// such as `toHour(dt)`, and its columns such as an aggregate state. So it is rebuilt not only when the
+                        /// column is in its key, but also when its sorting key is an expression of the column, and when it
+                        /// reads the column and computes any of its columns. A projection that only stores the column as is
+                        /// keeps its parts.
                         const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        const auto & sorting_key = projection.metadata->getSortingKey();
+                        const Names sorting_key_columns = sorting_key.expression ? sorting_key.expression->getRequiredColumns() : Names{};
+                        const bool column_in_key = std::ranges::find(pk_columns, command.column_name) != pk_columns.end()
+                            || std::ranges::find(sorting_key_columns, command.column_name) != sorting_key_columns.end();
+                        const bool column_read = std::ranges::find(projection.required_columns, command.column_name)
+                            != projection.required_columns.end();
+                        /// `_parent_part_offset` is the `_part_offset` of the table renamed, not computed from its columns.
+                        const bool computes_columns = std::ranges::any_of(
+                            projection.sample_block,
+                            [&](const auto & column)
+                            {
+                                return column.name != "_parent_part_offset"
+                                    && std::ranges::find(projection.required_columns, column.name) == projection.required_columns.end();
+                            });
+                        if (column_in_key || (column_read && computes_columns))
                         {
                             for (const auto & col : projection.required_columns)
                                 dependencies.emplace(col, ColumnDependency::PROJECTION);
