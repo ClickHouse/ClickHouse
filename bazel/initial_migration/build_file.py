@@ -113,7 +113,7 @@ def clickhouse_code_flags(language):
         return CLICKHOUSE_CODE_FLAGS
     standard = '-std=gnu11' if language == 'C' else '-std=c++23'
     flags = CLICKHOUSE_XRAY_FLAGS if language == 'C' else CLICKHOUSE_CODE_FLAGS
-    return flags + ['-Wframe-larger-than=65536'] + CLICKHOUSE_WARNINGS + [standard]
+    return flags + _LIBRARY_FLAGS['CLICKHOUSE_OPT_WARNINGS'] + CLICKHOUSE_WARNINGS + [standard]
 
 
 def has_clickhouse_code_flags(group):

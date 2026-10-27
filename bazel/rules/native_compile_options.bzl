@@ -1,19 +1,17 @@
 """Clang options for ClickHouse's native tools, unit_tests_dbms, and LLVM runtime sources."""
 
-load("//bazel/rules:ch_cc_library.bzl", "CLICKHOUSE_CODE_FLAGS")
+load("//bazel/rules:ch_cc_library.bzl", "CLICKHOUSE_CODE_FLAGS", "CLICKHOUSE_OPT_WARNINGS", "opt_copts")
 load("//bazel/rules:repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps")
 
 # These drivers construct Clang commands directly. LLVM supplies these flags
 # for ordinary C and C++ target compilations in opt mode.
 OPT_FLAGS = ["-O3", "-DNDEBUG"]
-OPT_DRIVER_FLAGS = select({
-    "@clickhouse//bazel:opt": OPT_FLAGS,
-    "//conditions:default": [],
-})
+OPT_DRIVER_FLAGS = opt_copts(OPT_FLAGS)
+CMAKE_OPT_FLAGS = OPT_FLAGS + CLICKHOUSE_OPT_WARNINGS
 
 def without_opt_flags(flags):
     """Drop the opt flags from a captured CMake Release command."""
-    return [flag for flag in flags if flag not in OPT_FLAGS]
+    return [flag for flag in flags if flag not in CMAKE_OPT_FLAGS]
 
 # Preserve CMake's position of -mbranches-within-32B-boundaries after the section flags.
 NATIVE_CODEGEN_COPTS = select({
@@ -96,7 +94,7 @@ DBMS_TEST_DRIVER_COPTS = [
     "-fstrict-vtable-pointers",
     "-fPIE",
     "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST",
-] + CLICKHOUSE_CODE_FLAGS + ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + OPT_DRIVER_FLAGS
+] + CLICKHOUSE_CODE_FLAGS + opt_copts(CLICKHOUSE_OPT_WARNINGS) + CLICKHOUSE_WARNINGS + OPT_DRIVER_FLAGS
 
 def native_release_copts(standard = None):
     """Return the Linux driver flags, with opt flags and the standard in CMake order."""

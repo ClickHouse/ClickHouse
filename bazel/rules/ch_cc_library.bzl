@@ -25,6 +25,14 @@ CLICKHOUSE_XRAY_FLAGS = [
 
 _CLICKHOUSE_CXX_WARNINGS = ["-Wall", "-Wextra"]
 CLICKHOUSE_CODE_FLAGS = CLICKHOUSE_XRAY_FLAGS + _CLICKHOUSE_CXX_WARNINGS
+CLICKHOUSE_OPT_WARNINGS = ["-Wframe-larger-than=65536"]
+
+def opt_copts(flags):
+    """Use flags only when Bazel compiles in opt mode."""
+    return select({
+        "@clickhouse//bazel:opt": flags,
+        "//conditions:default": [],
+    })
 
 def _for_arches(arches, values):
     """Return values on enabled CPUs and the default platform."""
@@ -68,8 +76,7 @@ def ch_cc_library(
         code_flags = CLICKHOUSE_XRAY_FLAGS if language == "C" else CLICKHOUSE_CODE_FLAGS
     if clickhouse_code and language in ["C", "CXX"]:
         standard = "-std=gnu11" if language == "C" else "-std=c++23"
-        defaults = ["-Wframe-larger-than=65536"] + CLICKHOUSE_WARNINGS + [standard]
-        code_flags = code_flags + _for_arches(arches, defaults)
+        code_flags = code_flags + opt_copts(CLICKHOUSE_OPT_WARNINGS) + _for_arches(arches, CLICKHOUSE_WARNINGS + [standard])
     if link_runtime:
         runtime = [Label("@clickhouse_llvm_project//:cxx")]
         kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + _for_arches(arches, runtime)

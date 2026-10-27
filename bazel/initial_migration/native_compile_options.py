@@ -40,8 +40,8 @@ def shared_native_compile_options(root, paths):
     def expand(node, standard, bindings=constants):
         # The imported CMake commands are Release commands. Match the opt arm
         # but emit the configurable expression for Bazel.
-        if node is constants["OPT_DRIVER_FLAGS"]:
-            return expand(constants["OPT_FLAGS"], standard)
+        if call_name(node) == "opt_copts":
+            return expand(node.args[0], standard, bindings)
         if isinstance(node, ast.IfExp) and isinstance(node.test, ast.Name) and node.test.id == "standard":
             return expand(node.body if standard else node.orelse, standard, bindings)
         if call_name(node) == "native_release_copts":
@@ -59,6 +59,7 @@ def shared_native_compile_options(root, paths):
 
     # Resolve only the imported option list and the constants it references in its own module.
     for filename, symbol in (("ch_cc_library.bzl", "CLICKHOUSE_CODE_FLAGS"),
+                             ("ch_cc_library.bzl", "CLICKHOUSE_OPT_WARNINGS"),
                              ("repository_paths.bzl", "CLICKHOUSE_WARNINGS")):
         module = Source((root / "bazel/rules" / filename).read_text()).module
         bindings = assignments(module.body)
