@@ -28,8 +28,6 @@ ch_cc_library(
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
-        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic",
-        "@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai",
         "//src/Common:Common",
         "//src/Functions/GatherUtils:headers",
         "//src:headers",

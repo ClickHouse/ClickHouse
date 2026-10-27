@@ -166,7 +166,11 @@ DEPENDENCIES = {
         ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
     ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (
         ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
-    ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'): ([
+        '@clickhouse_icu//:_icudata',
+        '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic',
+        '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai',
+    ], [], []),
     ('src/Loggers', 'loggers'): ([
         '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic', '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai',
         '@clickhouse_arrow//:_arrow', '@clickhouse_aws//:_aws', '@clickhouse_icu//:_icudata',
