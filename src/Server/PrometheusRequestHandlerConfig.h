@@ -5,6 +5,8 @@
 #include <Core/QualifiedTableName.h>
 #include <Server/HTTPHandler.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -48,6 +50,7 @@ struct PrometheusRequestHandlerConfig
 
     /// Settings for types APIv1, Query, Write, Read:
     QualifiedTableName time_series_table_name;
+    bool enable_table_name_url_routing = false;
 
     size_t keep_alive_timeout = 0;
     bool is_stacktrace_enabled = true;

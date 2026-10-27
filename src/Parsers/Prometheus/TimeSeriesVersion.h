@@ -41,6 +41,8 @@ namespace DB
 ///       The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression
 ///       generating identifiers are declared in the inner columns of the "tags" table. Tables of earlier versions keep
 ///       their external target tables and these settings.
+///  11 - The `prometheus_remote_write_dynamic_routing_enabled` setting was introduced. Tables of earlier versions can't be
+///       targets of the Prometheus remote-write dynamic URL routing.
 namespace TimeSeriesVersion
 {
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
@@ -96,11 +98,15 @@ namespace TimeSeriesVersion
     /// `id_type` and `id_generator`, which a table of this version or later can't have.
     constexpr UInt64 MIN_WITHOUT_ID_SETTINGS = 10;
 
+    /// The first version with the `prometheus_remote_write_dynamic_routing_enabled` setting (see the version history above).
+    /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
+    constexpr UInt64 MIN_WITH_REMOTE_WRITE_DYNAMIC_ROUTING_SETTING = 11;
+
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 10;
+    constexpr UInt64 LATEST = 11;
 
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
@@ -112,6 +118,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
     static_assert(MIN_WITHOUT_EXTERNAL_TARGETS <= LATEST);
     static_assert((MIN_WITH_ID_TYPE_SETTING <= MIN_WITHOUT_ID_SETTINGS) && (MIN_WITHOUT_ID_SETTINGS <= LATEST));
+    static_assert(MIN_WITH_REMOTE_WRITE_DYNAMIC_ROUTING_SETTING <= LATEST);
 
     static_assert(MIN_SUPPORTED <= LATEST);
     static_assert((MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL) && (MIN_SUPPORTED_BY_PROMQL <= LATEST));

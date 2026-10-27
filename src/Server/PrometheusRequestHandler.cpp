@@ -16,6 +16,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -35,10 +36,16 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/QualifiedTableName.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
+
+#include <vector>
 
 
 namespace DB
@@ -59,6 +66,152 @@ namespace ErrorCodes
     extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
     extern const int ZSTD_DECODER_FAILED;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool prometheus_remote_write_dynamic_routing_enabled;
+}
+
+namespace
+{
+    /// Reports a request target which `Poco::URI` can't parse (e.g. because of a malformed percent-escape) as a bad request.
+    /// The message of `Poco::URISyntaxException` isn't included: it can quote a part of the query string, and the query string
+    /// can contain credentials (the `user` and `password` parameters), while the exception is written to the server log.
+    [[noreturn]] void throwInvalidRequestURI(const HTTPServerRequest & request)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid request URI '{}'", maskSensitiveQueryParametersInURI(request.getURI()));
+    }
+
+#if USE_PROMETHEUS_PROTOBUFS
+    /// Returns the fixed path segments that must follow the `/{database}/{table}` prefix
+    /// for the endpoint that this handler serves with dynamic routing:
+    ///   - `remote_write`      -> `/{database}/{table}/write`
+    ///   - `prometheus_api_v1` -> `/{database}/{table}/api/v1/write`
+    /// Dynamic routing is only supported for these two handler types (and, for `prometheus_api_v1`,
+    /// only for the remote-write endpoint).
+    std::vector<String> getDynamicRoutingPathSuffix(const PrometheusRequestHandlerConfig & config)
+    {
+        switch (config.type)
+        {
+            case PrometheusRequestHandlerConfig::Type::Write:
+                return {"write"};
+            case PrometheusRequestHandlerConfig::Type::APIv1:
+                return {"api", "v1", "write"};
+            default:
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL path routing is supported only for Prometheus remote-write handlers");
+        }
+    }
+
+    /// Returns the raw (still percent-encoded) path of a request target. The target is normally in
+    /// origin-form (`/path?query`), but a proxy may send it in absolute-form (`http://host/path?query`).
+    /// The query and the fragment are cut off first, so a URL passed as the value of a query parameter
+    /// (e.g. `?query_id=https://host/db/table/write`) can't be taken for the authority of the target.
+    std::string_view getRawPath(std::string_view uri)
+    {
+        uri = uri.substr(0, uri.find_first_of("?#"));
+
+        /// Origin-form.
+        if (uri.empty() || uri.starts_with('/'))
+            return uri;
+
+        /// Absolute-form: the path follows the authority, which follows the scheme at the beginning of the target.
+        size_t scheme_end = uri.find("://");
+        if (scheme_end == std::string_view::npos)
+            return uri;
+        size_t authority_end = uri.find('/', scheme_end + 3);
+        if (authority_end == std::string_view::npos)
+            return {};
+        return uri.substr(authority_end);
+    }
+
+    /// Splits a raw path into segments and only then percent-decodes each segment separately.
+    /// Decoding the whole path first (as `Poco::URI` does) would be wrong here for two reasons:
+    /// a `%2F` inside a table name would turn into a segment separator, making a `TimeSeries` table such as
+    /// `` default.`a/b` `` unreachable; and `Poco::URI::getPathSegments` silently drops empty segments, so
+    /// malformed paths with doubled slashes would slip through the exact-shape check below.
+    std::vector<String> splitAndDecodeRawPathSegments(std::string_view raw_path)
+    {
+        std::vector<String> segments;
+
+        /// A well-formed request path is absolute, so it starts with `/`; that leading separator does not
+        /// introduce an empty first segment. Anything else is left as is and fails the shape check.
+        size_t pos = raw_path.starts_with('/') ? 1 : 0;
+
+        while (true)
+        {
+            size_t next = raw_path.find('/', pos);
+            std::string_view encoded = raw_path.substr(pos, (next == std::string_view::npos) ? std::string_view::npos : next - pos);
+
+            String segment;
+            try
+            {
+                Poco::URI::decode(String{encoded}, segment);
+            }
+            catch (const Poco::URISyntaxException & e)
+            {
+                /// A malformed percent-escape is a client mistake, so it must be reported as a bad request (HTTP 400)
+                /// rather than a server failure: remote-write senders keep retrying requests that fail with HTTP 5xx.
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL path '{}' contains an invalid percent-encoded segment: {}",
+                    raw_path, e.message());
+            }
+            segments.push_back(std::move(segment));
+
+            if (next == std::string_view::npos)
+                break;
+            pos = next + 1;
+        }
+
+        return segments;
+    }
+
+    QualifiedTableName resolveTableNameFromRequest(
+        const PrometheusRequestHandlerConfig & config,
+        const HTTPServerRequest & request)
+    {
+        if (!config.enable_table_name_url_routing)
+            return config.time_series_table_name;
+
+        /// The dynamic routing contract requires the request path to be exactly `/{database}/{table}/<suffix>`,
+        /// so that the first two segments unambiguously identify the target table. Validate the shape (and the
+        /// trailing suffix) instead of blindly using the first two segments: otherwise a fixed-table URL such as
+        /// `/prometheus/api/v1/write` (from a legacy `<url_prefix>/prometheus/api/v1</url_prefix>` handler that
+        /// enabled routing by mistake) would be silently reinterpreted as `database = "prometheus", table = "api"`.
+        const auto expected_suffix = getDynamicRoutingPathSuffix(config);
+
+        const auto raw_path = getRawPath(request.getURI());
+        const auto path_segments = splitAndDecodeRawPathSegments(raw_path);
+
+        bool shape_matches = (path_segments.size() == expected_suffix.size() + 2);
+        for (size_t i = 0; shape_matches && (i < expected_suffix.size()); ++i)
+            shape_matches = (path_segments[i + 2] == expected_suffix[i]);
+
+        if (!shape_matches)
+        {
+            String expected_path = "/{database}/{table}";
+            for (const auto & segment : expected_suffix)
+                expected_path += "/" + segment;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not match the expected dynamic routing shape '{}'",
+                raw_path, expected_path);
+        }
+
+        const String & database = path_segments[0];
+        const String & table = path_segments[1];
+        if (database.empty() || table.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path '{}' does not contain a database and a table name",
+                raw_path);
+
+        return QualifiedTableName{database, table};
+    }
+#endif
 }
 
 /// Base implementation of a prometheus protocol.
@@ -149,11 +302,21 @@ protected:
         });
 
         const auto & method = request.getMethod();
-        if (shouldParseFormFromRequestBody(request)
-            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-        else
-            params = std::make_unique<HTMLForm>(default_settings, request);
+        try
+        {
+            if (shouldParseFormFromRequestBody(request)
+                && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+                params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+            else
+                params = std::make_unique<HTMLForm>(default_settings, request);
+        }
+        catch (const Poco::URISyntaxException &)
+        {
+            /// `Poco::URI` percent-decodes the path and the query, so a malformed percent-escape in the request target
+            /// gets here. It's a client mistake, so it must be reported as a bad request (HTTP 400) rather than
+            /// a server failure: remote-write senders keep retrying requests that fail with HTTP 5xx.
+            throwInvalidRequestURI(request);
+        }
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
@@ -277,6 +440,22 @@ protected:
         return StorageID{full_name};
     }
 
+    /// URL path routing is supported only for remote write, so a `prometheus_api_v1` handler with
+    /// `enable_table_name_url_routing` is write-only. The check is done after authentication,
+    /// so an unauthenticated request gets the normal authentication response.
+    void rejectURLPathRoutingForNonWriteEndpoint()
+    {
+        if (config().enable_table_name_url_routing)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing for prometheus_api_v1 is supported only for remote write");
+    }
+
+    bool isTimeSeriesTableNameSetFromRequest() const
+    {
+        return params->has("database") || params->has("table");
+    }
+
     void onException() override
     {
         // So that the next requests on the connection have to always start afresh in case of exceptions.
@@ -324,8 +503,50 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
-        PrometheusRemoteWriteProtocol protocol{table, context};
+        /// Resolve and validate the target table before parsing the request body, so that requests targeting a
+        /// missing or non-`TimeSeries` table (or, with dynamic routing, a table that does not opt into it) are
+        /// rejected without first decompressing and materializing the whole protobuf payload.
+        const bool is_url_path_dynamic_routing = config().enable_table_name_url_routing;
+        if (is_url_path_dynamic_routing && isTimeSeriesTableNameSetFromRequest())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing cannot be combined with the 'database' or 'table' query parameters");
+
+        auto table_id = is_url_path_dynamic_routing
+            ? StorageID{resolveTableNameFromRequest(config(), request)}
+            : getTimeSeriesTableID();
+
+        /// With dynamic routing, check the `INSERT` privilege before looking the table up in the catalog. Neither
+        /// `DatabaseCatalog::getTable` nor reading the storage settings enforces RBAC, and the synthetic `INSERT` executed
+        /// later would check it too late: an unauthorized caller could otherwise probe arbitrary table names and tell
+        /// `UNKNOWN_TABLE`, a wrong engine or a disabled opt-in setting apart from `ACCESS_DENIED`.
+        /// Only the columns every remote-write request inserts are checked (a table opted into dynamic routing is of a version
+        /// whose samples column is `samples`), so grants on these columns are enough, like for the `INSERT` itself.
+        /// A handler with a fixed table doesn't need this check: the `INSERT` checks the columns it writes.
+        if (is_url_path_dynamic_routing)
+        {
+            context->checkAccess(
+                AccessType::INSERT,
+                table_id,
+                Strings{TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::Samples});
+        }
+
+        auto table = DatabaseCatalog::instance().getTable(table_id, context);
+        auto time_series_storage = storagePtrToTimeSeries(table);
+        if (is_url_path_dynamic_routing)
+        {
+            const auto & time_series_settings = time_series_storage->getStorageSettings();
+            if (!(*time_series_settings)[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
+            {
+                /// A 4xx status: a remote-write sender resends a request answered with 5xx for ever,
+                /// but a table which doesn't opt in is a permanent configuration mistake.
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Prometheus remote write dynamic routing is disabled for TimeSeries table {}",
+                    time_series_storage->getStorageID().getNameForLogs());
+            }
+        }
+        PrometheusRemoteWriteProtocol protocol{time_series_storage, context};
 
         prometheus::WriteRequest write_request;
 
@@ -373,6 +594,8 @@ public:
 
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
     {
+        rejectURLPathRoutingForNonWriteEndpoint();
+
 #if USE_PROMETHEUS_PROTOBUFS
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
@@ -500,6 +723,9 @@ public:
 
         try
         {
+            /// Inside the `try` block, so the rejection is reported in the Prometheus JSON error envelope.
+            rejectURLPathRoutingForNonWriteEndpoint();
+
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
@@ -746,10 +972,22 @@ private:
     Impl & getImpl(const HTTPServerRequest & request)
     {
         /// Get the decoded URL path (without the query string).
-        const String path = Poco::URI(request.getURI()).getPath();
+        /// This runs before `handleRequest`, so a malformed request target must be reported as a bad request here too.
+        String path;
+        try
+        {
+            path = Poco::URI(request.getURI()).getPath();
+        }
+        catch (const Poco::URISyntaxException &)
+        {
+            throwInvalidRequestURI(request);
+        }
 
         if (path.ends_with("/write"))
             return write_impl;
+
+        /// With `enable_table_name_url_routing` the handler is write-only, but this is checked by the read
+        /// and query implementations after authentication, see `rejectURLPathRoutingForNonWriteEndpoint`.
         if (path.ends_with("/read"))
             return read_impl;
 

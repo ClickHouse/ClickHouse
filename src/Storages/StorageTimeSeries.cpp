@@ -105,7 +105,8 @@ namespace
             && (setting_name != "metric_families_deduplication_cache_size_bytes")
             && (setting_name != "metric_families_deduplication_cache_expiration_seconds")
             && (setting_name != "tags_deduplication_cache_size_bytes")
-            && (setting_name != "tags_deduplication_cache_expiration_seconds"))
+            && (setting_name != "tags_deduplication_cache_expiration_seconds")
+            && (setting_name != "prometheus_remote_write_dynamic_routing_enabled"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -1014,6 +1015,25 @@ Then this table can be used with the following protocols (a port must be assigne
 - [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
 - [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
 
+When configuring a Prometheus remote-write handler with `enable_table_name_url_routing`, the URL is expected to start with `/{database}/{table}/`. This option cannot be combined with a fixed `database` or `table` in the handler configuration. Make sure the handler's `<url>` rule matches paths that include the database and table name. For example:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url>regex:^/[^/]+/[^/]+/write$</url>
+        <handler>
+            <type>prometheus_write</type>
+            <enable_table_name_url_routing>true</enable_table_name_url_routing>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+Enabling `enable_table_name_url_routing` on a `prometheus_api_v1` handler makes that handler write-only. Configure a separate handler without this option for `/read`, `/query`, and metadata endpoints; that handler can use a fixed `database` and `table` or the corresponding query parameters.
+
+See [Route remote write by URL path](/concepts/features/interfaces/prometheus#remote-write-url-routing) for the full handler configuration.
+
 ### Outer columns {#outer-columns}
 
 Columns of a TimeSeries table are generated automatically. These are outer columns, they store no data, they just provide interface for SELECT/INSERT. Actual data is stored in [target tables](#target-tables). Here is the list of the outer columns:
@@ -1198,7 +1218,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 9, recent_samples_ttl_seconds = 345600
+SETTINGS version = 11, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1466,9 +1486,11 @@ The following settings can be changed after `CREATE`:
 
 - `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
 - `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
+- `prometheus_remote_write_dynamic_routing_enabled`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
+ALTER TABLE my_table MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1;
 ALTER TABLE my_table RESET SETTING metric_families_deduplication_cache_expiration_seconds;
 ```
 
@@ -1504,6 +1526,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for a non-MergeTree engine |
+| `prometheus_remote_write_dynamic_routing_enabled` | Bool | false | Allow Prometheus remote-write dynamic URL routing to insert into this `TimeSeries` table. Requires [version](#schema-versioning) 11 or later |
 
 ### Settings of the earlier versions {#settings-of-earlier-versions}
 
@@ -1555,6 +1578,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 8 | The columns `min_time` and `max_time` were moved from the [tags](#tags-table) table to the new optional [time ranges](#time-ranges-table) table (the inner table `.inner_id.timeranges.<uuid>`, the keyword `TIME RANGES`), which is enabled by the [`store_time_ranges`](#settings) setting. The time ranges are always aggregated and always used to filter time series by time. The settings `store_min_time_and_max_time`, `aggregate_min_time_and_max_time` and `filter_by_min_time_and_max_time` apply to the earlier versions only. The inner tags table of a new table uses `ReplacingMergeTree` |
 | 9 | The default partition key of an inner [recent samples](#recent-samples-table) table names the timezone: `toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))`. Earlier versions generate it without one, and `toStartOfInterval` counts hours from local midnight, so a change of the server timezone moves the meaning of the partition values they have already written. Existing tables keep the key they were created with, which no `ALTER` can change |
 | 10 | External target tables are not supported for new tables: every target of a table of this version is an inner table. The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression generating identifiers are declared in `TAGS INNER COLUMNS` (see [The `id` column](#id-column)). Tables of earlier versions keep their external target tables and these settings. The stored data didn't change |
+| 11 | The [`prometheus_remote_write_dynamic_routing_enabled`](#settings) setting was introduced. Tables of earlier versions can't be targets of the Prometheus remote-write dynamic URL routing |
 
 # Functions {#functions}
 

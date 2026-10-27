@@ -9,6 +9,44 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_1>
+            <my_rule_1_dynamic>
+                <url>regex:^/[^/]+/[^/]+/write$</url>
+                <handler>
+                    <type>remote_write</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_dynamic>
+            <my_rule_1_dynamic_api_v1>
+                <url>regex:^/[^/]+/[^/]+/api/v1/write$</url>
+                <handler>
+                    <type>prometheus_api_v1</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_dynamic_api_v1>
+            <my_rule_1_dynamic_api_v1_query>
+                <url>regex:^/[^/]+/[^/]+/api/v1/query$</url>
+                <handler>
+                    <type>prometheus_api_v1</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_dynamic_api_v1_query>
+            <!-- A misconfigured handler that enables URL path routing on the legacy fixed-prefix
+                 `/prometheus/api/v1` shape. A request to `/prometheus/api/v1/write` must be rejected
+                 (the path does not match `/{database}/{table}/api/v1/write`) instead of being silently
+                 reinterpreted as database `prometheus`, table `api`. -->
+            <my_rule_1_legacy_prefix_routing>
+                <url>/prometheus/api/v1/write</url>
+                <handler>
+                    <type>prometheus_api_v1</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_legacy_prefix_routing>
+            <my_rule_1_dynamic_query_params>
+                <url>/write_query_params</url>
+                <handler>
+                    <type>remote_write</type>
+                </handler>
+            </my_rule_1_dynamic_query_params>
             <my_rule_2>
                 <url>/read</url>
                 <handler>

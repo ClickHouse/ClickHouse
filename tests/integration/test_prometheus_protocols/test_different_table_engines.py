@@ -398,8 +398,9 @@ def test_data_keyword():
     assert node.query("DESCRIBE timeSeriesData(prometheus)") == node.query("DESCRIBE timeSeriesSamples(prometheus)")
 
 
-# Checks that ALTER TABLE works and can modify the settings of the deduplication caches,
-# and rejects the settings which apply to tables of earlier versions only.
+# Checks that ALTER TABLE works and can modify the settings of the deduplication caches
+# and `prometheus_remote_write_dynamic_routing_enabled`, and rejects the settings which apply
+# to tables of earlier versions only.
 def test_alter_modify_settings():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -415,6 +416,14 @@ def test_alter_modify_settings():
     assert "INVALID_SETTING_VALUE" in node.query_and_get_error(
         "ALTER TABLE prometheus MODIFY SETTING filter_by_min_time_and_max_time = 0"
     )
+
+    # `prometheus_remote_write_dynamic_routing_enabled` is checked at INSERT time, so it can be altered.
+    node.query("ALTER TABLE prometheus MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1")
+    assert re.search(
+        r"\bprometheus_remote_write_dynamic_routing_enabled\s*=\s*true",
+        node.query("SHOW CREATE TABLE prometheus"),
+    )
+    node.query("ALTER TABLE prometheus RESET SETTING prometheus_remote_write_dynamic_routing_enabled")
 
     # Settings which can't be altered because they affect inner-table schemas.
     bound_settings = [

@@ -213,7 +213,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 10")) << definition;
+    EXPECT_TRUE(definition.contains("version = 11")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -704,7 +704,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 10")) << definition;
+    EXPECT_TRUE(definition.contains("version = 11")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
 }
 
@@ -733,7 +733,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
     /// key as generated, so it is stripped rather than carried over as if it had been declared.
     auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 7"));
-    EXPECT_TRUE(copy.contains("version = 10")) << copy;
+    EXPECT_TRUE(copy.contains("version = 11")) << copy;
     EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), pinned_engine);
 
     static constexpr std::string_view legacy_replicated_engine
@@ -754,7 +754,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
 
     auto replicated_copy = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", replicated_src);
-    EXPECT_TRUE(replicated_copy.contains("version = 10")) << replicated_copy;
+    EXPECT_TRUE(replicated_copy.contains("version = 11")) << replicated_copy;
     EXPECT_EQ(extractInnerEngine(replicated_copy, "RECENT SAMPLES"), pinned_replicated_engine);
 
     /// An explicit custom partition key is preserved on copy even when the engine has arguments.
