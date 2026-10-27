@@ -3083,26 +3083,100 @@ bool hasArchivePathLiteral(const IAST & ast)
     return found;
 }
 
+/// Table functions without a structure argument, and `values`, which reads one only from a literal: no computed
+/// argument of theirs is a structure.
+bool tableFunctionTakesNoComputedStructure(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "remote",
+        "remoteSecure",
+        "cluster",
+        "clusterAllReplicas",
+        "merge",
+        "loop",
+        "view",
+        "viewIfPermitted",
+        "viewExplain",
+        "values",
+        "numbers",
+        "numbers_mt",
+        "zeros",
+        "zeros_mt",
+        "generateSeries",
+        "generate_series",
+        "primes",
+        "mysql",
+        "postgresql",
+        "jdbc",
+        "odbc",
+        "sqlite",
+        "dictionary",
+        "filesystem",
+        "traceView",
+        "mergeTreeIndex",
+        "mergeTreeProjection",
+        "mergeTreeTextIndex",
+        "mergeTreeAnalyzeIndexes",
+        "mergeTreeAnalyzeIndexesUUID",
+        "mergeTreeCodecBlockCounts",
+        "timeSeriesData",
+        "timeSeriesMetrics",
+        "timeSeriesTags",
+        "timeSeriesSamples",
+        "timeSeriesSelector",
+        "timeSeriesMetricFamilies",
+        "timeSeriesTimeRanges",
+        "prometheusQuery",
+        "prometheusQueryRange",
+    };
+    return std::ranges::any_of(names, [&](std::string_view n) { return equalsCaseInsensitive(n, name); });
+}
+
+/// The constant the server folds a table-function argument to before reading it as a structure, or nullopt when this
+/// client cannot fold it the same way: it reads the session, the server, a table or a file, or calls a function this
+/// client does not know.
+std::optional<Field> tryFoldStructureArgument(const ASTPtr & argument, const ContextPtr & context)
+{
+    bool foldable = true;
+    forEachNode(*argument, [&foldable](const IAST & node)
+    {
+        /// A scalar function named like a table function, such as `file`, reads this machine.
+        const auto * function = node.as<ASTFunction>();
+        if (node.as<ASTSubquery>() || (function && TableFunctionFactory::instance().isTableFunctionName(function->name)))
+            foldable = false;
+    });
+    if (!foldable || dependsOnUnstoredContext(*argument, context))
+        return std::nullopt;
+    try
+    {
+        const ASTPtr evaluated = evaluateConstantExpressionAsLiteral(argument->clone(), context);
+        if (const auto * literal = evaluated->as<ASTLiteral>())
+            return literal->value;
+    }
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
+    {
+        /// Not a constant on this client: the caller keeps every type gate.
+    }
+    return std::nullopt;
+}
+
 /// Lowercase function names and type names of `ast`, without the column, table and database names, so that
 /// a gate matched on them is never carried by an object's name.
-String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vector<ASTPtr> * validated_types = nullptr)
+String nameTokens(
+    const IAST & ast, const IAST * skip, bool with_types, const ContextPtr & context, std::vector<ASTPtr> * validated_types = nullptr)
 {
     String names;
     std::set<const IAST *> table_functions;
     /// `validateDataType` reads strings only as a table-function structure or a CAST target type; other strings are data.
-    const auto add_types_in_string = [&](const IAST & node, bool is_structure)
+    const auto add_types_in_string = [&](const String & text, bool is_structure)
     {
-        const auto * literal = node.as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::String)
-            return;
         try
         {
             ParserColumnDeclarationList structure_parser;
             ParserDataType type_parser;
             IParser & parser = is_structure ? static_cast<IParser &>(structure_parser) : type_parser;
-            const ASTPtr parsed = parseQuery(
-                parser, literal->value.safeGet<String>(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            names += nameTokens(*parsed, nullptr, true, validated_types);
+            const ASTPtr parsed = parseQuery(parser, text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            names += nameTokens(*parsed, nullptr, true, context, validated_types);
             if (validated_types && !is_structure)
                 validated_types->push_back(parsed);
             else if (validated_types)
@@ -3118,6 +3192,54 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
         }
         catch (const Exception &) // NOLINT(bugprone-empty-catch)
         {
+        }
+    };
+    const auto add_types_in_literal = [&](const IAST & node, bool is_structure)
+    {
+        const auto * literal = node.as<ASTLiteral>();
+        if (literal && literal->value.getType() == Field::Types::String)
+            add_types_in_string(literal->value.safeGet<String>(), is_structure);
+    };
+    /// The analyzer reads an identifier argument of a table function as the constant of the alias it names.
+    std::multimap<String, ASTPtr> aliases;
+    std::function<void(const IAST &)> collect_aliases = [&](const IAST & node)
+    {
+        for (const auto & child : node.children)
+        {
+            if (child.get() == skip)
+                continue;
+            if (String alias = child->tryGetAlias(); !alias.empty())
+                aliases.emplace(std::move(alias), child);
+            collect_aliases(*child);
+        }
+    };
+    collect_aliases(ast);
+    /// Reads a structure argument as the server resolves it before parsing it. One this client cannot resolve keeps
+    /// every type gate: an expression is not a type, so `typeGateNeeds` keeps them all for it.
+    std::set<const IAST *> resolved_values;
+    std::function<void(const ASTPtr &)> add_types_in_value = [&](const ASTPtr & value)
+    {
+        if (!resolved_values.insert(value.get()).second)
+            return;
+        if (value->as<ASTLiteral>())
+            add_types_in_literal(*value, true);
+        else if (const auto * identifier = value->as<ASTIdentifier>())
+        {
+            /// `evaluateConstantExpressionOrIdentifierAsLiteral` reads a bare identifier as its name.
+            add_types_in_string(identifier->name(), true);
+            const auto range = aliases.equal_range(identifier->name());
+            for (auto it = range.first; it != range.second; ++it)
+                add_types_in_value(it->second);
+        }
+        else if (value->as<ASTFunction>() || value->as<ASTSubquery>())
+        {
+            if (const auto folded = tryFoldStructureArgument(value, context))
+            {
+                if (folded->getType() == Field::Types::String)
+                    add_types_in_string(folded->safeGet<String>(), true);
+            }
+            else if (validated_types)
+                validated_types->push_back(value);
         }
     };
     /// A local `Remote` table resolves its table-function target at CREATE, and a table created `AS` a table function
@@ -3152,7 +3274,8 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
             {
                 if (function->arguments)
                 {
-                    /// `values` and `format` also take rows, which are data: only their structure argument is one.
+                    /// `values` and `format` also take rows, which are data, and `executable` input queries: only their
+                    /// structure argument is one.
                     const auto & args = function->arguments->children;
                     size_t begin = 0;
                     size_t end = args.size();
@@ -3163,8 +3286,36 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
                         begin = args.size() == 3 ? 1 : 0;
                         end = args.size() == 3 ? 2 : 0;
                     }
+                    else if (equalsCaseInsensitive(function->name, "executable"))
+                        end = std::min<size_t>(args.size(), 3);
+                    const bool reads_computed = !tableFunctionTakesNoComputedStructure(function->name);
                     for (size_t i = begin; i < end; ++i)
-                        forEachNode(*args[i], [&](const IAST & argument) { add_types_in_string(argument, true); });
+                    {
+                        const ASTPtr & argument = args[i];
+                        const auto * argument_function = argument->as<ASTFunction>();
+                        /// The analyzer reads a nested table function as one, as `remote`, `loop` and `viewIfPermitted` take it,
+                        /// while `evaluateConstantExpressionOrIdentifierAsLiteral` calls it as a scalar function, which the
+                        /// dump does not fold: as an argument that may be a structure, it keeps every type gate.
+                        if (argument_function && TableFunctionFactory::instance().isTableFunctionName(argument_function->name))
+                            table_functions.insert(argument.get());
+                        /// A `key = value` argument overrides a key of a named collection; `headers` and `extra_credentials`
+                        /// hold request options.
+                        const bool key_value = argument_function && argument_function->name == "equals" && argument_function->arguments
+                            && argument_function->arguments->children.size() == 2;
+                        const bool request_options = argument_function
+                            && (argument_function->name == "headers" || argument_function->name == "extra_credentials");
+                        if (argument->as<ASTLiteral>())
+                            add_types_in_literal(*argument, true);
+                        else if (reads_computed && key_value)
+                            add_types_in_value(argument_function->arguments->children[1]);
+                        else if (reads_computed && !request_options)
+                            add_types_in_value(argument);
+                    }
+                    /// A named collection can carry the structure, which the statement does not show; the call is not a type.
+                    const size_t collection_slot = endsWithCaseInsensitive(function->name, "Cluster") ? 1 : 0;
+                    if (reads_computed && validated_types && tableFunctionUsesNamedCollections(function->name)
+                        && collection_slot < args.size() && args[collection_slot]->as<ASTIdentifier>())
+                        validated_types->push_back(node.clone());
                 }
             }
             else
@@ -3179,7 +3330,7 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
                     const auto & args = function->arguments->children;
                     const auto & target = cast_or_default ? args[1] : args.back();
                     if (target->as<ASTLiteral>())
-                        add_types_in_string(*target, false);
+                        add_types_in_literal(*target, false);
                     else if (validated_types)
                         /// A computed target type is folded only by the server: an unbuildable type keeps every type gate.
                         validated_types->push_back(target);
@@ -3701,9 +3852,9 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// Shared gates: each carrier is matched on the statement's names or AST, over-approximated
         /// where the exact check site is not worth mirroring.
         std::vector<ASTPtr> validated_types;
-        String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, &validated_types);
+        String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, context, &validated_types);
         for (const auto & query : eval_queries)
-            names += nameTokens(*query, nullptr, /* with_types= */ true, &validated_types);
+            names += nameTokens(*query, nullptr, /* with_types= */ true, context, &validated_types);
 
         needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
         needs.nlp_functions |= hasToken(names, "synonyms") || hasToken(names, "lemmatize") || hasToken(names, "detectlanguage", true)
