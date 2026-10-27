@@ -33,10 +33,8 @@ public:
         const char * assert_no_aggregates = nullptr;
         /// Appended to the message of `assert_no_aggregates`; use it to say what to write instead.
         const char * assert_no_aggregates_hint = "";
-        const char * assert_no_windows = nullptr;
         std::unordered_set<String> uniq_names {};
         ASTs aggregates{};
-        ASTs window_functions{};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -52,13 +50,7 @@ public:
         if (auto * func = node->as<ASTFunction>())
         {
             if (isAggregateFunction(*func))
-            {
                 return false;
-            }
-
-            // Window functions can contain aggregation results as arguments
-            // to the window functions, or columns of PARTITION BY or ORDER BY
-            // of the window.
         }
         return true;
     }
@@ -72,40 +64,23 @@ public:
 private:
     static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
     {
-        if (isAggregateFunction(node))
-        {
-            if (data.assert_no_aggregates)
-                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query{}",
-                                node.getColumnName(), String(data.assert_no_aggregates),
-                                String(data.assert_no_aggregates_hint));
+        if (node.isWindowFunction())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window function {} is not supported here", node.formatForErrorMessage());
 
-            String column_name = node.getColumnName();
-            if (data.uniq_names.contains(column_name))
-                return;
+        if (!isAggregateFunction(node))
+            return;
 
-            data.uniq_names.insert(column_name);
-            data.aggregates.push_back(ast);
-        }
-        else if (node.isWindowFunction())
-        {
-            if (data.assert_no_windows)
-                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
-                                node.getColumnName(), String(data.assert_no_windows));
+        if (data.assert_no_aggregates)
+            throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query{}",
+                            node.getColumnName(), String(data.assert_no_aggregates),
+                            String(data.assert_no_aggregates_hint));
 
-            if (node.name == "lag" || node.name == "lead")
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Window function '{}' is supported only with enabled analyzer",
-                    node.formatForErrorMessage());
-            }
+        String column_name = node.getColumnName();
+        if (data.uniq_names.contains(column_name))
+            return;
 
-            String column_name = node.getColumnName();
-            if (data.uniq_names.contains(column_name))
-                return;
-
-            data.uniq_names.insert(column_name);
-            data.window_functions.push_back(ast);
-        }
+        data.uniq_names.insert(column_name);
+        data.aggregates.push_back(ast);
     }
 
     static bool isAggregateFunction(const ASTFunction & node)
@@ -119,18 +94,10 @@ private:
 using GetAggregatesVisitor = GetAggregatesMatcher::Visitor;
 
 
-inline void assertNoWindows(const ASTPtr & ast, const char * description)
-{
-    GetAggregatesVisitor::Data data{.assert_no_windows = description};
-    GetAggregatesVisitor(data).visit(ast);
-}
-
 inline void assertNoAggregates(const ASTPtr & ast, const char * description, const char * hint = "")
 {
     GetAggregatesVisitor::Data data{.assert_no_aggregates = description, .assert_no_aggregates_hint = hint};
     GetAggregatesVisitor(data).visit(ast);
 }
-
-ASTs getExpressionsWithWindowFunctions(ASTPtr & ast);
 
 }

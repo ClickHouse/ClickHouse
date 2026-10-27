@@ -906,48 +906,10 @@ ASTs getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
         if (node.arguments)
         {
             for (auto & arg : node.arguments->children)
-            {
                 assertNoAggregates(arg, "inside another aggregate function");
-                // We also can't have window functions inside aggregate functions,
-                // because the window functions are calculated later.
-                assertNoWindows(arg, "inside an aggregate function");
-            }
         }
     }
     return data.aggregates;
-}
-
-ASTs getWindowFunctions(ASTPtr & query, const ASTSelectQuery & select_query)
-{
-    /// There can not be window functions inside the WHERE, PREWHERE and HAVING
-    if (select_query.having())
-        assertNoWindows(select_query.having(), "in HAVING");
-    if (select_query.where())
-        assertNoWindows(select_query.where(), "in WHERE");
-    if (select_query.prewhere())
-        assertNoWindows(select_query.prewhere(), "in PREWHERE");
-    if (select_query.window())
-        assertNoWindows(select_query.window(), "in WINDOW");
-
-    GetAggregatesVisitor::Data data;
-    GetAggregatesVisitor(data).visit(query);
-
-    /// Window functions cannot be inside aggregates or other window functions.
-    /// Aggregate functions can be inside window functions because they are
-    /// calculated earlier.
-    for (const ASTPtr & ast : data.window_functions)
-    {
-        const ASTFunction & node = typeid_cast<const ASTFunction &>(*ast);
-
-        if (node.arguments)
-            for (auto & arg : node.arguments->children)
-                assertNoWindows(arg, "inside another window function");
-
-        if (node.window_definition)
-            assertNoWindows(node.window_definition, "inside window definition");
-    }
-
-    return data.window_functions;
 }
 
 class MarkTupleLiteralsAsLegacyData
@@ -1556,8 +1518,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases, getContext());
 
     result.aggregates = getAggregates(query, *select_query);
-    result.window_function_asts = getWindowFunctions(query, *select_query);
-    result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
 
     result.collectUsedColumns(query, true);
 
@@ -1594,8 +1554,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
                 TreeOptimizer::optimizeGroupByFunctionKeys(select_query);
 
             result.aggregates = getAggregates(query, *select_query);
-            result.window_function_asts = getWindowFunctions(query, *select_query);
-            result.expressions_with_window_function = getExpressionsWithWindowFunctions(query);
             result.collectUsedColumns(query, true);
         }
     }

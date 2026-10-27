@@ -32,7 +32,6 @@ struct ASTWindowDefinition : public IAST
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
-    std::string getDefaultWindowName() const;
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 

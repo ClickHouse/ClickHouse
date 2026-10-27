@@ -630,7 +630,6 @@ ActionsMatcher::Data::Data(
     bool no_makeset_,
     bool only_consts_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_,
     bool is_create_parameterized_view_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
@@ -643,7 +642,6 @@ ActionsMatcher::Data::Data(
     , visit_depth(0)
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
-    , build_expression_with_window_functions(build_expression_with_window_functions_)
     , is_create_parameterized_view(is_create_parameterized_view_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
@@ -1400,51 +1398,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    // Now we need to correctly process window functions and any expression which depend on them.
-    if (node.isWindowFunction())
-    {
-        // Also add columns from PARTITION BY and ORDER BY of window functions.
-        if (node.window_definition)
-        {
-            visit(node.window_definition, data);
-        }
-        // Also manually add columns for arguments of the window function itself.
-        // ActionVisitor is written in such a way that this method must itself
-        // descend into all needed function children. Window functions can't have
-        // any special functions as argument, so the code below that handles
-        // special arguments is not needed. This is analogous to the
-        // appendWindowFunctionsArguments() in SelectQueryExpressionAnalyzer and
-        // partially duplicates its code. Probably we can remove most of the
-        // logic from that function, but I don't yet have it all figured out...
-        for (const auto & arg : node.arguments->children)
-        {
-            visit(arg, data);
-        }
-
-        // Don't need to do anything more for window functions here -- the
-        // resulting column is added in ExpressionAnalyzer, similar to the
-        // aggregate functions.
-        return;
-    }
-    if (node.computeAfterWindowFunctions())
-    {
-        if (!data.build_expression_with_window_functions)
-        {
-            for (const auto & arg : node.arguments->children)
-            {
-                if (auto const * function = arg->as<ASTFunction>(); function && function->name == "lambda")
-                {
-                    // Lambda function is a special case. It shouldn't be visited here.
-                    continue;
-                }
-                visit(arg, data);
-            }
-            return;
-        }
-    }
-
-    // An aggregate function can also be calculated as a window function, but we
-    // checked for it above, so no need to do anything more.
     if (AggregateUtils::isAggregateFunction(node))
         return;
 

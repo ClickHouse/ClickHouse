@@ -165,16 +165,6 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     }
 }
 
-std::string ASTWindowDefinition::getDefaultWindowName() const
-{
-    WriteBufferFromOwnString ostr;
-    FormatSettings settings{true /* one_line */};
-    FormatState state;
-    FormatStateStacked format_frame;
-    formatImpl(ostr, settings, state, format_frame);
-    return ostr.str();
-}
-
 ASTPtr ASTWindowListElement::clone() const
 {
     auto result = make_intrusive<ASTWindowListElement>();

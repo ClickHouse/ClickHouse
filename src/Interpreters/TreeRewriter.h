@@ -50,8 +50,6 @@ struct TreeRewriterResult
     Aliases aliases;
 
     ASTs aggregates;
-    ASTs window_function_asts;
-    ASTs expressions_with_window_function;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".

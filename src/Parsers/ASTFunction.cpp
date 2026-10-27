@@ -152,8 +152,6 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
         w.writeBool("is_operator", true);
     if (isWindowFunction())
         w.writeBool("is_window_function", true);
-    if (computeAfterWindowFunctions())
-        w.writeBool("compute_after_window_functions", true);
     if (isLambdaFunction())
         w.writeBool("is_lambda_function", true);
     if (preferSubqueryToFunctionFormatting())
@@ -216,7 +214,6 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
 
     setIsOperator(r.getBool("is_operator"));
     setIsWindowFunction(r.getBool("is_window_function"));
-    setComputeAfterWindowFunctions(r.getBool("compute_after_window_functions"));
     setIsLambdaFunction(r.getBool("is_lambda_function"));
     setPreferSubqueryToFunctionFormatting(r.getBool("prefer_subquery_to_function_formatting"));
     setNoEmptyArgs(r.getBool("no_empty_args"));
