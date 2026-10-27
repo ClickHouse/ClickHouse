@@ -46,12 +46,12 @@ CREATE TABLE t_codec (key UInt64, s String CODEC(NONE)) ENGINE = MergeTree ORDER
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1;
 CREATE TABLE t_codec_renamed AS t_codec;
 
-INSERT INTO t_wide SELECT intDiv(number, 100000), repeat('x', cityHash64(number) % 50) FROM numbers(1e6);
+INSERT INTO t_wide SELECT intDiv(number, 20000), repeat('x', cityHash64(number) % 50) FROM numbers(2e5);
 INSERT INTO t_wide_single_stream SELECT * FROM t_wide;
 INSERT INTO t_compact SELECT * FROM t_wide;
 INSERT INTO t_renamed SELECT * FROM t_wide;
-INSERT INTO t_nested SELECT intDiv(number, 100000), arrayMap(i -> 'x', range(cityHash64(number) % 5)), arrayMap(i -> i, range(cityHash64(number) % 5))
-FROM numbers(1e6);
+INSERT INTO t_nested SELECT intDiv(number, 20000), arrayMap(i -> 'x', range(cityHash64(number) % 5)), arrayMap(i -> i, range(cityHash64(number) % 5))
+FROM numbers(2e5);
 
 INSERT INTO t_nested_compact SELECT * FROM t_nested;
 INSERT INTO t_codec SELECT * FROM t_wide;
@@ -181,7 +181,7 @@ CREATE TABLE t_skew_compact (key UInt64, flag UInt8, s String CODEC(NONE)) ENGIN
 SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1,
     index_granularity = 8192, index_granularity_bytes = '10Mi';
 
-INSERT INTO t_skew_wide SELECT number, number < 1000, if(number < 1000, repeat('x', 1024), '') FROM numbers(1e6);
+INSERT INTO t_skew_wide SELECT number, number < 1000, if(number < 1000, repeat('x', 1024), '') FROM numbers(2e5);
 INSERT INTO t_skew_compact SELECT * FROM t_skew_wide;
 
 DROP TABLE IF EXISTS t_cache_sparse;
@@ -193,8 +193,14 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defau
 CREATE TABLE t_cache_dynamic (key UInt64, d Dynamic) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-INSERT INTO t_cache_sparse SELECT number, if(number % 100 = 0, number, NULL) FROM numbers(1e6);
-INSERT INTO t_cache_dynamic SELECT number, if(number % 2, number::Dynamic, toString(number)::Dynamic) FROM numbers(1e6);
+INSERT INTO t_cache_sparse SELECT number, if(number % 100 = 0, number, NULL) FROM numbers(2e5);
+INSERT INTO t_cache_dynamic SELECT number, if(number % 2, number::Dynamic, toString(number)::Dynamic) FROM numbers(2e5);
+
+DROP TABLE IF EXISTS t_cache_quantized;
+SET enable_quantized_codec = 1;
+CREATE TABLE t_cache_quantized (key UInt64, vec Array(Float32) CODEC(Quantized('product', 8, 4, 2))) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_cache_quantized SELECT number, arrayMap(j -> toFloat32((number * 7 + j) % 13), range(8)) FROM numbers(2e5);
 
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 2;
 
@@ -213,26 +219,45 @@ SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads
 SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_2';
 
--- The streams of the null map of a sparse `Nullable` and of a `Dynamic` are not all known without reading the column,
+-- The streams of the null map of a sparse `Nullable`, of a `Dynamic` and of a `Quantized` column are not all known without reading the column,
 -- so the bytes of the granules served from the cache are not measured, and no statistics are collected.
 SELECT sum(n.null) FROM t_cache_sparse FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_1';
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_1';
 SELECT sum(n.null) FROM t_cache_sparse FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_2';
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_sparse_2';
 SELECT d FROM t_cache_dynamic FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_1';
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_1';
 SELECT d FROM t_cache_dynamic FORMAT Null
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_2';
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_dynamic_2';
+-- A `Quantized` column lists its codes and codebook, which reading the vectors skips, and the codebook of the part is
+-- one value, read from the beginning of its file for any granule.
+SELECT vec FROM t_cache_quantized FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_1';
+SELECT vec FROM t_cache_quantized FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_2';
+SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_codebook_1';
+SELECT vec.product_quantization_codebook FROM t_cache_quantized FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_unknown_streams_quantized_codebook_2';
 
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- The first read is from the part. The second is not measured when the cache served it, which other tests can prevent by
--- evicting the entries.
-SELECT log_comment, if(endsWith(log_comment, '_1'),
+-- A read is measured if the cache served nothing. Which granules it serves is not fixed: other tests can evict the
+-- entries before the second read. The replicas share the cache but measure only the local reads, so the first read must
+-- not serve itself: the ranges are not split into overlapping ones.
+SELECT log_comment, if(ProfileEvents['ColumnsCacheHits'] = 0,
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0,
-    ProfileEvents['ColumnsCacheHits'] = 0 OR ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_when_streams_known
+    ProfileEvents['RuntimeDataflowStatisticsInputBytes'] = 0) AS measured_only_when_streams_known
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
     AND log_comment LIKE '05452\\_unknown\\_streams\\_%' AND type = 'QueryFinish'
@@ -262,3 +287,4 @@ DROP TABLE t_skew_wide;
 DROP TABLE t_skew_compact;
 DROP TABLE t_cache_sparse;
 DROP TABLE t_cache_dynamic;
+DROP TABLE t_cache_quantized;

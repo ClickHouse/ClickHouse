@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -1113,7 +1114,12 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
         const auto & name_and_type = columns_to_read[pos];
         /// The streams are enumerated without a deserialization state, so those listed in the prefixes are missed: the
         /// structure of dynamic types, and the buckets of a `Map`, whose info stream is enumerated in their place.
-        if (name_and_type.getTypeInStorage()->hasDynamicStructure())
+        /// A `Quantized` column enumerates its codes and codebook, which reading the vectors skips, and the single value
+        /// of the codebook is read from the beginning of its file for any granule, not from the granule's mark.
+        const auto & type_in_storage = name_and_type.getTypeInStorage();
+        const auto * custom_serialization = type_in_storage->getCustomSerialization();
+        if (type_in_storage->hasDynamicStructure()
+            || (custom_serialization && typeid(*custom_serialization) == typeid(SerializationQuantizedVector)))
         {
             served_from_cache_without_known_streams = true;
             return;
