@@ -27,6 +27,7 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
+    extern const int FAULT_INJECTED;
 }
 
 namespace
@@ -60,6 +61,20 @@ public:
     void copyFile(const String & destination, const String & source, size_t size) override
     {
         BackupWriterFile::copyFile(toLowerCopyASCII(destination), toLowerCopyASCII(source), size);
+    }
+};
+
+/// Fails the lookup of the upper-cased case sensitivity probe.
+class ProbeCheckFailingBackupWriter : public CaseFoldingBackupWriter
+{
+public:
+    using CaseFoldingBackupWriter::CaseFoldingBackupWriter;
+
+    bool fileExists(const String & file_name) override
+    {
+        if (file_name.starts_with("CLICKHOUSE_CASE_SENSITIVITY_CHECK_"))
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of the case sensitivity check");
+        return CaseFoldingBackupWriter::fileExists(file_name);
     }
 };
 
@@ -177,6 +192,23 @@ TEST_F(BackupImplCaseInsensitive, FailsOnNamesDifferingOnlyInCase)
     }
 
     EXPECT_FALSE(fs::exists(root / "metadata"));
+    EXPECT_FALSE(hasCaseSensitivityProbe(root));
+}
+
+TEST_F(BackupImplCaseInsensitive, RemovesProbeWhenCheckFails)
+{
+    createBackup(std::make_shared<ProbeCheckFailingBackupWriter>(root.string()));
+
+    try
+    {
+        writeFiles({{"metadata/d/T.sql", "CREATE TABLE d.T (x UInt8)"}, {"metadata/d/t.sql", "CREATE TABLE d.t (x UInt8)"}});
+        FAIL() << "Expected the injected failure of the case sensitivity check";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::FAULT_INJECTED) << e.displayText();
+    }
+
     EXPECT_FALSE(hasCaseSensitivityProbe(root));
 }
 

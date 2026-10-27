@@ -12,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Poco/Exception.h>
 
 #include <fcntl.h>
@@ -221,10 +222,9 @@ void BackupWriterDefault::copyFileFromDisk(
 bool BackupWriterDefault::probeCaseInsensitivity()
 {
     const String probe_name = fmt::format("clickhouse_case_sensitivity_check_{}", toString(UUIDHelpers::generateV4()));
+    SCOPE_EXIT_SAFE(removeFile(probe_name));
     writeFile(probe_name)->finalize();
-    bool case_insensitive = fileExists(toUpperCopyASCII(probe_name));
-    removeFile(probe_name);
-    return case_insensitive;
+    return fileExists(toUpperCopyASCII(probe_name));
 }
 
 void BackupWriterDefault::removeFiles(const Strings & file_names)
