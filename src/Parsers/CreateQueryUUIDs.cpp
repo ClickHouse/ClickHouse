@@ -119,6 +119,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 if (isTimeSeriesRecentSamplesTargetEnabled(query, for_restore))
                     generate_target_uuid(ViewTarget::RecentSamples);
 
+                if (isTimeSeriesHistogramsTargetEnabled(query, for_restore))
+                    generate_target_uuid(ViewTarget::Histograms);
+
                 if (isTimeSeriesTimeRangesTargetEnabled(query, for_restore))
                     generate_target_uuid(ViewTarget::TimeRanges);
             }

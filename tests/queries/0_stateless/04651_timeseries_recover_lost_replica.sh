@@ -24,10 +24,10 @@
 # `It's not initial query. ON CLUSTER is not allowed for Replicated database.` (Code 80) forever,
 # and waitTableFinallyDropped never returned.
 #
-# Expected (after fix):  the replica recovers, the TimeSeries table and its 5 inner tables are
+# Expected (after fix):  the replica recovers, the TimeSeries table and its 6 inner tables are
 #                        back, the inner tables were really dropped and re-created (so they are
 #                        empty again), and no Code 80 inner-drop rejection is logged.
-# Observed (before fix): recovery never completes -- the table count stays at 5 (only the
+# Observed (before fix): recovery never completes -- the table count stays at 6 (only the
 #                        orphaned inner tables), `ts` is gone, and DatabaseCatalog logs
 #                        `Cannot drop table <db>.ts (<uuid>). Will retry later.: Code: 80 ...`
 #                        every 5 seconds.
@@ -107,7 +107,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}',
 
 ${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
-# The outer TimeSeries table plus its 5 inner tables.
+# The outer TimeSeries table plus its 6 inner tables.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 
 # Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather
@@ -125,9 +125,9 @@ diverge_from_keeper ts
 force_recovery
 wait_for_recovery
 
-# Before the fix this stays at 5: only the orphaned inner tables survive, `ts` never comes back.
+# Before the fix this stays at 6: only the orphaned inner tables survive, `ts` never comes back.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
-# `ts` specifically exists again (a count of 6 made only of inner tables would be wrong).
+# `ts` specifically exists again (a count of 7 made only of inner tables would be wrong).
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts'"
 # The inner tables really were dropped and re-created, so they are empty again. If the eager inner

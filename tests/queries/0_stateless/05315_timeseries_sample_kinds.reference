@@ -1,0 +1,44 @@
+-- the generated column is aggregated, and belongs to the time ranges table only
+1	1
+-- the kinds stored in the time ranges table
+floats	a	1
+histograms	a	2
+mixed	a	3
+mixed	b	3
+-- the data tables read by a selector: samples, histograms
+floats	1	0
+histograms	0	1
+mixed	1	1
+mixed{job="b"}	1	1
+floats or histograms	1	1
+empty	0	0
+-- the samples returned by a selector: value, number of histograms
+floats	1	0
+histograms	0	1
+mixed	0	1
+mixed	0	1
+mixed	2	0
+mixed	3	0
+floats or histograms	0	1
+floats or histograms	1	0
+empty	0
+-- PromQL over float samples only, and over histogram samples which it does not support yet
+[('__name__','floats'),('job','a')]	1
+-- the rows of the two inserts of a series keep their kinds, and a merge ORs them into one row: kinds, then rows and kinds
+3
+1	3
+-- a series written with another id generator has an id outside the range of its metric: its kinds are unknown, both tables are read
+floats	1	1
+floats	1	0
+floats	5	0
+-- without the time ranges table there is no column and no time filter: both tables are read, also for a series without samples
+0
+floats	1	1
+empty	1	1
+-- a table of a version without histograms has a time ranges table without the column, and the selector does not read it
+0
+floats	1
+-- a customized engine of the inner time ranges table must keep the kinds when it merges rows
+ts_custom_key
+ts_custom_plain
+-- the column must have one of the allowed types

@@ -9,6 +9,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesTargetKinds.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinitionImpl.h>
 
 
@@ -38,7 +39,7 @@ namespace
     std::map<ViewTarget::Kind, ColumnsDescription> readExternalTargetColumns(const ASTCreateQuery & create_query, const ContextPtr & context)
     {
         std::map<ViewTarget::Kind, ColumnsDescription> result;
-        for (auto kind : StorageTimeSeries::getTargetKinds())
+        for (auto kind : getTimeSeriesTargetKinds())
         {
             if (create_query.hasTargetTableID(kind))
                 result[kind] = readTableColumns(create_query.getTargetTableID(kind), context);

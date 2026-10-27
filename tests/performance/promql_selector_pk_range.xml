@@ -9,12 +9,13 @@
         metric-clustered id layout (id = Tuple(sipHash64(metric_name), hash of tags)).
 
         The samples table is created with a small index granularity, so the part has many marks
-        (20000 series x 256 samples = 5.12M rows at granularity 64 -> 80K marks) and every selector
-        resolves to 20000 series ids. For a whole-metric selector the generated SQL carries a
-        continuous primary-key range on `id` and excludes the id set from index analysis, replacing
-        the generic exclusion search with the large set (single-threaded, the dominant cost of these
-        queries) by a continuous-range search. The label-filtered selector is the fallback control:
-        it keeps the id-set index analysis and must not regress.
+        (20000 series x 256 samples = 5.12M rows at granularity 64 -> 80K marks). The id set of a
+        selector reaches index analysis, where the generic exclusion search with the set is
+        single-threaded and the dominant cost of these queries, unless the range of the ids holds no
+        other series of the metric: then the range replaces the set (a continuous-range search). A
+        metric-name-only selector qualifies without a query. With other matchers a query on the tags
+        table checks it from `time_series_id_range_check_min_series` series on; below that the set
+        is cheaper than the check.
     -->
 
     <create_query>
@@ -35,13 +36,21 @@
         FROM numbers_mt(20000)
     </fill_query>
 
-    <!-- whole-metric selectors: the id range replaces the set in index analysis -->
+    <!-- metric name only: the range replaces the set without a check -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'pkr_metric', 1003830) FORMAT Null</query>
+
+    <!-- a matcher every series passes (a dashboard's "All" filter): the check passes, the range replaces the set -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc=~".*"}})', 1003830) FORMAT Null</query>
+
+    <!-- metric name only -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(rate(pkr_metric[30m]))', 1003830) FORMAT Null</query>
 
-    <!-- label-filtered selector: falls back to the id-set index analysis (regression control) -->
+    <!-- a matcher keeping 2500 of the series: the check fails, the set stays in index analysis -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc="0"}})', 1003830) FORMAT Null</query>
+
+    <!-- matchers keeping 100 series (a dashboard panel) and one series (an alert): no check, the set -->
+    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{instance=~"1[0-9][0-9]"}})', 1003830) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'pkr_metric{{instance="42"}}', 1003830) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_pk_range_ts</drop_query>
 </test>

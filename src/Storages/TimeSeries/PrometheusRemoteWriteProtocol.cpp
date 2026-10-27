@@ -22,14 +22,18 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/makePrometheusHistogramsBlock.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
+#include <span>
+#include <vector>
 
 
 namespace DB
@@ -70,16 +74,8 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
     return "";
 }
 
-void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
-{
-    if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
-        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
-    else
-        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
-}
-
 Block makeTimeSeriesBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    std::span<const prometheus::TimeSeries * const> time_series,
     size_t num_metadata_rows,
     const StorageInMemoryMetadata & metadata,
     const String & samples_column_name)
@@ -109,11 +105,11 @@ Block makeTimeSeriesBlock(
     time_series_offsets->reserve(num_rows);
     const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
 
-    for (const auto & element : time_series)
+    for (const auto * element : time_series)
     {
         std::string_view metric_name;
         bool has_metric_name = false;
-        for (const auto & label : element.labels())
+        for (const auto & label : element->labels())
         {
             if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName && !label.value().empty())
             {
@@ -134,9 +130,9 @@ Block makeTimeSeriesBlock(
         metric_name_column->insertData(metric_name.data(), metric_name.size());
         tags_offsets->insert(tags_names->size());
 
-        for (const auto & sample : element.samples())
+        for (const auto & sample : element->samples())
         {
-            insertTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
+            insertPrometheusTimestamp(sample.timestamp(), timestamp_scale, *timestamps);
             values->insert(sample.value());
         }
         time_series_offsets->insert(timestamps->size());
@@ -217,7 +213,7 @@ void appendBlock(Block & block, Block block_to_append)
 }
 
 Block makeBlock(
-    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    std::span<const prometheus::TimeSeries * const> time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
     const StorageInMemoryMetadata & metadata,
     const String & samples_column_name)
@@ -236,6 +232,23 @@ Block makeBlock(
             makeMetricsMetadataBlock(metrics_metadata, time_series.size(), metadata));
     }
     return block;
+}
+
+/// The time series of a request to write, one row each: those with a sample the table stores. A series without one would
+/// get a row of the "tags" table only - a phantom series discoverable through `timeSeriesTags` and the labels API with
+/// nothing to read. That is a series with histograms only when the table has no histograms table (see
+/// `dropPrometheusHistograms`), or a series sent without any sample.
+std::vector<const prometheus::TimeSeries *> selectTimeSeriesToWrite(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series, bool store_histograms)
+{
+    std::vector<const prometheus::TimeSeries *> selected;
+    selected.reserve(time_series.size());
+    for (const auto & element : time_series)
+    {
+        if (element.samples_size() || (store_histograms && element.histograms_size()))
+            selected.push_back(&element);
+    }
+    return selected;
 }
 
 void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
@@ -303,6 +316,15 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
 }
 
 
+void insertPrometheusTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
+{
+    if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
+        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
+    else
+        column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
+}
+
+
 PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     StoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext(context_)
@@ -328,8 +350,17 @@ void PrometheusRemoteWriteProtocol::write(
         metrics_metadata.size());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    const auto version = time_series_storage->getVersion();
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(version);
+    const bool store_histograms = timeSeriesVersionSupportsHistograms(version);
+    if (!store_histograms)
+        dropPrometheusHistograms(time_series, *time_series_storage);
+
+    const auto selected_time_series = selectTimeSeriesToWrite(time_series, store_histograms);
+    auto block = makeBlock(selected_time_series, metrics_metadata, *metadata, samples_column_name);
+    if (store_histograms)
+        appendBlock(block, makePrometheusHistogramsBlock(selected_time_series, metrics_metadata.size(), *metadata));
+    insertBlock(std::move(block), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,
