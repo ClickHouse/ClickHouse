@@ -154,3 +154,77 @@ drop table tk_arr;
 drop table tx_arr;
 drop table ng_map;
 drop table tx_map;
+
+-- Over `FixedString` elements the needle's trailing zero bytes are padding, whether it is a `String` or a
+-- wider `FixedString`, so `has(v, 'ab\0')` matches the element 'ab'. `ngrambf_v1` and `sparse_grams` must
+-- not build their probe from those zero bytes, which the stored value does not have.
+drop table if exists plain_fs_arr;
+drop table if exists ng_fs_arr;
+drop table if exists sg_fs_arr;
+drop table if exists tk_fs_arr;
+drop table if exists plain_fs_map;
+drop table if exists ng_fs_map_keys;
+drop table if exists ng_fs_map_values;
+
+create table plain_fs_arr (id UInt64, v Array(FixedString(4))) engine = Log;
+create table ng_fs_arr (id UInt64, v Array(FixedString(4)), index idx v type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table sg_fs_arr (id UInt64, v Array(FixedString(4)), index idx v type sparse_grams(3, 100, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table tk_fs_arr (id UInt64, v Array(FixedString(4)), index idx v type tokenbf_v1(512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+
+insert into plain_fs_arr values (0, ['abcd']), (1, ['ab']), (2, ['xyz']);
+insert into ng_fs_arr values (0, ['abcd']), (1, ['ab']), (2, ['xyz']);
+insert into sg_fs_arr values (0, ['abcd']), (1, ['ab']), (2, ['xyz']);
+insert into tk_fs_arr values (0, ['abcd']), (1, ['ab']), (2, ['xyz']);
+
+select 'fixed string array elements';
+select 'scan has str', (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, 'abcd\0') order by id)) = [0];
+select 'scan has short str', (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, 'ab\0') order by id)) = [1];
+select 'ngrambf has str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, 'abcd\0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_arr where has(v, 'abcd\0') order by id));
+select 'ngrambf has short str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, 'ab\0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_arr where has(v, 'ab\0') order by id));
+select 'ngrambf has wider fs',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, toFixedString('abcd', 8)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_arr where has(v, toFixedString('abcd', 8)) order by id));
+select 'ngrambf hasAny str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where hasAny(v, ['abcd\0']) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_arr where hasAny(v, ['abcd\0']) order by id));
+select 'sparse_grams has str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, 'abcd\0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from sg_fs_arr where has(v, 'abcd\0') order by id));
+select 'sparse_grams has wider fs',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, toFixedString('abcd', 8)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from sg_fs_arr where has(v, toFixedString('abcd', 8)) order by id));
+select 'tokenbf has str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_arr where has(v, 'abcd\0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from tk_fs_arr where has(v, 'abcd\0') order by id));
+
+create table plain_fs_map (id UInt64, k Map(FixedString(4), UInt8), w Map(String, FixedString(4))) engine = Log;
+create table ng_fs_map_keys (id UInt64, k Map(FixedString(4), UInt8), index idx mapKeys(k) type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table ng_fs_map_values (id UInt64, w Map(String, FixedString(4)), index idx mapValues(w) type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+
+insert into plain_fs_map values (0, map('abcd', 1), map('x', 'abcd')), (1, map('xyz', 1), map('x', 'xyz'));
+insert into ng_fs_map_keys values (0, map('abcd', 1)), (1, map('xyz', 1));
+insert into ng_fs_map_values values (0, map('x', 'abcd')), (1, map('x', 'xyz'));
+
+select 'ngrambf mapContainsKey str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_map where mapContainsKey(k, 'abcd\0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_map_keys where mapContainsKey(k, 'abcd\0') order by id));
+select 'ngrambf mapContainsValue str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_map where mapContainsValue(w, 'abcd\0') order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_map_values where mapContainsValue(w, 'abcd\0') order by id));
+
+drop table plain_fs_arr;
+drop table ng_fs_arr;
+drop table sg_fs_arr;
+drop table tk_fs_arr;
+drop table plain_fs_map;
+drop table ng_fs_map_keys;
+drop table ng_fs_map_values;

@@ -551,6 +551,25 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
+/// Removes the trailing zero bytes of a `String` value, or of each `String` element of an `Array` value, whatever their type.
+Field stripTrailingZerosInStringField(const Field & field)
+{
+    if (field.getType() == Field::Types::String)
+        return Field(String(stripTrailingZeros(field.safeGet<String>())));
+
+    if (field.getType() == Field::Types::Array)
+    {
+        Array stripped;
+        const auto & elements = field.safeGet<Array>();
+        stripped.reserve(elements.size());
+        for (const auto & element : elements)
+            stripped.push_back(stripTrailingZerosInStringField(element));
+        return Field(std::move(stripped));
+    }
+
+    return field;
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -613,9 +632,20 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         || function_name == "mapContains" || function_name == "mapContainsKey" || function_name == "mapContainsValue")
     {
         const auto searched_index = key_index ? key_index : (map_key_index ? map_key_index : map_value_index);
-        if (searched_index && zeroPaddedStringConstant(value_type)
-            && isString(removeNullable(removeLowCardinality(indexedElementType(index_data_types[*searched_index])))))
-            return false;
+        if (searched_index)
+        {
+            const auto indexed_element_type = indexedElementType(index_data_types[*searched_index]);
+            if (zeroPaddedStringConstant(value_type) && isString(indexed_element_type))
+                return false;
+
+            /// Against a `FixedString` element these functions ignore the trailing zero bytes of the needle,
+            /// whether it is a `FixedString` or a `String`, so `has(arr, 'ab\0')` matches the element `'ab'`.
+            /// The needle's zero bytes would add terms the stored value does not have and prune its granule.
+            /// Removing them only drops terms, and every allowed tokenizer emits the terms of the stripped
+            /// value as terms of the stored one.
+            if (isFixedString(indexed_element_type))
+                const_value = stripTrailingZerosInStringField(const_value);
+        }
     }
 
     if (key_node.isFunction())

@@ -27,3 +27,15 @@ text mapContains	1
 string needle still uses the index
 ngrambf has Str	1
 text has Str	1
+fixed string array elements
+scan has str	1
+scan has short str	1
+ngrambf has str	1
+ngrambf has short str	1
+ngrambf has wider fs	1
+ngrambf hasAny str	1
+sparse_grams has str	1
+sparse_grams has wider fs	1
+tokenbf has str	1
+ngrambf mapContainsKey str	1
+ngrambf mapContainsValue str	1
