@@ -1954,10 +1954,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             The new info.min_marks_for_concurrent_read `info.min_marks_for_concurrent_read / increase_num_streams_ratio` should be larger than 8.
             https://github.com/ClickHouse/ClickHouse/pull/53867
             */
-            if ((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read > parts_with_ranges.size())
+            /// The ceiling division is written without `sum_marks + min_marks_for_concurrent_read - 1`,
+            /// which overflows for huge `merge_tree_min_read_task_size`.
+            if (info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0) > parts_with_ranges.size())
             {
                 const size_t prev_num_streams = num_streams;
-                num_streams = (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read;
+                num_streams = info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0);
                 const size_t increase_num_streams_ratio = std::min(prev_num_streams / num_streams, info.min_marks_for_concurrent_read / 8);
                 if (increase_num_streams_ratio > 1)
                 {
@@ -2173,7 +2175,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         if (info.sum_marks / info.min_marks_for_concurrent_read < num_streams && parts_with_ranges.size() < num_streams)
         {
             num_streams = std::max(
-                (info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, parts_with_ranges.size());
+                info.sum_marks / info.min_marks_for_concurrent_read + (info.sum_marks % info.min_marks_for_concurrent_read != 0), parts_with_ranges.size());
         }
     }
 
