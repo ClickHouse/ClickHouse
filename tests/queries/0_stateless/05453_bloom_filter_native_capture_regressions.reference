@@ -1,0 +1,22 @@
+Bool capture sibling preserves rows	1
+Bool capture sibling prunes 1/16	1
+Bool capture has preserves rows	1
+Bool capture has prunes 1/16	1
+toUInt32 sibling preserves rows	1
+toUInt32 sibling prunes 1/16	1
+toUInt32 IN preserves rows	1
+toUInt32 IN prunes 1/16	1
+different integer target preserves rows	1
+different integer target declines index and reads 16/16	1
+integer multiply IN preserves rows	1
+integer multiply IN prunes 1/16	1
+different multiply constant preserves rows	1
+different multiply constant declines index and reads 16/16	1
+different multiply type preserves rows	1
+different multiply type declines index and reads 16/16	1
+nested callable sibling preserves rows	1
+nested callable sibling prunes 1/16	1
+nested callable has preserves rows	1
+nested callable has prunes 1/16	1
+unsafe nested callable sibling preserves rows	1
+unsafe nested callable sibling declines index and reads 16/16	1

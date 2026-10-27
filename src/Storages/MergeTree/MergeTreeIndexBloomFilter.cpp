@@ -276,6 +276,8 @@ struct ExpressionMatchBudget
     }
 };
 
+bool isNativeBoolType(const IDataType & type);
+
 bool isNativeTypeTree(const IDataType & type, ExpressionMatchBudget & budget, size_t depth = 0)
 {
     if (depth > 32 || !budget.consume())
@@ -299,7 +301,7 @@ bool isNativeTypeTree(const IDataType & type, ExpressionMatchBudget & budget, si
     };
 
     if (is_leaf())
-        return !raw->getCustomName() && !raw->getCustomSerialization();
+        return isNativeBoolType(type) || (!raw->getCustomName() && !raw->getCustomSerialization());
     if (typeid(*raw) == typeid(DataTypeArray))
     {
         if (raw->getCustomName() || raw->getCustomSerialization())
@@ -536,11 +538,52 @@ bool isStableSourceForDateTimeModeConversion(const DataTypePtr & source, Express
 
 bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget);
 
-bool sameNativeTypeTree(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget)
+bool sameNativeTypeTree(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget, size_t depth = 0)
 {
-    /// Authenticate both trees before sameType reads custom-name/serialization or child accessors.
+    if (!left || !right || depth > 32)
+        return false;
+    const auto * left_raw = left.get();
+    const auto * right_raw = right.get();
+
+    /// Callable signatures are admitted only for context scanning. Structural expression
+    /// matching still requires the actual lambda body and captures, not just its signature.
+    if (typeid(*left_raw) == typeid(DataTypeFunction) || typeid(*right_raw) == typeid(DataTypeFunction))
+    {
+        if (typeid(*left_raw) != typeid(DataTypeFunction) || typeid(*right_raw) != typeid(DataTypeFunction)
+            || left->getCustomName() || left->getCustomSerialization() || right->getCustomName() || right->getCustomSerialization()
+            || !budget.consume())
+            return false;
+        const auto & left_function = static_cast<const DataTypeFunction &>(*left);
+        const auto & right_function = static_cast<const DataTypeFunction &>(*right);
+        const auto & left_arguments = left_function.getArgumentTypes();
+        const auto & right_arguments = right_function.getArgumentTypes();
+        if (left_arguments.size() != right_arguments.size() || !budget.consume(left_arguments.size()))
+            return false;
+        for (size_t i = 0; i < left_arguments.size(); ++i)
+            if (!sameNativeTypeTree(left_arguments[i], right_arguments[i], budget, depth + 1))
+                return false;
+        return sameNativeTypeTree(left_function.getReturnType(), right_function.getReturnType(), budget, depth + 1);
+    }
+
+    /// Authenticate both trees before `sameType` reads custom-name/serialization or child accessors.
     /// A lambda capture and its outer expression commonly own distinct instances of the same type.
-    return left && right && isNativeTypeTree(*left, budget) && isNativeTypeTree(*right, budget) && sameType(left, right, budget);
+    return isNativeTypeTree(*left, budget, depth) && isNativeTypeTree(*right, budget, depth) && sameType(left, right, budget);
+}
+
+bool isNativeCaptureSignature(const DataTypePtr & type, const LambdaCapture & capture, ExpressionMatchBudget & budget)
+{
+    const auto * raw = type.get();
+    if (!raw || typeid(*raw) != typeid(DataTypeFunction) || type->getCustomName() || type->getCustomSerialization())
+        return false;
+    const auto & function_type = static_cast<const DataTypeFunction &>(*type);
+    const auto & arguments = function_type.getArgumentTypes();
+    if (arguments.size() != capture.lambda_arguments.size() || !budget.consume(arguments.size()))
+        return false;
+    size_t i = 0;
+    for (const auto & argument : capture.lambda_arguments)
+        if (!sameNativeTypeTree(arguments[i++], argument.type, budget))
+            return false;
+    return sameNativeTypeTree(function_type.getReturnType(), capture.return_type, budget);
 }
 
 bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_dag)
@@ -549,8 +592,10 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
     ExpressionMatchBudget budget(work_remaining);
     std::vector<const ActionsDAG *> pending_dags{&indexed_expression_dag};
     std::vector<const ActionsDAG::Node *> pending_nodes;
+    std::vector<std::pair<const IColumn *, DataTypePtr>> pending_callables;
     std::unordered_set<const ActionsDAG *> visited_dags;
     std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+    std::unordered_set<const ColumnFunction *> visited_callables;
     const auto * canonical_cast = FunctionFactory::instance().tryGetCanonicalCreator("CAST");
     const auto * canonical_internal_cast = FunctionFactory::instance().tryGetCanonicalCreator("_CAST");
     const auto * canonical_accurate_cast = FunctionFactory::instance().tryGetCanonicalCreator("accurateCast");
@@ -563,8 +608,47 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
         || !canonical_to_datetime || !canonical_to_datetime32 || !canonical_to_datetime64 || !canonical_to_unix_timestamp)
         return false;
 
-    while (!pending_dags.empty() || !pending_nodes.empty())
+    while (!pending_dags.empty() || !pending_nodes.empty() || !pending_callables.empty())
     {
+        if (!pending_callables.empty())
+        {
+            if (!budget.consume())
+                return false;
+            auto [column, type] = pending_callables.back();
+            pending_callables.pop_back();
+            if (!column)
+                return false;
+            if (typeid(*column) == typeid(ColumnConst))
+                column = &static_cast<const ColumnConst &>(*column).getDataColumn();
+            if (typeid(*column) != typeid(ColumnFunction))
+                return false;
+            const auto & column_function = static_cast<const ColumnFunction &>(*column);
+            const auto * function = column_function.getFunction().get();
+            if (!function || typeid(*function) != typeid(FunctionExpression))
+                return false;
+            const auto & expression = static_cast<const FunctionExpression &>(*function);
+            const auto & capture = expression.getCapture();
+            if (!isNativeCaptureSignature(type, capture, budget))
+                return false;
+            if (!visited_callables.insert(&column_function).second)
+                continue;
+            pending_dags.push_back(&expression.getActionsDAGForSemanticAnalysis());
+
+            const auto & captures = column_function.getCapturedColumns();
+            if (captures.size() != capture.captured_types.size() || !budget.consume(captures.size()))
+                return false;
+            for (size_t i = 0; i < captures.size(); ++i)
+            {
+                const auto & captured = captures[i];
+                if (!captured.column || !sameNativeTypeTree(captured.type, capture.captured_types[i], budget))
+                    return false;
+                const auto * captured_type = captured.type.get();
+                if (typeid(*captured_type) == typeid(DataTypeFunction))
+                    pending_callables.emplace_back(captured.column.get(), captured.type);
+            }
+            continue;
+        }
+
         if (!pending_dags.empty())
         {
             if (!budget.consume())
@@ -651,7 +735,7 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
                 else if (!areNativeConversionsEquivalentForBloomFilterExpressionMatching(*function_base, *function_base))
                 {
                     /// The self-comparison is an exact native semantic whitelist for context-independent
-                    /// integer->UInt8/UInt64, numeric->Decimal and numeric/Decimal->String. FromString templates and every
+                    /// integer->integer, numeric->Decimal and numeric/Decimal->String. FromString templates and every
                     /// unproved settings-capturing conversion fail closed here.
                     return false;
                 }
@@ -665,7 +749,9 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
                 pending_dags.push_back(&body);
                 /// Captures are separate children of FunctionCapture, but scan their declared
                 /// types as well so malformed/missing capture edges fail closed.
-                if (capture.captured_types.size() != node->children.size() || !budget.consume(capture.captured_types.size()))
+                if (!isNativeCaptureSignature(node->result_type, capture, budget)
+                    || !sameNativeTypeTree(node->result_type, function_capture.getResultType(), budget)
+                    || capture.captured_types.size() != node->children.size() || !budget.consume(capture.captured_types.size()))
                     return false;
                 for (size_t i = 0; i < capture.captured_types.size(); ++i)
                     if (!node->children[i] || !node->children[i]->result_type
@@ -683,26 +769,10 @@ bool isBloomIndexExpressionContextStable(const ActionsDAG & indexed_expression_d
             if (!node->column || !node->children.empty() || node->is_runtime_filter_id || node->is_masked_secret
                 || !node->is_deterministic_constant)
                 return false;
-            const auto * column_const = typeid_cast<const ColumnConst *>(node->column.get());
-            const auto * column_function = column_const ? typeid_cast<const ColumnFunction *>(&column_const->getDataColumn()) : nullptr;
-            const auto * function_expression
-                = column_function ? typeid_cast<const FunctionExpression *>(column_function->getFunction().get()) : nullptr;
-            if (!column_function || !function_expression || typeid(*column_function) != typeid(ColumnFunction)
-                || typeid(*function_expression) != typeid(FunctionExpression))
+            const auto * column = node->column.get();
+            if (typeid(*column) != typeid(ColumnConst))
                 return false;
-            const auto & capture = function_expression->getCapture();
-            pending_dags.push_back(&function_expression->getActionsDAGForSemanticAnalysis());
-
-            const auto & captures = column_function->getCapturedColumns();
-            if (captures.size() != capture.captured_types.size() || !budget.consume(captures.size()))
-                return false;
-            for (size_t i = 0; i < captures.size(); ++i)
-            {
-                const auto & captured_column = captures[i];
-                if (!captured_column.type || !captured_column.column
-                    || !sameNativeTypeTree(captured_column.type, capture.captured_types[i], budget))
-                    return false;
-            }
+            pending_callables.emplace_back(node->column.get(), node->result_type);
         }
         else if (node->type == ActionsDAG::ActionType::COLUMN && (node->has_folded_function || node->function_base))
         {
@@ -1863,11 +1933,13 @@ const char * getAuditedDirectFunctionName(const FunctionCreator * handle)
 {
     /// This is deliberately a closed set. A registered function handle is not enough to
     /// certify an empty/default semantic hash: its implementation must be admitted here.
-    static constexpr std::array<const char *, 32> names{
+    static constexpr std::array<const char *, 43> names{
         "lower",        "toYear",       "plus",          "minus",       "modulo",         "length",   "arrayReverse", "arraySort",
         "tuple",        "cityHash64",   "arraySlice",    "arrayResize", "arrayIntersect", "mapKeys",  "if",           "isNull",
         "arraySum",     "arrayMap",     "arrayDistinct", "arrayConcat", "CAST",           "toString", "toDecimal32",  "toDecimal64",
-        "toDecimal128", "toDecimal256", "abs",           "negate",      "sign",           "bitNot",   "toUInt8",      "toUInt64"};
+        "toDecimal128", "toDecimal256", "abs",           "negate",      "sign",           "bitNot",   "toUInt8",      "toUInt64",
+        "toUInt16",     "toUInt32",     "toUInt128",     "toUInt256",   "toInt8",         "toInt16",  "toInt32",      "toInt64",
+        "toInt128",     "toInt256",     "multiply"};
 
     if (!handle)
         return nullptr;
@@ -1994,12 +2066,10 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
     /// This guard excludes negate's context-dispatched tupleNegate path and every non-integer overload.
     if (name == "abs" || name == "negate" || name == "sign" || name == "bitNot")
         return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(result);
-    if (name == "toUInt8")
-        return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && typeid_cast<const DataTypeUInt8 *>(result.get())
-            && !result->getCustomName() && !result->getCustomSerialization();
-    if (name == "toUInt64")
-        return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && typeid_cast<const DataTypeUInt64 *>(result.get())
-            && !result->getCustomName() && !result->getCustomSerialization();
+    if (name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64" || name == "toUInt128" || name == "toUInt256"
+        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64" || name == "toInt128" || name == "toInt256")
+        return arguments.size() == 1 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(result)
+            && areNativeConversionsEquivalentForBloomFilterExpressionMatching(function, function);
     if (name == "lower")
         return arguments.size() == 1 && isStringType(arguments[0]) && isStringType(result);
     if (name == "toYear")
@@ -2014,7 +2084,7 @@ bool isSupportedDirectFunctionSignature(const String & name, const IFunctionBase
     if (name == "plus")
         return arguments.size() == 2 && isPrimitiveNumericType(arguments[0]) && isPrimitiveNumericType(arguments[1])
             && isPrimitiveNumericType(result);
-    if (name == "minus")
+    if (name == "minus" || name == "multiply")
         return arguments.size() == 2 && isPrimitiveIntegerType(arguments[0]) && isPrimitiveIntegerType(arguments[1])
             && isPrimitiveIntegerType(result);
     if (name == "modulo")

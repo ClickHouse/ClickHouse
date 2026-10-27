@@ -3646,6 +3646,35 @@ bool haveEqualConcreteNonDecimalTypes(const IDataType & left, const IDataType & 
         && left.equals(right);
 }
 
+bool isFunctionToInteger(const IFunction & function, const IDataType & result_type)
+{
+    if (typeid(function) == typeid(detail::FunctionToUInt8))
+        return isConcreteDataType<DataTypeUInt8>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToUInt16))
+        return isConcreteDataType<DataTypeUInt16>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToUInt32))
+        return isConcreteDataType<DataTypeUInt32>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToUInt64))
+        return isConcreteDataType<DataTypeUInt64>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToUInt128))
+        return isConcreteDataType<DataTypeUInt128>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToUInt256))
+        return isConcreteDataType<DataTypeUInt256>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToInt8))
+        return isConcreteDataType<DataTypeInt8>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToInt16))
+        return isConcreteDataType<DataTypeInt16>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToInt32))
+        return isConcreteDataType<DataTypeInt32>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToInt64))
+        return isConcreteDataType<DataTypeInt64>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToInt128))
+        return isConcreteDataType<DataTypeInt128>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToInt256))
+        return isConcreteDataType<DataTypeInt256>(result_type);
+    return false;
+}
+
 bool isFunctionToDecimal(const IFunction & function, const IDataType & result_type)
 {
     if (typeid(function) == typeid(detail::FunctionToDecimal32))
@@ -3789,14 +3818,13 @@ bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunct
     if (!left_result || !right_result)
         return false;
 
-    if (typeid(left_function) == typeid(detail::FunctionToUInt8) || typeid(left_function) == typeid(detail::FunctionToUInt64))
+    if (isFunctionToInteger(left_function, *left_result))
     {
-        const bool to_uint8 = typeid(left_function) == typeid(detail::FunctionToUInt8);
+        /// Native integer-to-integer execution uses `convertNumericGeneral` without conversion settings.
         return left_arguments.size() == 1 && right_arguments.size() == 1 && left_arguments[0] && right_arguments[0]
             && isAuditedPrimitiveIntegerType(*left_arguments[0]) && isAuditedPrimitiveIntegerType(*right_arguments[0])
             && haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0])
-            && (to_uint8 ? isConcreteDataType<DataTypeUInt8>(*left_result) && isConcreteDataType<DataTypeUInt8>(*right_result)
-                         : isConcreteDataType<DataTypeUInt64>(*left_result) && isConcreteDataType<DataTypeUInt64>(*right_result))
+            && isFunctionToInteger(right_function, *right_result)
             && haveEqualConcreteNonDecimalTypes(*left_result, *right_result);
     }
 

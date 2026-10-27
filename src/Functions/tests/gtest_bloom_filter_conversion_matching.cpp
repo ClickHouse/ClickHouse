@@ -191,11 +191,13 @@ TEST(BloomFilterConversionMatching, UnsupportedStringAndCustomSerializationPaths
     EXPECT_FALSE(areNativeConversionsEquivalentForBloomFilterExpressionMatching(*left_wrapped_string, *right_wrapped_string));
 }
 
-TEST(BloomFilterConversionMatching, NativeIntegerToUInt8AndUInt64IgnoreInputParsingSettings)
+TEST(BloomFilterConversionMatching, NativeIntegerConversionsIgnoreInputParsingSettings)
 {
     auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
     auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
-    const std::vector<String> conversion_names{"toUInt8", "toUInt64"};
+    const std::vector<String> conversion_names{
+        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256",
+        "toInt8", "toInt16", "toInt32", "toInt64", "toInt128", "toInt256"};
     const std::vector<String> integer_type_names{
         "UInt8",
         "UInt16",
@@ -226,11 +228,13 @@ TEST(BloomFilterConversionMatching, NativeIntegerToUInt8AndUInt64IgnoreInputPars
     }
 }
 
-TEST(BloomFilterConversionMatching, UInt8AndUInt64ConversionsDeclineUnauditedOrDifferentInputTypes)
+TEST(BloomFilterConversionMatching, IntegerConversionsDeclineUnauditedOrDifferentInputTypes)
 {
     auto left_context = makeContextWithSetting("input_format_parallel_parsing", "0");
     auto right_context = makeContextWithSetting("input_format_parallel_parsing", "1");
-    const std::vector<String> conversion_names{"toUInt8", "toUInt64"};
+    const std::vector<String> conversion_names{
+        "toUInt8", "toUInt16", "toUInt32", "toUInt64", "toUInt128", "toUInt256",
+        "toInt8", "toInt16", "toInt32", "toInt64", "toInt128", "toInt256"};
     const std::vector<String> unsupported_type_names{
         "String",
         "Float32",

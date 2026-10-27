@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -756,6 +757,64 @@ bool canPruneUnaryFunctionIn(const String & function_name, const DataTypePtr & a
     const auto & predicate
         = query_dag.addFunction(FunctionFactory::instance().get("in", context), {&query_function, &set_node}, "predicate");
 
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
+DataTypePtr makeCounterfeitBoolType()
+{
+    auto type = std::make_shared<DataTypeUInt8>();
+    type->setCustomization(std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeCustomFixedName>("Bool"), type->getDefaultSerialization()));
+    return type;
+}
+
+bool canPruneCompositeWithBoolCapture(bool counterfeit_bool)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto bool_type = counterfeit_bool ? makeCounterfeitBoolType() : DataTypeFactory::instance().get("Bool");
+    const auto array_type = std::make_shared<DataTypeArray>(uint64_type);
+
+    ActionsDAG lambda_dag;
+    const auto & argument = lambda_dag.addInput("v", uint64_type);
+    const auto & flag = lambda_dag.addInput("flag", bool_type);
+    const auto & zero = lambda_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(0))), uint64_type, "zero", true);
+    const auto & output = lambda_dag.addFunction(
+        FunctionFactory::instance().get("if", context), {&flag, &argument, &zero}, "mapped_value");
+    lambda_dag.getOutputs().push_back(&output);
+
+    const auto lambda = std::make_shared<FunctionCaptureOverloadResolver>(
+        std::move(lambda_dag),
+        ExpressionActionsSettings(context),
+        Names{"flag"},
+        NamesAndTypesList{{"v", uint64_type}},
+        uint64_type,
+        "mapped_value",
+        /* allow_constant_folding= */ true);
+
+    ActionsDAG query_dag;
+    const auto & query_string = query_dag.addInput("s", string_type);
+    const auto & query_literal
+        = query_dag.addColumn(string_type->createColumnConst(0, Field(String("3"))), string_type, "three", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_string, &query_literal}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & index_string = index_dag.addInput("s", string_type);
+    const auto & index_flag = index_dag.addInput("flag", bool_type);
+    const auto & array_input = index_dag.addInput("a", array_type);
+    const auto & lambda_node = index_dag.addFunction(lambda, {&index_flag}, "lambda");
+    const auto & mapped_array = index_dag.addFunction(
+        FunctionFactory::instance().get("arrayMap", context), {&lambda_node, &array_input}, "mapped_array");
+    index_dag.getOutputs() = {&index_string, &mapped_array};
+
+    Block header(ColumnsWithTypeAndName{
+        {string_type->createColumn(), string_type, "s"},
+        {mapped_array.result_type->createColumn(), mapped_array.result_type, "mapped_array"},
+    });
     MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
     return !condition.alwaysUnknownOrTrue();
 }
@@ -1563,6 +1622,196 @@ std::shared_ptr<FunctionCaptureOverloadResolver> makeIncrementLambda(
         /* allow_constant_folding= */ true);
 }
 
+ColumnConstPtr makeColumnFunctionConstant(
+    ActionsDAG && lambda_dag,
+    const LambdaCapturePtr & capture,
+    const ContextPtr & context,
+    ColumnsWithTypeAndName captured_columns = {})
+{
+    auto expression_actions = createLambdaExpressionActions(
+        std::move(lambda_dag), ExpressionActionsSettings(context), *capture);
+    FunctionBasePtr function = std::make_shared<FunctionExpression>(capture, std::move(expression_actions));
+    auto column_function = ColumnFunction::create(1, std::move(function), std::move(captured_columns));
+    return ColumnConst::create(std::move(column_function), 0);
+}
+
+ColumnPtr makeIncrementColumnFunctionConstant(const ContextPtr & context, const DataTypePtr & uint64_type)
+{
+    ActionsDAG lambda_dag;
+    const auto & argument = lambda_dag.addInput("w", uint64_type);
+    const auto & one = lambda_dag.addColumn(uint64_type->createColumnConst(0, Field(UInt64(1))), uint64_type, "one", true);
+    const auto & result = lambda_dag.addFunction(
+        FunctionFactory::instance().get("plus", context), {&argument, &one}, "incremented");
+    lambda_dag.getOutputs().push_back(&result);
+
+    const auto capture = std::make_shared<LambdaCapture>(LambdaCapture{
+        .captured_names = {},
+        .captured_types = {},
+        .lambda_arguments = NamesAndTypesList{{"w", uint64_type}},
+        .return_name = result.result_name,
+        .return_type = uint64_type,
+        .allow_constant_folding = true,
+    });
+    return makeColumnFunctionConstant(std::move(lambda_dag), capture, context);
+}
+
+ColumnPtr makeTextToFloatColumnFunctionConstant(
+    const ContextPtr & context,
+    const DataTypePtr & string_type,
+    const DataTypePtr & float64_type)
+{
+    ActionsDAG lambda_dag;
+    const auto & argument = lambda_dag.addInput("w", string_type);
+    const auto & result = lambda_dag.addFunction(
+        FunctionFactory::instance().get("toFloat64", context), {&argument}, "converted");
+    lambda_dag.getOutputs().push_back(&result);
+
+    const auto capture = std::make_shared<LambdaCapture>(LambdaCapture{
+        .captured_names = {},
+        .captured_types = {},
+        .lambda_arguments = NamesAndTypesList{{"w", string_type}},
+        .return_name = result.result_name,
+        .return_type = float64_type,
+        .allow_constant_folding = true,
+    });
+    return makeColumnFunctionConstant(std::move(lambda_dag), capture, context);
+}
+
+struct TestNestedFoldedCallableResult
+{
+    bool can_prune;
+    bool outer_contains_column_function_capture;
+};
+
+TestNestedFoldedCallableResult canPruneCompositeWithFoldedCallableCapture(bool hidden_unsafe_conversion, bool mismatched_signature)
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto actual_argument_type = hidden_unsafe_conversion ? DataTypePtr(string_type) : DataTypePtr(uint64_type);
+    const auto actual_return_type = hidden_unsafe_conversion ? DataTypePtr(float64_type) : DataTypePtr(uint64_type);
+    const auto declared_return_type = mismatched_signature ? DataTypePtr(float64_type) : actual_return_type;
+    const auto inner_function_type
+        = std::make_shared<DataTypeFunction>(DataTypes{actual_argument_type}, declared_return_type);
+    const auto inner_column = hidden_unsafe_conversion
+        ? makeTextToFloatColumnFunctionConstant(context, string_type, float64_type)
+        : makeIncrementColumnFunctionConstant(context, uint64_type);
+
+    const auto inner_array_type = std::make_shared<DataTypeArray>(actual_argument_type);
+    const auto outer_array_type = std::make_shared<DataTypeArray>(inner_array_type);
+    ActionsDAG outer_lambda_dag;
+    const auto & inner = outer_lambda_dag.addInput("inner", inner_function_type);
+    const auto & argument = outer_lambda_dag.addInput("v", inner_array_type);
+    const auto & mapped_inner = outer_lambda_dag.addFunction(
+        FunctionFactory::instance().get("arrayMap", context), {&inner, &argument}, "mapped_inner");
+    const auto & result = outer_lambda_dag.addFunction(
+        FunctionFactory::instance().get("arraySum", context), {&mapped_inner}, "outer_sum");
+    outer_lambda_dag.getOutputs().push_back(&result);
+
+    const auto outer_capture = std::make_shared<LambdaCapture>(LambdaCapture{
+        .captured_names = Names{"inner"},
+        .captured_types = DataTypes{inner_function_type},
+        .lambda_arguments = NamesAndTypesList{{"v", inner_array_type}},
+        .return_name = result.result_name,
+        .return_type = declared_return_type,
+        .allow_constant_folding = true,
+    });
+    ColumnsWithTypeAndName outer_captures{{inner_column, inner_function_type, "inner"}};
+    const auto outer_column = makeColumnFunctionConstant(std::move(outer_lambda_dag), outer_capture, context, std::move(outer_captures));
+    const auto * outer_constant = typeid_cast<const ColumnConst *>(outer_column.get());
+    const auto * outer_column_function = outer_constant
+        ? typeid_cast<const ColumnFunction *>(&outer_constant->getDataColumn()) : nullptr;
+    bool outer_contains_column_function_capture = false;
+    if (outer_column_function && outer_column_function->getCapturedColumns().size() == 1)
+    {
+        const auto & captured = outer_column_function->getCapturedColumns().front();
+        const auto * captured_constant = captured.column ? typeid_cast<const ColumnConst *>(captured.column.get()) : nullptr;
+        outer_contains_column_function_capture = captured_constant
+            && typeid_cast<const ColumnFunction *>(&captured_constant->getDataColumn());
+    }
+
+    const auto outer_function_type = std::make_shared<DataTypeFunction>(DataTypes{inner_array_type}, declared_return_type);
+    const auto mapped_result_type = std::make_shared<DataTypeArray>(declared_return_type);
+    ActionsDAG query_dag;
+    const auto & query_string = query_dag.addInput("s", string_type);
+    const auto & query_literal = query_dag.addColumn(string_type->createColumnConst(0, Field(String("3"))), string_type, "three", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_string, &query_literal}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & index_string = index_dag.addInput("s", string_type);
+    const auto & array_input = index_dag.addInput("a", outer_array_type);
+    const auto & outer_lambda = index_dag.addColumn(outer_column, outer_function_type, "outer_lambda", true);
+    const auto & mapped = index_dag.addFunction(
+        FunctionFactory::instance().get("arrayMap", context), {&outer_lambda, &array_input}, "mapped_outer");
+    index_dag.getOutputs() = {&index_string, &mapped};
+
+    Block header(ColumnsWithTypeAndName{
+        {string_type->createColumn(), string_type, "s"},
+        {mapped_result_type->createColumn(), mapped_result_type, "mapped_outer"},
+    });
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return {
+        .can_prune = !condition.alwaysUnknownOrTrue(),
+        .outer_contains_column_function_capture = outer_contains_column_function_capture,
+    };
+}
+
+bool canPruneCompositeWithLiveCallableCapture()
+{
+    tryRegisterFunctions();
+    const auto context = getContext().context;
+    const auto string_type = std::make_shared<DataTypeString>();
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto array_type = std::make_shared<DataTypeArray>(uint64_type);
+    const auto array_of_arrays_type = std::make_shared<DataTypeArray>(array_type);
+    const auto inner_function_type = std::make_shared<DataTypeFunction>(DataTypes{uint64_type}, uint64_type);
+
+    ActionsDAG outer_lambda_dag;
+    const auto & inner = outer_lambda_dag.addInput("inner", inner_function_type);
+    const auto & argument = outer_lambda_dag.addInput("v", array_type);
+    const auto & mapped_inner = outer_lambda_dag.addFunction(
+        FunctionFactory::instance().get("arrayMap", context), {&inner, &argument}, "mapped_inner");
+    const auto & result = outer_lambda_dag.addFunction(
+        FunctionFactory::instance().get("arraySum", context), {&mapped_inner}, "outer_sum");
+    outer_lambda_dag.getOutputs().push_back(&result);
+    const auto outer_lambda = std::make_shared<FunctionCaptureOverloadResolver>(
+        std::move(outer_lambda_dag),
+        ExpressionActionsSettings(context),
+        Names{"inner"},
+        NamesAndTypesList{{"v", array_type}},
+        uint64_type,
+        "outer_sum",
+        /* allow_constant_folding= */ true);
+
+    ActionsDAG query_dag;
+    const auto & query_string = query_dag.addInput("s", string_type);
+    const auto & query_literal
+        = query_dag.addColumn(string_type->createColumnConst(0, Field(String("3"))), string_type, "three", true);
+    const auto & predicate
+        = query_dag.addFunction(FunctionFactory::instance().get("equals", context), {&query_string, &query_literal}, "predicate");
+
+    ActionsDAG index_dag;
+    const auto & index_string = index_dag.addInput("s", string_type);
+    const auto & array_input = index_dag.addInput("a", array_of_arrays_type);
+    const auto inner_lambda_resolver = makeIncrementLambda(context, uint64_type, "w", "incremented");
+    const auto & inner_lambda = index_dag.addFunction(inner_lambda_resolver, {}, "inner_lambda");
+    const auto & outer = index_dag.addFunction(outer_lambda, {&inner_lambda}, "outer_lambda");
+    const auto & mapped_outer = index_dag.addFunction(
+        FunctionFactory::instance().get("arrayMap", context), {&outer, &array_input}, "mapped_outer");
+    index_dag.getOutputs() = {&index_string, &mapped_outer};
+
+    const auto mapped_array_type = std::make_shared<DataTypeArray>(uint64_type);
+    Block header(ColumnsWithTypeAndName{
+        {string_type->createColumn(), string_type, "s"},
+        {mapped_array_type->createColumn(), mapped_array_type, "mapped_outer"},
+    });
+    MergeTreeIndexConditionBloomFilter condition(&predicate, context, header, index_dag, 4, {}, {});
+    return !condition.alwaysUnknownOrTrue();
+}
+
 struct TestNestedLambdaResult
 {
     bool can_prune;
@@ -2143,6 +2392,12 @@ TEST(MergeTreeIndexBloomFilter, MatchesToUInt8INOnlyForPrimitiveIntegerInputs)
     EXPECT_FALSE(canPruneUnaryFunctionIn("toUInt8", std::make_shared<DataTypeFloat32>()));
 }
 
+TEST(MergeTreeIndexBloomFilter, AuthenticatesBoolCaptureInCompositeIndexContext)
+{
+    EXPECT_TRUE(canPruneCompositeWithBoolCapture(false)) << "the registered Bool domain is a native capture";
+    EXPECT_FALSE(canPruneCompositeWithBoolCapture(true)) << "a Bool name on ordinary UInt8 serialization is not Bool";
+}
+
 TEST(MergeTreeIndexBloomFilter, DeclinesLambdaBodyWhenSharedExpressionMatchBudgetIsExceeded)
 {
     EXPECT_TRUE(canPruneLambdaInWithFunctionCount(1));
@@ -2467,6 +2722,25 @@ TEST(MergeTreeIndexBloomFilter, MatchesOnlyEquivalentNativeNullableNothingConsta
                 FAIL() << "The customized-type test list must not include the uncustomized type";
         }
     }
+}
+
+TEST(MergeTreeIndexBloomFilter, ScansNativeCallableCapturesInCompositeIndexContext)
+{
+    EXPECT_TRUE(canPruneCompositeWithLiveCallableCapture());
+
+    const auto folded_safe = canPruneCompositeWithFoldedCallableCapture(false, false);
+    EXPECT_TRUE(folded_safe.outer_contains_column_function_capture);
+    EXPECT_TRUE(folded_safe.can_prune);
+
+    const auto folded_unsafe = canPruneCompositeWithFoldedCallableCapture(true, false);
+    EXPECT_TRUE(folded_unsafe.outer_contains_column_function_capture)
+        << "the outer ColumnFunction must carry the hidden inner ColumnFunction";
+    EXPECT_FALSE(folded_unsafe.can_prune)
+        << "the nested toFloat64(String) body is context dependent even though it is hidden in a capture";
+
+    const auto folded_mismatch = canPruneCompositeWithFoldedCallableCapture(false, true);
+    EXPECT_TRUE(folded_mismatch.outer_contains_column_function_capture);
+    EXPECT_FALSE(folded_mismatch.can_prune) << "the declared function signature must match the captured callable body";
 }
 
 TEST(MergeTreeIndexBloomFilter, DeclinesNestedNativeLambdaInBodyAndCaptureExpressions)
