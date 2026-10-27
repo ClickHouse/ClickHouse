@@ -7188,7 +7188,7 @@ ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
     auto lazy_reading_header = std::make_shared<const Block>(
         MergeTreeSelectProcessor::transformHeader(storage_snapshot->getSampleBlockForColumns(columns_to_read_lazily), nullptr, nullptr));
 
-    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+    PartRangesReadInfo info(getParts(), hasNonZeroUncompressedCache(context), context->getSettingsRef(), *data.getSettings());
     auto lazy_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
