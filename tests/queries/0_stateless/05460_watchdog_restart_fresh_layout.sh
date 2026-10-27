@@ -83,23 +83,34 @@ cat > "$work/config.xml" <<EOF
 </clickhouse>
 EOF
 
-# A subshell keeps the shell's report of the killed background job out of the output.
+# With --daemon, as `clickhouse start` runs it: the restart below also requires that the re-executed server did not detach from the watchdog.
 (
     ulimit -c 0
     CLICKHOUSE_WATCHDOG_ENABLE=1 CLICKHOUSE_WATCHDOG_RESTART=1 $CLICKHOUSE_BINARY server --config-file="$work/config.xml" \
-        -- --tcp_port=0 --listen_host=127.0.0.1 --max_server_memory_usage=2000000000 >/dev/null 2>&1 &
-    echo $! > "$work/watchdog.pid"
+        --pid-file="$work/server.pid" --daemon -- --tcp_port=0 --listen_host=127.0.0.1 >/dev/null 2>&1
 ) 2>/dev/null
-watchdog=$(cat "$work/watchdog.pid")
+
+for _ in {1..1200}; do
+    [ -s "$work/server.pid" ] && break
+    sleep 0.1
+done
+[ -s "$work/server.pid" ] || { echo "the server did not write its pid file"; exit 1; }
+child1=$(cat "$work/server.pid")
+watchdog=$(awk '/^PPid:/ { print $2 }' "/proc/$child1/status" 2>/dev/null)
+
+# Never signal a parent that is not the watchdog, which runs the same binary.
+if [ -z "$watchdog" ] || [ "$(readlink "/proc/$watchdog/exe" 2>/dev/null)" != "$(readlink "/proc/$child1/exe" 2>/dev/null)" ]; then
+    echo "$child1" >> "$pids"
+    echo "the server is not a child of the watchdog"
+    exit 1
+fi
 echo "$watchdog" >> "$pids"
+echo "$child1" >> "$pids"
 
 if [ ! -e "/proc/$watchdog/task/$watchdog/children" ]; then
     echo "@@SKIP@@: /proc does not show the children of a process"
     exit 0
 fi
-
-child1=$(wait_for_child "") || { echo "the watchdog did not start the server"; exit 1; }
-echo "$child1" >> "$pids"
 
 watchdog_exe=$(readlink "/proc/$watchdog/exe")
 watchdog_base=$(exe_base "$watchdog")
