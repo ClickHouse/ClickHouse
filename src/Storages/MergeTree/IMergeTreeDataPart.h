@@ -372,8 +372,14 @@ public:
     /// replica loaded or committed the part (see `MergeTreeData::getPartSharedStorageIncarnation`).
     /// Block numbers are reconstructed from the remaining parts when a table restarts empty, so a part
     /// name can be reused by another leader for different data; the name alone does not tell a replica
-    /// that its cached part was replaced. Written before the part becomes active.
+    /// that its cached part was replaced. Written before the part becomes active, with
+    /// `setSharedStorageIncarnation`. A projection part holds a copy of the value of its parent.
     std::optional<String> shared_storage_incarnation;
+
+    /// Sets `shared_storage_incarnation` of this part and of its projection parts. A projection part
+    /// keeps its own copy, because it may outlive its parent (and then must not dereference it), e.g.
+    /// when a temporary part is destroyed and its projection part is still referenced by a writer.
+    void setSharedStorageIncarnation(const std::optional<String> & incarnation);
 
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
@@ -667,7 +673,7 @@ public:
 
     /// Appended to the keys under which the caches shared between tables store the data of the part:
     /// the identity of the part directory on shared storage under `leader_election` (see
-    /// `shared_storage_incarnation`, taken from the parent part for a projection), empty otherwise.
+    /// `shared_storage_incarnation`, a copy of the parent's for a projection), empty otherwise.
     /// A part name and path can be reused by another leader for different data, and a reader that
     /// still holds the replaced part object must not serve its data to the replacement, or the other
     /// way around.

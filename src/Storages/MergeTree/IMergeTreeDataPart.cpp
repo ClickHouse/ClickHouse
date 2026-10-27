@@ -1601,15 +1601,20 @@ void IMergeTreeDataPart::removeStatisticsFromCache(StatisticsCache * cache) cons
         cache->remove(StatisticsCache::hash(part_path, column.name));
 }
 
+void IMergeTreeDataPart::setSharedStorageIncarnation(const std::optional<String> & incarnation)
+{
+    shared_storage_incarnation = incarnation;
+    for (const auto & [_, projection_part] : projection_parts)
+        projection_part->setSharedStorageIncarnation(incarnation);
+}
+
 String IMergeTreeDataPart::getCacheKeySuffix() const
 {
-    const IMergeTreeDataPart * root_part = this;
-    while (root_part->getParentPart())
-        root_part = root_part->getParentPart();
-
-    if (!root_part->shared_storage_incarnation)
+    /// Not taken from the parent part: this is called from the destructor of a projection part (via
+    /// `clearCaches`), which may run after the parent is destroyed.
+    if (!shared_storage_incarnation)
         return {};
-    return "@" + *root_part->shared_storage_incarnation;
+    return "@" + *shared_storage_incarnation;
 }
 
 String IMergeTreeDataPart::getPathForCacheKey() const
@@ -1868,6 +1873,7 @@ void IMergeTreeDataPart::addProjectionPart(
     /// so build it in the dedicated arena. Scoping here covers every caller (insert, merge,
     /// projection merge, load).
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    projection_part->setSharedStorageIncarnation(shared_storage_incarnation);
     projection_parts[projection_name] = std::move(projection_part);
 }
 

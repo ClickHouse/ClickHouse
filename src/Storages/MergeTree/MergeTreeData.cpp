@@ -3145,7 +3145,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     /// Recorded before the metadata is read, so that the identity is never newer than the data.
     if ((*getSettings())[MergeTreeSetting::leader_election])
-        res.part->shared_storage_incarnation = getPartSharedStorageIncarnation(*res.part);
+        res.part->setSharedStorageIncarnation(getPartSharedStorageIncarnation(*res.part));
 
     try
     {
@@ -8524,7 +8524,7 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
     /// metadata was read: looking it up again here could label the loaded metadata with the identity of a
     /// same-name replacement that appeared on the storage in the meantime, and then it would never be reloaded.
     if ((*getSettings())[MergeTreeSetting::leader_election] && !part->shared_storage_incarnation)
-        part->shared_storage_incarnation = getPartSharedStorageIncarnation(*part);
+        part->setSharedStorageIncarnation(getPartSharedStorageIncarnation(*part));
 
     part->is_temp = false;
     part->setState(DataPartState::PreActive);

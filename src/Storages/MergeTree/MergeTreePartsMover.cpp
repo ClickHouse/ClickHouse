@@ -352,7 +352,7 @@ try
     /// `swapActivePart` installs the clone directly, without `preparePartForCommit`, so record the identity
     /// of its directory here, as `preparePartForCommit` does for the other parts that become active.
     if (data->hasLeaderElection())
-        part.shared_storage_incarnation = data->getPartSharedStorageIncarnation(part);
+        part.setSharedStorageIncarnation(data->getPartSharedStorageIncarnation(part));
 }
 catch (...)
 {
