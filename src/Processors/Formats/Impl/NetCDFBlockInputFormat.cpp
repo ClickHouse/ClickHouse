@@ -1243,9 +1243,10 @@ an exception instead of corrupting it.
 
 The names of the classic format are UTF-8 text that begins with a letter, a digit, an underscore or
 a character outside of ASCII, and contains no slashes, no control characters and no trailing spaces.
-A name is also limited to 65536 bytes, which applies to the generated string-length dimension of a
-String column as well. A column whose name is not one of these - including a name that is not valid
-UTF-8, which a quoted identifier of ClickHouse may be - cannot be written, and throws an exception.
+A name is also limited to 256 bytes, the limit of the reference library, which applies to the
+generated string-length dimension of a String column as well. A column whose name is not one of
+these - including a name that is not valid UTF-8, which a quoted identifier of ClickHouse may be -
+cannot be written, and throws an exception.
 A name outside of ASCII has to be NFC-normalized as well, so that canonically equivalent names
 cannot collide; a build without ICU cannot check it, and rejects every name outside of ASCII.
 
@@ -1253,7 +1254,8 @@ The reader requires the same of the names of the dimensions and of the variables
 they become the names of the columns: a file that carries an empty name, a name that is not valid
 UTF-8, or a name with a control character or a trailing space is rejected instead of publishing
 that byte string as a column name. The NFC normalization is not required of a file, because a
-reader of another implementation accepts it either way.
+reader of another implementation accepts it either way, and the length of a name is only limited to
+65536 bytes, so that the files of other writers with longer names can still be read.
 
 The names of the variables of a file are unique, so a result set with two columns of the same name,
 which a query such as `SELECT x, x FROM t` produces, cannot be written and throws an exception.

@@ -6,17 +6,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 FILE=${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.nc
 
-# The reader rejects a name longer than 65536 bytes as a sign of a corrupted file, so the writer
-# has to reject such a name as well, or it would produce a file that cannot be read back.
+# The reference library limits a name to `NC_MAX_NAME` = 256 bytes, and its readers allocate only
+# that much for a name, so the writer rejects a longer name instead of producing a file that common
+# readers cannot safely open.
 
-echo "--- a name of exactly 65536 bytes is written and read back"
-NAME=$(printf 'a%.0s' {1..65536})
+echo "--- a name of exactly 256 bytes is written and read back"
+NAME=$(printf 'a%.0s' {1..256})
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`$NAME\` INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$FILE', NetCDF)" | awk '{print length($1), $2}'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)"
 rm -f "$FILE"
 
-echo "--- a name of 65537 bytes cannot be written"
+echo "--- a name of 257 bytes cannot be written"
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`${NAME}b\` FORMAT NetCDF" 2>&1 | grep -c "BAD_ARGUMENTS"
 
 echo "--- a String column whose generated length dimension crosses the bound cannot either"
@@ -25,7 +26,7 @@ echo "--- a String column whose generated length dimension crosses the bound can
 $CLICKHOUSE_LOCAL -q "SELECT 's' AS \`$NAME\` FORMAT NetCDF" 2>&1 | grep -c "BAD_ARGUMENTS"
 
 echo "--- and a String column whose length dimension is exactly at the bound is written"
-SHORTER=$(printf 'a%.0s' {1..65529})
+SHORTER=$(printf 'a%.0s' {1..249})
 $CLICKHOUSE_LOCAL -q "SELECT 's' AS \`$SHORTER\` INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$FILE', NetCDF)" | awk '{print length($1), $2}'
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)"

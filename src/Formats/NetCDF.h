@@ -48,7 +48,7 @@ bool netCDFTypeRequiresCDF5(NetCDFType type);
 NetCDFType checkNetCDFType(Int32 type, UInt8 version);
 
 /// The longest name the reader accepts: anything above is taken as a sign of a corrupted or
-/// hostile file. The writer enforces the same bound, or the file it produces could not be read back.
+/// hostile file. The writer enforces a stricter bound, the one of the reference library.
 constexpr UInt64 NETCDF_MAX_NAME_LENGTH = 1 << 16;
 
 /// The rules of a name of the classic format: a name is UTF-8 text; the first character is a

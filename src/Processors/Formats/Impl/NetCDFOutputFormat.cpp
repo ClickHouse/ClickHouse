@@ -58,6 +58,10 @@ constexpr Int32 NC_ATTRIBUTE = 12;
 constexpr std::string_view ROW_DIMENSION_NAME = "row";
 /// The suffix of the name of the dimension that holds the length of the strings of a column.
 constexpr std::string_view STRING_DIMENSION_SUFFIX = "_strlen";
+/// The longest name the writer produces. It is `NC_MAX_NAME` of the reference library, which tells
+/// the callers to allocate only `NC_MAX_NAME + 1` bytes for a name, so a longer name makes a file
+/// that common readers cannot safely open. The reader keeps the more permissive bound of its own.
+constexpr size_t NETCDF_MAX_WRITTEN_NAME_LENGTH = 256;
 
 /// Classic NetCDF requires UTF-8 names to be NFC-normalized, so canonically equivalent names
 /// have a unique byte representation in the header.
@@ -148,7 +152,7 @@ void writeAttribute(WriteBuffer & out, std::string_view name, NetCDFType type, U
 }
 
 /// A name that the format cannot store would produce a file that no reader can open. The rules are
-/// the ones the reader enforces, plus the NFC normalization, which the reader cannot require of the
+/// the ones the reader enforces, plus the length bound of the reference library and the NFC normalization, which the reader cannot require of the
 /// files of other writers but which this writer can guarantee for the files it produces.
 void checkName(const String & name)
 {
@@ -156,6 +160,11 @@ void checkName(const String & name)
     if (!reason.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The NetCDF format cannot store the name {} because {}", name, reason);
+
+    if (name.size() > NETCDF_MAX_WRITTEN_NAME_LENGTH)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The NetCDF format cannot store the name {} because it is {} bytes long, and a name can be at most {} bytes",
+            name, name.size(), NETCDF_MAX_WRITTEN_NAME_LENGTH);
 
     checkNameIsNFC(name);
 }
@@ -491,7 +500,7 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
             for (size_t attempt = 1; !used_dimension_names.insert(dimension_name).second; ++attempt)
                 dimension_name = column.name + String(STRING_DIMENSION_SUFFIX) + "_" + toString(attempt);
 
-            /// The suffix may push the name of a valid column over the length bound of the reader.
+            /// The suffix may push the name of a valid column over the length bound.
             checkName(dimension_name);
 
             variable.string_dimension_id = dimension_names.size();
