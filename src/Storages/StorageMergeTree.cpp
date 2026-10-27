@@ -2239,6 +2239,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         }
 
         bool output_may_be_on_remote_disk = false;
+        bool output_may_be_on_local_disk = false;
         std::vector<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memories;
         for (const auto & disk : candidate_destination_disks)
         {
@@ -2248,8 +2249,13 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// policy mixing a writable local disk with a read-only object-storage one is legitimate), and
             /// letting it mark the output as remote - or contribute its multipart ceiling - would
             /// reject merges for upload memory on a destination that is impossible to pick.
-            if (disk->isReadOnly() || !disk->isRemote())
+            if (disk->isReadOnly())
                 continue;
+            if (!disk->isRemote())
+            {
+                output_may_be_on_local_disk = true;
+                continue;
+            }
             output_may_be_on_remote_disk = true;
             const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
             admission_write_buffer_memories.push_back(disk_write_buffer_memory);
@@ -2275,9 +2281,20 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         };
         const auto mutations_snapshot = getMutationsSnapshotUnlocked(mutations_params, /*patch_parts=*/ {}, lock);
 
-        const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
+        /// The admission must be an upper bound on the estimate for every destination the tagger can pick,
+        /// local ones included: the remote estimate is not always the larger one - a multipart writer caps
+        /// the eagerly allocated file buffer of a stream at DBMS_DEFAULT_BUFFER_SIZE, while a local disk
+        /// opens it at the stream's full max_compress_block_size. So when the reachable destinations mix
+        /// local and remote disks, take the maximum of both estimates.
+        UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
             *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
             output_may_be_on_remote_disk, admission_write_buffer_memories, deduplicate, merge_with_cleanup);
+        if (output_may_be_on_remote_disk && output_may_be_on_local_disk)
+            needed_memory = std::max(
+                needed_memory,
+                CompactionStatistics::estimateNeededMemoryForMerge(
+                    *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
+                    /*output_on_remote_disk=*/ false, /*remote_write_buffer_memories=*/ {}, deduplicate, merge_with_cleanup));
 
         std::optional<MergeMemoryReservation> memory_reservation;
         if (user_initiated)
@@ -2308,7 +2325,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         /// The tagger chooses the destination with the same captured timestamp the candidate destinations
         /// above were narrowed with, so a selection that straddles a move TTL boundary cannot price the
         /// pre-boundary destination and then reserve on the post-boundary one.
-        uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+        uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true, time_of_merge);
         auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(
             future_part, needed_disk_space, *this, metadata_snapshot, /*is_mutation=*/false, time_of_merge);
 
@@ -2324,8 +2341,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// absent: a remote disk like HDFS has no multipart upload buffers and gets the local
             /// per-stream estimate) or when the admission priced a possible remote destination the tagger
             /// did not pick (a local destination re-estimates at the local price). Since the admission
-            /// check already used the worst case over the disks this table can write to, this correction
-            /// only keeps or lowers the reservation; the merge is already committed to run at this point,
+            /// check already used the maximum over the local and the remote destinations this merge can be
+            /// written to, this correction only keeps or lowers the reservation; the merge is already committed to run at this point,
             /// so reserve unconditionally (as the replicated path does) - the corrected reservation still
             /// throttles selection of further merges. The swap must be atomic (`replace`, not a fresh
             /// `reserve` moved over the old value): concurrent selectors would otherwise observe the

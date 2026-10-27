@@ -28,7 +28,9 @@
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/BitHelpers.h>
+#include <city.h>
 #include <Common/BufferAllocationPolicy.h>
+#include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3Defines.h>
@@ -38,6 +40,7 @@
 #include <base/interpolate.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <map>
@@ -83,6 +86,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
+    extern const MergeTreeSettingsFloat max_memory_ratio_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
     extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 min_unreserved_disk_space_for_merge;
@@ -984,14 +988,32 @@ size_t countVisibleProjectionColumnStreams(
 /// the old part's streams are recorded (or recoverable from its .bin files) and must not be dropped just
 /// because its declared type differs. For simple projection columns and bare identifiers of same-type base
 /// columns all of this is a no-op.
-WriterStreamCounts countRebuiltProjectionStreams(
+///
+/// Two counts are returned, because the two writers of a rebuilt projection see different stream sets. The
+/// wide writer opens every stream NAME once for the part (MergeTreeDataPartWriterWide::addStreams skips an
+/// already created stream), so with share_nested_offsets the columns of one Nested object share a single
+/// offsets stream (n.size0): `wide` deduplicates the static skeleton names shared across columns, the same
+/// way countOutputStreams unions the base output. Every arm above charges a column's full static skeleton
+/// (the capacity arm through countColumnStreams, the recorded union and the visible arm through the
+/// skeleton the same-type sources record), so subtracting the skeleton names an earlier column already
+/// contributed never goes below what the writer opens. The compact writer marks every column's substreams
+/// separately (per-column ColumnsSubstreams), so `compact_marks_streams` keeps the per-column sum.
+struct RebuiltProjectionStreamCounts
+{
+    WriterStreamCounts wide;
+    size_t compact_marks_streams = 0;
+};
+
+RebuiltProjectionStreamCounts countRebuiltProjectionStreams(
     const NamesAndTypesList & projection_columns,
     const MergeTreeDataPartsVector & source_parts,
     const MergeTreeSettings & settings,
     const NameSet & default_filled_dynamic_columns,
     PartsColumnsIndex & parts_index)
 {
-    WriterStreamCounts counts;
+    RebuiltProjectionStreamCounts counts;
+    const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
+    std::unordered_set<std::string> static_stream_names;
     for (const auto & column : projection_columns)
     {
         size_t column_streams = 0;
@@ -1001,8 +1023,15 @@ WriterStreamCounts countRebuiltProjectionStreams(
             column_streams = std::max(
                 countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings),
                 countVisibleProjectionColumnStreams(column, source_parts, settings, parts_index));
-        counts.total += column_streams;
-        counts.non_adaptive += nonAdaptiveStreamsShare(column, column_streams);
+        counts.compact_marks_streams += column_streams;
+
+        size_t shared_streams = 0;
+        for (const auto & file_name : collectStaticStreamFileNames({column}, stream_file_name_settings))
+            if (!static_stream_names.insert(file_name).second)
+                ++shared_streams;
+        const size_t written_streams = column_streams - std::min(shared_streams, column_streams);
+        counts.wide.total += written_streams;
+        counts.wide.non_adaptive += nonAdaptiveStreamsShare(column, written_streams);
     }
     return counts;
 }
@@ -1760,30 +1789,46 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// getSettings(&projection.settings_changes). So this resolution is parameterized by the effective
     /// settings and the written columns, and the projection pricing below instantiates it again with the
     /// projection's own settings and columns instead of reusing the parent table's size.
-    const auto resolve_max_compress_block_size = [&](const MergeTreeSettings & writer_settings,
-                                                     const NamesAndTypesList & written_columns,
-                                                     const ColumnsDescription & written_columns_description)
+    /// The smallest resolved size is returned as well: the memory-ratio adaptive trigger of the writer
+    /// (see ratio_triggers_adaptive below) is decided per stream from the stream's own size, and the
+    /// smallest one is the size for which it can be assumed for every stream of the writer.
+    struct CompressBlockSizeRange
     {
-        UInt64 max_compress_block_size = writer_settings[MergeTreeSetting::max_compress_block_size];
-        if (max_compress_block_size == 0)
-            max_compress_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
-        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+        UInt64 min = 0;
+        UInt64 max = 0;
+    };
+    const auto resolve_compress_block_size_range = [&](const MergeTreeSettings & writer_settings,
+                                                       const NamesAndTypesList & written_columns,
+                                                       const ColumnsDescription & written_columns_description)
+    {
+        UInt64 table_max_compress_block_size = writer_settings[MergeTreeSetting::max_compress_block_size];
+        if (table_max_compress_block_size == 0)
+            table_max_compress_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
+        table_max_compress_block_size = std::min<UInt64>(table_max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+        /// Resolve the effective size of every written column first and only then take the maximum: a
+        /// column with a nonzero override never uses the table size, so when every written column overrides
+        /// it with a smaller value, the table size must not leak into the result.
+        if (written_columns.empty())
+            return CompressBlockSizeRange{table_max_compress_block_size, table_max_compress_block_size};
+        CompressBlockSizeRange range{std::numeric_limits<UInt64>::max(), 0};
         for (const auto & column : written_columns)
         {
+            UInt64 column_block_size = table_max_compress_block_size;
             const auto column_desc = written_columns_description.tryGetColumnDescription(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-            if (!column_desc)
-                continue;
-            const auto * override_value = column_desc->settings.tryGet("max_compress_block_size");
-            if (!override_value)
-                continue;
-            const UInt64 column_override = override_value->safeGet<UInt64>();
-            if (column_override == 0)
-                continue;
-            max_compress_block_size = std::max(
-                max_compress_block_size, std::min<UInt64>(column_override, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
+            if (column_desc)
+            {
+                if (const auto * override_value = column_desc->settings.tryGet("max_compress_block_size"))
+                {
+                    const UInt64 column_override = override_value->safeGet<UInt64>();
+                    if (column_override != 0)
+                        column_block_size = std::min<UInt64>(column_override, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+                }
+            }
+            range.min = std::min(range.min, column_block_size);
+            range.max = std::max(range.max, column_block_size);
         }
-        return max_compress_block_size;
+        return range;
     };
 
     /// Input side: one reader stream per column substream a base merge reader actually opens on every
@@ -1801,7 +1846,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// dropped columns and the projection parts priced separately below. A patch part is accounted whole:
     /// it physically stores only the columns it patches plus the system columns needed to apply them, all
     /// of which its reader reads, and it has no projection parts.
-    const UInt64 input_decompressed_block_size = resolve_max_compress_block_size(settings, input_columns, columns_description);
+    const UInt64 input_decompressed_block_size = resolve_compress_block_size_range(settings, input_columns, columns_description).max;
     /// The reader buffers of the base parts when the merge reads `read_columns` (in the source-part view)
     /// from all of them at once. The vertical pricing below reuses it for the reader sets of its stages.
     const auto base_reader_memory = [&](const NamesAndTypesList & read_columns)
@@ -1953,22 +1998,6 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     if (__builtin_add_overflow(multipart_written_bytes, default_filled_value_bytes, &multipart_written_bytes))
         multipart_written_bytes = std::numeric_limits<UInt64>::max();
 
-    if (!remote_write_buffer_memories.empty())
-    {
-        remote_write_buffer_size = 0;
-        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
-        {
-            remote_write_buffer_size = std::max(
-                remote_write_buffer_size,
-                getMultipartUploadMemoryCeilingForWrittenBytes(remote_write_buffer_memory.memory, multipart_written_bytes));
-        }
-    }
-    else if (guessed_s3_write_buffer_memory.has_value())
-        remote_write_buffer_size = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, multipart_written_bytes),
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, multipart_written_bytes)});
-
     /// Every writer stream is TWO buffer chains, not one: MergeTreeWriterStream eagerly creates the data
     /// chain (plain_file / compressor) AND the marks chain (marks_file / marks_compressor), and on object
     /// storage the marks file goes through its own writeFile call with its own multipart state
@@ -2021,31 +2050,12 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const UInt64 output_marks_bytes_per_stream = marks_bytes_for_stream(output_granules, output_marks_per_granule);
     const UInt64 output_marks_bytes = saturatingStreamsTimesBuffer(output_marks_bytes_per_stream, output_streams);
 
-    /// The multipart ceiling of one marks file, from the marks bytes that file receives (the same
-    /// written-bytes tiering as remote_write_buffer_size above, which prices the data files). Zero, like
-    /// remote_write_buffer_size, when the output is not written through multipart upload buffers. Without
-    /// adaptive write buffers the writer of a marks file starts from MARKS_FILE_BUFFER_SIZE, the buf_size the
-    /// marks file is opened with, not from DBMS_DEFAULT_BUFFER_SIZE.
-    UInt64 marks_remote_write_buffer_size = 0;
-    if (!remote_write_buffer_memories.empty())
-    {
-        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
-            marks_remote_write_buffer_size = std::max(
-                marks_remote_write_buffer_size,
-                getMultipartUploadMemoryCeilingForWrittenBytes(
-                    getMultipartUploadMemoryForBufferSize(remote_write_buffer_memory.memory, MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE),
-                    output_marks_bytes_per_stream));
-    }
-    else if (guessed_s3_write_buffer_memory.has_value())
-        marks_remote_write_buffer_size = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, output_marks_bytes_per_stream),
-             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, output_marks_bytes_per_stream)});
-
     /// One output stream writes through a compressor block of max_compress_block_size and a file buffer the
     /// writer creates at that same size (the stream's own writeFile call), so its worst case is twice the
     /// block size plus the compressor's scratch buffer (see compression_scratch below).
-    const UInt64 base_max_compress_block_size = resolve_max_compress_block_size(settings, output_columns, columns_description);
+    const CompressBlockSizeRange base_compress_block_sizes = resolve_compress_block_size_range(settings, output_columns, columns_description);
+    const UInt64 base_max_compress_block_size = base_compress_block_sizes.max;
+    const UInt64 base_min_compress_block_size = base_compress_block_sizes.min;
 
     /// The default codec of the result part, resolved like MergeTask resolves it (MergeTreeData::getCompressionCodecForPart):
     /// the compact writer keys its compressors by the resolved codecs. The TTL infos of the result part are not known
@@ -2064,6 +2074,99 @@ static UInt64 estimateNeededMemoryForMergeImpl(
         return future_part.parts.front()->storage.getCompressionCodecForPart(
             metadata_snapshot, total_size_compressed, merged_ttl_infos, time_of_merge);
     }();
+
+    /// The multipart writers receive the ENCODED stream, not the uncompressed values: every compressed block
+    /// carries the codec header and a checksum, and a codec may expand incompressible data (CODEC(NONE)
+    /// adds only the framing, LZ4 / ZSTD bounds add a fraction of the block on top). Replaying the multipart
+    /// tiers from the uncompressed volume alone can miss a tier boundary the encoded file crosses, and the
+    /// detached upload buffer of that tier is never priced. The expansion is bounded linearly in the block
+    /// size between the overhead of a one-byte block and the overhead of a full block (the codec bounds are
+    /// linear in the block size, or larger for small blocks only by a term that line already covers), and
+    /// the CompressedWriteBuffer reserve is the larger of the codec's and the uncompressed codec's one.
+    /// The number of blocks of a stream is bounded by one block per granule (the wide writer may cut a block
+    /// at every granule boundary), one per full compressor buffer (at least the smallest block size any
+    /// written column resolves to) and the final one.
+    const auto encoded_written_bytes = [&](UInt64 written_bytes, UInt64 blocks, UInt64 compress_block_size) -> UInt64
+    {
+        const auto none_codec = CompressionCodecFactory::instance().get("NONE", {});
+        const auto block_overhead = [&](UInt64 block_size) -> UInt64
+        {
+            const auto size = static_cast<UInt32>(std::min<UInt64>(block_size, std::numeric_limits<UInt32>::max() / 2));
+            return std::max(part_codec.codec->getCompressedReserveSize(size), none_codec->getCompressedReserveSize(size)) - size
+                + sizeof(CityHash_v1_0_2::uint128);
+        };
+        const UInt64 fixed_overhead = block_overhead(1);
+        const UInt64 full_block_overhead = std::max(fixed_overhead, block_overhead(compress_block_size));
+        /// The part of the overhead that grows with the block size, applied to the whole volume.
+        UInt64 proportional_overhead = 0;
+        if (compress_block_size != 0)
+        {
+            const double overhead = std::ceil(
+                static_cast<double>(written_bytes) * static_cast<double>(full_block_overhead - fixed_overhead)
+                / static_cast<double>(compress_block_size));
+            proportional_overhead = overhead >= static_cast<double>(std::numeric_limits<UInt64>::max())
+                ? std::numeric_limits<UInt64>::max()
+                : static_cast<UInt64>(overhead);
+        }
+        return saturatingAdd(
+            saturatingAdd(written_bytes, proportional_overhead), saturatingStreamsTimesBuffer(blocks, fixed_overhead));
+    };
+    /// A compact part has one data file, but every column of a granule may be flushed through its own
+    /// compressor (one per distinct codec), each of DBMS_DEFAULT_BUFFER_SIZE.
+    {
+        const UInt64 min_block_size = std::max<UInt64>(
+            1, output_is_compact ? std::min<UInt64>(base_min_compress_block_size, DBMS_DEFAULT_BUFFER_SIZE) : base_min_compress_block_size);
+        const size_t block_streams = output_is_compact ? std::max<size_t>(1, output_columns.size()) : output_streams;
+        const UInt64 data_blocks = saturatingAdd(
+            saturatingStreamsTimesBuffer(block_streams, saturatingAdd(output_granules, 1)), multipart_written_bytes / min_block_size);
+        multipart_written_bytes = encoded_written_bytes(multipart_written_bytes, data_blocks, base_max_compress_block_size);
+    }
+    /// The marks file of a stream receives the marks through the marks compressor when compress_marks is on.
+    UInt64 output_encoded_marks_bytes_per_stream = output_marks_bytes_per_stream;
+    if (settings[MergeTreeSetting::compress_marks])
+    {
+        const UInt64 marks_block_size = std::max<UInt64>(
+            1, std::min<UInt64>(settings[MergeTreeSetting::marks_compress_block_size], MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
+        output_encoded_marks_bytes_per_stream = encoded_written_bytes(
+            output_marks_bytes_per_stream, output_marks_bytes_per_stream / marks_block_size + 1, marks_block_size);
+    }
+
+    if (!remote_write_buffer_memories.empty())
+    {
+        remote_write_buffer_size = 0;
+        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+        {
+            remote_write_buffer_size = std::max(
+                remote_write_buffer_size,
+                getMultipartUploadMemoryCeilingForWrittenBytes(remote_write_buffer_memory.memory, multipart_written_bytes));
+        }
+    }
+    else if (guessed_s3_write_buffer_memory.has_value())
+        remote_write_buffer_size = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, multipart_written_bytes),
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, multipart_written_bytes)});
+
+    /// The multipart ceiling of one marks file, from the marks bytes that file receives (the same
+    /// written-bytes tiering as remote_write_buffer_size above, which prices the data files). Zero, like
+    /// remote_write_buffer_size, when the output is not written through multipart upload buffers. Without
+    /// adaptive write buffers the writer of a marks file starts from MARKS_FILE_BUFFER_SIZE, the buf_size the
+    /// marks file is opened with, not from DBMS_DEFAULT_BUFFER_SIZE.
+    UInt64 marks_remote_write_buffer_size = 0;
+    if (!remote_write_buffer_memories.empty())
+    {
+        for (const auto & remote_write_buffer_memory : remote_write_buffer_memories)
+            marks_remote_write_buffer_size = std::max(
+                marks_remote_write_buffer_size,
+                getMultipartUploadMemoryCeilingForWrittenBytes(
+                    getMultipartUploadMemoryForBufferSize(remote_write_buffer_memory.memory, MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE),
+                    output_encoded_marks_bytes_per_stream));
+    }
+    else if (guessed_s3_write_buffer_memory.has_value())
+        marks_remote_write_buffer_size = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, output_encoded_marks_bytes_per_stream),
+             getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, output_encoded_marks_bytes_per_stream)});
 
     /// A compressor holds a scratch buffer next to its block once it flushes a block that does not fit into
     /// what is left of its output buffer: CompressedWriteBuffer::nextImpl compresses directly into the output
@@ -2173,9 +2276,27 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// price such a writer at full-size eager buffers per stream it never allocates - the
     /// over-reservation/starvation pattern this estimate unwinds. `counts.total` is exactly that writer's
     /// deduplicated stream count.
-    const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts) -> size_t
+    /// The memory-ratio rule of the same function (writeBuffersWouldTakeSignificantMemory): every stream
+    /// is adaptive when the writer's streams would preallocate two buffers of the stream's
+    /// max_compress_block_size each, summing to at least max_memory_ratio_to_activate_adaptive_write_buffer
+    /// of the server memory limit. The writer decides it per stream with the stream's own block size; it is
+    /// assumed here only when it holds for the smallest block size any written column of the writer
+    /// resolves to (min_compress_block_size), which then makes it hold for every stream of the writer.
+    /// Otherwise the streams stay priced as non-adaptive, the direction that can only over-reserve.
+    const double max_memory_ratio_for_adaptive = static_cast<double>(settings[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer]);
+    const Int64 server_memory_limit = total_memory_tracker.getHardLimit();
+    const auto ratio_triggers_adaptive = [&](size_t streams, UInt64 min_compress_block_size)
+    {
+        if (max_memory_ratio_for_adaptive <= 0 || server_memory_limit <= 0)
+            return false;
+        const double preallocated = static_cast<double>(streams) * 2 * static_cast<double>(min_compress_block_size);
+        return preallocated >= static_cast<double>(server_memory_limit) * max_memory_ratio_for_adaptive;
+    };
+    const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts, UInt64 min_compress_block_size) -> size_t
     {
         if (min_columns_for_adaptive != 0 && counts.total >= min_columns_for_adaptive)
+            return 0;
+        if (ratio_triggers_adaptive(counts.total, min_compress_block_size))
             return 0;
         return adaptive_for_dynamic_subcolumns ? counts.non_adaptive : counts.total;
     };
@@ -2185,9 +2306,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// WITH SETTINGS (see ALLOWED_PROJECTION_SETTINGS), so every writer resolves them from the table
     /// settings.
     const auto eager_write_buffers
-        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_compress_block_size) -> UInt64
+        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_compress_block_size, UInt64 min_compress_block_size) -> UInt64
     {
-        const size_t non_adaptive = non_adaptive_stream_count(counts);
+        const size_t non_adaptive = non_adaptive_stream_count(counts, min_compress_block_size);
         return non_adaptive * eager_stream_buffers_with_marks(non_adaptive_compress_block_size)
             + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
     };
@@ -2254,7 +2375,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
             return marks_compress_block_size + marks_compression_scratch + MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE;
         return saturatingAdd(
             stream_remote_write_buffer_size(
-                MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE, adaptive_stream, output_marks_bytes_per_stream, marks_remote_write_buffer_size),
+                MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE, adaptive_stream, output_encoded_marks_bytes_per_stream, marks_remote_write_buffer_size),
             marks_compress_block_size + marks_compression_scratch);
     };
     const auto worst_case_write_buffer_size = [&](UInt64 max_compress_block_size, bool adaptive_stream)
@@ -2270,9 +2391,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     const UInt64 write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ false);
     const UInt64 adaptive_write_buffer_size = worst_case_write_buffer_size(base_max_compress_block_size, /*adaptive_stream=*/ true);
     /// The worst case of a wide writer's streams, split by the per-stream adaptive decision.
-    const auto wide_worst_case = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_size, UInt64 adaptive_size)
+    const auto wide_worst_case
+        = [&](const WriterStreamCounts & counts, UInt64 non_adaptive_size, UInt64 adaptive_size, UInt64 min_compress_block_size)
     {
-        const size_t non_adaptive = non_adaptive_stream_count(counts);
+        const size_t non_adaptive = non_adaptive_stream_count(counts, min_compress_block_size);
         return saturatingAdd(
             saturatingStreamsTimesBuffer(non_adaptive, non_adaptive_size),
             saturatingStreamsTimesBuffer(counts.total - non_adaptive, adaptive_size));
@@ -2319,7 +2441,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
     const UInt64 output_worst_case = output_is_compact
         ? compact_worst_case(output_compact_block_size, output_compact_compressors)
-        : wide_worst_case(output_stream_counts, write_buffer_size, adaptive_write_buffer_size);
+        : wide_worst_case(output_stream_counts, write_buffer_size, adaptive_write_buffer_size, base_min_compress_block_size);
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
     /// a variable-size DEFAULT-filled column, a delayed vertical stream - is priced at the buffers its
@@ -2367,7 +2489,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
 
     const UInt64 output_eager_write_buffers = output_is_compact
         ? compact_eager_buffers(output_compact_block_size, output_compact_compressors)
-        : eager_write_buffers(output_stream_counts, base_max_compress_block_size);
+        : eager_write_buffers(output_stream_counts, base_max_compress_block_size, base_min_compress_block_size);
     /// The data every stream writes is bounded by what the merge reads plus the synthesized fixed-size
     /// defaults; the marks are written by every stream's marks compressor (a single one for a compact part).
     const UInt64 output_written_bytes = saturatingAdd(sum_input_bytes_uncompressed, default_filled_value_bytes);
@@ -2565,7 +2687,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                     max_gathering_column_eager_buffers
                         = std::max(
                             max_gathering_column_eager_buffers,
-                            eager_write_buffers(column_stream_counts, base_max_compress_block_size));
+                            eager_write_buffers(column_stream_counts, base_max_compress_block_size, base_min_compress_block_size));
 
                     UInt64 column_uncompressed = 0;
                     for (const auto & part : source_and_patch_parts)
@@ -2609,7 +2731,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// size - the direction that can only over-price, and bounded by the streams of
                 /// max_merge_delayed_streams_for_parallel_write column writers.
                 const UInt64 vertical_data_bound = saturatingAdd(
-                    eager_write_buffers(merging_stream_counts, base_max_compress_block_size)
+                    eager_write_buffers(merging_stream_counts, base_max_compress_block_size, base_min_compress_block_size)
                         + max_gathering_column_eager_buffers
                         + saturatingStreamsTimesBuffer(delayed_streams, eager_stream_buffers_with_marks(base_max_compress_block_size))
                         + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
@@ -2865,14 +2987,17 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// serialization, which would collapse such a column to a single stream and undersize the
                 /// reservation.
                 const auto projection_column_list = projection.sample_block.getNamesAndTypesList();
-                const auto projection_wide_stream_counts = countRebuiltProjectionStreams(
+                const auto projection_stream_counts = countRebuiltProjectionStreams(
                     part_source_view(projection_column_list), source_and_patch_parts, projection_settings, default_filled_dynamic_columns, parts_index);
+                const WriterStreamCounts & projection_wide_stream_counts = projection_stream_counts.wide;
 
                 /// The temp-part writer's per-stream buffers are sized by the projection's own
                 /// max_compress_block_size and by the projection columns' own column-level overrides
                 /// (the projection metadata carries them), not by the parent table's.
-                const UInt64 projection_max_compress_block_size = resolve_max_compress_block_size(
+                const CompressBlockSizeRange projection_compress_block_sizes = resolve_compress_block_size_range(
                     projection_settings, projection_column_list, projection.metadata->getColumns());
+                const UInt64 projection_max_compress_block_size = projection_compress_block_sizes.max;
+                const UInt64 projection_min_compress_block_size = projection_compress_block_sizes.min;
                 /// A temporary projection part is written as Wide only when it is big enough:
                 /// writeTempProjectionPart passes the projected block's size to choosePartFormat, which picks
                 /// Compact below min_bytes_for_wide_part (default 10 MiB) / min_rows_for_wide_part, and a merge
@@ -3063,7 +3188,8 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                         : wide_worst_case(
                             projection_wide_stream_counts,
                             worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ false),
-                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true));
+                            worst_case_write_buffer_size(projection_max_compress_block_size, /*adaptive_stream=*/ true),
+                            projection_min_compress_block_size);
                 };
                 const UInt64 projection_worst_case = std::max(
                     projection_format_worst_case(temp_projection_is_compact),
@@ -3078,7 +3204,7 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 {
                     return is_compact
                         ? compact_eager_buffers(projection_compact_block_size, projection_compact_compressors)
-                        : eager_write_buffers(projection_wide_stream_counts, projection_max_compress_block_size);
+                        : eager_write_buffers(projection_wide_stream_counts, projection_max_compress_block_size, projection_min_compress_block_size);
                 };
                 const UInt64 projection_eager_write_buffers = std::max(
                     projection_format_eager_buffers(temp_projection_is_compact),
@@ -3086,15 +3212,15 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// The marks of the rebuilt projection, written twice like its data (temporary parts, then
                 /// the read-back merge), at the projection's own granularity settings; a compact part's
                 /// single stream carries one mark per projection column per granule, or one per substream
-                /// with write_marks_for_substreams_in_compact_parts. countRebuiltProjectionStreams already sums
-                /// per-column counts without deduplicating stream names across columns, matching the per-column
-                /// ColumnsSubstreams the compact writer marks (see the base output above).
+                /// with write_marks_for_substreams_in_compact_parts. Those are counted by
+                /// countRebuiltProjectionStreams per column, without deduplicating stream names across columns,
+                /// matching the per-column ColumnsSubstreams the compact writer marks (see the base output above).
                 const UInt64 projection_granules
                     = estimate_output_granules(projection_rows, projection_uncompressed_bytes, projection_settings);
                 size_t projection_compact_marks_per_granule = projection.sample_block.columns();
                 if (projection_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
                     projection_compact_marks_per_granule
-                        = std::max(projection_compact_marks_per_granule, projection_wide_stream_counts.total);
+                        = std::max(projection_compact_marks_per_granule, projection_stream_counts.compact_marks_streams);
                 const auto projection_marks_bytes = [&](bool is_compact, size_t streams)
                 {
                     return saturatingStreamsTimesBuffer(
