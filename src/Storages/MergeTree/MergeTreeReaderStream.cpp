@@ -652,10 +652,12 @@ void MergeTreeReaderStream::addRangeOfPosition(size_t mark, size_t position, Com
     {
         const auto next_mark = marks_getter->getMark(mark, position);
         end = next_mark.offset_in_compressed_file;
-        if (next_mark.offset_in_decompressed_block != 0)
+        /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
+        /// it wrote nothing of its own, like the granules that share a `LowCardinality` dictionary: then the next mark is
+        /// the same, at the start of the block, as in `MergeTreeReaderStreamSingleColumn::getRightOffset`.
+        if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
         {
-            /// The block goes on to the next later offset. The offsets don't decrease, and many marks can share the block,
-            /// e.g. all marks of a `LowCardinality` dictionary written once, so search instead of scanning them.
+            /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
             const auto positions = std::views::iota(mark * num_positions + position, marks_count * num_positions);
             const auto it = std::ranges::partition_point(positions, [&](size_t i)
             {

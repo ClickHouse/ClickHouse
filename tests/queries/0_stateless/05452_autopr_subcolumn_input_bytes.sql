@@ -209,6 +209,14 @@ SELECT s FROM t_skew_wide WHERE key < 1000 FORMAT Null SETTINGS log_comment = '0
 SELECT s FROM t_skew_compact PREWHERE flag = 1 FORMAT Null SETTINGS log_comment = '05452_skew_compact_prewhere';
 SELECT s FROM t_skew_compact WHERE key < 1000 FORMAT Null SETTINGS log_comment = '05452_skew_compact_primary_key';
 
+-- A part with a single `LowCardinality` dictionary of long values, flushed in its own block: the marks of the granules that
+-- share it are all the same, at the start of the block.
+DROP TABLE IF EXISTS t_cache_lowcardinality;
+CREATE TABLE t_cache_lowcardinality (key UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 1, index_granularity = 8192,
+    index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO t_cache_lowcardinality SELECT number, hex(SHA256(toString(number % 5000))) FROM numbers(2e5);
+
 -- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_1';
@@ -218,6 +226,12 @@ SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_1';
 SELECT key, max(s) FROM t_skew_compact GROUP BY key FORMAT Null
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_compact_2';
+SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_lowcardinality_1';
+SELECT lc FROM t_cache_lowcardinality WHERE key < 20000 FORMAT Null
+SETTINGS merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
+    use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_lowcardinality_2';
 
 -- The streams of the null map of a sparse `Nullable`, of a `Dynamic` and of a `Quantized` column are not all known without reading the column,
 -- so the bytes of the granules served from the cache are not measured, and no statistics are collected.
@@ -288,3 +302,4 @@ DROP TABLE t_skew_compact;
 DROP TABLE t_cache_sparse;
 DROP TABLE t_cache_dynamic;
 DROP TABLE t_cache_quantized;
+DROP TABLE t_cache_lowcardinality;
