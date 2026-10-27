@@ -97,11 +97,13 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
 
     IndexGranulesMap index_granules;
 
+    /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
+    const KeyCondition * rpn_template_for_part = use_for_disjunctions ? &key_condition_rpn_template->generateForPart(*part_info) : nullptr;
+
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
-    if (use_for_disjunctions)
-        partial_eval_results.resize(
-            part_info->getIndexGranularity().getMarksCountWithoutFinal() * key_condition_rpn_template->generateForPart(*part_info).getRPN().size(),
-            true);
+    if (rpn_template_for_part)
+        partial_eval_results.resize(part_info->getIndexGranularity().getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
+
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
@@ -121,7 +123,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
-            key_condition_rpn_template->generateForPart(*part_info),
+            rpn_template_for_part,
             part_info,
             ranges,
             input.read_hints,
@@ -143,10 +145,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         total_granules = ranges.getNumberOfMarks();
     }
 
-    if (use_for_disjunctions)
+    if (rpn_template_for_part)
     {
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-                            *part_info, ranges, key_condition_rpn_template->generateForPart(*part_info),
+                            *part_info, ranges, *rpn_template_for_part,
                             partial_eval_results, reader_settings, log);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
@@ -207,7 +209,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
-                    /*key_condition_rpn_template=*/{},
+                    /*key_condition_rpn_template=*/nullptr,
                     part_info,
                     ranges,
                     input.read_hints,

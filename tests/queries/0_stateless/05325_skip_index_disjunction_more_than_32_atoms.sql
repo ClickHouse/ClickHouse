@@ -1,5 +1,5 @@
 -- Skip indexes are used for OR-connected filter conditions with many atoms (`use_skip_indexes_for_disjunctions`),
--- up to `max_rpn_elements_for_skip_indexes_with_disjunctions` RPN elements.
+-- up to `use_skip_indexes_for_disjunctions_max_rpn_elements` RPN elements.
 
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
@@ -112,7 +112,7 @@ WITH
 SELECT pos > 0;
 
 SELECT '-- 500 atoms, raised limit';
-SET max_rpn_elements_for_skip_indexes_with_disjunctions = 1000;
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 1000;
 SELECT count() FROM tab
 WHERE v1 = 100 OR v1 = 200 OR v1 = 300 OR v1 = 400 OR v1 = 500 OR v1 = 600 OR v1 = 700 OR v1 = 800 OR v1 = 900 OR v1 = 1000
    OR v1 = 1100 OR v1 = 1200 OR v1 = 1300 OR v1 = 1400 OR v1 = 1500 OR v1 = 1600 OR v1 = 1700 OR v1 = 1800 OR v1 = 1900 OR v1 = 2000
@@ -225,7 +225,7 @@ WITH
 SELECT lines[pos], lines[pos + 3];
 
 SELECT '-- 500 atoms, no limit';
-SET max_rpn_elements_for_skip_indexes_with_disjunctions = 0;
+SET use_skip_indexes_for_disjunctions_max_rpn_elements = 0;
 WITH
     (
         SELECT groupArray(trimBoth(explain)) FROM (

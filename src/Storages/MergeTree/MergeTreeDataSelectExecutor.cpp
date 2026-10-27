@@ -115,7 +115,7 @@ namespace Setting
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
-    extern const SettingsUInt64 max_rpn_elements_for_skip_indexes_with_disjunctions;
+    extern const SettingsUInt64 use_skip_indexes_for_disjunctions_max_rpn_elements;
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
@@ -1149,7 +1149,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !use_skip_indexes_on_data_read_
                                 && key_condition_rpn_template != nullptr
-                                && isRPNSizeAllowedForSkipIndexesWithDisjunctions(
+                                && isRPNSizeAllowedForSkipIndexesForDisjunctions(
                                     key_condition_rpn_template->generateUnsubstituted().getRPN().size(), settings);
 
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
@@ -1289,12 +1289,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
+                /// The same RPN template must be used for sizing the bitset, recording and merging the partial results.
+                const KeyCondition * rpn_template_for_part
+                    = use_skip_indexes_for_disjunctions ? &key_condition_rpn_template->generateForPart(ranges.data_part) : nullptr;
+
                 PartialDisjunctionResult partial_eval_results;
-                if (use_skip_indexes_for_disjunctions)
+                if (rpn_template_for_part)
                     partial_eval_results.resize(
-                        ranges.data_part->index_granularity->getMarksCountWithoutFinal()
-                            * key_condition_rpn_template->generateForPart(ranges.data_part).getRPN().size(),
-                        true);
+                        ranges.data_part->index_granularity->getMarksCountWithoutFinal() * rpn_template_for_part->getRPN().size(), true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -1327,7 +1329,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition_template->generateForPart(ranges.data_part),
-                            key_condition_rpn_template->generateForPart(ranges.data_part),
+                            rpn_template_for_part,
                             part_info_for_reader,
                             ranges.ranges,
                             ranges.read_hints,
@@ -1347,10 +1349,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
+                if (rpn_template_for_part)
                 {
                     ranges.ranges = mergePartialResultsForDisjunctions(*part_info_for_reader,
-                                        ranges.ranges, key_condition_rpn_template->generateForPart(ranges.data_part),
+                                        ranges.ranges, *rpn_template_for_part,
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -2949,7 +2951,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
-    const std::optional<KeyCondition> & key_condition_rpn_template,
+    const KeyCondition * key_condition_rpn_template,
     const MergeTreeDataPartInfoForReaderPtr & part_info,
     const MarkRanges & ranges,
     const RangesInDataPartReadHints & in_read_hints,
@@ -3386,9 +3388,9 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     return min_max_granules;
 }
 
-bool MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesWithDisjunctions(size_t rpn_size, const Settings & settings)
+bool MergeTreeDataSelectExecutor::isRPNSizeAllowedForSkipIndexesForDisjunctions(size_t rpn_size, const Settings & settings)
 {
-    const UInt64 max_rpn_elements = settings[Setting::max_rpn_elements_for_skip_indexes_with_disjunctions];
+    const UInt64 max_rpn_elements = settings[Setting::use_skip_indexes_for_disjunctions_max_rpn_elements];
     return max_rpn_elements == 0 || rpn_size <= max_rpn_elements;
 }
 
