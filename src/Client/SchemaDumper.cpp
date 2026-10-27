@@ -640,25 +640,53 @@ bool isClusterTableFunctionName(const String & name)
     return equalsCaseInsensitive(name, "cluster") || equalsCaseInsensitive(name, "clusterAllReplicas");
 }
 
+/// A copy of `context` in which the dump builds a function only to ask it about itself, never to run it. A function that a
+/// setting gates refuses to be built without it, which the dump session need not have, while the source had it to create the
+/// object that calls the function.
+ContextMutablePtr makeFunctionFlagsContext(const ContextPtr & context)
+{
+    auto result = Context::createCopy(context);
+    enableAllExperimentalSettings(result);
+    result->setSetting("allow_introspection_functions", true);
+    result->setSetting("allow_get_client_http_header", true);
+    return result;
+}
+
+/// Builds functions in `makeFunctionFlagsContext`, which it makes for the first one.
+class FunctionFlagsReader
+{
+public:
+    explicit FunctionFlagsReader(ContextPtr context_) : context(std::move(context_)) {}
+
+    FunctionOverloadResolverPtr tryGet(const String & name)
+    {
+        if (!flags_context)
+            flags_context = makeFunctionFlagsContext(context);
+        return FunctionFactory::instance().tryGet(name, flags_context);
+    }
+
+private:
+    ContextPtr context;
+    ContextPtr flags_context;
+};
+
 /// Rejects expressions that would fold against the dump session or machine.
 /// Function flags cover aliases and nested session/server constants without a name list.
 bool dependsOnUnstoredContext(const IAST & node, const ContextPtr & context)
 {
-    if (const auto * function = node.as<ASTFunction>())
+    FunctionFlagsReader functions(context);
+    bool depends = false;
+    forEachNode(node, [&](const IAST & current)
     {
         /// A nested table function - `cluster(c, merge(db, re))` - is dispatched, never scalar-folded,
-        /// so only its arguments can carry unstored context; the child walk below covers those.
-        if (!TableFunctionFactory::instance().isTableFunctionName(function->name))
-        {
-            auto resolver = FunctionFactory::instance().tryGet(function->name, context);
-            if (!resolver || !resolver->isDeterministic() || resolver->isServerConstant())
-                return true;
-        }
-    }
-    for (const auto & child : node.children)
-        if (child && dependsOnUnstoredContext(*child, context))
-            return true;
-    return false;
+        /// so only its arguments can carry unstored context.
+        const auto * function = current.as<ASTFunction>();
+        if (depends || !function || TableFunctionFactory::instance().isTableFunctionName(function->name))
+            return;
+        const auto resolver = functions.tryGet(function->name);
+        depends = !resolver || !resolver->isDeterministic() || resolver->isServerConstant();
+    });
+    return depends;
 }
 
 /// The cluster a `cluster*` call names, read the way the server's `tryGetClusterNameFromArgument`
@@ -996,13 +1024,14 @@ ASTPtr tryParseEvalQuery(const ASTFunction & eval, const ContextPtr & context)
         /// Unlike in `dependsOnUnstoredContext`, a function named like a table function, such as `file`, is folded as a scalar
         /// one here. The bare `eval(SELECT ...)` form is stored as a scalar subquery.
         bool folds_outside_server = true;
+        FunctionFlagsReader functions(context);
         forEachNode(*text, [&](const IAST & node)
         {
             if (node.as<ASTSubquery>())
                 folds_outside_server = false;
             else if (const auto * function = node.as<ASTFunction>())
             {
-                const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+                const auto resolver = functions.tryGet(function->name);
                 if (!resolver || !resolver->isDeterministic() || resolver->isServerConstant())
                     folds_outside_server = false;
             }
@@ -2609,11 +2638,7 @@ std::vector<TableInfo> resolveTables(
                 for (const auto & dependency : row.loading_dependencies)
                     owner->second->loading_dependencies.push_back(dependency);
 
-    /// A function a setting gates refuses to be built without it, and the dump only asks the built function about itself.
-    const auto function_context = Context::createCopy(clusters.context);
-    enableAllExperimentalSettings(function_context);
-    function_context->setSetting("allow_introspection_functions", true);
-    function_context->setSetting("allow_get_client_http_header", true);
+    const auto function_context = makeFunctionFlagsContext(clusters.context);
 
     std::vector<TableInfo> tables;
     for (auto & row : rows)
@@ -3973,6 +3998,7 @@ bool ttlMayNeedSuspiciousGate(const IAST & expression, const std::set<String> & 
 {
     bool reads_column = false;
     bool suspicious = false;
+    FunctionFlagsReader functions(context);
     forEachNode(expression, [&](const IAST & node)
     {
         if (const auto * identifier = node.as<ASTIdentifier>())
@@ -3980,7 +4006,7 @@ bool ttlMayNeedSuspiciousGate(const IAST & expression, const std::set<String> & 
         else if (const auto * function = node.as<ASTFunction>())
         {
             /// An aggregate function or a lambda is not a regular function, and keeps the gate.
-            const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+            const auto resolver = functions.tryGet(function->name);
             suspicious |= !resolver || !resolver->isDeterministic();
         }
         else if (!node.as<ASTLiteral>() && !node.as<ASTExpressionList>())

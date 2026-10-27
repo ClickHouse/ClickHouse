@@ -2,7 +2,8 @@
 
 # --dump-schema keeps the type gates of a table-function structure that the stored CREATE computes instead of spelling
 # it out: in the target of a local Remote table, which the server stores unfolded and resolves at CREATE, and in the
-# SELECT of a materialized view, which replay analyzes. A structure the dump cannot resolve keeps every type gate.
+# SELECT of a materialized view, which replay analyzes. A structure the dump cannot resolve keeps every type gate, also
+# when it calls a function that the dump session is not allowed to build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -76,6 +77,14 @@ round_trip session_dependent "
     CREATE DATABASE d;
     CREATE TABLE d.t (x UInt64)
         ENGINE = Remote('127.0.0.1', input(concat('x LowCardinality(', if(currentDatabase() = '', 'String', 'UInt64'), ')')));"
+
+# A function that a setting gates refuses to be built without it, also when the dump only reads its flags, and the dump
+# session does not have the gate. The function reads the session, so every type gate is kept, with the gate of the function.
+round_trip gated_function "
+    SET allow_get_client_http_header = 1;
+    CREATE DATABASE d;
+    CREATE TABLE d.t (x UInt64)
+        ENGINE = Remote('127.0.0.1', input(concat('x LowCardinality(UInt64)', getClientHTTPHeader('Missing'))));"
 
 # A named collection can carry the structure, which the stored CREATE does not show, so every type gate is kept.
 target_setup="CREATE NAMED COLLECTION nc_structure AS
