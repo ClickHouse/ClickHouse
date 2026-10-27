@@ -69,10 +69,6 @@ DEPENDENCIES = {
         '@clickhouse_double_conversion//:_double-conversion',
         '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
     ], [], []),
-    ('src', 'clickhouse_source_headers'): ([
-        '//base:common', '//src/Common', '//src/Parsers:headers',
-        '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx', ARRAY_LENGTH,
-    ], [], []),
     ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
     ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP], [], []),
     ('src/Dictionaries', 'clickhouse_dictionaries'): ([MINIZIP], [], []),
@@ -397,15 +393,18 @@ def apply(root):
             name = getattr(attrs.get('name'), 'value', None)
             if (package, name) == ('src/Storages/System', 'clickhouse_storages_system_information_schema'):
                 # attachInformationSchemaTables.h includes only Interpreters/Context_fwd.h.
-                for field, owners in (
-                        ('deps', ['//src:with_context']),
-                        ('implementation_deps', [
-                            '//src/Common', '@clickhouse_icu//:_icuuc', '//src:clickhouse_common_io__compile_0',
-                            '//base/poco/Foundation:_poco_foundation',
-                            '//src/Common/ZooKeeper:clickhouse_common_zookeeper_base', '//src/Parsers:headers',
-                            '//src:headers', '//src/Parsers:parser_api',
-                        ])):
+                private = [
+                    '//src/Common', '@clickhouse_icu//:_icuuc', '//src:clickhouse_common_io__compile_0',
+                    '//base/poco/Foundation:_poco_foundation',
+                    '//src/Common/ZooKeeper:clickhouse_common_zookeeper_base', '//src/Parsers:headers',
+                    '//src:headers', '//src/Parsers:parser_api', ':headers',
+                ]
+                for field, owners in (('deps', ['//src:with_context']), ('implementation_deps', private)):
                     edits.append((*source.span(attrs[field]), json.dumps(owners)))
+                inputs = ast.literal_eval(attrs['srcs'])
+                drop = inherited_source_headers(build, name, inputs, private, (':headers',))
+                if drop:
+                    edits.append((*source.span(attrs['srcs']), json.dumps([v for v in inputs if v not in drop])))
                 continue
             if package == 'src' and name in EMBEDDED_OBJECT_DEPS:
                 edits.extend(embedded_object_edits(build, rule, name, attrs))

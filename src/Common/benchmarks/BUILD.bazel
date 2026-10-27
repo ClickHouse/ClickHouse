@@ -79,7 +79,6 @@ ch_cc_library(
         "ENABLE_MULTITARGET_CODE=1",
         "XXH_INLINE_ALL",
     ]),
-    source_headers = True,
     alwayslink = True,
 )
 

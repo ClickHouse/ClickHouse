@@ -3616,32 +3616,6 @@ ch_cc_library(
     ],
 )
 
-cc_library(
-    name = "clickhouse_source_headers",
-    includes = [
-        ".",
-    ],
-    deps = [
-        ":core_types",
-        "//src/Access/Common:headers",
-        "//src/AggregateFunctions:headers",
-        "//src/Common/ZooKeeper:headers",
-        "//src/Common/mysqlxx",
-        "//src/Dictionaries:headers",
-        "//src/Dictionaries/Embedded:clickhouse_dictionaries_embedded",
-        "//src/Functions:headers",
-        "//src/Functions/GatherUtils:headers",
-        "//src/Functions/JSONPath:clickhouse_functions_jsonpath",
-        "//src/Functions/URL:clickhouse_functions_url__compile_1",
-        "//src/Loggers:headers",
-        "//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars",
-        "//src/Storages/System:headers",
-        "//src/TableFunctions:headers",
-        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
-        "//src/Common:memory_tracking_api",
-    ],
-)
-
 _COLUMN_TYPE_HEADERS = [
     "Columns/ColumnArray.h",
     "Columns/ColumnConst.h",
@@ -3701,6 +3675,8 @@ ch_cc_library(
         "@clickhouse_libdivide//:libdivide",
         "//src/Access/Common:headers",
         "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_raw_hash_set",
+        "@clickhouse_abseil_cpp//:absl_synchronization",
         "//base:pcg_random",
         "@clickhouse_sparsehash_c11//:sparsehash_c11",
         "@clickhouse_azure//:_azure_sdk",

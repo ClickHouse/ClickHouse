@@ -256,7 +256,6 @@ ch_cc_library(
         "//src:external_dictionaries_loader",
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
-    source_headers = True,
     deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"] + [
         "//bazel:clickhouse_config_headers",
         "//src:with_context",
@@ -268,7 +267,6 @@ ch_cc_library(
     srcs = [
         "//bazel:gen/embedded/src/Storages/System/attachInformationSchemaTables.cpp",
         "attachSystemTablesImpl.h",
-        "SystemTableSourceRegistry.h",
     ],
     hdrs = ["attachInformationSchemaTables.h"],
     additional_compiler_inputs = [
@@ -293,9 +291,9 @@ ch_cc_library(
         "//src/Parsers:headers",
         "//src:headers",
         "//src/Parsers:parser_api",
+        ":headers",
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
-    source_headers = True,
     deps = ["//src:with_context"],
 )
 

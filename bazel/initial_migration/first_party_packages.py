@@ -961,8 +961,7 @@ class Migration:
                         'common': 'base/base',
                         'contrib': 'contrib',
                         'unit_tests_dbms': 'src',
-                        # Replace the transitional root input library with a
-                        # header-only aggregate alongside the src libraries.
+                        # Redistribute the temporary root header glob to source packages.
                         'headers': 'src',
                     }
                     package = declarations.get(logical_name(name), package)
@@ -1041,8 +1040,6 @@ class Migration:
             return actual
         target = self.target_packages.get((pkg, name))
         if target is not None:
-            if not pkg and name == 'headers' and target == 'src':
-                name = 'clickhouse_source_headers'
             return relative_label(target, name, current, repo)
         file = physical(pkg, name)
         if file in self.file_set:
@@ -1176,11 +1173,13 @@ class Migration:
                 for item in call.keywords:
                     if item.arg == 'name':
                         value = deepcopy(item.value)
-                        if not build.package and name == 'headers' and current == 'src':
-                            value = quoted('clickhouse_source_headers')
                     else:
                         value = self.transform(item.value, build, current, item.arg, headers)
                     kw.append(ast.keyword(arg=item.arg, value=value))
+                if not build.package and name == 'headers' and current == 'src':
+                    # transform() recorded the other header packages from the root glob.
+                    self.header_packages.add(current)
+                    continue
                 if headers:
                     deps = next((item for item in kw if item.arg == 'deps'), None)
                     refs = list_expr([relative_label(owner, 'headers', current) for owner in sorted(headers)])
@@ -1286,9 +1285,9 @@ class Migration:
                 if not original.package and name in self.aliases:
                     continue
                 package = self.target_packages[original.package, name]
-                mapped_name = 'clickhouse_source_headers' if (
-                    not original.package and name == 'headers' and package == 'src') else name
-                rebuilt, new_call, after = rules[package, mapped_name]
+                if not original.package and name == 'headers' and package == 'src':
+                    continue
+                rebuilt, new_call, after = rules[package, name]
                 if call_name(call) != call_name(new_call):
                     raise ValueError('Native rule changed kind: ' + name)
                 for cpu in CPUS:

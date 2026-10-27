@@ -56,6 +56,10 @@ CLIENT_PARSER_HEADER_DEPS = ["//src/Common:string_utils", "@clickhouse_boost//:b
 # A (dependency, predecessor) pair keeps C++ include directories and linker inputs in order.
 AGGREGATE_HEADERS = ("//src/AggregateFunctions:headers", "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0")
 FIRST_PARTY_HEADER_DEPS = {
+    ("src", "headers", "deps"): [
+        ("@clickhouse_abseil_cpp//:absl_raw_hash_set", "@clickhouse_abseil_cpp//:absl_function_ref"),
+        ("@clickhouse_abseil_cpp//:absl_synchronization", "@clickhouse_abseil_cpp//:absl_function_ref"),
+    ],
     ("src", "dbms", "deps"): [(dep, ":dbms__compile_0") for dep in CLIENT_PARSER_HEADER_DEPS],
     ("src", "dbms__compile_2", "implementation_deps"): [
         ("//src/AggregateFunctions:aggregate_api", "//src/AggregateFunctions:headers"),

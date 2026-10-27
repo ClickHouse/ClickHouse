@@ -40,7 +40,6 @@ def ch_cc_library(
         hdrs = [],
         copts = None,
         clickhouse_code = False,
-        source_headers = False,
         language = "CXX",
         arches = ["x86_64", "aarch64"],
         link_runtime = False,
@@ -50,7 +49,6 @@ def ch_cc_library(
     """Compile a CMake library, with CPU defaults before source overrides.
 
     link_runtime adds libc++ privately; libc++ supplies libc++abi and libunwind.
-    source_headers adds //src:clickhouse_source_headers privately when True.
     Compiled C++ libraries use CXX_RUNTIME_DEFINES unless local_defines is set.
     Third-party C and C++ libraries default to -w and the ClickHouse language
     standard. An explicit copts list replaces both flags, including when empty.
@@ -66,12 +64,6 @@ def ch_cc_library(
         for arch, flags in CLICKHOUSE_TARGET_FLAGS.items()
     } | {"//conditions:default": []})
     code_flags = []
-    if source_headers:
-        headers = [Label("@clickhouse//src:clickhouse_source_headers")]
-        kwargs["implementation_deps"] = kwargs.get("implementation_deps", []) + select({
-            str(Label("@platforms//cpu:" + arch)): headers
-            for arch in arches
-        } | {"//conditions:default": []})
     if clickhouse_code:
         code_flags = CLICKHOUSE_XRAY_FLAGS if language == "C" else CLICKHOUSE_CODE_FLAGS
     if clickhouse_code and language in ["C", "CXX"]:
