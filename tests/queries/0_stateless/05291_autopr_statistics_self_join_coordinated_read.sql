@@ -26,7 +26,6 @@ OPTIMIZE TABLE t_self_coord FINAL;
 
 CREATE TABLE t_self_coord_baseline (left_sum UInt64, right_sum UInt64) ENGINE = Memory;
 
-SET enable_analyzer = 1;
 -- The read has to be pruned by its own key condition only: a filter built from the other side at runtime
 -- would change how many bytes are read and make the comparison below about something else.
 SET enable_join_runtime_filters = 0;
@@ -38,6 +37,9 @@ SET use_statistics_cache = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+-- Under load the columns cache decides per stripe whether a read takes it as one block, and the byte estimates
+-- compared below depend on how the read is cut into blocks.
+SET use_columns_cache = 0;
 
 -- What the query answers without parallel replicas, so the adopted plan can be checked against it.
 INSERT INTO t_self_coord_baseline
