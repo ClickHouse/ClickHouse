@@ -75,7 +75,9 @@ SAME_REPO_FILE_RE = re.compile(
 
 
 def is_trailing_punctuation(char):
-    return char in TRAILING_PUNCTUATION + ")" or unicodedata.category(char).startswith("P")
+    return char in TRAILING_PUNCTUATION + ")" or (
+        ord(char) > 127 and unicodedata.category(char).startswith("P")
+    )
 
 
 def trim_url(url):
@@ -95,6 +97,10 @@ def trim_url(url):
     return url
 
 
+def is_explicitly_delimited_url(prefix):
+    return prefix.endswith(('href="', "href='", "<"))
+
+
 def extract_urls(path, line):
     is_docs = path.startswith(DOCS_PATH_PREFIX)
     urls = []
@@ -104,7 +110,9 @@ def extract_urls(path, line):
             continue
         if APT_SOURCE_RE.search(prefix):
             continue
-        url = trim_url(match.group(0))
+        url = match.group(0)
+        if not is_explicitly_delimited_url(prefix):
+            url = trim_url(url)
         if url:
             urls.append(url)
     return urls
