@@ -12,6 +12,7 @@ SET data_type_default_nullable = 0;
 view_select: replay rc=0
 view_alias: dump rc=0
 SET allow_suspicious_low_cardinality_types = 1;
+SET allow_materialized_view_with_bad_select = 1;
 SET data_type_default_nullable = 0;
 view_alias: replay rc=0
 session_dependent: dump rc=0
