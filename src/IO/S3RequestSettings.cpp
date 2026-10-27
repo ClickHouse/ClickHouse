@@ -53,6 +53,7 @@ namespace ErrorCodes
     DECLARE(UInt64, list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, "", 0) \
     DECLARE(Bool, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
+    DECLARE(Bool, use_idempotency_id, true, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
