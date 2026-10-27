@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Core/Field.h>
 #include <Common/HiddenSecret.h>
+#include <Common/quoteString.h>
 #include <optional>
 
 namespace NATS
@@ -31,7 +32,7 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         /// value (`contrib/nats-io/src/url.c`, `natsUrl_Create`), so no URI authority bounds it.
         if (masked_value.contains('@'))
             masked_value = DB::HIDDEN_SECRET;
-        return fmt::format("'{}'", masked_value);
+        return DB::quoteString(masked_value);
     }}
 };
 
