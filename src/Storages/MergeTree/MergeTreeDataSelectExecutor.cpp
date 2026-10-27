@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -869,63 +870,90 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     size_t total_parts_before = parts.size();
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
-    for (const auto & part : parts)
+    /// A pending metadata mutation can change which on-disk column a queried name refers to,
+    /// while the part's statistics stay stored under the names the columns have on disk:
+    /// - a `RENAME COLUMN` is applied to reads on the fly, so an estimate looked up by the
+    ///   queried name describes a different column's data;
+    /// - a `DROP COLUMN` followed by adding a column with the same name makes reads treat the
+    ///   on-disk data as missing and fill the default instead, while the estimate still
+    ///   describes the dropped column's data.
+    /// Either way the estimates of such a part for the affected names do not describe the values
+    /// the query sees, so the part is not prunable if the pruner consults any of them. Both are
+    /// metadata mutations and appear in neither `hasDataMutations` nor `getAllUpdatedColumns`,
+    /// so the gate above does not see them.
+    std::vector<char> parts_not_prunable(parts.size(), false);
+    if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
     {
-        /// A pending metadata mutation can change which on-disk column a queried name refers to,
-        /// while the part's statistics stay stored under the names the columns have on disk:
-        /// - a `RENAME COLUMN` is applied to reads on the fly, so an estimate looked up by the
-        ///   queried name describes a different column's data;
-        /// - a `DROP COLUMN` followed by adding a column with the same name makes reads treat the
-        ///   on-disk data as missing and fill the default instead, while the estimate still
-        ///   describes the dropped column's data.
-        /// Either way the estimates of such a part for the affected names do not describe the values
-        /// the query sees, so the part is not prunable if the pruner consults any of them. Both are
-        /// metadata mutations and appear in neither `hasDataMutations` nor `getAllUpdatedColumns`,
-        /// so the gate above does not see them.
-        if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+        auto is_consulted = [&](const String & name)
         {
-            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+            for (const auto & required : required_columns)
+                if (columnNamesOverlap(name, required))
+                    return true;
+            return false;
+        };
+
+        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        {
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(parts[part_index].data_part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
                 , context->getAccess()->getEnabledMaskingPolicies()
 #endif
             );
 
-            auto is_consulted = [&](const String & name)
-            {
-                for (const auto & required : required_columns)
-                    if (columnNamesOverlap(name, required))
-                        return true;
-                return false;
-            };
-
             bool has_affected_column = std::ranges::any_of(alter_conversions->getDroppedColumns(), is_consulted);
             for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
                 has_affected_column = has_affected_column || is_consulted(rename_to) || is_consulted(rename_from);
 
-            if (has_affected_column)
+            parts_not_prunable[part_index] = has_affected_column;
+        }
+    }
+
+    std::vector<Estimates> parts_estimates(parts.size());
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [&](size_t part_index)
+        {
+            /// The estimates of a part that is not prunable are not needed.
+            if (parts_not_prunable[part_index])
+                return true;
+            auto estimates = parts[part_index].data_part->tryGetEstimatesFromMemory(required_columns);
+            if (!estimates)
+                return false;
+            parts_estimates[part_index] = std::move(*estimates);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            if (parts_not_prunable[part_index])
+                return;
+            parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+        },
+        [&](size_t part_index)
+        {
+            const auto & part = parts[part_index];
+            if (parts_not_prunable[part_index])
             {
                 res_parts.push_back(part);
-                continue;
+                return;
             }
-        }
-
-        auto estimates = part.data_part->getEstimates(required_columns);
-        try
-        {
-            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            const Estimates estimates = std::move(parts_estimates[part_index]);
+            try
             {
-                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                continue;
+                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                {
+                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                    return;
+                }
             }
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                part.data_part->name), LogsLevel::debug);
-        }
-        res_parts.push_back(part);
-    }
+            catch (const Exception &)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                    part.data_part->name), LogsLevel::debug);
+            }
+            res_parts.push_back(part);
+        });
 
     if (res_parts.size() < total_parts_before)
     {
