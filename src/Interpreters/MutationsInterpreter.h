@@ -133,7 +133,8 @@ public:
         ContextPtr context);
 
     /// Returns the name of a virtual column whose value may differ between replicas (`_table`, `_database`,
-    /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns.
+    /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns,
+    /// or if a projection that the mutation may rebuild reads it.
     static std::optional<String> findNonDeterministicVirtualColumn(
         const StoragePtr & storage,
         const MutationCommands & commands,

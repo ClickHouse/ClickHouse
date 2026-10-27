@@ -161,3 +161,17 @@ ALTER TABLE m_05228 MATERIALIZE COLUMN e; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE m_05228 MATERIALIZE COLUMN d SETTINGS mutations_sync = 2;
 SELECT key, d FROM m_05228 ORDER BY key;
 DROP TABLE m_05228 SYNC;
+
+-- A mutation calculates projections from the block it reads, which carries the virtual columns, so a mutation
+-- that may build or rebuild a projection reading a non-deterministic virtual column is refused as well.
+DROP TABLE IF EXISTS p_05228 SYNC;
+CREATE TABLE p_05228 (key UInt64, value String)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/p', 'r1') ORDER BY key;
+INSERT INTO p_05228 VALUES (1, 'old');
+ALTER TABLE p_05228 ADD PROJECTION p (SELECT key, concat(value, _table) AS x ORDER BY key);
+ALTER TABLE p_05228 MATERIALIZE PROJECTION p; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE p_05228 UPDATE value = 'new' WHERE 1; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE p_05228 DROP PROJECTION p SETTINGS mutations_sync = 2;
+ALTER TABLE p_05228 UPDATE value = 'new' WHERE 1 SETTINGS mutations_sync = 2;
+SELECT key, value FROM p_05228 ORDER BY key;
+DROP TABLE p_05228 SYNC;

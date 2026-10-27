@@ -2584,6 +2584,34 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
     if (nondeterministic_virtual_columns.empty())
         return {};
 
+    /// A mutation builds or rebuilds projections: the one named in `MATERIALIZE PROJECTION`, but also the ones that
+    /// depend on the updated columns, the broken ones, or all of them with `lightweight_mutation_projection_mode =
+    /// 'rebuild'`. A projection is calculated from the block read by the mutation, which carries the virtual columns
+    /// as well, so a projection that reads a non-deterministic virtual column would differ between replicas. Which
+    /// projections are rebuilt depends on the state of each part, so every projection is checked, unless the
+    /// mutation only drops projections.
+    NameSet dropped_projections;
+    bool only_drops_projections = true;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::DROP_PROJECTION)
+            dropped_projections.insert(command.projection_name);
+        else
+            only_drops_projections = false;
+    }
+
+    if (!only_drops_projections)
+    {
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (dropped_projections.contains(projection.name))
+                continue;
+            for (const auto & column_name : projection.required_columns)
+                if (nondeterministic_virtual_columns.contains(column_name))
+                    return column_name;
+        }
+    }
+
     /// Each command is resolved in its own scope, the same way the commands are analyzed in separate stages
     /// when the mutation is executed, so an alias defined in one command cannot hide a virtual column read
     /// in another one.
@@ -2721,8 +2749,8 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
-            "Virtual column '{}' is non-deterministic: its value may differ between replicas, "
-            "see allow_nondeterministic_mutations setting", *virtual_column_name);
+            "Virtual column '{}', read by the mutation or by a projection it may rebuild, is non-deterministic: "
+            "its value may differ between replicas, see allow_nondeterministic_mutations setting", *virtual_column_name);
 }
 
 void MutationsInterpreter::validate()
