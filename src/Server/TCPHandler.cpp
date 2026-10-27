@@ -3257,7 +3257,8 @@ void TCPHandler::killQueryIfStoppedByClient(QueryState & state)
 {
     {
         std::lock_guard lock(*callback_mutex);
-        if (!state.stop_query)
+        /// `out` is canceled when a write to the client fails.
+        if (!state.stop_query && !out->isCanceled())
             return;
     }
 
