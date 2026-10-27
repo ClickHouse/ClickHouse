@@ -424,6 +424,10 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
 
     result.for_disk = true;
     result.read_only = config.getBool(config_prefix + ".readonly", false);
+    /// The marker is written on the disk root, so a `locations.<name>` child takes it from there.
+    const auto locations_pos = config_prefix.rfind(".locations.");
+    const String disk_prefix = locations_pos == String::npos ? config_prefix : config_prefix.substr(0, locations_pos);
+    result.server_credentials_allowed = config.getBool(disk_prefix + "._server_credentials_allowed", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
     result.max_single_part_upload_size = config.getUInt64(
         config_prefix + ".max_single_part_upload_size", settings[Setting::s3_max_single_part_upload_size]);

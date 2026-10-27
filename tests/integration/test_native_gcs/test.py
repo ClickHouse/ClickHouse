@@ -304,6 +304,16 @@ def test_dynamic_gcs_disk_with_header_from_env_persists_credential_opt_in(
 
     node.restart_clickhouse()
     assert node.query("SELECT count() FROM gcs_env_header").strip() == "3"
+
+    # The disk is anonymous, but its client still sends the server-resolved header, so a restricted
+    # session must not reuse it behind a wrapper.
+    error = node.query_and_get_error(
+        "CREATE TABLE gcs_env_header_encrypted (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk(type = encrypted, disk = 'gcs_env_header_disk', "
+        "path = 'encrypted/', key = '0123456789012345')",
+        settings={"s3_allow_server_credentials_in_user_queries": 0},
+    )
+    assert "ACCESS_DENIED" in error and "gcs_env_header_disk" in error, error
     node.query("DROP TABLE gcs_env_header SYNC")
 
 

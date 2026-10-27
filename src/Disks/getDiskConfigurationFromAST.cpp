@@ -745,10 +745,11 @@ void validateResolvedS3DiskCredentials(
 }
 
 #if USE_GOOGLE_CLOUD
-/// Whether a disk created from user SQL, possibly behind wrappers, is a native GCS disk that authenticates with
-/// Application Default Credentials, which can resolve the server's identity. A disk from the server configuration
-/// may use them, so the walk stops there.
-static bool customDiskUsesGCSServerIdentity(DiskPtr disk)
+/// Whether a disk created from user SQL, possibly behind wrappers, is a native GCS disk that relies on server-managed
+/// credentials: Application Default Credentials, which can resolve the server's identity, or anything else for which
+/// the creating session had to opt in, such as a `from_env` header, as recorded by the `_server_credentials_allowed`
+/// marker of its definition. A disk from the server configuration may use them, so the walk stops there.
+static bool customDiskUsesGCSServerCredentials(DiskPtr disk)
 {
     for (; disk && disk->isCustomDisk(); disk = disk->getDelegateDiskIfExists())
     {
@@ -760,7 +761,9 @@ static bool customDiskUsesGCSServerIdentity(DiskPtr disk)
         if (object_storage->getType() != ObjectStorageType::GCS)
             return false;
 
-        return chooseGCSCredentialSource(*object_storage->getGCSObjectStorageSettings()) == GCSCredentialSource::ApplicationDefault;
+        const auto settings = object_storage->getGCSObjectStorageSettings();
+        return settings->server_credentials_allowed
+            || chooseGCSCredentialSource(*settings) == GCSCredentialSource::ApplicationDefault;
     }
     return false;
 }
@@ -775,16 +778,17 @@ void validateResolvedGCSDiskCredentials(
 #if USE_GOOGLE_CLOUD
     /// A wrapper such as `encrypted` or `cache` may name a native GCS disk another session created with the
     /// credential opt-in. It is reused as it is, together with its authenticated client, so the wrapper is not a
-    /// GCS backend by itself but still borrows the server's identity.
+    /// GCS backend by itself but still borrows the server-managed credentials.
     if (!is_loading_from_existing_metadata && !info.restriction_exempt && context->shouldRestrictUserQueryS3Credentials())
     {
         const String wrapped_disk = config.getString("disk", "");
         const auto disks = context->getDisksMap();
-        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end() && customDiskUsesGCSServerIdentity(it->second))
+        if (auto it = disks.find(wrapped_disk); !wrapped_disk.empty() && it != disks.end() && customDiskUsesGCSServerCredentials(it->second))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic disk created from user SQL may not wrap the disk `{}`: it is a native GCS disk created from "
-                "user SQL that uses Application Default Credentials, which can resolve the server's identity."
+                "user SQL that relies on server-managed credentials, such as Application Default Credentials, which "
+                "can resolve the server's identity, or a header resolved on the server."
 #if !CLICKHOUSE_CLOUD
                 " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
 #endif

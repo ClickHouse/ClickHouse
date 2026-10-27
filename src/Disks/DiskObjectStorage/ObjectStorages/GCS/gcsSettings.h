@@ -144,6 +144,11 @@ struct GCSObjectStorageSettings
     /// S3 client's `isClientForDisk` splits `S3*` from `DiskS3*`.
     bool for_disk = false;
     bool read_only = false;
+    /// The disk was created from user SQL by a session allowed to use server-managed credentials, and its
+    /// resolved configuration relies on them (e.g. Application Default Credentials or a `from_env` header):
+    /// the `_server_credentials_allowed` marker of its stored definition. A restricted session must not reuse
+    /// such a disk behind a wrapper, see `validateResolvedGCSDiskCredentials`.
+    bool server_credentials_allowed = false;
     /// Page size of the object listings (`maxResults`). 0 means "use the backend default".
     UInt64 list_object_keys_size = 1000;
     /// Largest object uploaded by a single `InsertObject` request; a larger one goes through a resumable
