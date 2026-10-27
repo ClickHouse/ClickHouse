@@ -181,9 +181,11 @@ struct DeltaLakeMetadataImpl
     DeltaLakeMetadata processMetadataFiles() const
     {
         std::set<String> result_files;
+        std::set<String> files_with_deletion_vectors;
         NamesAndTypesList current_schema;
         DeltaLakePartitionColumns current_partition_columns;
-        const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
+        const auto checkpoint_version = getCheckpointIfExists(
+            result_files, files_with_deletion_vectors, current_schema, current_partition_columns);
 
         if (checkpoint_version)
         {
@@ -196,7 +198,7 @@ struct DeltaLakeMetadataImpl
                 if (!object_storage->exists(StoredObject(file_path)))
                     break;
 
-                processMetadataFile(file_path, current_schema, current_partition_columns, result_files);
+                processMetadataFile(file_path, current_schema, current_partition_columns, result_files, files_with_deletion_vectors);
             }
 
             LOG_TRACE(
@@ -211,8 +213,14 @@ struct DeltaLakeMetadataImpl
             auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
             std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
-                processMetadataFile(key, current_schema, current_partition_columns, result_files);
+                processMetadataFile(key, current_schema, current_partition_columns, result_files, files_with_deletion_vectors);
         }
+
+        if (!files_with_deletion_vectors.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Reading Delta Lake files with deletion vectors is not supported without Delta Kernel (file: {})",
+                *files_with_deletion_vectors.begin());
 
         return DeltaLakeMetadata{current_schema, Strings(result_files.begin(), result_files.end()), current_partition_columns};
     }
@@ -256,7 +264,8 @@ struct DeltaLakeMetadataImpl
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns,
-        std::set<String> & result) const
+        std::set<String> & result,
+        std::set<String> & files_with_deletion_vectors) const
     {
         auto read_settings = context->getReadSettings();
         RelativePathWithMetadata object_info(metadata_file_path);
@@ -332,6 +341,10 @@ struct DeltaLakeMetadataImpl
                 Poco::URI::decode(add_object->getValue<String>("path"), path);
                 auto full_path = resolvePathInsideTable(table_path, path);
                 result.insert(full_path);
+                if (add_object->has("deletionVector") && !add_object->isNull("deletionVector"))
+                    files_with_deletion_vectors.insert(full_path);
+                else
+                    files_with_deletion_vectors.erase(full_path);
 
                 auto filename = fs::path(path).filename().string();
                 auto it = file_partition_columns.find(full_path);
@@ -385,7 +398,9 @@ struct DeltaLakeMetadataImpl
 
                 String path;
                 Poco::URI::decode(remove_object->getValue<String>("path"), path);
-                result.erase(resolvePathInsideTable(table_path, path));
+                const auto full_path = resolvePathInsideTable(table_path, path);
+                result.erase(full_path);
+                files_with_deletion_vectors.erase(full_path);
             }
         }
         insertDeltaRowToLogTable(context, sum_json, table_path, metadata_file_path);
@@ -521,6 +536,7 @@ struct DeltaLakeMetadataImpl
      */
     size_t getCheckpointIfExists(
         std::set<String> & result,
+        std::set<String> & files_with_deletion_vectors,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns) const
     {
@@ -603,6 +619,20 @@ struct DeltaLakeMetadataImpl
 
         /// A checkpoint written before this column existed simply carries no partition names.
         const auto * partition_columns_column = res_block.findByName("metaData.partitionColumns");
+
+        const auto * deletion_vector_column = res_block.findByName("add.deletionVector");
+        std::optional<size_t> deletion_vector_storage_type_position;
+        if (deletion_vector_column)
+        {
+            const auto * deletion_vector_type = typeid_cast<const DataTypeTuple *>(removeNullable(deletion_vector_column->type).get());
+            if (deletion_vector_type)
+                deletion_vector_storage_type_position = deletion_vector_type->tryGetPositionByName("storageType");
+            if (!deletion_vector_storage_type_position)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Unexpected type of `add.deletionVector` in Delta Lake checkpoint: {}",
+                    deletion_vector_column->type->getName());
+        }
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
@@ -694,6 +724,18 @@ struct DeltaLakeMetadataImpl
             const auto [_, inserted] = result.insert(full_path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
+
+            if (deletion_vector_column)
+            {
+                Field deletion_vector;
+                deletion_vector_column->column->get(i, deletion_vector);
+                if (!deletion_vector.isNull())
+                {
+                    const auto & storage_type = deletion_vector.safeGet<Tuple>().at(*deletion_vector_storage_type_position);
+                    if (!storage_type.isNull() && !storage_type.safeGet<String>().empty())
+                        files_with_deletion_vectors.insert(full_path);
+                }
+            }
         }
 
         return version;

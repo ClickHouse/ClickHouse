@@ -1,6 +1,8 @@
+import json
 import os
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from deltalake.writer import write_deltalake
 
@@ -11,6 +13,12 @@ from helpers.mock_servers import start_mock_servers
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MOCK_PORT = 8080
 REMOTE_STORAGE_ROOT = "/var/lib/clickhouse/user_files/unity_gcs_storage"
+DELETION_VECTOR = {
+    "storageType": "i",
+    "pathOrInlineDv": "wi5b=000010000siXQKl0rr91000f55c8Xg0@@D72lkbi5=-{L",
+    "sizeInBytes": 40,
+    "cardinality": 1,
+}
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -35,19 +43,114 @@ def copy_directory_to_container(local_root, container_id, remote_root):
             )
 
 
+def write_table(local_root):
+    write_deltalake(local_root, pa.table({"value": pa.array([1, 2, 3], type=pa.int64())}))
+    with open(os.path.join(local_root, "_delta_log", "00000000000000000000.json")) as log:
+        actions = [json.loads(line) for line in log if line.strip()]
+    metadata = next(action["metaData"] for action in actions if "metaData" in action)
+    add = next(action["add"] for action in actions if "add" in action)
+    return metadata, add
+
+
+def write_deletion_vector_commit(local_root):
+    _, add = write_table(local_root)
+    actions = [
+        {
+            "protocol": {
+                "minReaderVersion": 3,
+                "minWriterVersion": 7,
+                "readerFeatures": ["deletionVectors"],
+                "writerFeatures": ["deletionVectors"],
+            }
+        },
+        {"remove": {"path": add["path"], "deletionTimestamp": add["modificationTime"], "dataChange": True}},
+        {"add": {**add, "deletionVector": DELETION_VECTOR}},
+    ]
+    with open(os.path.join(local_root, "_delta_log", "00000000000000000001.json"), "w") as log:
+        log.write("\n".join(json.dumps(action) for action in actions) + "\n")
+
+
+def write_deletion_vector_checkpoint(local_root):
+    metadata, add = write_table(local_root)
+    deletion_vector_type = pa.struct(
+        [
+            ("storageType", pa.string()),
+            ("pathOrInlineDv", pa.string()),
+            ("offset", pa.int32()),
+            ("sizeInBytes", pa.int32()),
+            ("cardinality", pa.int64()),
+        ]
+    )
+    add_type = pa.struct(
+        [
+            ("path", pa.string()),
+            ("partitionValues", pa.map_(pa.string(), pa.string())),
+            ("size", pa.int64()),
+            ("modificationTime", pa.int64()),
+            ("dataChange", pa.bool_()),
+            ("stats", pa.string()),
+            ("deletionVector", deletion_vector_type),
+        ]
+    )
+    metadata_type = pa.struct(
+        [
+            ("id", pa.string()),
+            ("schemaString", pa.string()),
+            ("partitionColumns", pa.list_(pa.string())),
+            ("createdTime", pa.int64()),
+        ]
+    )
+    checkpoint = pa.table(
+        {
+            "add": pa.array(
+                [
+                    None,
+                    {
+                        "path": add["path"],
+                        "partitionValues": [],
+                        "size": add["size"],
+                        "modificationTime": add["modificationTime"],
+                        "dataChange": False,
+                        "stats": add.get("stats"),
+                        "deletionVector": {**DELETION_VECTOR, "offset": None},
+                    },
+                ],
+                type=add_type,
+            ),
+            "metaData": pa.array(
+                [
+                    {
+                        "id": metadata["id"],
+                        "schemaString": metadata["schemaString"],
+                        "partitionColumns": metadata["partitionColumns"],
+                        "createdTime": metadata.get("createdTime"),
+                    },
+                    None,
+                ],
+                type=metadata_type,
+            ),
+        }
+    )
+    log_directory = os.path.join(local_root, "_delta_log")
+    pq.write_table(checkpoint, os.path.join(log_directory, "00000000000000000001.checkpoint.parquet"))
+    with open(os.path.join(log_directory, "_last_checkpoint"), "w") as last_checkpoint:
+        json.dump({"version": 1, "size": 2}, last_checkpoint)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
 
-        local_table = os.path.join(cluster.instances_dir, "unity_gcs_table")
-        write_deltalake(
-            local_table,
-            pa.table({"value": pa.array([1, 2, 3], type=pa.int64())}),
-        )
-
         resolver_id = cluster.get_container_id("resolver")
-        copy_directory_to_container(local_table, resolver_id, os.path.join(REMOTE_STORAGE_ROOT, "table"))
+        for name, writer in (
+            ("table", write_table),
+            ("dv_json", write_deletion_vector_commit),
+            ("dv_checkpoint", write_deletion_vector_checkpoint),
+        ):
+            local_table = os.path.join(cluster.instances_dir, f"unity_gcs_{name}")
+            writer(local_table)
+            copy_directory_to_container(local_table, resolver_id, os.path.join(REMOTE_STORAGE_ROOT, name))
         start_mock_servers(
             cluster,
             SCRIPT_DIR,
@@ -105,3 +208,12 @@ def test_gcp_oauth_falls_back_from_delta_kernel(started_cluster):
         settings={"allow_delta_kernel_rs": 1},
     )
     assert result == "1\n2\n3\n"
+
+
+@pytest.mark.parametrize("collection", ["gcs_delta_dv_json", "gcs_delta_dv_checkpoint"])
+def test_native_reader_rejects_deletion_vectors(started_cluster, collection):
+    error = node.query_and_get_error(
+        f"SELECT value FROM deltaLake({collection})",
+        settings={"allow_delta_kernel_rs": 1},
+    )
+    assert "Reading Delta Lake files with deletion vectors is not supported without Delta Kernel" in error
