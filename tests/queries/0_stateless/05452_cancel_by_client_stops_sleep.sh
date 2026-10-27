@@ -75,13 +75,14 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE src (x UInt8) ENGINE = Memory;
     CREATE TABLE dst (x UInt8) ENGINE = Memory;
     CREATE MATERIALIZED VIEW mv TO dst AS SELECT sleepEachRow(3) + x AS x FROM src"
-fifo="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.fifo"
-rm -f "$fifo"
-mkfifo "$fifo"
 
 function start_streamed_insert()
 {
     local query_id=$1 query=${2:-"INSERT INTO src FORMAT TSV"}
+    # A FIFO per query: the previous client may still be reading its own, and would take this query's data.
+    fifo="${CLICKHOUSE_TMP}/${query_id}.fifo"
+    rm -f "$fifo"
+    mkfifo "$fifo"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --async_insert 0 --parallel_view_processing 1 --max_threads 4 \
         --max_threads_min_free_memory_per_thread 0 --input_format_parallel_parsing 0 --max_insert_block_size 100 \
         --max_block_size 100 --function_sleep_max_microseconds_per_block 600000000 \
@@ -100,6 +101,12 @@ kill -INT $client_pid
 seq 100 1>&"${fifo_fd}" 2>/dev/null
 wait_until_gone "streamed insert" "query_id = '$query_id'"
 exec {fifo_fd}>&-
+rm -f "$fifo"
+# The query ends with the client's exception, not with the generic cancellation of the process list entry.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'streamed insert exception', errorCodeToName(exception_code) FROM system.query_log
+    WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'ExceptionWhileProcessing'"
 
 # The client dies, so the server reads the end of the connection instead of a `Cancel`.
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_streamed_insert_killed"
@@ -108,6 +115,7 @@ kill -KILL $client_pid
 wait $client_pid 2>/dev/null
 wait_until_gone "streamed insert, client killed" "query_id = '$query_id'"
 exec {fifo_fd}>&-
+rm -f "$fifo"
 
 # With `input()` a pipeline thread reads the data, so it is the one that receives the `Cancel`.
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_input"

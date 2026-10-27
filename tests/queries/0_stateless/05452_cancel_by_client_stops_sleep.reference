@@ -2,6 +2,7 @@ remote: stopped
 cluster function: stopped
 insert select: stopped
 streamed insert: stopped
+streamed insert exception	QUERY_WAS_CANCELLED_BY_CLIENT
 streamed insert, client killed: stopped
 insert select from input: stopped
 create as select: stopped
