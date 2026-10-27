@@ -1407,21 +1407,23 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Table
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context)
 {
-    String database_name = context->getCurrentDatabase();
-    String table_name;
-
     Identifier table_identifier{table_function_name};
-    if (table_identifier.getPartsSize() == 1)
-    {
-        table_name = table_identifier[0];
-    }
-    else if (table_identifier.getPartsSize() == 2)
-    {
-        database_name = table_identifier[0];
-        table_name = table_identifier[1];
-    }
+    if (table_identifier.getPartsSize() == 0)
+        return { context->getCurrentDatabase(), "" };
 
-    return { database_name, table_name };
+    /// The name is hierarchical (see `DatabaseCatalog`), the same as the name of an ordinary view: `db.ns.v` may be the
+    /// view `ns.v` of the database `db`, and inside `USE db.ns` the same view is `v`.
+    String database_name;
+    for (size_t i = 0; i + 1 < table_identifier.getPartsSize(); ++i)
+    {
+        if (i > 0)
+            database_name += '.';
+        database_name += table_identifier[i];
+    }
+    StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+        StorageID(database_name, table_identifier[table_identifier.getPartsSize() - 1]), context);
+
+    return { resolved.database_name, resolved.table_name };
 }
 
 bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)
