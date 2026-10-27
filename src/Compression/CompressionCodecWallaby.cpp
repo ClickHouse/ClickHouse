@@ -717,8 +717,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         /// Runs the chain walk anchored at `start`: every position before it is exiled (its
         /// lane holds a zero delta and the true value is patched from an exception), the chain
         /// takes the quantized value at `start`, and each later position either extends the
-        /// chain or is exiled when its delta does not fit the cap.
-        const auto walk_from = [&](UInt32 start, T * lanes_out, UInt16 * exiled_out) -> UInt32
+        /// chain or is exiled when its delta does not fit the cap. A measuring walk (no output
+        /// buffers) stops as soon as it reaches `stop_at` exceptions, because the caller only
+        /// needs to know that it cannot beat that count.
+        const auto walk_from = [&](UInt32 start, T * lanes_out, UInt16 * exiled_out, UInt32 stop_at) -> UInt32
         {
             UInt32 exceptions = 0;
             for (UInt32 i = 0; i < start; ++i)
@@ -740,6 +742,8 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             SignedType chain = quantized[start];
             for (UInt32 i = start + 1; i < count; ++i)
             {
+                if (exceptions >= stop_at)
+                    return exceptions;
                 SignedType needed = 0;
                 bool fits = !is_quantization_exception[i] && !__builtin_sub_overflow(quantized[i], chain, &needed);
                 T zigzag = 0;
@@ -767,70 +771,44 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         };
 
         /** The chain starts at the first value by default, so an outlier prefix sitting there
-          * cannot be exiled the way an interior outlier is — the chain would stay on it and
+          * cannot be exiled the way an interior outlier is - the chain would stay on it and
           * every later delta would span the whole distance back to it, exiling the entire
-          * vector. When the head pair does not fit the cap, the smooth segment may instead
-          * begin after a leading prefix of any length the exception budget can pay for:
-          * exiling the whole prefix costs one exception per position, which is often far
-          * cheaper than losing the delta lanes altogether. Three anchors cover the
-          * possibilities — position zero (an interior outlier re-synchronizes on its own),
-          * the first position `f` that
-          * opens a fitting adjacent pair (skips the whole prefix), and the first prefix
-          * position whose delta straight to `f` fits (keeps one more value in the lanes). The
-          * exact walk is run from each candidate and the fewest exceptions win, so the choice
-          * is never worse than any single candidate; ties keep the earliest anchor. The
-          * measuring and packing phases replay the same deterministic search.
+          * vector. The same happens when the prefix is itself smooth but sits at a different
+          * magnitude than the rest (e.g. `-1e12, -1e12 + 1, 0, 1, 2, ...`): the head pair fits,
+          * yet the chain is stuck on the prefix. So the smooth segment may instead begin after a
+          * leading prefix of any length: exiling the whole prefix costs one exception per
+          * position, which is often far cheaper than losing the delta lanes altogether.
+          *
+          * The exact walk is run from every anchor that can still win, and the fewest exceptions
+          * win (ties keep the earliest anchor), so the choice is never worse than position zero.
+          * Two observations keep this cheap. Anchoring at `s` exiles the `s` positions before
+          * it, so only anchors below the best exception count found so far can win, and a
+          * smooth vector, whose walk from position zero has few exceptions, tries almost
+          * nothing else. And an anchor `s` whose predecessor is not a quantization exception
+          * and steps to it with a fitting delta is dominated by that predecessor: the walk from
+          * `s - 1` reaches `s` with the same chain value and one exception fewer, so only the
+          * starts of fitting runs are tried. Every candidate walk stops once it reaches the best
+          * count. The measuring and packing phases replay the same deterministic search.
           */
         UInt32 chain_start = 0;
-        if (count > 2
-            && (is_quantization_exception[0] || is_quantization_exception[1] || !delta_fits(quantized[0], quantized[1])))
+        UInt32 best_exceptions = walk_from(0, nullptr, nullptr, std::numeric_limits<UInt32>::max());
+        const UInt32 prefix_limit = std::min(count - 1, initial_exception_budget);
+        for (UInt32 s = 1; s <= prefix_limit && s < best_exceptions; ++s)
         {
-            /// Anchoring the chain at `f` exiles the whole prefix before it, one exception
-            /// per position, so the search stops exactly where those exceptions alone would
-            /// already cost more than the best encoding of this vector known so far. This is
-            /// the same break-even the candidate scans use, so no prefix that can still win is
-            /// left out of the search — a fixed window would cut off, say, a vector of 33 head
-            /// outliers followed by a smooth ramp, whose cheapest encoding starts the chain
-            /// right after them.
-            const UInt32 prefix_limit = std::min(count - 1, initial_exception_budget);
-            UInt32 first_fitting_pair = 0;
-            for (UInt32 f = 1; f <= prefix_limit && f + 1 < count; ++f)
+            if (is_quantization_exception[s])
+                continue;
+            if (!is_quantization_exception[s - 1] && delta_fits(quantized[s - 1], quantized[s]))
+                continue;
+            const UInt32 walked = walk_from(s, nullptr, nullptr, best_exceptions);
+            if (walked < best_exceptions)
             {
-                if (!is_quantization_exception[f] && !is_quantization_exception[f + 1]
-                    && delta_fits(quantized[f], quantized[f + 1]))
-                {
-                    first_fitting_pair = f;
-                    break;
-                }
-            }
-            if (first_fitting_pair != 0)
-            {
-                UInt32 candidates[3] = {0, first_fitting_pair, first_fitting_pair};
-                for (UInt32 s = 1; s < first_fitting_pair; ++s)
-                {
-                    if (!is_quantization_exception[s] && delta_fits(quantized[s], quantized[first_fitting_pair]))
-                    {
-                        candidates[2] = s;
-                        break;
-                    }
-                }
-                UInt32 best_exceptions = walk_from(0, nullptr, nullptr);
-                for (UInt32 c = 1; c < 3; ++c)
-                {
-                    if (candidates[c] == candidates[c - 1])
-                        continue;
-                    const UInt32 walked = walk_from(candidates[c], nullptr, nullptr);
-                    if (walked < best_exceptions || (walked == best_exceptions && candidates[c] < chain_start))
-                    {
-                        best_exceptions = walked;
-                        chain_start = candidates[c];
-                    }
-                }
+                best_exceptions = walked;
+                chain_start = s;
             }
         }
 
         base = quantized[chain_start];
-        return walk_from(chain_start, delta_lanes, exiled_positions);
+        return walk_from(chain_start, delta_lanes, exiled_positions, std::numeric_limits<UInt32>::max());
     };
 
     /** Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector and

@@ -4107,6 +4107,29 @@ TEST_F(WallabyTest, StartsTheDeltaChainAfterALongOutlierPrefix)
     EXPECT_LT(wallabyCompressedSize(values), 800u);
 }
 
+TEST_F(WallabyTest, StartsTheDeltaChainAfterASmoothPrefixAtADifferentMagnitude)
+{
+    /// A short prefix that is smooth by itself but sits at a different magnitude than the long
+    /// smooth suffix. Its head pair fits the cap, so an encoder revision that searched for a
+    /// later chain anchor only when the head pair did not fit kept the chain on the prefix and
+    /// fell back to ~2000 bytes of `XOR`, and one that stopped at the first fitting adjacent pair
+    /// missed the same layout behind one more outlier. Anchoring the chain right after the
+    /// prefix keeps the ramp in 2-bit delta lanes with two or three exceptions (~300 bytes).
+    std::vector<Float64> values(1024);
+    values[0] = -1e12;
+    values[1] = -1e12 + 1;
+    for (size_t i = 2; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i - 2);
+    EXPECT_LT(wallabyCompressedSize(values), 400u);
+
+    values[0] = 1e12;
+    values[1] = -1e12;
+    values[2] = -1e12 + 1;
+    for (size_t i = 3; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i - 3);
+    EXPECT_LT(wallabyCompressedSize(values), 400u);
+}
+
 TEST_F(WallabyTest, KeepsTheExactSampledScaleWhenTheTolerantScaleSucceeds)
 {
     /// Every sampled value votes the tolerant scale `alpha = 0` (the values are all `100.0` up
