@@ -48,7 +48,7 @@ public:
     /// of the format, so it is for a caller that makes decisions by the size of the output, not for every block.
     void writePendingData();
 
-    /// An upper estimate of the size of the data that `writePendingData` would write.
+    /// An estimate of the size of the data that `writePendingData` would write. Not an upper bound.
     virtual size_t getPendingDataBytes() const { return 0; }
 
     /// Value for rows_before_limit_at_least field.
