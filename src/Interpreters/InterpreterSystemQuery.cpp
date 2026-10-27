@@ -2494,6 +2494,10 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
+    /// `CancellationChecker` measures `max_execution_time` from an earlier point than `start` below, so it may cancel
+    /// the query first. `throwIfKilled` then throws `TIMEOUT_EXCEEDED` too, not `QUERY_WAS_CANCELLED`.
+    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+
     const auto start = std::chrono::steady_clock::now();
     const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
@@ -2508,7 +2512,9 @@ void InterpreterSystemQuery::syncMerges()
                 >= max_execution_time_us)
             break;
 
-        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        if (query_status)
+            query_status->throwIfKilled();
+        else if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
         merge_tree.triggerBackgroundOperations();

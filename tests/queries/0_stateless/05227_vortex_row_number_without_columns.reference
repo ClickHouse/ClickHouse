@@ -1,0 +1,30 @@
+-- no column of the file is read at all
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- every projected column is absent from the file
+0	0
+1	0
+2	0
+3	0
+4	0
+5	0
+6	0
+7	0
+8	0
+9	0
+-- a column of the file next to the row number, for comparison
+0	0
+1	1
+2	2
+-- the row numbers of a lazily materialized read whose eager pass reads no column
+9	0
+8	0
+7	0
