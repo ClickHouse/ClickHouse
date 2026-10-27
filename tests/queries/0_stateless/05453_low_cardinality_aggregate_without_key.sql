@@ -83,6 +83,13 @@ SELECT 'u', uniqExact(u), min(u), max(u), length(groupUniqArray(u)) FROM t_lc;
 SELECT 'fs', uniqExact(fs), min(fs), max(fs), length(groupUniqArray(fs)) FROM t_lc;
 SELECT 'iv', uniqExact(iv), min(iv), max(iv), length(groupUniqArray(iv)) FROM t_lc;
 
+-- groupUniqArray(N) keeps the first N distinct values in row order: the used values must be added in the order of their first occurrence.
+SELECT 'limit', 65505, toString((SELECT groupUniqArray(10)(s), groupUniqArray(10)(n), groupUniqArray(10)(fs) FROM t_lc))
+    = toString((SELECT groupUniqArray(10)(s), groupUniqArray(10)(n), groupUniqArray(10)(fs) FROM t_plain))
+    SETTINGS max_block_size = 65505, enable_parallel_replicas = 0;
+SELECT 'limit', 1000, toString((SELECT groupUniqArray(10)(fs) FROM t_lc)) = toString((SELECT groupUniqArray(10)(fs) FROM t_plain))
+    SETTINGS max_block_size = 1000, enable_parallel_replicas = 0;
+
 -- Combinators and GROUP BY keep adding every row.
 SELECT 'if', (SELECT uniqExactIf(s, id % 2 = 0) FROM t_lc) = (SELECT uniqExactIf(s, id % 2 = 0) FROM t_plain);
 SELECT 'state', (SELECT finalizeAggregation(uniqExactState(s)) FROM t_lc) = (SELECT finalizeAggregation(uniqExactState(s)) FROM t_plain);
