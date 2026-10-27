@@ -164,7 +164,7 @@ void UncommittedState::recordCreatedFile(const std::string & path, const std::st
     if (!directory)
         return;
 
-    const auto file_name = normalized_path.filename().string();
+    const auto file_name = pathToGenericString(normalized_path.filename());
     FileRemoteInfo info{.blob_key = blob_key};
     const auto new_blob_key = getBlobKey(*directory, file_name, info);
 
@@ -201,7 +201,7 @@ void UncommittedState::recordHardLink(const std::string & path_from, const std::
     if (!directory_from)
         return;
 
-    const auto file_name_from = normalized_path_from.filename().string();
+    const auto file_name_from = pathToGenericString(normalized_path_from.filename());
     const auto file_from = directory_from->files.find(file_name_from);
     if (file_from == directory_from->files.end())
         return;
@@ -231,8 +231,8 @@ void UncommittedState::recordMovedFile(const std::string & path_from, const std:
     if (!directory_from || !directory_to)
         return;
 
-    const auto file_name_from = normalized_path_from.filename().string();
-    const auto file_name_to = normalized_path_to.filename().string();
+    const auto file_name_from = pathToGenericString(normalized_path_from.filename());
+    const auto file_name_to = pathToGenericString(normalized_path_to.filename());
 
     const auto file_from = directory_from->files.find(file_name_from);
     if (file_from == directory_from->files.end())
