@@ -14,7 +14,8 @@ ALTER TABLE t_real ADD PROJECTION p (SELECT a, b ORDER BY b);
 SYSTEM STOP MERGES t_est;
 SYSTEM STOP MERGES t_real;
 
--- parts of 30210 to 30617 rows: the last granule has 10 to 17 rows less than a full one, and the last run 1 to 10 granules
+-- parts of 30210 to 30617 rows: the last granule of a part holds 6 to 95 rows
+-- the last run of a part has 3 to 7 granules
 INSERT INTO t_est SELECT 0 + number, if(number >= 30000, 0, 1 + number % 50) FROM numbers(30210) SETTINGS max_insert_block_size = 30210, min_insert_block_size_rows = 30210, min_insert_block_size_bytes = 0, max_block_size = 65536;
 INSERT INTO t_real SELECT 0 + number, if(number >= 30000, 0, 1 + number % 50) FROM numbers(30210) SETTINGS max_insert_block_size = 30210, min_insert_block_size_rows = 30210, min_insert_block_size_bytes = 0, max_block_size = 65536;
 INSERT INTO t_est SELECT 1000000 + number, if(number >= 30000, 0, 1 + number % 50) FROM numbers(30247) SETTINGS max_insert_block_size = 30247, min_insert_block_size_rows = 30247, min_insert_block_size_bytes = 0, max_block_size = 65536;
