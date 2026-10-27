@@ -4,6 +4,7 @@
 DROP TABLE IF EXISTS t_gdeflate;
 DROP TABLE IF EXISTS t_gdeflate_plain;
 DROP TABLE IF EXISTS t_gdeflate_levels;
+DROP TABLE IF EXISTS t_gdeflate_page;
 
 -- `GDeflate` is experimental: without the setting it is rejected.
 SET enable_gdeflate_codec = 0;
@@ -91,6 +92,19 @@ FROM numbers(100000);
 SELECT 'levels', count(), sum(l1), sum(l1) = sum(l6) AND sum(l6) = sum(l9) AND sum(l9) = sum(l12), sum(cityHash64(s1)) = sum(cityHash64(s12))
 FROM t_gdeflate_levels;
 
+-- A page that compresses to exactly the end of libdeflate's own bound.
+CREATE TABLE t_gdeflate_page (k UInt32, c UInt8 CODEC(GDeflate))
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 65536, max_compress_block_size = 65536,
+    min_columns_to_activate_adaptive_write_buffer = 1000, ratio_of_defaults_for_sparse_serialization = 1;
+
+INSERT INTO t_gdeflate_page SELECT number, toUInt8(if(number < 117, number % 7, cityHash64(number) % 256)) FROM numbers(65536)
+SETTINGS max_block_size = 65536;
+SELECT 'page', count(), sum(cityHash64(k, c)) = (
+    SELECT sum(cityHash64(toUInt32(number), toUInt8(if(number < 117, number % 7, cityHash64(number) % 256)))) FROM numbers(65536))
+FROM t_gdeflate_page;
+
 DROP TABLE t_gdeflate;
 DROP TABLE t_gdeflate_plain;
 DROP TABLE t_gdeflate_levels;
+DROP TABLE t_gdeflate_page;

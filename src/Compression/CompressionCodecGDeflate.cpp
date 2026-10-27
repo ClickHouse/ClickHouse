@@ -30,6 +30,10 @@ namespace
 constexpr size_t chunk_bytes = CompressionCodecGDeflate::chunk_bytes;
 constexpr size_t chunk_alignment = 4;
 
+/// GDeflate interleaves a page's bits over this many streams of 32-bit packets.
+constexpr size_t gdeflate_streams = 32;
+constexpr size_t gdeflate_packet_bytes = sizeof(UInt32);
+
 size_t alignUp(size_t bytes)
 {
     return (bytes + chunk_alignment - 1) / chunk_alignment * chunk_alignment;
@@ -40,10 +44,11 @@ size_t numChunks(size_t uncompressed_bytes)
     return (uncompressed_bytes + chunk_bytes - 1) / chunk_bytes;
 }
 
-/// The most a GDeflate page of `chunk_bytes` compresses to.
+/// The most a GDeflate page of `chunk_bytes` compresses to. The library's bound omits the two packets each stream can reserve
+/// beyond its bits.
 size_t maxPageBytes()
 {
-    return libdeflate_gdeflate_compress_bound(nullptr, chunk_bytes, nullptr);
+    return libdeflate_gdeflate_compress_bound(nullptr, chunk_bytes, nullptr) + 2 * gdeflate_streams * gdeflate_packet_bytes;
 }
 
 struct CompressorDeleter
@@ -71,10 +76,12 @@ public:
     /// Compresses `size` bytes of `source` into `out`, of `maxCompressedBytes`.
     void compress(libdeflate_gdeflate_compressor * compressor, const char * source, size_t size, char * out)
     {
-        libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxPageBytes()};
-        if (libdeflate_gdeflate_compress(compressor, source, size, &page, 1) == 0)
+        const libdeflate_gdeflate_in_page in_page{.data = source, .nbytes = size};
+        /// `libdeflate_gdeflate_compress` caps a page at the library's own bound; `_ex` writes up to `nbytes`.
+        libdeflate_gdeflate_out_page out_page{.data = out, .nbytes = maxPageBytes()};
+        if (libdeflate_gdeflate_compress_ex(compressor, &in_page, &out_page, 1) != 1)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", size);
-        compressed_size = static_cast<UInt32>(page.nbytes);
+        compressed_size = static_cast<UInt32>(out_page.nbytes);
         memset(out + compressed_size, 0, compressedBytes() - compressed_size);
     }
 
