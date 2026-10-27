@@ -561,9 +561,6 @@ public:
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
     RangesInDataParts getPartsForPrewhere() const;
-    /// Whether the readers of some of the parts may write their columns to the columns cache, so that they
-    /// do not apply string value filters during the scan, see `isColumnsCachePossibleForPart`.
-    bool mayWriteToColumnsCache(const RangesInDataParts & parts) const;
     IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;

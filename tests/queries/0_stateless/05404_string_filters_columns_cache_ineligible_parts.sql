@@ -1,7 +1,8 @@
 -- The readers do not apply string value filters during the scan to the parts whose columns they may write
--- to the columns cache, and the optimizer does not move the conditions to PREWHERE for that. Only a part
--- of a table with a UUID can be written to the cache: a table in an `Ordinary` database keeps the filters
--- with the columns cache enabled. Both compact and wide parts are written to the cache.
+-- to the columns cache. The optimizer still moves the conditions to PREWHERE: the decision does not depend
+-- on the columns cache. Only a part of a table with a UUID can be written to the cache: a table in an
+-- `Ordinary` database keeps the filters with the columns cache enabled. Both compact and wide parts are
+-- written to the cache.
 
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, optimize_prewhere_after_pushdown = 1;
 SET apply_string_filters_during_scan = 1;

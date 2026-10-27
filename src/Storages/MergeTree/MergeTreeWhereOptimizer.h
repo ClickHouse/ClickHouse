@@ -58,7 +58,6 @@ public:
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
-        bool may_write_to_columns_cache,
         const NameSet & columns_read_before_filter = {});
 
 private:

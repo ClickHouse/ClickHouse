@@ -118,6 +118,8 @@ IMergeTreeReader::IMergeTreeReader(
 
     /// The columns read from the part may be written to the columns cache and then served to other
     /// queries, which must not see the substituted empty strings. Read the values in full then.
+    /// The readers of wide and compact parts write to the cache, but only for the parts the cache can hold
+    /// (see `initColumnsCache` and `IMergeTreeDataPart::mayStoreColumnsInColumnsCache`).
     /// Not when the write budget has already disabled the writes for the rest of the query: the flag
     /// is never reset, so such a reader never writes.
     const bool columns_cache_writes_disabled = settings.columns_cache_writes_disabled

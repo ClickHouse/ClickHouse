@@ -175,7 +175,6 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     const std::string & filter_column_name,
     const ContextPtr & context,
     bool is_final,
-    bool may_write_to_columns_cache,
     const NameSet & columns_read_before_filter)
 {
     const auto & settings = context->getSettingsRef();
@@ -188,9 +187,11 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
-    /// The reader does not apply string value filters when it may write the columns to the columns cache.
-    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
-        && !may_write_to_columns_cache;
+    /// The decision does not depend on the columns cache: whether a column is served from the cache, written to it
+    /// or read as usual is known only to the reader. The reader does not apply the string filter to a column it writes
+    /// to the cache (the cache must not keep the substituted values), but the condition is still worth moving to PREWHERE:
+    /// a column served from the cache is filtered by the reader then, and the next read is likely to be served from it.
+    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan];
     /// Resolve the columns to their storage columns: the reader disables the scan filter for a storage column
     /// when anything reads it before the filter, including its subcolumns (e.g. `payload.size0` for `payload`).
     NameSet storage_columns_read_before_filter;
