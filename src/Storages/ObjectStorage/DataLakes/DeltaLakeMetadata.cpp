@@ -318,6 +318,14 @@ struct DeltaLakeMetadataImpl
                 if (!metadata_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `metaData` field");
 
+                if (metadata_object->has("configuration"))
+                {
+                    const auto configuration_object = metadata_object->getObject("configuration");
+                    if (configuration_object && configuration_object->has(column_mapping_mode_key)
+                        && !configuration_object->isNull(column_mapping_mode_key))
+                        markColumnMappingMode(configuration_object->getValue<String>(column_mapping_mode_key));
+                }
+
                 const auto schema_object = metadata_object->getValue<String>("schemaString");
 
                 Poco::JSON::Parser p;
@@ -636,6 +644,7 @@ struct DeltaLakeMetadataImpl
 
         /// A checkpoint written before this column existed simply carries no partition names.
         const auto * partition_columns_column = res_block.findByName("metaData.partitionColumns");
+        const auto * configuration_column = res_block.findByName("metaData.configuration");
 
         const auto * deletion_vector_column = res_block.findByName("add.deletionVector");
         std::optional<size_t> deletion_vector_storage_type_position;
@@ -659,6 +668,21 @@ struct DeltaLakeMetadataImpl
                 Poco::JSON::Parser parser;
                 Poco::Dynamic::Var json = parser.parse(metadata);
                 const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+                if (configuration_column)
+                {
+                    Field configuration;
+                    configuration_column->column->get(i, configuration);
+                    if (!configuration.isNull())
+                    {
+                        for (const auto & entry : configuration.safeGet<Map>())
+                        {
+                            const auto & key_value = entry.safeGet<Tuple>();
+                            if (key_value.at(0).safeGet<String>() == column_mapping_mode_key && !key_value.at(1).isNull())
+                                markColumnMappingMode(key_value.at(1).safeGet<String>());
+                        }
+                    }
+                }
 
                 auto current_schema = parseMetadata(object);
                 if (partition_columns_column)
@@ -756,6 +780,14 @@ struct DeltaLakeMetadataImpl
         }
 
         return version;
+    }
+
+    static constexpr auto column_mapping_mode_key = "delta.columnMapping.mode";
+
+    void markColumnMappingMode(const String & mode) const
+    {
+        if (mode != "none")
+            has_column_mapping = true;
     }
 
     LoggerPtr log = getLogger("DeltaLakeMetadataParser");
