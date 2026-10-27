@@ -25,6 +25,7 @@
 #include <Functions/geometryConverters.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadStatus.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
@@ -192,6 +193,8 @@ void MySQLWithFailoverSource::onCancel() noexcept
 
         try
         {
+            /// May run on a thread of the cancelled query, which would otherwise refuse to acquire a connection.
+            ThreadStatus::QueryCancellationBlocker cancellation_blocker;
             auto cancel_connection = std::make_unique<Connection>(pool->get(), kill_query);
             cancel_connection->query.execute();
             LOG_DEBUG(log, "Successfully cancelled MySQL query with connection ID {}", connection_id);

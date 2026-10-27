@@ -146,6 +146,59 @@ def test_kill_infinite_query(setup_infinite_query):
     assert node1.contains_in_log("QUERY_WAS_CANCELLED")
 
 
+def test_replace_query_waiting_on_mysql(setup_infinite_query):
+    mysql_conn, cluster = setup_infinite_query
+    query_id = str(uuid.uuid4())
+    errors = []
+
+    def remote_sleeps():
+        with mysql_conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT ID FROM information_schema.PROCESSLIST WHERE INFO = 'DO SLEEP(31536000)'"
+            )
+            return [row[0] for row in cursor.fetchall()]
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            f"""SELECT * FROM mysql(
+            '{cluster.mysql8_ip}:{cluster.mysql8_port}',
+            'test_db',
+            'infinite_counter',
+            'root',
+            '{mysql_pass}')""",
+            query_id=query_id,
+        )
+        errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query, daemon=True)
+    query_thread.start()
+
+    try:
+        for _ in range(100):
+            if remote_sleeps():
+                break
+            time.sleep(0.1)
+        assert len(remote_sleeps()) == 1
+
+        # The replacement only flags the old query, which then cancels its pipeline on its own thread.
+        assert (
+            node1.query(
+                "SELECT 'replaced'",
+                query_id=query_id,
+                settings={"replace_running_query": 1},
+            )
+            == "replaced\n"
+        )
+        query_thread.join(timeout=60)
+        assert not query_thread.is_alive()
+        assert "DB::Exception: Query was cancelled" in errors[0]
+        assert remote_sleeps() == []
+    finally:
+        with mysql_conn.cursor() as cursor:
+            for remote_id in remote_sleeps():
+                cursor.execute(f"KILL QUERY {remote_id}")
+
+
 def test_kill_query_during_generation(setup_big_data_table):
     mysql_conn, cluster = setup_big_data_table
     query_id = str(uuid.uuid4())
