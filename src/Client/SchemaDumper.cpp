@@ -711,6 +711,18 @@ bool isRemoteFunctionName(const String & name)
     return equalsCaseInsensitive(name, "remote") || equalsCaseInsensitive(name, "remoteSecure");
 }
 
+/// The positional arguments of a `remote*` or `cluster*` call. The stored call keeps a `SETTINGS` clause as an argument,
+/// which `parseRemoteFunctionArguments` takes out before it reads the others by position.
+ASTs remotePositionalArguments(const ASTFunction & function)
+{
+    ASTs arguments;
+    if (function.arguments)
+        for (const auto & argument : function.arguments->children)
+            if (!argument->as<ASTSetQuery>())
+                arguments.push_back(argument);
+    return arguments;
+}
+
 /// Whether a distributed read reaches this server. `Unknown` is an address the server's metadata does not show
 /// to be its own: it is read as remote, and a target in the dump only warns. Ordered so `std::max` combines replicas.
 enum class Locality
@@ -914,7 +926,7 @@ RemoteCollectionTarget resolveRemoteNamedCollection(
 /// `parseRemoteFunctionArguments` builds its ad-hoc cluster from the first argument.
 Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocality & clusters, bool constant_keys)
 {
-    const auto & first = function.arguments->children.at(0);
+    const ASTPtr first = remotePositionalArguments(function).at(0);
     bool secure = equalsCaseInsensitive(function.name, "remoteSecure");
     String name;
     if (tryGetIdentifierNameInto(first, name))
@@ -935,10 +947,11 @@ Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocal
 /// Whether a `cluster*`/`remote*` call reads its table argument on this instance.
 Locality distributedFunctionLocality(const ASTFunction & function, const ClusterLocality & clusters, bool constant_keys)
 {
-    if (!function.arguments || function.arguments->children.empty())
+    const size_t positional_arguments = remotePositionalArguments(function).size();
+    if (positional_arguments == 0)
         return Locality::Remote;
     if (isClusterTableFunctionName(function.name))
-        return function.arguments->children.size() >= 2 && clusters.names().local.contains(resolveClusterOfFunction(function, clusters))
+        return positional_arguments >= 2 && clusters.names().local.contains(resolveClusterOfFunction(function, clusters))
             ? Locality::Local
             : Locality::Remote;
     /// A `remote*` call needs no second argument: a named collection can carry the table itself.
@@ -955,7 +968,7 @@ const IAST * remoteFunctionArgumentsToSkip(const IAST & node, const ClusterLocal
     {
         /// Nothing a non-local call names is read on this instance, so the whole argument list goes:
         /// callers compare against direct children, and an argument node is not one.
-        if (function->arguments->children.size() >= 2
+        if (remotePositionalArguments(*function).size() >= 2
             && distributedFunctionLocality(*function, clusters, constant_keys) != Locality::Local)
             return function->arguments.get();
     }
@@ -1479,7 +1492,7 @@ void collectFunctionArgumentReferences(
             /// fallback here, a database-less first argument names the database for argument 2.
             auto read_target = [&](std::vector<TableReference> & targets)
             {
-                const auto & args = function->arguments->children;
+                const ASTs args = remotePositionalArguments(*function);
                 /// A named-collection call carries no positional database/table arguments: the edge
                 /// comes from the collection's own keys, with the call's overrides applied.
                 if (isRemoteFunctionName(function->name))

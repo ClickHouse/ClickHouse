@@ -8,3 +8,11 @@ replay rc=0
 1
 local with the macro: dump rc=0, after the source: yes
 local without the macro: dump rc=48, refused as unexpandable: 1
+SETTINGS: dump rc=0
+aaa_remote_settings after the source: yes
+aab_cluster_settings after the source: yes
+SETTINGS: replay rc=0
+1
+1
+1
+1

@@ -3,7 +3,8 @@
 # --dump-schema reads a `remote` cluster argument written as a server macro the way the server does: the macro is
 # expanded before the cluster is looked up, so `{default_cluster_macro}` from the test configuration names the local
 # cluster `test_shard_localhost`, and a reader through it is a local dependency. A macro the server cannot expand fails
-# the server's own lookup, so the dump refuses it.
+# the server's own lookup, so the dump refuses it. A `SETTINGS` clause of a call is not one of its positional arguments:
+# without a table argument the call reads `system.one`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -85,3 +86,33 @@ $CLICKHOUSE_LOCAL --config-file "$work/with_macro.xml" --path "$work/local" --du
 echo "local with the macro: dump rc=$?, after the source: $(dumped_before "$work/local.sql" d.zzz_src d.aaa_view)"
 $CLICKHOUSE_LOCAL --config-file "$work/without_macro.xml" --path "$work/local" --dump-schema d > /dev/null 2> "$work/local.err"
 echo "local without the macro: dump rc=$?, refused as unexpandable: $(grep -c 'Cannot expand cluster name' "$work/local.err")"
+
+# The `SETTINGS` clause stays in the stored calls. The readers through a table argument sort before their source as above.
+$CLICKHOUSE_CLIENT -mq "
+DROP DATABASE IF EXISTS ${DB};
+CREATE DATABASE ${DB} ENGINE = Atomic;
+CREATE TABLE ${DB}.zzz_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_remote_settings
+    AS SELECT * FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', ${DB}.zzz_src, SETTINGS skip_unavailable_shards = 1);
+CREATE VIEW ${DB}.aab_cluster_settings
+    AS SELECT * FROM cluster(\`{default_cluster_macro}\`, '${DB}', 'zzz_src', SETTINGS skip_unavailable_shards = 1);
+CREATE VIEW ${DB}.default_remote
+    AS SELECT dummy FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', SETTINGS skip_unavailable_shards = 1);
+CREATE VIEW ${DB}.default_cluster AS SELECT dummy FROM cluster(\`{default_cluster_macro}\`, SETTINGS skip_unavailable_shards = 1);
+"
+$CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$work/settings.sql" 2> "$work/settings.err"
+echo "SETTINGS: dump rc=$?"
+grep -o 'Code: [0-9]*' "$work/settings.err" | head -1
+for reader in aaa_remote_settings aab_cluster_settings; do
+    echo "${reader} after the source: $(dumped_before "$work/settings.sql" "${DB}.zzz_src" "${DB}.${reader}")"
+done
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${DB}"
+$CLICKHOUSE_CLIENT --queries-file "$work/settings.sql" 2>&1 | grep -o 'Code: [0-9]*' | head -1
+echo "SETTINGS: replay rc=${PIPESTATUS[0]}"
+$CLICKHOUSE_CLIENT -mq "
+INSERT INTO ${DB}.zzz_src VALUES (1);
+SELECT count() FROM ${DB}.aaa_remote_settings;
+SELECT count() FROM ${DB}.aab_cluster_settings;
+SELECT count() FROM ${DB}.default_remote;
+SELECT count() FROM ${DB}.default_cluster;
+"
