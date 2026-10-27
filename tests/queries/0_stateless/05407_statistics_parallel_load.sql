@@ -16,6 +16,7 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1;
+SET min_marks_per_part_to_use_statistics = 0;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, allow_reorder_prewhere_conditions = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0, aggregate_functions_null_for_empty = 0;
