@@ -17,6 +17,7 @@ SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
 MINIZIP = '@clickhouse_minizip_ng//:_minizip'
 S2 = '@clickhouse_s2geometry//:_s2'
 UPB_WIRE = '@clickhouse_grpc//:upb_wire_lib'
+PRIVATE_VENDOR_DEPS = ['@clickhouse_libcotp//:_libcotp', '@clickhouse_libgsasl//:_gsasl', '@clickhouse_zxc//:_zxc']
 ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
 UNIT_TEST_FUNCTION_DEPS = [
@@ -85,9 +86,9 @@ DEPENDENCIES = {
         '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
     ], [], []),
     ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
-    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP, S2, UPB_WIRE], [], []),
-    ('src/Dictionaries', 'clickhouse_dictionaries'): ([MINIZIP, S2], [], []),
-    ('src/Storages/System', 'clickhouse_storages_system'): ([MINIZIP, S2, UPB_WIRE], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([*PRIVATE_VENDOR_DEPS, MINIZIP, S2, UPB_WIRE], [], []),
+    ('src/Dictionaries', 'clickhouse_dictionaries'): ([*PRIVATE_VENDOR_DEPS, MINIZIP, S2], [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([*PRIVATE_VENDOR_DEPS, MINIZIP, S2, UPB_WIRE], [], []),
     ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
     ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
@@ -115,7 +116,7 @@ DEPENDENCIES = {
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
     ], ['//src:headers'], []),
     ('src/Functions/URL', 'clickhouse_functions_url'): ([
-        MINIZIP, S2,
+        *PRIVATE_VENDOR_DEPS, MINIZIP, S2,
         '@clickhouse_mongo_c_driver//:_libbson',
         '@clickhouse_arrow//:_orc',
     ], [], []),
@@ -187,7 +188,7 @@ DEPENDENCIES = {
         [], ['//base:common', '//src:headers', '//src/Common', TZDATA, ':headers'], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
     ('src', 'unit_tests_dbms'): (
-        [MINIZIP, S2, '@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
+        [*PRIVATE_VENDOR_DEPS, MINIZIP, S2, '@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid',
          *LLVM_RUNTIME_HEADERS, '@llvm-project//third-party/siphash'], [], [TZDATA]),
 }
 
@@ -389,6 +390,38 @@ def private_poco_expat_headers(root):
     path.write_text(source.rewrite(edits))
 
 
+def private_function_vendor_deps(root):
+    """Preserve the static link order without exporting libcotp, libgsasl, and zxc headers."""
+    for package, name in (('src/Functions', 'clickhouse_functions_obj'),
+                          ('src/Functions/array', 'clickhouse_functions_array')):
+        path = root / package / 'BUILD.bazel'
+        if not path.exists():
+            continue
+        build = Build(root, path, (), ())
+        rule, = (rule for _, rule in build.source.rules() if attributes(rule)['name'].value == name)
+        attrs = attributes(rule)
+        if 'implementation_deps' in attrs:
+            if all(build.values(attrs['implementation_deps'], cpu)[0] == PRIVATE_VENDOR_DEPS[0] for cpu in CPUS):
+                continue
+            raise ValueError(f'{name}: unexpected implementation_deps')
+        public, private = {}, {}
+        for cpu in CPUS:
+            deps = build.values(attrs['deps'], cpu)
+            cut = deps.index(PRIVATE_VENDOR_DEPS[0])
+            public[cpu], private[cpu] = deps[:cut], deps[cut:]
+            if not set(PRIVATE_VENDOR_DEPS) <= set(private[cpu]):
+                raise ValueError(f'{name}: vendor dependency order changed')
+        def configured(values):
+            if len({tuple(row) for row in values.values()}) == 1:
+                return json.dumps(next(iter(values.values())))
+            return 'select(' + json.dumps({'@platforms//cpu:' + cpu: row for cpu, row in values.items()}) + ')'
+        start, end = build.source.span(attrs['deps'])
+        path.write_text(build.source.rewrite([
+            (start, end, configured(public) + ',\n    implementation_deps = ' + configured(private)),
+        ]))
+
+
+
 def apply(root):
     """Set the declared visibility of each dependency without changing select conditions."""
     private_poco_expat_headers(root)
@@ -459,10 +492,13 @@ def apply(root):
                                   json.dumps(MINIZIP) + '], visibility = ["//src/Functions/array:__pkg__"])\n\n'))
                 # capnp, icui18n and upb_textformat_lib already forward these libraries.
                 unused = {UPB_WIRE, '@clickhouse_capnproto//:_kj', '@clickhouse_icu//:_icuuc'}
-                direct = editable_dependency_lists(build, attrs['deps'], unused, canonical, replacements)
-                if direct is None:
-                    raise ValueError(f'{name}: cannot preserve the Minizip and S2 dependency order')
-                edits.extend(direct)
+                for field in ('deps', 'implementation_deps'):
+                    if field not in attrs:
+                        continue
+                    direct = editable_dependency_lists(build, attrs[field], unused, canonical, replacements)
+                    if direct is None:
+                        raise ValueError(f'{name}: cannot preserve the Minizip and S2 dependency order')
+                    edits.extend(direct)
             spec = DEPENDENCIES.get((package, name))
             if spec is None:
                 continue
@@ -632,3 +668,4 @@ def apply(root):
 
     usearch_implementation_dep(root)
     declare_s2_link(root)
+    private_function_vendor_deps(root)
