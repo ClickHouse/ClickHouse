@@ -189,6 +189,18 @@ void collectCustomDiskNames(const ASTCreateQuery & create_query, NameSet & defin
     collectCustomDiskNames(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, defined, referenced);
 }
 
+/// Whether the storage settings of the table define a disk inline with `disk = disk(...)`.
+bool hasInlineDiskDefinition(const ASTCreateQuery & create_query)
+{
+    if (!create_query.storage || !create_query.storage->settings)
+        return false;
+
+    const Field * disk_setting = create_query.storage->settings->changes.tryGet("disk");
+    CustomType custom;
+    return disk_setting && disk_setting->tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST")
+        && isDiskFunction(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast);
+}
+
 }
 
 DatabaseOrdinary::DatabaseOrdinary(
@@ -419,7 +431,14 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto & create_query = ast->as<ASTCreateQuery &>();
 
-    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
+    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree"))
+        return;
+
+    /// A table that is already replicated is not converted, but the disk it defines inline with `disk(...)` is
+    /// still created here, as for any other table: another table may refer to that disk by name, and is
+    /// processed after this one (see `loadTablesMetadata`).
+    const bool can_be_converted = !create_query.storage->engine->name.starts_with("Replicated") && !create_query.storage->engine->name.starts_with("Shared");
+    if (!can_be_converted && !hasInlineDiskDefinition(create_query))
         return;
 
     /// Get table's storage policy
@@ -436,7 +455,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         std::lock_guard lock(mutex);
         custom_disk_registrations_of_metadata_scan.push_back(std::move(custom_disk_registration));
     }
-    if (!policy)
+    if (!policy || !can_be_converted)
         return;
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
