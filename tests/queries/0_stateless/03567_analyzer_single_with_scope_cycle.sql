@@ -14,4 +14,5 @@ SELECT 1 FROM (
             SELECT 1 FROM tab WHERE e = 'true'
         )
     )
-); -- { serverError UNKNOWN_IDENTIFIER }
+)
+SETTINGS allow_experimental_analyzer = 1; -- { serverError UNKNOWN_IDENTIFIER }

@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_NUMBER;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_UUID;
@@ -209,16 +208,6 @@ void assertNotEOF(ReadBuffer & buf)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
 }
 
-void throwNumberWithoutDigits()
-{
-    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
-}
-
-void throwIntegerTextOverflow()
-{
-    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Integer is out of range of the destination type");
-}
-
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
@@ -350,12 +339,6 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
-template <typename Vector>
-void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
-}
-
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -370,12 +353,6 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
-}
-
-void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -1311,10 +1288,6 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         return error("Cannot parse JSON string: expected opening quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
-    /// `s` is an append target already holding previous values (for a column, all previous rows of the block),
-    /// so the size of the current value is the growth of `s`.
-    const size_t initial_size = s.size();
-
     while (!buf.eof())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
@@ -1322,12 +1295,8 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1372,9 +1341,6 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != opening_bracket)
         return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
 
-    /// See the comment about `initial_size` in readJSONStringInto.
-    const size_t initial_size = s.size();
-
     s.push_back(*buf.position());
     ++buf.position();
 
@@ -1387,12 +1353,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1543,14 +1505,10 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// This one lambda reports every way the parse below can fail - a non-digit where a digit belongs, a
-    /// delimiter that is not allowed, or the value ending early - so it must not claim a particular one.
-    /// `toDate('yesterday')` used to be reported as "value is too short".
     auto error = []
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATE,
-                "Cannot parse date: expected a date in the YYYY-MM-DD or YYYYMMDD format");
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date: value is too short");
         return ReturnType(false);
     };
 
@@ -2308,12 +2266,13 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// Nothing to append, and `in.position()` may be null.
-    if (additional_bytes == 0)
+    /// There are no new bytes to add to memory.
+    /// No need to do extra stuff.
+    if (new_bytes == 0)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resizeAmortized(new_bytes);
+    memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }

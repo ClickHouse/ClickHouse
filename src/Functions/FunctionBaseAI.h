@@ -4,11 +4,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIRequestExecutor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
 
+#include <exception>
 #include <functional>
 #include <map>
 #include <optional>
@@ -59,7 +59,6 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool isExpensive() const override { return true; }
     /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
@@ -129,9 +128,14 @@ public:
     /// Parameters common to every AI function. Function-specific params are appended by `functionParams`.
     static AIParamSpecs commonParams();
 
-    /// Read the `ai_function_*` settings that govern how one provider request runs. The same policy
-    /// applies to every request the query issues.
-    static AIRequestPolicy makeRequestPolicy(const ContextPtr & context);
+    /// Exponential backoff delay capped at one minute, so adversarial values of
+    /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
+    /// sleep or overflow `std::chrono::milliseconds`.
+    static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
+
+    /// Whether a failed provider request should be retried: transient network failures and
+    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
+    static bool isRetriableProviderError(std::exception_ptr exception);
 
     /// Parameters accepted by the embedding functions (`aiEmbed`, `aiSimilarity`) in their optional trailing
     /// `Map(String, String)` argument. Unlike the text functions, they take no `max_tokens`, and `model` is a
@@ -141,31 +145,30 @@ public:
 
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
-    /// `ai_function_throw_on_error` disabled).
+    /// `ai_function_throw_on_error` disabled). The counters feed the AI ProfileEvents.
     struct EmbeddingResult
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
+        UInt64 api_calls = 0;
+        UInt64 input_tokens = 0;
         UInt64 texts_embedded = 0;
         UInt64 texts_skipped = 0;
     };
 
-    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching
-    /// and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call, and
-    /// up to `max_concurrent_requests` of those calls are in flight at once.
-    /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
-    static void embedTexts(
-        const std::shared_ptr<IAIProvider> & provider,
+    /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
+    /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
+    static EmbeddingResult embedTexts(
+        IAIProvider & provider,
         const String & model,
         UInt64 dimensions,
         const String & function_name,
-        const String & query_id,
-        const String & initial_query_id,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
-        size_t max_concurrent_requests,
-        const AIRequestPolicy & policy,
-        const AIQuotaTrackerPtr & quota,
-        EmbeddingResult & result);
+        UInt64 max_retries,
+        UInt64 retry_delay_ms,
+        bool throw_on_error,
+        AIQuotaTracker & quota,
+        const ConnectionTimeouts & timeouts);
 
 protected:
     ContextPtr context;

@@ -14,13 +14,9 @@ private:
     /// Used in Sparse columns where the null map is implicitly derived from sparse offsets.
     bool use_default_null_map;
 
-    /// Cached `nested->supportsPooling`, see `SerializationArray`.
-    bool nested_supports_pooling;
-
     explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false)
         : nested(nested_)
         , use_default_null_map(use_default_null_map_)
-        , nested_supports_pooling(nested->supportsPooling())
     {
     }
 
@@ -28,10 +24,7 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
     static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false);
 
-    /// Whether a resolved subcolumn is really the null map, which its name alone cannot tell.
-    static bool isNullMapSubcolumn(const SubstreamPath & path);
-
-    bool supportsPooling() const override { return nested_supports_pooling; }
+    bool supportsPooling() const override { return nested->supportsPooling(); }
 
     const SerializationPtr & getNested() const { return nested; }
 

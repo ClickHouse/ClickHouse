@@ -28,7 +28,6 @@ All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
-- **Concurrent requests**: Requests are issued from a server-wide thread pool, several at a time (controlled by [`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuration {#configuration}
 
@@ -115,24 +114,6 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 All AI-related settings are listed in [Settings](/reference/settings/session-settings) under the `ai_function_` prefix.
 
-### Server configuration {#server-configuration}
-
-The server setting `ai_function_allow_sql_named_collections` (default `true`) controls which named collections AI functions accept. When set to `false`, AI functions accept only named collections defined in the server configuration file, and using a collection created with `CREATE NAMED COLLECTION` throws an exception. This applies both to the `credentials` parameter and to the default-credentials settings. Changing the setting requires a server restart.
-
-```xml
-<clickhouse>
-    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
-    <named_collections>
-        <ai_text_credentials>
-            <provider>openai</provider>
-            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
-            <model>gpt-4o-mini</model>
-            <api_key>sk-...</api_key>
-        </ai_text_credentials>
-    </named_collections>
-</clickhouse>
-```
-
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
 The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) in the server config, e.g.:
@@ -156,35 +137,6 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-HTTPS endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
-
-### Throughput {#throughput}
-
-The AI functions differ from most traditional ClickHouse functions in that their throughput is almost entirely bound by the remote endpoint they send requests to rather than local CPU or I/O. Because of this they benefit significantly from increased concurrency above the standard `max_threads` used throughout ClickHouse. For this reason the requests are issued from a dedicated server-wide thread pool. Its size (`ai_function_max_thread_pool_size`, a server setting) caps how many AI provider requests the whole server has in flight at once, across every query.
-
-[`ai_function_max_concurrent_requests_per_thread`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) bounds each query thread's share of that pool, so a query running on several threads (at most `max_threads`) can have up to that many requests in flight per thread. To stop queries from raising it, put a ceiling on the setting with a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings). The ceiling is still per thread, so a query can have up to the ceiling times its number of threads in flight. For example:
-
-```xml
-<profiles>
-    <default>
-        <constraints>
-            <ai_function_max_concurrent_requests_per_thread>
-                <max>16</max>
-            </ai_function_max_concurrent_requests_per_thread>
-        </constraints>
-    </default>
-</profiles>
-```
-
-The default is `8`. A value above `1` loosens two guarantees:
-
-- A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
-- A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.
-
-[`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
-
-<Note>
-For a materialized view, the settings must go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
-</Note>
 
 ## Supported providers {#supported-providers}
 
@@ -235,10 +187,6 @@ Credentials (a named collection specifying the provider, model, endpoint, and op
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
 
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
-
 **Syntax**
 
 ```sql
@@ -272,8 +220,6 @@ positive
 **Classify a column with explicit credentials**
 
 ```sql title=Query
-CREATE TABLE issues (body String) ENGINE = Memory;
-INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -336,8 +282,6 @@ SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_e
 **Embed a column of texts**
 
 ```sql title=Query
-CREATE TABLE articles (title String) ENGINE = Memory;
-INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -356,10 +300,6 @@ In schema mode, the function returns a JSON object string whose keys match the r
 Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
 
 **Syntax**
 
@@ -394,8 +334,6 @@ late and damaged package
 **Schema extraction**
 
 ```sql title=Query
-CREATE TABLE reviews (review String) ENGINE = Memory;
-INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -405,11 +343,8 @@ Introduced in: v26.8.0
 
 Evaluates a natural-language condition against the given text using an LLM provider and returns a boolean (`UInt8`) suitable for `WHERE`, `PREWHERE`, and `JOIN ... ON`.
 
-The function asks the model to respond with only lowercase `true` or `false`. Any complete response other
-than `true` (including `false` and unrecognised text) maps to `0`, so the row is filtered out. A
-provider-signalled incomplete reply — truncated, content-filtered, or requiring further action — is instead
-treated as an error: with `ai_function_throw_on_error` enabled (the default) the query is aborted; with it
-disabled the row maps to `0` and is filtered out.
+The function asks the model to respond with only lowercase `true` or `false`. Failed requests (when
+`ai_function_throw_on_error` is disabled) and unrecognised responses map to `0`, so the row is filtered out.
 
 **Warning:** Do not trust `aiFilter` results without scrutiny. LLM-based predicates can be incorrect
 or inconsistent; use them only where false positives and false negatives are acceptable.
@@ -419,10 +354,6 @@ are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
 
 Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pair and can be expensive.
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
 
 **Syntax**
 
@@ -447,16 +378,12 @@ aiFilter(text, condition[, params])
 **Filter angry reviews**
 
 ```sql title=Query
-CREATE TABLE reviews (body String) ENGINE = Memory;
-INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
 **Filter a column with explicit credentials**
 
 ```sql title=Query
-CREATE TABLE issues (body String) ENGINE = Memory;
-INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -475,10 +402,6 @@ are taken from the `credentials` key of the optional parameter map, or from the
 The optional parameter map may also set `system_prompt` (an instruction that guides the model's
 behavior, e.g. tone, format, role), `temperature`, `max_tokens`, and `model`. If `system_prompt` is
 not set, the default is: `You are a helpful assistant. Provide a clear and concise response.`
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
 
 **Syntax**
 
@@ -518,8 +441,6 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 **Summarize column values**
 
 ```sql title=Query
-CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
-INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -549,13 +470,8 @@ newline, and carriage return are also normalized to spaces before the request, s
 byte-identical to inputs that contain them.
 
 Because `aiRedact` returns the whole input text with PII replaced, the output is about as long as the input.
-Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit is
-rejected with `AI_PROVIDER_RESPONSE_TRUNCATED` (or yields the column default when `ai_function_throw_on_error`
-is disabled) rather than returning partially redacted text.
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
+Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit
+will be incomplete.
 
 **Syntax**
 
@@ -569,7 +485,7 @@ aiRedact(text, categories[, params])
 
 - `text` — Text to redact. [`String`](/reference/data-types/string)
 - `categories` — Constant list of PII categories to redact (e.g. `['name', 'ssn', 'credit_card']`). An empty array falls back to a default set of common categories (name, email, phone number, address, credit card, IP address). [`Array(String)`](/reference/data-types/array)
-- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens; a reply truncated by a too-low limit is rejected rather than returning partially redacted text), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024` — because `aiRedact` returns the full text, set it above the input length in tokens or the reply may be truncated and incomplete), `replacement` (token that replaces each detected PII span; default `[REDACTED]`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -590,8 +506,6 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Redact the default PII categories with a custom token**
 
 ```sql title=Query
-CREATE TABLE tickets (body String) ENGINE = Memory;
-INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -645,16 +559,12 @@ SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials'
 **Rank reviews by similarity to a query**
 
 ```sql title=Query
-CREATE TABLE product_reviews (review String) ENGINE = Memory;
-INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **Semantic dedup over a self-join**
 
 ```sql title=Query
-CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
-INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -669,10 +579,6 @@ Additional style or dialect instructions may be passed via the `instructions` ke
 Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
-
-<Note>
-This function is non-deterministic: it can return different results for the same arguments.
-</Note>
 
 **Syntax**
 
@@ -707,8 +613,6 @@ Bonjour le monde!
 **Translate to Japanese with style instructions**
 
 ```sql title=Query
-CREATE TABLE articles (body String) ENGINE = Memory;
-INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 {/*AUTOGENERATED_END*/}

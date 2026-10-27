@@ -1,4 +1,4 @@
--- Tags: long, no-fasttest
+-- Tags: long, no-fasttest, no-old-analyzer
 
 -- Regression test: `parallel_full_sorting_merge` must stay compatible with `make_distributed_plan`.
 --
@@ -26,6 +26,7 @@ CREATE TABLE t_pfsmj_dp_right (id UInt64, b UInt64) ENGINE = MergeTree ORDER BY 
 INSERT INTO t_pfsmj_dp_left SELECT number, number % 1000 FROM numbers(20000);
 INSERT INTO t_pfsmj_dp_right SELECT number, number % 1000 FROM numbers(20000);
 
+SET enable_analyzer = 1;
 SET max_threads = 4;
 SET enable_parallel_replicas = 0;
 SET distributed_plan_execute_locally = 1;
@@ -38,7 +39,7 @@ SET enable_join_runtime_filters = 0;
 
 -- Distributed plan with `parallel_full_sorting_merge` must succeed (not throw SUPPORT_IS_DISABLED).
 SELECT count() FROM t_pfsmj_dp_left AS l JOIN t_pfsmj_dp_right AS r ON l.a = r.b
-SETTINGS make_distributed_plan = 1, join_algorithm = 'parallel_full_sorting_merge', distributed_plan_fallback_to_local_execution = 0;
+SETTINGS make_distributed_plan = 1, join_algorithm = 'parallel_full_sorting_merge';
 
 -- Single-node baseline for correctness.
 SELECT count() FROM t_pfsmj_dp_left AS l JOIN t_pfsmj_dp_right AS r ON l.a = r.b

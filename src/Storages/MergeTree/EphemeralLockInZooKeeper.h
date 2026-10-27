@@ -5,7 +5,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <optional>
-#include <set>
 
 
 namespace DB
@@ -102,44 +101,27 @@ EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_paths,
     const std::optional<String> & znode_data);
 
-/// Acquires block number locks in all or specified partitions.
-class EphemeralLocksInPartitions : public boost::noncopyable
+/// Acquires block number locks in all partitions.
+class EphemeralLocksInAllPartitions : public boost::noncopyable
 {
 public:
-    EphemeralLocksInPartitions(
+    EphemeralLocksInAllPartitions(
         const String & block_numbers_path,
         const String & path_prefix,
         const String & temp_path,
         const std::optional<String> & znode_data,
         zkutil::ZooKeeper & zookeeper_);
 
-    /// Acquires block number locks only in the specified partitions (not all).
-    /// If expected_block_numbers_version is provided, a version check on block_numbers_path
-    /// is included in the multi-op. Throws ZBADVERSION if a new partition appeared.
-    /// `host_check_path` is the path of the replica's `host` znode: it is checked when a missing
-    /// `block_numbers/<partition>` znode has to be created, so that a replica that is already
-    /// being dropped cannot create new partition znodes (the same guard the single-partition
-    /// `StorageReplicatedMergeTree::allocateBlockNumber` uses).
-    EphemeralLocksInPartitions(
-        const String & block_numbers_path,
-        const String & path_prefix,
-        const String & temp_path,
-        const std::optional<String> & znode_data,
-        zkutil::ZooKeeper & zookeeper_,
-        const std::set<String> & partition_ids,
-        const String & host_check_path,
-        std::optional<int32_t> expected_block_numbers_version = std::nullopt);
+    EphemeralLocksInAllPartitions() = default;
 
-    EphemeralLocksInPartitions() = default;
-
-    EphemeralLocksInPartitions(EphemeralLocksInPartitions && rhs) noexcept
+    EphemeralLocksInAllPartitions(EphemeralLocksInAllPartitions && rhs) noexcept
         : zookeeper(rhs.zookeeper)
         , locks(std::move(rhs.locks))
     {
         rhs.zookeeper = nullptr;
     }
 
-    EphemeralLocksInPartitions & operator=(EphemeralLocksInPartitions && rhs) noexcept
+    EphemeralLocksInAllPartitions & operator=(EphemeralLocksInAllPartitions && rhs) noexcept
     {
         zookeeper = rhs.zookeeper;
         rhs.zookeeper = nullptr;
@@ -161,7 +143,7 @@ public:
     void assumeUnlocked();
     void getUnlockOps(Coordination::Requests & ops) const;
 
-    ~EphemeralLocksInPartitions();
+    ~EphemeralLocksInAllPartitions();
 
 private:
     zkutil::ZooKeeper * zookeeper = nullptr;
@@ -185,7 +167,7 @@ public:
     PartitionBlockNumbersHolder() = default;
 
     PartitionBlockNumbersHolder(
-        BlockNumbersType block_numbers_, std::optional<EphemeralLocksInPartitions> locked_block_numbers_holder)
+        BlockNumbersType block_numbers_, std::optional<EphemeralLocksInAllPartitions> locked_block_numbers_holder)
         : block_numbers(std::move(block_numbers_))
         , multiple_partitions_holder(std::move(locked_block_numbers_holder))
     {
@@ -212,7 +194,7 @@ public:
 private:
     BlockNumbersType block_numbers;
 
-    std::optional<EphemeralLocksInPartitions> multiple_partitions_holder;
+    std::optional<EphemeralLocksInAllPartitions> multiple_partitions_holder;
     std::optional<EphemeralLockInZooKeeper> single_partition_holder;
 };
 

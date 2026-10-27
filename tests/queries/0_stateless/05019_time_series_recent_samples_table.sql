@@ -20,7 +20,7 @@ SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND nam
 
 SELECT '-- inserted samples are written to the recent samples table as well';
 
-INSERT INTO ts_recent (metric_name, tags, samples) VALUES
+INSERT INTO ts_recent (metric_name, tags, time_series) VALUES
     ('test_metric', map('env', 'prod'), [(now64(3) - INTERVAL 3 MINUTE, 42.), (now64(3) - INTERVAL 2 MINUTE, 43.)]),
     ('test_metric', map('env', 'dev'), [(now64(3) - INTERVAL 2 MINUTE, 100.)]);
 
@@ -57,7 +57,7 @@ ATTACH TABLE ts_recent;
 SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent, 'test_metric', now())));
 
-INSERT INTO ts_recent (metric_name, tags, samples) VALUES
+INSERT INTO ts_recent (metric_name, tags, time_series) VALUES
     ('test_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 44.)]);
 
 SELECT
@@ -84,6 +84,33 @@ RECENT SAMPLES ENGINE = MergeTree PARTITION BY toStartOfDay(timestamp) ORDER BY 
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%' AND engine_full LIKE '%toStartOfDay%';
 
 DROP TABLE ts_recent_declared;
+
+SELECT '-- an external recent samples table is fed by inserts and preferred by reads';
+
+DROP TABLE IF EXISTS ts_recent_ext;
+DROP TABLE IF EXISTS recent_ext;
+CREATE TABLE recent_ext
+(
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(ZSTD(3))
+)
+ENGINE = MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp);
+
+CREATE TABLE ts_recent_ext ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 864000 RECENT SAMPLES recent_ext;
+
+INSERT INTO ts_recent_ext (metric_name, tags, time_series) VALUES
+    ('ext_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
+
+SELECT count() FROM recent_ext;
+
+SELECT plan LIKE '%recent_ext%' AS reads_recent
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent_ext, 'ext_metric', now())));
+
+SELECT value FROM prometheusQuery(ts_recent_ext, 'ext_metric', now());
+
+DROP TABLE ts_recent_ext;
+DROP TABLE recent_ext;
 
 SELECT '-- settings of the recent samples table require a non-zero recent_samples_ttl_seconds';
 

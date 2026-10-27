@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <libdivide-config.h>
 #include <libdivide.h>
@@ -13,10 +12,6 @@
 
 namespace DB
 {
-
-/// The maximum size in bytes of a single bloom filter.
-static constexpr size_t MAX_BLOOM_FILTER_SIZE = 1 << 30;
-
 struct BloomFilterHashPair
 {
     UInt64 hash1;
@@ -40,7 +35,7 @@ class BloomFilter
 
 public:
     using UnderType = UInt64;
-    using Container = VectorWithMemoryTracking<UnderType>;
+    using Container = std::vector<UnderType>;
 
     explicit BloomFilter(const BloomFilterParameters & params);
     /// size -- size of filter in bytes.

@@ -157,9 +157,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         size_t part_idx = 0;
         size_t need_marks = 0;
         MarkRanges cut_ranges;
-        MarkRangesPtr read_request_map;
 
-        if (!cutRangesToRead(part_idx, need_marks, cut_ranges, read_request_map))
+        if (!cutRangesToRead(part_idx, need_marks, cut_ranges))
             return nullptr;
 
         MarkRanges task_ranges;
@@ -202,12 +201,11 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
         /// Count only the marks that reach a reader: the ones dropped by the refiner are not read.
         ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, task_ranges.getNumberOfMarks());
-        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, /*updater=*/ nullptr, read_request_map);
+        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task);
     }
 }
 
-bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(
-    size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read, MarkRangesPtr & read_request_map)
+bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read)
 {
     std::lock_guard lock(mutex);
 
@@ -243,7 +241,6 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
-            LOG_TEST(log, "Response ranges: {}", response->description.describe());
             if (response->description.empty() || response->finish)
                 no_more_tasks_available = true;
         }
@@ -282,10 +279,6 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(
     /// `min_marks_per_task` computed by the initiator after primary key analysis.
     /// Fall back to locally computed value for old initiators.
     need_marks = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
-
-    if (!front_read_request_map && (*part_it)->read_request_map)
-        front_read_request_map = std::make_shared<const MarkRanges>(current_task.ranges);
-    read_request_map = front_read_request_map;
 
     cutFromCurrentTask(need_marks, ranges_to_read);
     return true;
@@ -341,10 +334,7 @@ void MergeTreeReadPoolParallelReplicas::cutFromCurrentTask(size_t need_marks, Ma
     }
 
     if (current_task.ranges.empty())
-    {
         buffered_ranges.pop_front();
-        front_read_request_map = nullptr;
-    }
 }
 
 }

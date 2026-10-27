@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -96,7 +95,7 @@ namespace Setting
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
@@ -188,7 +187,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
-    temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
+    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -249,14 +248,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    const Settings & settings_,
+    size_t max_block_size_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(settings_)
+    , sort_settings(max_block_size_)
 {
 }
 
@@ -280,11 +279,10 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_)
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
 {
     limit_by_columns = std::move(limit_by_columns_);
     limit_by_group_length = limit_by_group_length_;
-    limit_by_always_read_till_end = limit_by_always_read_till_end_;
 }
 
 void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
@@ -292,7 +290,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
     if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
         return;
 
-    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns, *input_headers.front());
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(stream_sort_desc, limit_by_columns);
     if (sort_prefix.size() != limit_by_columns.size())
         return;
 
@@ -301,8 +299,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitBySortedStreamTransform>(
-                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end);
+            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, sort_prefix);
         });
 }
 
@@ -460,10 +457,9 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
 }
 
 void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker, bool sort_totals)
+    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker)
 {
-    bool increase_sort_description_compile_attempts = !sort_totals;
-    const size_t num_streams = sort_totals ? 1 : pipeline.getNumStreams();
+    bool increase_sort_description_compile_attempts = true;
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
     if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
@@ -471,8 +467,7 @@ void SortingStep::mergeSorting(
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
-            .num_files = ProfileEvents::ExternalSortWritePart,
-            .spilled_to_disk_operator = "sort"},
+            .num_files = ProfileEvents::ExternalSortWritePart},
             sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
@@ -482,7 +477,7 @@ void SortingStep::mergeSorting(
         [&, increase_sort_description_compile_attempts](
             const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) mutable -> ProcessorPtr
         {
-            if ((stream_type == QueryPipelineBuilder::StreamType::Totals) != sort_totals)
+            if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return nullptr;
 
             // For multiple FinishSortingTransform we need to count identical comparators only once per QueryPlan.
@@ -499,9 +494,9 @@ void SortingStep::mergeSorting(
                 sort_settings.max_block_bytes,
                 limit_,
                 increase_sort_description_compile_attempts_current,
-                sort_settings.max_bytes_before_remerge / num_streams,
+                sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
-                sort_settings.max_bytes_in_block_before_external_sort / num_streams,
+                sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
                 sort_settings.min_free_disk_space, threshold_tracker);
@@ -514,17 +509,14 @@ void SortingStep::fullSortStreams(
     const SortDescription & result_sort_desc,
     const UInt64 limit_,
     const bool skip_partial_sort,
-    TopKThresholdTrackerPtr threshold_tracker,
-    const bool sort_totals)
+    TopKThresholdTrackerPtr threshold_tracker)
 {
-    const auto sorted_stream_type = sort_totals ? QueryPipelineBuilder::StreamType::Totals : QueryPipelineBuilder::StreamType::Main;
-
     if (!skip_partial_sort || limit_)
     {
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
-                if (stream_type != sorted_stream_type)
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
                 return std::make_shared<PartialSortingTransform>(header, result_sort_desc, limit_, threshold_tracker);
@@ -537,28 +529,14 @@ void SortingStep::fullSortStreams(
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
             {
-                if (stream_type != sorted_stream_type)
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
                 return std::make_shared<LimitsCheckingTransform>(header, limits);
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker, sort_totals);
-}
-
-/// With all-constant keys every row ties, so a merge drains its inputs one after another, and a fan-out
-/// that must push to all of its outputs before it consumes again cannot wait that out.
-static bool allConstantMergeCanStall(const QueryPipelineBuilder & pipeline, const SortDescription & description)
-{
-    if (!sortDescriptionIsAllConstant(description, *pipeline.getSharedHeader()))
-        return false;
-
-    for (const auto & processor : pipeline.getProcessors())
-        if (processor->requiresAllOutputsPushable())
-            return true;
-
-    return false;
+    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_, threshold_tracker);
 }
 
 void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, QueryPipelineProcessorsCollector & collector, const bool skip_partial_sort)
@@ -571,8 +549,7 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
     addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
 
     /// If there are several streams, then we merge them into one
-    const bool merge_needed = pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1);
-    if (merge_needed && !allConstantMergeCanStall(pipeline, result_sort_desc))
+    if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
         sorting_stage = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         auto transform = std::make_shared<MergingSortedTransform>(
@@ -585,26 +562,16 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
-        if (threshold_tracker && limit_)
-            transform->setTopKThresholdTracker(threshold_tracker, result_sort_desc.front().column_name, limit_);
 
         pipeline.addTransform(std::move(transform));
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
 
     }
-    else
+    else if (apply_virtual_row_conversions)
     {
-        if (apply_virtual_row_conversions)
-            pipeline.addSimpleTransform(RemoveVirtualRowTransform::create);
-
+        pipeline.addSimpleTransform(RemoveVirtualRowTransform::create);
         auto tail = collector.detachProcessors(static_cast<size_t>(SortingStage::Sort));
         sorting_stage.insert(sorting_stage.end(), tail.begin(), tail.end());
-
-        if (merge_needed)
-        {
-            pipeline.resize(1);
-            merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));
-        }
     }
 }
 
@@ -781,12 +748,13 @@ void SortingStep::serialize(Serialization & ctx) const
             "Serialization of SortingStep requires query plan serialization version >= {}; "
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
-    serializeSortDescription(result_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(result_description, ctx.out);
 
-    serializeSortDescription(partition_by_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
+    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
+    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
     /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
     /// bit is set), so a plain full sort always writes a plain 0.
     UInt8 flags = 0;
@@ -801,7 +769,7 @@ void SortingStep::serialize(Serialization & ctx) const
     writeIntBinary(flags, ctx.out);
 
     if (type == Type::FinishSorting)
-        serializeSortDescription(prefix_description, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+        serializeSortDescription(prefix_description, ctx.out);
 
     /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
     /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
@@ -829,10 +797,10 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
 
     SortDescription result_description;
-    deserializeSortDescription(result_description, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(result_description, ctx.in);
 
     SortDescription partition_by_description;
-    deserializeSortDescription(partition_by_description, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(partition_by_description, ctx.in);
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -842,7 +810,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortDescription prefix_description;
     if (finish_sorting)
-        deserializeSortDescription(prefix_description, ctx.in, ctx.version, ctx.max_type_complexity);
+        deserializeSortDescription(prefix_description, ctx.in);
 
     /// A stream older than version 7 has no limit field (see serialize).
     UInt64 limit = 0;
@@ -880,7 +848,6 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->threshold_tracker = threshold_tracker;
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
-    cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
     return cloned;
 }
 

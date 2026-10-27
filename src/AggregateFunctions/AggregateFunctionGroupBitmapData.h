@@ -49,9 +49,8 @@ private:
     using UnsignedT = std::make_unsigned_t<T>;
     SmallSet<T, small_set_size> small;
     using ValueBuffer = VectorWithMemoryTracking<T>;
-    static constexpr bool use_roaring64 = sizeof(T) >= 8;
-    using RoaringBitmap = std::conditional_t<use_roaring64, roaring::Roaring64Map, roaring::Roaring>;
-    using Value = std::conditional_t<use_roaring64, UInt64, UInt32>;
+    using RoaringBitmap = std::conditional_t<sizeof(T) >= 8, roaring::Roaring64Map, roaring::Roaring>;
+    using Value = std::conditional_t<sizeof(T) >= 8, UInt64, UInt32>;
     std::shared_ptr<RoaringBitmap> roaring_bitmap;
 
     void toLarge()
@@ -86,31 +85,6 @@ public:
         else
         {
             roaring_bitmap->add(static_cast<Value>(value));
-        }
-    }
-
-    void remove(T value)
-    {
-        if (isSmall())
-        {
-            if (small.find(value) == small.end())
-                return;
-
-            /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
-            /// `small_set_size` values, so this is a bounded amount of work.
-            std::array<T, small_set_size> kept{};
-            size_t kept_size = 0;
-            for (const auto & x : small)
-                if (x.getValue() != value)
-                    kept[kept_size++] = x.getValue();
-
-            small.clear();
-            for (size_t i = 0; i < kept_size; ++i)
-                small.insert(kept[i]);
-        }
-        else
-        {
-            roaring_bitmap->remove(static_cast<Value>(value));
         }
     }
 
@@ -334,17 +308,10 @@ public:
                     ++ret;
             }
         }
-        else if (r1.isSmall())
-        {
-            for (const auto & x : r1.small)
-            {
-                if (roaring_bitmap->contains(static_cast<Value>(x.getValue())))
-                    ++ret;
-            }
-        }
         else
         {
-            ret = roaring_bitmap->and_cardinality(*r1.roaring_bitmap);
+            std::shared_ptr<RoaringBitmap> new_rb = r1.isSmall() ? r1.getNewRoaringBitmapFromSmall() : r1.roaring_bitmap;
+            ret = (*roaring_bitmap & *new_rb).cardinality();
         }
         return ret;
     }
@@ -426,7 +393,7 @@ public:
         }
         else
         {
-            if (roaring_bitmap->intersect(*r1.roaring_bitmap))
+            if ((*roaring_bitmap & *r1.roaring_bitmap).cardinality() > 0)
                 return 1;
         }
 
@@ -501,55 +468,6 @@ public:
             return small.find(static_cast<T>(x)) != small.end();
 
         return roaring_bitmap->contains(static_cast<Value>(static_cast<T>(x)));
-    }
-
-    /**
-     * Context for `rb_contains_bulk`. It caches the container found by the previous lookup in the same bitmap
-     * (or its absence), so consecutive lookups of values that share the high 16 bits skip the container search.
-     * It is bound to one bitmap: a context must not be reused with another bitmap.
-     */
-    struct BulkContext
-    {
-        const roaring::internal::container_t * container = nullptr;
-        /// High 16 bits of the previous lookup, -1 before the first lookup.
-        Int32 key = -1;
-        uint8_t typecode = 0;
-    };
-
-    /**
-     * Same as `rb_contains`, but for a sequence of lookups in the same bitmap.
-     * Unlike `roaring::Roaring::containsBulk`, a change of the container is handled by the same search as in
-     * `rb_contains` rather than by galloping from the previous container, so unordered lookups are not slower.
-     */
-    ALWAYS_INLINE UInt8 rb_contains_bulk(UInt64 x, BulkContext & context) const /// NOLINT
-    {
-        if constexpr (use_roaring64)
-            return rb_contains(x);
-        else
-        {
-            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
-                return 0;
-
-            if (isSmall())
-                return small.find(static_cast<T>(x)) != small.end();
-
-            const Value value = static_cast<Value>(static_cast<T>(x));
-            const Int32 key = static_cast<Int32>(value >> 16);
-            if (key != context.key)
-                findContainer(key, context);
-            return context.container && roaring::internal::container_contains(context.container, value & 0xFFFF, context.typecode);
-        }
-    }
-
-    /// The slow path of `rb_contains_bulk`, kept out of line so that the per-row part stays small enough to inline.
-    NO_INLINE void findContainer(Int32 key, BulkContext & context) const
-    {
-        const auto & high_low_container = roaring_bitmap->roaring.high_low_container;
-        const Int32 index = roaring::internal::ra_get_index(&high_low_container, static_cast<UInt16>(key));
-        context.key = key;
-        context.container = index < 0
-            ? nullptr
-            : roaring::internal::ra_get_container_at_index(&high_low_container, static_cast<UInt16>(index), &context.typecode);
     }
 
     /**
@@ -1052,8 +970,7 @@ struct AggregateFunctionGroupBitmapData
 {
     // If false, all bitmap operations will be treated as merge to initialize the state
     bool init = false;
-    using Bitmap = RoaringBitmapWithSmallSet<T, 32>;
-    Bitmap roaring_bitmap_with_small_set;
+    RoaringBitmapWithSmallSet<T, 32> roaring_bitmap_with_small_set;
     static const char * name() { return "groupBitmap"; }
 };
 

@@ -12,26 +12,6 @@ SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 1000000000
 -- A negative lock_acquire_timeout must saturate to an immediate deadline, not underflow now() + timeout.
 SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = -100000000000;
 
--- The Log family and File take their own seconds-typed timed lock, which the millisecond clamp does
--- not reach; a huge or negative timeout must not overflow now() + duration. The CREATE/INSERT
--- statements take the same locks in range.
-DROP TABLE IF EXISTS t_04327_log;
-DROP TABLE IF EXISTS t_04327_stripe_log;
-DROP TABLE IF EXISTS t_04327_file;
-CREATE TABLE t_04327_log (x UInt64) ENGINE = Log;
-CREATE TABLE t_04327_stripe_log (x UInt64) ENGINE = StripeLog;
-CREATE TABLE t_04327_file (x UInt64) ENGINE = File(TSV);
-INSERT INTO t_04327_log VALUES (1);
-INSERT INTO t_04327_stripe_log VALUES (1);
-INSERT INTO t_04327_file VALUES (1);
-SELECT count() FROM t_04327_log SETTINGS lock_acquire_timeout = 100000000000;
-SELECT count() FROM t_04327_stripe_log SETTINGS lock_acquire_timeout = 100000000000;
-SELECT count() FROM t_04327_file SETTINGS lock_acquire_timeout = 100000000000;
-SELECT count() FROM t_04327_log SETTINGS lock_acquire_timeout = -100000000000;
-DROP TABLE t_04327_log;
-DROP TABLE t_04327_stripe_log;
-DROP TABLE t_04327_file;
-
 -- SYSTEM SYNC MERGES builds its deadline as now() + max_execution_time; a huge value must not overflow.
 -- SYSTEM commands take no trailing SETTINGS clause, so the timeout is set on the session. With all
 -- scheduled parts already covered the command returns immediately, so this just exercises the clamp.
@@ -57,6 +37,7 @@ DROP TABLE t_04327_sync_merges;
 SELECT 'qc_04327_top' SETTINGS use_query_cache = 1, query_cache_ttl = 9223372036854;
 SELECT countIf(is_subquery = 0) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%qc\_04327\_top%' AND query NOT LIKE '%system.query_cache%';
 
--- The `is_subquery = 1` entry is written by the Planner.
-SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854;
+-- The is_subquery=1 entry is written only by the Planner, so pin enable_analyzer=1 here;
+-- with the old analyzer the Planner never runs and no is_subquery=1 entry is produced.
+SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854, enable_analyzer = 1;
 SELECT countIf(is_subquery = 0) > 0 AND countIf(is_subquery = 1) > 0 AND max(stale) = 0 FROM system.query_cache WHERE query LIKE '%41000000%' AND query NOT LIKE '%system.query_cache%';

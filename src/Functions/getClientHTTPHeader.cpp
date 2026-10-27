@@ -19,6 +19,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int FUNCTION_NOT_ALLOWED;
 }
 
@@ -54,9 +55,11 @@ public:
         return 1;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(String) -> String";
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String", getName());
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -91,10 +94,10 @@ Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
 Certain HTTP headers (e.g., `Authorization`, `Authentication` and `X-ClickHouse-*`) are restricted.
 
-<Note title="Setting `allow_get_client_http_header` is required">
+:::note Setting `allow_get_client_http_header` is required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
-</Note>
+:::
 
 HTTP headers are case-insensitive per RFC 9110.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.

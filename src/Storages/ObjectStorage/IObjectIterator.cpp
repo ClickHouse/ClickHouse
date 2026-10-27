@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/Archives/ArchiveEntryPositions.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -19,8 +18,6 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageListedObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
-    extern const Event ObjectStorageQueryConditionCacheSkippedFiles;
-    extern const Event ObjectStorageQueryConditionCacheSkippedRowGroups;
 }
 
 namespace DB
@@ -40,7 +37,7 @@ static ExpressionActionsPtr getExpressionActions(
     if (filter.has_value())
     {
         VirtualColumnUtils::buildSetsForDAG(*filter, context_);
-        return std::make_shared<ExpressionActions>(std::move(*filter), ExpressionActionsSettings(context_));
+        return std::make_shared<ExpressionActions>(std::move(*filter));
     }
     return nullptr;
 }
@@ -50,12 +47,12 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     const DB::ActionsDAG & filter_,
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_partition_columns_,
-    StorageObjectStorageConfigurationPtr configuration_,
+    const std::string & object_namespace_,
     const ContextPtr & context_,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , iterator(iterator_)
-    , configuration(std::move(configuration_))
+    , object_namespace(object_namespace_)
     , virtual_columns(virtual_columns_)
     , hive_partition_columns(hive_partition_columns_)
     , filter_actions(getExpressionActions(filter_, virtual_columns, context_))
@@ -79,9 +76,10 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             const auto key = object->getPath();
             std::vector<std::string> keys({key});
 
-            /// Must be the formatter the `_path` column is produced with: this filter is
-            /// evaluated against that column's values.
-            const auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
+            auto path = key;
+            if (path.starts_with("/"))
+                path = path.substr(1);
+            path = std::filesystem::path(object_namespace) / path;
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
@@ -163,13 +161,8 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);
-                    ProfileEvents::increment(
-                        ProfileEvents::ObjectStorageQueryConditionCacheSkippedRowGroups, marks.size() - matching_row_groups.size());
                     if (matching_row_groups.empty())
-                    {
-                        ProfileEvents::increment(ProfileEvents::ObjectStorageQueryConditionCacheSkippedFiles);
                         continue;
-                    }
                 }
             }
 
@@ -202,7 +195,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
-    return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
+    return getIdentifierForPath(getPath(), include_file_bucket_info);
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

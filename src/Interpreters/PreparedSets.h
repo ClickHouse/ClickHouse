@@ -1,6 +1,5 @@
 #pragma once
 
-#include <future>
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
@@ -9,26 +8,19 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <future>
+#include <Common/callOnce.h>
+#include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/FutureSetSettings.h>
 #include <Interpreters/SetKeys.h>
-#include <Interpreters/SetSpillable.h>
 #include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Storages/IStorage_fwd.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/callOnce.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
 
 class QueryPlan;
-
-/// True if any step of `plan` - including the nested plans it owns through `getChildPlans` - holds a
-/// correlated `PLACEHOLDER` expression. Such a plan cannot be optimized or executed standalone: it
-/// has to be decorrelated first.
-bool planHasCorrelatedExpressions(const QueryPlan & plan);
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -48,7 +40,6 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
-    std::shared_ptr<SetSpillState> spill_state = std::make_shared<SetSpillState>();
     StoragePtr external_table;
     /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
     /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations
@@ -82,15 +73,6 @@ public:
     /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
     SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
 
-    /// Whether the contents of the set can change while the query runs, without the query doing it.
-    /// Today that means an `ENGINE = Set` table (`SharedSet` in ClickHouse Cloud): `StorageSet::insertBlock`
-    /// inserts into the very `Set` object held here, so a concurrent `INSERT` is visible to a query that
-    /// already started. A set the query builds for itself is filled once and frozen. A caller that derives
-    /// a decision from the set and never revisits it - index analysis that prunes granules, say - must
-    /// refuse a mutable one. Deliberately abstract: a new kind of set has to answer this before index
-    /// analysis will trust it, rather than inheriting "immutable" by omission.
-    virtual bool isMutableDuringQuery() const = 0;
-
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
@@ -104,10 +86,7 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    /// `is_mutable_during_query_` says whether `set_` is a table's own set, which keeps changing under
-    /// the query, or one the query built for itself. Not derived from `storage_id_`: the two agree
-    /// today, but a storage id is an identity, not a statement about who may write to the set.
-    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id, bool is_mutable_during_query_);
+    explicit FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -115,15 +94,12 @@ public:
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
 
-    bool isMutableDuringQuery() const override { return is_mutable_during_query; }
-
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
 private:
     Hash hash;
     ASTPtr ast;
     std::optional<StorageID> storage_id;
     SetPtr set;
-    bool is_mutable_during_query;
 };
 
 using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
@@ -137,9 +113,6 @@ public:
 
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
-
-    /// Filled from the literal list in the constructor and never touched again.
-    bool isMutableDuringQuery() const override { return false; }
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
@@ -195,13 +168,17 @@ public:
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-        FutureSetSettings set_settings_);
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
 
     FutureSetFromSubquery(
         Hash hash_,
         ASTPtr ast_,
         QueryTreeNodePtr query_tree_,
-        FutureSetSettings set_settings_);
+        bool transform_null_in,
+        SizeLimits size_limits,
+        size_t max_size_for_index);
 
     ~FutureSetFromSubquery() override;
 
@@ -210,7 +187,6 @@ public:
     /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
     void replaceSetAndKey(SetAndKeyPtr set);
     SetAndKeyPtr detachSetAndKey();
-    const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -218,16 +194,9 @@ public:
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    /// The query runs the subquery that fills this set, once; nothing outside the query can write to it.
-    /// Whether it is filled *yet* is a different question, answered by `get`.
-    bool isMutableDuringQuery() const override { return false; }
-
-    /// `recoverable_build` marks the one in-place build whose result the deferred build can still redo;
-    /// see `CreatingSetStep::recoverable_build`. Deliberately not defaulted.
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
-        const PreparedSetsCachePtr & prepared_sets_cache,
-        bool recoverable_build);
+        const PreparedSetsCachePtr & prepared_sets_cache);
 
     /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
     /// retain the values, and make the source run as a distributed plan when its shape allows
@@ -236,7 +205,6 @@ public:
 
     void buildSetInplace(const ContextPtr & context);
 
-    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
@@ -254,8 +222,6 @@ public:
 private:
     Hash hash;
     ASTPtr ast;
-    /// The set and the step that fills it are made with these settings.
-    FutureSetSettings set_settings;
     SetAndKeyPtr set_and_key;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
@@ -273,37 +239,21 @@ private:
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
-/// Hashes a `FutureSet::Hash` for the unordered containers keyed by it. Declared here rather than
-/// inside `PreparedSets` so `BuiltSetsByHash` below can use it too; `PreparedSets::Hashing` aliases it.
-struct FutureSetHashing
-{
-    UInt64 operator()(const FutureSet::Hash & key) const { return key.low64 ^ key.high64; }
-};
-
-/// Sets that some earlier plan build already filled, keyed by `FutureSet::getHash`. A second plan
-/// build of the same query (automatic parallel replicas builds one to decide whether replicas pay
-/// off) can adopt them instead of re-running the subqueries: `FutureSetFromSubquery::build` and
-/// `buildOrderedSetInplace` both return early once the set is created.
-struct BuiltSetsByHash
-{
-    UnorderedMapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr, FutureSetHashing> sets;
-};
-using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
-
 /// Container for all the sets used in query.
 class PreparedSets
 {
 public:
 
     using Hash = CityHash_v1_0_2::uint128;
-    using Hashing = FutureSetHashing;
+    struct Hashing
+    {
+        UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
+    };
 
     using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
     using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    /// The set lives in a table (`ENGINE = Set`, or `SharedSet` in ClickHouse Cloud), so it is mutable:
-    /// both hand over the table's own `Set` object, which an `INSERT` writes into in place.
     FutureSetFromStoragePtr addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id);
     FutureSetFromTuplePtr addFromTuple(const Hash & key, ASTPtr ast, ColumnsWithTypeAndName block, const Settings & settings);
 
@@ -334,6 +284,7 @@ public:
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
+    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
 private:
     SetsFromTuple sets_from_tuple;

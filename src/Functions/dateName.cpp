@@ -15,12 +15,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
-#include <base/TypeList.h>
-
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
@@ -71,9 +71,39 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(const String, DateOrDateTime, [const String]) -> String";
+        if (arguments.size() != 2 && arguments.size() != 3)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}",
+                getName(),
+                arguments.size());
+
+        if (!WhichDataType(arguments[0].type).isString())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 1 argument of function {}. Must be string",
+                arguments[0].type->getName(),
+                getName());
+
+        WhichDataType first_argument_type(arguments[1].type);
+
+        if (!(first_argument_type.isDate() || first_argument_type.isDateTime() || first_argument_type.isDate32() || first_argument_type.isDateTime64()))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
+                arguments[1].type->getName(),
+                getName());
+
+        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 3 argument of function {}. Must be string",
+                arguments[2].type->getName(),
+                getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -87,13 +117,11 @@ public:
         size_t input_rows_count) const override
     {
         ColumnPtr res;
-        TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
-        {
-            if (!res)
-                res = executeType<DataType>(arguments, result_type, input_rows_count);
-        });
 
-        if (!res)
+        if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
+            || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of function {}, must be Date or DateTime.",

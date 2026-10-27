@@ -11,6 +11,7 @@
 -- to the row count, to zero, or to the other side cannot pass. The joins select `count()`: with no
 -- right column in the output the probe materializes nothing.
 
+SET enable_analyzer = 1;
 -- Swapping the sides moves `columns_added_by_join` and flips which side owns the output filter.
 SET query_plan_join_swap_table = 0;
 -- A runtime filter would drop non-matching left rows before the probe, changing `Left: rows`.
@@ -40,10 +41,8 @@ SELECT count(), countIf(k IN (SELECT k FROM left_side)) FROM right_dup_keys;
 {% set semi_anti_kinds = ['SEMI LEFT', 'SEMI RIGHT', 'ANTI LEFT', 'ANTI RIGHT'] -%}
 {% set asof_kinds = ['ASOF', 'ASOF LEFT'] -%}
 
--- `grace_hash` spills on `max_bytes_before_external_join`, which has to stay above the size of an empty
--- hash table: below that every freshly split bucket looks oversized and the buckets keep splitting.
 {% set cases = [
-    ('grace_hash', "join_algorithm = 'grace_hash', max_bytes_before_external_join = 16777216",
+    ('grace_hash', "join_algorithm = 'grace_hash', max_bytes_before_external_join = 1",
         all_kinds + any_kinds + semi_anti_kinds),
 
     ('partial_merge', "join_algorithm = 'partial_merge'",

@@ -1,0 +1,21 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup (it carries a real
+        `<pattern>` with `<regexp>`/`<function>`/`<retention>`) but also contains a foreign child
+        that `setGraphitePatternsFromConfig` rejects with `UNKNOWN_ELEMENT_IN_CONFIG`. The
+        unknown-key validator must not accept it merely because one child looks like a rollup
+        rule: every child must be a recognized `GraphiteMergeTree` key, otherwise the section is
+        an unknown top-level key (e.g. a typo) and must be rejected.
+    -->
+    <graphite_with_foreign_child>
+        <pattern>
+            <regexp>click_cost</regexp>
+            <function>any</function>
+            <retention>
+                <age>0</age>
+                <precision>3600</precision>
+            </retention>
+        </pattern>
+        <not_a_graphite_key>oops</not_a_graphite_key>
+    </graphite_with_foreign_child>
+</clickhouse>

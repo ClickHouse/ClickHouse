@@ -1,0 +1,4 @@
+<clickhouse>
+    <user_defined_executable_function_drivers_config>/etc/clickhouse-server/drivers/*.xml</user_defined_executable_function_drivers_config>
+    <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_udf/</dynamic_user_defined_executable_functions_path>
+</clickhouse>

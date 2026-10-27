@@ -20,32 +20,31 @@ Expression ((Project names + Projection))
             LazyFinalKeyAnalysis
               CreatingSet
                 Expression
-                  Filter
+                  Expression
                     ReadFromMergeTree (default.t_lazy_final_combined)
                     Indexes:
                       PrimaryKey
                         Keys:
                           key
-                        Condition: and(and((key in (-Inf, 5499]), (key in [500, +Inf))), and((key in (-Inf, 5499]), (key in [500, +Inf))))
+                        Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
                         Parts: 2/2
                         Granules: 56/62
                         Search Algorithm: binary search
                       Ranges: 2
-            Filter
-              JoinLazyColumnsStep
-                LazyReadReplacingFinal
-                  Expression
-                    Aggregating
+            JoinLazyColumnsStep
+              LazyReadReplacingFinal
+                Expression
+                  Aggregating
+                    Expression
                       Expression
-                        Expression
-                          ReadFromMergeTree (default.t_lazy_final_combined)
-                          Indexes:
-                            PrimaryKey
-                              Condition: true
-                              Parts: 2/2
-                              Granules: 56/62
-                            Ranges: 2
-                LazilyReadFromMergeTree
+                        ReadFromMergeTree (default.t_lazy_final_combined)
+                        Indexes:
+                          PrimaryKey
+                            Condition: true
+                            Parts: 2/2
+                            Granules: 56/62
+                          Ranges: 2
+              LazilyReadFromMergeTree
             ReadFromMergeTree (default.t_lazy_final_combined)
             Indexes:
               PrimaryKey
@@ -63,9 +62,12 @@ Expression ((Project names + Projection))
           ReadFromMergeTree (default.t_lazy_final_combined)
           Indexes:
             PrimaryKey
-              Condition: true
+              Keys:
+                key
+              Condition: and((key in (-Inf, 5499]), (key in [500, +Inf)))
               Parts: 2/2
               Granules: 12/16
+              Search Algorithm: binary search
             Ranges: 2
 === Set plan reads only needed columns ===
                     Header: key UInt64

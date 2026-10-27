@@ -27,7 +27,6 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return function_overload_resolver->isDeterministicInScopeOfQuery(); }
 
 private:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -78,8 +77,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
-
-    bool isExpensive() const override { return function_overload_resolver->isExpensive(); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.

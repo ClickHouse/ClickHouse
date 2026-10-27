@@ -16,8 +16,6 @@ def clickhouse_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
-            # A remote database disk would share the `Disk` connection group whose hard limit this test saturates.
-            with_remote_database_disk=False,
         )
         cluster.start()
         yield cluster
@@ -76,8 +74,8 @@ def test_disk_hard_limit_hit(clickhouse_cluster):
         SELECT ProfileEvents['S3PutObject'], ProfileEvents['DiskConnectionsCreated'] FROM system.query_log WHERE query_id = '{insert_query_id}' AND type = 'QueryFinish'
     """
     ).strip().split("\t")
-    assert(0 < int(puts) <= 10)
-    assert(0 < int(connections) <= 10)
+    assert(int(puts) <= 10)
+    assert(int(connections) <= 10)
 
     select_query_id = f"select_compact_{int(random.random() * 1000000)}"
     result = node.query(

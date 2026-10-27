@@ -30,11 +30,7 @@ COLUMNS="id UInt32, d Date DEFAULT '2000-01-01', q UInt32 DEFAULT 7, c String DE
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS dst_05446 SYNC;
-    DROP TABLE IF EXISTS dist_05446;
-    DROP TABLE IF EXISTS local_05446;
     CREATE TABLE dst_05446 (${COLUMNS}) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/dst_05446', 'r1') ORDER BY id;
-    CREATE TABLE local_05446 (${COLUMNS}) ENGINE = MergeTree ORDER BY id;
-    CREATE TABLE dist_05446 AS local_05446 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_05446, rand());
 "
 
 S3_GLOB="${S3_DIR}/part_{1,2}.jsonl"
@@ -70,11 +66,6 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO dst_05446 SELECT * FROM s3('${S3_GLOB}', 'JSONEachRow')
     SETTINGS parallel_distributed_insert_select = 2, ${PARALLEL_REPLICAS}"
 check dst_05446 "s3 with parallel replicas"
-
-$CLICKHOUSE_CLIENT -q "
-    INSERT INTO dist_05446 SELECT * FROM s3('${S3_GLOB}', 'JSONEachRow')
-    SETTINGS parallel_distributed_insert_select = 2, ${PARALLEL_REPLICAS}"
-check local_05446 "s3 with parallel replicas into Distributed"
 
 # An explicit structure must reach the nodes as written, positional or `key = value`. The `SELECT` list has an
 # expression, so the nodes cannot take the structure from the insertion table: with `'auto'` they would infer
@@ -117,8 +108,6 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), min(_synced_at) > now64(3) - INTERVAL 1 H
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE dst_05446 SYNC;
-    DROP TABLE dist_05446;
-    DROP TABLE local_05446;
     DROP TABLE typed_05446 SYNC;
     DROP TABLE clickpipes_05446 SYNC;
 "

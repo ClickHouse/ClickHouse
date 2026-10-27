@@ -1,4 +1,5 @@
 SET explain_query_plan_default = 'legacy';
+SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 0;
@@ -11,7 +12,6 @@ SET optimize_distinct_in_order = 1;
 SET optimize_sorting_by_input_stream_properties = 1;
 SET allow_reorder_prewhere_conditions = 0;
 SET read_in_order_use_virtual_row = 0;
-SET force_distinct_partitions_independently = 0;
 
 DROP TABLE IF EXISTS t1;
 

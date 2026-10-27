@@ -1,0 +1,4 @@
+<clickhouse>
+    <disk_connections_rcvbuf>262144</disk_connections_rcvbuf>
+    <disk_connections_sndbuf>262144</disk_connections_sndbuf>
+</clickhouse>

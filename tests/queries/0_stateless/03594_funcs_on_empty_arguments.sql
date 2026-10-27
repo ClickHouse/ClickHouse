@@ -13,10 +13,10 @@ SELECT cityHash64() FROM system.one;
 SELECT coalesce() FROM system.one;
 SELECT concat() FROM system.one;
 SELECT concatAssumeInjective() FROM system.one;
-SELECT corrMatrix() FROM system.one; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT corrMatrix() FROM system.one;
 SELECT count() FROM system.one;
-SELECT covarPopMatrix() FROM system.one; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT covarSampMatrix() FROM system.one; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT covarPopMatrix() FROM system.one;
+SELECT covarSampMatrix() FROM system.one;
 SELECT e() FROM system.one;
 SELECT emptyArrayDate() FROM system.one;
 SELECT emptyArrayDateTime() FROM system.one;

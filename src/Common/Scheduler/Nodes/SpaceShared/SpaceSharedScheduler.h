@@ -130,13 +130,6 @@ public:
         return nullptr;
     }
 
-    ResourceAllocation * selectAllocationToSpill(ResourceCost, String &) override
-    {
-        // Spill selection is initiated by `AllocationLimit`, never at the root.
-        chassert(false);
-        return nullptr;
-    }
-
     void updateMinMaxAllocated(ResourceCost new_value) override
     {
         min_max_allocated = new_value;

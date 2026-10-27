@@ -8,7 +8,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include <base/scope_guard.h>
@@ -18,7 +17,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
-#include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
@@ -31,8 +29,6 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
-#include <IO/S3/S3Capabilities.h>
-#include <IO/S3/deleteFileFromS3.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
@@ -132,19 +128,22 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
 
-static std::shared_ptr<DB::S3::Client> makeTestClient(
-    const DB::S3::URI & uri,
-    const String & server_side_encryption_customer_key_base64,
-    const DB::S3::ServerSideEncryptionKMSConfig & sse_kms_config,
-    bool is_s3express_bucket)
+static void testServerSideEncryption(
+    RequestFn do_request,
+    bool disable_checksum,
+    String server_side_encryption_customer_key_base64,
+    DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
+    String expected_headers,
+    bool is_s3express_bucket = false)
 {
-    /// The client keeps a reference to the filter, so it must outlive the returned client.
-    /// `const` makes sure no test reconfigures the shared instance.
-    static const DB::RemoteHostFilter remote_host_filter{};
+    TestPocoHTTPServer http;
+
+    DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
     bool s3_slow_all_threads_after_retryable_error = true;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
@@ -165,17 +164,18 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
 
     client_configuration.endpointOverride = uri.endpoint;
 
-    DB::NormalizedHTTPHeaderEntries headers;
+    DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = disable_checksum,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = is_s3express_bucket,
     };
 
-    return DB::S3::ClientFactory::instance().create(
+    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
         access_key_id,
@@ -190,20 +190,6 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(
             .forbid_implicit_credentials = false,
         }
     );
-}
-
-static void testServerSideEncryption(
-    RequestFn do_request,
-    String server_side_encryption_customer_key_base64,
-    DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
-    String expected_headers,
-    bool is_s3express_bucket = false)
-{
-    TestPocoHTTPServer http;
-
-    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
-    std::shared_ptr<DB::S3::Client> client
-        = makeTestClient(uri, server_side_encryption_customer_key_base64, sse_kms_config, is_s3express_bucket);
 
     ASSERT_TRUE(client);
 
@@ -217,6 +203,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersRead)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -241,6 +228,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
         {},
         "authorization: ... SignedHeaders="
@@ -252,7 +240,30 @@ TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWrite)
         "host;"
         "x-amz-content-sha256;"
         "x-amz-date;"
-        "x-amz-meta-clickhouse-idempotency-id;"
+        "x-amz-server-side-encryption-customer-algorithm;"
+        "x-amz-server-side-encryption-customer-key;"
+        "x-amz-server-side-encryption-customer-key-md5, ...\n"
+        "x-amz-server-side-encryption-customer-algorithm: AES256\n"
+        "x-amz-server-side-encryption-customer-key: Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=\n"
+        "x-amz-server-side-encryption-customer-key-md5: fMNuOw6OLU5GG2vc6RTA+g==\n");
+}
+
+TEST(IOTestAwsS3Client, AppendExtraSSECHeadersWriteDisableChecksum)
+{
+    /// See https://github.com/ClickHouse/ClickHouse/pull/19748
+    testServerSideEncryption(
+        doWriteRequest,
+        /* disable_checksum= */ true,
+        "Kv/gDqdWVGIT4iDqg+btQvV3lc1idlm4WI+MMOyHOAw=",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
         "x-amz-server-side-encryption-customer-algorithm;"
         "x-amz-server-side-encryption-customer-key;"
         "x-amz-server-side-encryption-customer-key-md5, ...\n"
@@ -270,6 +281,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersRead)
     // KMS headers shouldn't be set on a read request
     testServerSideEncryption(
         doReadRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -291,6 +303,7 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
     sse_kms_config.bucket_key_enabled = true;
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ false,
         "",
         sse_kms_config,
         "authorization: ... SignedHeaders="
@@ -302,7 +315,6 @@ TEST(IOTestAwsS3Client, AppendExtraSSEKMSHeadersWrite)
         "host;"
         "x-amz-content-sha256;"
         "x-amz-date;"
-        "x-amz-meta-clickhouse-idempotency-id;"
         "x-amz-server-side-encryption;"
         "x-amz-server-side-encryption-aws-kms-key-id;"
         "x-amz-server-side-encryption-bucket-key-enabled;"
@@ -319,6 +331,7 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
     /// See https://github.com/ClickHouse/ClickHouse/pull/19748
     testServerSideEncryption(
         doWriteRequest,
+        /* disable_checksum= */ true,
         "",
         {},
         "authorization: ... SignedHeaders="
@@ -330,140 +343,8 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         "x-amz-checksum-crc32;"
         "x-amz-content-sha256;"
         "x-amz-date;"
-        "x-amz-meta-clickhouse-idempotency-id;"
         "x-amz-sdk-checksum-algorithm, ...\n",
         /*is_s3express_bucket=*/true);
-}
-
-namespace
-{
-
-/// A `DeleteObjects` endpoint that, like a store requiring a digest, answers `400` with `error_code` unless the request
-/// carries an `x-amz-checksum-sha256` header (or, with `accept_sha256 = false`, always). Plain `DeleteObject` requests
-/// succeed. It keeps no other state: what a later batch does is decided by the client. Records whether each
-/// `DeleteObjects` request carried `Content-MD5` or `SHA256`, and counts the plain deletes.
-class DeleteObjectsStubServer
-{
-public:
-    enum class Digest
-    {
-        MD5,
-        SHA256,
-        None,
-    };
-
-    explicit DeleteObjectsStubServer(bool accept_sha256_, String error_code_ = "MissingContentMD5")
-        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
-        , factory(new Factory(*this))
-        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
-        , accept_sha256(accept_sha256_)
-        , error_code(std::move(error_code_))
-    {
-        server->start();
-    }
-
-    ~DeleteObjectsStubServer() { server->stop(); }
-
-    String getUrl() const { return "http://" + server_socket->address().toString(); }
-
-    std::vector<Digest> getDigests() const
-    {
-        std::lock_guard lock(mutex);
-        return digests;
-    }
-
-    size_t getPlainDeleteCount() const
-    {
-        std::lock_guard lock(mutex);
-        return plain_deletes;
-    }
-
-private:
-    class Handler : public Poco::Net::HTTPRequestHandler
-    {
-    public:
-        explicit Handler(DeleteObjectsStubServer & stub_) : stub(stub_) {}
-
-        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-        {
-            if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
-            {
-                {
-                    std::lock_guard lock(stub.mutex);
-                    ++stub.plain_deletes;
-                }
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_NO_CONTENT);
-                response.send();
-                return;
-            }
-
-            const bool has_sha256 = request.has("x-amz-checksum-sha256");
-            const bool has_md5 = request.has("content-md5");
-            {
-                std::lock_guard lock(stub.mutex);
-                stub.digests.push_back(has_sha256 ? Digest::SHA256 : has_md5 ? Digest::MD5 : Digest::None);
-            }
-
-            if (has_sha256 && stub.accept_sha256)
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-                response.setContentType("application/xml");
-                response.send() << R"(<?xml version="1.0" encoding="UTF-8"?><DeleteResult/>)";
-                return;
-            }
-
-            response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-            response.setContentType("application/xml");
-            response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-                               "<Error><Code>" << stub.error_code << "</Code><Message>Digest rejected</Message></Error>";
-        }
-
-    private:
-        DeleteObjectsStubServer & stub;
-    };
-
-    class Factory : public Poco::Net::HTTPRequestHandlerFactory
-    {
-    public:
-        explicit Factory(DeleteObjectsStubServer & stub_) : stub(stub_) {}
-
-        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
-        {
-            return new Handler(stub);
-        }
-
-    private:
-        DeleteObjectsStubServer & stub;
-    };
-
-    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
-    Poco::SharedPtr<Factory> factory;
-    std::unique_ptr<Poco::Net::HTTPServer> server;
-    const bool accept_sha256;
-    const String error_code;
-
-    mutable std::mutex mutex;
-    std::vector<Digest> digests;
-    size_t plain_deletes = 0;
-};
-
-using Digest = DeleteObjectsStubServer::Digest;
-
-}
-
-/// A store that requires a digest `DeleteObjects` does not support (`MissingContentMD5`) is deleted from with plain `DeleteObject`.
-TEST(IOTestAwsS3Client, DeleteObjectsFallsBackOnMissingContentMD5)
-{
-    DeleteObjectsStubServer stub(/*accept_sha256=*/ false, "MissingContentMD5");
-    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
-    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
-
-    DB::S3Capabilities capabilities;
-    DB::deleteFilesFromS3(client, uri.bucket, {"key1", "key2"}, /*if_exists=*/ false, capabilities);
-
-    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5}));
-    EXPECT_EQ(stub.getPlainDeleteCount(), 2u);
-    EXPECT_EQ(capabilities.isBatchDeleteSupported(), std::optional<bool>(false));
 }
 
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
@@ -491,9 +372,10 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
 
     client_configuration.endpointOverride = uri.endpoint;
 
-    DB::NormalizedHTTPHeaderEntries headers;
+    DB::HTTPHeaderEntries headers;
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = DB::S3::isS3ExpressEndpoint(uri.endpoint),
     };
@@ -515,25 +397,6 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
 namespace
 {
 
-std::string getCredentialString(const Poco::Net::MessageHeader & headers)
-{
-    for (const auto & [header_name, header_value] : headers)
-    {
-        if (header_name == "authorization")
-        {
-            std::vector<String> parts;
-            boost::split(parts, header_value, [](char c){ return c == ' '; });
-            for (const auto & part : parts)
-            {
-                if (part.starts_with("Credential="))
-                    return part;
-            }
-        }
-    }
-
-    return "";
-}
-
 void validateCredential(const std::string_view credential_string, const std::string_view service_name, const std::string_view expected_access_key, const std::string_view expected_region)
 {
     ASSERT_FALSE(credential_string.empty());
@@ -551,15 +414,9 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(
-    const Poco::URI::QueryParameters query_params,
-    const std::string_view expected_role_arn,
-    const std::string_view expected_role_session_name,
-    const std::string_view expected_external_id = "",
-    const std::string_view expected_policy = "")
+void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
 {
     bool external_id_present = false;
-    bool policy_present = false;
     for (const auto & [param, value] : query_params)
     {
         if (param == "Action")
@@ -573,15 +430,9 @@ void validateAssumeRoleQueryParams(
             external_id_present = true;
             ASSERT_EQ(value, expected_external_id);
         }
-        else if (param == "Policy")
-        {
-            policy_present = true;
-            ASSERT_EQ(value, expected_policy);
-        }
     }
-    /// ExternalId and Policy are optional and must be sent only when configured.
+    /// ExternalId is optional and must be sent only when configured.
     ASSERT_EQ(external_id_present, !expected_external_id.empty());
-    ASSERT_EQ(policy_present, !expected_policy.empty());
 }
 
 }
@@ -612,6 +463,27 @@ TEST(IOTestAwsS3Client, InstanceProfileCredentialsProviderCaching)
 
 TEST(IOTestAwsS3Client, AssumeRole)
 {
+    const auto get_credential_string =  [&](const Poco::Net::MessageHeader & headers) -> std::string
+    {
+        for (const auto & [header_name, header_value] : headers)
+        {
+            if (header_name == "authorization")
+            {
+                std::vector<String> parts;
+                boost::split(parts, header_value, [](char c){ return c == ' '; });
+                for (const auto & part : parts)
+                {
+                    if (part.starts_with("Credential="))
+                    {
+                        return part;
+                    }
+                }
+            }
+        }
+
+        return "";
+    };
+
     TestPocoHTTPServer http;
 
     static constexpr std::string_view role_access_key = "role_access_key";
@@ -619,7 +491,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
     TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
 
-    static const DB::RemoteHostFilter remote_host_filter;
+    DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
@@ -648,7 +520,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>();
 
-    DB::NormalizedHTTPHeaderEntries headers;
+    DB::HTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
@@ -657,6 +529,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     {
         DB::S3::ClientSettings client_settings{
             .use_virtual_addressing = uri.is_virtual_hosted_style,
+            .disable_checksum = false,
         };
 
         std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
@@ -706,10 +579,10 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, role_session_name);
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name);
     }
 
@@ -720,7 +593,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3("", "");
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", access_key_id, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", access_key_id, region);
         ASSERT_FALSE(sts_http.hasLastRequest());
     }
 
@@ -733,10 +606,10 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, "");
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
     }
 
@@ -751,61 +624,12 @@ TEST(IOTestAwsS3Client, AssumeRole)
 
         read_from_s3(role_arn, role_session_name, external_id);
 
-        validateCredential(getCredentialString(http.getLastRequestHeader()), "s3", role_access_key, region);
+        validateCredential(get_credential_string(http.getLastRequestHeader()), "s3", role_access_key, region);
 
         ASSERT_TRUE(sts_http.hasLastRequest());
-        validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
+        validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, external_id);
     }
-}
-
-TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
-{
-    static constexpr std::string_view role_access_key = "role_access_key";
-    static constexpr std::string_view role_secret_key = "role_secret_key";
-
-    TestPocoHTTPStsServer sts_http(std::string{role_access_key}, std::string{role_secret_key});
-
-    const String region = "eu-west-1";
-    const String access_key_id = "ACCESS_KEY_ID";
-
-    DB::RemoteHostFilter remote_host_filter;
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        region,
-        remote_host_filter,
-        /* s3_max_redirects = */ 100,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        /* s3_slow_all_threads_after_network_error = */ true,
-        /* s3_slow_all_threads_after_retryable_error = */ true,
-        /* enable_s3_requests_logging = */ false,
-        /* for_disk_s3 = */ false,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "http");
-    /// `ClientFactory::create` normally copies the region into the SDK configuration. This test bypasses it.
-    client_configuration.region = region;
-
-    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id, "SECRET_ACCESS_KEY");
-    auto client = DB::S3::AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_http.getUrl());
-    ASSERT_TRUE(client);
-
-    const std::string role_arn = "arn::role/my_role";
-    const std::string role_session_name = "session_name";
-    const std::string policy
-        = R"({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/table/*"}]})";
-
-    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(role_arn, role_session_name, "", policy));
-    ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
-
-    ASSERT_TRUE(sts_http.hasLastRequest());
-    validateCredential(getCredentialString(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
-    validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, role_session_name, "", policy);
-
-    const auto & result = outcome.GetResult();
-    ASSERT_EQ(result.getAccessKeyID(), role_access_key);
-    ASSERT_EQ(result.getSecretAccessKey(), role_secret_key);
-    ASSERT_EQ(result.getSessionToken(), "session_token");
-    ASSERT_EQ(result.getExpiration().Millis(), Aws::Utils::DateTime("2030-01-01T00:00:00Z", Aws::Utils::DateFormat::ISO_8601).Millis());
 }
 
 TEST(IOTestAwsS3Client, ClientCacheRegistryGetOrCreateCacheForKey)
@@ -848,6 +672,7 @@ TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };
@@ -942,20 +767,6 @@ TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
 
     EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(
         "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
-}
-
-TEST(IOTestAwsS3Client, HttpResponseCodeToString)
-{
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::NOT_FOUND), "404");
-
-    /// The AWS SDK uses this value when there was no response at all: it must not be printed as a number,
-    /// and especially not as 18446744073709551615, which is what a cast to an unsigned type produces.
-    EXPECT_EQ(DB::S3::httpResponseCodeToString(Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
-
-    /// The same rendering must be used by `{}` in log and exception messages.
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::OK), "200");
-    EXPECT_EQ(fmt::format("{}", Aws::Http::HttpResponseCode::REQUEST_NOT_MADE), "none (no response from the server)");
 }
 
 TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
@@ -1128,7 +939,7 @@ private:
 
 std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 {
-    static const DB::RemoteHostFilter remote_host_filter;
+    DB::RemoteHostFilter remote_host_filter;
     DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
         "us-east-1",
         remote_host_filter,
@@ -1145,6 +956,7 @@ std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri)
 
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };

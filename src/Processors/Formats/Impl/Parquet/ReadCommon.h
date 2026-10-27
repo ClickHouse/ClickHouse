@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Access/Common/AccessType.h>
-#include <Core/UUID.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Formats/FormatSettings.h>
 
@@ -11,52 +9,16 @@ struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 struct FormatFilterInfo;
 using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
-class ColumnsCache;
-struct ColumnsCacheEntry;
-struct ColumnsCacheWriteBudget;
 }
 
 namespace DB::Parquet
 {
 
-/// How a reader uses the columns cache (`use_columns_cache`). Set only for a file whose content is
-/// identified by a strong version token (an ETag, the identity of an immutable file recorded by its
-/// table, or the version token of a local file that has settled), see `Reader::initColumnsCache`.
-struct ColumnsCacheOptions
-{
-    std::shared_ptr<ColumnsCache> cache;
-
-    /// Shown as the `part` of the entries in `system.columns_cache`.
-    String file_path;
-
-    /// The table the file is read by: `system.columns_cache` shows the entries only to a user who
-    /// may see the table. The nil UUID for a table function, see `source`.
-    UUID table_uuid = UUIDHelpers::Nil;
-
-    /// For a table function: the source whose `READ` grant is required to see the entries in
-    /// `system.columns_cache`.
-    AccessTypeObjects::Source source = AccessTypeObjects::Source::FILE;
-
-    /// A hash of what identifies the content of the file - the path among all storages, its version token
-    /// and the size - and of the format settings that change the values decoded
-    /// from it. Part of the key of every entry of the file.
-    UInt64 file_identity = 0;
-
-    bool enable_reads = false;
-    bool enable_writes = false;
-
-    /// `columns_cache_max_bytes_to_write_to_cache` and `columns_cache_max_estimated_bytes_to_write_to_cache`,
-    /// 0 means half of the current size limit of the cache.
-    size_t max_bytes_to_write = 0;
-    size_t max_estimated_bytes_to_write = 0;
-
-    /// Shared by all readers of the query, so that the budgets above apply to the query as a whole.
-    std::shared_ptr<ColumnsCacheWriteBudget> write_budget;
-};
-
 struct ReadOptions
 {
     FormatSettings format;
+
+    bool seekable_read = true;
 
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
@@ -74,12 +36,6 @@ struct ReadOptions
     /// probability becomes very high. E.g. if bloom filter has 1% false positive probability,
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
-
-    /// The file is read from object storage or a URL.
-    bool is_remote_fs = false;
-
-    /// Null if the columns cache is not used.
-    std::shared_ptr<const ColumnsCacheOptions> columns_cache;
 };
 
 struct SharedResourcesExt
@@ -95,7 +51,6 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
-    static double getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 
 
@@ -129,8 +84,7 @@ enum class ReadStage
     NotStarted = 0,
 
     BloomFilterHeader,
-    BloomFilterBlocks,
-    Dictionary,
+    BloomFilterBlocksOrDictionary,
     ColumnIndexAndOffsetIndex,
 
     OffsetIndex,
@@ -241,13 +195,13 @@ private:
 /// Live, cross-thread reservation of the memory used by dictionary-filter pruning. Both the decoded
 /// dictionaries (`Reader::decodeDictionaryPage` on the pruning path, held until `clearColumnChunk`) and
 /// the value sets built while evaluating the row-group filter (`Reader::hashDictionaryValues`, held for
-/// the lifetime of the lookup) are charged to the `Dictionary` stage counter through this handle.
-/// Unlike a `MemoryUsageToken` - which records its allocation in a per-batch
+/// the lifetime of the lookup) are charged to the `BloomFilterBlocksOrDictionary` stage counter through
+/// this handle. Unlike a `MemoryUsageToken` - which records its allocation in a per-batch
 /// `MemoryUsageDiff` that is only flushed to the stage counter when the batch finishes - charging the
 /// shared atomic directly makes the allocation visible to every row group pruning in parallel the moment
 /// it is taken, not only after the batch flushes. That matters because pruning runs many row groups
-/// concurrently in the `Dictionary` stage: with per-batch accounting two worker threads could each
-/// decode a near-full-budget dictionary (and then reserve value sets) before either
+/// concurrently in the `BloomFilterBlocksOrDictionary` stage: with per-batch accounting two worker
+/// threads could each decode a near-full-budget dictionary (and then reserve value sets) before either
 /// batch flushed, overshooting the watermark. A live reservation keeps every decoded dictionary and
 /// value set visible to all threads for as long as it is alive, so their combined footprint - across
 /// several dictionary-filtered columns in one row group and across several row groups on different
@@ -261,7 +215,7 @@ private:
 /// (see `ReadManager::pruningMemoryReservation`).
 struct PruningMemoryReservation
 {
-    /// The `Dictionary` stage's live memory counter (nullptr == unbounded).
+    /// The `BloomFilterBlocksOrDictionary` stage's live memory counter (nullptr == unbounded).
     std::atomic<size_t> * stage_memory = nullptr;
     /// The pruning stage's per-reader memory budget: the query-global
     /// `input_format_parquet_memory_high_watermark` scaled by the stage's `memory_target_fraction` and split

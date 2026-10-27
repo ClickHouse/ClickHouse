@@ -11,9 +11,6 @@ namespace DB
 
 constexpr char QUERY_PARAMETER_NAME_PREFIX[] = "param_";
 
-/// The SQL text hiding the value of a secret setting change, or `nullopt` when it carries no secret.
-std::optional<String> renderSecretChangeValue(const SettingChange & change);
-
 /** SET query
   */
 class ASTSetQuery : public IAST

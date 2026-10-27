@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "التكاملات ومكتبات العملاء",
+          "group": "التكاملات ومكتبات العميل البرمجية",
           "pages": [
             "ar/resources/support-center/knowledge-base/integrations/node-js-example",
             "ar/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -126,13 +126,12 @@
           ]
         },
         {
-          "group": "العروض المُجسَّدة والإسقاطات",
+          "group": "العروض المادية والإسقاطات",
           "pages": [
             "ar/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ar/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
             "ar/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
-            "ar/resources/support-center/knowledge-base/materialized-views/projection-example",
-            "ar/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts"
+            "ar/resources/support-center/knowledge-base/materialized-views/projection-example"
           ]
         },
         {
@@ -151,7 +150,7 @@
           ]
         },
         {
-          "group": "الأمان والتحكم في الوصول",
+          "group": "الأمان والتحكم بالوصول",
           "pages": [
             "ar/resources/support-center/knowledge-base/security/check-users-roles",
             "ar/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -181,16 +180,15 @@
             "ar/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "ar/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "ar/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "ar/resources/support-center/knowledge-base/setup-installation/production",
-            "ar/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
+            "ar/resources/support-center/knowledge-base/setup-installation/production"
           ]
         },
         {
-          "group": "معلومات عامة وأسئلة شائعة",
+          "group": "عام والأسئلة الشائعة",
           "pages": [
             "ar/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "معلومات عامة",
+              "group": "عام",
               "pages": [
                 "ar/resources/support-center/knowledge-base/general-faqs/index",
                 "ar/resources/support-center/knowledge-base/general-faqs/columnar-database",
@@ -242,7 +240,7 @@
           ]
         },
         {
-          "group": "نصائح وأفكار مفيدة",
+          "group": "نصائح وحيل",
           "pages": [
             "ar/resources/support-center/tips-and-tricks/community-wisdom",
             "ar/resources/support-center/tips-and-tricks/cost-optimization",

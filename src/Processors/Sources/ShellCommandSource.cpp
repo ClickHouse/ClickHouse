@@ -489,7 +489,7 @@ namespace
     {
     public:
 
-        using SendDataTask = std::function<void()>;
+        using SendDataTask = std::function<void(void)>;
 
         ShellCommandSource(
             ContextPtr context_,
@@ -499,7 +499,7 @@ namespace
             bool check_exit_code_,
             SharedHeader sample_block_,
             std::unique_ptr<ShellCommand> && command_,
-            VectorWithMemoryTracking<SendDataTask> && send_data_tasks = {},
+            std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
@@ -570,7 +570,6 @@ namespace
                 }
 
                 pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
-                pipeline.disableProfileEventUpdate();
                 executor = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
             catch (...)
@@ -682,7 +681,6 @@ namespace
 
                         size_t max_block_size = configuration.number_of_rows_to_read;
                         pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, *sample_block, max_block_size)));
-                        pipeline.disableProfileEventUpdate();
                         executor = std::make_unique<PullingPipelineExecutor>(pipeline);
                     }
 
@@ -787,7 +785,7 @@ namespace
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
 
-        VectorWithMemoryTracking<ThreadFromGlobalPool> send_data_threads;
+        std::vector<ThreadFromGlobalPool> send_data_threads;
 
         std::mutex send_data_lock;
         std::exception_ptr exception_during_send_data;
@@ -830,7 +828,7 @@ ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration
 Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const VectorWithMemoryTracking<std::string> & arguments,
-    Pipes && input_pipes,
+    std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
     const ShellCommandSourceConfiguration & source_configuration)
@@ -867,7 +865,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
                 return std::make_unique<ShellCommandHolder>(std::move(func));
             },
-            configuration.max_command_execution_time_seconds * 1000);
+            configuration.max_command_execution_time_seconds * 10000);
 
         /// Pool wait is frozen here on both the success and the timeout-failure
         /// paths so that `PoolWaitMicroseconds` always records contention for a
@@ -922,7 +920,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             source_configuration.sampler->recordExecutablePid(process->getPid());
     }
 
-    VectorWithMemoryTracking<ShellCommandSource::SendDataTask> tasks;
+    std::vector<ShellCommandSource::SendDataTask> tasks;
     tasks.reserve(input_pipes.size());
 
     for (size_t i = 0; i < input_pipes.size(); ++i)

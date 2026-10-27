@@ -4,7 +4,9 @@ title: Cloud에서 지원되지 않는 기능
 
 다음 표에는 ClickHouse Cloud에서 지원되지 않는 것으로 분류된 기능과 자가 관리형 절차가 나열되어 있습니다. 각 항목에는 해당 원본 페이지에서 지원되는 기능도 함께 다루더라도, 지원되지 않는 구체적인 기능을 명시합니다.
 
-### 관리형 인프라 및 운영 {#unsupported-managed-infrastructure-and-operations}
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### 관리형 인프라 및 운영
+</div>
 
 | 지원되지 않는 기능                         | 문서                                                                                                                                   |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -14,7 +16,9 @@ title: Cloud에서 지원되지 않는 기능
 | 자가 관리형 하드웨어 성능 테스트 실행              | [가이드](/ko/concepts/features/performance/troubleshoot/performance-test)                                                                  |
 | 자가 관리형 운영 권장 사항 적용                 | [가이드](/ko/guides/oss/best-practices/tips)                                                                                               |
 
-### 인증 및 보안 {#unsupported-authentication-and-security}
+<div id="unsupported-authentication-and-security">
+  ### 인증 및 보안
+</div>
 
 | 지원되지 않는 기능      | 문서                                                                                                                          |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -23,7 +27,9 @@ title: Cloud에서 지원되지 않는 기능
 | LDAP 인증 및 역할 매핑 | [구성](/ko/concepts/features/security/configuring-ldap), [인증자](/ko/concepts/features/security/external-authenticators/ldap)         |
 | X.509 인증서 인증    | [사용자 인증](/ko/concepts/features/security/ssl-user-auth), [외부 인증자](/ko/concepts/features/security/external-authenticators/ssl-x509) |
 
-### 인터페이스 및 통합 {#unsupported-interfaces-and-integrations}
+<div id="unsupported-interfaces-and-integrations">
+  ### 인터페이스 및 통합
+</div>
 
 | 지원되지 않는 기능                     | 문서                                                                                                                                                                                                                                                                                                                                                  |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,7 +40,9 @@ title: Cloud에서 지원되지 않는 기능
 | MinIO S3 호환 객체 스토리지 통합         | [가이드](/ko/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                             |
 | Tigris S3 호환 객체 스토리지 통합        | [가이드](/ko/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                            |
 
-### 지원되지 않는 데이터베이스 및 테이블 엔진 {#unsupported-database-and-table-engines}
+<div id="unsupported-database-and-table-engines">
+  ### 지원되지 않는 데이터베이스 및 테이블 엔진
+</div>
 
 | 지원되지 않는 기능                                     | 문서                                                                                                                                                                                                                                                     |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -49,7 +57,9 @@ title: Cloud에서 지원되지 않는 기능
 | `YTsaurus` 테이블 엔진                              | [참고](/ko/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                           |
 | `Log` 계열 테이블 엔진(`Log`, `StripeLog`, `TinyLog`) | [계열 개요](/ko/reference/engines/table-engines/log-family), [`Log`](/ko/reference/engines/table-engines/log-family/log), [`StripeLog`](/ko/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/ko/reference/engines/table-engines/log-family/tinylog) |
 
-### 딕셔너리 및 서버 구성 {#unsupported-dictionaries-and-server-configuration}
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### 딕셔너리 및 서버 구성
+</div>
 
 | 지원되지 않는 기능                                                          | 문서                                                                                                                                                                                                                |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,7 +70,9 @@ title: Cloud에서 지원되지 않는 기능
 | `YTsaurus` 딕셔너리 소스                                                  | [참고](/ko/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                    |
 | 서버에서 구성된 일본어 토크나이저 딕셔너리                                             | [참고](/ko/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                 |
 
-### 데이터 포맷 및 코덱 {#unsupported-data-formats-and-codecs}
+<div id="unsupported-data-formats-and-codecs">
+  ### 데이터 포맷 및 코덱
+</div>
 
 | 지원되지 않는 기능                                                        | 문서                                                                                                                                                                                         |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -68,19 +80,24 @@ title: Cloud에서 지원되지 않는 기능
 | 서버 측 스키마 파일을 사용하는 `Protobuf`, `ProtobufList`, `ProtobufSingle` 포맷 | [가이드](/ko/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/ko/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/ko/reference/formats/Protobuf/ProtobufSingle) |
 | 사용 중단된 `ZSTD_QAT` 및 `DEFLATE_QPL` 코덱                              | [`ZSTD_QAT`](/ko/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/ko/reference/statements/create/table#deflate_qpl)                                                                 |
 
-### 함수 및 실험적 기능 {#unsupported-functions-and-experimental-features}
+<div id="unsupported-functions-and-experimental-features">
+  ### 함수 및 실험적 기능
+</div>
 
 | 지원되지 않는 기능                            | 문서                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 실험적 자연어 처리 함수                         | [참고](/ko/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                                |
-| 커밋 및 롤백을 포함하는 실험적 다중 SQL 문 트랜잭션       | [가이드](/ko/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                 |
+| 커밋 및 롤백을 포함하는 실험적 다중 SQL 문 트랜잭션       | [가이드](/ko/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                                  |
 | 실험적 트랜잭션 인트로스펙션 함수                    | [`transactionID`](/ko/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/ko/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/ko/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
-| 시간 윈도우 함수                             | [참고](/ko/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                        |
-| WebAssembly 사용자 정의 함수                 | [개요](/ko/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [가이드](/ko/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                               |
+| `WindowView`용 시간 윈도우 함수               | [참고](/ko/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                        |
+| 실험적 `WindowView`                      | [참고](/ko/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                                       |
+| WebAssembly 사용자 정의 함수                 | [개요](/ko/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [가이드](/ko/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                                |
 | 드라이버 기반 실행형 사용자 정의 함수                 | [참고](/ko/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                           |
 | 서버 로컬 파일을 대상으로 하는 `filesystem` 테이블 함수 | [참고](/ko/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                                     |
 
-### 관리 및 액세스 제어 {#unsupported-administration-and-access-control}
+<div id="unsupported-administration-and-access-control">
+  ### 관리 및 액세스 제어
+</div>
 
 | 지원되지 않는 기능                                | 문서                                                                                                                                                   |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |

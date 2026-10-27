@@ -13,8 +13,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -164,13 +162,6 @@ void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<vo
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
 }
 
-SerializationTuple::SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
-    : elems(std::move(elems_))
-    , has_explicit_names(has_explicit_names_)
-    , elems_support_pooling(std::ranges::all_of(elems, [](const auto & elem) { return elem->supportsPooling(); }))
-{
-}
-
 SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
 {
     for (const auto & elem : elems_)
@@ -180,11 +171,6 @@ SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool h
     }
     auto hash = getHash(elems_, has_explicit_names_);
     return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
-}
-
-bool SerializationTuple::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
-{
-    return !path.empty() && path.back().type == Substream::TupleElement && path.back().name_of_substream == element_name;
 }
 
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -761,12 +747,12 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());
         for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone(context) : nullptr);
+            new_state->states.push_back(state ? state->clone() : nullptr);
 
         return new_state;
     }
@@ -933,7 +919,10 @@ size_t SerializationTuple::allocatedBytes() const
 
 bool SerializationTuple::supportsPooling() const
 {
-    return elems_support_pooling;
+    for (const auto & elem : elems)
+        if (!elem->supportsPooling())
+            return false;
+    return true;
 }
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const

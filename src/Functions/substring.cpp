@@ -23,6 +23,8 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
@@ -42,12 +44,42 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        const size_t number_of_arguments = arguments.size();
+
+        if (number_of_arguments < 2 || number_of_arguments > 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Number of arguments for function {} doesn't match: "
+                            "passed {}, should be 2 or 3", getName(), number_of_arguments);
+
         if (is_utf8)
-            return "(String, NativeNumber, [NativeNumber]) -> String";
+        {
+            /// UTF8 variant is not available for FixedString and Enum arguments.
+            if (!isString(arguments[0]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}, expected String",
+                    arguments[0]->getName(), getName());
+        }
         else
-            return "(StringOrFixedString | Enum, NativeNumber, [NativeNumber]) -> String";
+        {
+            if (!isStringOrFixedString(arguments[0]) && !isEnum(arguments[0]))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}, expected String, FixedString or Enum",
+                    arguments[0]->getName(), getName());
+        }
+
+        if (!isNativeNumber(arguments[1]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected (U)Int*",
+                arguments[1]->getName(), getName());
+
+        if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected (U)Int*",
+                arguments[2]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -117,9 +149,6 @@ public:
             offset = column_offset_const->getInt(0);
         if (column_length_const)
             length = column_length_const->getInt(0);
-
-        if (column_offset_const && offset == 1 && !column_length && isString(arguments[0].type))
-            return column_string;
 
         if (is_utf8)
         {
@@ -216,9 +245,9 @@ See also the [`digits`](/reference/functions/regular-functions/other-functions#d
         "Basic usage",
         "SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)",
         R"(
-┌─db───────┬─substr(db, 5)─┬─substr(db, 5, 1)─┐
-│ database │ base          │ b                │
-└──────────┴───────────────┴──────────────────┘
+┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
+│ database │ base                     │ b                           │
+└──────────┴──────────────────────────┴─────────────────────────────┘
         )"
     }
     };
@@ -234,10 +263,10 @@ Code point counting starts from `1` with the following logic:
 
 An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
-<Note>
+:::note
 This function assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax_utf8 = "substringUTF8(s, offset[, length])";
     FunctionDocumentation::Arguments arguments_utf8 = {
@@ -250,7 +279,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     {
         "Usage example",
         "SELECT 'Täglich grüßt das Murmeltier.' AS str, substringUTF8(str, 9), substringUTF8(str, 9, 5)",
-        "Täglich grüßt das Murmeltier.\tgrüßt das Murmeltier.\tgrüßt"
+        "Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt"
     }
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};

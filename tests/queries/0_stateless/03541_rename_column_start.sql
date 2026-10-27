@@ -1,5 +1,4 @@
--- Tags: zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: RENAME rejection relies on the synchronous in-progress-mutation check, which SharedMergeTree resolves only eventually.
+ -- Tags: zookeeper
 
 CREATE TABLE rmt (a UInt64, b UInt64)
 ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/rmt', '1')

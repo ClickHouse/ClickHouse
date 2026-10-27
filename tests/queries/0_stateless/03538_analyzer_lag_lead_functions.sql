@@ -1,3 +1,4 @@
+set enable_analyzer = 1;
 
 SELECT number
     ,lag(number, 1, 8472) OVER () lag

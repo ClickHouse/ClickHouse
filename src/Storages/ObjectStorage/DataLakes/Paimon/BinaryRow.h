@@ -4,6 +4,7 @@
 #include <memory>
 #include <string_view>
 #include <Core/Field.h>
+#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

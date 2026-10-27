@@ -1,5 +1,7 @@
 -- Test that asterisk_include_virtual_columns includes virtual columns in SELECT * for Memory table.
 
+set enable_analyzer = 1;
+
 DROP TABLE IF EXISTS test_virtuals_memory;
 
 CREATE TABLE test_virtuals_memory

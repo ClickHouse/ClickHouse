@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-darwin
+-- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
 -- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
 
 -- A streaming (`FROM ... STREAM`) read expands its pipeline at run time and splices in a sub-pipeline
@@ -7,6 +8,7 @@
 -- terminate: a streaming read stops once its output port finishes.
 
 SET enable_streaming_queries = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_explain_analyze_stream;
 

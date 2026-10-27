@@ -18,17 +18,14 @@ struct ExtractQueryStringAndFragment
         res_size = 0;
 
         Pos end = data + size;
+        Pos pos = nullptr;
 
-        Pos pos = find_first_symbols<'?'>(data, end);
-        if (pos != end)
+        if (end != (pos = find_first_symbols<'?'>(data, end)))
         {
             res_data = pos + (without_leading_char ? 1 : 0);
             res_size = end - res_data;
-            return;
         }
-
-        pos = find_first_symbols<'#'>(data, end);
-        if (pos != end)
+        else if (end != (pos = find_first_symbols<'#'>(data, end)))
         {
             res_data = pos;
             res_size = end - res_data;

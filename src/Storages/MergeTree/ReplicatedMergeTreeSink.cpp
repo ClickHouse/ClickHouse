@@ -75,6 +75,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_pause_before_commit_local_part[];
     extern const char rmt_dedup_conflict_part_name_missing[];
     extern const char merge_tree_sink_on_start_random_sleep[];
 }
@@ -151,7 +152,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
             ErrorCodes::LOGICAL_ERROR,
             "Should be checked earlier: async inserts with quorum only make sense with enabled insert_quorum_parallel setting");
 
-    LOG_TEST(log, "Create ReplicatedMergeTreeSink {} async_insert={}, deduplicate={}, quorum_size={}, max_parts_per_block={}, quorum_parallel={}, is_attach={}",
+    LOG_DEBUG(log, "Create ReplicatedMergeTreeSink {} async_insert={}, deduplicate={}, quorum_size={}, max_parts_per_block={}, quorum_parallel={}, is_attach={}",
         storage.getStorageID().getNameForLogs(),
         is_async_insert,
         deduplicate,
@@ -470,7 +471,6 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
             std::set<std::string> parts_to_wait_for_quorum;
 
             size_t retry_times = 0;
-            UInt64 deduplication_cache_min_version = 0;
             while (true)
             {
                 partition.temp_part->finalize();
@@ -478,10 +478,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(partition.block_with_partition.partition_id, deduplicate);
                 auto deduplication_blocks_ids = getDeduplicationBlockIds(deduplication_hashes);
 
-                auto commit_result = commitPart(
-                    zookeeper, partition.temp_part->part, deduplication_hashes, deduplication_blocks_ids, deduplication_cache_min_version);
-                auto & conflicts = commit_result.conflicts;
-                deduplication_cache_min_version = commit_result.deduplication_cache_min_version;
+                auto conflicts = commitPart(zookeeper, partition.temp_part->part, deduplication_hashes, deduplication_blocks_ids);
 
                 if (isQuorumEnabled())
                 {
@@ -647,7 +644,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     try
     {
-        auto [conflicts, _] = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids);
+        auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids);
         bool deduplicated = !conflicts.empty();
 
         int error = 0;
@@ -694,6 +691,18 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     }
 }
 
+std::vector<DeduplicationHash> ReplicatedMergeTreeSink::detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes)
+{
+    auto conflict_block_ids = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_version);
+    if (!conflict_block_ids.empty())
+    {
+        deduplication_cache_version = 0;
+        return conflict_block_ids;
+    }
+
+    return {};
+}
+
 struct CommitRetryContext
 {
     enum Stages
@@ -722,12 +731,11 @@ struct CommitRetryContext
 };
 
 
-ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
+std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     const ZooKeeperWithFaultInjectionPtr & zookeeper,
     MergeTreeData::MutableDataPartPtr & part,
     const std::vector<DeduplicationHash> & deduplication_hashes,
-    const std::vector<String> & deduplication_block_ids,
-    UInt64 deduplication_cache_min_version)
+    const std::vector<String> & deduplication_block_ids)
 {
     /// It is possible that we alter a part with different types of source columns.
     /// In this case, if column was not altered, the result type will be different with what we have in metadata.
@@ -863,6 +871,10 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
 
     auto sleep_before_commit_for_tests = [&] ()
     {
+        /// The parts have been renamed but not committed yet, and the caller still holds the
+        /// table lock it took for the whole pipeline.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_pause_before_commit_local_part);
+
         auto sleep_before_commit_local_part_in_replicated_table_ms = (*storage.getSettings())[MergeTreeSetting::sleep_before_commit_local_part_in_replicated_table_ms];
         if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
         {
@@ -901,13 +913,11 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
             }
         }
 
-        UInt64 checked_cache_version = 0;
         if (is_async_insert)
         {
             /// prefilter by cache
-            auto cache_conflicts = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_min_version);
-            checked_cache_version = cache_conflicts.version;
-            std::move(cache_conflicts.hashes.begin(), cache_conflicts.hashes.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
+            auto conflicts = detectConflictsInCache(deduplication_hashes);
+            std::move(conflicts.begin(), conflicts.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
 
             if (!retry_context.conflict_deduplication_hashes.empty())
             {
@@ -944,7 +954,6 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
                     });
                 chassert(conflicted_hash_it != deduplication_hashes.end());
                 retry_context.conflict_deduplication_hashes.push_back(*conflicted_hash_it);
-                deduplication_cache_min_version = checked_cache_version + 1;
 
                 return CommitRetryContext::RESOLVE_CONFLICTS;
             }
@@ -1153,7 +1162,6 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
                 });
             chassert(conflicted_hash_it != deduplication_hashes.end());
             retry_context.conflict_deduplication_hashes.push_back(*conflicted_hash_it);
-            deduplication_cache_min_version = checked_cache_version + 1;
 
             LOG_TRACE(log, "conflict when committing, the conflict block ids are {}",
                 fmt::join(getDeduplicationBlockIds(retry_context.conflict_deduplication_hashes), ", "));
@@ -1265,7 +1273,7 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         storage.merge_selecting_task->schedule();
     }
 
-    return {std::move(retry_context.conflict_deduplication_hashes), deduplication_cache_min_version};
+    return retry_context.conflict_deduplication_hashes;
 }
 
 void ReplicatedMergeTreeSink::onStart()

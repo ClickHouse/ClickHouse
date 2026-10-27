@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas, long, no-sanitizers
--- Random settings limits: max_block_size=(20000, None)
 -- Correctness of the `GROUP BY` top-K optimization when the aggregation
 -- actually spills to disk.
 --
@@ -22,8 +21,6 @@
 -- what keeps both properties true at once: the heap fills early enough to
 -- start pruning instead of freezing itself as pure overhead, while the retained
 -- `1.5 * limit` groups still exceed the 1MB spill threshold.
--- Each spill restarts the heap empty, hence the `max_block_size` floor: with
--- blocks of exactly LIMIT rows the heap fills on the last row and never prunes.
 
 -- The top-K optimization does not apply to serialized plans; pin the setting
 -- so the assertions hold in the distributed-plan suite.

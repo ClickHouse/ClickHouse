@@ -14,9 +14,7 @@
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/ProfileEvents.h>
 #include <IO/SeekableReadBuffer.h>
-#include <base/sleep.h>
 
-#include <algorithm>
 #include <limits>
 
 
@@ -41,30 +39,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int NOT_INITIALIZED;
-    extern const int UNEXPECTED_END_OF_FILE;
-    extern const int HTTP_RANGE_NOT_SATISFIABLE;
     extern const int AZURE_OBJECT_CHANGED_DURING_READ;
-}
-
-namespace
-{
-
-/// A successful `Download` is not enough to trust the body: the endpoint may have ignored the
-/// requested range and answered `200 OK` with the whole object from byte 0, or `206 Partial
-/// Content` for a different range. Consuming such a body as if it started at `requested_offset`
-/// would hand the caller the wrong bytes under the right offsets - silent data corruption - so
-/// the start of the returned range is checked against the requested one before the body is read.
-/// The SDK reports a `200 OK` response as the range starting at 0, so a full-object response is
-/// accepted exactly when the request started at 0, where it is a correct answer, the same as in
-/// `ReadWriteBufferFromHTTP`.
-void checkReturnedRange(const Azure::Storage::Blobs::Models::DownloadBlobResult & result, size_t requested_offset, const String & path)
-{
-    if (result.ContentRange.Offset != static_cast<int64_t>(requested_offset))
-        throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-            "Azure Blob Storage returned a range starting at offset {} instead of the requested offset {} for file {}",
-            result.ContentRange.Offset, requested_offset, path);
-}
-
 }
 
 ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
@@ -107,54 +82,37 @@ ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
 
 void ReadBufferFromAzureBlobStorage::setReadUntilEnd()
 {
-    if (!read_until_position)
-        return;
-
-    read_until_position.reset();
-
-    /// Lifting the bound is a bound change like any other: the download opened under the previous
-    /// bound is closed, and the buffered bytes, which all lie within the lifted bound, are kept.
-    initialized = false;
-    data_stream.reset();
+    if (read_until_position)
+    {
+        read_until_position.reset();
+        if (initialized)
+        {
+            offset = getPosition();
+            resetWorkingBuffer();
+            initialized = false;
+        }
+    }
 }
 
 void ReadBufferFromAzureBlobStorage::setReadUntilPosition(size_t position)
 {
-    /// The bound that is already in effect: nothing changes, and the download is kept.
     if (read_until_position == position)
         return;
 
     read_until_position = position;
 
-    /// The current download was opened under the previous bound, so it is closed here, releasing
-    /// the response, and the next read opens one under the new bound. Where the new download
-    /// starts depends on what is buffered: `offset` is the end of the buffered bytes, and the
-    /// download is reopened there.
-    initialized = false;
-    data_stream.reset();
-
-    /// The buffered bytes are reconciled with the new bound even when the download was already
-    /// closed by an earlier bound change: that change may have kept bytes the new bound excludes.
-
-    /// The buffered bytes all lie within the new bound: they are kept.
-    if (static_cast<off_t>(position) >= offset)
-        return;
-
-    /// The bound was lowered below the end of the buffered bytes. The bytes past it must not be
-    /// handed out - a right-bounded read promises to end exactly at the bound - so they are cut off
-    /// the working buffer, and the next download, if any, starts at the bound. Leaving them in place
-    /// delivered them and then failed the following read with `Attempt to read beyond right offset`,
-    /// because the download was reopened past the bound.
-    if (static_cast<off_t>(position) >= getPosition())
+    /// The bytes that the previous bound allowed to buffer are already in `working_buffer`, and
+    /// some of them can be past the new bound. Give them up and let the next `nextImpl` download
+    /// the range again, so that the new bound takes effect immediately, as required by
+    /// `supportsRightBoundedReads`. `offset` is rewound to the position the caller has read up to,
+    /// because the buffered bytes after it are no longer handed out.
+    if (!working_buffer.empty())
     {
-        working_buffer.resize(working_buffer.size() - (offset - position));
-        offset = position;
-        return;
+        offset = getPosition();
+        resetWorkingBuffer();
     }
 
-    /// The caller has already consumed bytes past the new bound; nothing buffered is usable.
-    offset = getPosition();
-    resetWorkingBuffer();
+    initialized = false;
 }
 
 bool ReadBufferFromAzureBlobStorage::nextImpl()
@@ -175,15 +133,13 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
     if (!initialized)
         initialize(/* attempt */ 0);
 
-    /// Without a right bound, the data ends at the size of the blob that the last response advertised.
-    auto end_of_data = [this] { return read_until_position.value_or(blob_size_from_response); };
-
     if (use_external_buffer)
     {
         data_ptr = internal_buffer.begin();
         data_capacity = internal_buffer.size();
     }
 
+    size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
@@ -191,14 +147,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
 
     for (size_t i = 0; i < max_single_read_retries; ++i)
     {
-        /// A previous attempt may have reopened the download, so what is left of it is measured per attempt.
-        size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
-        /// The response may run past the right bound - e.g. the whole object in answer to a ranged
-        /// request at offset 0 - and nothing past the bound may reach the caller.
-        if (read_until_position)
-            to_read_bytes = std::min(to_read_bytes, *read_until_position - static_cast<size_t>(offset));
-        bool premature_end_of_response = false;
-
         try
         {
             ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, to_read_bytes);
@@ -206,16 +154,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             rlock.unlock(bytes_read); // Do not hold resource under bandwidth throttler
             if (read_settings.remote_throttler)
                 read_settings.remote_throttler->throttle(bytes_read);
-
-            /// The body of the current response is exhausted. For a read with a right bound that is
-            /// the end of the data only if the response reached the bound: the bound is set locally
-            /// by the caller, and every layer above this buffer takes it as the length of the data,
-            /// so a response that ends before it must not be reported as the end of the file - an
-            /// endpoint or a proxy that caps its responses would silently truncate the file there.
-            if (bytes_read == 0 && static_cast<size_t>(offset) < end_of_data())
-                premature_end_of_response = true;
-            else
-                break;
+            break;
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
@@ -245,37 +184,6 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             sleep_time_with_backoff_milliseconds *= 2;
             initialized = false;
             initialize(i + 1);
-        }
-
-        if (premature_end_of_response)
-        {
-            /// Reopen the download at the offset the read has reached, and if the endpoint keeps
-            /// ending its responses before the bound, fail instead of returning truncated data.
-            LOG_DEBUG(log, "Premature end of the response at offset {} while reading until position {} for file {} at attempt {}/{}",
-                offset, end_of_data(), path, i + 1, max_single_read_retries);
-
-            if (i + 1 == max_single_read_retries)
-                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE,
-                    "Premature end of the response from Azure Blob Storage at offset {} while reading until position {} of file {}",
-                    offset, end_of_data(), path);
-
-            /// An endpoint that caps its responses ends every one of them before the bound, so a
-            /// read of more than the cap is a correct read assembled from several responses: the
-            /// reopen that follows the first premature end of a call continues it, and is a request
-            /// of its own rather than a retry of a failed one - it is neither an error nor worth a
-            /// backoff, both of which would be paid on every response of such a read. A reopened
-            /// download that hands out nothing at all is the error case, and it is what the further
-            /// attempts of this loop back off for.
-            const bool reopen_continues_the_read = (i == 0);
-            if (!reopen_continues_the_read)
-            {
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
-                sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
-                sleep_time_with_backoff_milliseconds *= 2;
-            }
-
-            initialized = false;
-            initialize(reopen_continues_the_read ? 0 : i + 1);
         }
     }
 
@@ -380,11 +288,9 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
                 ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
-            checkReturnedRange(download_response.Value, offset, path);
             checkReturnedGeneration(download_response.Value.Details);
 
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
-            blob_size_from_response = static_cast<size_t>(std::max<int64_t>(download_response.Value.BlobSize, 0));
             data_stream = std::move(download_response.Value.BodyStream);
 
             if (blob_storage_log)
@@ -466,9 +372,6 @@ size_t ReadBufferFromAzureBlobStorage::getTotalSizeOfCurrentDownload(int64_t rep
     /// The size of the blob from the same response is not used to bound it, because it comes from
     /// the same untrusted place; only `read_until_position`, which is set locally by the caller,
     /// is a trustworthy bound.
-    ///
-    /// That the body starts at `offset_` rather than somewhere else is not assumed either: it is
-    /// checked against the range of the response by `checkReturnedRange`.
     size_t total = reported_length >= 0
         ? static_cast<size_t>(offset_) + static_cast<size_t>(reported_length)
         : std::numeric_limits<size_t>::max();
@@ -571,7 +474,6 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = getBlobClient().Download(download_options, azure_context);
-            checkReturnedRange(download_response.Value, range_begin, path);
             checkReturnedGeneration(download_response.Value.Details);
 
             if (blob_storage_log)

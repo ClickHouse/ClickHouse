@@ -1,3 +1,4 @@
+SET enable_analyzer=1;
 
 -- { echoOn }
 SELECT number, number % 2, sum(number) AS val
@@ -97,7 +98,7 @@ HAVING id IN (
     FROM test
 )
 FORMAT `NUll`
-SETTINGS group_by_use_nulls = true;
+SETTINGS enable_analyzer = 1, group_by_use_nulls = true;
 
 SELECT id
 FROM test
@@ -110,7 +111,7 @@ HAVING id IN (
     FINAL
 )
 FORMAT `NUll`
-SETTINGS group_by_use_nulls = true;
+SETTINGS enable_analyzer = 1, group_by_use_nulls = true;
 
 SELECT id
 FROM test
@@ -126,4 +127,4 @@ ORDER BY
     ) ASC
 LIMIT 256 BY id
 FORMAT `NUll`
-SETTINGS group_by_use_nulls=true;
+SETTINGS enable_analyzer = 1, group_by_use_nulls=true;

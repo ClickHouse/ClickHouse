@@ -1,6 +1,4 @@
 # docker build -t clickhouse/fasttest .
-ARG CCTOOLS_TAG
-FROM clickhouse/cctools:${CCTOOLS_TAG} AS cctools
 FROM ubuntu:24.04
 
 # ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
@@ -126,7 +124,7 @@ RUN ARCH=$(uname -m) && \
     rustup target add riscv64gc-unknown-linux-gnu
 
 # Note, libmpfr6 is also a requirement for gdb
-COPY --from=cctools /opt/gdb /opt/gdb
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
@@ -147,7 +145,7 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.17.0
+ARG SCCACHE_VERSION=v0.10.0
 ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
 # sccache requires a value for the region. So by default we use The Default Region
 ENV SCCACHE_REGION=us-east-1
@@ -163,17 +161,7 @@ RUN arch=${TARGETARCH} \
 
 COPY requirements.txt /
 RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
-ARG AWSCLI_VERSION=2.36.41
-ARG AWSCLI_SHA256_X86_64=659c1fe734a9534736fa452bb1b557dd4cccadea5823f45a74c0f09408a93d22
-ARG AWSCLI_SHA256_AARCH64=1612cda15d605985d8cb675ec429c8916e3b696fa52325994955dc3215c590a9
-RUN arch="$(uname -m)" \
-    && case "$arch" in \
-        x86_64) sha256="$AWSCLI_SHA256_X86_64" ;; \
-        aarch64) sha256="$AWSCLI_SHA256_AARCH64" ;; \
-        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac \
-    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}-${AWSCLI_VERSION}.zip" -o awscliv2.zip \
-    && echo "$sha256  awscliv2.zip" | sha256sum --check --strict \
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
     && unzip -q awscliv2.zip \
     && ./aws/install \
     && rm -rf awscliv2.zip aws

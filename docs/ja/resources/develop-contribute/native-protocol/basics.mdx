@@ -1,0 +1,150 @@
+---
+slug: /native-protocol/basics
+title: '基本'
+description: 'ネイティブプロトコルの基本'
+keywords: ['ネイティブプロトコル', 'TCPプロトコル', 'プロトコルの基本', 'バイナリプロトコル', 'クライアント・サーバー通信']
+doc_type: 'guide'
+---
+
+<Note>
+  クライアントプロトコルのリファレンスは現在作成中です。
+
+  例のほとんどは Go のみです。
+</Note>
+
+このドキュメントでは、ClickHouse TCP クライアント向けのバイナリプロトコルについて説明します。
+
+<div id="varint">
+  ## Varint
+</div>
+
+長さやパケットコードなどでは、*符号なし varint* エンコーディングを使用します。
+[binary.PutUvarint](https://pkg.go.dev/encoding/binary#PutUvarint) と [binary.ReadUvarint](https://pkg.go.dev/encoding/binary#ReadUvarint) を使用してください。
+
+<Note>
+  *符号付き* varint は使用しません。
+</Note>
+
+<div id="string">
+  ## 文字列
+</div>
+
+可変長文字列は *(length, value)* の形式でエンコードされます。ここで *length* は [varint](#varint)、*value* は UTF-8 文字列です。
+
+<Warning>
+  OOM を防ぐため、length を検証してください:
+
+  `0 ≤ len < MAX`
+</Warning>
+
+<Tabs>
+  <Tab title="エンコード">
+    ```go
+    s := "Hello, world!"
+
+    // 文字列の長さを uvarint として書き込む。
+    buf := make([]byte, binary.MaxVarintLen64)
+    n := binary.PutUvarint(buf, uint64(len(s)))
+    buf = buf[:n]
+
+    // 文字列本体を書き込む。
+    buf = append(buf, s...)
+    ```
+  </Tab>
+
+  <Tab title="デコード">
+    ```go
+    r := bytes.NewReader([]byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    })
+
+    // 長さを読み取る。
+    n, err := binary.ReadUvarint(r)
+    if err != nil {
+            panic(err)
+    }
+
+    // OOM や make() での実行時例外を防ぐために n を確認する。
+    const maxSize = 1024 * 1024 * 10 // 10 MB
+    if n > maxSize || n < 0 {
+        panic("invalid n")
+    }
+
+    buf := make([]byte, n)
+    if _, err := io.ReadFull(r, buf); err != nil {
+            panic(err)
+    }
+
+    fmt.Println(string(buf))
+    // Hello, world!
+    ```
+  </Tab>
+</Tabs>
+
+<Tabs>
+  <Tab title="16進ダンプ">
+    ```hexdump
+    00000000  0d 48 65 6c 6c 6f 2c 20  77 6f 72 6c 64 21        |.Hello, world!|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    DUhlbGxvLCB3b3JsZCE
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    ```go
+    data := []byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="integers">
+  ## 整数
+</div>
+
+<Tip>
+  ClickHouse では、固定長整数に **リトルエンディアン** を使用します。
+</Tip>
+
+<div id="int32">
+  ### Int32
+</div>
+
+```go
+v := int32(1000)
+
+// エンコード。
+buf := make([]byte, 8)
+binary.LittleEndian.PutUint32(buf, uint32(v))
+
+// デコード。
+d := int32(binary.LittleEndian.Uint32(buf))
+fmt.Println(d) // 1000
+```
+
+<Tabs>
+  <Tab title="16進ダンプ">
+    ```hexdump
+    00000000  e8 03 00 00 00 00 00 00                           |........|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    6AMAAAAAAAA
+    ```
+  </Tab>
+</Tabs>
+
+<div id="boolean">
+  ## 真偽値
+</div>
+
+真偽値は1バイトで表され、`1` は `true`、`0` は `false` を表します。

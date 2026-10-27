@@ -25,9 +25,8 @@ SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 INSERT INTO t_clear_ephemeral (x, y, e) VALUES (1, 0, 7);
 SELECT x, me, me2, mk FROM t_clear_ephemeral;
 
--- `mk` is recomputed from the cleared `x`. `me` reads the EPHEMERAL `e`, so it is absent from the
--- dependency graph the closure walks and keeps its stored value. `me2` reads only `me`, so the
--- closure starting at `x` never reaches it either -- it is not recomputed, and keeps its value too.
+-- `mk` is recomputed from the cleared `x`. `me` reads the EPHEMERAL `e`, so it cannot be recomputed
+-- and keeps its stored value. `me2` reads only `me`, so it keeps its value too.
 ALTER TABLE t_clear_ephemeral CLEAR COLUMN x IN PARTITION tuple();
 SELECT x, me, me2, mk FROM t_clear_ephemeral;
 
