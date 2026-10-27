@@ -8,9 +8,9 @@ Thaw: String key and String aggregate state
 1
 Thaw under WITH TOTALS
 1
-Give-up: repeat-dominated stream below the freeze threshold
+No freeze: repeat-dominated stream below every freeze bound
 1
 Analytic guard: thaw shape
 20000	2000000	1999999000000
-Analytic guard: give-up shape
+Analytic guard: no-freeze shape
 50	2000000	100000
