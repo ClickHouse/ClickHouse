@@ -7,6 +7,7 @@ load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//bazel/link_runtime:defs.bzl", "link_runtime_root")
 load("//bazel/rules:cmake_link_data.bzl", "CMAKE_LINK")
 load("//bazel/rules:cmake_link_data_aarch64.bzl", CMAKE_LINK_AARCH64 = "CMAKE_LINK")
+load("//bazel/rules:native_compile_options.bzl", "OPT_FLAGS")
 
 _CMAKE_LINKS = {
     "x86_64": CMAKE_LINK,
@@ -145,6 +146,7 @@ def _cmake_link_impl(ctx):
         _startup_directory(ctx.files._gcc_startup, ["crtbeginS.o", "crtendS.o"]),
     ]
     inputs = ctx.files._glibc_startup + ctx.files._gcc_startup
+    opt = ctx.var["COMPILATION_MODE"] == "opt"
     for operand in plan["sequence"]:
         kind = operand[0]
         if kind == "archive":
@@ -156,7 +158,8 @@ def _cmake_link_impl(ctx):
                 inputs.append(artifact)
                 args.add(artifact)
         elif kind == "arg":
-            args.add(operand[1])
+            if opt or operand[1] not in OPT_FLAGS:
+                args.add(operand[1])
         elif kind == "gcc":
             args.add_all(startup_dirs, format_each = "-B%s/")
         elif kind == "sysroot":

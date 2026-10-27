@@ -28,6 +28,7 @@ def parse_args():
     ]:
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--target", choices=["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"], required=True)
+    parser.add_argument("--cargo-profile", choices=["dev", "release"], required=True)
     parser.add_argument("--cargo-package", required=True)
     parser.add_argument("--cargo-feature", action="append", default=[])
     parser.add_argument("--path-crate", action="append", default=[])
@@ -397,11 +398,13 @@ def main():
             *(["--features=" + ",".join(args.cargo_feature)] if args.cargo_feature else []),
             "--package", args.cargo_package, "--crate-type=staticlib",
             "--manifest-path", str(manifest), "--target-dir", cargo_target,
-            "--profile=release", "--config=" + str(config), "--offline", "--locked",
+            "--profile=" + args.cargo_profile, "--config=" + str(config), "--offline", "--locked",
             "--", "-Cdefault-linker-libraries=no",
         ]
         subprocess.run(command, cwd=manifest.parent, env=env, check=True)
-        built = Path(cargo_target) / args.target / "release" / ("lib" + args.cargo_package + ".a")
+        # Cargo uses the historical directory name "debug" for the dev profile.
+        profile_dir = "debug" if args.cargo_profile == "dev" else "release"
+        built = Path(cargo_target) / args.target / profile_dir / ("lib" + args.cargo_package + ".a")
         if not built.is_file():
             raise FileNotFoundError(f"Cargo did not produce the expected raw archive: {built}")
         shutil.copyfile(built, args.output)

@@ -6,7 +6,7 @@ load("@clickhouse//bazel/rules:llvm_cc_library.bzl", "LLVM_DEFINES", "llvm_cc_li
 load("@clickhouse//bazel/rules:llvm_outline_atomics.bzl", "llvm_outline_atomics")
 load("@clickhouse//bazel/rules:llvm_runtime.bzl", "llvm_runtime_objects")
 load("@clickhouse//bazel/rules:llvm_tablegen.bzl", "llvm_tablegen")
-load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_CODEGEN_COPTS", "native_release_copts")
+load("@clickhouse//bazel/rules:native_compile_options.bzl", "NATIVE_CODEGEN_COPTS", "OPT_DRIVER_FLAGS", "native_release_copts")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_prefix_maps")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -4482,8 +4482,7 @@ llvm_runtime_objects(
         "-D",
         "OS_LINUX",
         "-gz=zlib",
-        "-O3",
-        "-DNDEBUG",
+    ] + OPT_DRIVER_FLAGS + [
         "-fPIC",
         "-fno-builtin",
         "-fvisibility=hidden",
@@ -4539,8 +4538,7 @@ llvm_runtime_objects(
         "-D",
         "OS_LINUX",
         "-gz=zlib",
-        "-O3",
-        "-DNDEBUG",
+    ] + OPT_DRIVER_FLAGS + [
         "-fPIC",
         "-fno-builtin",
         "-fvisibility=hidden",
@@ -4579,26 +4577,22 @@ cc_library(
     alwayslink = True,
 )
 
-_CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS = select({
-    "@platforms//cpu:x86_64": [],
-    "@platforms//cpu:aarch64": [
-        "--no-default-config",
-        "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
-        "-D",
-        "OS_LINUX",
-        "-gz=zlib",
-        "-O3",
-        "-DNDEBUG",
-        "-fPIC",
-        "-fno-builtin",
-        "-fvisibility=hidden",
-        "-fomit-frame-pointer",
-        "-nostdinc++",
-        "-fno-sanitize=all",
-        "-w",
-        "-Werror",
-    ],
-})
+_CLANG_RT_BUILTINS_RUNTIME_OBJECTS_COPTS = [
+    "--no-default-config",
+    "-march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16",
+    "-D",
+    "OS_LINUX",
+    "-gz=zlib",
+] + OPT_DRIVER_FLAGS + [
+    "-fPIC",
+    "-fno-builtin",
+    "-fvisibility=hidden",
+    "-fomit-frame-pointer",
+    "-nostdinc++",
+    "-fno-sanitize=all",
+    "-w",
+    "-Werror",
+]
 
 _CLANG_RT_BUILTINS_OUTLINE_SYSTEM_INCLUDES = select({
     "@platforms//cpu:x86_64": [],
@@ -4729,8 +4723,7 @@ llvm_runtime_objects(
         "-D",
         "OS_LINUX",
         "-gz=zlib",
-        "-O3",
-        "-DNDEBUG",
+    ] + OPT_DRIVER_FLAGS + [
         "-fPIC",
         "-fno-builtin",
         "-fno-exceptions",
@@ -4785,8 +4778,7 @@ llvm_runtime_objects(
         "-D",
         "OS_LINUX",
         "-gz=zlib",
-        "-O3",
-        "-DNDEBUG",
+    ] + OPT_DRIVER_FLAGS + [
         "-fPIC",
         "-fno-builtin",
         "-fno-exceptions",
@@ -5160,7 +5152,6 @@ llvm_runtime_objects(
         "-fstrict-vtable-pointers",
         "-fPIE",
     ] + native_release_copts("-std=c++23") + [
-        "-O3",
         "-fno-exceptions",
         "-funwind-tables",
         "-fno-sanitize=all",
@@ -5204,7 +5195,6 @@ llvm_runtime_objects(
         "-fdiagnostics-absolute-paths",
         "-fPIE",
     ] + native_release_copts() + [
-        "-O3",
         "-fno-exceptions",
         "-funwind-tables",
         "-fno-sanitize=all",
@@ -5241,7 +5231,6 @@ llvm_runtime_objects(
         "-fdebug-compilation-dir=.",
         "-pipe",
     ] + NATIVE_CODEGEN_COPTS + native_release_copts() + [
-        "-O3",
         "-fno-exceptions",
         "-funwind-tables",
         "-fno-sanitize=all",

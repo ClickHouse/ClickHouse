@@ -17,12 +17,12 @@ def option_atoms(node):
     return node.elts if isinstance(node, ast.List) else [node]
 
 
-def render(atoms):
+def render(atoms, spellings=None):
     terms = []
     for literal, group in groupby(atoms, lambda n: isinstance(n, ast.Constant)):
-        values = [ast.unparse(n) for n in group]
+        values = [spellings[n] if spellings and n in spellings else ast.unparse(n) for n in group]
         if literal:
-            terms.append("[\n" + ",\n".join(values) + ",\n]")
+            terms.append("[" + values[0] + "]" if len(values) == 1 else "[\n" + ",\n".join(values) + ",\n]")
         else:
             terms.extend(values)
     return " + ".join(terms)
@@ -38,8 +38,10 @@ def shared_native_compile_options(root, paths):
     functions = {n.name: n.body[-1].value for n in definitions if isinstance(n, ast.FunctionDef)}
 
     def expand(node, standard, bindings=constants):
-        # Read the two return expressions from native_compile_options.bzl so a
-        # changed CMake option cannot match a stale second copy in the importer.
+        # The imported CMake commands are Release commands. Match the opt arm
+        # but emit the configurable expression for Bazel.
+        if node is constants["OPT_DRIVER_FLAGS"]:
+            return expand(constants["OPT_FLAGS"], standard)
         if isinstance(node, ast.IfExp) and isinstance(node.test, ast.Name) and node.test.id == "standard":
             return expand(node.body if standard else node.orelse, standard, bindings)
         if call_name(node) == "native_release_copts":
@@ -67,7 +69,8 @@ def shared_native_compile_options(root, paths):
                               ("NATIVE_CODEGEN_COPTS", (None,)),
                               ("NATIVE_TOOL_LINKOPTS", (None,)),
                               ("DBMS_TEST_DRIVER_COPTS", (None,)),
-                              ("native_release_copts", ("-std=c++23", None))):
+                              ("native_release_copts", ("-std=c++23", None)),
+                              ("OPT_DRIVER_FLAGS", (None,))):
         for standard in standards:
             new = symbol if symbol not in functions else "{}({})".format(symbol, repr(standard) if standard else "")
             old = expand((functions | constants)[symbol], standard)
@@ -79,6 +82,7 @@ def shared_native_compile_options(root, paths):
     for path in sorted(paths):
         source = Source(path.read_text())
         edits, imports = [], {}
+        build_constants = assignments(source.module.body)
         for _, rule in source.rules():
             kind = call_name(rule)
             if kind == "ch_cc_library" and path.name.startswith(("clickhouse_aws_c_", "clickhouse_aws_checksums.")):
@@ -89,20 +93,33 @@ def shared_native_compile_options(root, paths):
                             suffix = opts.elts[len(aws_prefix):]
                             edits.append((*source.span(opts), "AWS_CRT_COPTS" + (" + " + render(suffix) if suffix else "")))
                             imports.setdefault("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", set()).add("AWS_CRT_COPTS")
-            if kind not in {"cc_binary", "cc_test", "llvm_runtime_objects"}:
+            is_runtime = kind in {"llvm_runtime_objects", "llvm_outline_atomics"}
+            if not is_runtime and kind not in {"cc_binary", "cc_test"}:
                 continue
-            attributes = ("copts",) if kind == "llvm_runtime_objects" else ("copts", "linkopts")
+            attributes = ("copts",) if is_runtime else ("copts", "linkopts")
             for attr in rule.keywords:
-                if attr.arg not in attributes or not isinstance(attr.value, ast.BinOp):
+                if attr.arg not in attributes:
                     continue
-                atoms = option_atoms(attr.value)
+                value = attr.value
+                options = value
+                if kind == "llvm_outline_atomics" and isinstance(value, ast.Name):
+                    # Every action of this macro is arm64-only. Its captured
+                    # x86_64 arm is empty and cannot select compilation flags.
+                    value = options = build_constants[value.id]
+                    if call_name(value) == "select":
+                        branches = value.args[0]
+                        options = dict(zip([key.value for key in branches.keys], branches.values))["@platforms//cpu:aarch64"]
+                if not isinstance(options, (ast.List, ast.BinOp)):
+                    continue
+                atoms = option_atoms(options)
+                spellings = {atom: source.text(atom) for atom in atoms}
                 original = list(map(ast_key, atoms))
                 for name, match, replacement in patterns:
                     if kind == "cc_test":
                         start = 0 if name == "DBMS_TEST_DRIVER_COPTS" and original[:len(match)] == match else None
                     elif attr.arg == "linkopts":
                         start = 0 if name == "NATIVE_TOOL_LINKOPTS" and original[:len(match)] == match else None
-                    elif kind == "llvm_runtime_objects" and name in {"NATIVE_CODEGEN_COPTS", "native_release_copts"}:
+                    elif is_runtime and name in {"NATIVE_CODEGEN_COPTS", "native_release_copts", "OPT_DRIVER_FLAGS"}:
                         start = next((i for i in range(len(atoms) - len(match) + 1)
                                       if [ast_key(a) for a in atoms[i:i + len(match)]] == match), None)
                     else:
@@ -110,8 +127,13 @@ def shared_native_compile_options(root, paths):
                     if start is not None:
                         atoms[start:start + len(match)] = [replacement]
                         imports.setdefault(LABEL, set()).add(name)
+                if is_runtime:
+                    # libunwind repeats -O3 immediately after the same level in native_release_copts.
+                    atoms = [atom for i, atom in enumerate(atoms)
+                             if not (i and call_name(atoms[i - 1]) == "native_release_copts"
+                                     and isinstance(atom, ast.Constant) and atom.value == "-O3")]
                 if [ast_key(a) for a in atoms] != original:
-                    edits.append((*source.span(attr.value), render(atoms)))
+                    edits.append((*source.span(value), render(atoms, spellings)))
         if edits:
             load = "".join("load(" + ", ".join(map(repr, [label, *sorted(names)])) + ")\n"
                            for label, names in sorted(imports.items()))

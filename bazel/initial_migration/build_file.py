@@ -76,8 +76,12 @@ NATIVE_PUBLIC_INCLUDES = {
 }
 
 def global_compile_options():
-    """Read unconditional Bazel compiler options from the project's rc file."""
-    options = {'copt': set(), 'conlyopt': set(), 'cxxopt': set()}
+    """Read the flags already supplied by LLVM and .bazelrc for CMake's Release graph."""
+    definitions = ast.parse((ROOT / 'bazel/rules/native_compile_options.bzl').read_text())
+    opt_flags = next(ast.literal_eval(node.value) for node in definitions.body
+                     if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                     and node.targets[0].id == 'OPT_FLAGS')
+    options = {'copt': set(opt_flags), 'conlyopt': set(), 'cxxopt': set()}
     for option, value in re.findall(
             r'^common --(copt|conlyopt|cxxopt)=(\S+)$',
             (ROOT / '.bazelrc').read_text(), re.MULTILINE):

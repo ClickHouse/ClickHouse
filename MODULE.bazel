@@ -83,6 +83,7 @@ single_version_override(
     patches = [
         "//bazel/patches:llvm-clickhouse-runtime.patch",
         "//bazel/patches:llvm-glibc-pie-startup.patch",
+        "//bazel/patches:llvm-opt-optimization-mode.patch",
     ],
 )
 
@@ -199,6 +200,14 @@ crate.annotation(
 )
 use_repo(crate, "chdig_crates", "delta_crates")
 
+# Let cc-rs use Cargo's OPT_LEVEL for CityHash. A later -Wall enables the
+# C-linkage warning again, so keep that diagnostic a warning under -Werror.
+crate.annotation(
+    crate = "clickhouse-rs-cityhash-sys",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:cityhash-cargo-profile.patch"],
+    repositories = ["chdig_crates"],
+)
 crate.annotation(
     crate = "cbindgen",
     extra_aliased_targets = {"cbindgen_cli": "cbindgen__bin"},

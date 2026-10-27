@@ -5,6 +5,7 @@ load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("//bazel/link_runtime:defs.bzl", "link_runtime_root")
+load("//bazel/rules:native_compile_options.bzl", "without_opt_flags")
 load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
 
@@ -33,6 +34,8 @@ def _cmake_cargo_impl(ctx):
     args.add("--rustc", rust.rustc)
     args.add("--rust-sysroot-anchor", rust.sysroot_anchor)
     args.add("--target", rust.target_flag_value)
+    profile = "release" if ctx.var["COMPILATION_MODE"] == "opt" else "dev"
+    args.add("--cargo-profile", profile)
     args.add("--cargo-package", ctx.attr.cargo_package)
     args.add_all(ctx.attr.cargo_features, before_each = "--cargo-feature")
     args.add_all(ctx.attr.path_crates, before_each = "--path-crate")
@@ -108,8 +111,9 @@ def _cmake_cargo_impl(ctx):
     if ctx.attr.native_compilation:
         args.add("--native-compilation")
         arch = rust.target_flag_value.split("-")[0]
-        args.add_all(RUST_CXX[arch]["ccopts"], format_each = "--native-c-flag=%s")
-        args.add_all(RUST_CXX[arch]["copts"], format_each = "--native-cxx-flag=%s")
+        for key, flag in [("ccopts", "--native-c-flag=%s"), ("copts", "--native-cxx-flag=%s")]:
+            flags = RUST_CXX[arch][key]
+            args.add_all(flags if profile == "release" else without_opt_flags(flags), format_each = flag)
         native_headers = ctx.attr._native_headers[DefaultInfo].files
         args.add_all([
             "--mount",

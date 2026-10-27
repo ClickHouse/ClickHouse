@@ -2,6 +2,7 @@ common --check_direct_dependencies=error
 
 common --incompatible_strict_action_env
 common --compilation_mode=opt
+common --@llvm//config:linux_opt_optimization_mode=O3
 common --features=system_include_paths
 
 common:dwyu --aspects=//bazel/rules:dwyu.bzl%dwyu
@@ -9,8 +10,6 @@ common:dwyu --output_groups=dwyu
 common:dwyu --keep_going
 # Common CMake flags for ClickHouse's native libraries. Per-target copts
 # retain exceptions such as -ffp-contract=fast on the array functions.
-common --copt=-O3
-common --copt=-DNDEBUG
 common --copt=-DOS_LINUX
 common --copt=-gz=zlib
 common --copt=--no-default-config
@@ -51,7 +50,7 @@ common:x86_64 --config=clickhouse_runtime
 common:x86_64 --per_file_copt=//bazel:google_(api|cloud|iam|longrunning|rpc|storage|type)_.*_proto$@-w,-std=c++23,-march=x86-64-v3,-mpclmul,-mbranches-within-32B-boundaries,-DSTD_EXCEPTION_HAS_STACK_TRACE=1,-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS,-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1,-D_LIBUNWIND_IS_NATIVE_ONLY
 # Match CMake's code-generation flags for the LLVM libraries in ClickHouse.
 # per_file_copt leaves exec tools and the separately configured runtimes alone.
-common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*@--no-default-config,-O3,-march=x86-64-v3,-mpclmul,-falign-functions=64,-falign-loops=32,-fasynchronous-unwind-tables,-faddrsig,-mbranches-within-32B-boundaries,-fstack-protector-strong,-fstack-clash-protection,-ffp-contract=off,-fno-math-errno,-fdebug-compilation-dir=.
+common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*@--no-default-config,-march=x86-64-v3,-mpclmul,-falign-functions=64,-falign-loops=32,-fasynchronous-unwind-tables,-faddrsig,-mbranches-within-32B-boundaries,-fstack-protector-strong,-fstack-clash-protection,-ffp-contract=off,-fno-math-errno,-fdebug-compilation-dir=.
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.](c|cpp)$@-fPIE
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]cpp$@-fstrict-vtable-pointers
 common:x86_64 --per_file_copt=external/llvm[+][+]llvm[+]llvm-project/llvm/.*[.]c$@-std=gnu11

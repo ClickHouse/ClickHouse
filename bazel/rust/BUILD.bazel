@@ -3,6 +3,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
 load("//bazel/rules:cbindgen.bzl", "rust_cbindgen")
 load("//bazel/rules:cmake_cargo.bzl", "cmake_cargo")
+load("//bazel/rules:native_compile_options.bzl", "without_opt_flags")
 load("//bazel/rules:openssl_headers.bzl", "openssl_headers")
 load("//bazel/rules:rust_archive.bzl", "rust_archive")
 load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
@@ -42,7 +43,7 @@ genrule(
             for arch, config in RUST_CXX.items()
         }),
         copts = ["-std=" + standard] + select({
-            "@platforms//cpu:" + arch: config["copts"]
+            "@platforms//cpu:" + arch: without_opt_flags(config["copts"])
             for arch, config in RUST_CXX.items()
         }),
         features = ["-fortify_source"],

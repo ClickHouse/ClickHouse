@@ -3,6 +3,12 @@
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("//bazel/rules:native_compile_options.bzl", "without_opt_flags")
+
+def _cmake_flags_for_mode(ctx, flags):
+    if ctx.var["COMPILATION_MODE"] == "opt":
+        return flags
+    return without_opt_flags(flags)
 
 def _bazel_substitutions(ctx):
     toolchain = find_cc_toolchain(ctx)
@@ -24,8 +30,8 @@ def _bazel_substitutions(ctx):
         "@BAZEL_CXX_COMPILER_VERSION@": "CLICKHOUSE_BAZEL_COMPILER_VERSION",
     }
     for language, action, flags in [
-        ("C", ACTION_NAMES.c_compile, ctx.fragments.cpp.conlyopts + ctx.attr.c_flags),
-        ("CXX", ACTION_NAMES.cpp_compile, ctx.fragments.cpp.cxxopts + ctx.attr.cxx_flags),
+        ("C", ACTION_NAMES.c_compile, ctx.fragments.cpp.conlyopts + _cmake_flags_for_mode(ctx, ctx.attr.c_flags)),
+        ("CXX", ACTION_NAMES.cpp_compile, ctx.fragments.cpp.cxxopts + _cmake_flags_for_mode(ctx, ctx.attr.cxx_flags)),
     ]:
         variables = cc_common.create_compile_variables(
             feature_configuration = features,
@@ -45,7 +51,7 @@ def _bazel_substitutions(ctx):
     variables = cc_common.create_link_variables(
         feature_configuration = features,
         cc_toolchain = toolchain,
-        user_link_flags = ctx.attr.link_flags + ctx.fragments.cpp.linkopts,
+        user_link_flags = _cmake_flags_for_mode(ctx, ctx.attr.link_flags) + ctx.fragments.cpp.linkopts,
         is_using_linker = True,
         is_linking_dynamic_library = False,
         is_static_linking_mode = True,

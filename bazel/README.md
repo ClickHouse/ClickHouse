@@ -11,6 +11,11 @@ Running those tests still requires a compatible execution platform.
 Bazel builds require no initialized Git submodules. Bazelisk selects the
 pinned Bazel version automatically.
 
+The default compilation mode is `opt`. For Linux C and C++ targets, `-c opt`
+selects `-O3` and defines `NDEBUG`; `-c fastbuild` and `-c dbg` leave
+assertions enabled and use the LLVM toolchain's optimization level for that
+mode. Bazel builds execution tools in their own compilation mode.
+
 The C/C++ toolchain is BCR's `llvm` module (hermetic-llvm). `llvm.MODULE.bazel`
 selects ClickHouse's LLVM fork and the `stage1_from_source` option builds the
 compiler from it. The same external repository supplies LLVM, libc++,
@@ -154,9 +159,10 @@ source directories, updates labels across the main and external repositories,
 and checks source order on both architectures. `//contrib` keeps
 auxiliary dependency targets in the complete `//...` build, even when the
 server does not depend on them.
-`initial_migration/build_file.py` reads unconditional `common --copt`, `--conlyopt`, and
-`--cxxopt` entries from `.bazelrc`. It omits those flags from generated
-native libraries, including `-O3`, `-DNDEBUG`, and `-gz=zlib`.
+`initial_migration/build_file.py` omits the CMake release flags `-O3`
+and `-DNDEBUG` from generated native libraries because the LLVM toolchain
+supplies them in `opt`. It also omits unconditional `common --copt`,
+`--conlyopt`, and `--cxxopt` entries from `.bazelrc`, such as `-gz=zlib`.
 `OS_LINUX`, position independence, and diagnostics shared by C and C++ are
 also `common --copt` options. The generator recognizes both `-DOS_LINUX`
 and CMake's two-argument `-D OS_LINUX` spelling.
