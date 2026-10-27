@@ -1,6 +1,5 @@
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1; -- Changes query plan
 SET query_plan_convert_outer_join_to_inner_join = 1; -- CI may inject False, preventing ANY OUTER → INNER conversion being tested

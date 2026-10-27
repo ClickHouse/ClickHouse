@@ -16,7 +16,6 @@ INSERT INTO mh_d1 SELECT number, number FROM numbers(2000);
 INSERT INTO mh_d2 SELECT number, number FROM numbers(2000);
 INSERT INTO mh_d3 SELECT number, if(number < 64, 'hot', 'cold') FROM numbers(2000);
 
-SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
