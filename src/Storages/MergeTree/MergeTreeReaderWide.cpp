@@ -1070,7 +1070,7 @@ void MergeTreeReaderWide::countCompressedBytesRead()
 
 std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
 {
-    if (!count_compressed_bytes_read)
+    if (!count_compressed_bytes_read || served_from_cache_without_known_streams)
         return std::nullopt;
 
     std::lock_guard lock(ranges_read_mutex);
@@ -1111,10 +1111,23 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
             continue;
 
         const auto & name_and_type = columns_to_read[pos];
+        /// The streams are enumerated without a deserialization state, so those listed in the prefixes are missed: the
+        /// structure of dynamic types, and the buckets of a `Map`, whose info stream is enumerated in their place.
+        if (name_and_type.getTypeInStorage()->hasDynamicStructure())
+        {
+            served_from_cache_without_known_streams = true;
+            return;
+        }
+
         serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
-            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+            /// The null map of a sparse `Nullable` is derived from the sparse offsets, which are not enumerated here.
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size())
+                || substream_path.back().type == ISerialization::Substream::MapBucketsInfo)
+            {
+                served_from_cache_without_known_streams = true;
                 return;
+            }
             const auto & stream_name = getStreamName(name_and_type, substream_path);
             auto * stream = stream_name ? streams.find(*stream_name) : nullptr;
             if (!stream)

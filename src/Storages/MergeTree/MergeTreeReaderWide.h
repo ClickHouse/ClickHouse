@@ -109,6 +109,9 @@ private:
     /// served from the cache in several read steps, and a block read in one step can hold a granule served in another.
     std::unordered_map<String, std::map<size_t, size_t>> counted_ranges;
     void addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk);
+    /// A granule served from the cache is priced by the blocks of its streams, which are not all known for some columns:
+    /// then the bytes read are not measured.
+    bool served_from_cache_without_known_streams = false;
 
     struct StreamInfo
     {
