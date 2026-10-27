@@ -44,7 +44,10 @@ listener, `host` rules match the server name (SNI) the client sent in the TLS ha
 
 ## PostgreSQL {#postgresql}
 
-The proxy reads the user and the database from the cleartext `StartupMessage`. A client that asks to
+The proxy reads the user and the database from the cleartext `StartupMessage`, as the server does: a
+malformed parameter block is rejected, and an omitted or empty database stays unknown to the proxy
+(the server does not default it to the user name, unlike PostgreSQL), so such a connection does not
+match the rules on `database`. A client that asks to
 encrypt the connection first (`SSLRequest` or `GSSENCRequest`) is handled in one of two ways:
 
 - When a routing rule needs the user or the database, the proxy declines encryption, so the client
@@ -79,7 +82,8 @@ and issues an auth-switch so the client re-computes its response against the bac
 proxy forwards that verbatim. The backend performs the real password check — the proxy never learns
 the password. After authentication the connection is spliced byte for byte.
 
-When no routing rule needs the user or the database, MySQL connections are instead forwarded
+When no routing rule needs the user or the database and no `on_first_seen_user` or
+`on_first_seen_database` hook is configured, MySQL connections are instead forwarded
 transparently and routed by peer address or the listener's default pool (no termination). Only
 `mysql_native_password` is mediated; TLS is not offered to the client on a MySQL listener so that the
 handshake stays readable. Because the client receives the proxy's greeting before the backend is
@@ -136,7 +140,10 @@ bastion key is used, the backend's host key is verified against `known_hosts_fil
 
 Each SSH connection borrows an OS thread for its lifetime (libssh drives its own blocking I/O), so
 SSH does not scale as cheaply as the byte-spliced protocols; it is intended for interactive and
-command sessions rather than very high connection counts. The key exchange is limited by
+command sessions rather than very high connection counts. These threads come from the fixed pool that
+the proxy uses for all blocking work (resolving backend host names, running hooks, reading files), so
+the number of concurrent SSH sessions is limited by `ssh.max_sessions` (by default, half of the CPUs
+available to the proxy, at least one) to keep threads for that work; further SSH connections are rejected. The key exchange is limited by
 `handshake_timeout_ms` and the authentication by `ssh.auth_timeout_ms`. SSH connections are routed
 inside the authentication callback, so the hooks (see below) are not run for them.
 
@@ -167,7 +174,9 @@ A listener can handle TLS in three ways:
 - **Transparent** — the `tls` listener protocol. The proxy reads the SNI from the `ClientHello`,
   chooses a backend by hostname, and forwards the encrypted bytes without decrypting them.
 
-Certificates are read from the `openSSL.server` section and reloaded when they change. ACME
+Certificates are read from the `openSSL.server` section at startup; the proxy does not reload them, so
+restart it after replacing a certificate. The TLS 1.3 cipher suites are set by `cipherSuites`, and the ciphers
+of older protocol versions by `cipherList`, in both `openSSL.server` and `openSSL.client`. ACME
 certificate provisioning is not supported by the proxy: a configuration with an `acme` section is
 rejected at startup.
 
@@ -227,8 +236,13 @@ Rules are checked in order; the first whose criteria all match wins. A rule can 
 (the TLS SNI or the HTTP `Host` header), `user`, `database`, `query_type` (`select`, `insert` or
 `other`; HTTP only), and `protocol`. It routes either to a named `pool` or to a `backend_template`.
 As in the server, the query of an HTTP request is the first `query` URL parameter followed by the
-request body, so the proxy classifies them together, reading the beginning of the body (the first
-chunk of a chunked body, up to 64 KiB) when the request has one. A body that is compressed
+request body, so the proxy classifies them together. When the `query` parameter does not establish the
+type by itself (an `INSERT` does, so its data is relayed without waiting for it), the proxy reads the
+beginning of the body (the chunks of a chunked body as long as they are needed, up to 64 KiB in total).
+The query is tokenized with the server's lexer, so comments are recognized as the server recognizes them.
+A `WITH` query is a `select` or an `insert` by the first `SELECT` or `INSERT` outside of brackets, and
+a read query combined with other statements by `PARALLEL WITH` is `other`; as a read query may be
+followed by such statements, a read query whose text is not read completely has no query type. A body that is compressed
 (`Content-Encoding`, or the `decompress` URL parameter) is not inspected, so unless the `query`
 parameter already contains the first keyword, such a request has no query type and matches only
 the rules without `query_type`. The same holds when the inspected beginning of the query ends before
@@ -244,7 +258,10 @@ plaintext `native` listener, if it matches on `host`).
 Hostnames are matched case-insensitively, as DNS names are case-insensitive: the incoming value is
 lowercased before matching, exact `host` values are compared after lowercasing, and a `host_regexp`
 is compiled as case-insensitive (regexp captures substituted into a `backend_template` are therefore
-lowercase). `user` and `database` are matched case-sensitively.
+lowercase). `user` and `database` are matched case-sensitively. The values of HTTP headers are
+decoded from RFC 2047 encoded words, as the server decodes them. An HTTP request without a `database`
+parameter or `X-ClickHouse-Database` header takes the database from a URL path like `/db/table.format`,
+as the server does with the default `http_allow_database_as_path` and `http_allow_table_as_file`.
 A server resolves an omitted or empty user name to its `default_session_user`, which the proxy does
 not know. So a connection with an omitted or empty user name is rejected (and the `on_unknown` hook
 runs) when it reaches a rule that matches on `user` and whose other criteria it matches, instead of
@@ -285,7 +302,9 @@ The proxy runs a shell command on these events, invoked as `<command> KIND PROTO
   trigger it. Concurrent connections with the same name and target wait for the hook. A failed hook is retried by a later connection, and the set of seen names is bounded, so the
   hook can run again for a name: it must be idempotent.
 
-A hook that runs longer than `timeout_ms` (60 seconds by default) is killed and counts as failed.
+A hook that runs longer than `timeout_ms` (60 seconds by default) is killed, together with the processes
+it started (it runs in its own process group), and counts as failed. A hook inherits no file descriptors
+of the proxy other than its standard streams.
 
 ### Session stickiness {#session-stickiness}
 
