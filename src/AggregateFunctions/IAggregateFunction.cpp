@@ -164,6 +164,84 @@ void IAggregateFunction::parallelizeMergeMulti(
     }
 }
 
+void IAggregateFunction::mergeAndDestroyBatchOrDefer(
+    AggregateDataPtr * dst_places,
+    AggregateDataPtr * rhs_places,
+    size_t size,
+    size_t offset,
+    PaddedPODArray<AggregateDataPtr> & deferred_dst,
+    PaddedPODArray<AggregateDataPtr> & deferred_src,
+    Arena * arena) const
+{
+    /// The caller has already detached the source states from their hash table, so a pair that is neither
+    /// merged nor recorded in `deferred_*` would leak. Reserve the slots for the deferred pairs before
+    /// anything is merged, so that recording a pair cannot throw. The destinations of a batch are distinct
+    /// and a merge changes only its own destination, so the decisions below do not change in the loop.
+    /// If something throws, the source states that are neither destroyed nor recorded yet are destroyed here.
+    size_t i = 0;
+    try
+    {
+        size_t num_large = 0;
+        for (size_t j = 0; j < size; ++j)
+            num_large += isLargeMergePair(dst_places[j] + offset, rhs_places[j] + offset);
+        if (num_large)
+        {
+            deferred_dst.reserve(deferred_dst.size() + num_large);
+            deferred_src.reserve(deferred_src.size() + num_large);
+        }
+
+        for (; i < size; ++i)
+        {
+            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+                     "IAggregateFunction::mergeAndDestroyBatchOrDefer called with the same source and destination state");
+            if (isLargeMergePair(dst_places[i] + offset, rhs_places[i] + offset))
+            {
+                chassert(deferred_dst.size() < deferred_dst.capacity() && deferred_src.size() < deferred_src.capacity());
+                deferred_dst.push_back(dst_places[i] + offset);
+                deferred_src.push_back(rhs_places[i] + offset);
+                continue;
+            }
+
+            mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
+            destroy(rhs_places[i] + offset);
+        }
+    }
+    catch (...)
+    {
+        for (; i < size; ++i)
+            destroy(rhs_places[i] + offset);
+        throw;
+    }
+}
+
+void IAggregateFunction::mergeBatchOrDefer(
+    size_t row_begin,
+    size_t row_end,
+    AggregateDataPtr * places,
+    size_t place_offset,
+    const AggregateDataPtr * rhs,
+    PaddedPODArray<AggregateDataPtr> & deferred_dst,
+    PaddedPODArray<AggregateDataPtr> & deferred_src,
+    Arena * arena) const
+{
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        if (!places[i])
+            continue;
+
+        chassert(places[i] + place_offset != rhs[i],
+                 "IAggregateFunction::mergeBatchOrDefer called with the same source and destination state");
+        if (isLargeMergePair(places[i] + place_offset, rhs[i]))
+        {
+            deferred_dst.push_back(places[i] + place_offset);
+            deferred_src.push_back(rhs[i]);
+            continue;
+        }
+
+        mergeImpl(places[i] + place_offset, rhs[i], arena);
+    }
+}
+
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
 {
     if (isState())
@@ -171,6 +249,23 @@ void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place
             ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented", getName());
 
     insertResultInto(place, to, arena);
+}
+
+void IAggregateFunction::addBatchSparseSinglePlace(
+    size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+    const auto * values = &column_sparse.getValuesColumn();
+    const auto & offsets = column_sparse.getOffsetsData();
+
+    auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+    auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+    size_t num_defaults = (row_end - row_begin) - (to - from);
+    if (from < to)
+        addBatchSinglePlace(from, to, place, &values, arena, -1);
+    if (num_defaults > 0)
+        addManyDefaults(place, &values, num_defaults, arena);
 }
 
 void IAggregateFunction::predictValues(

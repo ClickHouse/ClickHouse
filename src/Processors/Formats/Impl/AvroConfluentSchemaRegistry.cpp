@@ -272,7 +272,10 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
                 /// Build the request path directly to preserve percent-encoding.
                 /// Poco::URI normalizes paths by decoding %2F -> /, which breaks
                 /// subjects containing slashes.
-                std::string request_path = base_url.getPath() + "/subjects/" + encoded_subject + "/versions";
+                /// `getPath` returns the decoded path, so encode it again like `getPathAndQuery` does for the schema fetch.
+                std::string request_path;
+                Poco::URI::encode(base_url.getPath(), "?#", request_path);
+                request_path += "/subjects/" + encoded_subject + "/versions";
                 LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Registering schema under subject '{}' at path {}", subject, request_path);
 
                 auto connection_timeouts = buildTimeouts(timeouts);

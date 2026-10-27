@@ -10,6 +10,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -17,10 +18,8 @@
 #include <QueryPipeline/receiveExchangeStreams.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
-#if CLICKHOUSE_CLOUD
-#include <Server/StatelessWorker/StatelessWorkersProvider.h>
+#include <Server/StatelessWorker/IStatelessWorkersProvider.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
-#endif
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/printPipeline.h>
@@ -100,6 +99,7 @@ namespace Setting
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsUInt64 distributed_plan_workers_num;
+    extern const SettingsString distributed_plan_worker_cluster;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsBool use_concurrency_control;
@@ -113,6 +113,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
     extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
@@ -920,7 +921,8 @@ static void addTaskSpanAttributes(
 
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
+    bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback,
+    std::function<void()> on_failure)
 {
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
@@ -1087,6 +1089,18 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     catch (...)
     {
         logQueryException(query_log_elem, context, execute_task_watch, no_ast, query_span, false, /*log_as_internal*/ false, true);
+        if (on_failure)
+        {
+            /// The task's own exception is rethrown below, so an error of the callback is only logged.
+            try
+            {
+                on_failure();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(logger, "Cannot report the task failure early");
+            }
+        }
         throw;
     }
 }
@@ -1136,6 +1150,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
         client_info.initial_query_id = logicalQueryId(client_info);
         client_info.current_query_id = toString(unique_query_id) + "::" + task.task.task_id;
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.distributed_depth += 1;
         task_context->setClientInfo(client_info);
     }
 
@@ -1176,7 +1191,7 @@ public:
         /// InMemoryExchange::getChunk never returns. The exchanges are not removed here: the result
         /// reader still drains final_result after the driver finishes; removal happens when the query
         /// pipeline is destroyed (see makeInMemoryExchangesCleaner).
-        InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), cancellation->getFailure());
+        cancelDistributedQueryInMemoryExchanges(unique_query_id, cancellation->getFailure());
 
         joinAllThreads();
         stage_tasks.clear();
@@ -1229,22 +1244,21 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        VectorWithMemoryTracking<std::shared_future<void>> started_tasks;
-        VectorWithMemoryTracking<std::thread> started_threads;
-        started_tasks.reserve(stage.tasks.size());
-        started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+
+        /// Owned by the members before the first thread starts, so `cleanup` joins it if anything below throws.
+        auto & started_tasks = stage_tasks[stage_name];
+        auto & started_threads = stage_threads[stage_name];
+        started_tasks.reserve(stage.tasks.size());
+        started_threads.reserve(stage.tasks.size());
 
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
         }
-
-        stage_tasks[stage_name] = std::move(started_tasks);
-        stage_threads[stage_name] = std::move(started_threads);
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
@@ -1370,115 +1384,45 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
     assignHostsForTasks(distributed_query_plan_);
 }
 
-/// Worker hostnames from the `stateless_worker_client` config: the `cluster` replicas, or the
-/// single `host`; empty when the worker client is disabled.
-static Strings getDistributedWorkerHostnames(ContextPtr context)
-{
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        return {};
-
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (cluster_name.empty())
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host", "");
-        if (host.empty())
-            return {};
-        return {host};
-    }
-
-    auto cluster = context->tryGetCluster(cluster_name);
-    if (!cluster)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-    auto shard_addresses = cluster->getShardsAddresses();
-    if (shard_addresses.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-    /// Only a single-shard worker cluster is supported for now.
-    if (shard_addresses.size() > 1)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-
-    Strings result;
-    for (const auto & replica : shard_addresses[0])
-        result.push_back(replica.host_name);
-    return result;
-}
-
 size_t getCascadesPlanningNodeCount(ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
+    /// Read the settings from the query context, which the allocation also uses, so a subquery's own
+    /// `SETTINGS` cannot plan a different cluster or worker count than execution gets.
+    const ContextPtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+    const auto & settings = query_context->getSettingsRef();
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
 
     /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
     if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
-#if CLICKHOUSE_CLOUD
-    /// Cloud discovery leases `distributed_plan_workers_num` workers instead of a static cluster.
-    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
-        return requested_workers;
-#endif
-
-    /// Otherwise use the statically configured worker cluster's size.
-    return getDistributedWorkerHostnames(context).size();
+    /// With the client disabled the default cluster plans no distributed nodes, but an explicitly named
+    /// cluster cannot be served, so reject it instead of silently running locally.
+    const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
+    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+    {
+        if (!worker_cluster.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stateless worker client is not enabled; cannot use worker cluster '{}'", worker_cluster);
+        return 0;
+    }
+    /// Size the plan from the provider the query executes on; an unusable selection throws here.
+    return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
 }
 
 TaskToHostMap::~TaskToHostMap() = default;
 
 void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
-
-#if CLICKHOUSE_CLOUD
-    /// When the discovery service is configured it is the only source of
-    /// workers - the statically configured cluster/host is never used as a
-    /// fallback, so the two can never be mixed. Discovery takes precedence when
-    /// both are present.
-    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
-    {
-        const auto workers_num = context->getSettingsRef()[Setting::distributed_plan_workers_num];
-        if (workers_num == 0)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker discovery is configured but `distributed_plan_workers_num` is 0; "
-                "set it to a positive value to lease workers from the discovery service");
-        auto provider = context->getStatelessWorkersProvider();
-        worker_allocation = provider->allocate(workers_num);
-        for (const auto & endpoint : worker_allocation->getEndpoints())
-            worker_addresses.push_back(resolveWorkerAddress(endpoint.host, endpoint.port, 0, context));
-        if (worker_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No stateless workers available from the discovery service");
-        return;
-    }
-#endif
-
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (!cluster_name.empty())
-    {
-        auto cluster = context->tryGetCluster(cluster_name);
-        if (!cluster)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-        auto shard_addresses = cluster->getShardsAddresses();
-        if (shard_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-        /// Only a single-shard worker cluster is supported for now.
-        if (shard_addresses.size() > 1)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-        for (const auto & replica : shard_addresses[0])
-            worker_addresses.push_back(
-                resolveWorkerAddress(replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port, context));
-    }
-    else
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host");
-        if (!host.empty())
-            worker_addresses.push_back(resolveWorkerAddress(host, 0, 0, context));
-    }
-
+    /// No `enabled` check here: a query that already resolved its provider drains on it even if the
+    /// client is disabled meanwhile, while resolving a new provider is refused by the registry.
+    /// One allocation per query, shared by its distributed plans.
+    worker_allocation = context->getOrCreateStatelessWorkerAllocation();
+    for (const auto & addr : worker_allocation->getAddresses())
+        worker_addresses.push_back(
+            resolveWorkerAddress(addr.host, addr.stateless_worker_port, addr.streaming_exchange_port, context));
     if (worker_addresses.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
+        throw Exception(ErrorCodes::SW_SERVER_NO_WORKERS_AVAILABLE, "No stateless workers available");
 }
 
 void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
@@ -1683,7 +1627,7 @@ protected:
                     /// Its failure can be the root cause of the teardown: the initiator often sees an
                     /// effect first, e.g. the result reader's socket closing.
                     if (terminal_status->status != "Finished" && terminal_status->status != "Unknown task")
-                        recordTaskFailure(task, *terminal_status);
+                        recordTaskFailureOnce(task, *terminal_status);
                     tryForgetTask(task);
                 }
                 else
@@ -1714,13 +1658,22 @@ protected:
 
     private:
         /// Record a task's failed status under the worker's error code, so the client sees it and the
-        /// record can rank it. A status other than `Failed` carries no code and gets the generic remote
-        /// error code, which ranks below a known root cause.
-        void recordTaskFailure(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
+        /// record can rank it. A status other than `Failed` or `Failing` carries no code and gets the
+        /// generic remote error code, which ranks below a known root cause. A failing task reports its
+        /// failure on every poll until it ends, but it is recorded once.
+        void recordTaskFailureOnce(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
         {
+            {
+                std::lock_guard g(lock);
+                if (tasks_with_recorded_failure.contains(task.task_id))
+                    return;
+            }
             const int code = task_status.error_code != 0 ? task_status.error_code : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
             recordFailure(std::make_exception_ptr(Exception(code, "Task {} did not finish successfully (status: {}): {}",
                 task.task_id, task_status.status, task_status.error_message)));
+            /// Mark only after the record, otherwise a concurrent poll could skip the task before its failure is recorded.
+            std::lock_guard g(lock);
+            tasks_with_recorded_failure.insert(task.task_id);
         }
 
         /// Log the exception, record it as the query's failure, and request cancellation. The status
@@ -1818,17 +1771,16 @@ protected:
             if (progress_callback)
                 progress_callback(task_status.progress);
 
-            if (task_status.status == "Running")
+            const bool finished = task_status.status == "Finished";
+            if (!finished && task_status.status != "Running")
+                recordTaskFailureOnce(task, task_status);
+
+            if (!isTerminalTaskStatus(task_status.status))
             {
                 /// Add the task back to the end of the queue
                 addTaskToCheckQueue(stage_name, task.task_id);
                 return;
             }
-
-            /// Task reached a terminal state on the worker.
-            const bool finished = task_status.status == "Finished";
-            if (!finished)
-                recordTaskFailure(task, task_status);
 
             /// Release worker-side bookkeeping for it (TaskState/progress/future). Best-effort. Only
             /// after recording the failure: a forgotten task answers the teardown's poll with
@@ -1851,7 +1803,13 @@ protected:
             }
         }
 
-        /// Polls the worker until the task leaves the "Running" state or a bounded time budget elapses.
+        /// The task has ended on the worker. A `Failing` task has not: it still frees its resources.
+        static bool isTerminalTaskStatus(const String & status)
+        {
+            return status != "Running" && status != "Failing";
+        }
+
+        /// Polls the worker until the task reaches a terminal state or a bounded time budget elapses.
         /// Returns the terminal status when the task is known to be terminal (or already gone from the
         /// worker), nothing on timeout or a status-request error.
         std::optional<DistributedQueryTaskStatus> waitForTaskTerminal(const RunningTaskInfo & task) noexcept
@@ -1868,8 +1826,11 @@ protected:
                     /// through the cleanup polls.
                     handleWorkerLogs(task, task_status);
 
-                    if (task_status.status != "Running")
+                    if (isTerminalTaskStatus(task_status.status))
                         return task_status;
+                    /// Freeing the resources of a failing task can take longer than this wait.
+                    if (task_status.status == "Failing")
+                        recordTaskFailureOnce(task, task_status);
                 }
                 catch (...)
                 {
@@ -2025,6 +1986,8 @@ protected:
         UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
         /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
         bool cancel_started TSA_GUARDED_BY(lock) = false;
+        /// Tasks whose failure is recorded, see `recordTaskFailureOnce`.
+        UnorderedSetWithMemoryTracking<String> tasks_with_recorded_failure TSA_GUARDED_BY(lock);
         std::atomic<Int64> in_flight_request_count = 0;
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
@@ -2381,6 +2344,8 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
 
 void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure)
 {
+    /// Must not fail on the memory limit: it unblocks the task threads that are joined next.
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     InMemoryExchanges::instance()->cancelQuery(toString(unique_query_id), failure);
 }
 
