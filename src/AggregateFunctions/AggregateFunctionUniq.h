@@ -705,6 +705,7 @@ public:
 
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
+    bool ignoresRepeatedValues() const override { return true; }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
@@ -873,6 +874,7 @@ public:
         return 0;
     }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
+    bool ignoresRepeatedValues() const override { return true; }
 
     bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 

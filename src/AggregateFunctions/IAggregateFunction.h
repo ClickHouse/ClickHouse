@@ -256,6 +256,10 @@ public:
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
 
+    /// Return true if adding a value that the state has already received leaves the state unchanged,
+    /// so that a caller may skip repeated values.
+    virtual bool ignoresRepeatedValues() const { return false; }
+
     /// Should be used only if isAbleToParallelizeMerge() returned true.
     /// Non-virtual public entry point that asserts the source and destination states do not alias.
     /// All overrides must be done on `mergeImpl` below.

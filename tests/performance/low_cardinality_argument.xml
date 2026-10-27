@@ -2,11 +2,21 @@
     <create_query>
         CREATE TABLE test_lc (x UInt64, lc LowCardinality(Nullable(String))) ENGINE = MergeTree order by x
     </create_query>
+    <create_query>
+        CREATE TABLE test_lc_agg (x UInt64, lc LowCardinality(String)) ENGINE = MergeTree order by x
+    </create_query>
 
     <fill_query>INSERT INTO test_lc SELECT number, number % 10 ? NULL : toString(number % 10000) FROM numbers(1e7)</fill_query>
+    <fill_query>INSERT INTO test_lc_agg SELECT number, concat('model ', toString(number * 7919 % 166)) FROM numbers(1e8)</fill_query>
     
     <query>SELECT isNullable(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isConstant(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isNull(lc) FROM test_lc FORMAT Null</query>
     <query>SELECT isNotNull(lc) FROM test_lc FORMAT Null</query>
+    <query>SELECT uniqExact(lc), min(lc) FROM test_lc FORMAT Null</query>
+
+    <query>SELECT uniq(lc) FROM test_lc_agg FORMAT Null</query>
+    <query>SELECT uniqExact(lc), min(lc) FROM test_lc_agg FORMAT Null</query>
+    <query>SELECT min(lc), max(lc) FROM test_lc_agg FORMAT Null</query>
+    <query>SELECT groupUniqArray(lc), uniqCombined(lc) FROM test_lc_agg FORMAT Null</query>
 </test>

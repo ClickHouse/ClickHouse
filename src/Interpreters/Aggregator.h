@@ -531,6 +531,8 @@ public:
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
+        /// The only argument is a `LowCardinality` column whose used values are added once (aggregation without keys).
+        bool has_low_cardinality_argument = false;
     };
 
     /// Used for optimize_aggregation_in_order:
