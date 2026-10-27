@@ -322,6 +322,19 @@ def test_grant_by_other_spelling_or_alias():
     )
 
 
+def test_authentication_grants_by_other_spelling_or_alias():
+    """The GRANTS clause of an authentication method limits the rights of the user by intersection,
+    so a function name in it must be resolved like in GRANT."""
+    instance.query(
+        "CREATE USER A IDENTIFIED WITH sha256_password BY 'p' "
+        "GRANTS (FUNCTION ON HEX, FUNCTION ON isASCII)"
+    )
+    instance.query("GRANT FUNCTION ON HEX, FUNCTION ON isASCII TO A")
+
+    assert instance.query("SELECT hex('a')", user="A", password="p") == "61\n"
+    assert instance.query("SELECT isValidASCII('a')", user="A", password="p") == "1\n"
+
+
 def test_listed_executable_udf_requires_grant():
     skip_test_msan()
     instance.query("CREATE USER A")
