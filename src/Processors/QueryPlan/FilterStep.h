@@ -163,4 +163,11 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node);
 /// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
 bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node);
 
+/// Does the AND chain of the filter have an atom that is a column or a constant? Such an atom is not split into a filter of its
+/// own, so it is evaluated in the last filter of the chain.
+bool hasTrivialAndChainAtom(const ActionsDAG::Node * filter);
+
+/// Can every atom of the AND chain of the filter be moved to the front of the chain? See `canBeMovedToTheFrontOfAndChain`.
+bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter);
+
 }

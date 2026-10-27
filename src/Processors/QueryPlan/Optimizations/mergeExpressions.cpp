@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
@@ -104,6 +105,26 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
     return 0;
 }
+
+/// Is the filter of the node over a read whose row-level filter is applied after it (`SelectQueryInfo::row_level_filter_after_read`)?
+static bool isOverReadWithRowLevelFilterAfterIt(const QueryPlan::Node & node)
+{
+    const auto * current = &node;
+    while (current->children.size() == 1
+        && (typeid_cast<const FilterStep *>(current->step.get()) || typeid_cast<const ExpressionStep *>(current->step.get())))
+        current = current->children.front();
+
+    const auto * source = dynamic_cast<const SourceStepWithFilter *>(current->step.get());
+    return source && source->getQueryInfo().row_level_filter_after_read;
+}
+
+/// Can every result of the DAG besides its filter be computed on any row? See `canBeMovedToTheFrontOfAndChain`.
+static bool computesOnlyMovableResults(const ActionsDAG & dag, const ActionsDAG::Node & filter_node)
+{
+    return std::ranges::all_of(dag.getOutputs(),
+        [&](const ActionsDAG::Node * output) { return output == &filter_node || canBeMovedToTheFrontOfAndChain(output); });
+}
+
 size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -130,6 +151,17 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
             return 0;
 
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
+
+        /// The merged filter is not always split into its AND chain (`query_plan_merge_filters`), and never at a column atom, so over
+        /// a read whose row-level filter is applied after it, merge only what can be evaluated on the rows that filter rejects.
+        if (isOverReadWithRowLevelFilterAfterIt(*child_node))
+        {
+            const auto & upper_filter_node = parent_actions.findInOutputs(parent_filter->getFilterColumnName());
+            if (!canAndChainAtomsBeMovedToTheFront(&upper_filter_node)
+                || !computesOnlyMovableResults(parent_actions, upper_filter_node)
+                || (hasTrivialAndChainAtom(&child_filter_node) && !canAndChainAtomsBeMovedToTheFront(&child_filter_node)))
+                return 0;
+        }
         if (child_filter->removesFilterColumn())
             removeFromOutputs(child_actions, child_filter_node);
 

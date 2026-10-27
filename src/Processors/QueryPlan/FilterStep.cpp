@@ -293,6 +293,14 @@ static bool isTrivialSubtree(const ActionsDAG::Node * node)
     return node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
 }
 
+bool hasTrivialAndChainAtom(const ActionsDAG::Node * filter)
+{
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    return std::ranges::any_of(ActionsDAG::extractConjunctionAtoms(filter), isTrivialSubtree);
+}
+
 struct ActionsAndName
 {
     ActionsDAG dag;
@@ -345,6 +353,14 @@ bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
             nodes.push(child);
     }
     return true;
+}
+
+bool canAndChainAtomsBeMovedToTheFront(const ActionsDAG::Node * filter)
+{
+    while (filter->type == ActionsDAG::ActionType::ALIAS)
+        filter = filter->children.at(0);
+
+    return std::ranges::all_of(ActionsDAG::extractConjunctionAtoms(filter), canBeMovedToTheFrontOfAndChain);
 }
 
 /// Is the atom heavy, that is, does it contain functions that are worth to execute lazily (like `JSONExtractString`)?

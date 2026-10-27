@@ -22,6 +22,19 @@
 -- a stateful policy or a stateful condition of the query
 2
 2
+-- a policy that is a column
+2
+2
+2
+2
+2
+2
+3
+55
 -- a stateful condition is not merged into the filter below it
 [1,3]
+-- a filter merged although query_plan_merge_filters = 0
+2
+-- without a policy, a filter is still merged into one with a column atom
+1
 -- without a policy the row is in scope
