@@ -1137,11 +1137,13 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
     The name is taken from the terminal outcome `clickhouse-test` prints, not
     from any error the log happens to mention along the way: a run whose early
     retries hit the memory tracker but which ended on a refused connection is
-    not the memory-tracker case. Both places where a rejection is the terminal
-    outcome -- the startup probe, and the processlist query of the hung check
-    itself, which a run that started fine can still be rejected on -- print the
-    same `Server rejects queries.` marker, followed by which query was
-    rejected. The row is named after that: only a rejected startup probe says
+    not the memory-tracker case. Every place where a rejection is the terminal
+    outcome -- the startup probe, the processlist query of the hung check
+    itself, which a run that started fine can still be rejected on, and any
+    other query of the runner, such as the setup queries right after the
+    startup probe, whose error ends the run -- prints the same
+    `Server rejects queries.` marker, followed by which query was rejected.
+    The row is named after that: only a rejected startup probe says
     that every query was rejected, because when the processlist query is the
     one rejected, the version query and the preparation queries before it did
     go through.
