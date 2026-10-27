@@ -151,10 +151,10 @@ SELECT o.number, EXISTS (
 FROM numbers(2) AS o ORDER BY o.number;
 
 SELECT '-- a join_algorithm that cannot execute the restoring join';
-SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING s > 0)
+SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING s = 0)
 FROM numbers(2) AS o ORDER BY o.number
 SETTINGS join_algorithm = 'direct';
-SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING s > 0)
+SELECT o.number, EXISTS (SELECT sum(i.number) AS s FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING s = 0)
 FROM numbers(2) AS o ORDER BY o.number
 SETTINGS join_algorithm = 'direct', correlated_subqueries_use_in_memory_buffer = 0;
 
