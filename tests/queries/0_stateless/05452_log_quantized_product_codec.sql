@@ -8,12 +8,6 @@ DROP TABLE IF EXISTS t_log;
 DROP TABLE IF EXISTS t_tinylog;
 DROP TABLE IF EXISTS t_mt;
 DROP TABLE IF EXISTS t_clone;
-DROP TABLE IF EXISTS t_ctas_log;
-DROP TABLE IF EXISTS t_ctas_tinylog;
-DROP TABLE IF EXISTS t_ctas_tuple_log;
-DROP TABLE IF EXISTS t_ctas_tuple_tinylog;
-DROP TABLE IF EXISTS t_ctas_array_log;
-DROP TABLE IF EXISTS t_ctas_plain;
 DROP TABLE IF EXISTS t_log_int8;
 DROP TABLE IF EXISTS t_tinylog_int8;
 
@@ -23,15 +17,21 @@ CREATE TABLE t_tinylog (id UInt32, vec Array(Float32) CODEC(Quantized('product',
 CREATE TABLE t_mt (id UInt32, vec Array(Float32) CODEC(Quantized('product', 8, 2, 4))) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_clone AS t_mt ENGINE = TinyLog; -- { serverError ILLEGAL_COLUMN }
 -- A column inferred from a SELECT keeps the source column's serialization, without its codec.
-CREATE TABLE t_ctas_log ENGINE = Log AS SELECT * FROM t_mt; -- { serverError ILLEGAL_COLUMN }
-CREATE TABLE t_ctas_tinylog ENGINE = TinyLog AS SELECT * FROM t_mt; -- { serverError ILLEGAL_COLUMN }
-CREATE TABLE t_ctas_tuple_log ENGINE = Log AS SELECT id, tuple(vec) AS tv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
-CREATE TABLE t_ctas_tuple_tinylog ENGINE = TinyLog AS SELECT id, tuple(vec) AS tv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
-CREATE TABLE t_ctas_array_log ENGINE = Log AS SELECT id, [vec] AS vv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+-- A Replicated database creates the table from the formatted column list instead, so these use an Atomic one.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_log ENGINE = Log AS SELECT * FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_tinylog ENGINE = TinyLog AS SELECT * FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_tuple_log ENGINE = Log AS SELECT id, tuple(vec) AS tv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_tuple_tinylog ENGINE = TinyLog AS SELECT id, tuple(vec) AS tv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_array_log ENGINE = Log AS SELECT id, [vec] AS vv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+-- `EMPTY` skips the insert, so only the CREATE check can refuse these.
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_empty_log ENGINE = Log EMPTY AS SELECT * FROM t_mt; -- { serverError ILLEGAL_COLUMN }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_empty_tuple_tinylog ENGINE = TinyLog EMPTY AS SELECT id, tuple(vec) AS tv FROM t_mt; -- { serverError ILLEGAL_COLUMN }
 INSERT INTO t_mt SELECT number, arrayMap(j -> toFloat32((number * 7 + j) % 13), range(8)) FROM numbers(4);
-CREATE TABLE t_ctas_plain (id UInt32, vec Array(Float32)) ENGINE = Log AS SELECT * FROM t_mt;
-SELECT count(), sum(arraySum(vec)) FROM t_ctas_plain;
-DROP TABLE t_ctas_plain;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_plain (id UInt32, vec Array(Float32)) ENGINE = Log AS SELECT * FROM t_mt;
+SELECT count(), sum(arraySum(vec)) FROM {CLICKHOUSE_DATABASE_2:Identifier}.t_ctas_plain;
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 DROP TABLE t_mt;
 
 -- A full-definition ATTACH states a new definition and is refused like CREATE.
