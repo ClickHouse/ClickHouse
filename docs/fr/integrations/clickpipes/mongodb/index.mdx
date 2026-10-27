@@ -29,9 +29,7 @@ Vous pouvez utiliser ClickPipes pour ingérer des données depuis votre base de 
 
 Les ClickPipes MongoDB peuvent être déployés et gérés manuellement à l’aide de l’interface utilisateur de ClickPipes, ainsi que par programmation à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
 
-<div id="prerequisites">
-  ## Prérequis
-</div>
+## Prérequis {#prerequisites}
 
 Pour commencer, vous devez d’abord vous assurer que votre base de données MongoDB est correctement configurée pour la réplication. Les étapes de configuration dépendent de la manière dont vous déployez MongoDB ; veuillez donc suivre le guide correspondant ci-dessous :
 
@@ -43,17 +41,15 @@ Pour commencer, vous devez d’abord vous assurer que votre base de données Mon
 
 Une fois votre base de données MongoDB source configurée, vous pouvez poursuivre la création de votre ClickPipe.
 
-<div id="create-your-clickpipe">
-  ## Créez votre ClickPipe
-</div>
+## Créez votre ClickPipe {#create-your-clickpipe}
 
-Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’avez pas encore de compte, vous pouvez vous inscrire [ici](https://cloud.clickhouse.com/).
+Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’avez pas encore de compte, vous pouvez vous inscrire [ici](https://clickhouse.cloud/signUp?loc=docs-integrations-clickpipes-mongodb).
 
 1. Dans la console de ClickHouse Cloud, accédez à votre service ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="service ClickPipes" size="lg" border />
 
-2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe ».
+2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe ».
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Sélectionner les importations" size="lg" border />
 
@@ -61,9 +57,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="Sélectionner MongoDB" size="lg" border />
 
-<div id="add-your-source-mongodb-database-connection">
-  ### Ajoutez la connexion à votre base de données source MongoDB
-</div>
+### Ajoutez la connexion à votre base de données source MongoDB {#add-your-source-mongodb-database-connection}
 
 4. Renseignez les détails de connexion de votre base de données source MongoDB, que vous avez configurée à l’étape des prérequis.
 
@@ -74,15 +68,11 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="Renseignez les détails de connexion" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### (Facultatif) Modifier les paramètres TLS
-</div>
+#### (Facultatif) Modifier les paramètres TLS {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (Facultatif) Configurer le tunnel SSH
-</div>
+#### (Facultatif) Configurer le tunnel SSH {#optional-set-up-ssh-tunneling}
 
 Vous pouvez spécifier les informations du tunnel SSH si votre base de données source MongoDB n&#39;est pas accessible publiquement.
 
@@ -102,9 +92,7 @@ Vous pouvez spécifier les informations du tunnel SSH si votre base de données 
 
 Une fois les informations de connexion renseignées, cliquez sur `Next`.
 
-<div id="advanced-settings">
-  #### Configurer les paramètres avancés
-</div>
+#### Configurer les paramètres avancés {#advanced-settings}
 
 Vous pouvez configurer les paramètres avancés si nécessaire. Une brève description de chaque paramètre est fournie ci-dessous :
 
@@ -112,9 +100,7 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 * **Pull batch size** : le nombre de lignes à récupérer en une seule fois. Il s&#39;agit d&#39;un paramètre appliqué au mieux, qui peut ne pas être respecté dans tous les cas.
 * **Snapshot number of tables in parallel** : il s&#39;agit du nombre de tables qui seront récupérées en parallèle pendant le snapshot initial. Cela est utile si vous avez un grand nombre de tables et souhaitez contrôler le nombre de tables récupérées en parallèle.
 
-<div id="configure-the-tables">
-  ### Configurer les tables
-</div>
+### Configurer les tables {#configure-the-tables}
 
 5. Ici, vous pouvez sélectionner la base de données de destination de votre ClickPipe. Vous pouvez soit sélectionner une base de données existante, soit en créer une nouvelle.
 
@@ -122,23 +108,17 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 6. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données MongoDB source. Lors de la sélection des tables, vous pouvez également choisir de les renommer dans la base de données ClickHouse de destination.
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### Vérifiez les autorisations et démarrez le ClickPipe
-</div>
+### Vérifiez les autorisations et démarrez le ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 7. Sélectionnez le rôle « Full access » dans le menu déroulant des autorisations, puis cliquez sur « Complete Setup ».
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Vérifier les autorisations" size="lg" border />
 
-<div id="whats-next">
-  ## Et ensuite ?
-</div>
+## Et ensuite ? {#whats-next}
 
 Une fois votre ClickPipe configuré pour répliquer les données de MongoDB vers ClickHouse Cloud, vous pouvez vous concentrer sur la façon d’interroger et de modéliser vos données pour des performances optimales.
 
-<div id="caveats">
-  ## Points à noter
-</div>
+## Points à noter {#caveats}
 
 Voici quelques points à noter lors de l&#39;utilisation de ce connecteur :
 

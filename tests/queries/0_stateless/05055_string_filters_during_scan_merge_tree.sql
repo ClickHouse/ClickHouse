@@ -134,8 +134,10 @@ SELECT count() FROM t_string_filter_long PREWHERE s LIKE '%needle%' OR s LIKE '%
 DROP TABLE t_string_filter_long;
 
 SELECT 'the optimization is applied';
-SELECT count() > 0 FROM t_string_filter_wide PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied';
-SELECT count() > 0 FROM t_string_filter_single PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, log_comment = '05055_string_filter_applied';
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SELECT count() > 0 FROM t_string_filter_wide PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, log_comment = '05055_string_filter_applied';
+SELECT count() > 0 FROM t_string_filter_single PREWHERE s LIKE '%rare-substring%' SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, log_comment = '05055_string_filter_applied';
 SYSTEM FLUSH LOGS query_log;
 SELECT
     sum(ProfileEvents['StringValueFilterValuesChecked']) > 0,

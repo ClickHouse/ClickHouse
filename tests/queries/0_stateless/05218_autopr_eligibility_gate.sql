@@ -31,11 +31,14 @@ CREATE TABLE t_autopr_gate_hop ENGINE = Alias('v_autopr_gate');
 INSERT INTO t_autopr_gate SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_autopr_gate_2 SELECT number, number % 10 FROM numbers(1000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET max_parallel_replicas = 3;
-SET automatic_parallel_replicas_mode = 1;
+-- Mode 2 recollects the statistics on every execution, so an eligible query always gets a candidate
+-- plan. In mode 1 the cases below that read one table through several wrappers share a plan hash, so
+-- all but the first are decided from the first one's statistics and build no plan - which would read
+-- here as ineligibility.
+SET automatic_parallel_replicas_mode = 2;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 -- The byte pre-gate rejects a read this small before the eligibility check is reached; 0 disables it
 -- so that every query below actually exercises the check.

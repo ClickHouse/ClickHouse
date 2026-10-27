@@ -22,7 +22,7 @@ CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 # column: it retries until no row reports 'Scheduling'.
 query_no_scheduling() {
     local out
-    while :
+    while clickhouse_test_time_left
     do
         out=$($CLICKHOUSE_CLIENT -q "$1")
         if ! grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$out"; then
@@ -74,6 +74,7 @@ $CLICKHOUSE_CLIENT -q "
     create materialized view miss refresh every 1 year depends on plain (x Int64) engine Memory as select x from plain;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<1: missing>', status, last_success_time is null, next_refresh_time is null from refreshes where view = 'miss'"
@@ -82,6 +83,7 @@ $CLICKHOUSE_CLIENT -q "
     alter table miss modify refresh every 1 year depends on nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<2: still missing>', status from refreshes where view = 'miss'"
@@ -93,6 +95,7 @@ $CLICKHOUSE_CLIENT -q "
     system wait view nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'Scheduled' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -102,6 +105,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "drop table nonexistent;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'miss' -- $LINENO" | xargs`" != 'MissingDependencies' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 query_no_scheduling "select '<4: dep dropped>', status, next_refresh_time is null from refreshes where view = 'miss'"
@@ -121,6 +125,7 @@ $CLICKHOUSE_CLIENT -q "
     create materialized view after_dep refresh depends on every_dep (x Int64) engine Memory as select x*2 as x from every_dep;"
 while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time is null from refreshes where view = 'after_dep' -- $LINENO" | xargs`" != '0' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "select '<5: after-on-every>', * from after_dep;"
@@ -132,6 +137,7 @@ $CLICKHOUSE_CLIENT -q "
     system test view every_dep set fake time '2070-01-01 00:00:00';"
 while [ "`$CLICKHOUSE_CLIENT -q "select min(x) from after_dep -- $LINENO" | xargs`" != '400' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -151,6 +157,7 @@ $CLICKHOUSE_CLIENT -q "
 # REFRESH EVERY uses timeslot from schedule, when = timeslot < now → refresh immediately.
 while [ "`$CLICKHOUSE_CLIENT -q "select last_success_time is null from refreshes where view = 'every_on_after' -- $LINENO" | xargs`" != '0' ]
 do
+    clickhouse_test_time_left || exit 1
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "
@@ -183,10 +190,32 @@ $CLICKHOUSE_CLIENT -q "
     -- Initial state has no last-known dep refreshes to compare against, so the cycle won't start by itself; kick it.
     system refresh view current_batch_v;"
 
-# Wait until at least 3 waves have accumulated in batch_log (one append per wave).
-for _ in $(seq 1 120); do
-    n=$($CLICKHOUSE_CLIENT -q "select count() from batch_log")
-    if [ "$n" -ge 3 ]; then break; fi
+# Wait until at least 3 waves have accumulated in batch_log (one append per wave). A wave writes a part to
+# each of the three targets, which on object storage under load can take tens of seconds, so poll by wall
+# clock until 20s before the harness kills the test (CLICKHOUSE_TEST_TIMEOUT), leaving time to report.
+wave_wait_failed() {
+    echo "$1"
+    timeout -k 2 6 $CLICKHOUSE_CLIENT -q "select * from refreshes format Vertical" \
+        || echo "view_refreshes dump failed or timed out"
+    exit 1
+}
+wave_deadline=$((${CLICKHOUSE_TEST_TIMEOUT:-600} - 20))
+n='(no poll returned)'
+while clickhouse_test_time_left
+do
+    left=$((wave_deadline - SECONDS))
+    if ((left <= 0))
+    then
+        wave_wait_failed "Only $n of 3 waves in batch_log after ${SECONDS}s"
+    fi
+    out=$(timeout -k 1 "$left" $CLICKHOUSE_CLIENT -q "select count() from batch_log")
+    rc=$?
+    if ((rc != 0))
+    then
+        wave_wait_failed "Poll of batch_log failed with status $rc after ${SECONDS}s, last count $n"
+    fi
+    n=$out
+    if ((n >= 3)); then break; fi
     sleep 0.5
 done
 $CLICKHOUSE_CLIENT -q "

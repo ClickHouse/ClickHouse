@@ -15,19 +15,13 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 说明
-</div>
+## 说明 {#description}
 
 在这种格式中，所有数据都表示为一个 JSON 对象，其中每一行都对应该对象中的一个独立字段，类似于 [`JSONEachRow`](/zh/reference/formats/JSON/JSONEachRow) 格式。
 
-<div id="example-usage">
-  ## 示例用法
-</div>
+## 示例用法 {#example-usage}
 
-<div id="basic-example">
-  ### 基础示例
-</div>
+### 基础示例 {#basic-example}
 
 给定如下 JSON：
 
@@ -42,9 +36,7 @@ doc_type: 'reference'
 如果要将对象名称用作列值，可以使用特殊设置 [`format_json_object_each_row_column_for_object_name`](/zh/reference/settings/formats/format#format_json_object_each_row_column_for_object_name)。
 该设置的值应设为某个列名，该列名会在结果对象中用作某一行的 JSON 键。
 
-<div id="output">
-  #### 输出
-</div>
+#### 输出 {#output}
 
 假设我们有一个名为 `test` 的表，包含两列：
 
@@ -70,9 +62,7 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 }
 ```
 
-<div id="input">
-  #### 输入
-</div>
+#### 输入 {#input}
 
 假设我们将上一个示例的输出保存到了名为 `data.json` 的文件中：
 
@@ -101,9 +91,7 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-<div id="json-inserting-data">
-  ### 插入数据
-</div>
+### 插入数据 {#json-inserting-data}
 
 ```sql title="Query"
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -116,9 +104,7 @@ ClickHouse 允许：
 
 ClickHouse 会忽略元素之间的空格以及对象后面的逗号。你可以将所有对象写在同一行中传入，无需用换行符将它们分隔开。
 
-<div id="omitted-values-processing">
-  #### 省略值的处理
-</div>
+#### 省略值的处理 {#omitted-values-processing}
 
 ClickHouse 会用相应[数据类型](/zh/reference/data-types/index)的默认值来填补被省略的值。
 
@@ -141,9 +127,7 @@ CREATE TABLE IF NOT EXISTS example_table
   当以 `input_format_defaults_for_omitted_fields = 1` 插入数据时，相比 `input_format_defaults_for_omitted_fields = 0`，ClickHouse 会消耗更多计算资源。
 </Note>
 
-<div id="json-selecting-data">
-  ### 查询数据
-</div>
+### 查询数据 {#json-selecting-data}
 
 以 `UserActivity` 表为例：
 
@@ -167,9 +151,7 @@ CREATE TABLE IF NOT EXISTS example_table
   字符串中可以输出任意字节序列。如果你确定表中的数据可以在不丢失任何信息的情况下格式化为 JSON，请使用 [`JSONEachRow`](/zh/reference/formats/JSON/JSONEachRow) 格式。
 </Info>
 
-<div id="jsoneachrow-nested">
-  ### Nested 结构的用法
-</div>
+### Nested 结构的用法 {#jsoneachrow-nested}
 
 如果你的表中包含 [`Nested`](/zh/reference/data-types/nested-data-structures/index) 数据类型的列，则可以插入具有相同结构的 JSON 数据。可通过 [input&#95;format&#95;import&#95;nested&#95;json](/zh/reference/settings/formats/input-format#input_format_import_nested_json) 设置启用此功能。
 
@@ -228,9 +210,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-<div id="format-settings">
-  ## 格式设置
-</div>
+## 格式设置 {#format-settings}
 
 | 设置项                                                                                                                                                                         | 描述                                                                                                | 默认值      | 说明                                                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -249,7 +229,7 @@ SELECT * FROM json_each_row_nested
 | [`input_format_json_compact_allow_variable_number_of_columns`](/zh/reference/settings/formats/input-format#input_format_json_compact_allow_variable_number_of_columns)         | 在 JSONCompact/JSONCompactEachRow 格式中允许列数可变，忽略多余列，并对缺失列使用默认值。                                      | `false`  |                                                                                                                                                     |
 | [`input_format_json_throw_on_bad_escape_sequence`](/zh/reference/settings/formats/input-format#input_format_json_throw_on_bad_escape_sequence)                                 | 如果 JSON 字符串包含错误的转义序列，则抛出异常。若禁用此项，错误的转义序列将按原样保留在数据中。                                               | `true`   |                                                                                                                                                     |
 | [`input_format_json_empty_as_default`](/zh/reference/settings/formats/input-format#input_format_json_empty_as_default)                                                         | 将 JSON 输入中的空字段视为默认值。                                                                              | `false`. | 对于复杂的默认表达式，还必须同时启用 [`input_format_defaults_for_omitted_fields`](/zh/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields)。 |
-| [`output_format_json_quote_64bit_integers`](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | 控制 JSON 输出格式中 64 位整数是否加引号。                                                                        | `true`   |                                                                                                                                                     |
+| [`output_format_json_quote_64bit_integers`](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | 控制 JSON 输出格式中 64 位及以上整数是否加引号。                                                                     | `false`  |                                                                                                                                                     |
 | [`output_format_json_quote_64bit_floats`](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_floats)                                                  | 控制 JSON 输出格式中 64 位浮点数是否加引号。                                                                       | `false`  |                                                                                                                                                     |
 | [`output_format_json_quote_denormals`](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals)                                                        | 在 JSON 输出格式中启用 &#39;+nan&#39;、&#39;-nan&#39;、&#39;+inf&#39; 和 &#39;-inf&#39; 输出。                  | `false`  |                                                                                                                                                     |
 | [`output_format_json_quote_decimals`](/zh/reference/settings/formats/output-format#output_format_json_quote_decimals)                                                          | 控制在 JSON 输出格式中是否为 Decimal 输出加引号。                                                                  | `false`  |                                                                                                                                                     |

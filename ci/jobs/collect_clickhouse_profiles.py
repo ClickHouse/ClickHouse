@@ -20,13 +20,14 @@ import platform
 import shutil
 import subprocess
 import time
-import xml.etree.ElementTree as ET
+from shlex import quote
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
-    iceberg_database_ddl_commands,
+    iceberg_database_queries,
 )
+from ci.jobs.scripts.perf import test_discovery
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
@@ -309,7 +310,10 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     )
 
     if wait_for_server_ready(proc, server_dir, port, log_file):
-        return proc, log_fd
+        # Create the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
+        client = f"{server_dir}/clickhouse-client --port {port}"
+        if all(Shell.check(f"{client} --query {quote(query)}", verbose=True) for query in iceberg_database_queries(server_dir)):
+            return proc, log_fd
 
     # `shell=True` means `proc` is the wrapper shell, not `clickhouse-server`.
     # Tear down the whole process group via `stop_server` so the server itself
@@ -346,27 +350,6 @@ def install_perf_python_deps():
     )
 
 
-def test_has_shell_query(test_path):
-    """Whether a performance-test file contains a shell-script query.
-
-    Profile collection runs every `tests/performance/*.xml` against a single,
-    instrumented server started with only `--tcp_port` (its perf config removes
-    `<http_port>`), and it invokes `perf.py` without `--binary` / `--http-port`.
-    Shell-script queries (`<query type="shell">`) rely on exactly those: they build
-    `$CLICKHOUSE_BINARY` / `$CLICKHOUSE_LOCAL` from `--binary` and `$CLICKHOUSE_URL`
-    from `--http-port`. Here they would pick up whatever `clickhouse` is in `PATH`
-    (not the instrumented binary) and hit an HTTP endpoint that is not listening, so
-    such tests are skipped for profile collection rather than collecting profiles for
-    the wrong executable or failing the pass. A parse error is treated as "no shell
-    query" so the test still runs and `perf.py` reports the real error.
-    """
-    try:
-        root = ET.parse(test_path).getroot()
-    except ET.ParseError:
-        return False
-    return any(q.get("type") == "shell" for q in root.findall("query"))
-
-
 def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     """Run performance tests against a single server to exercise code paths.
 
@@ -386,9 +369,7 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
       * small `--max-query-seconds` / `--prewarm-max-query-seconds` passed to
                               `perf.py`, so individual queries return quickly.
     """
-    test_files = sorted(
-        f for f in os.listdir(f"{repo_path}/tests/performance/") if f.endswith(".xml")
-    )
+    test_files = test_discovery.list_test_files(f"{repo_path}/tests/performance/")
     print(
         f"Running up to {len(test_files)} performance tests "
         f"(runs={runs}, max_queries={max_queries}, budget={time_budget_s:.0f}s, "
@@ -404,8 +385,13 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
         # neither of which profile collection passes; they exercise startup / HTTP
         # timing rather than query code paths, so they are useless for PGO/BOLT
         # profiles. Skip them here (logged, never silently dropped).
-        if test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
+        if test_discovery.test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
             print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+            continue
+        # This job provisions no S3 endpoint, so suites requiring it cannot work here.
+        # TODO: opt into S3 coverage by provisioning the endpoint via s3_service.ensure and dropping this skip.
+        if test_discovery.test_requires_s3(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: uses the job-local S3 endpoint, which profile collection does not provision")
             continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -521,10 +507,6 @@ def configure_datasets(server_dir, port=9000):
         f'for f in {repo_path}/tests/performance/user_files/*; do [ -e "$f" ] || continue; '
         f'ln -sf "$(readlink -f "$f")" {server_dir}/db/user_files/; done'
     )
-    # Attach the Iceberg datasets as databases, so the Iceberg performance tests exercise their read paths here instead of failing on a missing database.
-    for command in iceberg_database_ddl_commands(server_dir):
-        if not Shell.check(command, verbose=True):
-            return False
     return True
 
 
@@ -618,6 +600,7 @@ def main():
                     name="Build (PGO instrumented)",
                     command="command time -v ninja clickhouse",
                     workdir=PGO_BUILD_DIR,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
             )
             res = results[-1].is_ok()

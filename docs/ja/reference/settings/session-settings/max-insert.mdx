@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
 **別名**: `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "別名 `max_insert_block_size_rows` を追加しました。"}]}]} />
 
 テーブルへの挿入時に形成されるブロックの最大サイズ (行数) です。
 
@@ -44,9 +44,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 * 正の整数。
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 正の整数。
 * 0 — この設定はブロック形成に関与しません。
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ part の最終フラッシュを遅延させる streams (カラム) の最大数
 
 Cloud でのデフォルト値: `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -106,9 +100,7 @@ Cloud でのデフォルト値:
 書き込み側は、安全に並列化できる場合にのみ並列化されます。それ以外の場合は単一ストリームのままとなり、この設定は効果を持ちません。特に、[`use_strict_insert_block_limits`](/ja/reference/settings/session-settings/use#use_strict_insert_block_limits) が有効で、宛先テーブル (または宛先が転送するテーブル) が挿入ブロックを重複排除し、かつクエリで挿入の重複排除が有効な場合 ([`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) を参照) 、宛先に依存する materialized view がある場合 (宛先が転送するテーブルの view (たとえば `Alias` の背後にあるもの) も含む。ただし、[`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) が有効で、かつ依存 view チェーンに重複排除のリスクがない場合を除く。つまり、view 内の重複排除が無効 ([`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) であるか、依存 view のどのパスでも重複排除できない場合) 、および宛先が `Buffer` または `Distributed` の場合は常に、書き込みは単一ストリームに維持されます。`Buffer` は独自のコンテキストでフラッシュし、`Distributed` は書き込みをリモートシャードに転送します (リモートシャード自体がデータをバッファリングする場合があります) 。そのため、このクエリの重複排除設定は最終的な書き込みには適用されず、設定にかかわらず単一ストリームに維持されます。並列化されないクォーラム挿入 ([`insert_quorum`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum) が `2` 以上または `'auto'` であり、[`insert_quorum_parallel`](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) が無効) も、テーブルごとに処理中のクォーラム part を 1 つしか許可しないため、単一ストリームのままとなります。
 値を大きくすると、メモリ使用量も増加します。
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 

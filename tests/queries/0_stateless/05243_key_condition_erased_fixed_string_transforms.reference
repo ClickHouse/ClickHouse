@@ -1,0 +1,30 @@
+s <= toFixedString('V0', 2)	3	3	5
+s = toFixedString('V0', 2)	3	3	5
+s != toFixedString('V0', 2)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	2	2	5
+s <= CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s = CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s != CAST(toFixedString('V0', 2) AS Dynamic)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	2	2	5
+s <= CAST('V0' AS Dynamic)	1	1	1
+s = CAST('V0' AS Variant(String, UInt64))	1	1	2
+s <= toFixedString('V0', 2)	3	3	5
+s = toFixedString('V0', 2)	3	3	5
+s != toFixedString('V0', 2)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64))	2	2	5
+s <= CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s = CAST(toFixedString('V0', 2) AS Dynamic)	3	3	5
+s != CAST(toFixedString('V0', 2) AS Dynamic)	2	2	5
+s <= CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s = CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	3	3	5
+s != CAST(toFixedString('V0', 3) AS Dynamic(max_types = 0))	2	2	5
+s <= CAST('V0' AS Dynamic)	1	1	1
+s = CAST('V0' AS Variant(String, UInt64))	1	1	2
+s = CAST(toFixedString('V0', 3) AS Dynamic)	3	3	4
+n = toFixedString('123', 3)	1	1	2

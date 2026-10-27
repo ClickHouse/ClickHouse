@@ -41,6 +41,15 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 データパートに存在しないテキスト索引トークンをキャッシュするかどうかを指定します。
 ネガティブトークンキャッシュはテキスト索引トークンキャッシュを使用し、存在しないトークンに対するDictionaryへの繰り返しのルックアップを回避します。
 
+## use_text_index_pattern_bypass_cache {#use_text_index_pattern_bypass_cache}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "ポスティングリストのしきい値を超えたテキスト索引のパターンDictionaryスキャンをキャッシュするための新しい設定。"}]}]} />
+
+`text_index_like_max_postings_to_read` を超えたテキスト索引のパターンDictionaryスキャンの結果をキャッシュするかどうかを指定します。
+パターンバイパスキャッシュはテキスト索引トークンキャッシュを利用し、以前に元の述語の評価へフォールバックしたDictionaryスキャンが再度実行されるのを回避します。
+
 ## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: same TimeSeries bug as the other tagged tests, with parallel replicas `timeSeriesTags` intermittently returns its rows twice, see https://github.com/ClickHouse/ClickHouse/issues/118130.
+
 -- The retention example from the docs of the TimeSeries engine: a TTL on the samples table deletes old samples, the tags stay.
 
 SET allow_experimental_time_series_table = 1;

@@ -14,7 +14,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## promql_database
+## promql_database {#promql_database}
 
 <PrivatePreviewBadge />
 
@@ -22,19 +22,19 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يحدّد اسم قاعدة البيانات المستخدمة بواسطة لهجة &#39;promql&#39;. وتعني السلسلة الفارغة قاعدة البيانات الحالية.
 
-## promql_evaluation_time
+## promql_evaluation_time {#promql_evaluation_time}
 
 <PrivatePreviewBadge />
 
 **الأسماء البديلة**: `evaluation_time`
 
-<SettingsInfoBlock type="FloatAuto" default_value="auto" />
+<SettingsInfoBlock type="DoubleAuto" default_value="auto" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "تمت إعادة تسمية هذا الإعداد. والاسم السابق هو `evaluation_time`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "تمت إعادة تسمية هذا الإعداد. والاسم السابق هو `evaluation_time`."}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "auto"},{"label": "إعداد تجريبي جديد. كان اسم الإعداد آنذاك `evaluation_time`، وهو الآن اسم بديل له."}]}]} />
 
-يضبط وقت التقييم المستخدم مع لهجة promql. وتعني `'auto'` الوقت الحالي.
+يضبط وقت التقييم المستخدم مع لهجة promql، بوصفه طابعًا زمنيًا لـ Unix بالثواني مع جزء كسري اختياري. وتعني `'auto'` الوقت الحالي.
 
-## promql_table
+## promql_table {#promql_table}
 
 <PrivatePreviewBadge />
 
