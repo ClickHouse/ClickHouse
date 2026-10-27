@@ -699,8 +699,14 @@ void ReplxxLineReader::vimWordObject(int & pos, std::u32string & text, bool bigw
                 end++;
             extendChunk(text, end, bigword);
         }
-        else if (end + 1 < length && (reps > 1 ? chunkClass(text, end + 1, bigword) : charClass(text, end + 1, bigword)) == 0)
+        else if (end + 1 < length && reps > 1 && chunkClass(text, end + 1, bigword) == 0)
             extendChunk(text, end, bigword);
+        else if (end + 1 < length && charClass(text, end + 1, bigword) == 0)
+        {
+            /* Without a count the trailing whitespace stays within the line, as in Vim. */
+            while (end + 1 < length && charClass(text, end + 1, bigword) == 0)
+                end++;
+        }
         else
             while (start > 0 && charClass(text, start - 1, bigword) == 0)
                 start--;
@@ -1351,8 +1357,9 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             int oldpos = pos;
             int length = static_cast<int>(text.length());
             /* Like vim, use the first bracket from the cursor to the end of the line. The operator
-             * range still starts at the original cursor position. */
-            for (; pos < length && text[pos] != '\n' && !std::u32string_view(U"(){}[]<>").contains(text[pos]); pos++)
+             * range still starts at the original cursor position. Angle brackets are not in vim's
+             * default `matchpairs`, and in SQL they are comparison operators. */
+            for (; pos < length && text[pos] != '\n' && !std::u32string_view(U"(){}[]").contains(text[pos]); pos++)
                 ;
             if (pos >= length || text[pos] == '\n')
             {
@@ -1379,11 +1386,6 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
                 case ']':
                     opening = false;
                     matching = '[';
-                    break;
-                case '<': matching = '>'; break;
-                case '>':
-                    opening = false;
-                    matching = '<';
                     break;
                 default:
                     /* Consume the count and any pending operator. */
@@ -1524,6 +1526,10 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
             resetVim();
         },
         MODE_G);
+
+    /* Like vim, a key without a binding cancels the pending operator, count and text object,
+     * so that a later motion does not complete a stale command. */
+    bindDefaultKey([this](char32_t) { resetVim(); }, MODE_NORMAL);
 
     for (char motion : {'w', 'e', 'b', 'W', 'E', 'B'})
     {

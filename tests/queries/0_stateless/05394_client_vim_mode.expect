@@ -459,5 +459,30 @@ submit
 expect "4934"
 expect ":) "
 
+# Without a count, `aw` on a word takes the trailing whitespace only up to the end of the line.
+send -- "SELECT 1000 -- comment word  \r+ 30"
+escape
+send -- "gg0fwdaw"
+submit
+expect "1030"
+expect ":) "
+
+# `%` does not match comparison operators: it uses the next parenthesis.
+send -- "SELECT 1000 + if(1 > 0, (20 + 3), 40)"
+escape
+send -- "0f>c%, 7"
+escape
+submit
+expect "1007"
+expect ":) "
+
+# A key without a binding cancels the pending operator, so the following motion only moves.
+send -- "SELECT 1000 + 123"
+escape
+send -- "0f1dzwwx"
+submit
+expect "1023"
+expect ":) "
+
 send -- "\4"
 expect eof
