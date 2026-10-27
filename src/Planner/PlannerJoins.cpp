@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsBool join_probe_resize_to_max_threads;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -1233,28 +1234,24 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
+        const bool allow_parallel_hash = table_join->allowParallelHashJoin();
+        const bool threshold_picked_hash = allow_parallel_hash && table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
+            && params.rhs_size_estimation && *params.rhs_size_estimation < params.parallel_hash_join_threshold;
+
         if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
         {
-            /// Set when `parallel_hash` was allowed but the size threshold picked the single-threaded build.
-            bool replaces_parallel_hash = false;
-            if (table_join->allowParallelHashJoin())
+            if (allow_parallel_hash && !threshold_picked_hash)
             {
-                const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
-                    || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
-                if (use_parallel_hash)
-                {
-                    return std::make_shared<SpillingHashJoin>(
-                        table_join,
-                        left_table_expression_header,
-                        right_table_expression_header,
-                        table_join->getTempDataOnDisk(),
-                        params.grace_hash_join_initial_buckets,
-                        params.grace_hash_join_max_buckets,
-                        params.max_threads,
-                        stats_collecting_params,
-                        params.join_any_take_last_row);
-                }
-                replaces_parallel_hash = true;
+                return std::make_shared<SpillingHashJoin>(
+                    table_join,
+                    left_table_expression_header,
+                    right_table_expression_header,
+                    table_join->getTempDataOnDisk(),
+                    params.grace_hash_join_initial_buckets,
+                    params.grace_hash_join_max_buckets,
+                    params.max_threads,
+                    stats_collecting_params,
+                    params.join_any_take_last_row);
             }
 
             auto spilling_join = std::make_shared<SpillingHashJoin>(
@@ -1266,33 +1263,24 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_max_buckets,
                 stats_collecting_params,
                 params.join_any_take_last_row);
-            spilling_join->setResizeProbeSideToMaxStreams(replaces_parallel_hash);
+            spilling_join->setResizeProbeSideToMaxStreams(params.join_probe_resize_to_max_threads && threshold_picked_hash);
             return spilling_join;
         }
 
-        bool replaces_parallel_hash = false;
-        if (table_join->allowParallelHashJoin())
+        if (allow_parallel_hash && !threshold_picked_hash)
         {
-            const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
-                || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
-            if (use_parallel_hash)
-            {
-                return std::make_shared<ConcurrentHashJoin>(
-                    table_join,
-                    params.max_threads,
-                    right_table_expression_header,
-                    stats_collecting_params,
-                    params.join_any_take_last_row);
-            }
-            replaces_parallel_hash = true;
+            return std::make_shared<ConcurrentHashJoin>(
+                table_join,
+                params.max_threads,
+                right_table_expression_header,
+                stats_collecting_params,
+                params.join_any_take_last_row);
         }
 
         auto hash_join = std::make_shared<HashJoin>(
             table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
             /*is_concurrent_hash_join_=*/false, stats_collecting_params);
-        /// The size threshold, often fed by the hash table statistics of a previous run, picked
-        /// `hash` over `parallel_hash`. Keep the probe as wide as `parallel_hash` would have made it.
-        hash_join->setResizeProbeSideToMaxStreams(replaces_parallel_hash);
+        hash_join->setResizeProbeSideToMaxStreams(params.join_probe_resize_to_max_threads && threshold_picked_hash);
         return hash_join;
     }
 
@@ -1387,6 +1375,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     hash_table_key_hash = 0;
     join_output_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
+    join_probe_resize_to_max_threads = settings[Setting::join_probe_resize_to_max_threads];
     enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
@@ -1420,6 +1409,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     hash_table_key_hash = hash_table_key_hash_;
     join_output_key_hash = join_output_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
+    join_probe_resize_to_max_threads = join_settings.join_probe_resize_to_max_threads;
     enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 

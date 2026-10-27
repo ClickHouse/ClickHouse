@@ -1,7 +1,20 @@
+Algorithm: HashJoin
 hash below threshold	4
+Algorithm: SpillingHashJoin(HashJoin)
 spilling hash below threshold	4
+Algorithm: ConcurrentHashJoin
 parallel_hash	4
+Algorithm: HashJoin
 explicit hash	1
+Algorithm: HashJoin
+resize disabled	1
+Algorithm: SpillingHashJoin(HashJoin)
+spilling resize disabled	1
+Algorithm: HashJoin
 hash from cached stats	4
+Algorithm: SpillingHashJoin(HashJoin)
+limit by default join	1
+300	268300517865934087
 1000	6879937819667658287
 1000	6879937819667658287
+0

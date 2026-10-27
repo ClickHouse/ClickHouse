@@ -161,7 +161,9 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
+        auto cloned_join = std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
+        cloned_join->setResizeProbeSideToMaxStreams(resize_probe_side_to_max_streams);
+        return cloned_join;
     }
 
     /** Add block of data from right hand of JOIN to the map.

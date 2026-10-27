@@ -215,10 +215,9 @@ public:
     /// is true and the right side has no totals. Zero leaves the choice to the pipeline.
     virtual size_t getMaxBuildThreads() const { return 0; }
 
-    /// The planner chose this join over a parallel one only because the right side looked small
-    /// (`parallel_hash_join_threshold`). A parallel join resizes the probe side to `max_streams`, so
-    /// this one asks for the same, keeping the probe and everything after it as wide as the join it
-    /// replaced. Only for joins whose `joinBlock` can run from many streams at once.
+    /// Request widening a narrow probe to `max_streams` after `parallel_hash_join_threshold`
+    /// selected a serial build. Subject to the same ordering and right-side totals restrictions
+    /// as the parallel-build path. Only for joins whose `joinBlock` supports concurrent calls.
     virtual bool resizeProbeSideToMaxStreams() const { return false; }
 
     /// Peek next stream of delayed joined blocks.

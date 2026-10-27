@@ -712,11 +712,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     }
     else
     {
-        /// A single-threaded build can still be probed from many streams. When the join stands in
-        /// for a parallel one (see `IJoin::resizeProbeSideToMaxStreams`), resize the probe side like
-        /// the branch above does, otherwise the probe and the steps after it stay at the left input's
-        /// stream count, which is 1 or 2 for a remote read. See #127983.
-        if (join->resizeProbeSideToMaxStreams() && !keep_left_read_in_order && num_streams < max_streams)
+        /// A build selected by `parallel_hash_join_threshold` can still have a large probe side.
+        /// Widen it under the same ordering and totals restrictions as the parallel-build branch.
+        /// Remote reads can otherwise leave the probe and subsequent steps at 1 or 2 streams. See #127983.
+        if (join->resizeProbeSideToMaxStreams() && !right->hasTotals() && !keep_left_read_in_order && num_streams < max_streams)
         {
             left->resize(max_streams);
             num_streams = max_streams;

@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -589,4 +590,26 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(carries_setting(serializeAt(disabled, pre_block_nested_loop_version)));
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
+}
+
+TEST(JoinProbeResizePlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_resize_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_PROBE_RESIZE - 1;
+
+    for (bool enabled : {false, true})
+    {
+        const auto join_settings = makeJoinSettings({{"join_probe_resize_to_max_threads", enabled}});
+        for (UInt64 version : {pre_resize_version, current_version})
+        {
+            const auto plan_settings = serializeAt(join_settings, version);
+            WriteBufferFromOwnString out;
+            plan_settings.writeChangedBinary(out);
+
+            EXPECT_EQ(out.str().contains("join_probe_resize_to_max_threads"), version == current_version);
+            QueryPlanSerializationSettings restored_settings;
+            ReadBufferFromString in(out.str());
+            restored_settings.readBinary(in);
+            EXPECT_EQ(JoinSettings(restored_settings, version).join_probe_resize_to_max_threads, enabled && version == current_version);
+        }
+    }
 }

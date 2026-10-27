@@ -98,7 +98,7 @@ public:
     size_t spill(size_t at_least_bytes);
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
-    /// Single-thread mode only: the concurrent mode already resizes the probe side.
+    /// Single-thread mode only; the concurrent mode uses the parallel-build path.
     bool resizeProbeSideToMaxStreams() const override { return resize_probe_side_to_max_streams; }
     void setResizeProbeSideToMaxStreams(bool value) { resize_probe_side_to_max_streams = value; }
     bool supportParallelNonJoinedBlocksProcessing() const override;

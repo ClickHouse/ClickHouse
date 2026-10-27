@@ -251,6 +251,7 @@ struct JoinAlgorithmParams
     UInt64 max_entries_for_hash_table_stats;
 
     UInt64 parallel_hash_join_threshold;
+    bool join_probe_resize_to_max_threads;
 
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
