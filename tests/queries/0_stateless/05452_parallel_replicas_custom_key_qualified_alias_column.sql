@@ -12,11 +12,16 @@ CREATE TABLE custom_key_qualified_alias
 (
     x UInt64,
     a ALIAS x IN custom_key_qualified_alias_set,
-    b ALIAS x * 7
+    b ALIAS x * 7,
+    arrs Array(Tuple(a UInt64)) MATERIALIZED [tuple(x)]
 )
 ENGINE = MergeTree ORDER BY x;
 INSERT INTO custom_key_qualified_alias SELECT number FROM numbers(10);
 
+-- The custom key filter is applied locally through `parallel_replicas_count` and `parallel_replica_offset`,
+-- so the randomized reading from parallel replicas of the test runner must not interfere.
+SET automatic_parallel_replicas_mode = 0;
+SET cluster_for_parallel_replicas = '';
 SET allow_experimental_parallel_reading_from_replicas = 1;
 SET max_parallel_replicas = 2;
 SET parallel_replicas_count = 2;
@@ -37,6 +42,10 @@ SETTINGS parallel_replicas_custom_key = 't.a', parallel_replicas_mode = 'custom_
 -- A qualified `ALIAS` column without forbidden constructs keeps working.
 SELECT count() FROM custom_key_qualified_alias
 SETTINGS parallel_replicas_custom_key = 'custom_key_qualified_alias.b', parallel_replicas_mode = 'custom_key_sampling';
+
+-- A field of a lambda argument named like the `ALIAS` column is not a qualified reference to that column.
+SELECT count() FROM custom_key_qualified_alias
+SETTINGS parallel_replicas_custom_key = 'arraySum(arrayMap(z -> z.a, arrs))', parallel_replicas_mode = 'custom_key_sampling';
 
 DROP TABLE custom_key_qualified_alias;
 DROP TABLE custom_key_qualified_alias_set;

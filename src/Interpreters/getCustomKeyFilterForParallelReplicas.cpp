@@ -12,6 +12,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/misc.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -103,15 +104,18 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
 /// Drop the table qualifier (`t.a`) or the database and table qualifiers (`db.t.a`) from identifiers
 /// that name an `ALIAS` column of the table, so that `ReplaceAliasByExpressionMatcher`, which matches
 /// the identifier as written, expands them too. The planner resolves such an identifier to the alias
-/// expression regardless of the qualifier.
-void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns)
+/// expression regardless of the qualifier. An identifier rooted at an argument of an enclosing lambda,
+/// e.g. `z.a` in `arrayMap(z -> z.a, arrs)`, is a field of that argument, not a qualified column, so
+/// it is left as is.
+void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns, NameSet & lambda_arguments)
 {
     checkStackSize();
 
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
         const auto & parts = identifier->name_parts;
-        if (parts.size() < 2 || columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()))
+        if (parts.size() < 2 || lambda_arguments.contains(parts.front())
+            || columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()))
             return;
 
         for (size_t num_qualifiers = 1; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
@@ -128,10 +132,29 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
         return;
     }
 
+    if (const auto * func = ast->as<ASTFunction>(); func && func->name == "lambda" && func->arguments
+        && func->arguments->children.size() == 2)
+    {
+        Names local_arguments;
+        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*func))
+            if (lambda_arguments.insert(name).second)
+                local_arguments.push_back(name);
+
+        auto & body = func->arguments->children[1];
+        auto * old_ptr = body.get();
+        removeQualifiersFromAliasColumnIdentifiers(body, columns, lambda_arguments);
+        if (body.get() != old_ptr)
+            func->arguments->updatePointerToChild(old_ptr, body.get());
+
+        for (const auto & name : local_arguments)
+            lambda_arguments.erase(name);
+        return;
+    }
+
     for (auto & child : ast->children)
     {
         auto * old_ptr = child.get();
-        removeQualifiersFromAliasColumnIdentifiers(child, columns);
+        removeQualifiersFromAliasColumnIdentifiers(child, columns, lambda_arguments);
         if (child.get() != old_ptr)
             ast->updatePointerToChild(old_ptr, child.get());
     }
@@ -158,7 +181,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     {
         using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
         ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
-        removeQualifiersFromAliasColumnIdentifiers(expanded_custom_key_ast, columns);
+        NameSet qualifier_lambda_arguments;
+        removeQualifiersFromAliasColumnIdentifiers(expanded_custom_key_ast, columns, qualifier_lambda_arguments);
         ReplaceAliasToExprVisitor::Data data{columns, {}};
         ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
         /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
