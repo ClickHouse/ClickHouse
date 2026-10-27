@@ -2272,15 +2272,6 @@
     "strip_prefix": "substrait-de9e6328f4f94abc0809977f57dfde7262a7258b",
     "remove_build_files": []
   },
-  "contrib/sysroot": {
-    "name": "clickhouse_sysroot",
-    "repository": "https://github.com/ClickHouse/sysroot",
-    "commit": "6dd29c222896e54de24e7af1b191c92e4cf2e229",
-    "url": "https://codeload.github.com/ClickHouse/sysroot/tar.gz/6dd29c222896e54de24e7af1b191c92e4cf2e229",
-    "sha256": "d017b42ccaa184738080c5763b60ae7528fafc08e3aac6ec77e9f4d2f5fc3b95",
-    "strip_prefix": "sysroot-6dd29c222896e54de24e7af1b191c92e4cf2e229",
-    "remove_build_files": []
-  },
   "contrib/sz3": {
     "name": "clickhouse_sz3",
     "repository": "https://github.com/ClickHouse/SZ3.git",

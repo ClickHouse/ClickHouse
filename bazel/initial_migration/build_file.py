@@ -822,7 +822,7 @@ class BuildFile:
                 related.update(
                     repository(source_path(item)) for item in fields[field] if isinstance(item, str)
                 )
-            related.difference_update({'contrib/sysroot', llvm_targets.PREFIX})
+            related.discard(llvm_targets.PREFIX)
             def source_data(path, owner):
                 relative = path.removeprefix(owner + '/') if owner else path
                 # These root directories are scanned by
@@ -841,10 +841,10 @@ class BuildFile:
                 )
             candidates = {
                 item for item in fields['additional_compiler_inputs']
-                if isinstance(item, str) and repository(source_path(item)) not in {'contrib/sysroot', llvm_targets.PREFIX}
+                if isinstance(item, str) and repository(source_path(item)) != llvm_targets.PREFIX
                 and source_data(source_path(item), repository(source_path(item)))
             }
-            globs = self.owner not in {'contrib/sysroot', llvm_targets.PREFIX} and any(
+            globs = self.owner != llvm_targets.PREFIX and any(
                 isinstance(item, Glob) for item in fields['additional_compiler_inputs']
             )
             if candidates or globs:
@@ -1591,28 +1591,6 @@ def dependency_inputs(builds, owners):
     })
     build('contrib/chdig').rule('filegroup', 'cargo_manifest', {'srcs': ['Cargo.toml']})
     build('contrib/openssl').rule('filegroup', 'headers', {'srcs': Glob(['include/**'])})
-    # Cargo build scripts link host tools and target C/C++ configure checks.
-    build('contrib/sysroot').rule('filegroup', 'cargo_link_files', {
-        'srcs': select({
-            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/**/' + lib + '/**' for lib in ('lib', 'lib64')])
-            for arch in ARCHES
-        }),
-    })
-    # The ClickHouse PIE links these glibc libraries and GCC startup objects.
-    glibc_libraries = ('ld-linux-*.so.*', 'libc.so*', 'libc_nonshared.a', 'libdl.so*',
-                       'libm.so*', 'libpthread.so*', 'librt.so*')
-    build('contrib/sysroot').rule('filegroup', 'linux_link_files', {
-        'srcs': select({
-            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/**/' + name for name in glibc_libraries])
-            for arch in ARCHES
-        }),
-    })
-    build('contrib/sysroot').rule('filegroup', 'gcc_pie_startup_objects', {
-        'srcs': select({
-            '@platforms//cpu:' + arch: Glob(['linux-' + arch + '/lib/gcc/**/crt*S.o'])
-            for arch in ARCHES
-        }),
-    })
     krb5 = build('contrib/krb5')
     # In the initial CMake graph the six generated private error tables
     # still belong to //bazel. configured_codegen_outputs unifies their

@@ -54,7 +54,7 @@ from initial_migration.repository_inputs import (
 )
 
 VERSION = 3
-SKIP = {'clickhouse_sysroot', 'clickhouse_llvm_project', 'clickhouse_rust_vendor'}
+SKIP = {'clickhouse_llvm_project', 'clickhouse_rust_vendor'}
 ROOT_METADATA = {
     'BUILD', 'BUILD.bazel', 'REPO.bazel', 'WORKSPACE', 'WORKSPACE.bazel',
     'MODULE.bazel', 'MODULE.bazel.lock', '.bazelignore',

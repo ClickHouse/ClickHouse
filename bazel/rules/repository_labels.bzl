@@ -139,7 +139,6 @@ REPOSITORIES = {
     "contrib/sql-console": Label("@clickhouse_sql_console//:BUILD.bazel"),
     "contrib/sqlite-amalgamation": Label("@clickhouse_sqlite_amalgamation//:BUILD.bazel"),
     "contrib/substrait": Label("@clickhouse_substrait//:BUILD.bazel"),
-    "contrib/sysroot": Label("@clickhouse_sysroot//:BUILD.bazel"),
     "contrib/sz3": Label("@clickhouse_sz3//:BUILD.bazel"),
     "contrib/thrift": Label("@clickhouse_thrift//:BUILD.bazel"),
     "contrib/ulid-c": Label("@clickhouse_ulid_c//:BUILD.bazel"),

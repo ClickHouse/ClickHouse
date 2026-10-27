@@ -58,9 +58,16 @@ def cmake_cxx_compiler_version(arch):
     # build_options stores C++ string literals, including their quotes.
     return _CMAKE_METADATA[arch]["build_options"]["@BAZEL_CXX_COMPILER_VERSION@"][1:-1]
 
+# Keep the three CppCompile prefix maps for the retired SDK in their original
+# argument positions so deleting the repository preserves the compile cache.
+_PREFIX_MAP_ROOTS = sorted(
+    [(path, label.workspace_root) for path, label in _REPOSITORIES.items()] +
+    [("contrib/sysroot", "external/+contrib+clickhouse_sysroot")],
+)
+
 _SOURCE_PREFIX_MAPS = [
-    "-ffile-prefix-map=" + label.workspace_root + "/=" + path + "/"
-    for path, label in _REPOSITORIES.items()
+    "-ffile-prefix-map=" + root + "/=" + path + "/"
+    for path, root in _PREFIX_MAP_ROOTS
 ] + [
     "-ffile-prefix-map=" + llvm_toolchain_path() + "/" + name + "/=contrib/llvm-project/" + name + "/"
     for name in ["libc", "libcxx", "libcxxabi", "libunwind", "compiler-rt"]
@@ -80,11 +87,11 @@ def _generated_prefix_maps(arch):
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/src/=" + build + "src/",
         "-ffile-prefix-map=$(GENDIR)/bazel/gen/contrib/=" + build + "contrib/",
     ] + [
-        "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/=" + build
-        for label in _REPOSITORIES.values()
+        "-ffile-prefix-map=$(GENDIR)/" + root + "/config/=" + build
+        for _, root in _PREFIX_MAP_ROOTS
     ] + [
-        "-ffile-prefix-map=$(GENDIR)/" + label.workspace_root + "/config/" + arch + "/=" + build
-        for label in _REPOSITORIES.values()
+        "-ffile-prefix-map=$(GENDIR)/" + root + "/config/" + arch + "/=" + build
+        for _, root in _PREFIX_MAP_ROOTS
     ] + [
         "-ffile-prefix-map=$(GENDIR)/" + repository_path("contrib/llvm-project") +
         "/gen/=" + build + "contrib/llvm-project/",

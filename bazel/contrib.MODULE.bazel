@@ -1,7 +1,6 @@
 contrib = use_extension("//bazel/rules:repositories.bzl", "contrib")
 use_repo(
     contrib,
-    "clickhouse_llvm_project",
     "clickhouse_abseil_cpp",
     "clickhouse_ai_sdk_cpp",
     "clickhouse_amqp_cpp",
@@ -95,6 +94,7 @@ use_repo(
     "clickhouse_liburing",
     "clickhouse_libuv",
     "clickhouse_libxml2",
+    "clickhouse_llvm_project",
     "clickhouse_lz4",
     "clickhouse_magic_enum",
     "clickhouse_mapbox_geometry",
@@ -142,7 +142,6 @@ use_repo(
     "clickhouse_sqlite_amalgamation",
     "clickhouse_stringzilla",
     "clickhouse_substrait",
-    "clickhouse_sysroot",
     "clickhouse_sz3",
     "clickhouse_thrift",
     "clickhouse_ulid_c",

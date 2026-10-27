@@ -31,7 +31,7 @@ TUS = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM')
 TEXTUAL = (*CC_HEADER_SUFFIXES, '.def', '.defs', '.th', '.td', '.tbl', '.tbi',
            '.tpp', '.icc', '.ixx', '.cuh', '.msh')
 FORCED = {'-include', '-imacros', '-ivfsoverlay', '-fmodule-file', '-fmodule-map-file'}
-SPECIAL_REPOS = {'@clickhouse_sysroot', '@clickhouse_llvm_project',
+SPECIAL_REPOS = {'@clickhouse_llvm_project',
                  '@clickhouse_rust_vendor', '@clickhouse_delta_kernel_rs'}
 
 

@@ -471,7 +471,7 @@
         "usagesDigest": "6S+kXqXczKx7BpC0Cgovu9SKSai+Y21UUXnbzjcA2Zs=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",
-          "FILE:@@//bazel/rules/contrib_repositories.json 313d7876ca26d82c5f4e1fcb7aacd0e701e01f8e2aff301e9999c98eea2c5747",
+          "FILE:@@//bazel/rules/contrib_repositories.json 0e21242ecfbf056c283763f61c04d9eaf6bf50861d803daa56df350683cc43e0",
           "FILE:@@//contrib/openssl-cmake/common/include DIR",
           "DIRENTS:@@//contrib/openssl-cmake/common/include 955c637f84aaaacf487ebc493dfb5f5f828e90d01f7a7005f30a1bfaa7341714",
           "FILE:@@//contrib/openssl-cmake/common/include/prov DIR",
@@ -3381,26 +3381,6 @@
               "strip_prefix": "substrait-de9e6328f4f94abc0809977f57dfde7262a7258b",
               "type": "tar.gz",
               "build_file": "@@//bazel/dependencies:clickhouse_substrait.BUILD.bazel",
-              "files": {},
-              "patches": [],
-              "patch_args": [
-                "-p1"
-              ],
-              "patch_cmds": [
-                "rm -f -- '.bazelignore'"
-              ]
-            }
-          },
-          "clickhouse_sysroot": {
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
-            "attributes": {
-              "urls": [
-                "https://codeload.github.com/ClickHouse/sysroot/tar.gz/6dd29c222896e54de24e7af1b191c92e4cf2e229"
-              ],
-              "sha256": "d017b42ccaa184738080c5763b60ae7528fafc08e3aac6ec77e9f4d2f5fc3b95",
-              "strip_prefix": "sysroot-6dd29c222896e54de24e7af1b191c92e4cf2e229",
-              "type": "tar.gz",
-              "build_file": "@@//bazel/dependencies:clickhouse_sysroot.BUILD.bazel",
               "files": {},
               "patches": [],
               "patch_args": [
