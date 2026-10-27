@@ -774,8 +774,9 @@ void BaseDaemon::setupWatchdog()
             (void)prctl(PR_SET_PDEATHSIG, SIGKILL);
             waitForWatchdog(notify_sync);
             notify_sync.close();
-            if (0 == chdir(original_working_directory.c_str()))
-                execve("/proc/self/exe", exec_argv.data(), exec_envp.data());
+            /// The server user may be unable to enter the launch directory, which absolute paths do not need.
+            [[maybe_unused]] int chdir_result = chdir(original_working_directory.c_str());
+            execve("/proc/self/exe", exec_argv.data(), exec_envp.data());
             exec_errno = errno;
         }
 #endif
