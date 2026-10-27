@@ -106,6 +106,7 @@ def _cmake_link_impl(ctx):
                 arguments = [args],
                 outputs = [output],
                 mnemonic = "ClickHouseNativeArchive",
+                use_default_shell_env = True,
                 progress_message = "Archiving Bazel objects for " + record["name"],
             )
             archives.append(output)
@@ -128,6 +129,7 @@ def _cmake_link_impl(ctx):
                     outputs = [output],
                     command = '"$1" -M < "$2"',
                     mnemonic = "ClickHouseRustArchive",
+                    use_default_shell_env = True,
                     progress_message = "Bundling Bazel Rust and cxx objects for " + record["name"],
                 )
                 archives.append(output)
@@ -180,6 +182,7 @@ def _cmake_link_impl(ctx):
         outputs = [output],
         arguments = [args],
         mnemonic = "ClickHouseNativeLink",
+        use_default_shell_env = True,
         progress_message = "Linking %{label} in CMake order from Bazel artifacts",
     )
     return [DefaultInfo(files = depset([output]), executable = output)]
