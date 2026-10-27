@@ -73,14 +73,14 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [4cffdfba7](https://github.com/dzbarsky/clickhouse/commit/4cffdfba78d0e51a3b9d1507b21116a01e329b1c), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [8c5da4275](https://github.com/dzbarsky/clickhouse/commit/8c5da4275424cf7e14633d1a9e316e64e936e220), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/f7b205e1-c018-461f-aa83-0c432c96c0e6) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/1e5cfe92-25c1-4fa9-9a73-a76772e8f2a0) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/48dcbb4c-6a90-4d12-88e2-1035e1af5850) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/fa5f828b-e7e7-47f1-a1c1-82d4b7af585f) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#4cffdfba7) records the unstripped hashes, runtime checks and dependency reports.
+The builds in the table produced the binaries. The [x86-64 SDK check](https://app.buildbuddy.io/invocation/65f8901b-bc24-476b-b3e7-37631c9bc939) and [ARM64 SDK check](https://app.buildbuddy.io/invocation/69652240-9ce4-47b0-b18a-8a8a757153ec) verified the remaining target on the same source. The [validation history](bazel/initial_migration/validation-history.md#8c5da4275) records both comparisons and the runtime checks.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -199,4 +199,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-DWYU found no unused or missing dependencies in the six x86-64 targets and seven ARM64 targets it checked. The [validation history](bazel/initial_migration/validation-history.md#4cffdfba7) lists the targets and links to both analyses.
+DWYU produced no dependency report for this revision. See the [validation history](bazel/initial_migration/validation-history.md#8c5da4275) for earlier coverage.

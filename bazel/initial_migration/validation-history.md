@@ -3076,3 +3076,30 @@ Bazel reported these counts for the native builds: [x86-64](https://app.buildbud
 ### Dependency reports
 
 DWYU found no unused or missing dependencies on [x86-64](https://app.buildbuddy.io/invocation/3ecf58c6-f8bd-4864-ba95-4586879f05c5) and [ARM64](https://app.buildbuddy.io/invocation/aec602ba-0a90-4b8c-b6ce-7a9b26e4ba35) for these six targets: `//src/Access/Common:headers`, `//src/Common/ZooKeeper:headers`, `@clickhouse_fast_float//:fast_float`, `@clickhouse_magic_enum//:magic_enum`, `@clickhouse_mapbox_geometry//:mapbox_geometry`, `@clickhouse_miniselect//:miniselect`. The ARM64 run also verified `//src/Common:exception_api`.
+
+## 8c5da4275
+
+At [8c5da4275](https://github.com/dzbarsky/clickhouse/commit/8c5da4275424cf7e14633d1a9e316e64e936e220), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and unit-test binaries also match the [previous Bazel build](https://github.com/dzbarsky/clickhouse/commit/4cffdfba78d0e51a3b9d1507b21116a01e329b1c).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/48dcbb4c-6a90-4d12-88e2-1035e1af5850) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/48dcbb4c-6a90-4d12-88e2-1035e1af5850) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/48dcbb4c-6a90-4d12-88e2-1035e1af5850) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/fa5f828b-e7e7-47f1-a1c1-82d4b7af585f) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/fa5f828b-e7e7-47f1-a1c1-82d4b7af585f) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/fa5f828b-e7e7-47f1-a1c1-82d4b7af585f) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[Seven ClickHouse libraries](https://github.com/dzbarsky/clickhouse/commit/6628f7c49e561723c2b7e45700fec6f5948595c7) dropped 45 dependencies already supplied by other libraries: 42 entries from `deps` and three from `implementation_deps`.
+
+[GoogleMock, GoogleTest and IDNA](https://github.com/dzbarsky/clickhouse/commit/8c5da4275424cf7e14633d1a9e316e64e936e220) declare the five, nine and eleven C++ files included by their translation units in `private_textual_srcs`. The public headers stay in `hdrs`.
+
+The initial builds produced 18 of 19 targets on each CPU, including all three ELFs, the seven Rust archives and eight status files. Only the SDK check failed: `m14_sdk/observe.bzl` reported `Different URL public dependencies` because it still required the URL library to depend on Parquet directly.
+
+The [x86-64 SDK check](https://app.buildbuddy.io/invocation/65f8901b-bc24-476b-b3e7-37631c9bc939) and [ARM64 SDK check](https://app.buildbuddy.io/invocation/69652240-9ce4-47b0-b18a-8a8a757153ec) used the same production source and requested only `//bazel/fixtures/m11:owners`. Only the verification files `m14_sdk/observe.bzl` and `m14_sdk/check.py` changed. The SDK check confirmed that the URL library receives `lib_parquet.a` transitively, with the same 56 x86-64 and 55 ARM64 objects in order. The SDK builds succeeded, but the original result reader raised `TypeError` by calling its local `finish` dictionary; a corrected reader verified the same saved outputs offline.
+
+The nine status files across the two builds per CPU verified 30 runtime checks and three compile checks. The seven Rust archive SHA-256 values and sizes matched the previous build on each CPU; the ARM64 SDK check verified the seven registered `llvm-strip --strip-debug` input/output pairs. The original builds recorded the same ClickHouse and unit-test linker arguments as the previous build. Both ELF comparisons use those original outputs.
+
+Five Clang depfiles per CPU showed five GoogleMock, nine GoogleTest and eleven IDNA C++ files included by their own translation units. `gmock_main.cc` and ClickHouse’s `src/Functions/idna.cpp` included public headers and none of the corresponding private implementation files.
+
+No DWYU child ran on the initial builds, and the SDK-only retries requested none. Earlier strict reports cover 429 of 627 eligible x86-64 targets and 417 of 612 ARM64 targets. That leaves 198 and 195, respectively, with no recorded strict report. This revision has no new DWYU grades.
