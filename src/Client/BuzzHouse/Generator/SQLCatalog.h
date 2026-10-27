@@ -167,6 +167,8 @@ public:
     LakeCatalog catalog = LakeCatalog::None;
     LakeStorage storage = LakeStorage::All;
     LakeFormat format = LakeFormat::All;
+    /// For Cluster and Remote, the database they proxy (for Overlay, its first source)
+    String proxy_target;
 
     static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d);
 
@@ -185,6 +187,15 @@ public:
     bool isOrdinaryDatabase() const;
 
     bool isDataLakeCatalogDatabase() const;
+
+    bool isClusterDatabase() const;
+
+    bool isRemoteDatabase() const;
+
+    bool isOverlayDatabase() const;
+
+    /// Cluster, Remote, RemoteSecure or Overlay: a read-through view of databases elsewhere
+    bool isProxyDatabase() const;
 
     bool isReplicatedOrSharedDatabase() const;
 
@@ -251,6 +262,8 @@ public:
     std::optional<String> file_comp;
     std::optional<String> partition_strategy;
     std::optional<String> partition_columns_in_data_file;
+    /// The PARTITION BY of an Iceberg table, which `system.tables` does not show
+    std::optional<String> iceberg_partition_key;
     std::optional<String> storage_class_name;
     std::optional<String> host_params;
     std::optional<String> bucket_path;
@@ -302,6 +315,8 @@ public:
     bool isShared(bool as_alias = false) const;
 
     bool isFileEngine(bool as_alias = false) const;
+
+    bool isSummingMergeTree(bool as_alias = false) const;
 
     bool isJoinEngine(bool as_alias = false) const;
 

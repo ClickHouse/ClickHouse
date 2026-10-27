@@ -54,4 +54,9 @@ constexpr const char * COLUMN_PAIMON_MANIFEST_FILE_SOURCE = "_FILE_SOURCE";
 constexpr const char * COLUMN_PAIMON_MANIFEST_VALUE_STATS_COLS = "_VALUE_STATS_COLS";
 constexpr const char * COLUMN_PAIMON_MANIFEST_EXTERNAL_PATH = "_EXTERNAL_PATH";
 
+/// for index manifest
+constexpr const char * COLUMN_PAIMON_INDEX_MANIFEST_INDEX_TYPE = "_INDEX_TYPE";
+constexpr const char * COLUMN_PAIMON_INDEX_MANIFEST_ROW_COUNT = "_ROW_COUNT";
+constexpr const char * PAIMON_DELETION_VECTORS_INDEX = "DELETION_VECTORS";
+
 }

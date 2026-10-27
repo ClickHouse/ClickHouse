@@ -20,8 +20,10 @@ INSERT INTO t VALUES (1, 100, '1970-01-01'), (1, 200, '1970-01-02');
 
 for enable_parallel_replicas in {0..1}; do
   ${CLICKHOUSE_CLIENT} --query="
-  --- Old analyzer uses different code path and it produces wrong result in this case.
-  set enable_analyzer=1;
+  -- Plan-based drops the totals block coming from the right side of the join when
+  -- 'parallel_replicas_local_plan' is 0: https://github.com/ClickHouse/ClickHouse/issues/120000
+  -- Pin the query-based implementation until it is fixed; plan-based gets its own test then.
+  set parallel_replicas_plan_based=0;
   set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, automatic_parallel_replicas_mode=0, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
 
   SELECT *

@@ -294,7 +294,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test' --workflow "PR" --ci --timestamp
 
   build_arm_tidy_1_4:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCAxLzQp') }}
     name: "Build (arm_tidy, 1/4)"
@@ -328,7 +328,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 1/4)' --workflow "PR" --ci --timestamp
 
   build_arm_tidy_2_4:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCAyLzQp') }}
     name: "Build (arm_tidy, 2/4)"
@@ -362,7 +362,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 2/4)' --workflow "PR" --ci --timestamp
 
   build_arm_tidy_3_4:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCAzLzQp') }}
     name: "Build (arm_tidy, 3/4)"
@@ -396,7 +396,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 3/4)' --workflow "PR" --ci --timestamp
 
   build_arm_tidy_4_4:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90aWR5LCA0LzQp') }}
     name: "Build (arm_tidy, 4/4)"
@@ -430,7 +430,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tidy, 4/4)' --workflow "PR" --ci --timestamp
 
   build_amd_debug:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9kZWJ1Zyk=') }}
     name: "Build (amd_debug)"
@@ -464,7 +464,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_debug)' --workflow "PR" --ci --timestamp
 
   build_amd_asan_ubsan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9hc2FuX3Vic2FuKQ==') }}
     name: "Build (amd_asan_ubsan)"
@@ -498,7 +498,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_asan_ubsan)' --workflow "PR" --ci --timestamp
 
   build_amd_tsan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF90c2FuKQ==') }}
     name: "Build (amd_tsan)"
@@ -532,7 +532,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_tsan)' --workflow "PR" --ci --timestamp
 
   build_amd_msan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tc2FuKQ==') }}
     name: "Build (amd_msan)"
@@ -566,7 +566,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_msan)' --workflow "PR" --ci --timestamp
 
   build_amd_binary:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
@@ -600,7 +600,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_binary)' --workflow "PR" --ci --timestamp
 
   build_arm_debug:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9kZWJ1Zyk=') }}
     name: "Build (arm_debug)"
@@ -634,7 +634,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_debug)' --workflow "PR" --ci --timestamp
 
   build_arm_asan_ubsan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9hc2FuX3Vic2FuKQ==') }}
     name: "Build (arm_asan_ubsan)"
@@ -668,7 +668,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_asan_ubsan)' --workflow "PR" --ci --timestamp
 
   build_arm_tsan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV90c2FuKQ==') }}
     name: "Build (arm_tsan)"
@@ -702,7 +702,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_tsan)' --workflow "PR" --ci --timestamp
 
   build_arm_msan:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9tc2FuKQ==') }}
     name: "Build (arm_msan)"
@@ -736,7 +736,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_msan)' --workflow "PR" --ci --timestamp
 
   build_arm_binary:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9iaW5hcnkp') }}
     name: "Build (arm_binary)"
@@ -838,7 +838,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_release)' --workflow "PR" --ci --timestamp
 
   build_amd_darwin:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-amd-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9kYXJ3aW4p') }}
     name: "Build (amd_darwin)"
@@ -872,7 +872,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_darwin)' --workflow "PR" --ci --timestamp
 
   build_arm_darwin:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9kYXJ3aW4p') }}
     name: "Build (arm_darwin)"
@@ -906,7 +906,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_darwin)' --workflow "PR" --ci --timestamp
 
   build_arm_v80compat:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV92ODBjb21wYXQp') }}
     name: "Build (arm_v80compat)"
@@ -940,7 +940,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_v80compat)' --workflow "PR" --ci --timestamp
 
   build_amd_freebsd:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9mcmVlYnNkKQ==') }}
     name: "Build (amd_freebsd)"
@@ -974,7 +974,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_freebsd)' --workflow "PR" --ci --timestamp
 
   build_amd_illumos:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-amd-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9pbGx1bW9zKQ==') }}
     name: "Build (amd_illumos)"
@@ -1008,7 +1008,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_illumos)' --workflow "PR" --ci --timestamp
 
   build_ppc64le:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHBwYzY0bGUp') }}
     name: "Build (ppc64le)"
@@ -1042,7 +1042,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (ppc64le)' --workflow "PR" --ci --timestamp
 
   build_amd_compat:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9jb21wYXQp') }}
     name: "Build (amd_compat)"
@@ -1076,7 +1076,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_compat)' --workflow "PR" --ci --timestamp
 
   build_amd_musl:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9tdXNsKQ==') }}
     name: "Build (amd_musl)"
@@ -1110,7 +1110,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (amd_musl)' --workflow "PR" --ci --timestamp
 
   build_riscv64:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHJpc2N2NjQp') }}
     name: "Build (riscv64)"
@@ -1144,7 +1144,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (riscv64)' --workflow "PR" --ci --timestamp
 
   build_s390x:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHMzOTB4KQ==') }}
     name: "Build (s390x)"
@@ -1178,7 +1178,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (s390x)' --workflow "PR" --ci --timestamp
 
   build_loongarch64:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGxvb25nYXJjaDY0KQ==') }}
     name: "Build (loongarch64)"
@@ -1212,7 +1212,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (loongarch64)' --workflow "PR" --ci --timestamp
 
   build_wasm64:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHdhc202NCk=') }}
     name: "Build (wasm64)"
@@ -1246,7 +1246,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (wasm64)' --workflow "PR" --ci --timestamp
 
   build_arm_fuzzers:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_targeted, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
     name: "Build (arm_fuzzers)"
@@ -1280,7 +1280,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (arm_fuzzers)' --workflow "PR" --ci --timestamp
 
   build_wasm_parser:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [build_arm_tidy_1_4, build_arm_tidy_2_4, build_arm_tidy_3_4, build_arm_tidy_4_4, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHdhc21fcGFyc2VyKQ==') }}
     name: "Build (wasm_parser)"
@@ -5870,7 +5870,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Keeper Stress Tests (PR)' --workflow "PR" --ci --timestamp
 
   build_toolchain_pgo_bolt_amd64:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-amd-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgVG9vbGNoYWluIChQR08sIEJPTFQpIChhbWQ2NCk=') }}
     name: "Build Toolchain (PGO, BOLT) (amd64)"
@@ -5905,7 +5905,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Toolchain (PGO, BOLT) (amd64)' --workflow "PR" --ci --timestamp
 
   build_toolchain_pgo_bolt_aarch64:
-    runs-on: [self-hosted, pr-arm-large]
+    runs-on: [self-hosted, pr-arm-medium-cpu]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgVG9vbGNoYWluIChQR08sIEJPTFQpIChhYXJjaDY0KQ==') }}
     name: "Build Toolchain (PGO, BOLT) (aarch64)"
