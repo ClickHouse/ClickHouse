@@ -86,7 +86,6 @@ void requireArgumentCount(std::string_view operator_name, const std::vector<ASTP
 
 /// Operators that map onto a ClickHouse function of the same arity, argument for argument.
 const std::unordered_map<std::string_view, std::string> direct_functions = {
-    {"$toString", "toString"},
     {"$strLenBytes", "length"},
     {"$strLenCP", "lengthUTF8"},
     {"$toUpper", "upper"},
@@ -104,10 +103,7 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$concatArrays", "arrayConcat"},
     {"$setIntersection", "arrayIntersect"},
     {"$range", "range"},
-    {"$not", "not"},
     {"$concat", "concat"},
-    {"$and", "and"},
-    {"$or", "or"},
     {"$divide", "divide"},
     {"$mod", "modulo"},
     {"$pow", "pow"},
@@ -354,19 +350,23 @@ ASTPtr makeToDecimal(ASTPtr argument)
     if (const auto * function = argument->as<ASTFunction>(); function && function->name == "CAST")
         return argument;
 
-    /// The wrappers `Nullable` and `LowCardinality` do not change the value space, so a wrapped
-    /// integer or boolean converts exactly at scale 0 as well.
-    auto is_exact = makeASTFunction(
-        "match",
-        makeASTFunction("toTypeName", argument),
-        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int(8|16|32|64|128|256)|Bool)\)*$)"))));
-    auto guard = makeASTFunction(
-        "throwIf",
-        makeASTFunction("not", std::move(is_exact)),
-        makeLiteral(Field(String(
-            "'$toDecimal' of a non-constant value is only exact for an integer or a boolean; "
-            "spell any other value as a '$numberDecimal' or a string literal, which carry their scale"))));
-    return makeASTFunction("plus", makeASTFunction("toDecimal128", argument->clone(), makeLiteral(Field(UInt64(0)))), std::move(guard));
+    /// The argument is used twice, so it is bound once (see `withValue`).
+    return withValue(std::move(argument), [](const ASTPtr & value)
+    {
+        /// The wrappers `Nullable` and `LowCardinality` do not change the value space, so a wrapped
+        /// integer or boolean converts exactly at scale 0 as well.
+        auto is_exact = makeASTFunction(
+            "match",
+            makeASTFunction("toTypeName", value->clone()),
+            makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*(U?Int(8|16|32|64|128|256)|Bool)\)*$)"))));
+        auto guard = makeASTFunction(
+            "throwIf",
+            makeASTFunction("not", std::move(is_exact)),
+            makeLiteral(Field(String(
+                "'$toDecimal' of a non-constant value is only exact for an integer or a boolean; "
+                "spell any other value as a '$numberDecimal' or a string literal, which carry their scale"))));
+        return makeASTFunction("plus", makeASTFunction("toDecimal128", value->clone(), makeLiteral(Field(UInt64(0)))), std::move(guard));
+    });
 }
 
 /** A comparison of Mongo, which is always a boolean: `null` equals `null` and is less than any
@@ -576,7 +576,10 @@ ASTPtr makeToBool(ASTPtr argument)
     });
 }
 
-/// The truth value of an element of `$anyElementTrue` and `$allElementsTrue`, where `null` is false.
+/** The truth value of a condition in Mongo - of an argument of `$not`, `$and` and `$or`, of the
+  * condition of `$cond`, `$switch` and `$filter`, of an element of `$anyElementTrue` and
+  * `$allElementsTrue` - where `null` is false, see `makeToBool`.
+  */
 ASTPtr makeTruthValue(ASTPtr argument)
 {
     return makeASTFunction("ifNull", makeToBool(std::move(argument)), makeLiteral(Field(false)));
@@ -596,91 +599,122 @@ std::string_view requireDateFormat(const rapidjson::Value & format, std::string_
   * `formatDateTime` has no counterpart for become expressions of their own, concatenated with the
   * formatted rest, and a specifier that cannot be translated is rejected rather than forwarded.
   */
-ASTPtr makeDateToString(std::string_view format, const ASTPtr & date, const ASTPtr & timezone)
+ASTPtr makeDateToString(std::string_view format, const ASTPtr & value, const ASTPtr & timezone)
 {
-    std::vector<ASTPtr> parts;
-    std::string pending_format;
+    /// Every part of the format reads the date, so it is bound once (see `withValue`).
+    return withValue(value, [&](const ASTPtr & date)
+    {
+        std::vector<ASTPtr> parts;
+        std::string pending_format;
 
-    const auto with_timezone = [&](ASTPtr function)
-    {
-        if (timezone)
-            function->as<ASTFunction &>().arguments->children.push_back(timezone->clone());
-        return function;
-    };
-    const auto flush = [&]
-    {
-        if (pending_format.empty())
-            return;
-        parts.push_back(with_timezone(makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(pending_format)))));
-        pending_format.clear();
-    };
-    const auto zero_padded = [](ASTPtr number, UInt64 width)
-    {
-        return makeASTFunction(
-            "leftPad", makeASTFunction("toString", std::move(number)), makeLiteral(Field(width)), makeLiteral(Field(String("0"))));
-    };
-
-    for (size_t i = 0; i < format.size(); ++i)
-    {
-        if (format[i] != '%')
+        const auto with_timezone = [&](ASTPtr function)
         {
-            pending_format.push_back(format[i]);
-            continue;
-        }
-        if (i + 1 == format.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'format' of '$dateToString' must not end with a single '%'");
-
-        const char specifier = format[++i];
-        switch (specifier)
+            if (timezone)
+                function->as<ASTFunction &>().arguments->children.push_back(timezone->clone());
+            return function;
+        };
+        const auto flush = [&]
         {
-            /// The same in both languages.
-            case 'b':
-            case 'd':
-            case 'G':
-            case 'H':
-            case 'j':
-            case 'm':
-            case 'S':
-            case 'u':
-            case 'V':
-            case 'Y':
-            case 'z':
-            case '%':
-                pending_format.push_back('%');
-                pending_format.push_back(specifier);
-                break;
-            /// The minute.
-            case 'M':
-                pending_format.append("%i");
-                break;
-            /// The milliseconds, `000` to `999`.
-            case 'L':
-                flush();
-                parts.push_back(zero_padded(makeASTFunction("toMillisecond", date->clone()), 3));
-                break;
-            /// The day of the week, from Sunday as 1 to Saturday as 7: the mode 3 of `toDayOfWeek`.
-            case 'w':
-                flush();
-                parts.push_back(makeASTFunction(
-                    "toString", with_timezone(makeASTFunction("toDayOfWeek", date->clone(), makeLiteral(Field(UInt64(3)))))));
-                break;
-            /// The week of the year, `00` to `53`, where the week 1 starts on the first Sunday of the
-            /// year: the mode 0 of `toWeek`.
-            case 'U':
-                flush();
-                parts.push_back(zero_padded(with_timezone(makeASTFunction("toWeek", date->clone(), makeLiteral(Field(UInt64(0))))), 2));
-                break;
-            default:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format specifier '%{}' of '$dateToString' is not supported", specifier);
-        }
-    }
-    flush();
+            if (pending_format.empty())
+                return;
+            parts.push_back(with_timezone(makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(pending_format)))));
+            pending_format.clear();
+        };
+        const auto zero_padded = [](ASTPtr number, UInt64 width)
+        {
+            return makeASTFunction(
+                "leftPad", makeASTFunction("toString", std::move(number)), makeLiteral(Field(width)), makeLiteral(Field(String("0"))));
+        };
 
-    if (parts.empty())
-        return makeLiteral(Field(String()));
-    if (parts.size() == 1)
-        return parts.front();
-    return makeFunction("concat", std::move(parts));
+        for (size_t i = 0; i < format.size(); ++i)
+        {
+            if (format[i] != '%')
+            {
+                pending_format.push_back(format[i]);
+                continue;
+            }
+            if (i + 1 == format.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'format' of '$dateToString' must not end with a single '%'");
+
+            const char specifier = format[++i];
+            switch (specifier)
+            {
+                /// The same in both languages.
+                case 'b':
+                case 'd':
+                case 'G':
+                case 'H':
+                case 'j':
+                case 'm':
+                case 'S':
+                case 'u':
+                case 'V':
+                case 'Y':
+                case 'z':
+                case '%':
+                    pending_format.push_back('%');
+                    pending_format.push_back(specifier);
+                    break;
+                /// The minute.
+                case 'M':
+                    pending_format.append("%i");
+                    break;
+                /// The milliseconds, `000` to `999`.
+                case 'L':
+                    flush();
+                    parts.push_back(zero_padded(makeASTFunction("toMillisecond", date->clone()), 3));
+                    break;
+                /// The day of the week, from Sunday as 1 to Saturday as 7: the mode 3 of `toDayOfWeek`.
+                case 'w':
+                    flush();
+                    parts.push_back(makeASTFunction(
+                        "toString", with_timezone(makeASTFunction("toDayOfWeek", date->clone(), makeLiteral(Field(UInt64(3)))))));
+                    break;
+                /// The week of the year, `00` to `53`, where the week 1 starts on the first Sunday of the
+                /// year: the mode 0 of `toWeek`.
+                case 'U':
+                    flush();
+                    parts.push_back(zero_padded(with_timezone(makeASTFunction("toWeek", date->clone(), makeLiteral(Field(UInt64(0))))), 2));
+                    break;
+                default:
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format specifier '%{}' of '$dateToString' is not supported", specifier);
+            }
+        }
+        flush();
+
+        if (parts.empty())
+            return makeLiteral(Field(String()));
+        if (parts.size() == 1)
+            return parts.front();
+        return makeFunction("concat", std::move(parts));
+    });
+}
+
+/** The lowering of `$toString`. Mongo converts a date to its ISO 8601 text in UTC, with the
+  * milliseconds and the `Z`, while `toString` prints the local time of the time zone of its type
+  * without them. Which one the argument is is only known when the query is analyzed, so the date
+  * branch is chosen by the type name, a constant. That branch must not throw for any other type:
+  * `accurateCastOrNull` converts anything without throwing, and the `concat` with nothing of the
+  * text of the argument keeps a `NULL` argument `NULL` while the result of an argument that is not
+  * `Nullable` stays a `String`.
+  */
+ASTPtr makeToString(ASTPtr argument)
+{
+    if (argument->as<ASTLiteral>())
+        return makeASTFunction("toString", std::move(argument));
+    return withValue(std::move(argument), [](const ASTPtr & value)
+    {
+        auto as_date = makeASTFunction(
+            "ifNull",
+            makeASTFunction("accurateCastOrNull", value->clone(), makeLiteral(Field(String("DateTime64(3, 'UTC')")))),
+            makeASTFunction("toDateTime64", makeLiteral(Field(UInt64(0))), makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC")))));
+        auto date_text = makeASTFunction(
+            "concat",
+            makeDateToString("%Y-%m-%dT%H:%M:%S.%LZ", as_date, makeLiteral(Field(String("UTC")))),
+            makeASTFunction(
+                "substring", makeASTFunction("toString", value->clone()), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(0)))));
+        return makeASTFunction("if", makeIsDate(value), std::move(date_text), makeASTFunction("toString", value->clone()));
+    });
 }
 
 /** The format of `$dateFromString` in the language of `parseDateTime`, see `makeDateToString`.
@@ -773,6 +807,19 @@ ASTPtr makeDateTrunc(const rapidjson::Value & argument)
     return makeASTFunction("dateTrunc", makeLiteral(Field(String(stringView(unit)))), std::move(date), makeLiteral(Field(String("UTC"))));
 }
 
+/** The `timezone` of a date operator. ClickHouse takes the time zone of a date function as a
+  * constant only, and the translation of an operator may repeat its time zone - once per part of
+  * the format of `$dateToString` - so it has to be a constant string here, which is cheap to copy.
+  */
+ASTPtr parseTimezoneValue(const rapidjson::Value & value, std::string_view operator_name)
+{
+    auto timezone = parseMongoAggregateExpression(value);
+    const auto * literal = timezone->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a constant string is supported as the 'timezone' of '{}'", operator_name);
+    return timezone;
+}
+
 /// The `timezone` of a date operator, UTC by default. Members other than `allowed` and `timezone`
 /// are rejected.
 ASTPtr parseDateTimezone(const rapidjson::Value & argument, std::string_view operator_name, std::initializer_list<std::string_view> allowed)
@@ -782,7 +829,7 @@ ASTPtr parseDateTimezone(const rapidjson::Value & argument, std::string_view ope
     {
         const auto member_name = stringView(member.name);
         if (member_name == "timezone")
-            timezone = parseMongoAggregateExpression(member.value);
+            timezone = parseTimezoneValue(member.value, operator_name);
         else if (std::find(allowed.begin(), allowed.end(), member_name) == allowed.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument '{}' of '{}'", member_name, operator_name);
     }
@@ -841,6 +888,36 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
         return makeFunction(it->second, parseArguments(argument));
+
+    if (name == "$toString")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeToString(arguments[0]);
+    }
+
+    /// The boolean operators take the Mongo truth value of their arguments, see `makeTruthValue`:
+    /// `null` is false, so `{"$not": [null]}` is true, and a string is true rather than an error.
+    if (name == "$not")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        return makeASTFunction("not", makeTruthValue(arguments[0]));
+    }
+
+    if (name == "$and" || name == "$or")
+    {
+        auto arguments = parseArguments(argument);
+        /// Mongo's `{"$and": []}` is true and `{"$or": []}` is false; `and` and `or` take at least
+        /// two arguments.
+        if (arguments.empty())
+            return makeLiteral(Field(name == "$and"));
+        for (auto & element : arguments)
+            element = makeTruthValue(element);
+        if (arguments.size() == 1)
+            return arguments.front();
+        return makeFunction(name == "$and" ? "and" : "or", std::move(arguments));
+    }
 
     if (name == "$eq" || name == "$ne" || name == "$lt" || name == "$lte" || name == "$gt" || name == "$gte")
     {
@@ -931,13 +1008,17 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
           * of the argument: the type name is a constant, and a non-array argument fails when
           * the query is analyzed.
           */
-        auto is_array = makeASTFunction(
-            "startsWith", makeASTFunction("toTypeName", arguments[0]), makeLiteral(Field(String("Array"))));
-        auto guard = makeASTFunction(
-            "throwIf",
-            makeASTFunction("not", std::move(is_array)),
-            makeLiteral(Field(String("The argument of '$size' must be an array"))));
-        return makeASTFunction("plus", makeASTFunction("length", arguments[0]->clone()), std::move(guard));
+        /// The argument is used twice, so it is bound once (see `withValue`).
+        return withValue(arguments[0], [](const ASTPtr & value)
+        {
+            auto is_array = makeASTFunction(
+                "startsWith", makeASTFunction("toTypeName", value->clone()), makeLiteral(Field(String("Array"))));
+            auto guard = makeASTFunction(
+                "throwIf",
+                makeASTFunction("not", std::move(is_array)),
+                makeLiteral(Field(String("The argument of '$size' must be an array"))));
+            return makeASTFunction("plus", makeASTFunction("length", value->clone()), std::move(guard));
+        });
     }
 
     if (name == "$toDecimal")
@@ -1026,6 +1107,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         else
             arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 3);
+        arguments[0] = makeTruthValue(arguments[0]);
         return makeFunction("if", std::move(arguments));
     }
 
@@ -1037,7 +1119,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         std::vector<ASTPtr> arguments;
         for (const auto & branch : branches.GetArray())
         {
-            arguments.push_back(parseMongoAggregateExpression(requireMember(branch, "case", name)));
+            arguments.push_back(makeTruthValue(parseMongoAggregateExpression(requireMember(branch, "case", name))));
             arguments.push_back(parseMongoAggregateExpression(requireMember(branch, "then", name)));
         }
         auto default_it = argument.FindMember("default");
@@ -1124,21 +1206,28 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (name == "$slice")
     {
         auto arguments = parseArguments(argument);
+        /// The count or the position is used several times, so it is bound once (see `withValue`).
         if (arguments.size() == 2)
         {
-            /// A negative count takes the elements at the end of the array.
-            auto positive = makeASTFunction("greaterOrEquals", arguments[1], makeLiteral(Field(UInt64(0))));
-            auto offset = makeASTFunction("if", positive, makeLiteral(Field(UInt64(1))), arguments[1]->clone());
-            return makeASTFunction("arraySlice", arguments[0], offset, makeASTFunction("abs", arguments[1]->clone()));
+            return withValue(arguments[1], [&](const ASTPtr & count)
+            {
+                /// A negative count takes the elements at the end of the array.
+                auto positive = makeASTFunction("greaterOrEquals", count->clone(), makeLiteral(Field(UInt64(0))));
+                auto offset = makeASTFunction("if", positive, makeLiteral(Field(UInt64(1))), count->clone());
+                return makeASTFunction("arraySlice", arguments[0], offset, makeASTFunction("abs", count->clone()));
+            });
         }
         if (arguments.size() == 3)
         {
-            /// Mongo counts the position from zero, ClickHouse from one, and a negative position
-            /// counts from the end in both.
-            auto positive = makeASTFunction("greaterOrEquals", arguments[1], makeLiteral(Field(UInt64(0))));
-            auto offset = makeASTFunction(
-                "if", positive, makeASTFunction("plus", arguments[1]->clone(), makeLiteral(Field(UInt64(1)))), arguments[1]->clone());
-            return makeASTFunction("arraySlice", arguments[0], offset, arguments[2]);
+            return withValue(arguments[1], [&](const ASTPtr & position)
+            {
+                /// Mongo counts the position from zero, ClickHouse from one, and a negative position
+                /// counts from the end in both.
+                auto positive = makeASTFunction("greaterOrEquals", position->clone(), makeLiteral(Field(UInt64(0))));
+                auto offset = makeASTFunction(
+                    "if", positive, makeASTFunction("plus", position->clone(), makeLiteral(Field(UInt64(1)))), position->clone());
+                return makeASTFunction("arraySlice", arguments[0], offset, arguments[2]);
+            });
         }
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$slice' takes two or three arguments, got {}", arguments.size());
     }
@@ -1180,6 +1269,8 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         auto variable = parseVariableName(argument, "this");
         auto body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
+        if (name == "$filter")
+            body = makeTruthValue(std::move(body));
         auto mapped = makeASTFunction(
             name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variable, std::move(body)), std::move(input));
         if (auto limit_it = argument.FindMember("limit"); limit_it != argument.MemberEnd() && name == "$filter")
@@ -1199,7 +1290,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             if (member_name == "format")
                 format = requireDateFormat(member.value, name);
             else if (member_name == "timezone")
-                timezone = parseMongoAggregateExpression(member.value);
+                timezone = parseTimezoneValue(member.value, name);
             else if (member_name == "onNull")
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'onNull' of '{}' is not supported", name);
             else if (member_name != "date")
@@ -1453,7 +1544,6 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         {"$min", "min"},
         {"$max", "max"},
         {"$stdDevPop", "stddevPop"},
-        {"$stdDevSamp", "stddevSamp"},
     };
 
     /// The accumulators that keep a `null`, see `wrapIntoTuple`; the boolean says whether the
@@ -1520,6 +1610,19 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         const bool takes_the_smallest_key = (name == "$first") == (direction == 1);
         return unwrapFromTuple(
             makeASTFunction(takes_the_smallest_key ? "argMin" : "argMax", wrapIntoTuple(std::move(input)), std::move(key)));
+    }
+
+    /// `stddevSamp` is `NaN` for a single value, while Mongo's `$stdDevSamp` is `null` for a sample
+    /// of fewer than two values. The value is an argument of an aggregate function, which cannot
+    /// nest, so the copy does not compound.
+    if (name == "$stdDevSamp")
+    {
+        auto sampled = parseMongoAggregateExpression(member.value);
+        return makeASTFunction(
+            "if",
+            makeASTFunction("greater", makeASTFunction("count", sampled->clone()), makeLiteral(Field(UInt64(1)))),
+            makeASTFunction("stddevSamp", sampled),
+            makeNull());
     }
 
     if (auto it = accumulators.find(name); it != accumulators.end())

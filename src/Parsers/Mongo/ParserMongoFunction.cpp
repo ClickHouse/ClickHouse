@@ -162,7 +162,9 @@ ASTPtr parseFieldOperator(
         ASTPtr negated;
         if (!MongoIdentityFunction(copyValue(argument, metadata->getAllocator()), metadata, field).parseImpl(negated))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the argument of '$not'");
-        return makeASTFunction("not", negated);
+        /// A predicate on a `NULL` field is `NULL`, which does not match, and neither must its
+        /// negation be `NULL`: in Mongo a document that does not match the predicate matches `$not`.
+        return makeASTFunction("not", makeASTFunction("ifNull", negated, make_intrusive<ASTLiteral>(Field(false))));
     }
 
     if (name == "$exists")
@@ -419,8 +421,9 @@ bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
         node = result;
     }
 
+    /// A condition that is `NULL` does not match, so its negation matches, see `$not`.
     if (isNegated())
-        node = makeASTFunction("not", node);
+        node = makeASTFunction("not", makeASTFunction("ifNull", node, make_intrusive<ASTLiteral>(Field(false))));
     return true;
 }
 
