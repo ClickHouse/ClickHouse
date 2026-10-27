@@ -681,6 +681,7 @@ ColumnsCacheFillClaims ColumnsCache::claimFills(
         if (fills.try_emplace(key, result.fill).second)
             result.keys.push_back(key);
     }
+    claimed_keys += result.keys.size();
     return result;
 }
 
@@ -696,6 +697,8 @@ void ColumnsCache::releaseFills(ColumnsCacheFillClaims & claims)
             chassert(fills.contains(key) && fills.at(key) == claims.fill);
             fills.erase(key);
         }
+        claimed_keys -= claims.keys.size();
+        ++released_fills;
     }
 
     {

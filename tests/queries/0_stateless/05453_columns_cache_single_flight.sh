@@ -112,12 +112,13 @@ echo "-- without columns_cache_wait_for_concurrent_fills the second read does no
 read_while_claimed "${ID}_7" "${ID}_8" ", columns_cache_wait_for_concurrent_fills = 0"
 
 echo "-- a stripe another read wrote after this read looked its range up is served from the cache"
-# Two stripes. The first read claims the first one and stops; meanwhile a read that does not wait writes
-# both; then the first read goes on, and has to find the second stripe in the cache although its range
-# was looked up before it was written: it misses only the 8 granules of the first stripe, of 2 columns.
+# Two stripes. The first read claims the first one and stops; meanwhile a second read gives up waiting
+# for it, reads it itself, and claims and writes the second one; then the first read goes on, and has to
+# find the second stripe in the cache although its range was looked up before it was written: it misses
+# only the 8 granules of the first stripe, of 2 columns.
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_cc_flight SELECT number, number * 3, number % 7 FROM numbers(65536, 65536); OPTIMIZE TABLE t_cc_flight FINAL"
 start_claimant "${ID}_9"
-$CLICKHOUSE_CLIENT --query "$QUERY, columns_cache_wait_for_concurrent_fills = 0"
+$CLICKHOUSE_CLIENT --query "$QUERY"
 finish_claimant
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "

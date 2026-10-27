@@ -498,13 +498,25 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     if (needed.empty())
         return {};
 
+    /// Read before the claim and the lookup, so that a fill released after them shows as a change.
+    const UInt64 released_fills = columns_cache->releasedFills();
+
+    /// Nothing to claim, nothing to wait for and nothing written by a fill since the last lookup: the
+    /// common case of a block that is less than a stripe, which must not pay for a lock and a lookup.
+    if (to_claim.empty() && released_fills == released_fills_seen && !columns_cache->anyFillsInProgress())
+        return {};
+
     std::vector<ColumnsCacheFillPtr> in_progress;
     auto claims = columns_cache->claimFills(needed, to_claim, in_progress);
     if (in_progress.empty())
     {
         /// The stripes another reader wrote and released after the range was looked up are served from the
         /// cache: a reader that trails another one through a part finds most of its stripes written so.
-        refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
+        if (released_fills != released_fills_seen)
+        {
+            refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
+            released_fills_seen = released_fills;
+        }
         if (!claims.empty())
             FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_after_claim);
         return claims;
@@ -522,6 +534,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
 
     /// Nothing is claimed yet: a reader never waits while it holds claims.
     ColumnsCache::waitForFills(in_progress, max_wait_ns);
+    released_fills_seen = columns_cache->releasedFills();
     refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
     collect();
 
@@ -610,6 +623,7 @@ void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_ma
 
     if (columns_cache_reads_possible)
     {
+        released_fills_seen = columns_cache->releasedFills();
         lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_cached_columns);
         LOG_TEST(log, "Range of marks [{}, {}) of part {}: {} of {} granules are in the columns cache",
             range_first_mark, range_end_mark, columns_cache_part_name,

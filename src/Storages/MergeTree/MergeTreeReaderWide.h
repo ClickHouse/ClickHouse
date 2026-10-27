@@ -350,6 +350,9 @@ private:
     static void countCachedGranules(
         std::span<const ColumnsCache::MappedPtr> entries, size_t counts_first_mark, size_t begin, size_t end, std::vector<UInt32> & cached_columns);
 
+    /// `ColumnsCache::releasedFills` as of the last lookup of the range.
+    UInt64 released_fills_seen = 0;
+
     /// How long this reader takes to read one value of a column from the part, in nanoseconds: a running
     /// average over its reads, 0 before the first one. See `ColumnsCache::waitForFills`.
     double read_nanoseconds_per_value = 0;

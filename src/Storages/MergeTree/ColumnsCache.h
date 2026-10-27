@@ -315,6 +315,12 @@ public:
     /// can still be rejected (budget, invalidation, size), and the waiters then read for themselves.
     ColumnsCacheFillClaims claimFills(const std::vector<Key> & needed, const std::vector<Key> & to_claim, std::vector<ColumnsCacheFillPtr> & in_progress);
 
+    /// How many claims were released so far: a reader that has seen this count when it looked keys up, and
+    /// sees it unchanged, knows that no fill has written them since.
+    UInt64 releasedFills() const { return released_fills.load(); }
+    /// Whether any key is claimed: when none is, `claimFills` would find no fill to wait for.
+    bool anyFillsInProgress() const { return claimed_keys.load() != 0; }
+
     /// Wait until the fills are released, but no longer than `max_wait_ns` if it is given, nor after the
     /// query is cancelled. Parks the CPU lease of the thread meanwhile.
     ///
@@ -454,6 +460,9 @@ private:
     /// mutex is enough, and it is what makes claiming all keys of a block at once trivial.
     std::unordered_map<Key, ColumnsCacheFillPtr, ColumnsCacheKeyHash> fills;
     std::mutex fills_mutex;
+    /// See `releasedFills` and `anyFillsInProgress`. Changed under `fills_mutex`, read without it.
+    std::atomic<UInt64> released_fills{0};
+    std::atomic<size_t> claimed_keys{0};
 
     /// See `readNanosecondsPerValue`. Updated without a lock: a lost update only delays the average.
     /// On a cache line of its own: every reader writes it.
