@@ -471,7 +471,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 		});
 		_pendingWrite = result.sslError == SSL_ERROR_WANT_WRITE;
 	}
-	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time, _independentReadWrite ? &lock : nullptr, unbounded));
+	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time, unlockWhileWaitingFor(result.sslError, lock), unbounded));
 	rc = result.rc;
 	if (rc <= 0)
 	{
@@ -521,7 +521,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 			return SSL_read(_pSSL, buffer, length);
 		});
 	}
-	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time, _independentReadWrite ? &lock : nullptr, unbounded));
+	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time, unlockWhileWaitingFor(result.sslError, lock), unbounded));
 	rc = result.rc;
 	if (rc <= 0)
 	{
@@ -744,6 +744,14 @@ Poco::Timespan SecureSocketImpl::getTimeoutOrLimit(Poco::Timespan remaining_time
 	if (remaining_time == 0)
 		remaining_time = Poco::Timespan(std::numeric_limits<int>::max());
 	return remaining_time;
+}
+
+std::unique_lock<SecureSocketImpl::RecursiveMutex> * SecureSocketImpl::unlockWhileWaitingFor(int sslError, std::unique_lock<RecursiveMutex> & lock) const
+{
+	/// After `SSL_ERROR_WANT_WRITE`, OpenSSL allows no other operation that could do I/O on the session
+	/// until the operation that got it is repeated (see `SSL_get_error`), so the session stays locked
+	/// while waiting for writability. A wait for readability lets the opposite direction progress.
+	return _independentReadWrite && sslError == SSL_ERROR_WANT_READ ? &lock : nullptr;
 }
 
 bool SecureSocketImpl::mustRetry(

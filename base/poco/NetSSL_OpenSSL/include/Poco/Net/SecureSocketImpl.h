@@ -229,8 +229,8 @@ namespace Net
         /// Let `receiveBytes` and `sendBytes` progress independently when two callers use the
         /// socket concurrently, one reading and one writing, as a full-duplex relay does.
         /// When set, the lock guarding SSL operations is not held while `receiveBytes` or
-        /// `sendBytes` waits for the socket to become readable or writable, so a pending read does
-        /// not block a write, and each operation is bounded by its own timeout (the receive timeout
+        /// `sendBytes` waits for the socket to become readable, so a pending read does
+        /// not block a write (a wait for writability keeps the lock, as OpenSSL requires), and each operation is bounded by its own timeout (the receive timeout
         /// for reads, the send timeout for writes) instead of the larger of the two. A zero timeout
         /// means no timeout at all for that operation.
         /// The caller must not close the socket while another caller is reading or writing.
@@ -261,6 +261,9 @@ namespace Net
         static bool isLocalHost(const std::string & hostName);
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
+
+        std::unique_lock<RecursiveMutex> * unlockWhileWaitingFor(int sslError, std::unique_lock<RecursiveMutex> & lock) const;
+        /// The lock to release while waiting to retry an operation that failed with sslError, if any.
 
         bool mustRetry(
             int rc, int sslError, int socketError, Poco::Timespan & remaining_time,

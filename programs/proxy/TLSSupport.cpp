@@ -77,6 +77,8 @@ Poco::Net::Context::Ptr makeServerTLSContext(const Poco::Util::AbstractConfigura
     params.verificationDepth = config.getInt(prefix + SSLManager::CFG_VER_DEPTH, SSLManager::VAL_VER_DEPTH);
     params.loadDefaultCAs = config.getBool(prefix + SSLManager::CFG_ENABLE_DEFAULT_CA, SSLManager::VAL_ENABLE_DEFAULT_CA);
     params.cipherList = config.getString(prefix + SSLManager::CFG_CIPHER_LIST, SSLManager::VAL_CIPHER_LIST);
+    /// TLS 1.3 cipher suites are configured separately from `cipherList`, which applies to older versions.
+    params.cipherSuites = config.getString(prefix + SSLManager::CFG_CIPHER_SUITES, "");
     params.dhParamsFile = config.getString(prefix + SSLManager::CFG_DH_PARAMS_FILE, "");
     params.ecdhCurve = config.getString(prefix + SSLManager::CFG_ECDH_CURVE, "");
 
@@ -96,8 +98,8 @@ Poco::Net::Context::Ptr makeServerTLSContext(const Poco::Util::AbstractConfigura
     if (config.getBool(prefix + SSLManager::CFG_PREFER_SERVER_CIPHERS, false))
         ctx->preferServerCiphers();
 
-    /// Install the per-connection certificate callback
-    /// and enable hot reload of the key pair on config change.
+    /// Install the per-connection certificate callback serving the loaded key pair.
+    /// The proxy does not reload its configuration, so a replaced certificate is used after a restart.
     CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
 
     return ctx;
@@ -121,6 +123,8 @@ Poco::Net::Context::Ptr makeClientTLSContext(const Poco::Util::AbstractConfigura
     params.verificationDepth = config.getInt(prefix + SSLManager::CFG_VER_DEPTH, SSLManager::VAL_VER_DEPTH);
     params.loadDefaultCAs = config.getBool(prefix + SSLManager::CFG_ENABLE_DEFAULT_CA, true);
     params.cipherList = config.getString(prefix + SSLManager::CFG_CIPHER_LIST, SSLManager::VAL_CIPHER_LIST);
+    /// TLS 1.3 cipher suites are configured separately from `cipherList`, which applies to older versions.
+    params.cipherSuites = config.getString(prefix + SSLManager::CFG_CIPHER_SUITES, "");
 
     Context::Usage usage = Context::CLIENT_USE;
     if (config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_2, false))
