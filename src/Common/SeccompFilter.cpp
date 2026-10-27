@@ -119,8 +119,7 @@ namespace DB
 /// POSIX IPC, and the extended-attribute calls (these with `ENOSYS` rather than the configured
 /// action - see `refused_with_enosys`). Making a device node with `mknodat` is refused too, while
 /// its other uses - a FIFO for an executable user defined function among them - are not. So is a
-/// socket of an address family the server does not use, such as `AF_PACKET`, `AF_ALG` or
-/// `AF_VSOCK` (with `EAFNOSUPPORT` - see `allowed_socket_families`).
+/// socket of a family the server does not use (with `EAFNOSUPPORT` - see `allowed_socket_families`).
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
@@ -128,9 +127,9 @@ namespace DB
 /// `local_filesystem_read_method = io_uring`). The filter sees `io_uring_enter` but not the
 /// operations queued in the ring, so whoever can make a ring can reach through it the operations
 /// that `io_uring` implements even where their system calls are refused here - such as the
-/// extended-attribute ones, or a socket of any family. `IORING_REGISTER_RESTRICTIONS` would not
-/// close that, since nothing stops a second, unrestricted ring from being made; refusing
-/// `io_uring_setup` would, at the price of the read method.
+/// extended-attribute ones. `IORING_REGISTER_RESTRICTIONS` would not close that, since nothing
+/// stops a second, unrestricted ring from being made; refusing `io_uring_setup` would, at the price
+/// of the read method.
 /// clang-format off
 #define SECCOMP_ALLOWED_SYSCALLS_COMMON(M) \
     /* Reading and writing data. */ \
@@ -332,15 +331,11 @@ constexpr UInt32 denied_clone_flags
 /// with `openat` and `bind`.
 constexpr UInt32 denied_mknod_file_types[] = {S_IFCHR, S_IFBLK};
 
-/// The address families the server makes sockets of: `AF_UNIX` for the daemons of the host and for
-/// socket pairs, `AF_INET` and `AF_INET6` for the network, and `AF_NETLINK` for the libc's view of
-/// the network interfaces and for the TCP socket metrics. A socket of any other family - each of
-/// them a protocol implementation of its own in the kernel - is refused with `EAFNOSUPPORT`, the
-/// answer of a kernel built without that family, so that code which tries one carries on without
-/// it, whatever the configured action. `socketpair` is checked as well, because the kernel makes both sockets of
-/// a pair before it asks the family whether it can pair them. The obsolete socket type
-/// `SOCK_PACKET` is refused in the same way, whatever the family: the kernel turns an `AF_INET`
-/// socket of that type into an `AF_PACKET` one, after the filter has seen the call.
+/// The families the server makes sockets of: `AF_UNIX` (host daemons, socket pairs), `AF_INET` and
+/// `AF_INET6`, and `AF_NETLINK` (the libc's interface list, TCP socket metrics). Any other family gets
+/// `EAFNOSUPPORT` in every enforcing mode, as from a kernel built without it, so the caller carries on.
+/// `socketpair` is checked too: the kernel makes both sockets before it asks the family to pair them.
+/// `SOCK_PACKET` is refused for any family: past the filter, the kernel turns `AF_INET` into `AF_PACKET`.
 constexpr UInt32 allowed_socket_families[] = {AF_UNIX, AF_INET, AF_INET6, AF_NETLINK};
 
 #if defined(__x86_64__)
@@ -368,9 +363,8 @@ constexpr UInt32 offset_mknodat_mode = offsetof(struct seccomp_data, args) + 2 *
 #if defined(__x86_64__)
 constexpr UInt32 offset_mknod_mode = offsetof(struct seccomp_data, args) + sizeof(UInt64);
 #endif
-/// The `domain` and `type` arguments of `socket` and `socketpair`. The kernel takes both as `int`,
-/// so only the low half decides, and of the type only the bits under `SOCK_TYPE_MASK` of the kernel
-/// (which no userspace header defines): the others carry `SOCK_CLOEXEC` and `SOCK_NONBLOCK`.
+/// The kernel takes `domain` and `type` as `int`, so only the low half counts, and of `type` only the
+/// bits under its `SOCK_TYPE_MASK` (in no userspace header): the rest are `SOCK_CLOEXEC`, `SOCK_NONBLOCK`.
 constexpr UInt32 offset_socket_domain = offsetof(struct seccomp_data, args);
 constexpr UInt32 offset_socket_type = offsetof(struct seccomp_data, args) + sizeof(UInt64);
 constexpr UInt32 socket_type_mask = 0xf;
@@ -749,8 +743,7 @@ void verifyProgram(
     /// Every number the running kernel could put into `nr`, and then some, so that a range which
     /// is off by one on either end cannot go unnoticed. The calls that are decided by an argument
     /// are in `allowed`, and with every argument zero that is indeed the answer they get - for
-    /// `mknodat`, a zero mode makes a regular file - except `socket` and `socketpair`, for which a
-    /// zero domain is `AF_UNSPEC`, not a family the server uses.
+    /// `mknodat`, a zero mode makes a regular file - but `socket` and `socketpair` refuse `AF_UNSPEC`.
     for (int nr = -4096; nr < 8192; ++nr)
     {
         UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
@@ -849,9 +842,6 @@ void verifyProgram(
                 check(mknod_data(mode), default_action);
     }
 
-    /// `socket` and `socketpair` make sockets of the families the server uses, of any type but
-    /// `SOCK_PACKET` and with any flags, and nothing else - also with junk in the half of an
-    /// argument the kernel does not look at.
     for (int nr : {__NR_socket, __NR_socketpair})
     {
         auto socket_data = [nr](UInt64 domain, UInt64 type)
@@ -1029,9 +1019,8 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 
     const std::unordered_set<int> allowed(numbers.begin(), numbers.end());
 
-    /// `ioctl` is decided by its request, `clone` by its flags, `mknodat` by its file type, and
-    /// `socket` and `socketpair` by their family and type, in blocks of their own, so none of them
-    /// must also be in the table.
+    /// `ioctl` is decided by its request, `clone` by its flags, `mknodat` by its file type and `socket` and
+    /// `socketpair` by family and type, in blocks of their own, so none of them must also be in the table.
     std::erase(numbers, __NR_ioctl);
     std::erase(numbers, __NR_clone);
     std::erase(numbers, __NR_mknodat);
@@ -1045,7 +1034,6 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     /// Nothing is refused in the `log` mode, so there the calls refused with `ENOSYS` elsewhere
     /// get the same treatment as the rest of the policy.
     const UInt32 enosys_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    /// And so does a socket of a family the server does not use - see `allowed_socket_families`.
     const UInt32 refused_family_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{EAFNOSUPPORT});
     Program program = buildProgram(toRanges(numbers), default_action, enosys_action, refused_family_action);
     verifyProgram(program, allowed, default_action, enosys_action, refused_family_action);
