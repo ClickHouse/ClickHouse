@@ -649,6 +649,9 @@ private:
         std::optional<size_t> argument_num_of_space_filling_curve;
         Field const_value;
         DataTypePtr const_type;
+        /// The single-row column of an untransformed constant, which tells the member a `Variant` or `Dynamic`
+        /// holds. A transformed constant already has the type of the key column and leaves it empty.
+        ColumnPtr const_column;
         /// Whether the constant is a `FixedString`, including an active `Variant` or `Dynamic` member.
         /// This describes the candidate's value after any transform, not the predicate's original value.
         bool const_is_fixed_string = false;
