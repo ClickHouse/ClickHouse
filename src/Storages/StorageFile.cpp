@@ -2676,7 +2676,7 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(storage->format_name))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -2702,8 +2702,9 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(storage->format_name, "Parquet"))
+    /// Only the Parquet and Vortex readers support both.
+    if (!boost::iequals(storage->format_name, "Parquet")
+        && !boost::iequals(storage->format_name, "Vortex"))
         return false;
 
     /// A file descriptor (e.g. stdin) is consumed by the main read and cannot be reopened.
@@ -2966,6 +2967,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         query_info.row_level_filter,
         query_info.prewhere_info,
         info.format_filter_input_header);
+    format_filter_info->need_row_numbers
+        = lazy_row_index_registry != nullptr || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
@@ -3127,11 +3130,13 @@ public:
                 /// LazyMaterializingTransform would restore the original row order incorrectly.
                 FormatSettings format_settings = storage->format_settings ? *storage->format_settings : getFormatSettings(getContext());
                 format_settings.parquet.preserve_order = true;
+                format_settings.vortex.preserve_order = true;
 
                 /// There is no filter and no prewhere here: the surviving rows are known exactly,
                 /// so the deferred columns are read without any filtering expressions.
                 auto format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, getContext(), nullptr, nullptr, nullptr);
                 format_filter_info->rows_to_read = file.rows;
+                format_filter_info->need_row_numbers = true;
 
                 if (object_with_metadata)
                 {

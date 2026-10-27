@@ -695,6 +695,13 @@ Block buildAllowedFilterInputs(
     return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
 }
 
+bool formatNeedsEagerKeyConditionSets(const String & format_name)
+{
+    return boost::iequals(format_name, "Parquet")
+        || boost::iequals(format_name, "ORC")
+        || boost::iequals(format_name, "Vortex");
+}
+
 void prepareEagerKeyConditionSets(
     const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
     const StorageSnapshotPtr & storage_snapshot,
