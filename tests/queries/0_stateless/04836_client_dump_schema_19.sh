@@ -134,7 +134,7 @@ rm -rf "$REPLICATED_PATH"
 $CLICKHOUSE_LOCAL --path "$REPLICATED_PATH" --multiquery --query "
 CREATE DATABASE d;
 ATTACH TABLE d.r UUID '04836190-0000-4000-8000-000000000019' (x UInt64)
-    ENGINE = ReplicatedMergeTree('/test/04836_client_dump_schema_19/r', 'r1') ORDER BY x;
+    ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r1') ORDER BY x;
 "
 echo '<clickhouse><zookeeper><node><host>localhost</host><port>1</port></node></zookeeper></clickhouse>' > "$ZOOKEEPER_CONFIG"
 BEFORE=$(snapshot "$REPLICATED_PATH")
