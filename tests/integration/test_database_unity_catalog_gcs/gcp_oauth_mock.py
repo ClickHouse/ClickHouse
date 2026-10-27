@@ -1,5 +1,6 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -7,10 +8,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        if self.path == "/":
+        path = urlparse(self.path).path
+        if path == "/":
             body = b"OK"
             content_type = "text/plain"
-        elif self.path == "/computeMetadata/v1/instance/service-accounts/default/token":
+        elif path == "/computeMetadata/v1/instance/service-accounts/default/token":
             body = json.dumps(
                 {
                     "access_token": "gcp-token",
