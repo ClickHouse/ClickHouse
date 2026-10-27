@@ -3103,3 +3103,30 @@ The nine status files across the two builds per CPU verified 30 runtime checks a
 Five Clang depfiles per CPU showed five GoogleMock, nine GoogleTest and eleven IDNA C++ files included by their own translation units. `gmock_main.cc` and ClickHouse’s `src/Functions/idna.cpp` included public headers and none of the corresponding private implementation files.
 
 No DWYU child ran on the initial builds, and the SDK-only retries requested none. Earlier strict reports cover 429 of 627 eligible x86-64 targets and 417 of 612 ARM64 targets. That leaves 198 and 195, respectively, with no recorded strict report. This revision has no new DWYU grades.
+
+## e78106451
+
+At [e78106451](https://github.com/dzbarsky/clickhouse/commit/e78106451da198cf6a5bdf82b5448d751d6a3539), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and unit-test binaries also match the [previous Bazel build](https://github.com/dzbarsky/clickhouse/commit/8c5da4275424cf7e14633d1a9e316e64e936e220).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-49ed-bc88-173739d74571) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-49ed-bc88-173739d74571) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-49ed-bc88-173739d74571) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c0f9b61f-6a30-4dd5-b314-75edff78f54e) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/c0f9b61f-6a30-4dd5-b314-75edff78f54e) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c0f9b61f-6a30-4dd5-b314-75edff78f54e) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[Four ClickHouse libraries](https://github.com/dzbarsky/clickhouse/commit/80c8c046bef66c2c88ab71f6c9b61996ce2cb771) stopped exporting libstemmer, SHA-3, ULID, WordNet and yaml-cpp. This removed 20 public dependency entries from AggregateFunctions, Dictionaries, URL functions and system storage. The libraries that compile the eight C++ sources using those headers keep their private dependencies.
+
+[GatherUtils](https://github.com/dzbarsky/clickhouse/commit/e78106451da198cf6a5bdf82b5448d751d6a3539) dropped its two unused implementation dependencies on the Anthropic and OpenAI SDK providers. `bazel/initial_migration/measured_deps.py` reproduces all five BUILD files. Of 302 BUILD files, 297 were unchanged; all 302 were already in Buildifier format.
+
+On each CPU, six Clang depfiles showed that each of five sampled readers included its vendor header; `programs/main.cpp` received none of the five vendor include directories or headers.
+
+Each native invocation completed 19 targets and produced nine status files. They verified 30 runtime checks and three compile checks. The seven processed Rust archives on each CPU matched their previous SHA-256 values and byte counts; all seven registered ARM64 `llvm-strip --strip-debug` input/output pairs matched. The ClickHouse and unit-test link arguments also matched those of the previous executables.
+
+BuildBuddy reported [x86-64](https://app.buildbuddy.io/invocation/1c391533-0635-49ed-bc88-173739d74571): 687 remote executions and 55,147 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/c0f9b61f-6a30-4dd5-b314-75edff78f54e): 687 remote executions and 55,625 remote cache hits.
+
+### Dependency reports
+
+The [x86-64](https://app.buildbuddy.io/invocation/25ddeb68-503e-48a0-ae94-a1de51b4929b) and [ARM64](https://app.buildbuddy.io/invocation/a66bf0e7-99c6-459e-bfed-152044ccf8a5) workers each reported that none of their five targets fit the DWYU limits. Neither started a DWYU build. The result checker could not reproduce the workers’ estimates; these runs produced no dependency reports.
