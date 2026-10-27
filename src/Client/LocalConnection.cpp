@@ -699,6 +699,10 @@ bool LocalConnection::isSendDataNeeded() const
 
 void LocalConnection::sendCancel()
 {
+    /// No query is in flight: like the TCP server, ignore the cancel.
+    if (!state)
+        return;
+
     state->is_cancelled = true;
     if (state->executor)
         state->executor->cancel();
@@ -1043,6 +1047,9 @@ Packet LocalConnection::receivePacket()
         {
             packet.exception.reset(state->exception->clone());
             next_packet_type.reset();
+            /// An exception is the last packet of the query, as `EndOfStream` is.
+            state.reset();
+            last_sent_snapshots.clear();
             break;
         }
         case Protocol::Server::Progress:
