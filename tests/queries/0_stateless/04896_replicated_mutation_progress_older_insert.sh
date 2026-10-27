@@ -21,10 +21,17 @@ for case in control held; do
     fi
 
     # The part of partition 1 fails forever, so one part with a known size stays to do.
-    # The first read sizes both parts while merges (and so mutations) are stopped.
+    # The mutation reaches the queue asynchronously, so wait for a read that sizes both parts while
+    # merges (and so mutations) are stopped.
     $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_older_insert"
     $CLICKHOUSE_CLIENT -q "ALTER TABLE t_older_insert UPDATE v = v + throwIf(v = 2) WHERE 1 SETTINGS mutations_sync = 0"
-    $CLICKHOUSE_CLIENT -q "SELECT parts_to_do FROM system.mutations WHERE database = currentDatabase() AND table = 't_older_insert' FORMAT Null"
+    pending=""
+    for _ in {1..300}; do
+        pending=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_older_insert' AND parts_to_do = 2")
+        [ "$pending" = "1" ] && break
+        sleep 0.2
+    done
+    [ "$pending" = "1" ] || echo "$case FAIL: the mutation never reached the queue with both parts"
     $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_older_insert"
 
     state=""
