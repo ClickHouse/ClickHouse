@@ -68,6 +68,27 @@ Map	16
 Map	16
 Map	16
 Map	16
+-- a missing map key or JSON path reads the default value, where the tokenizer of the element index can find a token
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	8
+FixedString	8
+FixedString	8
+FixedString	8
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	8
+JSON FixedString	8
+JSON FixedString	8
+JSON FixedString	8
 -- LowCardinality(String): direct read
 8
 8

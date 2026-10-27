@@ -1974,6 +1974,21 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
+/// Whether the value has no tokens with any tokenizer: `forEachToken` finds none in an empty string.
+static bool hasNoTokensWithAnyTokenizer(const Field & value)
+{
+    if (value.isNull())
+        return true;
+
+    if (value.getType() == Field::Types::String)
+        return value.safeGet<String>().empty();
+
+    if (value.getType() == Field::Types::Array)
+        return std::ranges::all_of(value.safeGet<Array>(), [](const Field & element) { return hasNoTokensWithAnyTokenizer(element); });
+
+    return false;
+}
+
 /// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
 /// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
 /// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
@@ -1983,17 +1998,35 @@ static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
     ActionsDAG::IntermediateExecutionResult default_input;
     default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
 
+    /// hasTokenPrefix/Like/Match without a tokenizer argument are evaluated here with `splitByNonAlpha`, but the query plan
+    /// gives them the tokenizer of a text index on their input (see `TextIndexDAGReplacer`), which this index does not know.
+    /// That tokenizer can find a token in the default value, e.g. in the NUL bytes of a `FixedString`. So the result is
+    /// known only if their input has no tokens with any tokenizer.
+    ActionsDAG::NodeRawConstPtrs outputs = subdag.getOutputs();
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.children.size() == 2
+            && MergeTreeIndexConditionText::isPerTokenPatternFunction(node.function_base->getName()))
+            outputs.push_back(node.children.front());
+    }
+
     ColumnsWithTypeAndName result;
     try
     {
-        result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
+        result = ActionsDAG::evaluatePartialResult(default_input, outputs, /*input_rows_count=*/ 1);
     }
     catch (const Exception &)
     {
         return true;
     }
 
-    return !result.front().column || result.front().column->getBool(0);
+    if (!result.front().column || result.front().column->getBool(0))
+        return true;
+
+    return std::ranges::any_of(result.begin() + 1, result.end(), [](const ColumnWithTypeAndName & per_token_function_input)
+    {
+        return !per_token_function_input.column || !hasNoTokensWithAnyTokenizer((*per_token_function_input.column)[0]);
+    });
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
