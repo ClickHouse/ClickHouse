@@ -71,6 +71,12 @@ public:
     /// `JSON*` formats compare types with `equals` instead and keep the default.
     virtual bool validatesDeclaredTypesByName() const { return false; }
 
+    /// The type names exactly as declared in the data by the last `readSchema` call, before they are
+    /// parsed and canonicalized by `DataTypeFactory` (a declared `Boolean` becomes `Bool`). Meaningful
+    /// only when `validatesDeclaredTypesByName` is true: the parser compares this original text with
+    /// `getName` of the destination type. Empty if unknown.
+    virtual std::vector<String> getDeclaredTypeNames() const { return {}; }
+
     /// True when the schema returned by `readSchema` describes the structure the parser actually reads
     /// and validates. It is false for the metadata-based `JSON*` formats (`JSON`, `JSONCompact`,
     /// `JSONColumnsWithMetadata`) when `input_format_json_validate_types_from_metadata` = 0: schema

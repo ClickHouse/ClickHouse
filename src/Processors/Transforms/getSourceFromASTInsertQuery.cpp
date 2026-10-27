@@ -338,6 +338,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
     bool format_validates_declared_types_by_name = false;
+    std::vector<String> format_declared_type_names;
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
     bool format_allows_fewer_columns_than_expected = false;
@@ -382,6 +383,7 @@ String getInsertDataSchemaMismatchDescription(
         format_has_strict_order_of_columns = schema_reader->hasStrictOrderOfColumns();
         format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
         format_validates_declared_types_by_name = schema_reader->validatesDeclaredTypesByName();
+        format_declared_type_names = schema_reader->getDeclaredTypeNames();
         format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
         format_allows_variable_number_of_columns = schema_reader->allowVariableNumberOfColumns();
         format_allows_fewer_columns_than_expected = schema_reader->allowsFewerColumnsThanExpected();
@@ -797,9 +799,15 @@ String getInsertDataSchemaMismatchDescription(
     {
         /// The -WithNamesAndTypes parser compares the declared type name with the name of the destination
         /// type, so types that compare equal but have different names (`Bool` and `UInt8`) are a real
-        /// mismatch there. Check this before the general equality shortcut.
+        /// mismatch there. Check this before the general equality shortcut. The parser compares the
+        /// original declared text, so an alias (`Boolean` for a `Bool` column) is a mismatch as well,
+        /// even though the inferred type is canonicalized to the same name; use that text when known.
         if (format_validates_declared_types_by_name)
+        {
+            if (evidence.column_index && evidence.path.empty() && *evidence.column_index < format_declared_type_names.size())
+                return format_declared_type_names[*evidence.column_index] == expected_type->getName();
             return inferred_type->getName() == expected_type->getName();
+        }
 
         if (inferred_type->equals(*expected_type))
             return true;
@@ -1971,20 +1979,72 @@ bool formatEndsRowsWithLineBreak(const String & format_name)
 /// Whether `data` may end inside a quoted field read with the `CSV` escaping rule, where a line break
 /// is a part of the value rather than the end of the row. `readCSVStringInto` accepts a quoted field
 /// cut by the end of the data, so inference would see such an unfinished row as a complete short one.
-/// An escaped quote inside a quoted field is doubled, so an odd number of quote characters means that
-/// a quoted field is still open. A quote character inside an unquoted field may make the count odd
-/// as well, which then only suppresses the explanation.
+/// A field is quoted only when its first character is an enabled quote character; a quote character
+/// elsewhere in an unquoted field is literal, and an escaped quote inside a quoted field is doubled.
+/// So follow the field and quotation state of `readCSVStringInto` through the data. Where that state
+/// cannot be established exactly, the answer is "may end inside", which only suppresses the explanation:
+/// a quote preceded by spaces or tabs at the start of a field (whether it opens a quoted field depends
+/// on trimming and on the column type), a quote at the very end of the data (it may be the first half
+/// of a doubled quote), and `CustomSeparated` or a custom `CSV` delimiter (multi-character delimiters
+/// are not tracked here), where any enabled quote character makes the answer "may end inside".
 bool mayEndInsideCSVQuotedField(std::string_view data, const String & format_name, const FormatSettings & format_settings)
 {
     String name = Poco::toLower(format_name);
-    const bool csv_escaping = name.starts_with("csv")
+    const bool csv = name.starts_with("csv");
+    const bool csv_escaping = csv
         || (name.starts_with("customseparated") && format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV);
     if (!csv_escaping)
         return false;
 
-    auto has_odd_count = [&](char quote) { return std::ranges::count(data, quote) % 2 != 0; };
-    return (format_settings.csv.allow_double_quotes && has_odd_count('"'))
-        || (format_settings.csv.allow_single_quotes && has_odd_count('\''));
+    const auto & csv_settings = format_settings.csv;
+    auto is_quote = [&](char c) { return (csv_settings.allow_double_quotes && c == '"') || (csv_settings.allow_single_quotes && c == '\''); };
+
+    if (!csv || !csv_settings.custom_delimiter.empty())
+        return std::ranges::any_of(data, is_quote);
+
+    const char delimiter = csv_settings.delimiter;
+    bool at_field_start = true;
+    bool whitespace_at_field_start = false;
+    char open_quote = 0;
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        const char c = data[i];
+        if (open_quote)
+        {
+            if (c != open_quote)
+                continue;
+            if (i + 1 == data.size())
+                return true;
+            if (data[i + 1] == open_quote)
+            {
+                ++i;
+                continue;
+            }
+            /// The quoted field is closed; anything up to the next delimiter belongs to the same field.
+            open_quote = 0;
+        }
+        else if (c == delimiter || c == '\n' || c == '\r')
+        {
+            at_field_start = true;
+            whitespace_at_field_start = false;
+        }
+        else if (at_field_start && is_quote(c))
+        {
+            if (whitespace_at_field_start)
+                return true;
+            open_quote = c;
+            at_field_start = false;
+        }
+        else if (at_field_start && (c == ' ' || c == '\t'))
+        {
+            whitespace_at_field_start = true;
+        }
+        else
+        {
+            at_field_start = false;
+        }
+    }
+    return open_quote != 0;
 }
 
 }

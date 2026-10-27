@@ -491,6 +491,7 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
         NamesAndTypesList result;
         for (size_t i = 0; i != data_type_names.size(); ++i)
             result.emplace_back(column_names[i], DataTypeFactory::instance().get(data_type_names[i]));
+        declared_type_names = std::move(data_type_names);
         return result;
     }
 
