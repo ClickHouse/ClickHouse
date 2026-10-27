@@ -33,6 +33,11 @@ zk_node = cluster.add_instance(
 SECCOMP_MODE_DISABLED = "0"
 SECCOMP_MODE_FILTER = "2"
 
+SOCKET_COLUMNS = (
+    "packet_socket_result String, packet_socketpair_result String, "
+    "used_families_result String"
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -83,17 +88,38 @@ def get_server_pid(node):
     return int(output.split(":", 1)[1].strip())
 
 
-def run_probe(node):
+def skip_under_memory_sanitizer(node):
     if node.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with vfork")
+
+
+def run_probe(node):
+    skip_under_memory_sanitizer(node)
 
     # A seccomp filter survives both `fork` and `execve`, so an executable user defined function or
     # dictionary, a bridge, or the OOM canary runs under the same policy as the server.
     return node.query(
         "SELECT * FROM executable('seccomp_status.py', 'TabSeparated', "
         "'mode String, getxattr_result String, clone_result String, clone3_result String, "
-        "thread_result String, mknod_device_result String, mkfifo_result String')"
+        f"thread_result String, mknod_device_result String, mkfifo_result String, {SOCKET_COLUMNS}')"
     ).split()
+
+
+def check_sockets_are_not_refused(
+    packet_socket_result, packet_socketpair_result, used_families_result
+):
+    # Without a filter the kernel makes a packet socket for a process with `CAP_NET_RAW` and refuses
+    # it with `EPERM` otherwise, and refuses to pair packet sockets (`ENOTSUP` and `EOPNOTSUPP` are
+    # the same error). None of those answers is `EAFNOSUPPORT`.
+    socket_results = packet_socket_result.split(",")
+    assert len(socket_results) == 2
+    assert all(result in ("0", "EPERM") for result in socket_results)
+    socketpair_results = packet_socketpair_result.split(",")
+    assert len(socketpair_results) == 2
+    assert all(
+        result in ("ENOTSUP", "EOPNOTSUPP", "EPERM") for result in socketpair_results
+    )
+    assert used_families_result == "OK"
 
 
 def test_setting_is_reported(started_cluster):
@@ -158,6 +184,9 @@ def test_no_filter_when_disabled(started_cluster):
         thread_result,
         mknod_device_result,
         mkfifo_result,
+        packet_socket_result,
+        packet_socketpair_result,
+        used_families_result,
     ) = run_probe(disabled_node)
     assert mode == SECCOMP_MODE_DISABLED
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
@@ -168,6 +197,9 @@ def test_no_filter_when_disabled(started_cluster):
     assert thread_result == "OK"
     assert mknod_device_result == "ENOENT"
     assert mkfifo_result == "0"
+    check_sockets_are_not_refused(
+        packet_socket_result, packet_socketpair_result, used_families_result
+    )
 
 
 def check_policy_is_enforced(node):
@@ -179,6 +211,9 @@ def check_policy_is_enforced(node):
         thread_result,
         mknod_device_result,
         mkfifo_result,
+        packet_socket_result,
+        packet_socketpair_result,
+        used_families_result,
     ) = run_probe(node)
     assert mode == SECCOMP_MODE_FILTER
     assert getxattr_result == "ENOSYS"
@@ -187,6 +222,11 @@ def check_policy_is_enforced(node):
     assert thread_result == "OK"
     assert mknod_device_result == "EPERM"
     assert mkfifo_result == "0"
+    # `EAFNOSUPPORT` is neither what the kernel answers for a packet socket nor the `EPERM` of the
+    # `errno` mode, so it comes from the policy's own check of the family and type.
+    assert packet_socket_result == "EAFNOSUPPORT,EAFNOSUPPORT"
+    assert packet_socketpair_result == "EAFNOSUPPORT,EAFNOSUPPORT"
+    assert used_families_result == "OK"
 
 
 def test_system_call_outside_the_policy_is_refused(started_cluster):
@@ -196,8 +236,24 @@ def test_system_call_outside_the_policy_is_refused(started_cluster):
     # `EPERM` here - which is what makes the filter more than a formality - and `clone3`, whose
     # arguments a filter cannot read, is refused as a whole with `ENOSYS` - and making a thread
     # keeps working, because `ENOSYS` is what sends the libc back to `clone`. `mknod` is refused
-    # for a device node, but a FIFO is still made.
+    # for a device node, but a FIFO is still made. A socket of a family the server does not use,
+    # here a packet socket in both of its spellings, is refused with `EAFNOSUPPORT` as if the kernel
+    # had no such family, while the families the server uses keep working.
     check_policy_is_enforced(errno_node)
+
+
+def test_socket_of_an_unused_family_is_refused_in_trap_mode(started_cluster):
+    # The shipped `trap` mode refuses such a socket with `EAFNOSUPPORT` as well, rather than with
+    # `SIGSYS`, so the probe gets its answer instead of being killed, and the server keeps working.
+    # Only the socket fields are probed: the `clone` and `mknod` probes would get `SIGSYS` here.
+    skip_under_memory_sanitizer(trap_node)
+    assert (
+        trap_node.query(
+            f"SELECT * FROM executable('seccomp_status.py sockets', 'TabSeparated', '{SOCKET_COLUMNS}')"
+        )
+        == "EAFNOSUPPORT,EAFNOSUPPORT\tEAFNOSUPPORT,EAFNOSUPPORT\tOK\n"
+    )
+    assert trap_node.query("SELECT 1") == "1\n"
 
 
 def test_setting_from_zookeeper_is_the_one_installed(started_cluster):
@@ -228,6 +284,9 @@ def test_log_mode_refuses_nothing(started_cluster):
         thread_result,
         mknod_device_result,
         mkfifo_result,
+        packet_socket_result,
+        packet_socketpair_result,
+        used_families_result,
     ) = run_probe(log_node)
     assert mode == SECCOMP_MODE_FILTER
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
@@ -236,6 +295,9 @@ def test_log_mode_refuses_nothing(started_cluster):
     assert thread_result == "OK"
     assert mknod_device_result == "ENOENT"
     assert mkfifo_result == "0"
+    check_sockets_are_not_refused(
+        packet_socket_result, packet_socketpair_result, used_families_result
+    )
 
 
 def test_server_works_under_the_filter(started_cluster):

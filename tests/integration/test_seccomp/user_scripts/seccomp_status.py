@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Reports what a process the server started sees of the policy, as a single row of seven fields:
+# Reports what a process the server started sees of the policy, as a single row of ten fields:
 #  - the seccomp mode it inherited across `fork` and `execve`: 0 is no filter, 2 is a BPF filter;
 #  - what `getxattr`, which the policy does not allow, does here. Without a filter the attribute is
 #    simply missing (`ENODATA`); under a filter the call is refused with `ENOSYS`, whatever the
@@ -18,14 +18,27 @@
 #    probe safe to run and tells the two answers apart: without a filter the kernel looks the path
 #    up before it checks for `CAP_MKNOD`, and answers `ENOENT`;
 #  - whether `mkfifo`, which is `mknod` of a FIFO, still works: executable user defined functions
-#    pass their arguments through FIFOs.
+#    pass their arguments through FIFOs;
+#  - what `socket` of a packet socket does, in both of its spellings, joined by a comma: `AF_PACKET`,
+#    and the obsolete `AF_INET` of the type `SOCK_PACKET`, which the kernel turns into `AF_PACKET`.
+#    The policy refuses both with `EAFNOSUPPORT`, whatever the mode. Without a filter the kernel
+#    makes the socket (`0`) for a process with `CAP_NET_RAW`, and answers `EPERM` otherwise;
+#  - the same two through `socketpair`. Without a filter the kernel answers `EOPNOTSUPP`, because
+#    packet sockets do not pair, or `EPERM` without `CAP_NET_RAW`;
+#  - whether the families the server uses still work: `OK`, or the family and the error of the first
+#    one that does not.
+#
+# With the argument `sockets`, only the last three fields are printed, so that the probe can run in
+# the `trap` mode, where the `clone` and `mknod` probes would take it down with `SIGSYS`.
 
 import ctypes
 import errno
 import os
 import platform
 import shutil
+import socket
 import stat
+import sys
 import tempfile
 import threading
 
@@ -38,6 +51,8 @@ CLONE3_SYSCALL_NUMBER = 435
 # `sizeof(struct clone_args)` of the kernel that introduced `clone3`. Anything smaller than that is
 # rejected with `EINVAL` before the structure itself is read.
 CLONE_ARGS_SIZE = 64
+# The obsolete packet socket type, for which Python has no constant.
+SOCK_PACKET = 10
 
 
 def syscall_result(number, *arguments):
@@ -50,7 +65,55 @@ def syscall_result(number, *arguments):
     return errno.errorcode.get(ctypes.get_errno(), str(ctypes.get_errno()))
 
 
+def socket_result(make):
+    try:
+        made = make()
+    except OSError as e:
+        return errno.errorcode.get(e.errno, str(e.errno))
+    for s in made if isinstance(made, tuple) else (made,):
+        s.close()
+    return "0"
+
+
+def socket_fields():
+    packet_socket_result = ",".join(
+        socket_result(lambda: socket.socket(family, kind))
+        for family, kind in [
+            (socket.AF_PACKET, socket.SOCK_RAW),
+            (socket.AF_INET, SOCK_PACKET),
+        ]
+    )
+    packet_socketpair_result = ",".join(
+        socket_result(lambda: socket.socketpair(family, kind))
+        for family, kind in [
+            (socket.AF_PACKET, socket.SOCK_DGRAM),
+            (socket.AF_INET, SOCK_PACKET),
+        ]
+    )
+
+    used_families_result = "OK"
+    for name, make in [
+        ("AF_UNIX", lambda: socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)),
+        ("AF_INET", lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM)),
+        ("AF_NETLINK", lambda: socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, 0)),
+        (
+            "AF_UNIX_pair",
+            lambda: socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM),
+        ),
+    ]:
+        result = socket_result(make)
+        if result != "0":
+            used_families_result = f"{name}:{result}"
+            break
+
+    return [packet_socket_result, packet_socketpair_result, used_families_result]
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["sockets"]:
+        print("\t".join(socket_fields()))
+        sys.exit(0)
+
     mode = "unknown"
     with open("/proc/self/status", "r") as status:
         for line in status:
@@ -105,5 +168,6 @@ if __name__ == "__main__":
                 mknod_device_result,
                 mkfifo_result,
             ]
+            + socket_fields()
         )
     )

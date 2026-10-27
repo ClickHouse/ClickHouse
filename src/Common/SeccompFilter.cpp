@@ -75,6 +75,7 @@ std::optional<SeccompMode> getInstalledSeccompMode()
 #include <linux/seccomp.h>
 #include <sched.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -117,7 +118,9 @@ namespace DB
 /// `fanotify`, swap and quota control, setting the system clock and the host name, System V and
 /// POSIX IPC, and the extended-attribute calls (these with `ENOSYS` rather than the configured
 /// action - see `refused_with_enosys`). Making a device node with `mknodat` is refused too, while
-/// its other uses - a FIFO for an executable user defined function among them - are not.
+/// its other uses - a FIFO for an executable user defined function among them - are not. So is a
+/// socket of an address family the server does not use, such as `AF_PACKET`, `AF_ALG` or
+/// `AF_VSOCK` (with `EAFNOSUPPORT` - see `allowed_socket_families`).
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
@@ -125,9 +128,9 @@ namespace DB
 /// `local_filesystem_read_method = io_uring`). The filter sees `io_uring_enter` but not the
 /// operations queued in the ring, so whoever can make a ring can reach through it the operations
 /// that `io_uring` implements even where their system calls are refused here - such as the
-/// extended-attribute ones. `IORING_REGISTER_RESTRICTIONS` would not close that, since nothing
-/// stops a second, unrestricted ring from being made; refusing `io_uring_setup` would, at the price
-/// of the read method.
+/// extended-attribute ones, or a socket of any family. `IORING_REGISTER_RESTRICTIONS` would not
+/// close that, since nothing stops a second, unrestricted ring from being made; refusing
+/// `io_uring_setup` would, at the price of the read method.
 /// clang-format off
 #define SECCOMP_ALLOWED_SYSCALLS_COMMON(M) \
     /* Reading and writing data. */ \
@@ -154,7 +157,9 @@ namespace DB
     M(eventfd2) M(signalfd4) M(timerfd_create) M(timerfd_settime) M(timerfd_gettime) \
     M(inotify_init1) M(inotify_add_watch) M(inotify_rm_watch) \
     \
-    /* Networking. */ \
+    /* Networking. Which address families `socket` and `socketpair` may make sockets of is */ \
+    /* decided separately, in a block of the program of its own, so those entries do not go */ \
+    /* into the table of numbers. */ \
     M(socket) M(socketpair) M(bind) M(listen) M(accept) M(accept4) M(connect) M(shutdown) \
     M(getsockname) M(getpeername) M(setsockopt) M(getsockopt) M(sendto) M(recvfrom) \
     M(sendmsg) M(recvmsg) M(sendmmsg) M(recvmmsg) \
@@ -327,6 +332,17 @@ constexpr UInt32 denied_clone_flags
 /// with `openat` and `bind`.
 constexpr UInt32 denied_mknod_file_types[] = {S_IFCHR, S_IFBLK};
 
+/// The address families the server makes sockets of: `AF_UNIX` for the daemons of the host and for
+/// socket pairs, `AF_INET` and `AF_INET6` for the network, and `AF_NETLINK` for the libc's view of
+/// the network interfaces and for the TCP socket metrics. A socket of any other family - each of
+/// them a protocol implementation of its own in the kernel - is refused with `EAFNOSUPPORT`, the
+/// answer of a kernel built without that family, so that code which tries one carries on without
+/// it, whatever the mode. `socketpair` is checked as well, because the kernel makes both sockets of
+/// a pair before it asks the family whether it can pair them. The obsolete socket type
+/// `SOCK_PACKET` is refused in the same way, whatever the family: the kernel turns an `AF_INET`
+/// socket of that type into an `AF_PACKET` one, after the filter has seen the call.
+constexpr UInt32 allowed_socket_families[] = {AF_UNIX, AF_INET, AF_INET6, AF_NETLINK};
+
 #if defined(__x86_64__)
 constexpr UInt32 expected_audit_arch = AUDIT_ARCH_X86_64;
 #else
@@ -352,6 +368,12 @@ constexpr UInt32 offset_mknodat_mode = offsetof(struct seccomp_data, args) + 2 *
 #if defined(__x86_64__)
 constexpr UInt32 offset_mknod_mode = offsetof(struct seccomp_data, args) + sizeof(UInt64);
 #endif
+/// The `domain` and `type` arguments of `socket` and `socketpair`. The kernel takes both as `int`,
+/// so only the low half decides, and of the type only the bits under `SOCK_TYPE_MASK` of the kernel
+/// (which no userspace header defines): the others carry `SOCK_CLOEXEC` and `SOCK_NONBLOCK`.
+constexpr UInt32 offset_socket_domain = offsetof(struct seccomp_data, args);
+constexpr UInt32 offset_socket_type = offsetof(struct seccomp_data, args) + sizeof(UInt64);
+constexpr UInt32 socket_type_mask = 0xf;
 
 static_assert(
     std::endian::native == std::endian::little,
@@ -382,6 +404,8 @@ constexpr UInt32 jump_to_clone_check = 0xFFFFFFFBU;
 constexpr UInt32 jump_to_enosys = 0xFFFFFFFAU;
 constexpr UInt32 jump_to_mknodat_check = 0xFFFFFFF9U;
 constexpr UInt32 jump_to_mknod_check = 0xFFFFFFF8U;
+constexpr UInt32 jump_to_socket_check = 0xFFFFFFF7U;
+constexpr UInt32 jump_to_refused_family = 0xFFFFFFF6U;
 
 /// A maximal run of consecutive allowed system call numbers, `[first, last]`.
 struct Range
@@ -465,6 +489,8 @@ struct Blocks
     size_t mknodat_check;
     /// Only on x86-64, which has the legacy `mknod`; nothing jumps here elsewhere.
     size_t mknod_check;
+    size_t socket_check;
+    size_t refused_family;
     size_t allow;
     size_t deny;
 };
@@ -495,6 +521,10 @@ void link(Program & program, const Blocks & blocks)
             target = blocks.mknodat_check;
         else if (instruction.k == jump_to_mknod_check)
             target = blocks.mknod_check;
+        else if (instruction.k == jump_to_socket_check)
+            target = blocks.socket_check;
+        else if (instruction.k == jump_to_refused_family)
+            target = blocks.refused_family;
         else
             continue;
 
@@ -511,7 +541,7 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action)
+Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 enosys_action, UInt32 refused_family_action)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -544,6 +574,10 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_mknod, 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_mknod_check));
 #endif
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_socket_check));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketpair, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_socket_check));
 
     /// Last, after the calls that are usually allowed: only refused calls get this far.
     std::vector<int> enosys_numbers(std::begin(refused_with_enosys), std::end(refused_with_enosys));
@@ -599,8 +633,24 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     const size_t mknod_check_index = 0;
 #endif
 
+    const size_t socket_check_index = program.size();
+    program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_socket_type));
+    program.push_back(statement(BPF_ALU | BPF_AND | BPF_K, socket_type_mask));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, SOCK_PACKET, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_refused_family));
+    program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_socket_domain));
+    for (UInt32 family : allowed_socket_families)
+    {
+        program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, family, 0, 1));
+        program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
+    }
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_refused_family));
+
     const size_t enosys_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, enosys_action));
+
+    const size_t refused_family_index = program.size();
+    program.push_back(statement(BPF_RET | BPF_K, refused_family_action));
 
     const size_t allow_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
@@ -615,6 +665,8 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
          .enosys = enosys_index,
          .mknodat_check = mknodat_check_index,
          .mknod_check = mknod_check_index,
+         .socket_check = socket_check_index,
+         .refused_family = refused_family_index,
          .allow = allow_index,
          .deny = deny_index});
     return program;
@@ -668,7 +720,11 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
 }
 
 void verifyProgram(
-    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 enosys_action)
+    const Program & program,
+    const std::unordered_set<int> & allowed,
+    UInt32 default_action,
+    UInt32 enosys_action,
+    UInt32 refused_family_action)
 {
     const std::unordered_set<int> enosys(std::begin(refused_with_enosys), std::end(refused_with_enosys));
 
@@ -693,12 +749,15 @@ void verifyProgram(
     /// Every number the running kernel could put into `nr`, and then some, so that a range which
     /// is off by one on either end cannot go unnoticed. The calls that are decided by an argument
     /// are in `allowed`, and with every argument zero that is indeed the answer they get - for
-    /// `mknodat`, a zero mode makes a regular file.
+    /// `mknodat`, a zero mode makes a regular file - except `socket` and `socketpair`, for which a
+    /// zero domain is `AF_UNSPEC`, not a family the server uses.
     for (int nr = -4096; nr < 8192; ++nr)
     {
         UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
         if (enosys.contains(nr))
             expected = enosys_action;
+        if (nr == __NR_socket || nr == __NR_socketpair)
+            expected = refused_family_action;
         check({.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {}}, expected);
     }
 
@@ -788,6 +847,39 @@ void verifyProgram(
         for (UInt32 file_type : denied_mknod_file_types)
             for (UInt64 mode : {UInt64{file_type}, UInt64{file_type | 0600}, UInt64{1} << 32 | file_type, UInt64{0x10000} | file_type})
                 check(mknod_data(mode), default_action);
+    }
+
+    /// `socket` and `socketpair` make sockets of the families the server uses, of any type but
+    /// `SOCK_PACKET` and with any flags, and nothing else - also with junk in the half of an
+    /// argument the kernel does not look at.
+    for (int nr : {__NR_socket, __NR_socketpair})
+    {
+        auto socket_data = [nr](UInt64 domain, UInt64 type)
+        {
+            return seccomp_data{.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {domain, type, 0, 0, 0, 0}};
+        };
+
+        for (UInt64 domain : {UInt64{AF_UNIX}, UInt64{AF_INET}, UInt64{AF_INET6}, UInt64{AF_NETLINK}, UInt64{1} << 32 | AF_INET})
+        {
+            for (UInt64 type : {UInt64{SOCK_STREAM},
+                                UInt64{SOCK_DGRAM},
+                                UInt64{SOCK_RAW},
+                                UInt64{SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK},
+                                UInt64{1} << 32 | SOCK_DGRAM})
+                check(socket_data(domain, type), SECCOMP_RET_ALLOW);
+
+            for (UInt64 type : {UInt64{SOCK_PACKET}, UInt64{SOCK_PACKET | SOCK_CLOEXEC}, UInt64{1} << 32 | SOCK_PACKET})
+                check(socket_data(domain, type), refused_family_action);
+        }
+
+        for (UInt64 domain : {UInt64{AF_UNSPEC},
+                              UInt64{AF_PACKET},
+                              UInt64{AF_TIPC},
+                              UInt64{AF_ALG},
+                              UInt64{AF_VSOCK},
+                              UInt64{0xFFFFFFFF},
+                              UInt64{1} << 32 | AF_PACKET})
+            check(socket_data(domain, SOCK_STREAM), refused_family_action);
     }
 }
 
@@ -937,21 +1029,26 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 
     const std::unordered_set<int> allowed(numbers.begin(), numbers.end());
 
-    /// `ioctl` is decided by its request, `clone` by its flags and `mknodat` by its file type, in
-    /// blocks of their own, so none of them must also be in the table.
+    /// `ioctl` is decided by its request, `clone` by its flags, `mknodat` by its file type, and
+    /// `socket` and `socketpair` by their family and type, in blocks of their own, so none of them
+    /// must also be in the table.
     std::erase(numbers, __NR_ioctl);
     std::erase(numbers, __NR_clone);
     std::erase(numbers, __NR_mknodat);
 #if defined(__x86_64__)
     std::erase(numbers, __NR_mknod);
 #endif
+    std::erase(numbers, __NR_socket);
+    std::erase(numbers, __NR_socketpair);
 
     const UInt32 default_action = getDefaultAction(mode);
     /// Nothing is refused in the `log` mode, so there the calls refused with `ENOSYS` elsewhere
     /// get the same treatment as the rest of the policy.
     const UInt32 enosys_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    Program program = buildProgram(toRanges(numbers), default_action, enosys_action);
-    verifyProgram(program, allowed, default_action, enosys_action);
+    /// And so does a socket of a family the server does not use - see `allowed_socket_families`.
+    const UInt32 refused_family_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{EAFNOSUPPORT});
+    Program program = buildProgram(toRanges(numbers), default_action, enosys_action, refused_family_action);
+    verifyProgram(program, allowed, default_action, enosys_action, refused_family_action);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(

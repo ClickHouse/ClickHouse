@@ -1987,6 +1987,8 @@ Creating a namespace is refused in every form it takes: `unshare` and `setns` ar
 
 The extended-attribute system calls are refused with `ENOSYS` as well. ClickHouse does not use them, but the NSS modules of the host run inside the server process, and `nss-resolve` of `systemd` probes whether it may tag its socket with an attribute before doing so; `ENOSYS` is the answer it takes for "no" and goes on without the tag, whereas `SIGSYS` in the `trap` mode would terminate the server at the first host name lookup.
 
+`socket` and `socketpair` may only make sockets of the address families the server uses: `AF_UNIX`, `AF_INET`, `AF_INET6` and `AF_NETLINK`. Any other family, such as `AF_PACKET`, `AF_ALG` or `AF_VSOCK`, is refused with `EAFNOSUPPORT` in every mode but `log`, which is what a kernel built without that family answers, so code that tries one carries on without it; so is the obsolete `SOCK_PACKET` socket type, which makes an `AF_PACKET` socket out of an `AF_INET` one. This also applies to the processes the server starts. A socket made through `io_uring` is not seen by the filter.
+
 Possible values:
 
 - `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.
