@@ -18,5 +18,5 @@
     <query>SELECT uniq(lc) FROM test_lc_agg FORMAT Null</query>
     <query>SELECT uniqExact(lc), min(lc) FROM test_lc_agg FORMAT Null</query>
     <query>SELECT min(lc), max(lc) FROM test_lc_agg FORMAT Null</query>
-    <query>SELECT groupUniqArray(lc), uniqCombined(lc) FROM test_lc_agg FORMAT Null</query>
+    <query>SELECT groupUniqArray(lc), uniqHLL12(lc) FROM test_lc_agg FORMAT Null</query>
 </test>

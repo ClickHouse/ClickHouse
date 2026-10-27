@@ -90,6 +90,12 @@ SELECT 'limit', 65505, toString((SELECT groupUniqArray(10)(s), groupUniqArray(10
 SELECT 'limit', 1000, toString((SELECT groupUniqArray(10)(fs) FROM t_lc)) = toString((SELECT groupUniqArray(10)(fs) FROM t_plain))
     SETTINGS max_block_size = 1000, enable_parallel_replicas = 0;
 
+-- A full exact set of uniqCombined turns into HLL on any insert, also of a repeated value: a LowCardinality column must give the same result.
+SELECT 'uniqCombined 4096',
+    (SELECT uniqCombined(s), uniqCombined64(s) FROM (SELECT toLowCardinality(toString(number % 4096)) AS s FROM numbers(12288)))
+    = (SELECT uniqCombined(s), uniqCombined64(s) FROM (SELECT toString(number % 4096) AS s FROM numbers(12288)))
+    SETTINGS max_block_size = 65505;
+
 -- Combinators and GROUP BY keep adding every row.
 SELECT 'if', (SELECT uniqExactIf(s, id % 2 = 0) FROM t_lc) = (SELECT uniqExactIf(s, id % 2 = 0) FROM t_plain);
 SELECT 'state', (SELECT finalizeAggregation(uniqExactState(s)) FROM t_lc) = (SELECT finalizeAggregation(uniqExactState(s)) FROM t_plain);
