@@ -5,6 +5,8 @@
 #include <Common/filesystemHelpers.h>
 
 #include <csignal>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 
 #if defined(OS_LINUX)
@@ -95,6 +97,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_KILL;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CLOSE_FILE;
 }
 
 }
@@ -1505,6 +1508,19 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
 namespace
 {
+    /// A running server holds an exclusive lock on its pid file (see `StatusFile`). A terminated one does not, even while
+    /// `kill(pid, 0)` still succeeds because its parent has not reaped it yet. Errors count as locked.
+    bool isPidFileLocked(const fs::path & pid_file)
+    {
+        int fd = ::open(pid_file.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd == -1)
+            return true;
+        bool locked = 0 != flock(fd, LOCK_SH | LOCK_NB);
+        if (0 != ::close(fd))
+            throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close {}", pid_file.string());
+        return locked;
+    }
+
     int start(const std::string & user, const std::string & group, const fs::path & binary, const fs::path & executable, const fs::path & config, const fs::path & pid_file, unsigned max_tries, bool no_sudo)
     {
         if (fs::exists(pid_file))
@@ -1515,7 +1531,7 @@ namespace
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
 
-                if (0 == kill(pid, 0))
+                if (0 == kill(pid, 0) && isPidFileLocked(pid_file))
                 {
                     fmt::print("The process with pid = {} is already running.\n", pid);
                     return 2;
@@ -1640,6 +1656,11 @@ namespace
         {
             if (0 == kill(pid, 0))
             {
+                if (!isPidFileLocked(pid_file))
+                {
+                    fmt::print("The server process with pid = {} has terminated: {} is not locked.\n", pid, pid_file.string());
+                    return 0;
+                }
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
             else if (errno == ESRCH)
