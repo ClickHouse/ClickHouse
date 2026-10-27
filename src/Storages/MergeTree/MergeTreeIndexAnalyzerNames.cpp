@@ -11,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/PlannerContext.h>
@@ -29,6 +30,9 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
+
+#include <algorithm>
 #include <unordered_map>
 
 namespace DB
@@ -423,22 +427,64 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
 }
 
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(
-    const IndexDescription & index, const ColumnsDescription & table_columns, const ContextPtr & context)
+    const IndexDescription & index, const StorageInMemoryMetadata & table_metadata, bool index_is_in_table, const ContextPtr & context)
 {
+    if (index_is_in_table)
+        return getAlternativeExpression(
+            index.expression_list_ast,
+            index.expression,
+            index.column_names,
+            table_metadata.getColumns(),
+            [&](StorageInMemoryMetadata & metadata)
+            {
+                IndicesDescription indices;
+                indices.push_back(index);
+                metadata.setSecondaryIndices(std::move(indices));
+            },
+            /// The passes see the key as an index of this type.
+            fmt::format("index of type {}", index.type),
+            fmt::format("the expression of index {}", index.name),
+            context);
+
+    /// The query was analyzed against the table without this index, so the passes treat specially
+    /// only those source columns of the index that are columns of the keys and indexes of the table
+    /// (e.g. `FunctionToSubcolumnsPass` rewrites `isNull(x)` to `x.null` in the query when `x` is
+    /// not a key column of the table). Register exactly those columns, as a primary key on them.
+    if (!index.expression)
+        return nullptr;
+
+    NameSet table_key_columns;
+    for (const auto & column : table_metadata.getColumnsRequiredForPrimaryKey())
+        table_key_columns.insert(column);
+    for (const auto & column : table_metadata.getColumnsRequiredForPartitionKey())
+        table_key_columns.insert(column);
+    for (const auto & table_index : table_metadata.getSecondaryIndices())
+        for (const auto & column : table_index.expression->getRequiredColumns())
+            table_key_columns.insert(column);
+
+    Names protected_columns;
+    for (const auto & column : index.expression->getRequiredColumns())
+        if (table_key_columns.contains(column))
+            protected_columns.push_back(column);
+    std::sort(protected_columns.begin(), protected_columns.end());
+
     return getAlternativeExpression(
         index.expression_list_ast,
         index.expression,
         index.column_names,
-        table_columns,
+        table_metadata.getColumns(),
         [&](StorageInMemoryMetadata & metadata)
         {
-            IndicesDescription indices;
-            indices.push_back(index);
-            metadata.setSecondaryIndices(std::move(indices));
+            if (protected_columns.empty())
+                return;
+            auto key_ast = makeASTFunction("tuple");
+            for (const auto & column : protected_columns)
+                key_ast->arguments->children.push_back(make_intrusive<ASTIdentifier>(column));
+            metadata.primary_key = KeyDescription::getKeyFromAST(key_ast, metadata.getColumns(), VirtualColumnsDescription{}, context);
         },
-        /// The passes see the key as an index of this type.
-        fmt::format("index of type {}", index.type),
-        fmt::format("the expression of index {}", index.name),
+        /// The passes see the key columns of the table, which are part of the identity of the result.
+        fmt::format("hypothetical index of type {} with key columns of the table: {}", index.type, fmt::join(protected_columns, ", ")),
+        fmt::format("the expression of hypothetical index {}", index.name),
         context);
 }
 
@@ -463,9 +509,11 @@ AlternativeKeyExpressionPtr LazyAlternativeKeyExpression::get(
     return alternative_key;
 }
 
-RewriteAwareIndexConditionFactory::RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_)
+RewriteAwareIndexConditionFactory::RewriteAwareIndexConditionFactory(
+    MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_, bool index_is_in_table_)
     : index_helper(std::move(index_helper_))
     , metadata_snapshot(std::move(metadata_snapshot_))
+    , index_is_in_table(index_is_in_table_)
     , minmax_index(typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get()))
 {
 }
@@ -476,7 +524,7 @@ MergeTreeIndexConditionPtr RewriteAwareIndexConditionFactory::create(const Actio
         return nullptr;
 
     if (minmax_index)
-        std::call_once(alternative_key_initialized, [&] { alternative_key = getAlternativeIndexExpression(index_helper->index, metadata_snapshot->getColumns(), context); });
+        std::call_once(alternative_key_initialized, [&] { alternative_key = getAlternativeIndexExpression(index_helper->index, *metadata_snapshot, index_is_in_table, context); });
 
     if (alternative_key)
         return minmax_index->createIndexConditionWithAlternativeKey(predicate, context, alternative_key);

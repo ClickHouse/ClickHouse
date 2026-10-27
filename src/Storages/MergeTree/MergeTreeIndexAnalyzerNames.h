@@ -53,9 +53,13 @@ class MergeTreeIndexMinMax;
   *
   * The result is cached by the content of the key (its AST and the stored key expression) and the
   * query's changed settings and current database, because computing it runs the query tree passes.
+  *
+  * `index_is_in_table` is false for a hypothetical index of `EXPLAIN WHATIF`: the query was analyzed
+  * against `table_metadata` without the index, so the passes see only the keys and indexes of the
+  * table, not this index, and the alternative form is computed the same way.
   */
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(
-    const IndexDescription & index, const ColumnsDescription & table_columns, const ContextPtr & context);
+    const IndexDescription & index, const StorageInMemoryMetadata & table_metadata, bool index_is_in_table, const ContextPtr & context);
 
 /** The same for a primary or partition key: index analysis matches the filter expression against the
   * key expressions by name as well, so a key on expressions (e.g. `ORDER BY multiIf(v > 0, v, NULL)`
@@ -86,17 +90,21 @@ private:
   * The alternative form of the key is computed lazily, once per factory, because a condition can be
   * created many times for the same query (once per part, for constant folding), and not at all when
   * the query has no filter.
+  *
+  * `index_is_in_table` is false for a hypothetical index, which is not in `metadata_snapshot_`,
+  * see `getAlternativeIndexExpression`.
   */
 class RewriteAwareIndexConditionFactory
 {
 public:
-    RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_);
+    RewriteAwareIndexConditionFactory(MergeTreeIndexPtr index_helper_, StorageMetadataPtr metadata_snapshot_, bool index_is_in_table_ = true);
 
     MergeTreeIndexConditionPtr create(const ActionsDAG::Node * predicate, const ContextPtr & context) const;
 
 private:
     MergeTreeIndexPtr index_helper;
     StorageMetadataPtr metadata_snapshot;
+    bool index_is_in_table = true;
     const MergeTreeIndexMinMax * minmax_index = nullptr;
 
     mutable std::once_flag alternative_key_initialized;

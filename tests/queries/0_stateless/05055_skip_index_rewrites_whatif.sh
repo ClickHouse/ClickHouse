@@ -30,3 +30,32 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^With |^\s+status:|^\s+marks:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_whatif_rewrites;"
+
+# The predicate is analyzed against the table without the hypothetical index, so `isNull(x)` is
+# rewritten to the subcolumn `x.null` in it, while a real index on `x` would prevent that rewrite.
+# The estimate must match the predicate as it is analyzed, and then match the real read path.
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_whatif_rewrites_mixed;
+    CREATE TABLE t_whatif_rewrites_mixed (x Nullable(Int32), v Int32, id UInt32) ENGINE = MergeTree ORDER BY id
+    SETTINGS index_granularity = 4, index_granularity_bytes = 0, add_minmax_index_for_numeric_columns = 0;
+    INSERT INTO t_whatif_rewrites_mixed SELECT NULL, number, number FROM numbers(100);
+"
+
+echo "--- hypothetical minmax index on a mixed expression with a subcolumn rewrite ---"
+$CLICKHOUSE_CLIENT -n -q "
+    CREATE HYPOTHETICAL INDEX idx_mixed ON t_whatif_rewrites_mixed (if(isNull(x), multiIf(v > 0, v, 0), 0)) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT id FROM t_whatif_rewrites_mixed WHERE if(isNull(x), multiIf(v > 0, v, 0), 0) = 51;
+" | grep -E '^With |^\s+status:|^\s+marks:'
+
+echo "--- the same real index ---"
+$CLICKHOUSE_CLIENT -n -q "
+    ALTER TABLE t_whatif_rewrites_mixed ADD INDEX idx_mixed (if(isNull(x), multiIf(v > 0, v, 0), 0)) TYPE minmax GRANULARITY 1;
+    ALTER TABLE t_whatif_rewrites_mixed MATERIALIZE INDEX idx_mixed SETTINGS mutations_sync = 2;
+"
+$CLICKHOUSE_CLIENT -q "
+    SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_whatif_rewrites_mixed WHERE if(isNull(x), multiIf(v > 0, v, 0), 0) = 51)
+    WHERE explain LIKE '%Name: idx_mixed%' OR explain LIKE '%Granules:%'
+    SETTINGS enable_parallel_replicas = 0, use_query_condition_cache = 0;
+"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_whatif_rewrites_mixed;"
