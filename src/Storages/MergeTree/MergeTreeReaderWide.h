@@ -7,6 +7,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/StreamWithSizeHint.h>
 
 
 namespace DB
@@ -50,8 +51,9 @@ public:
 
     void updateReadRequestMap(MarkRangesPtr request_map) override;
 
-    /// Return map (column to read) -> (list of all streams required to read this column).
-    std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
+    /// Return map (requested column name) -> (list of all streams required to read this column, each stream once; the
+    /// size hints of a stream reported several times are summed).
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
