@@ -2364,6 +2364,8 @@ Possible values:
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
 For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
 
+A Parquet read (the `File` table engine, the `file` table function, object storage and data lakes) uses the boundary the same way: it drops the rows beyond it and skips whole row groups by their min/max statistics.
+
 This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
 
 It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas.

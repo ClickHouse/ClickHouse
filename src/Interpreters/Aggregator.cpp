@@ -32,6 +32,7 @@
 #include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -189,7 +190,10 @@ void initDataVariantsWithSizeHint(
 /// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
 /// `Aggregator::adaptiveStagingVerdict`), if it measured one.
 void updateStatistics(
-    const DB::ManyAggregatedDataVariants & data_variants, std::optional<bool> repeat_dominated, const DB::StatsCollectingParams & params)
+    const DB::ManyAggregatedDataVariants & data_variants,
+    std::optional<bool> repeat_dominated,
+    const DB::StatsCollectingParams & params,
+    const DB::Aggregator::Params::TopKParams * linked_top_k)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -205,9 +209,22 @@ void updateStatistics(
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
 
+    auto & stats = DB::getHashTablesStatistics<DB::AggregationEntry>();
+
+    /// A linked read drops the rows beyond a published boundary, so the tables may hold only the top groups.
+    if (linked_top_k && linked_top_k->threshold_tracker->isSet())
+        return;
+
+    /// Without a boundary, only query condition cache entries of earlier runs can have dropped rows: never lower the record then.
+    if (linked_top_k && sum_of_sizes >= linked_top_k->k)
+    {
+        const auto prev = stats.getSizeHint(params);
+        if (prev && sum_of_sizes < prev->sum_of_sizes)
+            return;
+    }
+
     /// A run without a verdict of its own carries the stored one over, so that the runs the verdict keeps off the
     /// adaptive path do not erase it: a query marked repeat-dominated is not measured again until its entry is evicted.
-    auto & stats = DB::getHashTablesStatistics<DB::AggregationEntry>();
     if (!repeat_dominated)
     {
         const auto prev = stats.getSizeHint(params);
@@ -5576,7 +5593,10 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     LOG_TRACE(log, "Merging aggregated data");
 
     updateStatistics(
-        data_variants, adaptive_session ? adaptiveStagingVerdict(*adaptive_session) : std::nullopt, params.stats_collecting_params);
+        data_variants,
+        adaptive_session ? adaptiveStagingVerdict(*adaptive_session) : std::nullopt,
+        params.stats_collecting_params,
+        params.top_k && params.top_k->threshold_tracker ? &*params.top_k : nullptr);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

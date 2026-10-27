@@ -32,9 +32,10 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings);
 /// the same, by comparing the sort column against the running threshold of the top-K heap
 /// (published by the sorting transforms into the shared tracker). The tracker carries the sort
 /// direction, NULLS FIRST/LAST and collation. Only supported by the Parquet format.
+/// `GROUP BY x LIMIT n` (see `tryOptimizeGroupByTopK`) publishes the boundary of its top-K heap the same way.
 struct FormatTopKFilterInfo
 {
-    /// Name of the first ORDER BY column in the format's output block.
+    /// Name of the first `ORDER BY` column or ranked `GROUP BY` key in the format's output block.
     String column_name;
     TopKThresholdTrackerPtr threshold_tracker;
     /// Hash of the planning-time parameters of the TopK (sort column and its type, number of sort
@@ -48,6 +49,8 @@ struct FormatTopKFilterInfo
     /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
     /// condition cache.
     bool track_row_group_best_values = false;
+    /// The format may stop filtering rows by the threshold for the rest of the file once it drops almost nothing.
+    bool stop_when_unprofitable = false;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.

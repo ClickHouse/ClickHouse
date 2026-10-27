@@ -256,7 +256,7 @@ public:
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
 
             /// Set by the plan optimization when the first ranked key is a column read straight from a `MergeTree`
-            /// table: the heaps publish their boundary into it and the reading step filters rows and skips granules
+            /// table or a Parquet file: the heaps publish their boundary into it and the reading step filters rows and skips granules
             /// by the published value (see `enable_group_by_top_k_dynamic_filtering`). Never serialized: it is a
             /// link between two steps of the same local plan.
             TopKThresholdTrackerPtr threshold_tracker;

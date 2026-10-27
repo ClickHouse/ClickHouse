@@ -2584,7 +2584,7 @@ void StorageFileSource::checkTopKQueryConditionCacheKeyHolds(bool still_holds) c
         == TopKQueryConditionCacheKey::State::Used)
         throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
             "File {} was modified while the query was running, after the query condition cache had been used for the "
-            "`ORDER BY ... LIMIT` read of its files. Rerun the query",
+            "`ORDER BY ... LIMIT` or `GROUP BY ... LIMIT` read of its files. Rerun the query",
             current_path);
 }
 

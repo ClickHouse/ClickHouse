@@ -603,7 +603,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
     catch (Exception & e)
     {
         e.addMessage(
-            "in column chunk statistics for TopN sort column '{}'; use use_top_k_dynamic_filtering=0 to ignore",
+            "in column chunk statistics for TopN sort column '{}'; use use_top_k_dynamic_filtering=0 (enable_group_by_top_k_dynamic_filtering=0 for GROUP BY ... LIMIT) to ignore",
             column_info.name);
         throw;
     }
@@ -1843,6 +1843,9 @@ void Reader::preparePrewhere()
                 {
                     if (primitive_columns[primitive_idx].first_step_to_calculate == 0)
                         primitive_columns[primitive_idx].first_step_to_calculate = steps.size() + 1;
+                    else if (has_top_k_step && primitive_columns[primitive_idx].first_step_to_calculate == 1
+                             && primitive_columns[primitive_idx].first_step_without_top_k == 0)
+                        primitive_columns[primitive_idx].first_step_without_top_k = steps.size() + 1;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
             }
@@ -1962,6 +1965,7 @@ void Reader::preparePrewhere()
                 createInternalFunctionTopKFilterResolver(top_k.threshold_tracker), {dag.getInputs().front()}, {});
             dag.getOutputs().push_back(&filter_node);
             add_single_step(dag, filter_node.result_name, /*needs_filter=*/ true, /*step_idx=*/ 0);
+            has_top_k_step = true;
         }
     }
 
@@ -1986,6 +1990,14 @@ void Reader::preparePrewhere()
             && pc.idx_in_output_block < extended_sample_block.columns()
             && pc.idx_in_output_block >= sample_block->columns())
             pc.first_step_to_calculate = SIZE_MAX;
+
+    if (has_top_k_step && format_filter_info->top_k_filter->stop_when_unprofitable)
+    {
+        top_k_step_may_stop = true;
+        for (const auto & pc : primitive_columns)
+            if (pc.first_step_to_calculate != 1 && pc.first_step_to_calculate != SIZE_MAX)
+                ++top_k_step_columns_after;
+    }
 
     /// Push down substring search conditions from PREWHERE into string decoding: values that do not
     /// match are decoded as empty strings without copying their data (see `StringValueFilter`).
@@ -4541,10 +4553,55 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
     return state.column;
 }
 
+size_t Reader::firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const
+{
+    if (steps.empty())
+        return 0;
+
+    if (top_k_step_may_stop && top_k_step_unprofitable.load(std::memory_order_relaxed))
+    {
+        row_subgroup.skip_top_k_step = true;
+        return stepAfterTopKStep();
+    }
+
+    return 1;
+}
+
+size_t Reader::firstStepToReadColumn(const PrimitiveColumnInfo & column_info, const RowSubgroup & row_subgroup) const
+{
+    if (row_subgroup.skip_top_k_step && column_info.first_step_to_calculate == 1)
+        return column_info.first_step_without_top_k;
+    return column_info.first_step_to_calculate;
+}
+
 void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx)
 {
     {
+        chassert(!(has_top_k_step && step_idx == 1 && row_subgroup.skip_top_k_step));
         const Step & step = steps.at(step_idx - 1);
+
+        /// Every row passes the threshold step until the threshold is set, and in a row group whose worst value is inside it.
+        if (has_top_k_step && step_idx == 1)
+        {
+            const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;
+            bool every_row_passes = !tracker.isSet();
+            if (!every_row_passes && row_group.top_k_sort_column_range.has_value())
+            {
+                const Range & range = *row_group.top_k_sort_column_range;
+                const Field & worst = tracker.getDirection() == 1 ? range.right : range.left;
+                every_row_passes = !worst.isNull() && tracker.isValueInsideThreshold(worst);
+            }
+
+            if (every_row_passes)
+            {
+                if (step_idx == steps.size())
+                {
+                    while (row_subgroup.output.size() > sample_block->columns())
+                        row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
+                }
+                return;
+            }
+        }
 
         Block block;
         for (size_t idx_in_output_block : step.input_idxs)
@@ -4597,6 +4654,17 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
+
+        if (top_k_step_may_stop && step_idx == 1)
+        {
+            std::lock_guard lock(top_k_step_stats_mutex);
+            top_k_step_rows_checked += filter.size();
+            top_k_step_rows_dropped += filter.size() - rows_pass;
+            if (top_k_step_rows_checked >= top_k_step_rows_to_observe
+                && top_k_step_rows_dropped * 10 * (1 + top_k_step_columns_after) < top_k_step_rows_checked)
+                top_k_step_unprofitable.store(true, std::memory_order_relaxed);
+        }
+
         if (rows_pass == 0 || !row_group.need_to_process)
         {
             /// Whole row group was filtered out.

@@ -12,6 +12,7 @@
 #include <Common/StringValueFilter.h>
 
 #include <deque>
+#include <mutex>
 #include <optional>
 #include <unordered_set>
 
@@ -201,6 +202,7 @@ struct Reader
         /// column) each contribute their own KeyCondition here; a page must pass all of them.
         std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
+        size_t first_step_without_top_k = 0; // read stage of a row subgroup that skips the TopN threshold step
         bool only_for_prewhere = false; // can remove this column after applying prewhere
         /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
         /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
@@ -475,6 +477,9 @@ struct Reader
 
         std::vector<OutputColumnState> output; // parallel to extended_sample_block
 
+        /// The TopN threshold step does not run for this subgroup; its columns are read by the main step.
+        bool skip_top_k_step = false;
+
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
@@ -634,6 +639,15 @@ struct Reader
     std::optional<size_t> top_k_best_value_column_pos;
     /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
     bool row_groups_ordered_by_top_k = false;
+    /// TopN dynamic filtering: the first of `steps` compares the sort column with the threshold.
+    bool has_top_k_step = false;
+    bool top_k_step_may_stop = false;
+    static constexpr size_t top_k_step_rows_to_observe = 1 << 13;
+    size_t top_k_step_columns_after = 0;
+    std::mutex top_k_step_stats_mutex;
+    size_t top_k_step_rows_checked = 0;
+    size_t top_k_step_rows_dropped = 0;
+    std::atomic<bool> top_k_step_unprofitable {false};
 
     /// Columns cache, see `ReadOptions::columns_cache` and `initColumnsCache`.
     /// The rows of a row group are cached in chunks of this many rows (the target rows of a stripe of the
@@ -785,6 +799,11 @@ struct Reader
     /// Take back out of the columns cache the columns of the row groups that were not read to the end,
     /// e.g. because of `LIMIT`. Called when the reading is finished or abandoned.
     void withdrawColumnsCacheWrites();
+
+    /// The TopN threshold step only drops rows, so a row subgroup may skip it once it stops paying off.
+    size_t firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const;
+    size_t stepAfterTopKStep() const { return steps.size() > 1 ? 2 : 0; }
+    size_t firstStepToReadColumn(const PrimitiveColumnInfo & column_info, const RowSubgroup & row_subgroup) const;
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 

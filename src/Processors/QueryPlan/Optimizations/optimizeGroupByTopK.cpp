@@ -1,4 +1,7 @@
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -8,8 +11,10 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -82,7 +87,136 @@ static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, cons
     return node->result_name;
 }
 
-/// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it.
+static UInt64 groupByTopKConditionHash(
+    const String & key_name,
+    const DataTypePtr & key_type,
+    size_t num_key_columns,
+    size_t limit,
+    const AggregatingStep & aggregating_step,
+    const std::vector<const ActionsDAG *> & path_expressions,
+    const std::vector<int> & directions,
+    const std::vector<int> & nulls_directions)
+{
+    SipHash hash;
+    /// Length-prefixed, so that adjacent strings cannot run together (`aU` `Int8` and `a` `UInt8`).
+    auto update_string = [&hash](std::string_view s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+    update_string("group_by_top_k");
+    update_string(key_name);
+    update_string(key_type->getName());
+    hash.update(num_key_columns);
+    hash.update(limit);
+
+    const auto & aggregation_keys = aggregating_step.getParams().keys;
+    const auto & aggregation_input_header = *aggregating_step.getInputHeaders().front();
+    hash.update(aggregation_keys.size());
+    for (const auto & aggregation_key : aggregation_keys)
+    {
+        update_string(aggregation_key);
+        update_string(aggregation_input_header.getByName(aggregation_key).type->getName());
+    }
+
+    hash.update(path_expressions.size());
+    for (const auto * expression : path_expressions)
+        expression->updateHash(hash);
+
+    hash.update(directions.size());
+    for (size_t i = 0; i < directions.size(); ++i)
+    {
+        hash.update(directions[i]);
+        hash.update(nulls_directions[i]);
+    }
+    return hash.get64();
+}
+
+/// The format keeps the rows equal to the boundary, which a group at the boundary needs.
+static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
+    SourceStepWithFilterBase & source_step,
+    const String & key_name,
+    const AggregatingStep & aggregating_step,
+    size_t limit,
+    size_t num_key_columns,
+    const std::vector<int> & directions,
+    const std::vector<int> & nulls_directions,
+    const std::vector<const ActionsDAG *> & path_expressions,
+    bool has_non_deterministic_filter,
+    const Optimization::ExtraSettings & settings)
+{
+    auto log = getLogger("optimizeGroupByTopK");
+
+    /// The format keys its query condition cache verdicts by the plan, which does not capture such a filter.
+    if (has_non_deterministic_filter)
+    {
+        LOG_TRACE(log, "No dynamic filter: a filter above the format read is not deterministic");
+        return nullptr;
+    }
+
+    /// `Memory` applies the threshold to every block with no way to stop when it drops almost nothing.
+    if (typeid_cast<const ReadFromMemoryStorageStep *>(&source_step))
+        return nullptr;
+
+    const auto * key_column = source_step.getOutputHeader()->findByName(key_name);
+    if (!key_column)
+        return nullptr;
+
+    /// The threshold is a `Field`, which loses the runtime type of `Dynamic`, `Variant` and `JSON` values
+    /// (https://github.com/ClickHouse/ClickHouse/issues/124960), and `nan` may be absent from Parquet statistics.
+    const auto & key_type = key_column->type;
+    const DataTypePtr unwrapped_key_type = removeNullable(key_type);
+    const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped_key_type.get());
+    if (anyInTypeTree(*key_type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); })
+        || (key_tuple_type && key_tuple_type->getElements().empty())
+        || (!key_type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types)
+        || anyInTypeTree(*key_type, [](const IDataType & node) { return isFloat(node); }))
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_type->getName());
+        return nullptr;
+    }
+
+    /// The query condition cache verdicts of a format read misorder a `NULL` nested in a container, also under
+    /// `Nullable` (https://github.com/ClickHouse/ClickHouse/issues/124788).
+    if ((isTuple(unwrapped_key_type) || isArray(unwrapped_key_type) || isMap(unwrapped_key_type))
+        && anyInTypeTree(*unwrapped_key_type, [](const IDataType & node) { return node.isNullable(); }))
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} has a nested Nullable", key_name);
+        return nullptr;
+    }
+
+    if (!source_step.supportsTopKDynamicFilter(*key_column))
+    {
+        LOG_TRACE(log, "No dynamic filter: the source cannot filter by the key {}", key_name);
+        return nullptr;
+    }
+
+    /// The format drops rows by the boundary before it evaluates its row policy and PREWHERE.
+    const auto prewhere_info = source_step.getPrewhereInfo();
+    const auto row_level_filter = source_step.getRowLevelFilter();
+    if ((prewhere_info && dependsOnItsBlock(prewhere_info->prewhere_actions))
+        || (row_level_filter && dependsOnItsBlock(row_level_filter->actions)))
+    {
+        LOG_TRACE(log, "No dynamic filter: the PREWHERE or row policy of the format read depends on its block");
+        return nullptr;
+    }
+
+    SortColumnDescription key_sort_description(key_name, directions.front(), nulls_directions.front());
+    auto threshold_tracker = createTopKThresholdTracker(key_sort_description, *key_type);
+
+    auto info = std::make_shared<FormatTopKFilterInfo>();
+    info->column_name = key_name;
+    info->threshold_tracker = threshold_tracker;
+    info->plan_hash = groupByTopKConditionHash(
+        key_name, key_type, num_key_columns, limit, aggregating_step, path_expressions, directions, nulls_directions);
+    info->stop_when_unprofitable = true;
+    source_step.setTopKFilter(std::move(info));
+
+    LOG_TRACE(log, "Filtering rows and skipping row groups of the format read by the top-K boundary of the aggregation on {}", key_name);
+    return threshold_tracker;
+}
+
+/// Links the top-K heap of the aggregation to the `ReadFromMergeTree` or data format reading step below it.
 ///
 /// The heap admits only keys not worse than its boundary once it holds `LIMIT` of them, so a row whose
 /// first ranked key column is beyond the boundary can never reach the result. When that column is a
@@ -181,6 +315,12 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
             read_step = read;
             break;
         }
+        else if (auto * source_step = dynamic_cast<SourceStepWithFilterBase *>(node->step.get()))
+        {
+            return tryAttachFormatDynamicFilter(
+                *source_step, key_name, aggregating_step, limit, num_key_columns, directions, nulls_directions,
+                path_expressions, has_non_deterministic_filter, settings);
+        }
         else
         {
             LOG_TRACE(log, "No dynamic filter: step {} between the aggregation and the reading step", node->step->getName());
@@ -271,34 +411,9 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     /// key has to be passed through unchanged, the others may be computed between the read and the aggregation
     /// (`GROUP BY a, g` over `SELECT a, b % 100 AS g`), and the name of a computed key does not always identify its
     /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation.
-    SipHash hash;
-    hash.update(std::string_view("group_by_top_k"));
-    hash.update(info.column_name);
-    const String type_name = info.data_type->getName();
-    hash.update(type_name);
-    hash.update(info.num_sort_columns);
-    hash.update(info.limit_n);
-
-    const auto & aggregation_keys = aggregating_step.getParams().keys;
-    const auto & aggregation_input_header = *aggregating_step.getInputHeaders().front();
-    hash.update(aggregation_keys.size());
-    for (const auto & aggregation_key : aggregation_keys)
-    {
-        hash.update(aggregation_key);
-        hash.update(aggregation_input_header.getByName(aggregation_key).type->getName());
-    }
-
-    hash.update(path_expressions.size());
-    for (const auto * expression : path_expressions)
-        expression->updateHash(hash);
-
-    hash.update(directions.size());
-    for (size_t i = 0; i < directions.size(); ++i)
-    {
-        hash.update(directions[i]);
-        hash.update(nulls_directions[i]);
-    }
-    info.condition_hash = hash.get64();
+    info.condition_hash = groupByTopKConditionHash(
+        info.column_name, info.data_type, info.num_sort_columns, info.limit_n, aggregating_step, path_expressions, directions,
+        nulls_directions);
 
     read_step->setTopKColumn(info);
 
