@@ -720,6 +720,7 @@ void BaseDaemon::setupWatchdog()
 
     bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
     bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
+    [[maybe_unused]] bool ignores_signals = false;
 
 #if defined(OS_LINUX)
     /// Each server process is a new image of the running binary, so that it does not share the address space
@@ -768,15 +769,23 @@ void BaseDaemon::setupWatchdog()
 
 #if defined(OS_LINUX)
         int exec_errno = 0;
+        bool no_working_directory = false;
         if (0 == pid)
         {
             /// The parent-death signal is set again and checked after `execve`, see `setupWatchdogChild`.
             (void)prctl(PR_SET_PDEATHSIG, SIGKILL);
             waitForWatchdog(notify_sync);
             notify_sync.close();
-            /// The server user may be unable to enter the launch directory, which absolute paths do not need.
-            [[maybe_unused]] int chdir_result = chdir(original_working_directory.c_str());
-            execve("/proc/self/exe", exec_argv.data(), exec_envp.data());
+            if (ignores_signals)
+                for (int sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM})
+                    (void)signal(sig, SIG_DFL);
+            /// The server user may be unable to enter the launch directory, which absolute paths do not need,
+            /// but the new image cannot start in a working directory that was removed.
+            char working_directory[PATH_MAX];
+            if (0 == chdir(original_working_directory.c_str()) || getcwd(working_directory, sizeof(working_directory)))
+                execve("/proc/self/exe", exec_argv.data(), exec_envp.data());
+            else
+                no_working_directory = true;
             exec_errno = errno;
         }
 #endif
@@ -806,8 +815,14 @@ void BaseDaemon::setupWatchdog()
             updateCurrentThreadIdAfterFork();
 #if defined(OS_LINUX)
             ErrnoException exception(
-                "Cannot re-execute the server binary /proc/self/exe; "
-                "set CLICKHOUSE_WATCHDOG_ENABLE=0 to run the server without the watchdog",
+                no_working_directory
+                    ? fmt::format(
+                          "Cannot re-execute the server binary: cannot enter the launch directory {} "
+                          "and cannot get the current working directory",
+                          original_working_directory)
+                    : std::string(
+                          "Cannot re-execute the server binary /proc/self/exe; "
+                          "set CLICKHOUSE_WATCHDOG_ENABLE=0 to run the server without the watchdog"),
                 ErrorCodes::SYSTEM_ERROR, exec_errno);
             logger().fatal(exception.message());
             throw exception; /// NOLINT
@@ -890,6 +905,7 @@ void BaseDaemon::setupWatchdog()
                     throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot ignore {}", signal_description);
                 }
             }
+            ignores_signals = true;
         }
 
         int status = 0;
