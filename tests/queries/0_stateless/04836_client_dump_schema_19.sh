@@ -82,20 +82,23 @@ echo '--- an omitted Remote database is not listed for a database-less reference
 REMOTE_SOURCE_DB="${DB}_fx_source"
 REMOTE_DB="${DB}_fx_remote"
 REMOTE_DUMP_FILE="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_remote.sql"
-# A namesake of the parameterized view in any omitted database that can be listed would refuse the dump.
+# A namesake of the parameterized view in any omitted database that can be listed would refuse the dump, so the views are
+# named after the test database: other runs of this test are omitted databases of this dump.
+PV="pv_${DB}"
+READER="reader_${DB}"
 $CLICKHOUSE_CLIENT --multiquery --query "
 CREATE DATABASE ${REMOTE_SOURCE_DB};
 CREATE TABLE ${REMOTE_SOURCE_DB}.marker_tbl (x UInt64) ENGINE = Memory;
 CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.2:${CLICKHOUSE_PORT_TCP}', '${REMOTE_SOURCE_DB}');
-CREATE VIEW dump_schema_19_pv AS SELECT number FROM numbers(10) WHERE number = {p:UInt64};
-CREATE VIEW dump_schema_19_reader AS SELECT * FROM dump_schema_19_pv(p = 1);
+CREATE VIEW ${PV} AS SELECT number FROM numbers(10) WHERE number = {p:UInt64};
+CREATE VIEW ${READER} AS SELECT * FROM ${PV}(p = 1);
 "
 START=$($CLICKHOUSE_CLIENT --query "SELECT toUnixTimestamp64Micro(now64(6))")
 if $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
-    echo "database-less reader dumped: $(grep -c "^CREATE VIEW ${DB}\.dump_schema_19_reader " "$REMOTE_DUMP_FILE")"
+    echo "database-less reader dumped: $(grep -c "^CREATE VIEW ${DB}\.${READER} " "$REMOTE_DUMP_FILE")"
     # The Remote database could have a namesake too, which the dump no longer rules out.
     echo "Remote database named for the database-less reader: $(
-        grep -F "${DB}.dump_schema_19_reader references dump_schema_19_pv without a database" "$ERR_FILE" | grep -cF "${REMOTE_DB}")"
+        grep -F "${DB}.${READER} references ${PV} without a database" "$ERR_FILE" | grep -cF "${REMOTE_DB}")"
 else
     echo "FAIL: dump failed: $(cat "$ERR_FILE")"
 fi
@@ -105,10 +108,16 @@ echo "dump queries naming the Remote database: $($CLICKHOUSE_CLIENT --query "
     WHERE current_database = currentDatabase() AND event_date >= yesterday()
         AND toUnixTimestamp64Micro(event_time_microseconds) >= ${START} AND type = 'QueryStart'
         AND query LIKE '%${REMOTE_DB}%' AND query NOT LIKE '%system.query_log%'")"
+# The server's own background work can list the Remote database too, so only the queries that the queries of the dump
+# started count: the Remote database sends its queries with the id of the query that needs them as `initial_query_id`.
 echo "queries the Remote database sent to its server: $($CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.query_log
     WHERE event_date >= yesterday() AND toUnixTimestamp64Micro(event_time_microseconds) >= ${START} AND type = 'QueryStart'
-        AND NOT is_initial_query AND query LIKE '%${REMOTE_SOURCE_DB}%'")"
+        AND NOT is_initial_query AND query LIKE '%${REMOTE_SOURCE_DB}%'
+        AND initial_query_id IN (
+            SELECT query_id FROM system.query_log
+            WHERE current_database = currentDatabase() AND event_date >= yesterday()
+                AND toUnixTimestamp64Micro(event_time_microseconds) >= ${START} AND is_initial_query)")"
 $CLICKHOUSE_CLIENT --multiquery --query "
 DROP DATABASE IF EXISTS ${REMOTE_DB};
 DROP DATABASE IF EXISTS ${REMOTE_SOURCE_DB};

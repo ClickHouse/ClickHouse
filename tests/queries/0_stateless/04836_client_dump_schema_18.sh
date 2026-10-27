@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 # --dump-schema emits `allow_archive_path_syntax` for an archive path (`a.tar :: data.csv`) in a table function that
 # CREATE parses: the one a table is created AS, and one in the SELECT of a materialized view. A plain view parses its

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 # --dump-schema dumps what a replay needs to recreate the schema, without changing data:
 # - A refreshable materialized view runs a refresh as soon as CREATE makes it, unless the CREATE says `EMPTY`, which the

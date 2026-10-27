@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 # --dump-schema emits the gates that CREATE reads outside the experimental-settings list when a stored definition
 # carries them: a codec declared for a subcolumn, with the codec gates of its codecs, the `Elasticsearch` engine,
