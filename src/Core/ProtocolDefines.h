@@ -181,8 +181,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOUR
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
 /// First query-plan serialization version that knows `enable_join_robin_hood_hash_tables`. Below it, the name is not
 /// written, because a strict named schema makes an older peer throw on an unknown name, and a plan from such a peer is
-/// read with the Robin Hood mode on, as the join hash tables of 26.10 have it. The mode changes only the speed and the
-/// memory of a join, not its result.
+/// read with the Robin Hood mode on, as in 26.10. The mode changes the speed and memory of a join, not its result.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ROBIN_HOOD_HASH_TABLES = 21;
 /// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
 /// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
