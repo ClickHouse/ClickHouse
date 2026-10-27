@@ -26,7 +26,7 @@ bool CompressedReadBufferFromFile::nextImpl()
     {
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
-        const size_t block_offset = file_in.getPosition();
+        const size_t block_offset = blocks_read ? file_in.getPosition() : 0;
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
         if (!size_compressed)
             return false;
@@ -129,7 +129,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             size_t size_decompressed = 0;
             size_t size_compressed_without_checksum = 0;
 
-            const size_t block_offset = file_in.getPosition();
+            const size_t block_offset = blocks_read ? file_in.getPosition() : 0;
             size_t new_size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
             size_compressed = 0; /// file_in no longer points to the end of the block in working_buffer.
 
