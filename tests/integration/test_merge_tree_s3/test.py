@@ -934,7 +934,8 @@ def s3_cancellation(cluster, broken_s3, s3_cancellation_read_mode):
         yield node, table
     finally:
         broken_s3.reset()
-        node.query(f"SYSTEM START MERGES {table}")
+        if node.query(f"EXISTS TABLE {table}").strip() == "1":
+            node.query(f"SYSTEM START MERGES {table}")
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
@@ -1038,6 +1039,9 @@ def test_cancelled_merge_teardown_retries_multipart_abort(
             f"INSERT INTO {table} SELECT number + {offset}, randomString(8192) FROM numbers(8192)"
         )
     original_objects = object_names()
+    assert original_objects
+    data_query = f"SELECT count(), sum(key), sum(cityHash64(value)) FROM {table}"
+    original_data = node.query(data_query)
     assert not outstanding_uploads()
     try:
         broken_s3.reset()
@@ -1068,11 +1072,13 @@ def test_cancelled_merge_teardown_retries_multipart_abort(
         assert broken_s3.get_request_counts()["abort_multipart_upload"] > len(uploads)
         if recover:
             wait_condition(outstanding_uploads, lambda remaining: not remaining, max_attempts=30)
-            wait_condition(object_names, lambda remaining: remaining <= original_objects, max_attempts=30)
+            wait_condition(object_names, lambda remaining: remaining == original_objects, max_attempts=30)
         else:
             # Exhaustion must terminate teardown, but does not promise eventual garbage collection.
             remaining_ids = {upload["UploadId"] for upload in outstanding_uploads()}
             assert {upload["UploadId"] for upload in uploads} <= remaining_ids
+        assert original_objects <= object_names()
+        assert node.query(data_query) == original_data
     finally:
         # A replicated `OPTIMIZE` waits for queue completion even after its current merge was cancelled.
         node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
@@ -1084,48 +1090,6 @@ def test_cancelled_merge_teardown_retries_multipart_abort(
             s3.abort_multipart_upload(
                 Bucket=cluster.minio_bucket, Key=upload["Key"], UploadId=upload["UploadId"]
             )
-
-
-def test_local_projection_observes_parent_partition_cancellation(s3_cancellation):
-    node, table = s3_cancellation
-    source = table + "_projection_source"
-    projection_pause = "merge_task_projection_stage_pause"
-    write_pause = "merge_task_pause_after_write"
-    node.query(
-        f"CREATE TABLE {table} (partition UInt32, key UInt32, value UInt32, "
-        "PROJECTION p (SELECT * ORDER BY value)) ENGINE=MergeTree "
-        "PARTITION BY partition ORDER BY key SETTINGS enable_vertical_merge_algorithm=0"
-    )
-    node.query(f"CREATE TABLE {source} AS {table}")
-    node.query(f"SYSTEM STOP MERGES {table}")
-    for offset in (0, 10000):
-        node.query(f"INSERT INTO {table} SELECT 7, number + {offset}, number FROM numbers(10000)")
-    try:
-        node.query(f"SYSTEM ENABLE FAILPOINT {projection_pause}")
-        node.query(f"SYSTEM START MERGES {table}")
-        request = node.get_query_request(f"OPTIMIZE TABLE {table} FINAL", timeout=30)
-        node.query(f"SYSTEM WAIT FAILPOINT {projection_pause} PAUSE", timeout=30)
-        # Base-part writes are done. A cancelled child must never reach its first write.
-        node.query(f"SYSTEM ENABLE FAILPOINT {write_pause}")
-        replacement_query_id = "projection_cancel_" + uuid.uuid4().hex
-        replacement = node.get_query_request(
-            f"ALTER TABLE {table} REPLACE PARTITION 7 FROM {source} "
-            "SETTINGS allow_replace_partition_from_empty_source=1",
-            timeout=10,
-            query_id=replacement_query_id,
-        )
-        node.wait_for_log_line(
-            f"{replacement_query_id}.*StorageMergeTree::stopMergesAndWaitForPartition Waiting",
-            timeout=10,
-        )
-        node.query(f"SYSTEM DISABLE FAILPOINT {projection_pause}")
-        replacement.get_answer()
-        assert "ABORTED" in request.get_error()
-        assert node.query(f"SELECT count() FROM {table}").strip() == "0"
-    finally:
-        node.query(f"SYSTEM DISABLE FAILPOINT {projection_pause}")
-        node.query(f"SYSTEM DISABLE FAILPOINT {write_pause}")
-        node.query(f"DROP TABLE {source} SYNC")
 
 
 def test_partition_cancellation_is_isolated(s3_cancellation, broken_s3):

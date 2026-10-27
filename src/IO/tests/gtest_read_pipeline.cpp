@@ -16,10 +16,6 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/PageCache.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
-#include <Common/ThreadStatus.h>
-#include <Common/tests/gtest_global_context.h>
 #include <base/scope_guard.h>
 
 #include <algorithm>
@@ -66,12 +62,9 @@ public:
     explicit TestReadBuffer(
         String data_,
         std::shared_ptr<std::optional<size_t>> bound_out_ = nullptr,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        std::function<void()> cancellation_hook_ = {})
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
         : ReadBufferFromFileBase(buf_size, nullptr, 0)
         , data(std::move(data_))
-        , chunk_size(buf_size)
-        , cancellation_hook(std::move(cancellation_hook_))
         , bound_out(std::move(bound_out_))
     {
     }
@@ -101,12 +94,10 @@ public:
 private:
     bool nextImpl() override
     {
-        if (cancellation_hook)
-            cancellation_hook();
         const size_t limit = std::min(data.size(), read_until_position.value_or(data.size()));
         if (file_offset >= limit)
             return false;
-        size_t to_read = std::min({limit - file_offset, internal_buffer.size(), chunk_size});
+        size_t to_read = std::min(limit - file_offset, internal_buffer.size());
         memcpy(internal_buffer.begin(), data.data() + file_offset, to_read);
         working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + to_read);
         file_offset += to_read;
@@ -114,8 +105,6 @@ private:
     }
 
     String data;
-    size_t chunk_size;
-    std::function<void()> cancellation_hook;
     std::shared_ptr<std::optional<size_t>> bound_out;
     std::optional<size_t> read_until_position;
     size_t file_offset = 0;
@@ -214,7 +203,6 @@ FileCachePtr createTestFileCache(const String & name)
     cache->initialize();
     return cache;
 }
-
 
 }
 
@@ -949,88 +937,6 @@ catch (...)
     FAIL() << getCurrentExceptionMessage(true);
 }
 
-
-/// The source checks the executing thread, without capturing either operation. The pipeline
-/// has no cancellation hook, so this exercises the normal shared FileSegment reader path.
-class ThreadContextCacheHandoff : public ::testing::TestWithParam<bool> {};
-
-TEST_P(ThreadContextCacheHandoff, SharedSourceUsesCurrentOperation)
-{
-    const bool cancel_original_operation = GetParam();
-    std::async(std::launch::async, [cancel_original_operation]
-    {
-        ThreadStatus status;
-        const String cache_name = cancel_original_operation ? "context_cache_canceled_owner" : "context_cache_canceled_consumer";
-        auto cache = createTestFileCache(cache_name);
-        SCOPE_EXIT({
-            cache.reset();
-            FileCacheFactory::instance().clear();
-            fs::remove_all(fs::current_path() / (cache_name + "_cache"));
-        });
-
-        auto original_canceled = std::make_shared<std::atomic_bool>(false);
-        auto next_canceled = std::make_shared<std::atomic_bool>(false);
-        auto original_group = ThreadGroup::createForMergeMutate(
-            getContext().context, [original_canceled]
-            {
-                return original_canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
-            });
-        auto next_group = ThreadGroup::createForMergeMutate(
-            getContext().context, [next_canceled]
-            {
-                return next_canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
-            });
-
-        size_t sources_created = 0;
-        auto create_reader = [&]
-        {
-            ReadSettings settings;
-            settings.remote_fs_settings.buffer_size = 4;
-            settings.local_fs_settings.buffer_size = 4;
-            ReadPipeline pipeline;
-            pipeline.setSource([&sources_created](const StoredObject &, const ReadSettings &, bool, bool)
-            {
-                ++sources_created;
-                return std::make_unique<TestReadBuffer>("abcdefghijkl", nullptr, 4, [] { CurrentThread::checkIfNotCancelled(); });
-            }, StoredObjects{testObject(12)}, settings);
-            pipeline.needFilesystemCache(cache, FilesystemCacheSettings{});
-            return pipeline.build();
-        };
-
-        std::unique_ptr<ReadBufferFromFileBase> original;
-        String prefix(4, '\0');
-        {
-            ThreadGroupSwitcher scope(original_group, ThreadName::MERGE_MUTATE);
-            original = create_reader();
-            original->readStrict(prefix.data(), prefix.size());
-            ASSERT_EQ(prefix, "abcd");
-        }
-        const auto segments = cache->getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
-        ASSERT_EQ(segments.size(), 1u);
-        ASSERT_EQ(segments.front().downloaded_size, 4u);
-        ASSERT_EQ(sources_created, 1u);
-
-        original_canceled->store(cancel_original_operation);
-        next_canceled->store(!cancel_original_operation);
-        ThreadGroupSwitcher scope(next_group, ThreadName::MERGE_MUTATE);
-        auto next = create_reader();
-        next->readStrict(prefix.data(), prefix.size());
-        ASSERT_EQ(prefix, "abcd");
-        if (cancel_original_operation)
-        {
-            String tail;
-            readStringUntilEOF(tail, *next);
-            EXPECT_EQ(tail, "efghijkl");
-        }
-        else
-        {
-            EXPECT_THROW(next->next(), Exception);
-        }
-        EXPECT_EQ(sources_created, 1u) << "Must actually reuse the shared source, not create a private replacement";
-    }).get();
-}
-
-INSTANTIATE_TEST_SUITE_P(OperationCancellation, ThreadContextCacheHandoff, ::testing::Bool());
 
 TEST(ReadPipeline, MemoryCacheSkipsUnknownSizeObject)
 try

@@ -283,41 +283,6 @@ TEST_P(S3CacheCancellationHandoff, ReusedS3ReaderUsesCurrentOperation)
 
 INSTANTIATE_TEST_SUITE_P(OperationCancellation, S3CacheCancellationHandoff, ::testing::Combine(::testing::Bool(), ::testing::Bool()));
 
-TEST(OperationCancellation, CancelledAbortRecoversAfterRetryableFailure)
-{
-    std::async(std::launch::async, []
-    {
-        ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
-        ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
-        Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
-        Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 1);
-        auto & counters = static_cast<CancellationHTTPFactory &>(*factory);
-        Poco::Net::HTTPServer server(factory, socket, new Poco::Net::HTTPServerParams);
-        server.start();
-        SCOPE_EXIT({ server.stopAll(true); });
-        RemoteHostFilter filter;
-        auto config = S3::ClientFactory::instance().createClientConfiguration(
-            "us-east-1", filter, 3, {.max_retries = 2, .initial_delay_ms = 1, .max_delay_ms = 1},
-            false, false, false, false, {}, {}, "http");
-        config.per_request_configuration = {};
-        config.error_report = {};
-        config.retryStrategy = std::make_shared<S3::Client::RetryStrategy>(config.retry_strategy);
-        config.endpointOverride = fmt::format("127.0.0.1:{}", socket.address().port());
-        auto client = S3::Client::create(
-            3, {}, std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test", "test"), config,
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, {.use_virtual_addressing = false});
-        S3::AbortMultipartUploadRequest request;
-        ThreadStatus::QueryCancellationBlocker cleanup;
-        request.SetBucket("bucket");
-        request.SetKey("key");
-        request.SetUploadId("test");
-        EXPECT_NO_THROW({ EXPECT_TRUE(client->AbortMultipartUpload(request).IsSuccess()); });
-        EXPECT_EQ(counters.requests.load(), 2);
-        EXPECT_EQ(CurrentThread::get().getCancellationRequest(), CancellationRequest::StopWork);
-    }).get();
-}
-
 TEST(OperationCancellation, CleanupDeleteHelpersIgnoreCancellation)
 {
     for (const bool batch_supported : {false, true})

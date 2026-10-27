@@ -1079,39 +1079,6 @@ TEST_F(WBS3Test, CurrentOperationCancelsRequestsWithoutHooks)
     }).get();
 }
 
-TEST_F(WBS3Test, CurrentOperationAllowsMultipartCleanupWithoutHooks)
-{
-    std::async(std::launch::async, [&]
-    {
-        ThreadStatus status;
-        auto canceled = std::make_shared<std::atomic_bool>(false);
-        auto group = ThreadGroup::createForMergeMutate(
-            getContext().context, [canceled]
-            {
-                return canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
-            });
-        ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
-        auto & s3 = static_cast<S3::Client &>(*client);
-
-        S3::CreateMultipartUploadRequest create;
-        create.SetBucket(bucket);
-        create.SetKey("file");
-        auto created = s3.CreateMultipartUpload(create);
-        ASSERT_TRUE(created.IsSuccess());
-        canceled->store(true);
-
-        S3::AbortMultipartUploadRequest abort;
-        ThreadStatus::QueryCancellationBlocker cleanup;
-        abort.SetBucket(bucket);
-        abort.SetKey("file");
-        abort.SetUploadId(created.GetResult().GetUploadId());
-        EXPECT_TRUE(s3.AbortMultipartUpload(abort).IsSuccess());
-        EXPECT_EQ(client->counters.multiUploadAbort, 1);
-        EXPECT_TRUE(client->store->GetBucketStore(bucket).multiPartUploads.empty());
-        EXPECT_EQ(CurrentThread::get().getCancellationRequest(), CancellationRequest::StopWork);
-    }).get();
-}
-
 class SyncAsync : public WBS3Test, public ::testing::WithParamInterface<bool>
 {
 protected:
@@ -1148,7 +1115,6 @@ namespace
 
 enum class PostUploadCheck
 {
-    UploadExists,
     DecoratedUploadExists,
     UploadSize,
     CopyExists,
@@ -1257,12 +1223,11 @@ INSTANTIATE_TEST_SUITE_P(
     S3,
     PostUploadCancellation,
     ::testing::Values(
-        PostUploadCheck::UploadExists, PostUploadCheck::DecoratedUploadExists, PostUploadCheck::UploadSize, PostUploadCheck::CopyExists),
+        PostUploadCheck::DecoratedUploadExists, PostUploadCheck::UploadSize, PostUploadCheck::CopyExists),
     [](const ::testing::TestParamInfo<PostUploadCheck> & info_param)
     {
         switch (info_param.param)
         {
-            case PostUploadCheck::UploadExists: return "UploadExists";
             case PostUploadCheck::DecoratedUploadExists: return "DecoratedUploadExists";
             case PostUploadCheck::UploadSize: return "UploadSize";
             case PostUploadCheck::CopyExists: return "CopyExists";

@@ -254,7 +254,7 @@ TEST(ThreadPoolCallbackRunner, DroppedCallbacksCanProtectTheirOwnCleanup)
 
 TEST(ThreadPoolCallbackRunner, CallbackDestructionPrecedesExceptionalCompletion)
 {
-    for (bool use_local_runner : {false, true})
+    auto check = []<typename Result>(bool use_local_runner)
     {
         std::async(std::launch::async, [use_local_runner]
         {
@@ -262,8 +262,8 @@ TEST(ThreadPoolCallbackRunner, CallbackDestructionPrecedesExceptionalCompletion)
             auto group = ThreadGroup::createForMergeMutate(getContext().context);
             ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
             ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
-            auto unsafe = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::MERGE_MUTATE);
-            ThreadPoolCallbackRunnerLocal<void> local(pool, ThreadName::MERGE_MUTATE);
+            auto unsafe = threadPoolCallbackRunnerUnsafe<Result>(pool, ThreadName::MERGE_MUTATE);
+            ThreadPoolCallbackRunnerLocal<Result> local(pool, ThreadName::MERGE_MUTATE);
             std::atomic_bool destroyed{false};
             struct Recorder
             {
@@ -276,10 +276,10 @@ TEST(ThreadPoolCallbackRunner, CallbackDestructionPrecedesExceptionalCompletion)
                     *destroyed = true;
                 }
             };
-            std::future<void> future;
+            std::future<Result> future;
             {
                 ThreadStatus::QueryCancellationBlocker cleanup;
-                std::function<void()> callback = [recorder = std::make_shared<Recorder>(group, &destroyed)]
+                std::function<Result()> callback = [recorder = std::make_shared<Recorder>(group, &destroyed)]() -> Result
                 {
                     throw std::runtime_error("unwind callback");
                 };
@@ -293,5 +293,10 @@ TEST(ThreadPoolCallbackRunner, CallbackDestructionPrecedesExceptionalCompletion)
             EXPECT_FALSE(ThreadStatus::QueryCancellationBlocker::isActive());
             pool.wait();
         }).get();
+    };
+    for (bool use_local_runner : {false, true})
+    {
+        check.operator()<void>(use_local_runner);
+        check.operator()<int>(use_local_runner);
     }
 }
