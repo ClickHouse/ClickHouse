@@ -2,9 +2,10 @@
 -- no-fasttest: needs the XGBoost contrib, which is not built in the fast test.
 
 -- The messages of the XGBoost library go to the server log under the `XGBoost` logger, attached to the query
--- that trains or predicts, instead of to `stderr`. `verbosity 3` makes XGBoost log its debug messages.
+-- that trains or predicts, instead of to `stderr`. XGBoost warns that the `gblinear` booster is deprecated.
 
 SET enable_xgboost = 1;
+SET send_logs_level = 'error'; -- the warning is checked in `system.text_log`, not sent to the client
 SET max_rows_to_read = 0; -- system.text_log can be really big
 
 DROP DICTIONARY IF EXISTS model_05263_xgb;
@@ -16,7 +17,7 @@ INSERT INTO training_05263 SELECT number AS x1, intDiv(number, 7) AS x2, 2 * x1 
 CREATE DICTIONARY model_05263_xgb (x1 Float64, x2 Float64, y Float64)
 PRIMARY KEY (x1, x2)
 SOURCE(CLICKHOUSE(TABLE 'training_05263'))
-LAYOUT(XGBOOST(num_iterations 2 verbosity 3))
+LAYOUT(XGBOOST(num_iterations 2 booster 'gblinear'))
 LIFETIME(0);
 
 -- The dictionary loads, and so trains, on the first `predictXGBoost` call.
@@ -25,10 +26,10 @@ SELECT predictXGBoost('model_05263_xgb', 1.0, 2.0) FORMAT Null SETTINGS log_comm
 SYSTEM FLUSH LOGS query_log, text_log;
 
 -- The messages carry the server log's own level and timestamp: XGBoost's level prefix, its timestamp and the
--- trailing newline of its monitor lines are removed.
+-- trailing newline are removed.
 SELECT
-    countIf(level = 'Debug' AND message LIKE '%Using tree method%') > 0,
-    countIf(message LIKE '[%' OR message LIKE 'DEBUG:%' OR message LIKE '%\n') = 0
+    countIf(level = 'Warning' AND message LIKE '%`booster=gblinear` is deprecated%') > 0,
+    countIf(message LIKE '[%' OR message LIKE 'WARNING:%' OR message LIKE '%\n') = 0
 FROM system.text_log
 WHERE event_date >= yesterday()
     AND logger_name = 'XGBoost'
