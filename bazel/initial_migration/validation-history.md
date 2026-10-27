@@ -2868,3 +2868,50 @@ BuildBuddy recorded 20 remote executions and 55,814 remote cache hits on x86-64 
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/666eb9b0-bd8b-4148-a9f7-f24213291632): all six analyzer reports contained no findings and BuildBuddy reported all six targets built. The collector expects a number for every per-target measurement; it rejected the structured `symbol_inputs_if_added` field (`invalid per-owner charge`) and credited no targets.
 
 [ARM64 DWYU](https://app.buildbuddy.io/invocation/64fe995e-bd0e-4864-afe2-2fa65424e46c): all six analyzer reports contained no findings and BuildBuddy reported all six targets built. The collector expects a number for every per-target measurement; it rejected the structured `symbol_inputs_if_added` field (`invalid per-owner charge`) and credited no targets.
+
+## ecd39e5e3
+
+At [ecd39e5e3](https://github.com/dzbarsky/clickhouse/commit/ecd39e5e3712bcb8f3567cea7c82837616081067), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. Unstripped ClickHouse and unit-test hashes are compared with the [preceding build](https://github.com/dzbarsky/clickhouse/commit/8e9777ae287c9e44cdc486123f2226e22cc29693).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/879c2b9f-8701-4c3e-bb98-3eb34ea4f026) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/879c2b9f-8701-4c3e-bb98-3eb34ea4f026) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/879c2b9f-8701-4c3e-bb98-3eb34ea4f026) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+Each native build completed 19 targets and passed 27 runtime checks, including the [upstream `UsersConfigMultipleAuthTest.OTPWithMixedAuthIncludingPassword` test](../../src/Access/tests/gtest_users_config_multiple_auth.cpp#L787). Three compiler checks verified the ZooKeeper object with logging disabled and the radix-sort and wrap-in-nullable benchmark objects. The SHA-256 and byte count of all seven processed Rust archives matched the preceding build on each CPU.
+
+### Linux link files
+
+The x86-64 build used 25 files from three pinned Ubuntu packages. On ARM64, the 24 files available to each Cargo action matched the preceding ClickHouse sysroot byte for byte. They include the 14 inputs used for the final link. Four GCC files still come from ClickHouse/sysroot: `crtbegin.o`, `crtbeginS.o`, `crtend.o` (also copied to `crtendS.o`) and `libgcc.a`. The Arm GNU glibc archive is 34,935,288 bytes; those four GCC files total 1,401,456 bytes. Only the ARM64 `--sysroot` and GCC `-B` directories changed in the ClickHouse link arguments.
+
+The [ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) recorded the Arm GNU inputs and outputs of all seven registered `StripArmGlibc` actions, using `@llvm//tools:llvm-strip`. Each output below is the file supplied to the production build.
+
+| ARM64 library or loader | Arm release SHA-256 | Registered `llvm-strip --strip-debug` output SHA-256 |
+| --- | --- | --- |
+| `ld-linux-aarch64.so.1` | `b26bede8aec0cb6955617f7b9a0b7900d0887de8360041c09e512b7dcc0a9651` | `375e73c29060bf7d15f9d1195b8b6dc5ca6f3f744990d9137593687d6351eaae` |
+| `libc.so.6` | `2c4934c21678cd9727efe384efb607d404b6b2fc9837cb955d4cfd528aeeae13` | `72127e15bc2f236ab7e02e40f786dc4e51b54190a5624295379b0a940d110f21` |
+| `libdl.so.2` | `71b4d69a5cd064448f7cc8ed60f45de5001241d9cb04cc5df333f7ecff582eda` | `a30f99d53fcd712753687a13d89481257403d5cc89b51f534df2753be361de93` |
+| `libm.so.6` | `29ea0de9308fada9273ae963d5d7f8d0a600e1dce6dabbab6f4eb4772c7718ce` | `ba03e31580a1b30f32fd58b3926dbbd093b6e99b04bd796e5cd87f4580e188e6` |
+| `libpthread.so.0` | `cf4ae82dffd1336f5e2d7b665f27456a5b5e23ce44a2fa53119b870d51b6cf17` | `47916f6fd9f666b702bafcc178069a7dc84752492852b6914542144a754cabea` |
+| `libresolv.so.2` | `147b8bcc33a7f649727e846be4a37cc7bd5fe0a3000993ff6d891f345c801a96` | `14f73c6599a1e99b8da32a03603092dcbb8d363d4dfe35e5b45301309f1e67df` |
+| `librt.so.1` | `d49466a6dd656d41e98a04826c8d10563b876e6cbef60adcdc8003fb8d8f07b3` | `625e35533fc1a003690ce7f27f5f33c91722ffa6ab9b1ac4ed229c1b7c716867` |
+
+[Access/Common and ZooKeeper](https://github.com/dzbarsky/clickhouse/commit/71c20de8deda6d9dc9ea7d4d3b6671e881a8274e) dropped direct private dependencies on OpenSSL crypto and the target CPU’s LLVM code generator, respectively; both remain reachable through their existing libraries. [CRoaring](https://github.com/dzbarsky/clickhouse/commit/ecd39e5e3712bcb8f3567cea7c82837616081067) now sets `-std=gnu11` and forces `page_aligned_functions.h` only when compiling C.
+
+### Generated glibc interfaces
+
+The [preceding ARM64 link](https://app.buildbuddy.io/invocation/fd8531df-2953-40ee-80bb-7c9e70b3cdd0) differed from native CMake only in the order of `pthread_setcanceltype` and `__shm_directory` in `.dynstr` and their two name offsets in `.dynsym`. The [ARM64 experiment](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2-b0d9-c4453e0f205e) changes only the generated `libpthread.so.0` among the six link interfaces: `--hash-style=sysv` puts `pthread_setcanceltype` before `__shm_directory` in the link interface. The production ARM64 link uses Arm GNU’s libraries and loader. The linker and strip both exited zero. The stripped experimental SHA-256 was `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` (637,316,696 bytes); it matched native CMake. No new x86-64 interface link was requested.
+
+### Dependency reports
+
+Correction to the [preceding x86-64 DWYU run](https://app.buildbuddy.io/invocation/666eb9b0-bd8b-4148-a9f7-f24213291632): verified clean: `//base:pcg_random`, `//contrib/driftsort:headers`, `//contrib/ipnsort:headers`, `//contrib/pdqsort:headers`, `//src/Compression:codec_api`, `@clickhouse_sqids_cpp//:sqids_cpp`.
+
+Correction to the [preceding ARM64 DWYU run](https://app.buildbuddy.io/invocation/64fe995e-bd0e-4864-afe2-2fa65424e46c): verified clean: `//contrib/driftsort:headers`, `//contrib/ipnsort:headers`, `//contrib/pdqsort:headers`, `//src/AggregateFunctions:aggregate_api`, `//src/Compression:codec_api`, `@clickhouse_sqids_cpp//:sqids_cpp`.
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/e1db9cdb-bba5-44e5-bff2-64a0377e8306): three targets built successfully and produced DWYU reports: `@clickhouse_croaring//:_roaring`, `@clickhouse_fp16//:fp16`, `@clickhouse_nlohmann_json//:nlohmann_json`. `@clickhouse_ai_sdk_cpp//:sdk` was not selected. The report reader called `str.removeprefix` on Python 3.8, so this comparison records no new per-target DWYU grades.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/9a1b8dad-6cb0-42b5-8e16-acb17260e90f): three targets built successfully and produced DWYU reports: `@clickhouse_croaring//:_roaring`, `@clickhouse_fp16//:fp16`, `@clickhouse_nlohmann_json//:nlohmann_json`. `@clickhouse_ai_sdk_cpp//:sdk` was not selected. The report reader called `str.removeprefix` on Python 3.8, so this comparison records no new per-target DWYU grades.
