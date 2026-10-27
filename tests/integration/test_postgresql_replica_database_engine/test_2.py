@@ -259,6 +259,26 @@ def test_remove_table_from_replication(started_cluster):
     )
 
 
+def test_detach_database_keeps_replication(started_cluster):
+    # Its tables can be detached only permanently, so `DETACH DATABASE` is refused. It used to fail only at the first
+    # table, after it had stopped the replication, and the database stayed attached without replicating.
+    NUM_TABLES = 2
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    error = instance.query_and_get_error("DETACH DATABASE test_database")
+    assert "`DETACH DATABASE` is not supported" in error
+
+    for i in range(NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number FROM numbers(50, 50)"
+        )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+
 def test_predefined_connection_configuration(started_cluster):
     pg_manager.execute("DROP TABLE IF EXISTS test_table")
     pg_manager.execute(

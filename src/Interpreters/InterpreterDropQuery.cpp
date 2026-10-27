@@ -541,6 +541,17 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             tryLogCurrentException("InterpreterDropQuery", "Async loading failed", LogsLevel::warning);
     }
 
+#if USE_LIBPQXX
+    /// The tables of a `MaterializedPostgreSQL` database can be detached only permanently (`DatabaseMaterializedPostgreSQL::detachTable`
+    /// throws), so detaching the database failed at its first table, after its replication had been stopped and its tables
+    /// had been prepared for shutdown: the database stayed attached but no longer replicated. Refuse before touching anything.
+    if (query.kind == ASTDropQuery::Kind::Detach && typeid_cast<DatabaseMaterializedPostgreSQL *>(database.get()) && !database->empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "`DETACH DATABASE` is not supported for a `{}` database with tables, because its tables can be detached only "
+                        "permanently. Use `DROP DATABASE`, or `DETACH TABLE ... PERMANENTLY` for each table",
+                        database->getEngineName());
+#endif
+
     getContext()->onQueryExecutionStarted();
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
