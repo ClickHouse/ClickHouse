@@ -142,8 +142,10 @@ SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 
 -- After the starters every row is a new key that ranks better than all before it, so the started heap admits each
 -- one and the arena grows with their 2000-byte payloads until the table crosses the two-level byte threshold and
 -- spills. The flush recreates the table, whose heap waits again; the result comes from the rows after the payloads.
+-- Fixed 1024-row granules end a block at exactly 32768 keys: a block past it also grows the hash table, which with
+-- the first payloads can cross the byte threshold before the heap starts.
 SELECT 'external aggregation';
-CREATE TABLE t_05407_spill (s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024;
+CREATE TABLE t_05407_spill (s String) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1024, index_granularity_bytes = 0;
 INSERT INTO t_05407_spill SELECT multiIf(number < 33792, concat('m', toString(number)),
     number < 37888, concat('n', leftPad(toString(number), 6, '0'), repeat('x', 2000)),
     concat(['Z', 'a', 'á'][(number - 37888) % 3 + 1], toString((number - 37888) % 997)))
