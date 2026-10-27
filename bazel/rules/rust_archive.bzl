@@ -17,7 +17,7 @@ def _rust_archive_impl(ctx):
         if not archives:
             fail("Rust localization requires a static archive from " + str(target.label))
         references.extend(archives)
-    references.append(ctx.file._libm)
+    references.append(ctx.file._libm_abi)
     output = ctx.actions.declare_file("lib" + ctx.label.name + ".a")
     args = ctx.actions.args()
     args.add("--source", ctx.file.src)
@@ -50,7 +50,7 @@ rust_archive = rule(
         "_processor": attr.label(default = "//bazel/rules:process_rust_archive", executable = True, cfg = "exec"),
         "_localize_script": attr.label(default = "//:cmake/localize_rust_c_symbols.sh", allow_single_file = True),
         "_strip_script": attr.label(default = "//:cmake/strip_rust_symbols.sh", allow_single_file = True),
-        "_libm": attr.label(default = "@clickhouse_sysroot//:linux_math_library", allow_single_file = True),
+        "_libm_abi": attr.label(default = "@glibc//:libm_abi", allow_single_file = [".abilist"]),
     } | {
         "_" + name: attr.label(default = "@llvm//tools:" + tool, executable = True, allow_files = True, cfg = "exec")
         for name, tool in {"ar": "llvm-ar", "objcopy": "llvm-objcopy", "nm": "llvm-nm", "ld": "ld.lld"}.items()

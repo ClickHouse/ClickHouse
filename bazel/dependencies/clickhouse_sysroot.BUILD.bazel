@@ -45,15 +45,3 @@ filegroup(
         "@platforms//cpu:aarch64": glob(["linux-aarch64/lib/gcc/**/crt*S.o"]),
     }),
 )
-
-filegroup(
-    name = "linux_math_library",
-    srcs = select({
-        "@platforms//cpu:x86_64": [
-            "linux-x86_64/x86_64-linux-gnu/libc/lib64/libm.so.6",
-        ],
-        "@platforms//cpu:aarch64": [
-            "linux-aarch64/aarch64-linux-gnu/libc/lib64/libm.so.6",
-        ],
-    }),
-)

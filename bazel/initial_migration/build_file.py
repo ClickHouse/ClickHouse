@@ -1633,12 +1633,6 @@ def dependency_inputs(builds, owners):
             for arch in ARCHES
         }),
     })
-    build('contrib/sysroot').rule('filegroup', 'linux_math_library', {
-        'srcs': select({
-            '@platforms//cpu:' + arch: ['linux-' + arch + '/' + arch + '-linux-gnu/libc/lib64/libm.so.6']
-            for arch in ARCHES
-        }),
-    })
     krb5 = build('contrib/krb5')
     # In the initial CMake graph the six generated private error tables
     # still belong to //bazel. configured_codegen_outputs unifies their

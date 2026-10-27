@@ -46,10 +46,10 @@ index 0000000000000000000000000000000000000000..85b66524360a6c729ed2cf911eb5ecf2
 +        .section .note.GNU-stack,"",%progbits
 diff --git a/3rd_party/libc/glibc/pie_startup.bzl b/3rd_party/libc/glibc/pie_startup.bzl
 new file mode 100644
-index 0000000000000000000000000000000000000000..8139700487b0e3e5ef5c625a0ff60558d7cfc973
+index 0000000000000000000000000000000000000000..f80859bfb39a475e735f3f5763e335d0ceed6f2e
 --- /dev/null
 +++ b/3rd_party/libc/glibc/pie_startup.bzl
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,143 @@
 +"""Compile the GNU/Linux PIE startup objects from a selected glibc source release."""
 +
 +load("@llvm//toolchain/runtimes:cc_runtime_library.bzl", "cc_runtime_stage0_library")
@@ -178,6 +178,15 @@ index 0000000000000000000000000000000000000000..8139700487b0e3e5ef5c625a0ff60558
 +            target_compatible_with = native_linux,
 +        )
 +
++    # libm.abilist lists the public symbols from this glibc release.
++    libm_directories = {"aarch64": "aarch64", "x86_64": "x86_64/64"}
++    native.filegroup(
++        name = "libm_abi",
++        srcs = _by_cpu({cpu: ["sysdeps/unix/sysv/linux/" + libm_directories[cpu] + "/libm.abilist"] for cpu in profiles}, []),
++        target_compatible_with = compatible,
++        visibility = ["//visibility:public"],
++    )
++
 +    native.filegroup(
 +        name = name,
 +        srcs = _by_cpu({cpu: [":pie_startup_" + cpu] for cpu in profiles}, []),
@@ -287,23 +296,39 @@ index 3c08a22b00cc32c743047f83673afb7f80cc24f2..c6f80d9e4f81d065a56afb1c7f882764
          "patch": header_patch,
          "index": glibc_index,
      },
+diff --git a/runtimes/glibc/extension/make_select_glibc_repository_target.bzl b/runtimes/glibc/extension/make_select_glibc_repository_target.bzl
+index ddce2d8e700a423ccae26e6fd784b71caa2c7db9..d5830000efa0467cbd7ac703d047b1668a44b41c 100644
+--- a/runtimes/glibc/extension/make_select_glibc_repository_target.bzl
++++ b/runtimes/glibc/extension/make_select_glibc_repository_target.bzl
+@@ -32,3 +32,14 @@ def declare_glibc_repository_target(name, bazel_repository, bazel_target, archit
+         actual = select(targets),
+         **kwargs
+     )
++
++def declare_glibc_link_target(name, pie_startups):
++    """Use the glibc release that provides the target platform's PIE startup objects."""
++    targets = {cpu: native.package_relative_label(target).same_package_label(name) for cpu, target in pie_startups.items()}
++    native.alias(
++        name = name,
++        actual = select(targets | {"//conditions:default": "@llvm//runtimes:none"}),
++        target_compatible_with = ["@platforms//os:linux"] + select({cpu: [] for cpu in targets} | {
++            "//conditions:default": ["@platforms//:incompatible"],
++        }),
++    )
 diff --git a/runtimes/glibc/extension/trampoline.BUILD.bazel b/runtimes/glibc/extension/trampoline.BUILD.bazel
-index d92090a7ec335e592ea53485c53e54a56f99413c..37c0f1a3c22700ead0f7591311ec84b110cdbca8 100644
+index d92090a7ec335e592ea53485c53e54a56f99413c..d02f01da7b9f6a12a81361a599a1a33966e0859a 100644
 --- a/runtimes/glibc/extension/trampoline.BUILD.bazel
 +++ b/runtimes/glibc/extension/trampoline.BUILD.bazel
-@@ -1,7 +1,16 @@
- load("@llvm//runtimes/glibc/extension:make_select_glibc_repository_target.bzl", "declare_glibc_repository_target")
+@@ -1,7 +1,12 @@
+-load("@llvm//runtimes/glibc/extension:make_select_glibc_repository_target.bzl", "declare_glibc_repository_target")
++load("@llvm//runtimes/glibc/extension:make_select_glibc_repository_target.bzl", "declare_glibc_link_target", "declare_glibc_repository_target")
 +load(":pie_startups.bzl", "PIE_STARTUPS")
  
  package(default_visibility = ["//visibility:public"])
  
-+alias(
-+    name = "pie_startup_objects",
-+    actual = select(PIE_STARTUPS | {"//conditions:default": "@llvm//runtimes:none"}),
-+    target_compatible_with = ["@platforms//os:linux"] + select({cpu: [] for cpu in PIE_STARTUPS} | {
-+        "//conditions:default": ["@platforms//:incompatible"],
-+    }),
-+)
++declare_glibc_link_target("libm_abi", PIE_STARTUPS)
++
++declare_glibc_link_target("pie_startup_objects", PIE_STARTUPS)
 +
  declare_glibc_repository_target(
      name = "gnu_libc_headers",
