@@ -81,7 +81,8 @@ attach_only() {
     local name=$1 index=$2
     rm -rf "$work/attach_src" "$work/attach_dst"
     $CLICKHOUSE_LOCAL --path "$work/attach_src" -n -q "CREATE DATABASE d;
-        ATTACH TABLE d.t UUID '00000000-0000-0000-0000-000000004836' (a UInt64, s Array(UInt64), $index)
+        ATTACH TABLE d.t UUID '00000000-0000-0000-0000-000000004836' (a UInt64, s Array(UInt64), n Array(Nullable(String)),
+            m Map(String, Nullable(String)), v Dynamic, f AggregateFunction(sum, UInt64), $index)
         ENGINE = MergeTree ORDER BY a;"
     $CLICKHOUSE_LOCAL --path "$work/attach_src" --dump-schema d > "$work/attach.sql" 2> "$work/attach.err"
     local dump_rc=$? refusal
@@ -99,6 +100,12 @@ attach_only lambda 'INDEX i arrayMap(x -> x + rand(), s) TYPE bloom_filter GRANU
 attach_only array_join 'INDEX i arrayJoin(s) TYPE minmax GRANULARITY 1'
 attach_only bloom_filter_rate 'INDEX i a TYPE bloom_filter(1) GRANULARITY 1'
 attach_only bloom_filter_parameters 'INDEX i a TYPE bloom_filter(0.1, 2) GRANULARITY 1'
+# The rest depend on the types the expression computes, which the dump derives from the column types like CREATE does.
+attach_only constant 'INDEX i (a, toUInt64(1)) TYPE minmax GRANULARITY 1'
+attach_only bloom_filter_nullable_elements 'INDEX i mapValues(m) TYPE bloom_filter GRANULARITY 1'
+attach_only minmax_not_comparable 'INDEX i f TYPE minmax GRANULARITY 1'
+attach_only minmax_dynamic 'INDEX i v TYPE minmax GRANULARITY 1'
 # Indexes that CREATE accepts too are dumped.
 attach_only accepted 'INDEX i a TYPE bloom_filter(0.01) GRANULARITY 1, INDEX j a + 1 TYPE minmax GRANULARITY 1,
-    INDEX k arrayMap(x -> x + 1, s) TYPE bloom_filter GRANULARITY 1'
+    INDEX k arrayMap(x -> x + 1, s) TYPE bloom_filter GRANULARITY 1, INDEX l mapKeys(m) TYPE bloom_filter GRANULARITY 1,
+    INDEX o arrayMap(x -> assumeNotNull(x), n) TYPE bloom_filter GRANULARITY 1'

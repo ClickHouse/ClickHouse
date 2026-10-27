@@ -12,7 +12,9 @@
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/TypeTree.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Functions/FunctionFactory.h>
@@ -63,6 +65,8 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/StorageURL.h>
 #include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
@@ -1910,12 +1914,28 @@ ASTPtr tryParseCreate(const String & create_query);
 
 /// What a secondary index of a `MergeTree` table declares that `MergeTreeIndexFactory::validate` and the index validators
 /// accept only on ATTACH, which loads a table the server already has, such as one an older version created, and refuse on
-/// CREATE whatever the settings. Only the checks the statement alone decides are mirrored. `context` builds the functions
-/// the expressions call, so every setting that gates a function must be on in it.
+/// CREATE whatever the settings. Only the checks the statement alone decides are mirrored: those of the expression, and
+/// those of the columns it computes, whose types the expression is analyzed for like CREATE does, from the declared column
+/// types. `context` builds the functions the expressions call, so every setting that gates a function must be on in it.
 std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, const ContextPtr & context)
 {
     if (!create.columns_list || !create.columns_list->indices)
         return {};
+    /// The server stores the type of every column. Without a type this client knows, an expression cannot be analyzed.
+    ColumnsDescription columns;
+    bool columns_known = create.columns_list->columns != nullptr;
+    if (columns_known)
+        for (const auto & column_ast : create.columns_list->columns->children)
+        {
+            const auto * column = column_ast->as<ASTColumnDeclaration>();
+            const DataTypePtr column_type = column && column->getType() ? DataTypeFactory::instance().tryGet(column->getType()) : nullptr;
+            if (!column_type)
+            {
+                columns_known = false;
+                break;
+            }
+            columns.add(ColumnDescription(column->name, column_type));
+        }
     /// A view or TimeSeries keeps its inner table engines in `targets`.
     bool merge_tree = create.storage && create.storage->engine && endsWithCaseInsensitive(create.storage->engine->name, "MergeTree");
     if (create.targets)
@@ -1936,20 +1956,52 @@ std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, cons
 
         /// `validate` refuses an array join and a non-deterministic function anywhere in the expression, inside a lambda too.
         std::optional<String> call;
-        if (const ASTPtr expression = index->getExpression())
+        bool functions_known = true;
+        const ASTPtr expression = index->getExpression();
+        if (expression)
             forEachNode(*expression, [&](const IAST & node)
             {
                 const auto * function = node.as<ASTFunction>();
                 if (call || !function)
                     return;
+                const auto resolver = function->name == "arrayJoin" || function->name == "lambda"
+                    ? nullptr : FunctionFactory::instance().tryGet(function->name, context);
+                functions_known &= resolver || function->name == "lambda";
                 if (function->name == "arrayJoin")
                     call = what + " calls `arrayJoin`";
-                else if (const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
-                         resolver && !resolver->isDeterministic())
+                else if (resolver && !resolver->isDeterministic())
                     call = what + " calls the non-deterministic function " + backQuote(function->name);
             });
         if (call)
             return call;
+
+        /// `validate` refuses a constant column, the minmax validator a type that is not comparable or holds `Dynamic` or `Variant`,
+        /// and the bloom filter validator an array of nullable elements.
+        if (expression && columns_known && functions_known)
+        {
+            const auto description = IndexDescription::getIndexFromAST(
+                child, columns, /* is_implicitly_created= */ false, /* escape_filenames= */ true, context);
+            for (const auto & column : description.sample_block)
+            {
+                if (column.column && (isColumnConst(*column.column) || column.column->isDummy()))
+                    return what + " computes the constant " + backQuote(column.name);
+                if (description.type == "minmax")
+                {
+                    if (!column.type->isComparable())
+                        return what + " of type `minmax` computes " + backQuote(column.name) + " of the type "
+                            + column.type->getName() + ", which is not comparable";
+                    bool mixed = false;
+                    forEachInTypeTree(*column.type, [&](const IDataType & part) { mixed |= isDynamic(part) || isVariant(part); });
+                    if (mixed)
+                        return what + " of type `minmax` computes " + backQuote(column.name) + " of the type "
+                            + column.type->getName() + ", which holds values of different types";
+                }
+                if (description.type == "bloom_filter")
+                    if (const auto * array = typeid_cast<const DataTypeArray *>(column.type.get()); array && array->getNestedType()->isNullable())
+                        return what + " of type `bloom_filter` computes " + backQuote(column.name) + " of the type "
+                            + column.type->getName() + ", an array of nullable elements";
+            }
+        }
 
         /// `bloomFilterIndexValidator` takes at most one parameter, a `Float64` false positive rate between 0 and 1.
         if (type && equalsCaseInsensitive(type->name, "bloom_filter") && type->arguments && !type->arguments->children.empty())
@@ -2474,6 +2526,8 @@ std::vector<TableInfo> resolveTables(
     /// A function a setting gates refuses to be built without it, and the dump only asks the built function about itself.
     const auto function_context = Context::createCopy(clusters.context);
     enableAllExperimentalSettings(function_context);
+    function_context->setSetting("allow_introspection_functions", true);
+    function_context->setSetting("allow_get_client_http_header", true);
 
     std::vector<TableInfo> tables;
     for (auto & row : rows)
