@@ -20,7 +20,7 @@
             if (location.protocol === 'file:') return new URL('js/viz-standalone.js', document.baseURI).href;
             const path = location.pathname;
             const route = path.lastIndexOf('/processors-profile');
-            const url = new URL('js/viz-standalone.js', location.origin + (route != -1 ? path.slice(0, route + 1) : path));
+            const url = new URL('js/viz-standalone.js', location.origin + (route != -1 ? path.slice(0, route + 1) : '/'));
             const params = new URLSearchParams(location.search);
             for (const name of ['query', 'user', 'password']) params.delete(name);
             url.search = params.toString();
@@ -442,7 +442,9 @@
                 if (PAGE_URL_PARAMETERS.includes(name)) url.searchParams.delete(name);
             url.hash = '';
             const route = url.pathname.lastIndexOf('/processors-profile');
-            if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+            /// A route name absent from the path means the page is mounted at a configured alias (`http_handlers`),
+            /// which says nothing about where the server is exposed: the endpoint is then the origin root, as before.
+            url.pathname = route != -1 ? url.pathname.slice(0, route + 1) : '/';
             return url.href;
         }
 

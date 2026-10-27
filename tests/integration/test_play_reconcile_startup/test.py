@@ -98,6 +98,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "shape-not-stamped-before-run",
         "proxied-endpoint",
         "query-not-routing",
+        "aliased-endpoint",
         "cross-origin-terminal",
         "trusted-host-terminal",
         "path-routed-handover",
