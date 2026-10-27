@@ -500,22 +500,24 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
 
     /// Read before the claim and the lookup, so that a fill released after them shows as a change.
     const UInt64 released_fills = columns_cache->releasedFills();
+    const auto stripes_seen = std::span(stripes_released_fills_seen).subspan(first_stripe - range_first_stripe, end_stripe - first_stripe);
+    const bool stripes_current = std::ranges::all_of(stripes_seen, [&](UInt64 seen) { return seen == released_fills; });
 
-    /// Nothing to claim, nothing to wait for and nothing written by a fill since the last lookup: the
-    /// common case of a block that is less than a stripe, which must not pay for a lock and a lookup.
-    if (to_claim.empty() && released_fills == released_fills_seen && !columns_cache->anyFillsInProgress())
+    /// Nothing to claim, nothing to wait for and nothing written by a fill since the stripes were looked up:
+    /// the common case of a block that is less than a stripe, which must not pay for a lock and a lookup.
+    if (to_claim.empty() && stripes_current && !columns_cache->anyFillsInProgress())
         return {};
 
     std::vector<ColumnsCacheFillPtr> in_progress;
     auto claims = columns_cache->claimFills(needed, to_claim, in_progress);
     if (in_progress.empty())
     {
-        /// The stripes another reader wrote and released after the range was looked up are served from the
+        /// The stripes another reader wrote and released after they were looked up are served from the
         /// cache: a reader that trails another one through a part finds most of its stripes written so.
-        if (released_fills != released_fills_seen)
+        if (!stripes_current)
         {
             refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
-            released_fills_seen = released_fills;
+            std::ranges::fill(stripes_seen, released_fills);
         }
         if (!claims.empty())
             FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_after_claim);
@@ -534,7 +536,7 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
 
     /// Nothing is claimed yet: a reader never waits while it holds claims.
     ColumnsCache::waitForFills(in_progress, max_wait_ns);
-    released_fills_seen = columns_cache->releasedFills();
+    std::ranges::fill(stripes_seen, columns_cache->releasedFills());
     refreshColumnsCacheStripes(first_stripe, end_stripe, needed, needed_positions);
     collect();
 
@@ -620,11 +622,14 @@ void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_ma
 
     cached_entries.clear();
     granule_cached_columns.clear();
+    stripes_released_fills_seen.clear();
 
     if (columns_cache_reads_possible)
     {
-        released_fills_seen = columns_cache->releasedFills();
+        const UInt64 released_fills = columns_cache->releasedFills();
         lookupColumnsCache(range_first_mark, range_end_mark, num_columns, cached_entries, granule_cached_columns);
+        const size_t range_end_stripe = range_end_mark > range_first_mark ? stripes.stripeOf(range_end_mark - 1) + 1 : range_first_stripe;
+        stripes_released_fills_seen.assign(range_end_stripe - range_first_stripe, released_fills);
         LOG_TEST(log, "Range of marks [{}, {}) of part {}: {} of {} granules are in the columns cache",
             range_first_mark, range_end_mark, columns_cache_part_name,
             num_regular_columns ? std::count(granule_cached_columns.begin(), granule_cached_columns.end(), num_regular_columns) : 0,

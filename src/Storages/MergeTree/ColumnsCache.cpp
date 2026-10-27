@@ -679,9 +679,12 @@ ColumnsCacheFillClaims ColumnsCache::claimFills(
     for (const auto & key : to_claim)
     {
         if (fills.try_emplace(key, result.fill).second)
+        {
+            /// Counted key by key: if a later insertion throws, the result releases exactly these.
             result.keys.push_back(key);
+            ++claimed_keys;
+        }
     }
-    claimed_keys += result.keys.size();
     return result;
 }
 

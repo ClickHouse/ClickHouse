@@ -23,7 +23,7 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# One stripe: 8 granules of 8192 rows (two stripes in the last case).
+# One stripe: 8 granules of 8192 rows (three stripes in the last case).
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_cc_flight;
     CREATE TABLE t_cc_flight (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
@@ -39,7 +39,7 @@ function start_claimant()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP COLUMNS CACHE"
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT $PAUSE"
-    $CLICKHOUSE_CLIENT --query_id "$1" --query "$QUERY" &
+    $CLICKHOUSE_CLIENT --query_id "$1" --query "$QUERY$2" &
     claimant_pid=$!
     $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $PAUSE PAUSE"
 }
@@ -112,13 +112,15 @@ echo "-- without columns_cache_wait_for_concurrent_fills the second read does no
 read_while_claimed "${ID}_7" "${ID}_8" ", columns_cache_wait_for_concurrent_fills = 0"
 
 echo "-- a stripe another read wrote after this read looked its range up is served from the cache"
-# Two stripes. The first read claims the first one and stops; meanwhile a second read gives up waiting
-# for it, reads it itself, and claims and writes the second one; then the first read goes on, and has to
-# find the second stripe in the cache although its range was looked up before it was written: it misses
-# only the 8 granules of the first stripe, of 2 columns.
-$CLICKHOUSE_CLIENT --query "INSERT INTO t_cc_flight SELECT number, number * 3, number % 7 FROM numbers(65536, 65536); OPTIMIZE TABLE t_cc_flight FINAL"
-start_claimant "${ID}_9"
-$CLICKHOUSE_CLIENT --query "$QUERY"
+# Three stripes. The first read claims the first one and stops; meanwhile a second read claims and writes
+# the other two; then the first read goes on, and has to find both in the cache although its range was
+# looked up before they were written: it misses only the 8 granules of the first stripe, of 2 columns. Its
+# write budget runs out with the first stripe, so it claims nothing more that would make it look the cache
+# up again anyway.
+$CLICKHOUSE_CLIENT --query "INSERT INTO t_cc_flight SELECT number, number * 3, number % 7 FROM numbers(65536, 131072); OPTIMIZE TABLE t_cc_flight FINAL"
+start_claimant "${ID}_9" ", columns_cache_max_bytes_to_write_to_cache = 1"
+$CLICKHOUSE_CLIENT --query "SELECT sum(a), sum(b) FROM t_cc_flight WHERE k >= 65536
+    SETTINGS use_columns_cache = 1, max_threads = 1, use_query_condition_cache = 0, use_uncompressed_cache = 0"
 finish_claimant
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --query "
