@@ -218,6 +218,11 @@ private:
     const bool is_left;
     const bool is_right;
     const bool is_full;
+    /// Mirror of `HashJoin::canRemoveColumnsFromLeftBlock`: the join emits only the output left
+    /// columns, matching the hash join's layout (and the plan's join output header) exactly -
+    /// required for the `SpillingHashJoin` fallback, whose header the plan computes from the
+    /// hash join. See `removeNonOutputLeftColumns`.
+    const bool prune_left_columns;
     bool keep_left_block_order = false;
     const size_t max_joined_block_rows;
     /// Byte cap of one output chunk, honored by the order-preserving probe (the classic probe
@@ -241,6 +246,7 @@ private:
     LoggerPtr log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
+    void removeNonOutputLeftColumns(Block & block) const;
     void addRightColumns(Block & block, MutableColumns && columns);
 
     template <bool is_all>

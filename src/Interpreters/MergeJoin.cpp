@@ -9,6 +9,7 @@
 #include <Core/SortCursor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -651,6 +652,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     , is_left(isLeft(table_join->kind()))
     , is_right(isRight(table_join->kind()))
     , is_full(isFull(table_join->kind()))
+    , prune_left_columns(HashJoin::canRemoveColumnsFromLeftBlock(*table_join))
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
@@ -1719,8 +1721,45 @@ void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns) cons
     block.setColumns(std::move(columns));
 }
 
+/// Erase the left columns the join does not output. `HashJoin` prunes them since the plan
+/// computes one join output header for a spill-capable hash join and its MergeJoin fallback
+/// (`JoiningTransform::transformHeader` consults the hash join), so this join must emit exactly
+/// the same set - and the standalone `partial_merge` then also stops materializing columns a
+/// `ColumnPermuteTransform` would drop right after. Mirrors `HashJoinResult`: keep the output
+/// left columns by name AND multiplicity; the auxiliary condition column survives too, its
+/// dedicated `erase` in the probe tails runs after this.
+void MergeJoin::removeNonOutputLeftColumns(Block & block) const
+{
+    std::unordered_map<std::string_view, size_t> left_output_remaining;
+    for (const auto & out_column : table_join->getOutputColumns(JoinTableSide::Left))
+        ++left_output_remaining[out_column.name];
+
+    String mask_column_temp_name;
+    if (needConditionJoinColumn())
+    {
+        mask_column_temp_name = deriveTempName(mask_column_name_left, JoinTableSide::Left);
+        ++left_output_remaining[mask_column_temp_name];
+    }
+
+    std::set<size_t> positions_to_erase;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto it = left_output_remaining.find(block.getByPosition(i).name);
+        if (it != left_output_remaining.end() && it->second > 0)
+            --it->second;
+        else
+            positions_to_erase.insert(i);
+    }
+    block.erase(positions_to_erase);
+}
+
 void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 {
+    /// The block holds only the left columns at this point, so this is the one choke point of
+    /// every probe flavor (classic, ordered, the LEFT ANY column reuse, `extraBlock`).
+    if (prune_left_columns)
+        removeNonOutputLeftColumns(block);
+
     for (size_t i = 0; i < right_columns_to_add.columns(); ++i)
     {
         const auto & column = right_columns_to_add.getByPosition(i);
@@ -1869,6 +1908,10 @@ IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
     {
         size_t left_columns_count = left_sample_block.columns();
+        /// The probe emits only the output left columns (see `removeNonOutputLeftColumns`), and
+        /// the non-joined rows must have the same layout.
+        if (prune_left_columns)
+            left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
         chassert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
         return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);

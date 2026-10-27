@@ -412,6 +412,39 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 }
 
+bool SpillingHashJoin::canPreserveLeftBlockOrder() const
+{
+    /// The in-memory join processes the probe side when the build fits under the threshold, so it
+    /// must preserve the order on its own.
+    bool in_memory_join_preserves_order
+        = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
+
+    /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
+    /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
+    bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
+        && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
+        && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any);
+
+    return in_memory_join_preserves_order && merge_join_fallback_is_possible;
+}
+
+void SpillingHashJoin::keepLeftPipelineInOrder()
+{
+    /// The callers must check `canPreserveLeftBlockOrder` first (see IJoin::keepLeftPipelineInOrder).
+    /// In particular, RIGHT and FULL joins can never keep the left order: the non-joined right
+    /// rows are emitted out of band and have no position in the left order.
+    if (!canPreserveLeftBlockOrder())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "SpillingHashJoin cannot preserve the left block order for this join");
+
+    /// The pin must land before the build phase starts: the choice of the spill fallback and the
+    /// delayed-block transforms in the pipeline depend on it.
+    if (state.load(std::memory_order_acquire) != State::COLLECTING)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "SpillingHashJoin got the left-order pin after the build phase started");
+
+    keep_left_block_order = true;
+}
+
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
 {
     chosen_join->onProbePhaseFinish(matched_right_rows);
@@ -561,8 +594,11 @@ IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()
 
 bool SpillingHashJoin::isDelayedBlocksProcessingEnabled() const
 {
-    const auto current_state = state.load(std::memory_order_acquire);
-    return current_state != State::IN_MEMORY_JOIN && current_state != State::MERGE_JOIN;
+    /// `hasDelayedBlocks` is false under the left-order pin: the pipeline is then built without
+    /// the delayed-block transforms, and the MergeJoin fallback has none to process anyway (it
+    /// inherits the nullptr `IJoin::getDelayedBlocks`). The conjunction is defensive - no
+    /// `JoiningTransform` with a delayed input can observe a pinned join.
+    return hasDelayedBlocks() && state.load(std::memory_order_acquire) != State::IN_MEMORY_JOIN;
 }
 
 }
