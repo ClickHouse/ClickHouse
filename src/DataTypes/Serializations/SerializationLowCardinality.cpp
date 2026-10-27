@@ -234,9 +234,8 @@ struct SerializeStateLowCardinality : public ISerialization::SerializeBinaryBulk
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
-    /// The phases of a raised dictionary size (`SerializeBinaryBulkSettings::low_cardinality_raised_max_dictionary_size`):
-    /// probing during the first granules, raised while every granule uses a large share of the dictionary,
-    /// configured (`low_cardinality_max_dictionary_size`) for the rest of the part.
+    /// Phases of `low_cardinality_raised_max_dictionary_size`: Probing for the first granules, Raised while each granule
+    /// uses a large share of the dictionary, Configured (`low_cardinality_max_dictionary_size`) for the rest of the part.
     enum class RaisedDictionarySize : uint8_t
     {
         None,
