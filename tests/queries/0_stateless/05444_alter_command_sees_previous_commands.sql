@@ -221,3 +221,13 @@ ALTER TABLE t_alter_previous_commands_if DROP COLUMN IF EXISTS x, ADD COLUMN IF 
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_if' ORDER BY position;
 SELECT * FROM t_alter_previous_commands_if;
 DROP TABLE t_alter_previous_commands_if;
+
+-- CLEAR COLUMN keeps the column for the later commands of the statement.
+CREATE TABLE t_alter_previous_commands_clear (id UInt64, q UInt32, r UInt32, `n.c` Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_alter_previous_commands_clear VALUES (1, 42, 43, [44]);
+ALTER TABLE t_alter_previous_commands_clear CLEAR COLUMN IF EXISTS n, ADD COLUMN IF NOT EXISTS n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+ALTER TABLE t_alter_previous_commands_clear CLEAR COLUMN q, RENAME COLUMN r TO q; -- { serverError DUPLICATE_COLUMN }
+ALTER TABLE t_alter_previous_commands_clear CLEAR COLUMN q, RENAME COLUMN IF EXISTS q TO s; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_alter_previous_commands_clear CLEAR COLUMN q, ADD COLUMN s UInt32 AFTER q SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_clear;
+DROP TABLE t_alter_previous_commands_clear;

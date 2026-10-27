@@ -2302,6 +2302,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    NameSet cleared_columns;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2551,7 +2552,15 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
-                all_columns.remove(command.column_name);
+
+                /// A cleared column stays in the table, as in `prepare`.
+                if (command.clear)
+                {
+                    for (const auto & column : all_columns.getNested(command.column_name))
+                        cleared_columns.insert(column.name);
+                }
+                else
+                    all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
             {
@@ -2634,6 +2643,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
+                                                             "in a single ALTER query", backQuote(column_name));
+
+            if (cleared_columns.contains(column_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clear and rename the same column {} "
                                                              "in a single ALTER query", backQuote(column_name));
 
             String from_nested_table_name = Nested::extractTableName(command.column_name);
@@ -2736,7 +2749,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     /// Parameterized views do not have 'columns' in their metadata
     bool is_parameterized_view = table->as<StorageView>() && table->as<StorageView>()->isParameterizedView();
 
-    if (!is_parameterized_view && all_columns.empty())
+    if (!is_parameterized_view
+        && std::all_of(all_columns.begin(), all_columns.end(), [&](const ColumnDescription & column) { return cleared_columns.contains(column.name); }))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
