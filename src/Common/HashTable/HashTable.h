@@ -1654,7 +1654,7 @@ public:
           * https://en.wikipedia.org/wiki/Linear_probing
           * https://en.wikipedia.org/wiki/Open_addressing
           * Algorithm without recomputing hash but keep probes difference value (difference of natural cell position and inserted one)
-          * in cell https://arxiv.org/ftp/arxiv/papers/0909/0909.2547.pdf
+          * in cell https://arxiv.org/pdf/0909.2547
           *
           * Currently we use algorithm with hash recomputing on each step from https://en.wikipedia.org/wiki/Open_addressing
           */
