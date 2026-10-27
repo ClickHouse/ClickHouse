@@ -23,7 +23,7 @@ OPTIMIZE TABLE tab FINAL;
 
 SELECT count() FROM tab WHERE text LIKE '%foobar%'
 SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1,
-         text_index_like_max_postings_to_read = 0, enable_analyzer = 1, max_rows_to_read = 0;
+         text_index_like_max_postings_to_read = 0, max_rows_to_read = 0;
 
 -- Pattern that matches nothing: result is an all-default sparse column.
 
