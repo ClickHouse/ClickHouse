@@ -12,8 +12,10 @@ DROP ROW POLICY IF EXISTS p_05453_alias ON t_alias;
 DROP ROW POLICY IF EXISTS p_05453_both_child ON t_both;
 DROP ROW POLICY IF EXISTS p_05453_both_merge ON m_both;
 DROP ROW POLICY IF EXISTS p_05453_nested ON m_nested_inner;
+DROP ROW POLICY IF EXISTS p_05453_nested_both_child ON t_nested_both;
+DROP ROW POLICY IF EXISTS p_05453_nested_both_merge ON m_nested_both_inner;
 DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_final, t_final, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
-    m_nested_outer, m_nested_inner, t_nested;
+    m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;
 
 CREATE TABLE t_mt (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_mt VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
@@ -70,6 +72,15 @@ CREATE TABLE m_nested_outer AS t_nested ENGINE = Merge(currentDatabase(), '^m_ne
 CREATE ROW POLICY p_05453_nested ON m_nested_inner USING tenant = 'a' TO ALL;
 SELECT 'nested prewhere', count() FROM m_nested_outer PREWHERE toUInt64(payload) > 10;
 
+CREATE TABLE t_nested_both (tenant String, region String, payload String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_nested_both VALUES ('a', 'eu', '5'), ('a', 'eu', '20'), ('b', 'eu', 'secret'), ('a', 'eu', '30'), ('a', 'us', 'other');
+CREATE TABLE m_nested_both_inner AS t_nested_both ENGINE = Merge(currentDatabase(), '^t_nested_both$');
+CREATE TABLE m_nested_both_outer AS t_nested_both ENGINE = Merge(currentDatabase(), '^m_nested_both_inner$');
+CREATE ROW POLICY p_05453_nested_both_child ON t_nested_both USING tenant = 'a' TO ALL;
+CREATE ROW POLICY p_05453_nested_both_merge ON m_nested_both_inner USING region = 'eu' TO ALL;
+SELECT 'nested both rows', payload FROM m_nested_both_outer ORDER BY payload;
+SELECT 'nested both prewhere', count() FROM m_nested_both_outer PREWHERE toUInt64(payload) > 10;
+
 DROP ROW POLICY p_05453_mt ON t_mt;
 DROP ROW POLICY p_05453_memory ON t_memory;
 DROP ROW POLICY p_05453_final ON t_final;
@@ -78,5 +89,7 @@ DROP ROW POLICY p_05453_alias ON t_alias;
 DROP ROW POLICY p_05453_both_child ON t_both;
 DROP ROW POLICY p_05453_both_merge ON m_both;
 DROP ROW POLICY p_05453_nested ON m_nested_inner;
+DROP ROW POLICY p_05453_nested_both_child ON t_nested_both;
+DROP ROW POLICY p_05453_nested_both_merge ON m_nested_both_inner;
 DROP TABLE m_mt, t_mt, m_memory, t_memory, m_final, t_final, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
-    m_nested_outer, m_nested_inner, t_nested;
+    m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;

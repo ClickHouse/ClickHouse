@@ -2072,9 +2072,9 @@ namespace
 /// The filter column is dropped after filtering, so its name must be unique against the DAG outputs and
 /// against the child table's columns: a table may have a column named __row_policy_filter, and on
 /// SELECT * it flows into the same block as the filter column, so a clash makes Block::insert throw.
-String makeUniqueRowPolicyFilterColumnName(const ActionsDAG & dag, const NamesAndTypesList & table_columns)
+String makeUniqueRowPolicyFilterColumnName(const ActionsDAG & dag, const NamesAndTypesList & table_columns, const NameSet & other_names = {})
 {
-    NameSet reserved_names;
+    NameSet reserved_names = other_names;
     for (const auto & column : table_columns)
         reserved_names.insert(column.name);
 
@@ -2203,8 +2203,24 @@ FilterDAGInfoPtr ReadFromMerge::RowPolicyData::makeRowLevelFilter(
     }
 
     /// One row-level filter for both policies: the child's and the `Merge` table's.
-    auto dag = ActionsDAG::merge(actions_dag.clone(), forwarded->actions.clone());
-    const auto * policy_node = &dag.findInOutputs(filter_column_name);
+    /// `forwarded` may be another `Merge`'s child policy filter, named like ours.
+    NameSet forwarded_names;
+    for (const auto * node : forwarded->actions.getInputs())
+        forwarded_names.insert(node->result_name);
+    for (const auto * node : forwarded->actions.getOutputs())
+        forwarded_names.insert(node->result_name);
+
+    auto policy_dag = actions_dag.clone();
+    const auto & policy_filter = policy_dag.findInOutputs(filter_column_name);
+    const auto & policy_alias = policy_dag.addAlias(
+        policy_filter, makeUniqueRowPolicyFilterColumnName(policy_dag, columns.getAll(), forwarded_names));
+    for (auto & output : policy_dag.getOutputs())
+        if (output == &policy_filter)
+            output = &policy_alias;
+    const String policy_column_name = policy_alias.result_name;
+
+    auto dag = ActionsDAG::merge(std::move(policy_dag), forwarded->actions.clone());
+    const auto * policy_node = &dag.findInOutputs(policy_column_name);
     const auto * forwarded_node = &dag.findInOutputs(forwarded->column_name);
     const auto & conjunction_node = dag.addFunction(FunctionFactory::instance().get("and", local_context), {policy_node, forwarded_node}, {});
 

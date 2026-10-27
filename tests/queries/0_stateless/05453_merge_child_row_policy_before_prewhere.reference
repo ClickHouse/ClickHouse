@@ -14,3 +14,7 @@ both rows	30
 both rows with region	eu	20
 both rows with region	eu	30
 nested prewhere	2
+nested both rows	20
+nested both rows	30
+nested both rows	5
+nested both prewhere	2
