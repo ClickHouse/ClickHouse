@@ -1,0 +1,56 @@
+equals
+10
+10
+10
+Parts: 1/3
+Granules: 10/30
+Parts: 1/1
+Granules: 10/10
+Parts: 1/1
+Granules: 10/10
+Parts: 3/3
+Granules: 30/30
+Parts: 3/3
+Granules: 30/30
+Parts: 1/3
+Granules: 10/30
+in
+10
+10
+10
+Parts: 1/3
+Granules: 10/30
+Parts: 1/1
+Granules: 10/10
+Parts: 1/1
+Granules: 10/10
+Parts: 3/3
+Granules: 30/30
+Parts: 3/3
+Granules: 30/30
+Parts: 1/3
+Granules: 10/30
+a nonzero byte past the key width matches nothing
+0
+0
+0
+30
+30
+30
+10
+10
+10
+30
+30
+30
+not equals
+20
+20
+20
+nullable set
+10
+10
+10
+nullable key
+10
+10

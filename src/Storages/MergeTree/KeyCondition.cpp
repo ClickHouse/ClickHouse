@@ -48,6 +48,7 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
@@ -2337,6 +2338,16 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// `FixedString` values of different widths compare as if the narrower one were padded with zero bytes, so a value
+/// wider than `width` stands for its first `width` bytes if all the other bytes are zero bytes, and for no value otherwise.
+static std::optional<std::string_view> narrowFixedStringToWidth(std::string_view value, size_t width)
+{
+    chassert(value.size() > width);
+    if (std::ranges::any_of(value.substr(width), [](char c) { return c != '\0'; }))
+        return {};
+    return value.substr(0, width);
+}
+
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
 
 /// The values one step below and one step above each value of a `Decimal32` or `Decimal64` column, or nothing if a value is
@@ -3552,6 +3563,45 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         size_t set_element_index = mapping.index_mapping.tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
+
+        /// `IN` casts a `FixedString` key into a wider `FixedString` element by padding it with zero bytes, `has` does not.
+        if (membership_compares_carriers)
+        {
+            const DataTypePtr predicate_type = mapping.set_transform ? mapping.set_transform->input_type : key_column_type;
+            const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(removeLowCardinalityAndNullable(predicate_type).get());
+            const auto * fixed_element = typeid_cast<const DataTypeFixedString *>(removeLowCardinalityAndNullable(set_element_type).get());
+            if (fixed_key && fixed_element && fixed_element->getN() > fixed_key->getN())
+            {
+                const size_t width = fixed_key->getN();
+                const ColumnPtr full_column = set_column->convertToFullColumnIfLowCardinality();
+                const auto * nullable_column = typeid_cast<const ColumnNullable *>(full_column.get());
+                const auto & values = assert_cast<const ColumnFixedString &>(nullable_column ? nullable_column->getNestedColumn() : *full_column);
+
+                auto narrowed_values = ColumnFixedString::create(width);
+                for (size_t i = 0; i < values.size(); ++i)
+                {
+                    const std::string_view value = values.getDataAt(i);
+                    const std::string_view prefix = value.substr(0, width);
+                    narrowed_values->insertData(prefix.data(), prefix.size());
+                    if (!narrowFixedStringToWidth(value, width) && !(nullable_column && nullable_column->isNullAt(i)))
+                        filter[i] = 0;
+                }
+
+                const DataTypePtr narrowed_type = std::make_shared<DataTypeFixedString>(width);
+                if (nullable_column)
+                {
+                    set_column = ColumnNullable::create(std::move(narrowed_values), nullable_column->getNullMapColumnPtr());
+                    set_element_type = makeNullable(narrowed_type);
+                }
+                else
+                {
+                    set_column = std::move(narrowed_values);
+                    set_element_type = narrowed_type;
+                }
+                transformed_set_columns[set_element_index] = set_column;
+                filter_used = true;
+            }
+        }
 
         /// `IN` asks the `Set`, and a `Set` over a `Dynamic` or a `Variant` element is carrier-sensitive:
         /// it hashes and compares the type (the discriminator) each value was inserted with before the
@@ -6021,11 +6071,11 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 /// the single padded value while `convertFieldToType` below builds a point
                 /// range from the padding:
                 ///   - against a `String` key it matches the family `value` + trailing '\0'*
-                ///     (`'abc'`, `'abc\0'`, ...), not a point;
-                ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
-                ///     bytes, which no longer map into the key domain.
-                /// Either way the point range is unsound and prunes matching granules, so
-                /// decline this candidate. A wider-or-equal `FixedString(M)` key (`M >= N`) pads
+                ///     (`'abc'`, `'abc\0'`, ...), not a point, so the point range is unsound
+                ///     and prunes matching granules: decline this candidate;
+                ///   - against a narrower `FixedString(M)` key (N > M) it is cut to M bytes if
+                ///     the other bytes are zero bytes, and declined otherwise.
+                /// A wider-or-equal `FixedString(M)` key (`M >= N`) pads
                 /// the constant into exactly one key value, so a point range is sound.
                 /// `isFixedStringConstant` strips `LowCardinality` and `Nullable`: a wrapped constant such as
                 /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
@@ -6039,8 +6089,16 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 if (candidate.const_is_fixed_string && isStringOrFixedString(key_expr_type_not_null))
                 {
                     const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
-                    if (!fixed_key || fixed_key->getN() < const_value.safeGet<String>().size())
+                    if (!fixed_key)
                         return std::nullopt;
+
+                    if (fixed_key->getN() < const_value.safeGet<String>().size())
+                    {
+                        const auto narrowed = narrowFixedStringToWidth(const_value.safeGet<String>(), fixed_key->getN());
+                        if (!narrowed)
+                            return std::nullopt;
+                        const_value = String(*narrowed);
+                    }
                 }
 
                 /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
