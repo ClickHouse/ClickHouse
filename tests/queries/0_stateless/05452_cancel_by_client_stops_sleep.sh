@@ -60,12 +60,13 @@ $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
 wait_until_gone "cluster function" "initial_query_id = '$query_id'"
 
 # The client dies while it receives the result of one stream and the other one sleeps, so the server sees that on a
-# write (`interactive_delay` keeps it from polling the socket first).
+# write (`interactive_delay` keeps it from polling the socket first). The first stream is longer than the test profile's
+# `max_rows_to_read` allows.
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_select_killed"
 $CLICKHOUSE_CLIENT --query_id "$query_id" --interactive_delay 600000000 -q "
     SELECT number, 0 AS s FROM numbers(1000000000) UNION ALL SELECT number, sleepEachRow(3) AS s FROM numbers(100)
     SETTINGS max_threads = 2, max_threads_min_free_memory_per_thread = 0, use_concurrency_control = 0, max_block_size = 100,
-        function_sleep_max_microseconds_per_block = 600000000" >/dev/null 2>&1 &
+        max_rows_to_read = 0, function_sleep_max_microseconds_per_block = 600000000" >/dev/null 2>&1 &
 client_pid=$!
 wait_for_query "query_id = '$query_id'"
 kill -KILL $client_pid
