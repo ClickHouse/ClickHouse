@@ -42,6 +42,8 @@ filegroup(
         crate_name = "_ch_rust_" + ("skim_rust" if name == "skim" else name),
         crate_root = name + "/src/lib.rs",
         edition = "2021",
+        # The final ClickHouse link supplies libc++, libc++abi, and libunwind.
+        features = ["-static_link_cpp_runtimes"],
         deps = all_crate_deps(
             package_name = "rust/workspace/" + name,
             normal = True,

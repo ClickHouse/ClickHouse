@@ -106,6 +106,8 @@ rust_static_library(
     name = "delta_kernel_ffi",
     srcs = ["delta.rs"],
     edition = "2021",
+    # The final ClickHouse link supplies libc++, libc++abi, and libunwind.
+    features = ["-static_link_cpp_runtimes"],
     deps = ["@delta_crates//:delta_kernel_ffi"],
 )
 
@@ -113,6 +115,7 @@ rust_static_library(
     name = "chdig",
     srcs = ["chdig.rs"],
     edition = "2024",
+    features = ["-static_link_cpp_runtimes"],
     deps = ["@chdig_crates//:chdig"],
 )
 
