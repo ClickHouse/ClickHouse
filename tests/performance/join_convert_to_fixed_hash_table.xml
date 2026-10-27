@@ -75,8 +75,8 @@
     <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'auto', enable_join_fixed_hash_table_conversion = 1</query>
 
     <!-- Grace hash join algorithm -->
-    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'grace_hash', enable_join_fixed_hash_table_conversion = 0</query>
-    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'grace_hash', enable_join_fixed_hash_table_conversion = 1</query>
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = '200M', enable_join_fixed_hash_table_conversion = 0</query>
+    <query>SELECT p.id0, b.id0 FROM probe p LEFT JOIN build_5k b ON p.id0 = b.id0 FORMAT Null SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = '200M', enable_join_fixed_hash_table_conversion = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS build_5k</drop_query>
     <drop_query>DROP TABLE IF EXISTS build_10k</drop_query>

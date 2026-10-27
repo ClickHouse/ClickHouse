@@ -22,6 +22,10 @@ struct SpatialFilter
 
     /// Bounding box of the constant query geometry.
     double query_xmin = 0, query_ymin = 0, query_xmax = 0, query_ymax = 0;
+
+    /// Whether the geometry column is read as a single point (a `Tuple`), so the predicate cannot
+    /// interpret its value as a line or a polygon connecting several vertices.
+    bool column_is_point = false;
 };
 
 /// Walk filter_actions_dag looking for calls to spatial functions with isSpatialPredicate()==true
@@ -35,8 +39,8 @@ std::vector<SpatialFilter> extractSpatialFilters(
 /// using only geospatial_statistics.bbox baked into the geometry column's ColumnMetaData.
 /// covering.bbox is handled via the standard KeyCondition hyperrectangle path.
 bool rowGroupFailsSpatialFilters(
-    const parq::RowGroup & rg_meta,
-    const std::vector<Reader::PrimitiveColumnInfo> & primitive_columns,
+    const Reader & reader,
+    size_t row_group_idx,
     const std::vector<SpatialFilter> & filters);
 
 /// Build a KeyCondition for: (xmin <= q_xmax) AND (xmax >= q_xmin) AND (ymin <= q_ymax) AND (ymax >= q_ymin).

@@ -229,6 +229,17 @@ if (OS_DARWIN)
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
+    # Emit chained fixups (`LC_DYLD_CHAINED_FIXUPS`) instead of classic dyld rebase/bind opcodes.
+    # The clickhouse binary has about 1.4 million fixups; with opcodes dyld applies all of them
+    # at launch, touching every data page, while chained fixups are applied lazily as pages are
+    # first touched, which makes startup faster.
+    # Chained fixups need macOS 11, which is already the minimum for arm64, so this is not
+    # enabled for x86_64, where the deployment target is 10.15.
+    # Both lld and the cctools `ld` used for cross-compilation in CI understand the flag.
+    if (ARCH_AARCH64)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-fixup_chains")
+    endif ()
+
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -381,14 +392,15 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 
 # Align functions and loops to reduce performance sensitivity to code layout changes,
 # providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+# -falign-loops applies only to non-LTO builds; ThinLTO builds pass the loop alignment to the linker below.
+# Sanitizer builds are not benchmarked, and the padding counts against the 2 GiB reach of x86-64 code.
+if (NOT SANITIZE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
+endif ()
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+if (NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
@@ -399,7 +411,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     endif ()
 endif()
 
-if (ARCH_AMD64)
+if (ARCH_AMD64 AND NOT SANITIZE)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
     # which makes benchmark results more stable.
     set(BRANCHES_WITHIN_32B_BOUNDARIES "-mbranches-within-32B-boundaries")
@@ -433,6 +445,13 @@ endif ()
 
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
+
+# Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
+# to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
+# llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+if (USE_MUSL)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
+endif ()
 
 # Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
 # computed result - `errno` is the only observable difference and ClickHouse never reads it
@@ -506,16 +525,23 @@ endif()
 # https://stackoverflow.com/questions/63386189/whats-the-difference-between-a-compilers-o0-option-and-og-option/63386263#63386263
 set(DEBUG_O_LEVEL "g" CACHE STRING "The -Ox level used for debug builds")
 
+# x86-64 MSan builds use -O2: their instrumented code must stay within the 2 GiB reach of the small code model.
+if (SANITIZE STREQUAL "memory" AND ARCH_AMD64 AND NOT ENABLE_FUZZING)
+    set (RELWITHDEBINFO_OPT_LEVEL "-O2")
+else ()
+    set (RELWITHDEBINFO_OPT_LEVEL "-O3")
+endif ()
+
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
-set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
+set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_CXX_FLAGS_ADD}")
 
 set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} ${CMAKE_C_FLAGS_ADD}")
-set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
+set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_C_FLAGS_ADD}")
 
 set (CMAKE_ASM_FLAGS                     "${CMAKE_ASM_FLAGS} ${COMPILER_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
-set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} -O3 ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
+set (CMAKE_ASM_FLAGS_RELWITHDEBINFO      "${CMAKE_ASM_FLAGS_RELWITHDEBINFO} ${RELWITHDEBINFO_OPT_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O${DEBUG_O_LEVEL} ${DEBUG_INFO_FLAGS} ${CMAKE_ASM_FLAGS_ADD}")
 
 if (OS_DARWIN)
@@ -567,6 +593,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
 
     if(LINKER_NAME MATCHES "lld")
         set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
+        # ThinLTO generates code in the linker, which does not see -falign-loops.
+        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,-mllvm,-align-loops=32")
     endif()
 
     if (ENABLE_CFI)
@@ -647,16 +675,19 @@ include(cmake/dbms_glob_sources.cmake)
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
 #
+# The code is compiled with -fPIE, not -fPIC: it is linked into an executable, where the symbol
+# interposition that -fPIC pays for (GOT loads, TLS descriptors) never happens.
+#
 # This has to be configured before the first targets are created, in particular before
 # cmake/linux/default_libs.cmake adds the C++ runtime libraries from contrib: CMake copies the flags
 # into each subdirectory when add_subdirectory is called, so targets created earlier would silently
-# compile without -fPIC. That only breaks with compilers that do not default to PIE
+# compile without -fPIE. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
 if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
-    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # -fPIE only makes the code relocatable; whether the executable itself is position independent is
     # the compiler driver's default unless the linker is asked explicitly, so ask it.
     # musl links with -static-pie instead (see cmake/linux/default_libs.cmake).
     # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
@@ -667,8 +698,8 @@ endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
 endif()
 
 add_library(global-group INTERFACE)
@@ -683,6 +714,7 @@ elseif (OS_SUNOS)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
 endif ()
+
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
 
