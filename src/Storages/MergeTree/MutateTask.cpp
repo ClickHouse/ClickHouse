@@ -704,6 +704,18 @@ static void splitAndModifyMutationCommands(
                 break;
             }
 
+            /// A pending `MODIFY COLUMN` that changes the type (queued after this mutation) is already in
+            /// the table metadata, but not in the part. The fast path keeps the stored bytes of the source
+            /// type and would resolve the current codec against them (e.g. `T64` against `Float64`, which
+            /// the codec rejects), so the mutation would fail on every retry and, being a grouping barrier,
+            /// block the conversion that makes the codec applicable. Re-serialize the part instead: the
+            /// whole-part rewrite reads the column converted to its current type.
+            if (!part_columns.get(command.column_name).type->equals(*column_desc->type))
+            {
+                recompress_rewrites_whole_part = true;
+                break;
+            }
+
             /// A lossy codec (e.g. `SZ3`) does not decompress to the original bytes, which violates
             /// the fast path's premise that recompression keeps the decompressed content byte-identical
             /// (carried-over uncompressed checksums and marks), and the raw-block path cannot perform
@@ -729,6 +741,8 @@ static void splitAndModifyMutationCommands(
         NameSet dropped_columns;
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+        const bool has_recompress_command = std::ranges::any_of(
+            commands, [](const auto & command) { return command.type == MutationCommand::Type::RECOMPRESS_COLUMN; });
 
         for (const auto & command : commands)
         {
@@ -1028,8 +1042,24 @@ static void splitAndModifyMutationCommands(
                     continue;
                 }
 
+                /// The interpreter reads through the current table metadata, so a column whose type is
+                /// changed by a pending `MODIFY COLUMN` is converted to its current type here. Normally that
+                /// `MODIFY COLUMN` is grouped into the same task and describes the conversion itself, but
+                /// `RECOMPRESS COLUMN` is a grouping barrier and runs alone. Describe the type actually
+                /// written, so that the interpreter rebuilds the indices and projections that depend on the
+                /// converted column; otherwise they are hardlinked with the bounds of the old type, and the
+                /// later `MODIFY COLUMN` sees the new type in the part and skips rebuilding them too.
+                DataTypePtr read_type = column.type;
+                if (has_recompress_command)
+                {
+                    if (const auto * table_column = table_columns.tryGet(column.name);
+                        table_column && table_column->default_desc.kind != ColumnDefaultKind::Alias
+                        && table_column->default_desc.kind != ColumnDefaultKind::Ephemeral)
+                        read_type = table_column->type;
+                }
+
                 for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = read_type});
             }
             else if (dropped_columns.contains(column.name))
             {
