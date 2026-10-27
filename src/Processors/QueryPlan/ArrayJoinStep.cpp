@@ -65,7 +65,9 @@ void ArrayJoinStep::updateOutputHeader()
 
 std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
 {
-    if (is_unaligned)
+    /// `array_join_use_nulls` makes the joined elements `Nullable`, which `arrayJoin(emptyArrayToSingle(arr))` does
+    /// not represent: index analysis would treat `x IS NULL` as constant false and skip the empty-array rows.
+    if (is_unaligned || array_join.array_join_use_nulls)
         return {};
 
     ActionsDAG dag(getInputHeaders().front()->getNamesAndTypesList());

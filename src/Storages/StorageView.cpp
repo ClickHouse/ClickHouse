@@ -14,6 +14,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -38,6 +39,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -67,6 +69,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsBool array_join_use_nulls;
     extern const SettingsBool extremes;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_result_rows;
@@ -489,6 +492,38 @@ bool hasLeftArrayJoin(const IAST & ast)
     return false;
 }
 
+namespace
+{
+
+void findArrayJoinUseNullsImpl(const IAST & ast, bool & enabled, bool & disabled)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+    {
+        if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"))
+            (SettingFieldBool(*value) ? enabled : disabled) = true;
+    }
+
+    for (const auto & child : ast.children)
+    {
+        if (child)
+            findArrayJoinUseNullsImpl(*child, enabled, disabled);
+    }
+}
+
+}
+
+std::optional<bool> findArrayJoinUseNulls(const IAST & ast)
+{
+    bool enabled = false;
+    bool disabled = false;
+    findArrayJoinUseNullsImpl(ast, enabled, disabled);
+    if (enabled)
+        return true;
+    if (disabled)
+        return false;
+    return std::nullopt;
+}
+
 VirtualColumnsDescription StorageView::createVirtuals()
 {
     VirtualColumnsDescription desc;
@@ -783,7 +818,11 @@ void StorageView::readImpl(
                                 "You may explicitly specify 'join_use_nulls' in 'CREATE VIEW' query to avoid this error",
                                 getStorageID().getFullTableName());
 
-        if (hasLeftArrayJoin(*select_with_union))
+        /// Only the nullability introduced by an enabled `array_join_use_nulls` is reported: with the setting
+        /// disabled, a `Nullable` output of `LEFT ARRAY JOIN` comes from a `Nullable` element type, and the
+        /// conversion below handles it as it always did.
+        if (hasLeftArrayJoin(*select_with_union)
+            && findArrayJoinUseNulls(*select_with_union).value_or(view_context->getSettingsRef()[Setting::array_join_use_nulls]))
             throw DB::Exception(ErrorCodes::INCORRECT_QUERY,
                                 "Query from view {} returned Nullable column having not Nullable type in structure. "
                                 "If query from view has LEFT ARRAY JOIN, it may be caused by different values of 'array_join_use_nulls' setting. "

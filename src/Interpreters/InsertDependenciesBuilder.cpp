@@ -52,7 +52,6 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Formats/FormatFactory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -154,23 +153,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Whether any `SETTINGS` clause of the query enables `array_join_use_nulls`.
-bool enablesArrayJoinUseNulls(const IAST & ast)
-{
-    if (const auto * set_query = ast.as<ASTSetQuery>())
-    {
-        if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"); value && SettingFieldBool(*value))
-            return true;
-    }
-
-    for (const auto & child : ast.children)
-    {
-        if (child && enablesArrayJoinUseNulls(*child))
-            return true;
-    }
-    return false;
-}
 
 /// True when `target` is an Enum that contains `source` with the same in-memory width, i.e. `source`
 /// is a narrower Enum whose members are a subset of `target`. This mirrors the compatibility that
@@ -672,7 +654,7 @@ private:
         /// `LEFT ARRAY JOIN` under `array_join_use_nulls` makes the joined columns `Nullable`, which cannot be
         /// stored into the non-`Nullable` columns of the target table. Report it explicitly, like `StorageView`
         /// does for ordinary views.
-        if ((local_context->getSettingsRef()[Setting::array_join_use_nulls] || enablesArrayJoinUseNulls(*select_query))
+        if (findArrayJoinUseNulls(*select_query).value_or(local_context->getSettingsRef()[Setting::array_join_use_nulls])
             && hasLeftArrayJoin(*select_query)
             && changedNullabilityOneWay(pipeline.getHeader(), inner_metadata->getSampleBlock()))
         {
