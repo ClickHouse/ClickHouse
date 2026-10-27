@@ -497,6 +497,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
+    /// Stopped below after `check_tables`, so that a refused drop leaves the replication running.
+    bool stop_replication = false;
 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
@@ -511,7 +513,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP IF EMPTY is not implemented for databases");
 
     if (!truncate && database->hasReplicationThread())
-        database->stopReplication();
+        stop_replication = true;
 
     if (database->shouldBeEmptyOnDetach())
     {
@@ -623,30 +625,46 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
             };
 
-            collect_tables();
-
             /// If there are refreshable materialized views, we need to stop them before getting the
             /// final list of tables to drop.
             std::vector<StoragePtr> tables_to_prepare_early;
-            for (const StoragePtr & table_ptr : tables_to_prepare)
-            {
-                if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
-                {
-                    if (materialized_view->canCreateOrDropOtherTables())
-                        tables_to_prepare_early.push_back(table_ptr);
-                }
-            }
-
-            /// Stopping a refreshable view drops, without a size check, the temporary table its refresh has created.
             std::unordered_set<String> running_refresh_tables;
-            for (const StoragePtr & view : tables_to_prepare_early)
+            auto collect_and_check_tables = [&]
             {
-                StorageID view_id = view->getStorageID();
-                for (const auto & task : getContext()->getRefreshSet().findTasks(view_id))
-                    if (task->hasRefreshTemporaryTable())
-                        running_refresh_tables.insert(".tmp" + StorageMaterializedView::generateInnerTableName(view_id));
+                collect_tables();
+
+                tables_to_prepare_early.clear();
+                for (const StoragePtr & table_ptr : tables_to_prepare)
+                {
+                    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(table_ptr.get()))
+                    {
+                        if (materialized_view->canCreateOrDropOtherTables())
+                            tables_to_prepare_early.push_back(table_ptr);
+                    }
+                }
+
+                /// Stopping a refreshable view drops, without a size check, the temporary table its refresh has created.
+                running_refresh_tables.clear();
+                for (const StoragePtr & view : tables_to_prepare_early)
+                {
+                    StorageID view_id = view->getStorageID();
+                    for (const auto & task : getContext()->getRefreshSet().findTasks(view_id))
+                        if (task->hasRefreshTemporaryTable())
+                            running_refresh_tables.insert(".tmp" + StorageMaterializedView::generateInnerTableName(view_id));
+                }
+                check_tables(running_refresh_tables);
+            };
+
+            collect_and_check_tables();
+
+            if (stop_replication)
+            {
+                /// The replication can create, drop and rename tables until it is stopped.
+                database->stopReplication();
+                tables_to_prepare.clear();
+                tables_to_drop.clear();
+                collect_and_check_tables();
             }
-            check_tables(running_refresh_tables);
 
             if (!tables_to_prepare_early.empty())
             {

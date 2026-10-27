@@ -63,4 +63,14 @@ SELECT 'transaction', is_readonly FROM system.replicas WHERE database = currentD
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT 'dropped', count() FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
+
+-- A refused DROP DATABASE leaves the replication of a `Replicated` database running.
+SET distributed_ddl_output_mode = 'none';
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Replicated('/test/databases/{database}/05320', 's1', 'r1');
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO {CLICKHOUSE_DATABASE_2:Identifier}.t VALUES (1);
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier} SETTINGS max_table_size_to_drop = 1; -- { serverError TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.t2 (id UInt64) ENGINE = MergeTree ORDER BY id;
+SELECT 'replicated', groupArray(name) FROM (SELECT name FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} ORDER BY name);
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};

@@ -16,3 +16,4 @@ transaction	mt	1	5
 transaction	rmt	1	5
 transaction	0
 dropped	0
+replicated	['t','t2']
