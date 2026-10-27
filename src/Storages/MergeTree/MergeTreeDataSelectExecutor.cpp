@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -924,12 +925,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     /// Statistics that are already in memory cost nothing, so the parts with them are always pruned.
     /// Only the parts whose statistics would be loaded count for the size of the read.
-    std::vector<bool> estimates_in_memory(parts.size());
+    std::vector<Estimates> parts_estimates(parts.size());
+    std::vector<char> estimates_in_memory(parts.size());
     RangesInDataParts parts_to_load_statistics;
     for (size_t i = 0; i < parts.size(); ++i)
     {
-        estimates_in_memory[i] = parts[i].data_part->areEstimatesInMemory(required_columns);
-        if (!estimates_in_memory[i])
+        if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
+        {
+            parts_estimates[i] = std::move(*estimates);
+            estimates_in_memory[i] = true;
+        }
+        else
             parts_to_load_statistics.push_back(parts[i]);
     }
 
@@ -943,35 +949,47 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         LOG_TRACE(log, "Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key",
             parts_to_load_statistics.size(), min_marks_to_use_statistics);
 
+    /// A part needs its statistics loaded only if they are not in memory and the read is large enough to load them.
+    auto needs_loading = [&](size_t part_index) { return load_statistics && !estimates_in_memory[part_index]; };
+
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
 
-    for (size_t i = 0; i < parts.size(); ++i)
-    {
-        const auto & part = parts[i];
-        if (!load_statistics && !estimates_in_memory[i])
+    MergeTreeData::loadStatisticsOfPartsInParallel(
+        parts.size(),
+        settings[Setting::max_threads],
+        [&](size_t part_index) { return !needs_loading(part_index); },
+        [&](size_t part_index)
         {
-            res_parts.push_back(part);
-            continue;
-        }
-
-        auto estimates = part.data_part->getEstimates(required_columns);
-        try
+            if (needs_loading(part_index))
+                parts_estimates[part_index] = parts[part_index].data_part->getEstimates(required_columns);
+        },
+        [&](size_t part_index)
         {
-            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            const auto & part = parts[part_index];
+            if (!load_statistics && !estimates_in_memory[part_index])
             {
-                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                continue;
+                res_parts.push_back(part);
+                return;
             }
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, fmt::format(
-                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                part.data_part->name), LogsLevel::debug);
-        }
-        res_parts.push_back(part);
-    }
+
+            const Estimates estimates = std::move(parts_estimates[part_index]);
+            try
+            {
+                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+                {
+                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                    return;
+                }
+            }
+            catch (const Exception &)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                    part.data_part->name), LogsLevel::debug);
+            }
+            res_parts.push_back(part);
+        });
 
     if (res_parts.size() < total_parts_before)
     {

@@ -170,6 +170,8 @@ public:
     ColumnSizeByNameConstPtr getColumnSizes() const;
     /// Return the size of all files required to read the specified subcolumn.
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
+    /// The same for several subcolumns at once, listed by one reader; the results go to the cache as well.
+    std::vector<ColumnSize> getSubcolumnSizes(const NamesAndTypesList & subcolumns) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -269,8 +271,11 @@ public:
     /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
     /// because the statistics of these columns are cached or the part has none for them.
     bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
-    /// Whether `getEstimates(required_columns)` would not read anything from disk.
-    bool areEstimatesInMemory(const NameSet & required_columns) const;
+    /// The result of `loadStatistics(required_columns, cache)` if every statistics file it would read is in the cache,
+    /// otherwise `std::nullopt`. It never reads from disk.
+    std::optional<ColumnsStatistics> tryLoadStatisticsFromCache(const NameSet & required_columns, StatisticsCache * cache) const;
+    /// The result of `getEstimates(required_columns)` if it needs nothing read from disk, otherwise `std::nullopt`.
+    std::optional<Estimates> tryGetEstimatesFromMemory(const NameSet & required_columns) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -920,8 +925,8 @@ protected:
     /// disk using columns and checksums.
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
-    /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+    /// Calculate the sizes of all files required to read the specified subcolumns, one size per subcolumn.
+    virtual std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const { return std::vector<ColumnSize>(subcolumns.size()); }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -1026,6 +1031,13 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
+
+    /// The statistics files that `loadStatistics(required_columns)` reads, with the columns they belong to.
+    std::vector<std::pair<String, const ColumnDescription *>> getStatisticsFilesToLoad(
+        const NameSet & required_columns, const PackedFilesReader * packed_reader) const;
+
+    /// `getEstimates`, or `tryGetEstimatesFromMemory` if `only_from_memory`.
+    std::optional<Estimates> getEstimatesImpl(const NameSet & required_columns, bool only_from_memory) const;
 
     /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
     /// statistics file separately instead of in the packed archive.

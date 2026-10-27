@@ -339,7 +339,29 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 }
 ```
 
-[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
+[Full Example](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async_native.go)
+
+### Async insert with a batch {#async-insert-batch}
+
+`WithAsync` also applies to batch inserts. A batch uses only the context that you give to `PrepareContext`. Give the async context to `PrepareContext`. The context that you give to `Stmt.ExecContext` has no effect on the batch. `Commit` sends the batch with the settings from the `PrepareContext` context.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithAsync(true))
+tx, err := conn.Begin()
+if err != nil {
+    return err
+}
+stmt, err := tx.PrepareContext(ctx, "INSERT INTO example") // WithAsync must be on this context
+if err != nil {
+    return err
+}
+for i := 0; i < 100; i++ {
+    if _, err := stmt.Exec(i, "Golang SQL database driver", []uint8{1, 2, 3, 4, 5, 6, 7, 8, 9}, time.Now()); err != nil {
+        return err
+    }
+}
+return tx.Commit()
+```
 
 ## Server-side query parameters {#server-side-query-parameters}
 
