@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 #include <Common/Exception.h>
@@ -22,7 +23,14 @@ constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
 /// At three hash functions this achieves a 12.5% false positive rate.
 constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
+/// One cache line, the block of `RuntimeBloomFilter`.
+constexpr UInt64 RUNTIME_BLOOM_FILTER_BLOCK_BYTES = 64;
 
+}
+
+UInt64 normalizeRuntimeBloomFilterBytes(UInt64 bytes) noexcept
+{
+    return std::bit_floor(std::max<UInt64>(1, bytes / RUNTIME_BLOOM_FILTER_BLOCK_BYTES)) * RUNTIME_BLOOM_FILTER_BLOCK_BYTES;
 }
 
 RuntimeBloomFilterParameters resolveRuntimeBloomFilterDefaults(RuntimeBloomFilterParameters parameters) noexcept
@@ -65,7 +73,10 @@ UInt64 growRuntimeBloomFilterBytesFromStats(
         = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
     const double clamped_bloom_filter_bytes
         = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
-    return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
+    /// `RuntimeBloomFilter` rounds its byte budget down to a power of two, so round the ideal size up to
+    /// one first (the maximum is a power of two, so the clamp holds).
+    const UInt64 pow2_bloom_filter_bytes = std::bit_ceil(static_cast<UInt64>(clamped_bloom_filter_bytes));
+    return normalizeRuntimeBloomFilterBytes(std::max(pow2_bloom_filter_bytes, default_bloom_filter_bytes));
 }
 
 }
