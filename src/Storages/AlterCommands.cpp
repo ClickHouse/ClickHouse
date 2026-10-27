@@ -1089,7 +1089,7 @@ void AlterCommand::apply(
             insert_it,
             IndexDescription::getIndexFromAST(
                 index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context,
-                /* validate_expressions = */ true));
+                /* validate_expressions = */ !isSecondaryDDLReplay(context)));
     }
     else if (type == DROP_INDEX)
     {
@@ -1908,6 +1908,7 @@ void AlterCommands::apply(
     /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
     /// in the global context, not in the session that happens to issue the `ALTER`.
     const ContextPtr index_context = context->getGlobalContext();
+    const bool is_secondary_ddl_replay = isSecondaryDDLReplay(context);
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
@@ -1917,11 +1918,13 @@ void AlterCommands::apply(
             /// But if this `ALTER` changed an `ALIAS` column the index expands through, the expanded
             /// expression is fresh user input and must pass the same checks as a new definition. Compare
             /// before compiling: the compilation builds the sets of `IN`, so an unvalidated `x IN table`
-            /// in a changed alias would already read that table.
+            /// in a changed alias would already read that table. A secondary replay of a committed `Replicated`
+            /// database entry was already validated by its initiator (possibly an older server), so it is exempt.
             auto expanded_expression_list = IndexDescription::getExpandedExpressionList(index.definition_ast, columns_with_virtuals, index_context);
-            const bool validate_expressions = !index.expression_list_ast || !expanded_expression_list
-                || expanded_expression_list->getTreeHash(/* ignore_aliases = */ false)
-                    != index.expression_list_ast->getTreeHash(/* ignore_aliases = */ false);
+            const bool validate_expressions = !is_secondary_ddl_replay
+                && (!index.expression_list_ast || !expanded_expression_list
+                    || expanded_expression_list->getTreeHash(/* ignore_aliases = */ false)
+                        != index.expression_list_ast->getTreeHash(/* ignore_aliases = */ false));
 
             index = IndexDescription::getIndexFromAST(
                 index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context,
