@@ -218,7 +218,14 @@ private:
         if (access_checked.load(std::memory_order_relaxed))
             return;
 
-        auto qualified = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+        /// The same identity as the loader resolves the name to: a qualified name is hierarchical (see `DatabaseCatalog`),
+        /// so inside `USE db` the name `ns.model` may be the dictionary `db`.`ns.model` rather than `ns`.`model`.
+        const auto & loader = context->getExternalDictionariesLoader();
+        QualifiedTableName qualified;
+        if (auto bound = loader.tryBindQualifiedDictionaryName(dictionary_name, context->getCurrentDatabase()))
+            qualified = std::move(*bound);
+        else
+            qualified = loader.qualifyDictionaryNameWithDatabase(dictionary_name, context);
         context->checkAccess(
             AccessType::dictGet,
             qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
