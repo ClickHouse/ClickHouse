@@ -4,8 +4,9 @@
 
 # --dump-schema leaves the source as it was. In clickhouse-local, loading the metadata starts every table, but the dump
 # must not refresh a refreshable materialized view, run a pending mutation or TTL merge, stream a `FileLog` into its view,
-# or send the blocks that a `Distributed` table has queued. A database-less reference must not make the dump list the
-# tables of an omitted `Remote` database either: that queries the server the database points to.
+# or send the blocks that a `Distributed` table has queued. Loading a table must not remove a temporary mutation file or
+# start a deduplication log either. A database-less reference must not make the dump list the tables of an omitted
+# `Remote` database either: that queries the server the database points to.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,9 +47,16 @@ INSERT INTO d.ttl SELECT now() - 100, number FROM numbers(5);
 CREATE TABLE d.log (x UInt64) ENGINE = FileLog('${LOCAL_PATH}/filelog', 'JSONEachRow');
 CREATE TABLE d.log_dst (x UInt64) ENGINE = MergeTree ORDER BY x;
 CREATE MATERIALIZED VIEW d.log_mv TO d.log_dst AS SELECT x FROM d.log;
+CREATE TABLE d.dedup (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS non_replicated_deduplication_window = 1;
+INSERT INTO d.dedup VALUES (1);
 "
 # Written after the run that created the FileLog table, so only a later run can stream it.
 echo '{"x": 1}' > "$LOCAL_PATH/filelog/a.jsonl"
+# A temporary mutation file, as an interrupted mutation leaves it, which loading a writable table removes. And `d.dedup`,
+# the only table with a deduplication window, without its deduplication log, which opening the log starts again.
+MUT_DIR=$(dirname "$(find "$LOCAL_PATH/store" -name 'mutation_*.txt' | head -1)")
+echo 'x' > "$MUT_DIR/tmp_mutation_1000.txt"
+rm -r "$(find "$LOCAL_PATH/store" -type d -name deduplication_logs)"
 
 # Every directory and file of the data path `$1` with its size, except the `status` file that each run rewrites.
 snapshot()
