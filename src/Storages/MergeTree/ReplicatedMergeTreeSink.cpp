@@ -75,6 +75,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_insert_pause_before_commit[];
     extern const char rmt_dedup_conflict_part_name_missing[];
     extern const char merge_tree_sink_on_start_random_sleep[];
 }
@@ -1010,6 +1011,9 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_after_op, { zookeeper->forceFailureAfterOperation(); });
 
         fiu_do_on(FailPoints::rmt_delay_commit_part, { sleepForSeconds(5); });
+
+        /// The block number is reserved and not published yet: an INSERT paused here is still committing.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_insert_pause_before_commit);
 
         Coordination::Responses responses;
         Coordination::Error multi_code = zookeeper->tryMultiNoThrow(ops, responses, /* check_session_valid */ true); /// 1 RTT
