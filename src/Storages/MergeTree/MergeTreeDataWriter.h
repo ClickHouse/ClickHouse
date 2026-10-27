@@ -173,6 +173,7 @@ private:
         bool merge_is_needed,
         bool sync,
         bool try_adaptive_codec,
+        ContextPtr context,
         bool use_selected_codec = false);
 
     MergeTreeData & data;
