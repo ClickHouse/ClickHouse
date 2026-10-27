@@ -17,6 +17,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <typeinfo>
 
 namespace DB::GPU
 {
@@ -25,6 +26,13 @@ namespace DB::GPU
 /// exceptions of cuDF and rmm are caught by their types, whose `what` is theirs to read; of any other, `what` is not
 /// read: the binary holds two standard libraries, and an exception of the other one is not safe to look into. What
 /// the device reports is said instead, as a fault on it is what such an exception usually comes of.
+/// What an exception says, and its type: `what` may be null for an exception made without a message.
+__host__ inline std::string described(const std::exception & exception)
+{
+    const char * what = exception.what();
+    return std::string(typeid(exception).name()) + ": " + (what ? what : "(no message)");
+}
+
 template <typename Body>
 __host__ auto guarded(const std::string & doing, Body && body)
 {
@@ -34,15 +42,15 @@ __host__ auto guarded(const std::string & doing, Body && body)
     }
     catch (const rmm::out_of_memory & exception)
     {
-        throwGPUError((doing + ": out of device memory: " + exception.what()).c_str());
+        throwGPUError((doing + ": out of device memory: " + described(exception)).c_str());
     }
     catch (const cudf::cuda_error & exception)
     {
-        throwGPUError((doing + ": CUDA error: " + exception.what()).c_str());
+        throwGPUError((doing + ": CUDA error: " + described(exception)).c_str());
     }
     catch (const cudf::logic_error & exception)
     {
-        throwGPUError((doing + ": " + exception.what()).c_str());
+        throwGPUError((doing + ": " + described(exception)).c_str());
     }
     catch (const std::exception & exception)
     {
@@ -50,9 +58,12 @@ __host__ auto guarded(const std::string & doing, Body && body)
             throw;
 
         const cudaError_t last = cudaPeekAtLastError();
-        std::string message = doing + ": an exception the device library does not know";
+        std::string message = doing + ": " + described(exception);
         if (last != cudaSuccess)
-            message += std::string(", the device reports: ") + cudaGetErrorString(last);
+        {
+            const char * error = cudaGetErrorString(last);
+            message += std::string(", the device reports: ") + (error ? error : std::to_string(static_cast<int>(last)).c_str());
+        }
         throwGPUError(message.c_str());
     }
 }

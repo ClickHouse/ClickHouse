@@ -125,6 +125,9 @@ struct CudfGroupBy::State
     /// a `sum`, a `min` and a `max` by the same one and those of a `count` by a `sum`, but not those of an `avg`.
     bool runs_combine = false;
 
+    /// Whether `streaming_groupby` counts the rows of the groups, through a column of ones, see `make`.
+    bool counts_rows = false;
+
     /// Set by the first batch: whether every batch is reduced over its runs of equal keys, which is so where the first
     /// has few runs per row, as the rows of a part sorted by the keys have. Then the runs are gathered as they are, not
     /// grouped through `streaming_groupby`, and combined into their groups at once by a groupby of cuDF: the rows of a
@@ -170,28 +173,35 @@ struct CudfGroupBy::State
             derived_values.emplace_back(0, stream_);
         runs_combine = std::all_of(
             aggregates.begin(), aggregates.end(), [](const GPUGroupByAggregate & aggregate) { return aggregate.aggregation != GPUAggregationKind::Mean; });
+        counts_rows = countsRows();
     }
 
     __host__ size_t numBatchValues() const { return values.size() - derived.size(); }
 
     __host__ cudf::groupby::streaming_groupby make(size_t new_capacity) const
     {
-        /// A `count` counts the rows of the first key, which has no nulls but what a `WHERE` leaves out.
+        /// `streaming_groupby` counts into a `cudf::size_type`, which a group of 2^31 rows or more overflows, and its
+        /// mean divides by that count. A `count` is the sum, in an `Int64`, of the column of ones `addBatch` appends
+        /// after the values (`onesColumn`), and an `avg` is its sum and that count, divided in `tableOf`.
+        const auto ones = static_cast<cudf::size_type>(keys.size() + values.size());
         std::vector<cudf::groupby::streaming_aggregation_request> requests;
-        requests.reserve(aggregates.size());
+        requests.reserve(aggregates.size() * 2);
         for (const auto & aggregate : aggregates)
         {
             const cudf::size_type column
                 = aggregate.column == GPUGroupByAggregate::no_column ? 0 : static_cast<cudf::size_type>(keys.size() + aggregate.column);
-            /// cuDF's own mean divides by a count it reads as a `size_type`, which a group of 2^31 rows or more turns
-            /// into a null. An `avg` is asked as its sum and its count, divided in `tableOf`.
-            if (aggregate.aggregation == GPUAggregationKind::Mean)
+            switch (aggregate.aggregation)
             {
-                requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(GPUAggregationKind::Sum)});
-                requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(GPUAggregationKind::Count)});
-                continue;
+                case GPUAggregationKind::Count:
+                    requests.push_back({.column_index = ones, .aggregation = groupByAggregationFor(GPUAggregationKind::Sum)});
+                    break;
+                case GPUAggregationKind::Mean:
+                    requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(GPUAggregationKind::Sum)});
+                    requests.push_back({.column_index = ones, .aggregation = groupByAggregationFor(GPUAggregationKind::Sum)});
+                    break;
+                default:
+                    requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(aggregate.aggregation)});
             }
-            requests.push_back({.column_index = column, .aggregation = groupByAggregationFor(aggregate.aggregation)});
         }
 
         /// The keys have no nulls but what a `WHERE` leaves out.
@@ -225,7 +235,8 @@ struct CudfGroupBy::State
             else
                 result = std::move(results[next_result++].results.front());
             const GPUElementType result_type = aggregates[i].result_type;
-            /// cuDF counts into a `cudf::size_type`, where ClickHouse counts into a `UInt64`.
+            /// A groupby of cuDF counts into a `cudf::size_type`, where ClickHouse counts into a `UInt64`; from
+            /// `streaming_groupby` a count comes as the `Int64` sum of ones already.
             if (aggregates[i].aggregation == GPUAggregationKind::Count && cudf::size_of(result->type()) != sizeOf(result_type))
                 result = guarded("widening a count", [&] { return cudf::cast(result->view(), cudf::data_type{cudf::type_id::INT64}, stream); });
             /// cuDF sums unsigned integers into signed ones, whose bits are the same.
@@ -316,14 +327,36 @@ struct CudfGroupBy::State
         });
     }
 
-    /// The rows of `columns` that the `WHERE` whose mask is in `filter_mask` keeps.
-    __host__ std::unique_ptr<cudf::table> compact(const std::vector<cudf::column_view> & columns, size_t rows, cudf::size_type left_out)
+    /// `all_true` holding at least `rows` bytes of one.
+    __host__ void fillOnes(size_t rows)
     {
         if (all_true.size() < rows)
         {
             all_true.resize(rows, stream);
             checkCuda(cudaMemsetAsync(all_true.data(), 1, rows, stream.get()), "Cannot fill a mask of the device");
         }
+    }
+
+    /// Whether the groups count their rows: through the sum of a column of ones, see `make`.
+    __host__ bool countsRows() const
+    {
+        return std::any_of(aggregates.begin(), aggregates.end(), [](const GPUGroupByAggregate & aggregate)
+        {
+            return aggregate.aggregation == GPUAggregationKind::Count || aggregate.aggregation == GPUAggregationKind::Mean;
+        });
+    }
+
+    /// A column of `rows` ones of a byte each, whose sum cuDF makes in an `Int64`.
+    __host__ cudf::column_view onesColumn(size_t rows)
+    {
+        fillOnes(rows);
+        return cudf::column_view(cudf::data_type{cudf::type_id::INT8}, static_cast<cudf::size_type>(rows), all_true.data(), nullptr, 0);
+    }
+
+    /// The rows of `columns` that the `WHERE` whose mask is in `filter_mask` keeps.
+    __host__ std::unique_ptr<cudf::table> compact(const std::vector<cudf::column_view> & columns, size_t rows, cudf::size_type left_out)
+    {
+        fillOnes(rows);
 
         const cudf::column_view kept(
             cudf::data_type{cudf::type_id::BOOL8},
@@ -672,6 +705,8 @@ __host__ void CudfGroupBy::addBatch(
         return;
     }
 
+    if (state->counts_rows)
+        columns.push_back(state->onesColumn(rows));
     state->group(cudf::table_view(columns));
 }
 
