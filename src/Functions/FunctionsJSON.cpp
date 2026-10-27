@@ -51,7 +51,6 @@ namespace Setting
 {
     extern const SettingsBool allow_simdjson;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-    extern const SettingsBool json_extract_named_tuples_as_objects;
 }
 
 namespace ErrorCodes
@@ -256,22 +255,16 @@ public:
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
-            /// For typed paths getSubcolumn returns only the literal value. For non-typed paths it returns
-            /// a Dynamic column: literal if present, sub-object as JSON if not, NULL otherwise.
-            /// When type_json_skip_null_typed_paths is enabled, use extractCombinedSubcolumn for every path
-            /// (including typed ones) so a NULL typed literal still surfaces a non-empty sub-object, and
-            /// a parent whose typed descendants are all NULL is treated as absent.
-            String combined_name = DataTypeObject::getCombinedSubcolumnName(path);
-            const bool skip_null = format_settings.json.type_json_skip_null_typed_paths;
-            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
-            bool treat_typed_as_always_present = is_typed_path && !skip_null;
+            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
+            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
+            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
+            auto merged_type = data_type_object.getSubcolumnType(combined_name);
+            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
-            auto merged = skip_null
-                ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
-                : data_type_object.getSubcolumn(combined_name, object_column);
-            auto merged_type = skip_null
-                ? data_type_object.getDynamicType()
-                : data_type_object.getSubcolumnType(combined_name);
+            /// Typed paths are always present in a JSON column, even when the key was missing
+            /// from the inserted JSON (they get the type's default value). For non-typed paths
+            /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
@@ -279,7 +272,7 @@ public:
 
             if constexpr (is_has)
             {
-                if (treat_typed_as_always_present)
+                if (is_typed_path)
                     return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
 
                 auto result = ColumnVector<UInt8>::create(input_rows_count);
@@ -310,7 +303,7 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    if (!treat_typed_as_always_present && merged->isNullAt(i))
+                    if (!is_typed_path && merged->isNullAt(i))
                     {
                         raw_col->insertDefault();
                     }
@@ -646,22 +639,17 @@ public:
         DataTypes argument_types_,
         DataTypePtr return_type_,
         DataTypePtr json_return_type_,
-        const FormatSettings & format_settings_,
-        UInt64 settings_hash_)
+        const FormatSettings & format_settings_)
         : null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
         , json_return_type(std::move(json_return_type_))
         , format_settings(format_settings_)
-        , settings_hash(settings_hash_)
     {
     }
 
     String getName() const override { return Name::name; }
-
-    /// The captured settings decide how a JSON value is parsed into the result, see `IFunctionBase::updateHash`.
-    void updateHash(SipHash & hash) const override { hash.update(settings_hash); }
 
     const DataTypes & getArgumentTypes() const override
     {
@@ -687,7 +675,6 @@ private:
     DataTypePtr return_type;
     DataTypePtr json_return_type;
     FormatSettings format_settings;
-    UInt64 settings_hash;
 };
 
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
@@ -712,19 +699,6 @@ public:
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
         /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
         format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
-
-        /// Not a format setting: it governs these functions, so it is applied here rather than in
-        /// `getFormatSettings`, which would also reach the `JSON` data type.
-        format_settings.json.extract_named_tuples_as_objects = context->getSettingsRef()[Setting::json_extract_named_tuples_as_objects];
-
-        /// Everything captured above, for `FunctionBaseFunctionJSON::updateHash`: `format_settings` through the
-        /// hash of the session settings it was derived from, plus the members overridden above.
-        SipHash hash;
-        hash.update(allow_simdjson);
-        hash.update(format_settings.date_time_input_format);
-        hash.update(format_settings.json.extract_named_tuples_as_objects);
-        hash.update(getFormatSettingsHash(context->getSettingsRef()));
-        settings_hash = hash.get64();
     }
 
     bool isVariadic() const override { return true; }
@@ -735,77 +709,35 @@ public:
         return !functionForcesTheReturnType<Impl>();
     }
 
-    /// `build()` below constructs the result type itself, so the signature is purely
-    /// advertised — it does not gate execution. We still surface it through
-    /// `system.functions` so users see the expected shape for each JSON function.
-    String getSignatureString() const override
-    {
-        if constexpr (requires { Impl<DummyJSONParser>::signature; })
-            return Impl<DummyJSONParser>::signature;
-        else
-            return {};
-    }
-
-    /// `build` computes the result type from `Impl::getReturnType`, which is the authoritative
-    /// logic for these functions: it also accepts `Dynamic` / `Variant` JSON arguments and wraps
-    /// nullable inputs itself, neither of which the advertised signature expresses. Route both
-    /// return-type entry points through the same logic, so that a direct `getReturnType` call
-    /// agrees with `build` instead of evaluating the documentation-only signature.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return calculateResultType(arguments);
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return calculateResultType(columns);
-    }
-
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        bool has_nothing_argument = false;
+        for (const auto & arg : arguments)
+            has_nothing_argument |= isNothing(arg.type);
+
         DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
         NullPresence null_presence = getNullPresense(arguments);
-        DataTypePtr return_type = wrapReturnType(arguments, json_return_type, null_presence);
+        DataTypePtr return_type;
+        if (has_nothing_argument)
+            return_type = std::make_shared<DataTypeNothing>();
+        else if (null_presence.has_null_constant)
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+        else if (null_presence.has_nullable)
+            return_type = makeNullable(json_return_type);
+        else
+            return_type = json_return_type;
 
         DataTypes argument_types;
         argument_types.reserve(arguments.size());
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
-            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings, settings_hash);
+            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings);
     }
 
 private:
-    /// Applies the `Nothing` / `Nullable` handling on top of the type `Impl` computed.
-    static DataTypePtr wrapReturnType(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & json_return_type, const NullPresence & null_presence)
-    {
-        for (const auto & arg : arguments)
-        {
-            if (isNothing(arg.type))
-                return std::make_shared<DataTypeNothing>();
-        }
-
-        if (null_presence.has_null_constant)
-            return makeNullable(std::make_shared<DataTypeNothing>());
-        if (null_presence.has_nullable)
-            return makeNullable(json_return_type);
-        return json_return_type;
-    }
-
-    static DataTypePtr calculateResultType(const ColumnsWithTypeAndName & arguments)
-    {
-        DataTypePtr json_return_type = Impl<DummyJSONParser>::getReturnType(Name::name, createBlockWithNestedColumns(arguments));
-        return wrapReturnType(arguments, json_return_type, getNullPresense(arguments));
-    }
-
     const bool allow_simdjson;
     FormatSettings format_settings;
-    UInt64 settings_hash = 0;
 };
 
 struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
@@ -844,7 +776,6 @@ class JSONHasImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
@@ -864,7 +795,6 @@ class IsValidJSONImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String) -> UInt8";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -895,7 +825,6 @@ class JSONLengthImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> UInt64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -926,7 +855,6 @@ class JSONKeyImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -951,8 +879,6 @@ class JSONTypeImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature
-        = "(String, ...) -> Enum8('Array' = 91, 'Object' = 123, 'String' = 34, 'Int64' = 105, 'UInt64' = 117, 'Double' = 100, 'Bool' = 98, 'Null' = 0)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1014,10 +940,6 @@ class JSONExtractNumericImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature =
-        std::is_same_v<NumberType, Int64>  ? "(String, ...) -> Int64"  :
-        std::is_same_v<NumberType, UInt64> ? "(String, ...) -> UInt64" :
-                                             "(String, ...) -> Float64";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1057,7 +979,6 @@ class JSONExtractBoolImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> UInt8";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1098,7 +1019,6 @@ class JSONExtractStringImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1127,13 +1047,6 @@ class JSONExtractImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Declarative signature — the last argument is a constant string with the
-    /// type name; the result is the type produced by `typeFromString` on that
-    /// name. The optional middle arguments are JSON-pointer-like index/key
-    /// selectors. The signature is documentation-only because the function's
-    /// `build()` constructs the return type itself.
-    static constexpr auto signature = "(String, ..., const t String) -> typeFromString(t)";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1175,12 +1088,6 @@ class JSONExtractKeysAndValuesImpl
 {
 public:
     using Element = typename JSONParser::Element;
-
-    /// Declarative signature — keys are strings; values get parsed via the
-    /// trailing constant type-name argument. Result is `Array(Tuple(String,
-    /// typeFromString(t)))`. Documentation-only (the function's `build()`
-    /// constructs the return type itself).
-    static constexpr auto signature = "(String, ..., const t String) -> Array(Tuple(String, typeFromString(t)))";
 
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
@@ -1248,7 +1155,6 @@ class JSONExtractRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> String";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1285,7 +1191,6 @@ class JSONExtractArrayRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1320,7 +1225,6 @@ class JSONExtractKeysAndValuesRawImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> Array(Tuple(String, String))";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1361,7 +1265,6 @@ class JSONExtractKeysImpl
 {
 public:
     using Element = typename JSONParser::Element;
-    static constexpr auto signature = "(String, ...) -> Array(String)";
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
@@ -1412,7 +1315,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
             )",
             R"(
 1
-1
+0
             )"
         }
         };
@@ -1440,7 +1343,7 @@ SELECT isValidJSON('not JSON') = 0;
             )",
             R"(
 1
-1
+0
             )"
         },
         {
@@ -1459,7 +1362,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 3);
 1
 1
 1
+1
 0
+
             )"
         }
         };
@@ -1725,9 +1630,9 @@ Parses JSON and extracts a value with given ClickHouse data type.
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Array(Float64))') AS res;
             )",
             R"(
-┌─res──────────────────────┐
-│ ('hello',[-100,200,300]) │
-└──────────────────────────┘
+┌─res──────────────────────────────┐
+│ ('hello',[-100,200,300])         │
+└──────────────────────────────────┘
             )"
         }
         };
@@ -1786,9 +1691,9 @@ Returns a part of JSON as unparsed string.
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') AS res;
             )",
             R"(
-┌─res────────────┐
-│ [-100,200,300] │
-└────────────────┘
+┌─res──────────────┐
+│ [-100,200.0,300] │
+└──────────────────┘
             )"
         }
         };
@@ -1816,9 +1721,9 @@ Returns an array with elements of JSON array, each represented as unparsed strin
 SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') AS res;
             )",
             R"(
-┌─res──────────────────────┐
-│ ['-100','200','"hello"'] │
-└──────────────────────────┘
+┌─res──────────────────────────┐
+│ ['-100','200.0','"hello"']   │
+└──────────────────────────────┘
             )"
         }
         };
@@ -1875,9 +1780,9 @@ Parses a JSON string and extracts the keys.
 SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}') AS res;
             )",
             R"(
-┌─res───────┐
-│ ['a','b'] │
-└───────────┘
+┌─res─────────┐
+│ ['a','b']   │
+└─────────────┘
             )"
         }
         };

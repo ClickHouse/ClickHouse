@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -46,9 +47,21 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt64, UInt64, UInt64, UInt64) -> Tuple(UInt64, UInt64)";
+        for (size_t i = 0; i < getNumberOfArguments(); ++i)
+        {
+            const auto * arg = arguments[i].get();
+            if (!WhichDataType(arg).isUInt64())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}. Must be UInt64",
+                    arg->getName(), i + 1, getName());
+        }
+
+        DataTypePtr element = std::make_shared<DataTypeUInt64>();
+
+        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -148,8 +161,7 @@ Returns the smallest S2 latitude-longitude rectangle that contains the union of 
         {"s2Rect2High", "S2 cell identifier of the high vertex of the second rectangle.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the union rectangle.", {"Tuple(UInt64, UInt64)"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217)",
-     "(5179062030687166815,5177056748191934217)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectUnion(5765131099823669248, 5765131099956887552, 5765131100074868736, 5765131100088901632)", ""}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

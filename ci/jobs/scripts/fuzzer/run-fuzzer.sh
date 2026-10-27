@@ -15,10 +15,6 @@ repo_dir=/repo
 
 CONFIG_DIR="/etc/clickhouse-server"
 
-# query-fuzzer-tweaks-users.xml runs the server-side AST fuzzer on every query of the `default` user.
-# The harness's own queries opt out: their fuzzed copies run before the reply and can hold it open.
-NO_AST_FUZZER="--ast_fuzzer_runs=0"
-
 export PATH="$repo_dir/ci/tmp/:$PATH"
 export PYTHONPATH=$repo_dir:$repo_dir/ci
 
@@ -83,10 +79,6 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
-    if [[ -n "${FUZZER_ORACLE_ENABLED:-}" ]]; then
-        cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/z-oracle-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
-    fi
-
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
@@ -114,7 +106,7 @@ function filter_exists_and_template
 
 function stop_server
 {
-    timeout --signal TERM --kill-after=10 20 clickhouse-client $NO_AST_FUZZER --query "select elapsed, query from system.processes" ||:
+    timeout --signal TERM --kill-after=10 20 clickhouse-client --query "select elapsed, query from system.processes" ||:
     clickhouse stop
 
     # Debug.
@@ -157,7 +149,7 @@ function fuzz
     # A dead server is detected early, so the deadline only affects hung servers.
     for _ in {1..120}
     do
-        if clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
+        if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1" || ! kill -0 $server_bg_pid
         then
             break
         fi
@@ -167,7 +159,7 @@ function fuzz
 
     kill -0 $server_pid
 
-    IS_ASAN=$(clickhouse-client $NO_AST_FUZZER --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
+    IS_ASAN=$(clickhouse-client --query "SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize=address' IN value)")
     if [[ "$IS_ASAN" = "1" ]];
     then
         echo "ASAN build detected. Not using gdb since it disables LeakSanitizer detections"
@@ -206,13 +198,13 @@ function fuzz
         gdb -batch -command script.gdb -p $server_pid &
         sleep 5
         # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
-        time clickhouse-client $NO_AST_FUZZER --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+        time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
         # Check connectivity after we attach gdb, because it might cause the server
         # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
         for _ in {1..180}
         do
-            if clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1"
+            if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "select 1"
             then
                 break
             fi
@@ -345,7 +337,7 @@ function fuzz
         # Make sure the server is still accepting queries before restarting: a fuzzer that
         # exited with code 0 against a dead server would otherwise restart-loop until the budget
         # runs out and hide the failure.
-        if ! timeout --signal TERM --kill-after=10 60 clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
+        if ! clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 'fuzzer restart liveness check'"; then
             echo "Server is not responding, not restarting the fuzzer"
             break
         fi
@@ -377,11 +369,7 @@ function fuzz
         # --receive_timeout governs the socket only once the handshake has completed; until
         # then both directions run on handshake_timeout_ms, whose client-side default is 300s.
         # A probe needs both bounds to be held to the budget it asks for.
-        # Neither bounds the wait after the client's own timeout: it cancels and then waits for
-        # the server to answer, so a server that never answers is bounded only by `timeout`.
-        probe_rc=0
-        timeout --signal TERM --kill-after=10 60 clickhouse-client $NO_AST_FUZZER --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 1" 2> err || probe_rc=$?
-        if [[ "$probe_rc" == "0" ]]
+        if clickhouse-client --handshake_timeout_ms=30000 --receive_timeout=5 --query "SELECT 1" 2> err
         then
             server_died=0
             break
@@ -394,7 +382,7 @@ function fuzz
                 # diagnostic and runs under `set -e`; if the same overload rejects
                 # it, do not abort the script (that would skip the status.tsv
                 # write below and surface as a missing-status job ERROR).
-                timeout --signal TERM --kill-after=10 20 clickhouse-client $NO_AST_FUZZER --query "SHOW PROCESSLIST" ||:
+                timeout --signal TERM --kill-after=10 20 clickhouse-client --query "SHOW PROCESSLIST" ||:
                 timeouts=0
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
@@ -402,7 +390,7 @@ function fuzz
                 # Server is alive but at memory limit, give it time to reclaim
                 timeouts=0
                 sleep 1
-            elif [[ "$probe_rc" == "124" || "$probe_rc" == "137" ]] || grep -F 'Timeout exceeded while' err
+            elif grep -F 'Timeout exceeded while' err
             then
                 # Alive but slow to answer: retry, and only treat it as a real
                 # hang once the timeouts persist (a dead server hits the branch
@@ -417,7 +405,7 @@ function fuzz
                 fi
                 sleep 1
             else
-                echo "Server live check returns $probe_rc"
+                echo "Server live check returns $?"
                 cat err
                 server_died=1
                 break

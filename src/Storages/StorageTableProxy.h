@@ -34,16 +34,6 @@ public:
         return "TableProxy";
     }
 
-    /// Same forwarding as `getInMemoryMetadataPtr` below, for the same reason: the proxy's own
-    /// metadata is seeded from the `CREATE TABLE` query and never carries a unique key.
-    bool hasUniqueKey() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->hasUniqueKey();
-        return IStorage::hasUniqueKey();
-    }
-
     /// Forward the metadata query to the nested storage once it has been materialized.
     /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
     /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*
@@ -173,14 +163,6 @@ public:
         IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
         if (nested)
             nested->renameInMemory(new_table_id);
-    }
-
-    /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
-    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override

@@ -14,7 +14,7 @@
     },
     {
       "expanded": true,
-      "group": "أدلة إرشادية",
+      "group": "الأدلة",
       "pages": [
         "ar/products/kubernetes-operator/guides/introduction",
         "ar/products/kubernetes-operator/guides/configuration",

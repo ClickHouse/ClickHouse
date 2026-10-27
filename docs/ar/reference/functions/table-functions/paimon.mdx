@@ -15,7 +15,9 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يوفّر واجهة شبيهة بالجدول للقراءة فقط للوصول إلى جداول Apache [Paimon](https://paimon.apache.org/) المخزّنة في Amazon S3 أو Azure أو HDFS أو محليًا.
 
-## الصياغة {#syntax}
+<div id="syntax">
+  ## الصياغة
+</div>
 
 ```sql
 paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
@@ -29,24 +31,24 @@ paimonHDFS(path_to_table, [,format] [,compression_method])
 paimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-## المعاملات {#arguments}
+<div id="arguments">
+  ## المعاملات
+</div>
 
 يتوافق وصف المعاملات هنا مع وصف المعاملات في دوال الجداول `s3` و`azureBlobStorage` و`HDFS` و`file`، كلٌّ بحسب ما يقابله.
 ويشير `format` إلى تنسيق ملفات البيانات في جدول Paimon.
 
 بالنسبة إلى `paimonS3`، يمكن استخدام المعلَمة الاختيارية `extra_credentials` لتمرير `role_arn` من أجل الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.
 
-### القيمة المعادة {#returned-value}
+<div id="returned-value">
+  ### القيمة المعادة
+</div>
 
 جدول ذو بنية محددة لقراءة البيانات من جدول Paimon المحدد.
 
-## القيود {#limitations}
-
-لم يُنفَّذ الدمج عند القراءة (Merge-on-read) بعد، ولذلك **تتعذّر قراءة الجداول ذات المفاتيح الأساسية**: إذ يُعيد القارئ الاتحاد الخام لملفات البيانات في
-اللقطة (snapshot)، وهو اتحاد لا يزال يتضمن إصدارات الصفوف التي استُبدلت بعمليات upsert لاحقة. ومن ثَمّ فإن قراءة جدول يُعرِّف مخططه
-`primary-key` تؤدي إلى رفع استثناء.
-
-## تعريف مجموعة مسماة {#defining-a-named-collection}
+<div id="defining-a-named-collection">
+  ## تعريف مجموعة مسماة
+</div>
 
 فيما يلي مثال على تهيئة مجموعة مسماة لتخزين عنوان URL وبيانات الاعتماد:
 
@@ -69,11 +71,15 @@ SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
 DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 ```
 
-## الأسماء المستعارة {#aliases}
+<div id="aliases">
+  ## الأسماء المستعارة
+</div>
 
 أصبحت دالة الجدول `paimon` الآن اسمًا مستعارًا لـ `paimonS3`.
 
-## الأعمدة الافتراضية {#virtual-columns}
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -81,11 +87,13 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
 * `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
 
-## أنواع البيانات المدعومة {#data-types-supported}
+<div id="data-types-supported">
+  ## أنواع البيانات المدعومة
+</div>
 
 | نوع بيانات Paimon                 | نوع البيانات في ClickHouse |
 | --------------------------------- | -------------------------- |
-| BOOLEAN                           | Bool                       |
+| BOOLEAN                           | Int8                       |
 | TINYINT                           | Int8                       |
 | SMALLINT                          | Int16                      |
 | INTEGER                           | Int32                      |
@@ -103,7 +111,9 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 | ARRAY                             | Array                      |
 | MAP                               | Map                        |
 
-## التقسيم المدعوم {#partition-supported}
+<div id="partition-supported">
+  ## التقسيم المدعوم
+</div>
 
 أنواع البيانات المدعومة ضمن مفاتيح التقسيم في Paimon:
 
@@ -122,7 +132,9 @@ DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
 * `FLOAT`
 * `DOUBLE`
 
-## راجع أيضًا {#see-also}
+<div id="see-also">
+  ## راجع أيضًا
+</div>
 
 * [دالة الجدول العنقودية لـ Paimon](/ar/reference/functions/table-functions/paimonCluster)
 

@@ -1,5 +1,4 @@
 #include <future>
-#include <stdexcept>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -43,30 +42,6 @@ std::unique_ptr<ThreadPool> makeSingleThreadPool()
         /*queue_size=*/ 10);
 }
 
-/// Its moved-from shell blocks in the destructor on any thread but `waiter`: the pool worker destroys that shell with the
-/// finished task, after the future became ready, so this holds open the window in which the task still exists.
-struct HoldTaskDestruction
-{
-    std::shared_future<void> release;
-    std::thread::id waiter;
-    bool moved_from = false;
-
-    HoldTaskDestruction(std::shared_future<void> release_, std::thread::id waiter_)
-        : release(std::move(release_)), waiter(waiter_) {}
-    HoldTaskDestruction(HoldTaskDestruction && other) noexcept
-        : release(other.release) // NOLINT(performance-move-constructor-init,cert-oop11-cpp): the shell keeps waiting on it
-        , waiter(other.waiter)
-    {
-        other.moved_from = true;
-    }
-    void operator()() {}
-    ~HoldTaskDestruction()
-    {
-        if (moved_from && std::this_thread::get_id() != waiter)
-            release.wait();
-    }
-};
-
 }
 
 /// The group is captured when a task is enqueued, on the scheduling thread - not when the runner
@@ -102,78 +77,6 @@ TEST(ThreadPoolCallbackRunner, UnsafeRunnerCapturesGroupAtEnqueueTime)
         creation_group.reset();
         EXPECT_TRUE(creation_group_weak.expired())
             << "a runner object must not keep the group current at its creation alive";
-    });
-    t.join();
-}
-
-/// A waiter woken by the future may end the query and free the trackers its group's tracker points to (the user's, in
-/// `ProcessList`), so the task must drop the group before the future is ready, not when the pool destroys the task.
-TEST(ThreadPoolCallbackRunner, UnsafeRunnerReleasesGroupBeforeFutureIsReady)
-{
-    std::thread t([&]
-    {
-        ThreadStatus ts;
-        auto context = getContext().context;
-        auto pool = makeSingleThreadPool();
-
-        auto group = std::make_shared<ThreadGroup>(context, 0);
-        std::weak_ptr<ThreadGroup> group_weak = group;
-        std::promise<void> release;
-
-        CurrentThread::attachToGroupIfDetached(group);
-        auto runner = threadPoolCallbackRunnerUnsafe<void, HoldTaskDestruction>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
-        auto future = runner(HoldTaskDestruction(release.get_future().share(), std::this_thread::get_id()), Priority{});
-        CurrentThread::detachFromGroupIfNotDetached();
-        group.reset();
-
-        future.get();
-        const bool released_before_ready = group_weak.expired();
-        release.set_value();
-        pool->wait();
-
-        EXPECT_TRUE(released_before_ready) << "the task must drop its group before the future is ready";
-    });
-    t.join();
-}
-
-/// Same for a task the pool drops unrun on shutdown: it satisfies the promise from its destructor.
-TEST(ThreadPoolCallbackRunner, UnsafeRunnerDroppedTaskReleasesGroupBeforeFutureIsReady)
-{
-    std::thread t([&]
-    {
-        ThreadStatus ts;
-        auto context = getContext().context;
-        auto pool = makeSingleThreadPool();
-
-        /// Occupy the only worker; when it throws, the pool shuts down and the worker drops the queued task unrun.
-        std::promise<void> blocker_started;
-        std::promise<void> unblock;
-        auto unblock_future = unblock.get_future().share();
-        pool->scheduleOrThrowOnError([&blocker_started, unblock_future]
-        {
-            blocker_started.set_value();
-            unblock_future.wait();
-            throw std::runtime_error("shut the pool down");
-        });
-        blocker_started.get_future().wait();
-
-        auto group = std::make_shared<ThreadGroup>(context, 0);
-        std::weak_ptr<ThreadGroup> group_weak = group;
-        std::promise<void> release;
-
-        CurrentThread::attachToGroupIfDetached(group);
-        auto runner = threadPoolCallbackRunnerUnsafe<void, HoldTaskDestruction>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
-        auto future = runner(HoldTaskDestruction(release.get_future().share(), std::this_thread::get_id()), Priority{});
-        CurrentThread::detachFromGroupIfNotDetached();
-        group.reset();
-
-        unblock.set_value();
-        EXPECT_THROW(future.get(), Exception);
-        const bool released_before_ready = group_weak.expired();
-        release.set_value();
-        EXPECT_THROW(pool->wait(), std::runtime_error);
-
-        EXPECT_TRUE(released_before_ready) << "a dropped task must drop its group before the future is ready";
     });
     t.join();
 }

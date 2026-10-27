@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas marks a coordinated read for serialization without attaching callbacks,
 -- then clones the fragment again to build the initiator's local arm. The clone must reproduce that state
 -- instead of resolving the callbacks from the context, which on an initiator holds none.

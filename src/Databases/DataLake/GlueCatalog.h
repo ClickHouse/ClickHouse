@@ -67,15 +67,9 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
-
-    std::optional<std::string> getDefaultTableLocation(
-        const std::string & namespace_name,
-        const std::string & table_name) const override;
-
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    void createNamespaceIfNotExists(const String & namespace_name) const override;
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
@@ -92,8 +86,7 @@ public:
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
     /// fails with `ExpiredToken`, so that a long-running read can recover without
     /// the user having to restart the query.
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
     /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
     /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
@@ -103,7 +96,18 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
+    using FieldTypes = std::unordered_map<String, String>;
+
+    static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
+
+    static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
+
 private:
+    struct FieldTypesWeightFunction
+    {
+        size_t operator()(const FieldTypes & field_types) const;
+    };
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -132,7 +136,7 @@ private:
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
-    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
+    mutable DB::CacheBase<String, FieldTypes, std::hash<String>, FieldTypesWeightFunction> current_schema_field_types;
 };
 
 }

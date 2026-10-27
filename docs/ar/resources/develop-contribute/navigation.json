@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "المقدمة",
+      "group": "مقدمة",
       "pages": [
         "ar/resources/develop-contribute/introduction/developer-instruction",
         "ar/resources/develop-contribute/introduction/architecture"
       ]
     },
     {
-      "group": "البناء",
+      "group": "الإنشاء",
       "pages": [
         "ar/resources/develop-contribute/build/build",
         "ar/resources/develop-contribute/build/build-osx",
@@ -23,8 +23,10 @@
     {
       "group": "البروتوكول الأصلي",
       "pages": [
-        "ar/resources/develop-contribute/native-protocol/protocol",
-        "ar/resources/develop-contribute/native-protocol/format",
+        "ar/resources/develop-contribute/native-protocol/basics",
+        "ar/resources/develop-contribute/native-protocol/client",
+        "ar/resources/develop-contribute/native-protocol/server",
+        "ar/resources/develop-contribute/native-protocol/columns",
         "ar/resources/develop-contribute/native-protocol/hash"
       ]
     },
@@ -51,7 +53,7 @@
       ]
     },
     {
-      "group": "خارطة الطريق",
+      "group": "خريطة الطريق",
       "pages": [
         "ar/resources/develop-contribute/roadmap"
       ]

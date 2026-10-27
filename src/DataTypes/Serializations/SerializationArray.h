@@ -17,10 +17,6 @@ public:
     static SerializationPtr create(const SerializationPtr & nested_);
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
-    /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
-    /// `Map` sizes are the same substream, so this covers them too.
-    static bool isArraySizesSubcolumn(const SubstreamPath & path);
-
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
@@ -84,7 +80,6 @@ public:
         SubstreamsCache * cache) const override;
 
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
-    static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, WriteBuffer & stream, bool position_independent_encoding);
     static bool deserializeOffsetsBinaryBulk(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
     static size_t deserializeOffsetsBinaryBulkAndGetNestedLimit(IColumn & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
 
@@ -107,8 +102,5 @@ private:
     template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
-
-/// Converts the offsets of an array (a `ColumnArray::ColumnOffsets`) to the sizes of its elements.
-ColumnPtr arrayOffsetsToSizes(const IColumn & column);
 
 }

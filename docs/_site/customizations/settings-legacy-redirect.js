@@ -50,6 +50,7 @@
       var routeSuffix = window.location.pathname.slice(
         markerIndex + baseRoute.length
       ).replace(/\/$/, '');
+      if (routeSuffix) continue;
 
       if (!routeFamilies[baseRoute]) {
         if (!loadingRoutes[baseRoute]) {
@@ -65,25 +66,7 @@
         return false;
       }
 
-      var anchorRoutes = Object.assign(
-        {},
-        routeFamilies[baseRoute],
-        (window.clickhouseSettingsLegacyAliases || {})[baseRoute],
-      );
-      var aliasRoutes = (window.clickhouseSettingsLegacyAliases || {})[baseRoute] || {};
-      var aliasAnchors = (window.clickhouseSettingsLegacyAliasAnchors || {})[baseRoute] || {};
-      var alias = canonicalAnchor(aliasRoutes, decodedHash);
-      if (alias && aliasAnchors[alias]) {
-        var basePath = window.location.pathname.slice(0, markerIndex);
-        window.location.replace(
-          basePath + aliasRoutes[alias] + window.location.search +
-          '#' + aliasAnchors[alias]
-        );
-        return true;
-      }
-
-      if (routeSuffix) continue;
-
+      var anchorRoutes = routeFamilies[baseRoute];
       var directAnchor = canonicalAnchor(anchorRoutes, decodedHash);
       var baseAnchor = directAnchor || canonicalAnchor(
         anchorRoutes,

@@ -5,7 +5,7 @@
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/SecretArgumentsRegistry.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 
 namespace DB
@@ -13,6 +13,7 @@ namespace DB
 
   /// This class lets `FunctionSecretArgumentsFinder` read a FUNCTION node of an `ActionsDAG`.
   /// It is the sibling of `FunctionAST` (parser AST) and `FunctionTreeNodeImpl` (analyzer query tree).
+  /// Those two are used by `FunctionSecretArgumentsFinderAST` and `FunctionSecretArgumentsFinderTreeNodeImpl`.
   /// The finder code is written one time against `AbstractFunction`. This class answers its four
   /// questions about an argument for each DAG node type:
   ///
@@ -114,9 +115,17 @@ private:
 
 /// Finds secret arguments of a FUNCTION node of an `ActionsDAG`. A DAG function is always an ordinary
 /// function (table engines, database engines and backup names never become DAG nodes).
-inline SecretArgumentsResult findSecretArguments(const ActionsDAG::Node & function)
+class FunctionSecretArgumentsFinderActionsDAG : public FunctionSecretArgumentsFinder
 {
-    return SecretArgumentsRegistry::instance().find(ASTFunction::Kind::ORDINARY_FUNCTION, FunctionActionsDAG(function));
-}
+public:
+    explicit FunctionSecretArgumentsFinderActionsDAG(const ActionsDAG::Node & function_)
+        : FunctionSecretArgumentsFinder(std::make_unique<FunctionActionsDAG>(function_))
+    {
+        if (!function->hasArguments())
+            return;
+
+        findOrdinaryFunctionSecretArguments();
+    }
+};
 
 }

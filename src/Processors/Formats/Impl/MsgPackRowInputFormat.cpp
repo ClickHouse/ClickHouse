@@ -524,15 +524,8 @@ bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    /// execute() returns parse_return, not bool: both error statuses are negative and so are
-    /// indistinguishable from success under a boolean test.
-    while (true)
+    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
     {
-        const msgpack::parse_return status = msgpack_parser.execute(buf->position(), buf->available(), offset);
-        if (status == msgpack::PARSE_SUCCESS || status == msgpack::PARSE_EXTRA_BYTES)
-            break;
-        if (status != msgpack::PARSE_CONTINUE)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
         buf->position() = buf->buffer().end();
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing msgpack object.");
@@ -555,15 +548,7 @@ size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
     while (!buf->eof() && num_rows < max_block_size)
     {
         for (size_t i = 0; i < columns; ++i)
-        {
-            /// A row that ends between columns is incomplete.
-            if (!readObject(null_parser))
-            {
-                if (i != 0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough values to complete the row.");
-                return num_rows;
-            }
-        }
+            readObject(null_parser);
         ++num_rows;
     }
 
@@ -760,10 +745,10 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object, siz
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = removeNullable(getDataType(object_map.ptr[0].key, depth + 1));
+                auto key_type = getDataType(object_map.ptr[0].key, depth + 1);
                 auto value_type = getDataType(object_map.ptr[0].val, depth + 1);
                 if (key_type && value_type)
-                    return std::make_shared<DataTypeMap>(key_type, value_type);
+                    return std::make_shared<DataTypeMap>(removeNullable(key_type), value_type);
             }
             return nullptr;
         }

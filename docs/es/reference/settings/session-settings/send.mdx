@@ -13,13 +13,15 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos SETTINGS están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## send_profile_events {#send_profile_events}
+<div id="send_profile_events">
+  ## send_profile_events
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Nueva configuración. Indica si se envían eventos de perfil a los client."}]}]} />
 
-Habilita o deshabilita el envío de paquetes [ProfileEvents](/es/resources/develop-contribute/native-protocol/protocol#profileevents) al client.
+Habilita o deshabilita el envío de paquetes [ProfileEvents](/es/resources/develop-contribute/native-protocol/server#profile-events) al client.
 
 Esto se puede deshabilitar para reducir el tráfico de red de los client que no requieren eventos de perfil.
 
@@ -28,7 +30,9 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## send_progress_in_http_headers {#send_progress_in_http_headers}
+<div id="send_progress_in_http_headers">
+  ## send_progress_in_http_headers
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -41,7 +45,9 @@ Posibles valores:
 * 0 — Desactivado.
 * 1 — Activado.
 
-## send_table_structure_on_insert_with_inline_data {#send_table_structure_on_insert_with_inline_data}
+<div id="send_table_structure_on_insert_with_inline_data">
+  ## send_table_structure_on_insert_with_inline_data
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -49,7 +55,9 @@ Posibles valores:
 
 Si está desactivada y la consulta INSERT contiene datos en línea, el servidor no enviará al client la estructura de la tabla ni los valores predeterminados de las columnas a través del protocolo nativo. En su lugar, el servidor analizará por sí mismo los datos en línea. Esto puede mejorar el rendimiento de muchas inserciones pequeñas a través del protocolo nativo.
 
-## send_timeout {#send_timeout}
+<div id="send_timeout">
+  ## send_timeout
+</div>
 
 <SettingsInfoBlock type="Seconds" default_value="300" />
 

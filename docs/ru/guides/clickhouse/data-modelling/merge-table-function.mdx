@@ -14,9 +14,11 @@ keywords: ['слияние', 'табличная функция', 'шаблон�
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## Настройка таблиц {#setup-tables}
+<div id="setup-tables">
+  ## Настройка таблиц
+</div>
 
-Мы научимся использовать эту функцию на примере [базы данных матчей ATP от TennisMyLife](https://github.com/Tennismylife/TML-Database).
+Мы научимся использовать эту функцию на примере [теннисного набора данных Джеффа Сакмана](https://github.com/JeffSackmann/tennis_atp).
 Мы будем обрабатывать CSV-файлы с матчами начиная с 1960-х годов, но для каждого десятилетия создадим немного отличающуюся схему.
 Мы также добавим пару дополнительных столбцов для 1990-х годов.
 
@@ -25,19 +27,19 @@ keywords: ['слияние', 'табличная функция', 'шаблон�
 ```sql
 CREATE OR REPLACE TABLE atp_matches_1960s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, score
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1968..1969}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1968..1969}.csv')
 SETTINGS schema_inference_make_columns_nullable=0, 
          schema_inference_hints='winner_seed Nullable(String), loser_seed Nullable(UInt8)';
 
 CREATE OR REPLACE TABLE atp_matches_1970s ORDER BY tourney_id AS 
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1970..1979}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1970..1979}.csv')
 SETTINGS schema_inference_make_columns_nullable=0, 
          schema_inference_hints='winner_seed Nullable(UInt8), loser_seed Nullable(UInt8)';
 
 CREATE OR REPLACE TABLE atp_matches_1980s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1980..1989}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1980..1989}.csv')
 SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16)';
 
@@ -45,12 +47,14 @@ CREATE OR REPLACE TABLE atp_matches_1990s ORDER BY tourney_id AS
 SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score,
        toBool(arrayExists(x -> position(x, 'W/O') > 0, score))::Nullable(bool) AS walkover,
        toBool(arrayExists(x -> position(x, 'RET') > 0, score))::Nullable(bool) AS retirement
-FROM url('https://raw.githubusercontent.com/Tennismylife/TML-Database/refs/heads/master/{1990..1999}.csv')
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1990..1999}.csv')
 SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## Схема нескольких таблиц {#schema-multiple-tables}
+<div id="schema-multiple-tables">
+  ## Схема нескольких таблиц
+</div>
 
 Мы можем выполнить следующий запрос, чтобы вывести столбцы каждой таблицы и их типы рядом — так различия будет проще увидеть.
 
@@ -89,7 +93,9 @@ SETTINGS output_format_pretty_max_value_width=25;
 * В 1980-х `winner_seed` и `loser_seed` меняются с `Nullable(UInt8)` на `Nullable(UInt16)`.
 * В 1990-х `surface` меняется с `String` на `Enum('Hard', 'Grass', 'Clay', 'Carpet')`, а также добавляются столбцы `walkover` и `retirement`.
 
-## Запрос к нескольким таблицам с помощью merge {#querying-multiple-tables}
+<div id="querying-multiple-tables">
+  ## Запрос к нескольким таблицам с помощью merge
+</div>
 
 Давайте напишем запрос, чтобы найти матчи, в которых Джон Макинрой победил соперника, посеянного под № 1:
 
@@ -107,20 +113,18 @@ AND loser_seed = 1;
 │ Bjorn Borg    │ ['7-6','6-4']                   │
 │ Bjorn Borg    │ ['4-6','7-6','7-6','6-4']       │
 │ Jimmy Connors │ ['6-1','6-3']                   │
-│ Mats Wilander │ ['6-2','6-4']                   │
 │ Ivan Lendl    │ ['6-2','4-6','6-3','6-7','7-6'] │
 │ Ivan Lendl    │ ['6-3','3-6','6-3','7-6']       │
 │ Ivan Lendl    │ ['6-1','6-3']                   │
 │ Stefan Edberg │ ['6-2','6-3']                   │
 │ Stefan Edberg │ ['7-6','6-2']                   │
-│ Ivan Lendl    │ ['7-6','1-4','WEA']             │
 │ Stefan Edberg │ ['6-2','6-2']                   │
 │ Jakob Hlasek  │ ['6-3','7-6']                   │
 └───────────────┴─────────────────────────────────┘
 ```
 
 Далее предположим, что мы хотим отфильтровать эти матчи и найти те, где McEnroe был посеян под номером 3 или ниже.
-Это немного сложнее, потому что `winner_seed` имеет разные типы в разных таблицах:
+Это немного сложнее, потому что `winner_seed` имеет разные types в разных таблицах:
 
 ```sql
 SELECT loser_name, score, winner_seed
@@ -130,7 +134,7 @@ AND loser_seed = 1
 AND multiIf(
   variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
   variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
-  variantElement(winner_seed, 'String')::Nullable(UInt16) >= 3
+  variantElement(winner_seed, 'String')::UInt16 >= 3
 );
 ```
 
@@ -139,17 +143,17 @@ AND multiIf(
 Результат выполнения запроса показан ниже:
 
 ```text
-┌─loser_name────┬─score───────────────┬─winner_seed─┐
-│ Bjorn Borg    │ ['6-3','6-4']       │ 3           │
-│ Mats Wilander │ ['6-2','6-4']       │ 3           │
-│ Stefan Edberg │ ['6-2','6-3']       │ 6           │
-│ Stefan Edberg │ ['7-6','6-2']       │ 4           │
-│ Ivan Lendl    │ ['7-6','1-4','WEA'] │ 4           │
-│ Stefan Edberg │ ['6-2','6-2']       │ 7           │
-└───────────────┴─────────────────────┴─────────────┘
+┌─loser_name────┬─score─────────┬─winner_seed─┐
+│ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────┴───────────────┴─────────────┘
 ```
 
-## Из какой таблицы берутся строки при использовании merge? {#which-table-merge}
+<div id="which-table-merge">
+  ## Из какой таблицы берутся строки при использовании merge?
+</div>
 
 Что, если мы хотим узнать, из какой таблицы берутся строки?
 Для этого можно использовать виртуальный столбец `_table`, как показано в следующем запросе:
@@ -162,19 +166,17 @@ AND loser_seed = 1
 AND multiIf(
   variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
   variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
-  variantElement(winner_seed, 'String')::Nullable(UInt16) >= 3
+  variantElement(winner_seed, 'String')::UInt16 >= 3
 );
 ```
 
 ```text
-┌─_table────────────┬─loser_name────┬─score───────────────┬─winner_seed─┐
-│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4']       │ 3           │
-│ atp_matches_1980s │ Mats Wilander │ ['6-2','6-4']       │ 3           │
-│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3']       │ 6           │
-│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2']       │ 4           │
-│ atp_matches_1980s │ Ivan Lendl    │ ['7-6','1-4','WEA'] │ 4           │
-│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2']       │ 7           │
-└───────────────────┴───────────────┴─────────────────────┴─────────────┘
+┌─_table────────────┬─loser_name────┬─score─────────┬─winner_seed─┐
+│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────────┴───────────────┴───────────────┴─────────────┘
 ```
 
 Мы также можем использовать этот виртуальный столбец в запросе, чтобы подсчитать значения в столбце `walkover`:
@@ -188,11 +190,11 @@ ORDER BY _table;
 
 ```text
 ┌─_table────────────┬─walkover─┬─count()─┐
-│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7319 │
-│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39404 │
-│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36097 │
-│ atp_matches_1990s │ true     │     129 │
-│ atp_matches_1990s │ false    │   37023 │
+│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7542 │
+│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39165 │
+│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36233 │
+│ atp_matches_1990s │ true     │     128 │
+│ atp_matches_1990s │ false    │   37022 │
 └───────────────────┴──────────┴─────────┘
 ```
 
@@ -221,13 +223,13 @@ ORDER BY _table;
 
 ```text
 ┌─_table────────────┬─multiIf(isNo⋯, '%W/O%'))─┬─count()─┐
-│ atp_matches_1960s │ true                     │     296 │
-│ atp_matches_1960s │ false                    │    7023 │
-│ atp_matches_1970s │ true                     │     583 │
-│ atp_matches_1970s │ false                    │   38821 │
-│ atp_matches_1980s │ true                     │     117 │
-│ atp_matches_1980s │ false                    │   35980 │
-│ atp_matches_1990s │ true                     │     129 │
-│ atp_matches_1990s │ false                    │   37023 │
+│ atp_matches_1960s │ true                     │     242 │
+│ atp_matches_1960s │ false                    │    7300 │
+│ atp_matches_1970s │ true                     │     422 │
+│ atp_matches_1970s │ false                    │   38743 │
+│ atp_matches_1980s │ true                     │      92 │
+│ atp_matches_1980s │ false                    │   36141 │
+│ atp_matches_1990s │ true                     │     128 │
+│ atp_matches_1990s │ false                    │   37022 │
 └───────────────────┴──────────────────────────┴─────────┘
 ```

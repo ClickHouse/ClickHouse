@@ -86,7 +86,7 @@ PartitionPruner::PartitionPruner(
     if (!physical_names_map_.empty())
     {
         for (auto & name : physical_partition_columns)
-            name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
+            name = getPhysicalName(name, physical_names_map_);
     }
 }
 

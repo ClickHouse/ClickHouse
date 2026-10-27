@@ -282,10 +282,6 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled, const std::unor
     ///  to aggregate (mix) rules per database
     for (const auto & [policy_id, info] : policies)
     {
-        /// Fully ignore SQL-created policies for users.xml users (skip before touching the mixer).
-        if (access_control.shouldSkipSQLAccessEntityForUser(policy_id, enabled.params.user_id))
-            continue;
-
         if (info.isForDatabase())
         {
             const auto & policy = *info.policy;
@@ -316,9 +312,6 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled, const std::unor
     /// populate table_mixers using database_mixers and table-level policies
     for (const auto & [policy_id, info] : policies)
     {
-        if (access_control.shouldSkipSQLAccessEntityForUser(policy_id, enabled.params.user_id))
-            continue;
-
         if (!info.isForDatabase())
         {
             const auto & policy = *info.policy;

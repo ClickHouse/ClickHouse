@@ -1,3 +1,0 @@
-<clickhouse>
-    <shutdown_wait_unfinished>10</shutdown_wait_unfinished>
-</clickhouse>
