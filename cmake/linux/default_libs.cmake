@@ -68,6 +68,10 @@ elseif (USE_MUSL)
     # -static-pie: a static executable that relocates itself at startup (rcrt1.o), so it keeps ASLR.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/rcrt1.o ${MUSL_CRT_DIR}/crti.o")
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
+    # Every pointer in the binary's data still has to be patched at startup, but packed relative relocations
+    # (DT_RELR, applied by musl's ldso/dlstart.c) describe them in ~250 KB instead of ~34 MB of `.rela.dyn`:
+    # the binary is that much smaller, and a start with a cold page cache reads that much less.
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,pack-relative-relocs")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()

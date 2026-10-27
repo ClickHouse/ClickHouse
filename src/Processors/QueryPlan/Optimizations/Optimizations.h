@@ -57,6 +57,7 @@ struct Optimization
         bool use_skip_indexes_for_top_k{};
         bool use_top_k_dynamic_filtering{};
         bool use_top_k_dynamic_filtering_for_variable_length_types{};
+        bool use_top_k_dynamic_filtering_for_single_string_sort_column{};
         size_t max_limit_for_top_k_optimization{};
         bool use_skip_indexes_on_data_read{};
         bool read_in_order{};
@@ -120,7 +121,7 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const
 
 /// When an aggregation feeds ORDER BY <its lone count() output> LIMIT n, let every two-level
 /// bucket of the aggregation output materialize only its n best groups by that count.
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings);
 
 /// Split FilterStep into chain `ExpressionStep -> FilterStep`, where FilterStep contains minimal number of nodes.
 size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);

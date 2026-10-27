@@ -14,6 +14,7 @@
 
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/Context.h"
+#include "Poco/Net/DistrustedCertificates.h"
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 #include "Poco/Net/RejectCertificateHandler.h"
@@ -197,6 +198,20 @@ SSLManager::InvalidCertificateHandlerPtr SSLManager::clientCertificateHandler()
 
 int SSLManager::verifyCallback(bool server, int ok, X509_STORE_CTX* pStore)
 {
+	/// OpenSSL calls this for every certificate of the chain, with `ok` set to 1 if it has
+	/// no other errors, so this rejects a chain that contains a distrusted certificate at any
+	/// depth, whichever trust store (the system one, the configured one or the embedded one)
+	/// it was built from. The rejection is reported like any other verification error.
+	if (X509 * cert = X509_STORE_CTX_get_current_cert(pStore))
+	{
+		int distrusted = checkDistrustedCertificate(cert);
+		if (distrusted != X509_V_OK)
+		{
+			X509_STORE_CTX_set_error(pStore, distrusted);
+			ok = 0;
+		}
+	}
+
 	if (!ok)
 	{
 		int depth = X509_STORE_CTX_get_error_depth(pStore);
@@ -344,7 +359,9 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
+	/// Only an outbound connection has a requested host name to check: on an accepted socket this
+	/// would run against the client's address, which a client certificate does not name.
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else
