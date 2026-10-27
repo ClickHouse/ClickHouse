@@ -20,7 +20,11 @@ time.sleep(300)
 ' "$pid_file" & exec sleep 600 ) &
 parent=$!
 trap 'kill -9 $parent $(cat "$pid_file" 2>/dev/null) 2>/dev/null; wait $parent 2>/dev/null; rm -rf "$dir"' EXIT
-while [ ! -s "$pid_file" ]; do sleep 0.1; done
+while [ ! -s "$pid_file" ]; do
+    clickhouse_test_time_left || exit 1
+    sleep 0.1
+done
+pid=$(cat "$pid_file")
 
 echo "status before stop, running: $("$CLICKHOUSE_BINARY" status --pid-path "$dir" 2>&1 | grep -c 'is running')"
 echo "start before stop, already running: $("$CLICKHOUSE_BINARY" start --prefix "$dir" --pid-path "$dir" --user '' 2>&1 | grep -c 'is already running')"
@@ -31,3 +35,4 @@ echo "kill signals sent: $(grep -c 'Sent kill signal' "$dir/stop.log")"
 
 echo "status after stop, running: $("$CLICKHOUSE_BINARY" status --pid-path "$dir" 2>&1 | grep -c 'is running')"
 echo "start after stop, already running: $("$CLICKHOUSE_BINARY" start --prefix "$dir" --pid-path "$dir" --user '' 2>&1 | grep -c 'is already running')"
+echo "killed process still exists: $(kill -0 "$pid" 2>/dev/null && echo 1 || echo 0)"

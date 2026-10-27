@@ -4,3 +4,4 @@ stop: 0
 kill signals sent: 1
 status after stop, running: 0
 start after stop, already running: 0
+killed process still exists: 1
