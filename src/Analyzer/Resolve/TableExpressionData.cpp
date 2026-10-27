@@ -122,14 +122,23 @@ size_t AnalysisTableExpressionData::matchTableName(const Identifier & identifier
     return 0;
 }
 
-size_t AnalysisTableExpressionData::matchDatabaseAndTableName(const Identifier & identifier) const
+size_t AnalysisTableExpressionData::matchDatabaseAndTableName(const Identifier & identifier, bool * crosses_boundary) const
 {
+    if (crosses_boundary)
+        *crosses_boundary = false;
+
     if (database_name.empty() || table_name.empty())
         return 0;
 
     /// Matched as a whole: a quoted part may cross the boundary between the database and the table (`"db.ns".t` for the
     /// table `ns.t` of the database `db`), the same as the name of the table expression itself.
-    return matchDottedName(identifier, 0, database_name + '.' + table_name);
+    size_t matched = matchDottedName(identifier, 0, database_name + '.' + table_name);
+    if (matched && crosses_boundary)
+    {
+        size_t database_parts = matchDottedName(identifier, 0, database_name);
+        *crosses_boundary = !database_parts || matchDottedName(identifier, database_parts, table_name) != matched;
+    }
+    return matched;
 }
 
 }

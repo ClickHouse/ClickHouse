@@ -1133,9 +1133,29 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     }
 
     /// The database and the table name (hierarchical, possibly covering several parts) qualify the column.
-    size_t database_and_table_name_parts = table_expression_data.matchDatabaseAndTableName(identifier);
+    bool crosses_boundary = false;
+    size_t database_and_table_name_parts = table_expression_data.matchDatabaseAndTableName(identifier, &crosses_boundary);
     if (database_and_table_name_parts == 0 || database_and_table_name_parts >= identifier.getPartsSize())
         return {};
+
+    /// A qualifier crossing the boundary between the database and the table (`"a.b".c` for the table `a`.`b.c`) is only
+    /// accepted when no other table expression matches it exactly (the table `a.b`.`c`): these are distinct tables.
+    if (crosses_boundary)
+    {
+        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+        {
+            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
+            {
+                if (&other_table_expression_data == &table_expression_data)
+                    continue;
+
+                bool other_crosses_boundary = false;
+                size_t other_parts = other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary);
+                if (other_parts > 0 && other_parts < identifier.getPartsSize() && !other_crosses_boundary)
+                    return {};
+            }
+        }
+    }
 
     return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, database_and_table_name_parts);
 }
