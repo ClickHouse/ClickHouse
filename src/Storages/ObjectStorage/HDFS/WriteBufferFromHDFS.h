@@ -42,7 +42,6 @@ public:
 
 private:
     void finalizeImpl() override;
-    void cancelImpl() noexcept override;
 
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;

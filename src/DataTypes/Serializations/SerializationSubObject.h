@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
+
 namespace DB
 {
 
@@ -16,18 +17,8 @@ namespace ErrorCodes
 /// this class will be responsible for reading sub-object a.b and will read JSON column with data {"c" : 43, "d" : "Hello"}.
 class SerializationSubObject final : public SimpleTextSerialization
 {
-private:
-    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const SerializationPtr & typed_shared_data_serialization_);
-
 public:
-    static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const SerializationPtr & typed_shared_data_serialization_);
-
-    /// typed_paths_serializations_ holds the typed paths under the prefix that are not SHARED; the SHARED ones
-    /// are read together by typed_shared_data_serialization_, which is null when there are none.
-    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const SerializationPtr & typed_shared_data_serialization_);
-
-    size_t allocatedBytes() const override;
-    bool supportsPooling() const override;
+    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -56,7 +47,8 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -80,7 +72,6 @@ private:
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
-    SerializationPtr typed_shared_data_serialization;
 };
 
 }

@@ -22,9 +22,9 @@ struct HTTPAuthClientParams
 {
     Poco::URI uri;
     ConnectionTimeouts timeouts;
-    size_t max_tries{};
-    size_t retry_initial_backoff_ms{};
-    size_t retry_max_backoff_ms{};
+    size_t max_tries;
+    size_t retry_initial_backoff_ms;
+    size_t retry_max_backoff_ms;
     std::vector<String> forward_headers;
 };
 
@@ -56,9 +56,9 @@ public:
             bool last_attempt = attempt + 1 >= max_tries;
             try
             {
-                sendHTTPRequest(*session, request)->finalize();
-                auto body = receiveHTTPResponse(*session, response);
-                return parser.parse(response, body.get());
+                session->sendRequest(request);
+                auto & body_stream = session->receiveResponse(response);
+                return parser.parse(response, &body_stream);
             }
             catch (const Poco::Exception &) // TODO: make retries smarter
             {

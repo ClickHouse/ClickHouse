@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-ordinary-database
+-- Tags: no-replicated-database, no-ordinary-database, no-encrypted-storage
 
 SET mutations_sync = 1;
 SET check_query_single_value_result = 0;

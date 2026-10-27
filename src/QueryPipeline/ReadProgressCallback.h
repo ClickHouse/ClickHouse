@@ -13,16 +13,14 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class EnabledQuota;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using StorageLimitsList = std::list<StorageLimits>;
 
 
 class ReadProgressCallback
 {
 public:
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) { quota = quota_; }
-    void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
     void setProcessListElement(QueryStatusPtr elem);
-    QueryStatusPtr getProcessListElement() const { return process_list_elem; }
     void setProgressCallback(const ProgressCallback & callback) { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
     void addTotalBytes(size_t value) { total_bytes += value; }
@@ -35,7 +33,6 @@ public:
 
 private:
     std::shared_ptr<const EnabledQuota> quota;
-    UInt64 normalized_query_hash = 0;
     ProgressCallback progress_callback;
     QueryStatusPtr process_list_elem;
 

@@ -15,7 +15,7 @@
 []	c
 []	mv1
 []	mv3
-['mv3']	new_mv2
+[]	new_mv2
 <<<	no change
 []	.inner_id.
 []	.inner_id.
@@ -24,16 +24,16 @@
 []	c
 []	mv1
 []	mv3
-['mv3']	new_mv2
+[]	new_mv2
 <<<	rename a and b
 []	.inner_id.
 []	.inner_id.
 []	c
 []	mv1
 []	mv3
-['mv1','new_mv2']	new_a
+[]	new_a
 []	new_b
-['mv3']	new_mv2
+[]	new_mv2
 <<<	back
 []	.inner_id.
 []	.inner_id.

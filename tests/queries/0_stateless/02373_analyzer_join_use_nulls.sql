@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS test_table_join_1;

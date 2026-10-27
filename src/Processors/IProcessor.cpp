@@ -6,12 +6,9 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
-#if defined(OS_LINUX)
+#ifdef OS_LINUX
 #include <sys/epoll.h>
-#elif defined(OS_DARWIN)
-#include <Common/Epoll.h> /// EPOLLIN/EPOLLERR compatibility flags for the kqueue-backed Epoll
 #endif
 
 
@@ -38,43 +35,16 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-bool IProcessor::isAnyOutputNeeded() const
-{
-    for (const auto & output : outputs)
-        if (!output.isFinished() && output.isNeeded())
-            return true;
-    return false;
-}
-
-void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
+void IProcessor::setQueryPlanStep(IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
     query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
     if (step)
     {
         plan_step_name = step->getName();
         plan_step_description = step->getStepDescription();
         step_uniq_id = step->getUniqID();
-        query_plan_step_id = step->getStepIndex() + 1;
     }
-}
-
-void IProcessor::setQueryPlanStepGroup(size_t group)
-{
-    query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
-}
-
-void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group)
-{
-    query_plan_step = parent.query_plan_step;
-    query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
-    plan_step_name = parent.plan_step_name;
-    plan_step_description = parent.plan_step_description;
-    step_uniq_id = parent.step_uniq_id;
-    query_plan_step_id = parent.query_plan_step_id;
 }
 
 IProcessor::Status IProcessor::prepare()
@@ -92,24 +62,20 @@ int IProcessor::schedule()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-std::tuple<int, uint32_t, Int64> IProcessor::scheduleForEvent()
+#ifdef OS_LINUX
+std::pair<int, uint32_t> IProcessor::scheduleForEvent()
 {
-    return {schedule(), EPOLLIN | EPOLLERR, -1};
+    return {schedule(), EPOLLIN | EPOLLERR};
 }
 #endif
 
-IProcessor::PipelineUpdate IProcessor::updatePipeline()
+Processors IProcessor::expandPipeline()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
 }
 
-void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
+void IProcessor::cancel() noexcept
 {
-    /// PartialResult means the consumer has enough data and only wants external ingress to stop
-    /// while the rest of the pipeline drains. Only sources act on it;
-    if (reason == CancelReason::PartialResult)
-        return;
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
@@ -146,14 +112,6 @@ UInt64 IProcessor::getOutputPortNumber(const OutputPort * output_port) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
 }
 
-IProcessor::PortDataCounters IProcessor::getPortDataCounters(const Port & port) const
-{
-    if (&port.getProcessor() != this)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to {} processor", getName());
-
-    return {port.rows, port.bytes};
-}
-
 IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
 {
     ProcessorDataStats stats;
@@ -173,22 +131,23 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     return stats;
 }
 
-ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
+IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
 {
     ProcessorsProfileLogInfo info;
 
-    /// Indices unique within the query, not heap addresses, which must not be published.
-    info.id = processor_index;
+    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+    info.id = get_proc_id(*this);
 
     for (const auto & port : outputs)
     {
         if (!port.isConnected())
             continue;
         const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(next.processor_index);
+        info.parent_ids.push_back(get_proc_id(next));
     }
 
-    info.plan_step = query_plan_step_id;
+    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
     info.plan_step_name = plan_step_name;
     info.plan_step_description = plan_step_description;
     info.plan_group = query_plan_step_group;
@@ -263,8 +222,8 @@ std::string IProcessor::statusToName(std::optional<Status> status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::UpdatePipeline:
-            return "UpdatePipeline";
+        case Status::ExpandPipeline:
+            return "ExpandPipeline";
     }
 }
 

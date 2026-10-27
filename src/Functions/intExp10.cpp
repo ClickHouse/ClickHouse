@@ -19,7 +19,6 @@ struct IntExp10Impl
 {
     using ResultType = UInt64;
     static constexpr const bool allow_string_or_fixed_string = false;
-    static constexpr auto signature = "(NativeNumber) -> UInt64";
 
     static ResultType apply([[maybe_unused]] A a)
     {
@@ -32,18 +31,12 @@ struct IntExp10Impl
             if constexpr (std::is_floating_point_v<A>)
             {
                 if (std::isnan(a))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp10 must not be called with nan");
-            }
-
-            /// Range-check before the narrowing `static_cast<int>` below. Without this, integer
-            /// inputs whose magnitude exceeds `INT_MAX` (e.g. `UInt32` near `2^32`, `Int64`
-            /// near `INT64_MAX`) get implementation-defined truncation and return nonsense.
-            if constexpr (is_signed_v<A>)
-                if (a < A{0})
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp2 must not be called with nan");
+                if (a < 0)
                     return 0;
-            if (a >= A{20})
-                return std::numeric_limits<UInt64>::max();
-
+                if (a >= 20)
+                    return std::numeric_limits<UInt64>::max();
+            }
             return intExp10(static_cast<int>(a));
         }
     }
@@ -54,14 +47,15 @@ struct IntExp10Impl
 };
 
 struct NameIntExp10 { static constexpr auto name = "intExp10"; };
-using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, false>;
+/// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
+using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, true>;
 
 }
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull()
             ? -std::numeric_limits<Float64>::infinity()
@@ -74,10 +68,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
         if (left_float < 0 || right_float > 19)
             return {};
 
-        /// For floating-point inputs, the value is truncated to int, so `intExp10` is not
-        /// strictly monotonic (e.g. `intExp10(1.5)` == `intExp10(1.9)`).
-        bool is_strict = type.isValueRepresentedByInteger();
-        return { .is_monotonic = true, .is_strict = is_strict };
+        return { .is_monotonic = true, .is_strict = true };
     }
 };
 

@@ -5,10 +5,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-# The command line overrides the file's `session_timeout_ms`, so a reload must keep it as well.
-node = cluster.add_instance(
-    "node", with_zookeeper=True, extra_args="--zookeeper.session_timeout_ms=20000"
-)
+node = cluster.add_instance("node", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")

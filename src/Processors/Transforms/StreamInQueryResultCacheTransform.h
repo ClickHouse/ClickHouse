@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StreamInQueryResultCacheTransform final : public ISimpleTransform
+class StreamInQueryResultCacheTransform : public ISimpleTransform
 {
 public:
     StreamInQueryResultCacheTransform(
@@ -16,8 +16,6 @@ public:
 
 protected:
     void transform(Chunk & chunk) override;
-    Status prepare() override;
-    void cancel(CancelReason reason) noexcept override;
 
 public:
     void finalizeWriteInQueryResultCache();

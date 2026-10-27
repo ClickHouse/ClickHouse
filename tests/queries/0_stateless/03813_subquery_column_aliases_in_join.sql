@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 
 SELECT * FROM (SELECT 1) AS t(a) JOIN (SELECT 1) AS u(b) ON a = b;
 

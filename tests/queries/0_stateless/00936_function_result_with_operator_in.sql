@@ -23,6 +23,7 @@ SELECT 'a' IN splitByChar('c', 'abcdef');
 SELECT 'non-constant array expressions:';
 -- non-constant expressions in the right side of IN now work with array-returning functions
 SET force_primary_key = 0;
+SET enable_analyzer = 1;
 SELECT count() FROM samples WHERE 1 IN range(samples.value);
 SELECT count() FROM samples WHERE 1 IN range(rand() % 1000 + 2);
 SET force_primary_key = 1;

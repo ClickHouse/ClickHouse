@@ -1,4 +1,3 @@
-
 SELECT toTypeName((1,)), (1,);
 
 EXPLAIN SYNTAX SELECT (1,);

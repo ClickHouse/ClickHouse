@@ -18,6 +18,7 @@
 #define Util_AbstractConfiguration_INCLUDED
 
 
+#include <utility>
 #include <vector>
 #include "Poco/BasicEvent.h"
 #include "Poco/Mutex.h"

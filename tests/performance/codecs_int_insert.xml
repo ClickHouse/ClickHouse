@@ -29,18 +29,17 @@
                 <value>rnd</value>
             </values>
         </substitution>
-        <!-- More rows per INSERT make the test write more than the CI runner's page cache absorbs, so later runs wait for the disk -->
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>5000000</value>
+                <value>20000000</value>
             </values>
         </substitution>
     </substitutions>
 
     <create_query>CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_{codec} (n {type} CODEC({codec})) 
         ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple()
-        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000, auto_statistics_types='';</create_query>
+        SETTINGS parts_to_delay_insert = 5000, parts_to_throw_insert = 5000;</create_query>
     <create_query>system stop merges</create_query>
 
     <!-- Using limit to make query finite, allowing it to be run multiple times in a loop, reducing mean error -->

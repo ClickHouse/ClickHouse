@@ -1,7 +1,6 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
-#include <cerrno>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <pwd.h>
@@ -25,22 +24,15 @@ namespace
         if (buffer_size <= 0)
             buffer_size = 1024;
         std::string buffer;
-        buffer.resize(buffer_size);
+        buffer.reserve(buffer_size);
 
-        struct passwd passwd_entry{};
+        struct passwd passwd_entry;
         struct passwd * result = nullptr;
         const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
 
-        /// Fall back to the numeric id when there is no name for it. Note that when the user databases
-        /// are missing entirely (e.g. no /etc/passwd in a container built "from scratch"), glibc reports
-        /// it by a null result, while musl may return an error.
         if (error)
-        {
-            if (error == ENOENT || error == ESRCH)
-                return std::to_string(user_id);
             ErrnoException::throwWithErrno(
                 ErrorCodes::FAILED_TO_GETPWUID, error, "Failed to find user name for {}", std::to_string(user_id));
-        }
         else if (result)
             return result->pw_name;
         return std::to_string(user_id);
@@ -51,7 +43,7 @@ void assertProcessUserMatchesDataOwner(const std::string & path, std::function<v
 {
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
-    struct stat statbuf{};
+    struct stat statbuf;
     if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         auto effective_user = getUserName(effective_user_id);

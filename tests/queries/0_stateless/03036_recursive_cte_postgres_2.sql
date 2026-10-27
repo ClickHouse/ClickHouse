@@ -32,6 +32,8 @@
 
 -- { echoOn }
 
+SET enable_analyzer = 1;
+
 --
 -- Some examples with a tree
 --
@@ -133,7 +135,7 @@ WITH RECURSIVE q AS (
       (WITH x AS (SELECT * FROM q)
        SELECT * FROM x)
     )
-SELECT * FROM q LIMIT 24 SETTINGS max_threads = 1;
+SELECT * FROM q LIMIT 24;
 
 WITH RECURSIVE q AS (
       SELECT * FROM department
@@ -145,7 +147,7 @@ WITH RECURSIVE q AS (
         )
        SELECT * FROM x)
     )
-SELECT * FROM q LIMIT 32 SETTINGS max_threads = 1;
+SELECT * FROM q LIMIT 32;
 
 -- recursive term has sub-UNION
 WITH RECURSIVE t AS (
@@ -155,6 +157,6 @@ WITH RECURSIVE t AS (
         (SELECT 2 AS i UNION ALL SELECT 3 AS i) AS t2
         JOIN t ON (t2.i = t.i+1))
 
-    SELECT * FROM t ORDER BY ALL;
+    SELECT * FROM t;
 
 -- { echoOff }

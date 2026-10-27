@@ -32,7 +32,7 @@ public:
             return VisitorStatus::Error;
         }
 
-        VisitorStatus status = {};
+        VisitorStatus status;
         if (current_index < element.getArray().size())
         {
             apply(element);

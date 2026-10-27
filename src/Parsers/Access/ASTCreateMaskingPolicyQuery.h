@@ -42,7 +42,7 @@ public:
     ASTPtr update_assignments;  // ASTExpressionList of ASTAssignment objects
     ASTPtr where_condition;
 
-    Int64 priority{};
+    Int64 priority;
 
     String getID(char) const override;
     ASTPtr clone() const override;

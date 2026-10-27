@@ -3,9 +3,8 @@
 #include <IO/WriteHelpers.h>
 #include <string>
 #include <iostream>
-#include <Examples/clickhouse_examples.h>
 
-int mainEntryExampleValidUtf8(int, char **)
+int main(int, char **)
 {
     try
     {

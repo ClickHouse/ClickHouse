@@ -15,4 +15,5 @@ SELECT
     hits1.date,
     arrayFilter(x -> (x IN (2, 3)), data) AS filtered
 FROM hits1
-WHERE arrayExists(x -> (x IN (2, 3)), data);
+WHERE arrayExists(x -> (x IN (2, 3)), data)
+SETTINGS enable_analyzer = 1;

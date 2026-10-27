@@ -124,7 +124,7 @@ prune_counts() {
         END { printf "read=%d pruned=%d\n", read, pruned }'
 }
 
-echo '-- physical wider than declared: statistics are cast to the output type, so pruning still works'
+echo '-- physical wider than declared: statistics are not usable, so no row group is pruned'
 prune_counts "SELECT count() FROM file('$DATA/rowgroups_mismatch.parquet', Parquet) WHERE k > 500 SETTINGS input_format_parquet_filter_push_down = 1"
 $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/rowgroups_mismatch.parquet', Parquet) WHERE k > 500 SETTINGS input_format_parquet_filter_push_down = 1"
 
@@ -132,7 +132,7 @@ echo '-- same file well-formed (declared precision 18): pruning still works'
 prune_counts "SELECT count() FROM file('$DATA/rowgroups_control.parquet', Parquet) WHERE k > 500 SETTINGS input_format_parquet_filter_push_down = 1"
 $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/rowgroups_control.parquet', Parquet) WHERE k > 500 SETTINGS input_format_parquet_filter_push_down = 1"
 
-echo '-- a hint of exactly the decoded width also prunes'
+echo '-- a hint of exactly the decoded width restores pruning'
 prune_counts "SELECT count() FROM file('$DATA/rowgroups_mismatch.parquet', Parquet, 'k Decimal(18, 2)') WHERE k > 500 SETTINGS input_format_parquet_filter_push_down = 1"
 $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/rowgroups_mismatch.parquet', Parquet, 'k Decimal(18, 2)') WHERE k > 500 SETTINGS input_format_parquet_filter_push_down = 1"
 

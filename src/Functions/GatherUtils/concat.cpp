@@ -21,7 +21,7 @@ namespace
 
 struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
 {
-    using Sources = VectorWithMemoryTracking<std::unique_ptr<IArraySource>>;
+    using Sources = std::vector<std::unique_ptr<IArraySource>>;
 
     template <typename Source>
     static void selectSource(bool /*is_const*/, bool is_nullable, Source & source, const Sources & sources, ColumnArray::MutablePtr & result)
@@ -54,7 +54,7 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
 
 }
 
-ColumnArray::MutablePtr concat(const VectorWithMemoryTracking<std::unique_ptr<IArraySource>> & sources)
+ColumnArray::MutablePtr concat(const std::vector<std::unique_ptr<IArraySource>> & sources)
 {
     if (sources.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Concat function should get at least 1 ArraySource");

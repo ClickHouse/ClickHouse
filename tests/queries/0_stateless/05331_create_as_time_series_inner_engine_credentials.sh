@@ -21,7 +21,7 @@ client=(${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1)
           TABLE ENGINE ON ReplacingMergeTree, TABLE ENGINE ON URL TO ${user};
 
     CREATE TABLE ${db}.ts_src ENGINE = TimeSeries
-        SAMPLES ENGINE = URL('http://user:password@127.0.0.1:1/', 'CSV');
+        DATA ENGINE = URL('http://user:password@127.0.0.1:1/', 'CSV');
 
     GRANT SHOW COLUMNS ON ${db}.ts_src TO ${user};
 "

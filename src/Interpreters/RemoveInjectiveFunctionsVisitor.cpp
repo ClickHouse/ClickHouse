@@ -5,7 +5,6 @@
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/getASTFunctionArgumentColumns.h>
 
 namespace DB
 {
@@ -18,12 +17,7 @@ static bool isUniq(const ASTFunction & func)
 }
 
 /// Remove injective functions of one argument: replace with a child
-static bool removeInjectiveFunction(
-    ASTPtr & ast,
-    ContextPtr context,
-    const NamesAndTypesList & source_columns,
-    const NameSet & array_join_result_names,
-    const FunctionFactory & function_factory)
+static bool removeInjectiveFunction(ASTPtr & ast, ContextPtr context, const FunctionFactory & function_factory)
 {
     const ASTFunction * func = ast->as<ASTFunction>();
     if (!func)
@@ -32,10 +26,7 @@ static bool removeInjectiveFunction(
     if (!func->arguments || func->arguments->children.size() != 1)
         return false;
 
-    /// The claim can depend on the argument, so resolve it as far as the AST allows. An argument
-    /// that stays unresolved leaves the function unclaimed.
-    auto argument_columns = tryGetASTFunctionArgumentColumns(*func, source_columns, array_join_result_names);
-    if (!argument_columns || !function_factory.get(func->name, context)->isInjective(*argument_columns))
+    if (!function_factory.get(func->name, context)->isInjective({}))
         return false;
 
     ast = func->arguments->children[0];
@@ -56,7 +47,7 @@ void RemoveInjectiveFunctionsMatcher::visit(ASTFunction & func, ASTPtr &, const 
 
         for (auto & arg : func.arguments->children)
         {
-            while (removeInjectiveFunction(arg, data.getContext(), data.source_columns, data.array_join_result_names, function_factory))
+            while (removeInjectiveFunction(arg, data.getContext(), function_factory))
                 ;
         }
     }

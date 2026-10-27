@@ -1,5 +1,4 @@
 #pragma once
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -21,7 +20,7 @@ namespace DB
   *
   * The function can be used for debugging purposes, as well as for (hidden from the user) query conversions.
   */
-class FunctionIndexHint final : public IFunction
+class FunctionIndexHint : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";
@@ -41,11 +40,6 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    /// Arguments are never evaluated and the result is always UInt8, so a Nothing-typed
-    /// argument must not force the declared return type to Nothing (which would mismatch
-    /// the UInt8 column produced by executeImpl).
-    bool useDefaultImplementationForNothing() const override { return false; }
-
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     bool useDefaultImplementationForSparseColumns() const override { return false; }
@@ -58,10 +52,9 @@ public:
     {
         return name;
     }
-
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt8 OR (Any, ...) -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

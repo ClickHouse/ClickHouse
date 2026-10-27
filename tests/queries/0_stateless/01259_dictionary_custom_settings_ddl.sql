@@ -1,10 +1,5 @@
 -- Tags: no-fasttest
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-USE {CLICKHOUSE_DATABASE_1:Identifier};
-
 CREATE TABLE table_for_dict
 (
   key_column UInt64,
@@ -16,9 +11,13 @@ ORDER BY key_column;
 
 INSERT INTO table_for_dict VALUES (100500, 10000000, 'Hello world');
 
-DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.dict1;
+DROP DATABASE IF EXISTS ordinary_db;
 
-CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dict1
+CREATE DATABASE ordinary_db;
+
+DROP DICTIONARY IF EXISTS ordinary_db.dict1;
+
+CREATE DICTIONARY ordinary_db.dict1
 (
   key_column UInt64 DEFAULT 0,
   second_column UInt64 DEFAULT 1,
@@ -31,8 +30,10 @@ LAYOUT(FLAT()) SETTINGS(max_result_bytes=1);
 
 SELECT 'INITIALIZING DICTIONARY';
 
-SELECT dictGetUInt64('dict1', 'second_column', toUInt64(100500)); -- { serverError TOO_MANY_ROWS_OR_BYTES }
+SELECT dictGetUInt64('ordinary_db.dict1', 'second_column', toUInt64(100500)); -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SELECT 'END';
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE IF EXISTS ordinary_db;
+
+DROP TABLE IF EXISTS table_for_dict;

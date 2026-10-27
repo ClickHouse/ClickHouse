@@ -1,4 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/4567
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS fact;
 DROP TABLE IF EXISTS animals;
 DROP TABLE IF EXISTS colors;

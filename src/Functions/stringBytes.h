@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/BitHelpers.h>
@@ -13,11 +14,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
 template <typename Impl, typename Name>
-class FunctionStringBytes final : public IFunction
+class FunctionStringBytes : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -33,12 +35,19 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (!isString(arguments[0].type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(),
+                getName());
+
         if constexpr (std::is_same_v<ResultType, UInt16>)
-            return "(String) -> UInt16";
+            return std::make_shared<DataTypeUInt16>();
         else if constexpr (std::is_same_v<ResultType, Float64>)
-            return "(String) -> Float64";
+            return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

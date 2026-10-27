@@ -1,4 +1,6 @@
-SELECT count()\nFROM t_constraints_where\nWHERE greater(b, 15)
+SELECT count()
+FROM t_constraints_where
+WHERE b > 15
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -9,7 +11,10 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT count()\nFROM t_constraints_where\nWHERE equals(b, 20)
+  SETTINGS enable_analyzer=1
+SELECT count()
+FROM t_constraints_where
+WHERE b = 20
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -20,7 +25,10 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT count()\nFROM t_constraints_where\nWHERE less(b, 2)
+  SETTINGS enable_analyzer=1
+SELECT count()
+FROM t_constraints_where
+WHERE b < 2
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -31,7 +39,10 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
-SELECT count()\nFROM t_constraints_where\nWHERE or(greater(b, 20), less(b, 8))
+  SETTINGS enable_analyzer=1
+SELECT count()
+FROM t_constraints_where
+WHERE (b > 20) OR (b < 8)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -46,7 +57,10 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: b, result_type: UInt32, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_8, constant_value_type: UInt8
-SELECT count()\nFROM t_constraints_where\nPREWHERE or(greater(b, 20), less(b, 8))
+  SETTINGS enable_analyzer=1
+SELECT count()
+FROM t_constraints_where
+PREWHERE (b > 20) OR (b < 8)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -61,7 +75,10 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: b, result_type: UInt32, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_8, constant_value_type: UInt8
-SELECT count()\nFROM t_constraints_where\nWHERE or(equals(b, 1), less(b, 18), greater(b, 5))
+  SETTINGS enable_analyzer=1
+SELECT count()
+FROM t_constraints_where
+WHERE (b = 1) OR (b < 18) OR (b > 5)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -70,3 +87,4 @@ QUERY id: 0
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
+  SETTINGS enable_analyzer=1

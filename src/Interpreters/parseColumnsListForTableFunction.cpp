@@ -5,11 +5,9 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -20,7 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
-    extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_nullable_tuple_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -44,7 +42,7 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
-    , enable_nullable_tuple_type(settings[Setting::enable_nullable_tuple_type])
+    , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
 {
 }
 
@@ -141,7 +139,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.enable_nullable_tuple_type)
+        if (!settings.allow_experimental_nullable_tuple_type)
         {
             if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&data_type))
             {
@@ -150,17 +148,16 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot create column with type '{}' because Nullable Tuple type is not allowed. "
-                        "Set setting enable_nullable_tuple_type = 1 in order to allow it",
+                        "Set setting allow_experimental_nullable_tuple_type = 1 in order to allow it",
                         data_type.getName());
                 }
             }
         }
     };
 
+    validate_callback(*type_to_check);
     if (settings.validate_nested_types)
-        forEachInTypeTree(*type_to_check, validate_callback);
-    else
-        validate_callback(*type_to_check);
+        type_to_check->forEachChild(validate_callback);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
@@ -176,11 +173,10 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST to ASTExpressionList");
 
-    auto columns_list = make_intrusive<ASTColumns>();
-    columns_list->set(columns_list->columns, columns_list_raw);
     auto columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
     auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
     for (const auto & [name, type] : columns.getAll())
@@ -210,7 +206,8 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     if (!columns_list_raw)
         return false;
 
-    if (!dynamic_cast<ASTExpressionList *>(columns_list_raw.get()))
+    auto * columns_list = dynamic_cast<ASTExpressionList *>(columns_list_raw.get());
+    if (!columns_list)
     {
         error = fmt::format("Invalid columns declaration list: \"{}\"", structure);
         return false;
@@ -218,8 +215,6 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
 
     try
     {
-        auto columns_list = make_intrusive<ASTColumns>();
-        columns_list->set(columns_list->columns, columns_list_raw);
         columns = InterpreterCreateQuery::getColumnsDescription(*columns_list, context, LoadingStrictnessLevel::CREATE);
         auto validation_settings = DataTypeValidationSettings(context->getSettingsRef());
         for (const auto & [name, type] : columns.getAll())

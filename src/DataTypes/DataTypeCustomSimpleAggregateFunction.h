@@ -3,15 +3,15 @@
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>;
 
 /** The type SimpleAggregateFunction(fct, type) is meant to be used in an AggregatingMergeTree. It behaves like a standard
  * data type but when rows are merged, an aggregation function is applied.
@@ -44,7 +44,6 @@ public:
     const DataTypes & getArgumentsDataTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
     String getName() const override;
-    DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 

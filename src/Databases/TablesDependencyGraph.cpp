@@ -45,12 +45,11 @@ TablesDependencyGraph & TablesDependencyGraph::operator=(const TablesDependencyG
 {
     if (this != &src)
     {
-        /// Copying the `nodes` set would share the `Node` objects with the source graph - they are held
-        /// by `shared_ptr` and point at each other - so every modification of the copy would also modify
-        /// the graph it was copied from. Rebuild the nodes instead, which is what makes a copy usable as
-        /// a scratch graph, e.g. to test what a rename would do to the dependencies.
-        clear();
-        mergeWith(src);
+        nodes = src.nodes;
+        nodes_by_database_and_table_names = src.nodes_by_database_and_table_names;
+        nodes_by_uuid = src.nodes_by_uuid;
+        levels_calculated = src.levels_calculated;
+        nodes_sorted_by_level_lazy = src.nodes_sorted_by_level_lazy;
     }
     return *this;
 }
@@ -246,15 +245,11 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
         }
     }
 
-    /// `table_node` was its own dependency if it was removed above, and is dangling from then on.
-    if (!table_node_removed)
+    chassert(table_node->dependencies.empty());
+    if (remove_isolated_tables && !table_node_removed && table_node->dependents.empty())
     {
-        chassert(table_node->dependencies.empty());
-        if (remove_isolated_tables && table_node->dependents.empty())
-        {
-            /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
-            removeNode(table_node);
-        }
+        /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
+        removeNode(table_node);
     }
 
     setNeedRecalculateLevels();

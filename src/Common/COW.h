@@ -84,7 +84,7 @@ private:
     COW() = default;
     COW(const COW&) = default;
 
-public:
+protected:
     template <typename T>
     class mutable_ptr : public boost::intrusive_ptr<T> /// NOLINT
     {
@@ -113,8 +113,10 @@ public:
         mutable_ptr(std::nullptr_t) {} /// NOLINT
     };
 
+public:
     using MutablePtr = mutable_ptr<Derived>;
 
+protected:
     template <typename T>
     class immutable_ptr : public boost::intrusive_ptr<const T> /// NOLINT
     {
@@ -155,6 +157,7 @@ public:
         immutable_ptr(std::nullptr_t) {} /// NOLINT
     };
 
+public:
     using Ptr = immutable_ptr<Derived>;
 
     template <typename... Args>
@@ -286,9 +289,6 @@ public:
     using Ptr = typename Base::template immutable_ptr<Derived>;
     using MutablePtr = typename Base::template mutable_ptr<Derived>;
 
-    Ptr getPtr() const { return static_cast<Ptr>(derived()); }
-    MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
-
     template <typename... Args>
     static MutablePtr create(Args &&... args) { return MutablePtr(new Derived(std::forward<Args>(args)...)); }
 
@@ -296,8 +296,6 @@ public:
     static MutablePtr create(std::initializer_list<T> && arg) { return MutablePtr(new Derived(std::forward<std::initializer_list<T>>(arg))); }
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
-
-    size_t sizeOfObject() const override { return sizeof(Derived); }
 
 protected:
     MutablePtr shallowMutate() const { return MutablePtr(static_cast<Derived *>(Base::shallowMutate().get())); }
