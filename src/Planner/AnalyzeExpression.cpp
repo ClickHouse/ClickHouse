@@ -5,16 +5,20 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
 #include <base/find_symbols.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -152,6 +156,50 @@ static std::optional<NamesAndTypesList> getReferencedColumns(const IAST & ast, c
 
     return result;
 }
+
+/// The analyzer constructs the functions of the expression with the context of the query node it
+/// resolves, which is a private copy of the caller's context, destroyed when the analysis returns. A
+/// function that keeps a weak reference to its context (`WithContext`) would then fail with `Context has
+/// expired` when the returned actions are executed later, e.g. by `CheckConstraintsTransform`. Rebuild
+/// the ordinary functions with the caller's context, which the caller keeps alive while it executes the
+/// actions, as `ExpressionAnalyzer` constructed them. Subqueries are skipped: they own their contexts.
+class RebuildFunctionsWithContextVisitor : public InDepthQueryTreeVisitor<RebuildFunctionsWithContextVisitor>
+{
+public:
+    explicit RebuildFunctionsWithContextVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || !function_node->isOrdinaryFunction())
+            return;
+
+        /// Functions that are not registered in `FunctionFactory` (e.g. `exists`) are resolved by the
+        /// analyzer itself and keep their original resolution.
+        auto resolver = FunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
+        if (!resolver)
+            return;
+
+        /// The argument names the analyzer passed are not kept in the query tree, and a function may
+        /// derive its result type from them (a named `tuple`). Such a function keeps the original
+        /// resolution: the actions must produce the type the analyzer resolved.
+        auto function_base = resolver->build(function_node->getArgumentColumns());
+        if (!function_base->getResultType()->equals(*function_node->getResultType()))
+            return;
+
+        function_node->resolveAsFunction(std::move(function_base));
+    }
+
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        return !child->as<QueryNode>() && !child->as<UnionNode>();
+    }
+
+private:
+    ContextPtr context;
+};
 
 static CoreAnalysisResult buildExpressionCoreDAG(
     const ASTPtr & expression_ast,
@@ -316,6 +364,8 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 
     query_node = std::static_pointer_cast<QueryNode>(query_tree);
     expression_list = query_node->getProjectionNode();
+
+    RebuildFunctionsWithContextVisitor(context).visit(expression_list);
 
     collectSourceColumns(expression_list, planner_context, false);
     collectSets(expression_list, *planner_context);
