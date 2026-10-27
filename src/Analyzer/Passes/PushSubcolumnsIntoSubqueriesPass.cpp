@@ -31,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
@@ -326,8 +327,19 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         if (!key_column->tryInsert(key_value))
             return {};
 
+        const auto key_serialization = key_type->getDefaultSerialization();
         WriteBufferFromOwnString buffer;
-        key_type->getDefaultSerialization()->serializeText(*key_column, 0, buffer, FormatSettings());
+        key_serialization->serializeText(*key_column, 0, buffer, FormatSettings());
+
+        /// `DataTypeMap` parses the key back from the subcolumn name, and the text form is not always
+        /// lossless: two `DateTime` values in a repeated local-time interval of a daylight saving
+        /// clock change have the same text, so the subcolumn would look up another key.
+        auto parsed_key_column = key_type->createColumn();
+        ReadBufferFromString parse_buffer(buffer.str());
+        if (!key_serialization->tryDeserializeWholeText(*parsed_key_column, parse_buffer, FormatSettings())
+            || parsed_key_column->size() != 1 || key_column->compareAt(0, 0, *parsed_key_column, 1) != 0)
+            return {};
+
         subcolumn_path = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buffer.str();
     }
     else if (
