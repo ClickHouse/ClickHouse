@@ -1997,6 +1997,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
 
     QueryPlan plan;
     bool applies_row_policy = false;
+    std::optional<FilterDAGInfo> prewhere_after_row_policy;
 
     bool must_return_interpreter_select_query_plan
         = processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<StorageMerge *>(storage.get());
@@ -2008,6 +2009,17 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         {
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot_->metadata->getColumns().getAllPhysical()).name);
             is_smallest_column_requested = true;
+        }
+
+        /// The child's row policy is applied after the read (see `convertAndFilterSourceStream`).
+        if (row_policy_data_opt)
+        {
+            modified_query_info.row_level_filter_after_read = true;
+            if (modified_query_info.prewhere_info)
+            {
+                prewhere_after_row_policy = std::move(*modified_query_info.prewhere_info).toFilterDAGInfo();
+                modified_query_info.prewhere_info.reset();
+            }
         }
 
         storage->read(plan,
@@ -2052,7 +2064,11 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         applies_row_policy = true;
     }
 
-    return ChildPlan{.plan = std::move(plan), .stage = storage_stage, .applies_row_policy = applies_row_policy};
+    return ChildPlan{
+        .plan = std::move(plan),
+        .stage = storage_stage,
+        .applies_row_policy = applies_row_policy,
+        .prewhere_after_row_policy = std::move(prewhere_after_row_policy)};
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2389,6 +2405,15 @@ void ReadFromMerge::convertAndFilterSourceStream(
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt && !child.applies_row_policy)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
+
+    if (child.prewhere_after_row_policy)
+    {
+        auto & prewhere = *child.prewhere_after_row_policy;
+        auto prewhere_step = std::make_unique<FilterStep>(
+            child.plan.getCurrentHeader(), std::move(prewhere.actions), prewhere.column_name, prewhere.do_remove_column);
+        prewhere_step->setStepDescription("Prewhere");
+        child.plan.addStep(std::move(prewhere_step));
+    }
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,

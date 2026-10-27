@@ -1,0 +1,24 @@
+-- Memory
+2
+2
+3
+2
+2
+-- File
+2
+2
+-- Merge, policy on the child
+2
+2
+-- Merge, policy on the Merge table
+2
+2
+-- a condition that cannot throw is still moved to PREWHERE
+1
+0
+-- an order-sensitive policy
+0
+3
+-- a stateful policy
+2
+-- without a policy the row is in scope

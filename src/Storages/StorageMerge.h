@@ -334,6 +334,8 @@ private:
         bool forget_aggregation_buckets = false;
         /// Set when the child's plan was built by the interpreter, which applies the child's row policy itself.
         bool applies_row_policy = false;
+        /// The PREWHERE of a child read whose row policy is applied after the read, to apply after that policy.
+        std::optional<FilterDAGInfo> prewhere_after_row_policy;
     };
 
     /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first

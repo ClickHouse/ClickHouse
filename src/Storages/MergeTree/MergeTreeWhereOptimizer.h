@@ -54,11 +54,13 @@ public:
     /// `columns_read_before_filter` are the columns that the reader observes before the moved conditions
     /// are applied (the existing PREWHERE and the row policy): no string value filter can be applied
     /// during the scan to them (see `extractStringValueFilters`).
+    /// `row_level_filter_after_read`: see `SelectQueryInfo::row_level_filter_after_read`.
     FilterActionsOptimizeResult optimize(const ActionsDAG & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final,
-        const NameSet & columns_read_before_filter = {});
+        const NameSet & columns_read_before_filter = {},
+        bool row_level_filter_after_read = false);
 
 private:
     struct Condition
@@ -150,6 +152,7 @@ private:
         bool is_final = false;
         bool use_statistics = false;
         bool apply_string_filters_during_scan = false;
+        bool row_level_filter_after_read = false;
         const NameSet * columns_read_before_filter = nullptr;
     };
 

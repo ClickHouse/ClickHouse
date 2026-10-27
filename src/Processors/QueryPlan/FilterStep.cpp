@@ -313,10 +313,7 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
     return ActionsAndName{std::move(split_result.first), std::move(name)};
 }
 
-/// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,
-/// so it must be cheap (no functions that are worth to execute lazily) and all its functions must be unable to throw,
-/// be stateless, have no observable side effects and be deterministic in the scope of the query. See setting `short_circuit_function_evaluation_reorder_arguments`.
-static bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
+bool canBeMovedToTheFrontOfAndChain(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -378,10 +375,7 @@ static bool isHeavyAndChainAtom(const ActionsDAG::Node * node)
     return false;
 }
 
-/// Does the atom contain stateful functions, functions with observable side effects (like `sleep`),
-/// or functions that are not deterministic in the scope of the query (like `rand` or `rowNumberInBlock`)?
-/// Such an atom must not be evaluated on fewer rows than in the original order, so no atom can be moved in front of it.
-static bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
+bool hasOrderSensitiveFunctions(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);

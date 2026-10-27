@@ -314,6 +314,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
+    /// A row-level filter applied after the read precedes the moved conditions in the filter.
+    const bool row_level_filter_after_read = source_step_with_filter->getQueryInfo().row_level_filter_after_read;
+    if (row_level_filter_after_read && hasOrderSensitiveFunctions(&filter_root_node))
+        return;
+
     ConditionSelectivityEstimatorPtr selectivity_estimator;
     if (has_multiple_conditions && read_from_merge_tree_step)
         selectivity_estimator = use_pruned_parts
@@ -346,7 +351,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
         is_final,
-        columns_read_before_filter);
+        columns_read_before_filter,
+        row_level_filter_after_read);
 
     if (optimize_result.prewhere_nodes.empty())
         return;

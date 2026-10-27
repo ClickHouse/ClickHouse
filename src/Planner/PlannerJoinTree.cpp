@@ -2256,13 +2256,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     if (select_query_options.build_logical_plan
                         && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
                         where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
-                    /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
                     else if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                     {
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                         row_policy_filter_not_pushed = true;
+                        table_expression_query_info.row_level_filter_after_read = true;
+
+                        /// The read evaluates PREWHERE before the rows reach the policy, so filter after the policy instead.
+                        if (prewhere_info)
+                        {
+                            where_filters.emplace_back(std::move(*prewhere_info).toFilterDAGInfo(), makeDescription("Prewhere"));
+                            prewhere_info.reset();
+                        }
                     }
                 }
 

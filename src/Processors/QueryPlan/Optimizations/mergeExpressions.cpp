@@ -125,6 +125,10 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         if (child_actions.hasArrayJoin())
             return 0;
 
+        /// A filter with a stateful function is not split into its AND chain, so the upper filter would see the rows the lower one rejects.
+        if (child_actions.hasStatefulFunctions() || parent_actions.hasStatefulFunctions())
+            return 0;
+
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
         if (child_filter->removesFilterColumn())
             removeFromOutputs(child_actions, child_filter_node);
