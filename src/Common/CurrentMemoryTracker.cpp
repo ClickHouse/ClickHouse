@@ -69,8 +69,7 @@ bool canCheckQueryLimit(MemoryTracker * memory_tracker)
     return false;
 }
 
-/// Adds the allocations of a flush that did not check the limit. Frees do not reduce it: they may be charged to another
-/// tracker, e.g. in the scope of a `MemoryTrackerSwitcher`.
+/// Counts only allocations: a free may be charged to another tracker, e.g. in the scope of a `MemoryTrackerSwitcher`.
 void addUncheckedFlush(DB::ThreadStatus & thread, Int64 size)
 {
     if (size > 0)
