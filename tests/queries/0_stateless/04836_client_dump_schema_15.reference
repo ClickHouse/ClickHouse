@@ -1,0 +1,6 @@
+dump rc=0
+probes of the wildcard url: 0, of the file glob: 0, of the plain url: 1
+bad-select gate emitted: 1
+GROUP BY gate emitted: 1
+replay rc=0
+replayed views: 4

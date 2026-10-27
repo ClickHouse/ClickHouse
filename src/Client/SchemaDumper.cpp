@@ -3221,8 +3221,26 @@ using AnalyzesOnSource = std::function<bool(const String & select_query, const S
 
 bool tableFunctionHasStaticStructure(const ASTFunction & function, const ContextPtr & context);
 
-/// Whether a SELECT analyzes the same on the source server as at replay: every table function in it is a local generator,
-/// reads a literal structure, or names its database.
+/// Whether the source server builds the storage of this table function from its arguments alone, with no I/O. Analysis
+/// executes every table function it reads, so a probe builds these storages on the source, and a static structure does
+/// not make that passive: `s3` and the other object storages create a client and, under the default
+/// `use_hive_partitioning`, list a wildcard path for a sample; `url` with a `*` in its path lists HTTP index pages,
+/// with retries, under `allow_url_wildcard_from_index_pages`; `file` stats and lists files while parsing its arguments.
+/// So only an allowlist is probed: `StorageURL` without such a wildcard, `StorageInput`, `StorageExecutable` (the script
+/// runs on read), `StorageFilesystem` (it lists on read) and `traceView` (it reads the span log on read).
+bool tableFunctionBuildsPassively(const ASTFunction & function, const ContextPtr & context)
+{
+    static const std::set<std::string_view> passive = {"url", "input", "executable", "filesystem", "traceView"};
+    const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function.name, name); };
+    /// Without a static structure the storage reads the source to infer one.
+    if (!std::ranges::any_of(passive, is) || !tableFunctionHasStaticStructure(function, context))
+        return false;
+    return !is("url") || !urlMayHaveWildcard(function);
+}
+
+/// Whether a SELECT can be probed on the source server: it analyzes there the same as at replay, and its analysis does no
+/// I/O. Every table function in it is a local generator, builds its storage passively, or is a `merge` or `loop` that
+/// names its database.
 bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
 {
     static const std::set<std::string_view> generators = {"numbers", "numbers_mt", "zeros", "zeros_mt", "values", "generateRandom",
@@ -3236,7 +3254,7 @@ bool analyzesOnlyLocally(const IAST & select, const ContextPtr & context)
         if (!function)
             return;
         const auto is = [&](std::string_view name) { return equalsCaseInsensitive(function->name, name); };
-        if (std::ranges::any_of(generators, is) || tableFunctionHasStaticStructure(*function, context))
+        if (std::ranges::any_of(generators, is) || tableFunctionBuildsPassively(*function, context))
             return;
         /// `merge` and `loop` read local tables; a database-less one would resolve in the dump session's database.
         const auto & arguments = function->arguments ? function->arguments->children : ASTs{};
@@ -3421,7 +3439,8 @@ ReplayGateNeeds collectReplayGateNeeds(
         if (create->select && !plain_view)
         {
             const AnalyzerCarriers carriers = scan_analyzed(*create->select);
-            /// A SELECT that may analyze differently on the source (current database, remote data) is not asked.
+            /// A SELECT that may analyze differently on the source (current database, remote data), or whose analysis does
+            /// I/O there, is not asked: its analyzer gates stay on its clauses.
             const bool ask_source = create->is_materialized_view && analyzes_on_source && has_carrier(carriers)
                 && analyzesOnlyLocally(*create->select, context) && !analysisMayRunSubquery(*create->select);
             add_gates_read(carriers, ask_source ? create->select->formatWithSecretsOneLine() : "");
@@ -4182,8 +4201,9 @@ bool materializedViewMayNeedBadSelectGate(
     if (selectMayOutputUnknownColumn(*create->select, target_columns))
         return true;
 
-    /// Matching names do not prove the SELECT analyzes, so the source is asked, unless that runs a subquery or a
-    /// table name could resolve against the dump session's database instead of the view's.
+    /// Matching names do not prove the SELECT analyzes, so the source is asked, unless that runs a subquery, does I/O
+    /// on the source (see `analyzesOnlyLocally`), or a table name could resolve against the dump session's database
+    /// instead of the view's.
     std::set<String> cte_names;
     bool lateral = false;
     forEachNode(*create->select, [&](const IAST & node)
@@ -4432,7 +4452,8 @@ void dumpDatabaseSchema(
     std::set<String> settings_known_to_server(server_setting_names.begin(), server_setting_names.end());
 
     /// `EXPLAIN QUERY TREE` runs the analyzer only, so it creates nothing on the source; callers do not ask about a query whose
-    /// analysis runs a subquery. The settings go in the query text, because `LocalConnection` drops the settings argument.
+    /// analysis runs a subquery or builds a storage that does I/O (see `analyzesOnlyLocally`). The settings go in the query
+    /// text, because `LocalConnection` drops the settings argument.
     const std::vector<String> user_defined_function_names = fetchStringColumn(connection, timeouts, client_info,
         "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
     const std::set<String> user_defined_functions(user_defined_function_names.begin(), user_defined_function_names.end());

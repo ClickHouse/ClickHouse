@@ -56,7 +56,7 @@ CREATE MATERIALIZED VIEW ${DB}.mv_numbers (x Int64) ENGINE = Memory AS SELECT x 
 CREATE MATERIALIZED VIEW ${DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM merge('${DB}', '^src\$'));
 CREATE MATERIALIZED VIEW ${DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
 CREATE MATERIALIZED VIEW ${DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
-CREATE MATERIALIZED VIEW ${DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM s3('http://127.0.0.1:1/bucket/data.csv', NOSIGN, CSV, 'x Int64')) AND x IN (SELECT x FROM input('x Int64'));
+CREATE MATERIALIZED VIEW ${DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM input('x Int64'));
 CREATE MATERIALIZED VIEW ${DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
 CREATE MATERIALIZED VIEW ${DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1)
     AND x IN (SELECT toInt64(prime) FROM primes(3)) AND x IN (SELECT toInt64(generate_series) FROM generateSeries(1, 3));
@@ -66,6 +66,15 @@ echo "healthy views, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE
 echo "healthy views, GROUP BY and ORDER BY gates emitted: $(grep -cE '^SET allow_suspicious_types_in_(group|order)_by = 1;' "$DUMP_FILE")"
 echo "healthy views, correlated-subquery gate emitted: $(grep -cE '^SET (allow_experimental_correlated_subqueries|allow_correlated_subqueries) = 1;' "$DUMP_FILE")"
 replay_local 'healthy views' 'mv%'
+
+echo '--- a healthy materialized view over an object storage keeps the gate: its analysis is not probed ---'
+# Analysis builds the `StorageObjectStorage` of `s3`, which creates a client and may list the bucket.
+make_dump "
+CREATE TABLE ${DB}.src (x Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE MATERIALIZED VIEW ${DB}.mv_s3 (x Int64) ENGINE = Memory AS SELECT x FROM ${DB}.src WHERE x IN (SELECT x FROM s3('http://127.0.0.1:1/bucket/data.csv', NOSIGN, CSV, 'x Int64'));
+"
+echo "s3 with a structure, bad-select gate emitted: $(grep -c "$BADSEL_RE" "$DUMP_FILE")"
+replay_local 's3 with a structure' 'mv%'
 
 echo '--- a materialized view accepted under a relaxed check gets the gate exactly once ---'
 make_dump "
@@ -139,7 +148,7 @@ CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_numbers (x Int64) ENGINE = Memory A
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_merge (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM merge('${CONSTRAINT_DB}', '^src\$'));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_values (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM values('x Int64', 1, 2));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_url (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM url('http://127.0.0.1:1/data.csv', CSV, 'x Int64'));
-CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM s3('http://127.0.0.1:1/bucket/data.csv', NOSIGN, CSV, 'x Int64')) AND x IN (SELECT x FROM input('x Int64'));
+CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_static (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT x FROM input('x Int64'));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_folded (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT number FROM numbers(1 + 1)) AND x IN (SELECT x FROM values('x Int64', 1 + 1));
 CREATE MATERIALIZED VIEW ${CONSTRAINT_DB}.mv_more (x Int64) ENGINE = Memory AS SELECT x FROM ${CONSTRAINT_DB}.src WHERE x IN (SELECT toInt64(zero) FROM zeros() LIMIT 1) AND x IN (SELECT x FROM loop(${CONSTRAINT_DB}.src) LIMIT 1) AND x IN (SELECT x FROM generateRandom('x Int64', 1, 10, 2, SETTINGS null_ratio = 0.5) LIMIT 1)
     AND x IN (SELECT toInt64(prime) FROM primes(3)) AND x IN (SELECT toInt64(generate_series) FROM generateSeries(1, 3));

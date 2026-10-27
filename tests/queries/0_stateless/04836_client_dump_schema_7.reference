@@ -4,6 +4,10 @@ healthy views, GROUP BY and ORDER BY gates emitted: 0
 healthy views, correlated-subquery gate emitted: 0
 OK: healthy views replayed
 healthy views, replayed objects: 11
+--- a healthy materialized view over an object storage keeps the gate: its analysis is not probed ---
+s3 with a structure, bad-select gate emitted: 1
+OK: s3 with a structure replayed
+s3 with a structure, replayed objects: 1
 --- a materialized view accepted under a relaxed check gets the gate exactly once ---
 extra output column, bad-select gate emitted: 1
 OK: extra output column replayed
