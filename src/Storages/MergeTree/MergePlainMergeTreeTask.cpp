@@ -95,10 +95,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    /// Capture the leadership epoch at the start of the merge (just after selection, as the
-    /// leader). `finish` re-checks it before publishing, so a merge that survives a leadership
-    /// loss+reacquire is rejected rather than publishing parts prepared under the previous epoch.
-    admission_epoch = storage.currentLeadershipEpoch();
+    /// Use the leadership epoch sampled before the source parts were selected (not the current
+    /// one: a foreground merge may reach `prepare` only after a leadership loss and reacquire).
+    /// `finish` re-checks it before publishing, so such a merge is rejected rather than publishing
+    /// a part whose source set and block range were chosen under the previous epoch.
+    admission_epoch = merge_mutate_entry->leadership_epoch;
 
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(

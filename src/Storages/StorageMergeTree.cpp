@@ -2839,6 +2839,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     const std::function<void()> & on_wait_for_running_merges,
     bool merge_forced_horizontal)
 {
+    /// Sample the leadership epoch before selecting the source parts and carry it with the
+    /// selected entry: the merge task publishes only if the epoch is still the same, so a
+    /// selection that outlives a leadership loss and reacquire is rejected. See `MergeMutateSelectedEntry::leadership_epoch`.
+    const UInt64 leadership_epoch = currentLeadershipEpoch();
+
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
     /// per-partition UK mutex guards DELETE but not merges), silently dropping the
@@ -2940,6 +2945,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         auto entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
         entry->ttl_merge_slot = std::move(ttl_merge_slot);
+        entry->leadership_epoch = leadership_epoch;
         return entry;
     };
 
@@ -3233,6 +3239,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & /* disable_reason */, TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
 {
+    /// Sampled before selecting the source part, see `selectPartsToMerge`.
+    const UInt64 leadership_epoch = currentLeadershipEpoch();
+
     current_parts_postpone_reasons.clear();
 
     if (current_mutations_by_version.empty())
@@ -3534,7 +3543,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->part_format = part->getFormat();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, mutation_ids);
+            auto entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, mutation_ids);
+            entry->leadership_epoch = leadership_epoch;
+            return entry;
         }
     }
 

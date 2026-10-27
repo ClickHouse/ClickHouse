@@ -85,7 +85,7 @@ private:
     std::function<void(const ExecutionStatus &)> write_part_log;
     std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
-    /// Leadership epoch captured in `prepare` (just after the merge is selected, as the leader).
+    /// Leadership epoch sampled before the source parts were selected (taken from the selected entry in `prepare`).
     /// Re-checked in `finish` before publishing the merged part, so a merge selected under one
     /// `leader_election` lease cannot publish after a leadership loss/reacquire (its source set and
     /// block range were prepared under the previous epoch). 0 when `leader_election` is disabled.

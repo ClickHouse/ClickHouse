@@ -45,11 +45,11 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
-    /// Capture the leadership epoch at the start of the mutation (just after selection, as the
-    /// leader). It is re-checked before publishing the result part, so a mutation that survives
-    /// a leadership loss+reacquire is rejected rather than publishing a part whose source parts
-    /// and block range belong to the previous epoch. Same pattern as `MergePlainMergeTreeTask`.
-    admission_epoch = storage.currentLeadershipEpoch();
+    /// Use the leadership epoch sampled before the source part was selected. It is re-checked
+    /// before publishing the result part, so a mutation that survives a leadership loss+reacquire
+    /// (even one prepared only after the reacquire) is rejected rather than publishing a part whose
+    /// source part and block range belong to the previous epoch. Same pattern as `MergePlainMergeTreeTask`.
+    admission_epoch = merge_mutate_entry->leadership_epoch;
 
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
