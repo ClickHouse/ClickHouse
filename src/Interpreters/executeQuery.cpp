@@ -3255,18 +3255,20 @@ static BlockIO executeQueryImpl(
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
-                        /// The query result cache stores only the result, so analyze the query to know where its columns come from.
+                        /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
+                        /// subqueries against the current data.
                         if (flags.collect_result_column_origins)
-                        {
-                            InterpreterSelectQueryAnalyzer interpreter_for_origins(out_ast, context, SelectQueryOptions(stage));
-                            result_details.result_column_origins = getResultColumnOrigins(interpreter_for_origins.getQueryTree());
-                        }
+                            result_details.result_column_origins = reader->entryResultColumnOrigins();
 
                         return true;
                     }
                 }
                 return false;
             };
+
+            /// Where the result columns come from. Collected for `QueryFlags::collect_result_column_origins` and to be stored with
+            /// the result in the query result cache.
+            ResultColumnOrigins result_column_origins;
 
             if (!get_result_from_query_result_cache())
             {
@@ -3318,8 +3320,9 @@ static BlockIO executeQueryImpl(
                 {
                     interpreter_with_analyzer->getQueryPlan();
 
+                    result_column_origins = getResultColumnOrigins(interpreter_with_analyzer->getQueryTree());
                     if (flags.collect_result_column_origins)
-                        result_details.result_column_origins = getResultColumnOrigins(interpreter_with_analyzer->getQueryTree());
+                        result_details.result_column_origins = result_column_origins;
                 }
 
                 if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
@@ -3397,6 +3400,8 @@ static BlockIO executeQueryImpl(
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
+                            if (result_column_origins.size() == key.header->columns())
+                                key.result_column_origins = result_column_origins;
 
                             const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache

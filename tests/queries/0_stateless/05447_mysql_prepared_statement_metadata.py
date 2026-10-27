@@ -289,6 +289,20 @@ def main():
         query_metadata(sock, "SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600")
         query_metadata(sock, "SELECT * FROM t SETTINGS use_query_cache = 1, query_cache_ttl = 600")
 
+        # The column origins are stored with the cached result, so a cache hit does not analyze the query again: its scalar
+        # subqueries are not evaluated against the current data, and the tables it reads may even be gone.
+        query(sock, "DROP TABLE IF EXISTS c")
+        query(sock, "CREATE TABLE c (id UInt64) ENGINE = MergeTree ORDER BY id")
+        query(sock, "INSERT INTO c VALUES (1)")
+        cached = "SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600"
+        query_metadata(sock, cached)
+        # With this value, analyzing the query would fail to resolve `FixedString(0)`.
+        query(sock, "TRUNCATE TABLE c")
+        query(sock, "INSERT INTO c VALUES (0)")
+        query_metadata(sock, cached)
+        query(sock, "DROP TABLE c")
+        query_metadata(sock, cached)
+
         # Preparation checks the access rights as the execution does, also inside subqueries.
         user = f"user_{CLICKHOUSE_DATABASE}"
         query(sock, f"DROP USER IF EXISTS {user}")

@@ -71,6 +71,15 @@ name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
 name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
 name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
 name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
+name=x org_name=x schema= table= org_table= type=254 length=1
+--- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
+name=x org_name=x schema= table= org_table= type=254 length=1
+--- query: SELECT id, toFixedString('x', assumeNotNull((SELECT id FROM c LIMIT 1))) AS x FROM c SETTINGS use_query_cache = 1, query_cache_ttl = 600
+name=id org_name=id schema=<database> table=c org_table=c type=8 length=20
+name=x org_name=x schema= table= org_table= type=254 length=1
 --- prepare: SELECT id FROM (SELECT id FROM t) ORDER BY id
 num_columns=1 num_params=0
 name=id org_name=id schema= table= org_table= type=8 length=20
