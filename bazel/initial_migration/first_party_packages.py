@@ -667,6 +667,10 @@ def group_package_sources(root):
     for _, rule in source.rules():
         attrs = attributes(rule)
         target = attrs["name"].value
+        if target == "headers" and "local_defines" not in attrs:
+            # ch_cc_library must keep standalone public-header checks free of CXX_RUNTIME_DEFINES.
+            end = source.span(attrs["name"])[1]
+            edits.append((end, end, ", local_defines = []"))
         if target not in {"unit_tests_dbms", "clickhouse_common_io__compile_0"}:
             continue
         test = target == "unit_tests_dbms"

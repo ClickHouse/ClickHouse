@@ -3724,6 +3724,7 @@ ch_cc_library(
     includes = [
         ".",
     ],
+    local_defines = [],
     deps = [
         ":core_types",
         "//src/Common:action_lock",
