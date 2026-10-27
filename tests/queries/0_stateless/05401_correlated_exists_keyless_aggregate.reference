@@ -29,6 +29,8 @@
 1	1
 0
 1
+-- LATERAL restores the groups even when its HAVING rejects count() = 0
+1
 -- a HAVING that cannot be decided at planning restores the groups
 0	1
 1	0

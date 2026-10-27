@@ -67,6 +67,13 @@ SELECT count() > 0 FROM (
     FROM numbers(2) AS o)
 WHERE explain ILIKE '%correlated_aggregate_input_marker%';
 
+SELECT '-- LATERAL restores the groups even when its HAVING rejects count() = 0';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN actions = 1 SELECT o.number, l.c FROM numbers(2) AS o
+    INNER JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c > 5) AS l ON true)
+WHERE explain ILIKE '%correlated_aggregate_input_marker%'
+SETTINGS allow_experimental_lateral_join = 1;
+
 SELECT '-- a HAVING that cannot be decided at planning restores the groups';
 SELECT o.number, EXISTS (SELECT 1 FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING isNaN(avg(i.number)))
 FROM numbers(2) AS o ORDER BY o.number;

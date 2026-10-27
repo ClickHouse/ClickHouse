@@ -1002,7 +1002,10 @@ QueryPlan decorrelateQueryPlan(
         auto * child = node->children.front();
         if (const auto * aggregating = typeid_cast<const AggregatingStep *>(child->step.get()))
         {
-            if (canRestoreEmptyGroups(context, aggregating->getParams()) && filterRejectsGroupWithoutRows(*filter_step, *aggregating))
+            /// `LATERAL` always restores: the probe sees the group alone, while the runtime `HAVING` sees a block of groups.
+            if (context.correlated_subquery.kind == CorrelatedSubqueryKind::EXISTS
+                && canRestoreEmptyGroups(context, aggregating->getParams())
+                && filterRejectsGroupWithoutRows(*filter_step, *aggregating))
                 context.aggregates_with_rejected_empty_groups.insert(child);
         }
 
