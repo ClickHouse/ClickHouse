@@ -19,7 +19,7 @@ Float64 lgamma_wrapper(Float64 arg)
     if (arg < 0 && arg == std::floor(arg))
         return std::numeric_limits<Float64>::quiet_NaN();
 
-    int signp = 0;
+    int signp;
     return lgamma_r(arg, &signp);
 }
 

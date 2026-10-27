@@ -3,7 +3,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/format.h>
 #include <Common/memcpySmall.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <algorithm>
@@ -41,10 +40,10 @@ struct FormatStringImpl
     template <bool has_column_string, bool has_column_fixed_string>
     static void format(
         String pattern,
-        const VectorWithMemoryTracking<const ColumnString::Chars *> & data,
-        const VectorWithMemoryTracking<const ColumnString::Offsets *> & offsets,
-        [[maybe_unused]] /* Because sometimes !has_column_fixed_string */ const VectorWithMemoryTracking<size_t> & fixed_string_N,
-        const VectorWithMemoryTracking<std::optional<String>> & constant_strings,
+        const std::vector<const ColumnString::Chars *> & data,
+        const std::vector<const ColumnString::Offsets *> & offsets,
+        [[maybe_unused]] /* Because sometimes !has_column_fixed_string */ const std::vector<size_t> & fixed_string_N,
+        const std::vector<std::optional<String>> & constant_strings,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
@@ -57,7 +56,7 @@ struct FormatStringImpl
 
         /// Vector of substrings of pattern that will be copied to the answer, not string view because of escaping and iterators invalidation.
         /// These are exactly what is between {} tokens, for `Hello {} world {}` we will have [`Hello `, ` world `, ``].
-        VectorWithMemoryTracking<String> substrings;
+        std::vector<String> substrings;
 
         Format::init(pattern, argument_number, constant_strings, index_positions, substrings);
 

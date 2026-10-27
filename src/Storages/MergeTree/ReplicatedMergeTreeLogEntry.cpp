@@ -13,7 +13,6 @@
 
 #include <base/find_symbols.h>
 #include <fmt/ranges.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
@@ -125,9 +124,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
             if (cleanup)
                 out << "\ncleanup: " << cleanup;
-
-            if (bypass_min_unreserved_space)
-                out << "\nbypass_min_unreserved_space: " << bypass_min_unreserved_space;
 
             if (!patch_parts.empty())
             {
@@ -292,7 +288,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                 if (checkString("merge_type: ", in))
                 {
-                    UInt32 value = 0;
+                    UInt32 value;
                     in >> value;
                     merge_type = checkAndGetMergeType(static_cast<std::underlying_type_t<MergeType>>(value));
                 }
@@ -318,13 +314,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                 {
                     in >> cleanup;
                 }
-                else if (checkString("bypass_min_unreserved_space: ", in))
-                {
-                    in >> bypass_min_unreserved_space;
-                }
                 else if (checkString("apply_patches:", in))
                 {
-                    size_t num_patches = 0;
+                    size_t num_patches;
                     in >> " " >> num_patches >> "\n";
 
                     for (size_t i = 0; i < num_patches; ++i)
@@ -399,12 +391,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
         in >> "\nhave_mutation\n";
         in >> have_mutation;
         in >> "\ncolumns_str_size:\n";
-        size_t columns_size = 0;
+        size_t columns_size;
         in >> columns_size >> "\n";
         columns_str.resize(columns_size);
         in.readStrict(columns_str.data(), columns_size);
         in >> "\nmetadata_str_size:\n";
-        size_t metadata_size = 0;
+        size_t metadata_size;
         in >> metadata_size >> "\n";
         metadata_str.resize(metadata_size);
         in.readStrict(metadata_str.data(), metadata_size);
@@ -490,7 +482,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
 
 bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
 {
-    chassert(drop_range_info.getBlocksCount() != 0);
+    assert(drop_range_info.getBlocksCount() != 0);
     return drop_range_info.getBlocksCount() == 1;
 }
 

@@ -6,6 +6,10 @@
             Granules: 2/6
             Granules: 6/6
             Granules: 2/6
+            Granules: 6/6
+            Granules: 2/6
+            Granules: 6/6
+            Granules: 2/6
 ---
 1	Well, Hello ClickHouse !
 2	Well, Hello World !
@@ -17,9 +21,17 @@
             Granules: 3/6
             Granules: 6/6
             Granules: 3/6
+            Granules: 6/6
+            Granules: 3/6
+            Granules: 6/6
+            Granules: 3/6
 ---
 5	Its An OLAP Database
 5	OLAP Database
+            Granules: 6/6
+            Granules: 1/6
+            Granules: 6/6
+            Granules: 1/6
             Granules: 6/6
             Granules: 1/6
             Granules: 6/6

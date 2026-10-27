@@ -1,5 +1,4 @@
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -10,8 +9,6 @@
 
 namespace DB
 {
-
-UUID ServerUUID::server_uuid = UUIDHelpers::Nil;
 
 namespace ErrorCodes
 {
@@ -25,11 +22,6 @@ UUID ServerUUID::get()
         (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER ||
          Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::KEEPER))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ServerUUID is not initialized yet");
-    return server_uuid;
-}
-
-UUID ServerUUID::tryGet()
-{
     return server_uuid;
 }
 

@@ -31,10 +31,10 @@ void KnownObjectNames::add(const String & name, bool case_insensitive)
     names.emplace(name);
 }
 
-VectorWithMemoryTracking<String> KnownObjectNames::getAllRegisteredNames() const
+std::vector<String> KnownObjectNames::getAllRegisteredNames() const
 {
     std::lock_guard lock{mutex};
-    return VectorWithMemoryTracking<String>(names.begin(), names.end());
+    return std::vector<String>(names.begin(), names.end());
 }
 
 

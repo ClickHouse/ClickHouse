@@ -1,3 +1,0 @@
-after compat 25.7	enable_lightweight_update	0
-after alias set	enable_lightweight_update	1
-after compat 25.6	enable_lightweight_update	1

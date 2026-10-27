@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include <Functions/divideImpl.h>
+#include <Functions/divide/divide.h>
 
 
 namespace DB
@@ -60,23 +60,8 @@ struct DivideIntegralByConstantImpl
         {
             if (b == -1) [[unlikely]]
             {
-                /// The quotient of the minimal signed number by -1 does not fit in the result type,
-                /// so this case must be an exception, same as `throwIfDivisionLeadsToFPE` in the
-                /// generic and constant-folded paths. Silently wrapping it would place the wrapped
-                /// value out of order in an otherwise monotonic result, and consumers relying on the
-                /// monotonicity of `intDiv` by a constant (e.g. reading in order for
-                /// `ORDER BY intDiv(key, -1)`) would then work on a stream that is not actually
-                /// sorted: a logical error in `DistinctSortedStreamTransform` in debug builds,
-                /// wrong query results in release builds.
-                using SignedA = make_signed_t<A>;
-                bool has_min = false;
                 for (size_t i = 0; i < size; ++i)
-                {
-                    has_min |= static_cast<SignedA>(a_pos[i]) == std::numeric_limits<SignedA>::min();
                     c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
-                }
-                if (has_min) [[unlikely]]
-                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
                 return;
             }
         }
@@ -167,9 +152,9 @@ in the range of the dividend, or when dividing a minimal negative number by minu
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = {"Result of integer division of `x` and `y`"};
     FunctionDocumentation::Example example1 = {"Integer division of two floats", "SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)", R"(
-┌──res─┬─toTypeName(res)─┐
-│ 1000 │ Int64           │
-└──────┴─────────────────┘
+┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
+│ 1000 │ Int64                                   │
+└──────┴─────────────────────────────────────────┘
     )"};
     FunctionDocumentation::Example example2 = {
         "Quotient does not fit in the range of the dividend",

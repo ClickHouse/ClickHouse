@@ -10,15 +10,8 @@ namespace DB
 /// Enables the `.size` subcolumn for string columns.
 class SerializationStringSize final : public SerializationNumber<UInt64>
 {
-private:
-    explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
-
 public:
-    static UInt128 getHash(MergeTreeStringSerializationVersion version_);
-
-    static SerializationPtr create(MergeTreeStringSerializationVersion version_);
-
-    size_t allocatedBytes() const override;
+    explicit SerializationStringSize(MergeTreeStringSerializationVersion version_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -26,7 +19,8 @@ public:
         const SubstreamData & data) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -41,30 +35,34 @@ private:
     MergeTreeStringSerializationVersion version;
 
     /// Helper to access base string serialization logic.
-    SerializationPtr serialization_string;
+    SerializationString serialization_string;
 
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
     void deserializeBinaryBulkWithoutSizeStream(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
 
     void deserializeWithStringData(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStateStringWithoutSizeStream & string_state,
         SubstreamsCache * cache) const;
 
     void deserializeWithoutStringData(
-        IColumn & column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
+        ColumnPtr & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
 };
 
 }

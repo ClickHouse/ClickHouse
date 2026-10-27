@@ -19,15 +19,14 @@ using FunctionILike = FunctionsStringSearch<ILikeImpl>;
 
 REGISTER_FUNCTION(ILike)
 {
-    FunctionDocumentation::Description description = "Like [`like`](#like) but searches case-insensitively. Supports the optional `ESCAPE` clause (see `like`).";
+    FunctionDocumentation::Description description = "Like [`like`](#like) but searches case-insensitively.";
     FunctionDocumentation::Syntax syntax = R"(
-ilike(haystack, pattern[, escape_character])
--- haystack ILIKE pattern [ESCAPE 'escape_character']
+ilike(haystack, pattern)
+-- haystack ILIKE pattern
     )";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
-        {"pattern", "LIKE pattern to match against.", {"String"}},
-        {"escape_character", "Optional single-character string to use as the escape character instead of `\\`. Default: `\\`.", {"String"}}
+        {"pattern", "LIKE pattern to match against.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string matches the LIKE pattern (case-insensitive), otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples =

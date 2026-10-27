@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros final : public StorageWithCommonVirtualColumns
+class StorageSystemZeros final : public IStorage
 {
 public:
     /// If even_distribution is true, numbers are distributed evenly between streams.
@@ -21,10 +21,6 @@ public:
     StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
 
     std::string getName() const override { return "SystemZeros"; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

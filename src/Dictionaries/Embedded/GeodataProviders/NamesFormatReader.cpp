@@ -9,7 +9,7 @@ bool LanguageRegionsNamesFormatReader::readNext(RegionNameEntry & entry)
 {
     while (!input->eof())
     {
-        Int32 read_region_id = 0;
+        Int32 read_region_id;
         std::string region_name;
 
         readIntText(read_region_id, *input);

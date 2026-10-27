@@ -8,13 +8,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <ranges>
 
@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -39,7 +40,19 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override { return "(Array, Array) -> UInt8"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        for (auto i : collections::range(0, arguments.size()))
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+            if (!array_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be an array but it has type {}.",
+                                i, getName(), arguments[i]->getName());
+        }
+
+        return std::make_shared<DataTypeUInt8>();
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
@@ -57,7 +70,7 @@ public:
         for (size_t i = 0; i < num_args; ++i)
             preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
-        VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
+        std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
         for (auto & argument_column : preprocessed_columns)
         {

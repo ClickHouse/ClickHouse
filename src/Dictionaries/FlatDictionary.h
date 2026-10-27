@@ -108,10 +108,7 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = std::conditional_t<
-        std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>,
-        VectorWithMemoryTracking<Value>,
-        PaddedPODArray<Value>>;
+    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
@@ -143,9 +140,7 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
-            ContainerType<Array>,
-            ContainerType<Map>,
-            ContainerType<Object>>
+            ContainerType<Array>>
             container;
 
         AttributeUnderlyingType type;

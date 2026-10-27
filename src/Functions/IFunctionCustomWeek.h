@@ -10,6 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -66,14 +67,8 @@ public:
 
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
 
-        /// The function is executed with the time zone taken from its argument's type
-        /// (`extractTimeZoneFromFunctionArguments`), so the factor comparison below has to use that same
-        /// time zone: a range that lies inside one week of the server time zone can straddle a week
-        /// boundary of the column's time zone, and there the function is not monotonic.
-        const DateLUTImpl * date_lut_ptr = &DateLUT::instance();
-        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
-            date_lut_ptr = &timezone->getTimeZone();
-        const DateLUTImpl & date_lut = *date_lut_ptr;
+        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
+        const DateLUTImpl & date_lut = DateLUT::instance();
 
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
@@ -87,8 +82,8 @@ public:
 
         if (checkAndGetDataType<DataTypeDate32>(type_ptr))
         {
-            return extendedFactorForMonotonicity<typename Transform::FactorTransform>(Int32(left.safeGet<Int32>()), date_lut)
-                    == extendedFactorForMonotonicity<typename Transform::FactorTransform>(Int32(right.safeGet<Int32>()), date_lut)
+            return Transform::FactorTransform::execute(Int32(left.safeGet<Int32>()), date_lut)
+                    == Transform::FactorTransform::execute(Int32(right.safeGet<Int32>()), date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
@@ -101,18 +96,10 @@ public:
             const auto & right_date_time = right.safeGet<DateTime64>();
             TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
 
-            /// Use the unclamped extended result so pre-epoch values keep distinct, order-preserving
-            /// factors (see extendedFactorForMonotonicity).
-            if constexpr (requires { Transform::FactorTransform::executeExtendedResult(Int64{}, date_lut); })
-                return transformer_left.executeExtendedResult(left_date_time.getValue(), date_lut)
-                        == transformer_right.executeExtendedResult(right_date_time.getValue(), date_lut)
-                    ? is_monotonic
-                    : is_not_monotonic;
-            else
-                return transformer_left.execute(left_date_time.getValue(), date_lut)
-                        == transformer_right.execute(right_date_time.getValue(), date_lut)
-                    ? is_monotonic
-                    : is_not_monotonic;
+            return transformer_left.execute(left_date_time.getValue(), date_lut)
+                    == transformer_right.execute(right_date_time.getValue(), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
         }
 
         if (checkAndGetDataType<DataTypeDateTime>(type_ptr))

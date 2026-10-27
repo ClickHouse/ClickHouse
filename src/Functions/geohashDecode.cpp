@@ -21,7 +21,7 @@ namespace
 {
 
 // geohashDecode(string) => (lon float64, lat float64)
-class FunctionGeohashDecode final : public IFunction
+class FunctionGeohashDecode : public IFunction
 {
 public:
     static constexpr auto name = "geohashDecode";
@@ -36,9 +36,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(StringOrFixedString) -> Tuple(longitude Float64, latitude Float64)";
+        FunctionArgumentDescriptors args{
+            {"encoded", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+
+        return std::make_shared<DataTypeTuple>(
+                DataTypes{std::make_shared<DataTypeFloat64>(), std::make_shared<DataTypeFloat64>()},
+                Strings{"longitude", "latitude"});
     }
 
     template <typename ColumnTypeEncoded>
@@ -103,9 +110,8 @@ Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into
             "SELECT geohashDecode('ezs42') AS res",
             R"(
 ┌─res─────────────────────────────┐
-├──────longitude─┬───────latitude─┤
-│ -5.60302734375 │ 42.60498046875 │
-└────────────────┴────────────────┘
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
             )"
         }
     };

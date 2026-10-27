@@ -1,4 +1,0 @@
-active_before_commit	['all_1_2_1']
-read_before_commit	2
-sync_merges_before_commit	timed_out
-read_after_sync	1	20

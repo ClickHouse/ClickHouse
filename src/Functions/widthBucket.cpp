@@ -12,7 +12,6 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -33,7 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket final : public IFunction
+class FunctionWidthBucket : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(
@@ -130,7 +129,7 @@ class FunctionWidthBucket final : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        VectorWithMemoryTracking<ColumnPtr> cast_columns;
+        std::vector<ColumnPtr> cast_columns;
         cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
@@ -189,12 +188,32 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return
-            "(NativeNumber, NativeNumber, NativeNumber, UInt8) -> UInt16"
-            " OR (NativeNumber, NativeNumber, NativeNumber, UInt16) -> UInt32"
-            " OR (NativeNumber, NativeNumber, NativeNumber, UInt32 | UInt64) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args{
+            {"operand", isNativeNumber, nullptr, "native numeric"},
+            {"min_range", isNativeNumber, nullptr, "native numeric"},
+            {"max_range", isNativeNumber, nullptr, "native numeric"},
+            {"num_buckets", isNativeUInt, nullptr, "UInt8, UInt16, UInt32 or UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        switch (arguments[3].type->getTypeId())
+        {
+            case TypeIndex::UInt8:
+                return std::make_shared<DataTypeUInt16>();
+            case TypeIndex::UInt16:
+                return std::make_shared<DataTypeUInt32>();
+            case TypeIndex::UInt32:
+                [[fallthrough]];
+            case TypeIndex::UInt64:
+                return std::make_shared<DataTypeUInt64>();
+            default:
+                break;
+        }
+
+        UNREACHABLE();
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -237,7 +256,7 @@ FunctionDocumentation::Arguments arguments = {
 };
 FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
 FunctionDocumentation::Examples examples = {
-    {"Usage example", "SELECT widthBucket(10.15, -8.6, 23, 18)", "11"}
+    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
 };
 FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;

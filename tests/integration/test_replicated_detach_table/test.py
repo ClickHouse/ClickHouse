@@ -1,5 +1,7 @@
 # Tag no-fasttest: requires S3
 
+import random
+import string
 
 import pytest
 
@@ -39,7 +41,7 @@ def test_replicated_detach_table(start_cluster):
     )
 
     replica1.query_with_retry(
-        """
+        f"""
         CREATE TABLE db.test_replicated_table
         (
             number UInt64
@@ -49,12 +51,12 @@ def test_replicated_detach_table(start_cluster):
         """
     )
     replica1.query(
-        "INSERT INTO db.test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
+        f"INSERT INTO db.test_replicated_table SELECT number FROM system.numbers LIMIT 6;"
     )
     replica1.query(
-        "SYSTEM SYNC REPLICA db.test_replicated_table;",
+        f"SYSTEM SYNC REPLICA db.test_replicated_table;",
         timeout=20,
     )
-    replica1.query("DETACH TABLE db.test_replicated_table PERMANENTLY;")
+    replica1.query(f"DETACH TABLE db.test_replicated_table PERMANENTLY;")
 
-    replica1.query("DROP DATABASE db ON CLUSTER test_cluster SYNC")
+    replica1.query(f"DROP DATABASE db ON CLUSTER test_cluster SYNC")

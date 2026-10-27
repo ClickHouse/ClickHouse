@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -109,7 +110,7 @@ struct TranslateImpl
         if (map_from.size() != map_to.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::array<UInt8, 128> map{};
+        std::array<UInt8, 128> map;
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
@@ -236,7 +237,7 @@ struct TranslateUTF8Impl
                     }
 
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
-                    chassert(0 < dst_len && dst_len <= 4);
+                    assert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
                     dst += dst_len;
@@ -245,7 +246,7 @@ struct TranslateUTF8Impl
                 }
 
                 size_t src_len = UTF8::seqLength(*src);
-                chassert(0 < src_len && src_len <= 4);
+                assert(0 < src_len && src_len <= 4);
 
                 if (src + src_len <= src_end)
                 {
@@ -261,7 +262,7 @@ struct TranslateUTF8Impl
                                 continue;
 
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
-                            chassert(0 < dst_len && dst_len <= 4);
+                            assert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
                             data_size += dst_len;
@@ -303,7 +304,7 @@ private:
 
 
 template <typename Impl, typename Name>
-class FunctionTranslate final : public IFunction
+class FunctionTranslate : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -318,9 +319,21 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(T : StringOrFixedString, const StringOrFixedString, const StringOrFixedString) -> T";
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                arguments[0]->getName(), getName());
+
+        if (!isStringOrFixedString(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                arguments[1]->getName(), getName());
+
+        if (!isStringOrFixedString(arguments[2]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
+                arguments[2]->getName(), getName());
+
+        return arguments[0];
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -339,8 +352,8 @@ public:
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
 
-        size_t map_from_size = 0;
-        size_t map_to_size = 0;
+        size_t map_from_size;
+        size_t map_to_size;
         if constexpr (std::is_same_v<Impl, TranslateUTF8Impl>)
         {
             map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
@@ -352,7 +365,7 @@ public:
             map_to_size = map_to.size();
         }
         if (map_from_size < map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from_size, map_to_size);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {

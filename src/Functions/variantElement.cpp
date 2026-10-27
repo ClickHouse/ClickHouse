@@ -30,7 +30,7 @@ namespace
 /** Extract element of Variant by variant type name.
   * Also the function looks through Arrays: you can get Array of Variant elements from Array of Variants.
   */
-class FunctionVariantElement final : public IFunction
+class FunctionVariantElement : public IFunction
 {
 public:
     static constexpr auto name = "variantElement";
@@ -44,15 +44,6 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// Documentation-only — the result type is the requested Variant element
-    /// (or array of, when called on Array(Variant)), looked up dynamically from
-    /// the const-string type-name in the second argument. The optional third
-    /// argument is the default value.
-    String getSignatureString() const override
-    {
-        return "(Variant | Array, const String, [Any]) -> Any";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

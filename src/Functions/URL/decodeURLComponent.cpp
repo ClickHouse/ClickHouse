@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <base/find_symbols.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -143,7 +143,7 @@ struct CodeURLComponentImpl
         {
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
-            size_t dst_size = 0;
+            size_t dst_size;
 
             if constexpr (code_strategy == encode)
             {
@@ -263,7 +263,6 @@ SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') A
     FunctionDocumentation documentation_decodeURLFormComponent = {description_decodeURLFormComponent, syntax_decodeURLFormComponent, arguments_decodeURLFormComponent, {}, returned_value_decodeURLFormComponent, examples_decodeURLFormComponent, introduced_in_decodeURLFormComponent, category_decodeURLFormComponent};
 
     factory.registerFunction<FunctionDecodeURLFormComponent>(documentation_decodeURLFormComponent);
-    factory.registerAlias("url_decode", "decodeURLFormComponent", FunctionFactory::Case::Insensitive);
 
     /// encodeURLFormComponent documentation
     FunctionDocumentation::Description description_encodeURLFormComponent = R"(
@@ -292,7 +291,6 @@ SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS En
     FunctionDocumentation documentation_encodeURLFormComponent = {description_encodeURLFormComponent, syntax_encodeURLFormComponent, arguments_encodeURLFormComponent, {}, returned_value_encodeURLFormComponent, examples_encodeURLFormComponent, introduced_in_encodeURLFormComponent, category_encodeURLFormComponent};
 
     factory.registerFunction<FunctionEncodeURLFormComponent>(documentation_encodeURLFormComponent);
-    factory.registerAlias("url_encode", "encodeURLFormComponent", FunctionFactory::Case::Insensitive);
 }
 
 }

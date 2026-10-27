@@ -184,7 +184,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         PaddedPODArray<UInt64> keys = {0, 1, 2, 3, 4};
 
         {
-            size_t keys_found = {};
+            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,
@@ -202,7 +202,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
             ASSERT_EQ(keys_found, 3);
         }
         {
-            size_t keys_found = {};
+            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,
@@ -230,7 +230,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
         PaddedPODArray<UInt64> keys = {1, 2, 3};
 
         {
-            size_t keys_found = {};
+            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,
@@ -248,7 +248,7 @@ TEST(HierarchyDictionariesUtils, getDescendants)
             ASSERT_EQ(keys_found, 2);
         }
         {
-            size_t keys_found = {};
+            size_t keys_found;
             auto result = DB::detail::getDescendants(
                 keys,
                 *parent_to_child_index,

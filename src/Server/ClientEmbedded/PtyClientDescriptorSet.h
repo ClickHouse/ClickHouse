@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -43,10 +45,7 @@ private:
 
         void close();
 
-        /// Destructor must not throw: a thrown ErrnoException during stack
-        /// unwinding (e.g. on session teardown for `/webterminal`) would call
-        /// `std::terminate` and bring the server down. Swallow and log instead.
-        ~FileDescriptorWrapper();
+        ~FileDescriptorWrapper() { close(); } // may throw, thus std::terminate
 
     private:
         int fd = -1;
@@ -64,3 +63,5 @@ private:
 };
 
 }
+
+#endif

@@ -34,11 +34,8 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
     ///
     /// NOTE: This can be done only if progress callback already set, since
     /// otherwise total_rows_approx will lost.
-    if (!progress_callback)
-        return;
-
-    size_t rows_approx = total_rows_approx.exchange(0);
-    if (rows_approx != 0)
+    size_t rows_approx = 0;
+    if (progress_callback && (rows_approx = total_rows_approx.exchange(0)) != 0)
     {
         Progress total_rows_progress = {0, 0, rows_approx};
 
@@ -111,7 +108,7 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
             limits.local_limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_stopwatch.elapsedMicroseconds(), limits.local_limits.timeout_overflow_mode);
 
         if (quota)
-            quota->usedForQuery(normalized_query_hash, {{QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes}});
+            quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
     }
 
     if (update_profile_events)

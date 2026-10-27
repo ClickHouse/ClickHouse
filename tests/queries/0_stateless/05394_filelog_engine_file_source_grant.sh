@@ -13,6 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # test at once, so they carry the pid as well as the unique name.
 NAME="${CLICKHOUSE_TEST_UNIQUE_NAME}_$$"
 USER="low_${NAME}"
+# On 26.4 `FileLog` does not resolve a relative path against `user_files_path`, so pass it absolute.
 FILE="${NAME}.csv"
 TABLE="${CLICKHOUSE_DATABASE}.fl_${NAME}"
 
@@ -27,12 +28,12 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER}"
 ${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE, SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER}"
 
 echo "-- no FILE grant: CREATE is refused, nothing is left behind"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${TABLE} (marker String) ENGINE = FileLog('${FILE}', 'LineAsString')" 2>&1 | denied && echo "ACCESS_DENIED"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${TABLE} (marker String) ENGINE = FileLog('${USER_FILES_PATH}/${FILE}', 'LineAsString')" 2>&1 | denied && echo "ACCESS_DENIED"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'fl_${NAME}'"
 
 echo "-- READ and WRITE on FILE: CREATE and SELECT work"
 ${CLICKHOUSE_CLIENT} -q "GRANT READ, WRITE ON FILE TO ${USER}"
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${TABLE} (marker String) ENGINE = FileLog('${FILE}', 'LineAsString')"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "CREATE TABLE ${TABLE} (marker String) ENGINE = FileLog('${USER_FILES_PATH}/${FILE}', 'LineAsString')"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT marker FROM ${TABLE} ORDER BY marker SETTINGS stream_like_engine_allow_direct_select = 1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${TABLE}"

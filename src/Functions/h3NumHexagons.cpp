@@ -16,6 +16,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -23,7 +24,7 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 namespace
 {
 
-class FunctionH3NumHexagons final : public IFunction
+class FunctionH3NumHexagons : public IFunction
 {
 public:
     static constexpr auto name = "h3NumHexagons";
@@ -36,9 +37,16 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return "(UInt8) -> Int64";
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt8())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arg->getName(), 1, getName());
+
+        return std::make_shared<DataTypeInt64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -75,9 +83,8 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution), getName(), MAX_H3_RES);
-            int64_t num_cells = 0;
-            getNumCells(resolution, &num_cells);
-            dst_data[row] = num_cells;
+            Int64 res = getNumCells(resolution);
+            dst_data[row] = res;
         }
 
         return dst;

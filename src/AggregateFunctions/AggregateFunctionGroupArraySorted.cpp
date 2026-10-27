@@ -263,7 +263,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & rhs_values = this->data(rhs).values;
         for (auto rhs_element : rhs_values)
@@ -414,7 +414,6 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 
 }
 
-void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

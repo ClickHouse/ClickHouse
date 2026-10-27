@@ -4,8 +4,8 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/TypeLists.h>
 #include <base/range.h>
 
 
@@ -15,12 +15,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany final : public IFunction
+struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -32,12 +34,27 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// Both positions match the legacy checks exactly: `isInteger` for the value and
-        /// `isUInt` for every bit position, so wide integers are accepted here and rejected
-        /// later by the column dispatch, as they have always been.
-        return "(Integer, UInt, ...) -> UInt8";
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Number of arguments for function {} doesn't match: "
+                "passed {}, should be at least 2.", getName(), arguments.size());
+
+        const auto & first_arg = arguments.front();
+
+        if (!isInteger(first_arg))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}", first_arg->getName(), getName());
+
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            const auto & pos_arg = arguments[i];
+
+            if (!isUInt(pos_arg))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}", pos_arg->getName(), i, getName());
+        }
+
+        return std::make_shared<DataTypeUInt8>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -50,12 +67,14 @@ public:
         const auto * value_col = arguments.front().column.get();
 
         ColumnPtr res;
-        TypeListUtils::forEach(TypeListNativeInt{}, [&]<typename T>(TypeList<T>)
-        {
-            if (!res)
-                res = execute<T>(arguments, result_type, value_col, input_rows_count);
-        });
-        if (!res)
+        if (!((res = execute<UInt8>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt16>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt32>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt64>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int8>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int16>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int32>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int64>(arguments, result_type, value_col, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_col->getName(), getName());
 
         return res;
@@ -70,7 +89,7 @@ private:
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const = false;
+            bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
@@ -94,7 +113,7 @@ private:
         }
         if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const = false;
+            bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 

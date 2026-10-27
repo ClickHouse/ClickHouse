@@ -1,6 +1,5 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -12,8 +11,6 @@
 
 #include <Functions/logical.h>
 
-#include <Interpreters/JoinUtils.h>
-
 #include <Core/Settings.h>
 
 
@@ -21,7 +18,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
 }
 
@@ -59,40 +55,6 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
     }
 }
 
-/// A condition may become a join key only if its value is stable within one query: in the key position it
-/// is evaluated per row of each joined side instead of once per row of the cross product. Hence
-/// `isDeterministicInScopeOfQuery` rather than `isDeterministic`, which would reject a sound `now`.
-bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
-{
-    QueryTreeNodes nodes_to_visit = {node};
-    while (!nodes_to_visit.empty())
-    {
-        auto current = nodes_to_visit.back();
-        nodes_to_visit.pop_back();
-
-        auto current_type = current->getNodeType();
-        if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
-            continue;
-
-        if (const auto * function_node = current->as<FunctionNode>())
-        {
-            if (function_node->isWindowFunction() || !function_node->isOrdinaryFunction())
-                return false;
-
-            auto function_base = function_node->getFunction();
-            if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery()
-                || function_base->isServerConstant())
-                return false;
-        }
-
-        for (const auto & child : current->getChildren())
-            if (child)
-                nodes_to_visit.push_back(child);
-    }
-
-    return true;
-}
-
 const QueryTreeNodePtr & getEquiArgument(const QueryTreeNodePtr & cond, size_t index)
 {
     const auto * func = cond->as<FunctionNode>();
@@ -110,8 +72,8 @@ bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodeP
 
     if (const auto * join_node = table_expression->as<JoinNode>())
     {
-        return findInTableExpression(source, join_node->getLeftTableExpressionNode())
-            || findInTableExpression(source, join_node->getRightTableExpressionNode());
+        return findInTableExpression(source, join_node->getLeftTableExpression())
+            || findInTableExpression(source, join_node->getRightTableExpression());
     }
 
     return false;
@@ -127,8 +89,8 @@ void getJoinNodes(QueryTreeNodePtr & join_tree_node, std::vector<JoinNode *> & j
         return;
 
     join_nodes.push_back(join_node);
-    getJoinNodes(join_node->getLeftTableExpressionNode(), join_nodes);
-    getJoinNodes(join_node->getRightTableExpressionNode(), join_nodes);
+    getJoinNodes(join_node->getLeftTableExpression(), join_nodes);
+    getJoinNodes(join_node->getRightTableExpression(), join_nodes);
 }
 
 class CrossToInnerJoinVisitor : public InDepthQueryTreeVisitorWithContext<CrossToInnerJoinVisitor>
@@ -174,12 +136,6 @@ public:
 
         for (auto & condition : equi_conditions)
         {
-            if (!canMoveToJoinExpression(condition))
-            {
-                other_conditions.push_back(std::move(condition));
-                continue;
-            }
-
             const auto & lhs_equi_argument = getEquiArgument(condition, 0);
             const auto & rhs_equi_argument = getEquiArgument(condition, 1);
 
@@ -188,12 +144,8 @@ public:
             DataTypes key_types = {lhs_equi_argument->getResultType(), rhs_equi_argument->getResultType()};
             DataTypePtr common_key_type = tryGetLeastSupertype(key_types);
 
-            /// The planner rejects a `Dynamic` JOIN key unless `allow_dynamic_type_in_join_keys` is set.
-            bool dynamic_key_rejected = !getSettings()[Setting::allow_dynamic_type_in_join_keys]
-                && (hasDynamicType(key_types[0]) || hasDynamicType(key_types[1]));
-
             /// If there is common key type, we can join on this condition
-            if (common_key_type && !dynamic_key_rejected)
+            if (common_key_type)
             {
                 auto left_src = getExpressionSource(lhs_equi_argument).first;
                 auto right_src = getExpressionSource(rhs_equi_argument).first;
@@ -220,11 +172,6 @@ public:
                             edge = &graph.edges.emplace_back();
                             graph.nodes[*rhs_index].edges[*lhs_index] = edge;
                         }
-
-                        /// Such a key matches NULLs that `equals` does not, so WHERE keeps the condition too.
-                        if (JoinCommon::keyMatchesNullAsValue(lhs_equi_argument->getResultType())
-                            || JoinCommon::keyMatchesNullAsValue(rhs_equi_argument->getResultType()))
-                            other_conditions.push_back(condition->clone());
 
                         edge->equi_conditions.push_back(std::move(condition));
                     }
@@ -330,12 +277,12 @@ public:
             checkNotRewritten(table_with_condition.join_type.is_comma, join_node);
 
             if (!cross)
-                cross = std::make_shared<CrossJoinNode>(std::move(join_node->getLeftTableExpressionNode()));
+                cross = std::make_shared<CrossJoinNode>(std::move(join_node->getLeftTableExpression()));
             else
-                cross->appendTable(std::move(join_node->getLeftTableExpressionNode()), cross_join_type);
+                cross->appendTable(std::move(join_node->getLeftTableExpression()), cross_join_type);
 
             cross_join_type = table_with_condition.join_type;
-            lhs = std::move(join_node->getRightTableExpressionNode());
+            lhs = std::move(join_node->getRightTableExpression());
         }
 
         if (!cross)
@@ -358,7 +305,7 @@ public:
         if (!where_node)
             return;
 
-        auto & join_tree_node = query_node->getJoinTreeNode();
+        auto & join_tree_node = query_node->getJoinTree();
         if (!join_tree_node || join_tree_node->getNodeType() != QueryTreeNodeType::CROSS_JOIN)
             return;
 
@@ -382,7 +329,7 @@ public:
 
         auto tables_with_conditions = buildJoinsChain(join_graph);
         auto table_node = rebuildJoins(tables_with_conditions);
-        query_node->getJoinTreeNode() = table_node;
+        query_node->getJoinTree() = table_node;
 
         where_node = makeConjunction(other_conditions);
     }
