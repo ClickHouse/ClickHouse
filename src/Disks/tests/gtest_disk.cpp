@@ -4,6 +4,7 @@
 #include <Disks/tests/gtest_disk.h>
 #include <atomic>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <stdexcept>
 #include <unordered_set>
@@ -161,4 +162,23 @@ TEST_F(DiskTest, iterateDirectory)
         iter->next();
         EXPECT_FALSE(iter->isValid());
     }
+}
+
+
+TEST(DiskLocalStartup, UnusablePathMarksDiskBrokenInsteadOfThrowing)
+{
+    auto root = fs::temp_directory_path() / ("clickhouse_gtest_disk_startup_" + std::to_string(getpid()));
+    fs::remove_all(root);
+    fs::create_directory(root);
+
+    /// A regular file in the middle of the path makes `create_directories` fail even for root.
+    auto not_a_directory = root / "not_a_directory";
+    std::ofstream(not_a_directory).put('x');
+
+    auto disk = std::make_shared<DB::DiskLocal>("unusable_disk", (not_a_directory / "disk").string() + "/");
+    EXPECT_NO_THROW(disk->startup(/* skip_access_check */ false));
+    EXPECT_TRUE(disk->isBroken());
+
+    disk.reset();
+    fs::remove_all(root);
 }
