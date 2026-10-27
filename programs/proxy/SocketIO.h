@@ -102,7 +102,8 @@ public:
     /// bounded by the send timeout. The socket must not be closed while either fiber still uses it.
     void enableFullDuplex();
 
-    /// Bound the whole handshake of an accepted connection by @p timeout_ms (see `HandshakeDeadline`).
+    /// Bound the whole handshake of an accepted connection, or a whole exchange over a connected socket,
+    /// by @p timeout_ms (see `HandshakeDeadline`).
     void armHandshakeDeadline(UInt64 timeout_ms);
     /// The handshake is over: the connection is no longer bounded by the handshake deadline.
     void disarmHandshakeDeadline() { handshake_deadline.reset(); }

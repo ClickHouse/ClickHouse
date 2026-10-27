@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <base/scope_guard.h>
+
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
@@ -157,6 +159,18 @@ void HealthMonitor::checkBackend(Backend & backend, bool poll_resources)
 
 void HealthMonitor::pollResources(Backend & backend)
 {
+    /// A failed poll makes the resource usage unknown again: a sample that is not refreshed any more
+    /// (for example, the monitoring credentials were revoked) would otherwise keep its score forever.
+    bool polled = false;
+    SCOPE_EXIT({
+        if (!polled)
+            backend.setResourceUsage(-1, -1);
+    });
+
+    /// The whole response, however slowly a backend sends it, is bounded by the size and by the timeout,
+    /// so a misbehaving endpoint cannot hold the round of checks (and the shutdown, which waits for it).
+    constexpr size_t max_response_bytes = 64 * 1024;
+
     const UInt16 port = backendPortFor(ListenerProtocol::HTTP, backend.config(), /*listener_port=*/ 0);
     try
     {
@@ -177,10 +191,14 @@ void HealthMonitor::pollResources(Backend & backend)
             socket = FiberSocket::connect(address, config.health_check.timeout_ms);
         }
         socket.setTimeouts(config.health_check.timeout_ms, config.health_check.timeout_ms);
+        socket.armHandshakeDeadline(config.health_check.timeout_ms);
+        SCOPE_EXIT({ socket.close(); });
 
         const String credentials = base64Encode(backend.config().monitor_user + ":" + backend.config().monitor_password);
+        /// Encoded as a parameter value: the server reads `+` as a space and `&` as the next parameter.
+        /// The same reserved characters as `Poco::URI::RESERVED_QUERY_PARAM`, which is not public.
         String query;
-        Poco::URI::encode(config.health_check.resource_query, "", query);
+        Poco::URI::encode(config.health_check.resource_query, "?#/:;+@&=", query);
 
         const String request =
             "GET /?query=" + query + " HTTP/1.0\r\n"
@@ -193,24 +211,26 @@ void HealthMonitor::pollResources(Backend & backend)
         String status_line;
         if (!reader.readLine(status_line, 8192) || !status_line.contains(" 200 "))
         {
-            socket.close();
             LOG_DEBUG(log, "Resource poll of {} returned '{}'", backend.name(), status_line);
             return;
         }
 
         /// Skip headers.
         String header;
-        while (reader.readLine(header, 8192) && !header.empty())
+        while (true)
         {
+            if (!reader.readLine(header, 8192) || reader.received().size() > max_response_bytes)
+            {
+                LOG_DEBUG(log, "Resource poll of {} returned an incomplete or too large response", backend.name());
+                return;
+            }
+            if (header.empty())
+                break;
         }
 
         String body;
         if (!reader.readLine(body, 8192))
-        {
-            socket.close();
             return;
-        }
-        socket.close();
 
         const size_t tab = body.find('\t');
         if (tab == String::npos)
@@ -219,6 +239,7 @@ void HealthMonitor::pollResources(Backend & backend)
         const double cpu = std::stod(Poco::trim(body.substr(0, tab)));
         const double memory = std::stod(Poco::trim(body.substr(tab + 1)));
         backend.setResourceUsage(cpu, memory);
+        polled = true;
         LOG_TRACE(log, "Backend {} resource usage: {} cores, {} bytes", backend.name(), cpu, memory);
     }
     catch (...)

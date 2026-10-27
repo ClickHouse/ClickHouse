@@ -87,10 +87,9 @@ void HandshakeDeadline::disarm() noexcept
 
 void FiberSocket::armHandshakeDeadline(UInt64 timeout_ms)
 {
-    chassert(adopted_fd >= 0);
     /// Zero means no timeout, as for the socket timeouts.
     if (timeout_ms)
-        handshake_deadline = std::make_unique<HandshakeDeadline>(adopted_fd, timeout_ms);
+        handshake_deadline = std::make_unique<HandshakeDeadline>(adopted_fd >= 0 ? adopted_fd : fd(), timeout_ms);
 }
 
 FiberSocket FiberSocket::adopt(int fd)
