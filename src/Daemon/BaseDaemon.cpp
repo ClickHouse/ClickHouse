@@ -17,6 +17,7 @@
 #endif
 #include <cerrno>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -67,6 +68,10 @@
 
 namespace fs = std::filesystem;
 
+#if defined(OS_LINUX)
+extern char ** environ;
+#endif
+
 namespace DB
 {
     namespace ErrorCodes
@@ -112,6 +117,31 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
         LOG_WARNING(logger, "{}: when creating {}, {}", __PRETTY_FUNCTION__, path, getCurrentExceptionMessage(true));
     }
     return false;
+}
+
+
+#if defined(OS_LINUX)
+/// The command line the kernel started this process with: unlike the `argv` of the application, it still
+/// contains the name of the application (`clickhouse server ...`). Empty if it cannot be read.
+static VectorWithMemoryTracking<std::string> readCommandLine()
+{
+    VectorWithMemoryTracking<std::string> args;
+    std::ifstream in("/proc/self/cmdline");
+    for (std::string arg; std::getline(in, arg, '\0');)
+        args.push_back(arg);
+    return args;
+}
+#endif
+
+
+/// Blocks until the watchdog closes the pipe, so that the notifications of the child to the service manager
+/// are sent after the ones of the watchdog.
+static void waitForWatchdog(Poco::Pipe & notify_sync)
+{
+    notify_sync.close(Poco::Pipe::CLOSE_WRITE);
+    char buf[1];
+    if (0 != notify_sync.readBytes(buf, sizeof(buf)))
+        throw Poco::Exception("Unexpected result while waiting for watchdog synchronization pipe to close.");
 }
 
 
@@ -425,6 +455,8 @@ void BaseDaemon::initialize(Application & self)
     /// After initialized loggers but before initialized signal handling.
     if (should_setup_watchdog)
         setupWatchdog();
+    else if (watchdog_pid != 0)
+        logger().information(fmt::format("Started by the watchdog with pid {} as a new process image", watchdog_pid));
 
     /// Create pid file.
     if (config().has("pid"))
@@ -620,6 +652,63 @@ void BaseDaemon::shouldSetupWatchdog(char * argv0_)
 }
 
 
+bool BaseDaemon::setupWatchdogChild([[maybe_unused]] const char * argv0_)
+{
+#if defined(OS_LINUX)
+    const char * env_pid = getenv("CLICKHOUSE_WATCHDOG_PID"); // NOLINT(concurrency-mt-unsafe)
+    if (!env_pid)
+        return false;
+
+    pid_t pid = 0;
+    bool parsed = tryParse(pid, env_pid) && pid > 0;
+    /// Not passed on to the processes that the server starts. Empty means absent, as `unsetenv` is trapped in
+    /// debug builds (base/harmful).
+    (void)setenv("CLICKHOUSE_WATCHDOG_PID", "", 1); // NOLINT(concurrency-mt-unsafe)
+    if (!parsed)
+        return false;
+
+    /// `execve` of a binary with file capabilities resets the parent-death signal.
+    if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
+    {
+        std::cerr << "Cannot do prctl to ask termination with the watchdog: " << errnoToString() << std::endl;
+        _exit(EXIT_FAILURE);
+    }
+    if (getppid() != pid)
+    {
+        std::cerr << "The watchdog (pid " << pid << ") that started this process has exited" << std::endl;
+        _exit(EXIT_FAILURE);
+    }
+
+    if (getenvBool("CLICKHOUSE_WATCHDOG_NOT_DUMPABLE"))
+    {
+        (void)setenv("CLICKHOUSE_WATCHDOG_NOT_DUMPABLE", "", 1); // NOLINT(concurrency-mt-unsafe)
+        if (0 != prctl(PR_SET_DUMPABLE, 0))
+        {
+            std::cerr << "Cannot make the process not dumpable like the watchdog: " << errnoToString() << std::endl;
+            _exit(EXIT_FAILURE);
+        }
+    }
+
+    /// `execve("/proc/self/exe")` names the process `exe`.
+    std::string_view name(argv0_);
+    if (auto slash = name.rfind('/'); slash != std::string_view::npos)
+        name.remove_prefix(slash + 1);
+    (void)prctl(PR_SET_NAME, std::string(name).c_str());
+
+    watchdog_pid = pid;
+    return true;
+#else
+    return false;
+#endif
+}
+
+
+bool BaseDaemon::shouldDetach() const
+{
+    return watchdog_pid == 0;
+}
+
+
 void BaseDaemon::setupWatchdog()
 {
     /// Initialize in advance to avoid double initialization in forked processes.
@@ -631,6 +720,38 @@ void BaseDaemon::setupWatchdog()
 
     bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
     bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
+
+#if defined(OS_LINUX)
+    /// Each server process is a new image of the running binary, so that it does not share the address space
+    /// layout and the stack protector canary of the watchdog. Between `fork` and `execve` the child only makes
+    /// system calls, so everything is prepared here.
+    VectorWithMemoryTracking<std::string> exec_args = readCommandLine();
+    if (exec_args.empty())
+        throw Exception(ErrorCodes::SYSTEM_ERROR,
+            "Cannot read /proc/self/cmdline to re-execute the server; "
+            "set CLICKHOUSE_WATCHDOG_ENABLE=0 to run the server without the watchdog");
+
+    VectorWithMemoryTracking<std::string> exec_env;
+    for (char ** var = environ; *var; ++var)
+    {
+        std::string_view entry(*var);
+        if (!entry.starts_with("CLICKHOUSE_WATCHDOG_PID=") && !entry.starts_with("CLICKHOUSE_WATCHDOG_NOT_DUMPABLE="))
+            exec_env.emplace_back(entry);
+    }
+    exec_env.push_back(fmt::format("CLICKHOUSE_WATCHDOG_PID={}", getpid()));
+    if (1 != prctl(PR_GET_DUMPABLE))
+        exec_env.emplace_back("CLICKHOUSE_WATCHDOG_NOT_DUMPABLE=1");
+
+    VectorWithMemoryTracking<char *> exec_argv;
+    for (auto & arg : exec_args)
+        exec_argv.push_back(arg.data());
+    exec_argv.push_back(nullptr);
+
+    VectorWithMemoryTracking<char *> exec_envp;
+    for (auto & var : exec_env)
+        exec_envp.push_back(var.data());
+    exec_envp.push_back(nullptr);
+#endif
 
     while (true)
     {
@@ -644,6 +765,20 @@ void BaseDaemon::setupWatchdog()
         if (async_channel)
             async_channel->closeAndJoinThreads();
         pid = fork();
+
+#if defined(OS_LINUX)
+        int exec_errno = 0;
+        if (0 == pid)
+        {
+            /// The parent-death signal is set again and checked after `execve`, see `setupWatchdogChild`.
+            (void)prctl(PR_SET_PDEATHSIG, SIGKILL);
+            waitForWatchdog(notify_sync);
+            notify_sync.close();
+            if (0 == chdir(original_working_directory.c_str()))
+                execve("/proc/self/exe", exec_argv.data(), exec_envp.data());
+            exec_errno = errno;
+        }
+#endif
 
 #if USE_JEMALLOC
         if (0 == pid)
@@ -668,22 +803,18 @@ void BaseDaemon::setupWatchdog()
         if (0 == pid)
         {
             updateCurrentThreadIdAfterFork();
-            logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
-            if (0 != prctl(PR_SET_PDEATHSIG, SIGKILL))
-                logger().warning("Cannot do prctl to ask termination with parent.");
-#endif
-
-            {
-                notify_sync.close(Poco::Pipe::CLOSE_WRITE);
-                /// Read from the pipe will block until the pipe is closed.
-                /// This way we synchronize with the parent process.
-                char buf[1];
-                if (0 != notify_sync.readBytes(buf, sizeof(buf)))
-                    throw Poco::Exception("Unexpected result while waiting for watchdog synchronization pipe to close.");
-            }
-
+            ErrnoException exception(
+                "Cannot re-execute the server binary /proc/self/exe; "
+                "set CLICKHOUSE_WATCHDOG_ENABLE=0 to run the server without the watchdog",
+                ErrorCodes::SYSTEM_ERROR, exec_errno);
+            logger().fatal(exception.message());
+            throw exception; /// NOLINT
+#else
+            logger().information("Forked a child process to watch");
+            waitForWatchdog(notify_sync);
             return;
+#endif
         }
 
 #if defined(OS_LINUX)

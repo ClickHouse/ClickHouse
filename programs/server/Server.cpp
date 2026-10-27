@@ -587,7 +587,7 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
     /// Can be overridden by environment variable (cannot use server config at this moment).
-    if (argc > 0)
+    if (argc > 0 && !app.setupWatchdogChild(argv[0]))
     {
         const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE"); // NOLINT(concurrency-mt-unsafe)
         if (env_watchdog)
