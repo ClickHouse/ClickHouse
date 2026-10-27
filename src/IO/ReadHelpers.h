@@ -977,12 +977,16 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
     }
 
-    /// Mirror the fallback: only a plausible date delimiter (the same one at positions 4 and 7) starts a
-    /// broken-down date. A field delimiter such as a tab must not be treated as a date separator, otherwise
-    /// a 4-digit field in a row format would be parsed across the following columns.
+    /// Mirror the fallback: only the YYYY-MM-DD layout with a plausible date delimiter (the same one at
+    /// positions 4 and 7) starts a broken-down date. A field delimiter such as a tab must not be treated as
+    /// a date separator, and the digits must be checked too, otherwise a small decimal timestamp followed by
+    /// another field (e.g. '1234.5<TAB>.25') would be parsed across the following columns.
     const bool may_be_date = s[4] == '-' || s[4] == '/' || s[4] == '.'
         || (allowed_date_delimiters != nullptr && isSymbolIn(s[4], allowed_date_delimiters));
-    if (!(s[4] == s[7] && may_be_date))
+    const bool is_date_layout = may_be_date && s[4] == s[7]
+        && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+        && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9]);
+    if (!is_date_layout)
     {
         /// Not a YYYY-MM-DD date, so it is a unix timestamp, possibly with a fractional part that is handled by the caller.
 
