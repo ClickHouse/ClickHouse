@@ -212,7 +212,7 @@ bool parsePivotBody(IParser::Pos & pos, PivotSpec & spec, Expected & expected)
         return false;
 
     ASTPtr pivot_column;
-    if (!ParserCompoundIdentifier(false, false).parse(pos, pivot_column, expected))
+    if (!ParserCompoundIdentifier(false, true).parse(pos, pivot_column, expected))
         return false;
 
     if (!ParserKeyword(Keyword::IN).ignore(pos, expected))
