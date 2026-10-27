@@ -1123,9 +1123,11 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
 
     /// The newest sample of each series, skipping the series whose newest sample is a stale marker, sorted by metric name.
     /// Samples at the same timestamp follow the rule of the instant query: a real value beats a NaN, then the greatest wins.
+    /// Like the instant query, the samples are grouped by `timeSeriesIdToGroup`, because different identifiers can have
+    /// the same tags (after a change of `id_generator` the old rows keep their identifiers), and they are one series.
     String sql_query = fmt::format(
-        "SELECT timeSeriesIdToTags(id) AS tags, argMax(value, (timestamp, NOT isNaN(value), value)) AS last_value, "
-        "toUnixTimestamp64Milli(toDateTime64(max(timestamp), 3)) AS last_timestamp FROM ({}) GROUP BY id "
+        "SELECT timeSeriesGroupToTags(group) AS tags, argMax(value, (timestamp, NOT isNaN(value), value)) AS last_value, "
+        "toUnixTimestamp64Milli(toDateTime64(max(timestamp), 3)) AS last_timestamp FROM ({}) GROUP BY timeSeriesIdToGroup(id) AS group "
         "HAVING reinterpretAsUInt64(toFloat64(last_value)) != 0x7FF0000000000002 ORDER BY arrayFirst(tag -> tag.1 = '__name__', tags).2, tags",
         selects);
 
