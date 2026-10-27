@@ -102,6 +102,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool enable_global_with_statement;
     extern const SettingsUInt64 table_function_remote_max_addresses;
 }
 
@@ -1018,30 +1019,105 @@ ASTPtr tryParseEvalQuery(const ASTFunction & eval, const ContextPtr & context)
     }
 }
 
-/// The query an `eval` call generates, and the names of the `WITH` subqueries anywhere in it, which a table expression in their
-/// scope reads before a table.
+/// The query an `eval` call generates, and the table names in it that read a `WITH` subquery instead of a table.
 struct EvalQuery
 {
     ASTPtr ast;
-    std::set<String> cte_names;
+    std::set<const IAST *> cte_reads;
 };
 
+/// The `WITH` subqueries a SELECT declares, and the one whose body is being visited, which does not see itself.
+struct WithScope
+{
+    std::set<String> names;
+    String hidden;
+};
+
+/// Collects the table names under `node` that the analyzer resolves to a `WITH` subquery: the table of a table expression, and
+/// a bare name after `IN`. A `WITH` subquery is visible in the SELECT that declares it, but not in its own body unless the
+/// `WITH` is `RECURSIVE`, and, under `enable_global_with_statement`, in the subqueries below that SELECT. The query `eval`
+/// generates does not go through `ApplyWithGlobalVisitor`, so the `WITH` of the first SELECT of a UNION is not visible in
+/// the others. A table function, such as `view`, analyzes its arguments on its own, outside the scopes around it.
+void collectWithSubqueryReads(const IAST & node, std::vector<WithScope> & scopes, bool global_with, std::set<const IAST *> & reads)
+{
+    const auto visible = [&](const String & name)
+    {
+        for (auto scope = scopes.rbegin(); scope != scopes.rend(); ++scope)
+        {
+            if (scope->names.contains(name) && scope->hidden != name)
+                return true;
+            if (!global_with)
+                return false;
+        }
+        return false;
+    };
+
+    const auto * select = node.as<ASTSelectQuery>();
+    if (select)
+    {
+        WithScope scope;
+        if (const ASTPtr with = select->with())
+            for (const auto & element : with->children)
+                if (const auto * with_element = element->as<ASTWithElement>())
+                    scope.names.insert(with_element->name);
+        scopes.push_back(std::move(scope));
+    }
+    else if (const auto * table_expression = node.as<ASTTableExpression>())
+    {
+        const auto * table = table_expression->database_and_table_name
+            ? table_expression->database_and_table_name->as<ASTTableIdentifier>() : nullptr;
+        if (table && table->getDatabaseName().empty() && visible(table->shortName()))
+            reads.insert(table);
+    }
+    else if (const auto * function = node.as<ASTFunction>(); function && functionIsInOrGlobalInOperator(function->name)
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        const auto * identifier = function->arguments->children[1]->as<ASTIdentifier>();
+        if (identifier && !identifier->compound() && visible(identifier->name()))
+            reads.insert(identifier);
+    }
+
+    const auto * table_expression = node.as<ASTTableExpression>();
+    for (const auto & child : node.children)
+    {
+        if (table_expression && child == table_expression->table_function)
+        {
+            std::vector<WithScope> own_scopes;
+            collectWithSubqueryReads(*child, own_scopes, global_with, reads);
+        }
+        else if (select && child == select->with())
+        {
+            for (const auto & element : child->children)
+            {
+                const auto * with_element = element->as<ASTWithElement>();
+                scopes.back().hidden = with_element && !select->recursive_with ? with_element->name : "";
+                collectWithSubqueryReads(*element, scopes, global_with, reads);
+            }
+            scopes.back().hidden.clear();
+        }
+        else
+            collectWithSubqueryReads(*child, scopes, global_with, reads);
+    }
+
+    if (select)
+        scopes.pop_back();
+}
+
 /// The query an `eval` call in `owner` generates. The analyzer reads it when `owner` is created or read, so the tables it reads
-/// must be created first, and a query the dump cannot resolve refuses the dump instead of leaving them unordered.
+/// must be created first, and a query the dump cannot resolve refuses the dump instead of leaving them unordered. Its `WITH`
+/// subqueries are scoped as under the dump session's `enable_global_with_statement`.
 EvalQuery parseEvalQueryOrRefuse(const ASTFunction & eval, const ContextPtr & context, const std::pair<String, String> & owner)
 {
-    EvalQuery query{.ast = tryParseEvalQuery(eval, context), .cte_names = {}};
+    EvalQuery query{.ast = tryParseEvalQuery(eval, context), .cte_reads = {}};
     if (!query.ast)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot statically resolve the query that {} generates in {}.{} for --dump-schema: only a string literal or a constant "
             "expression that runs no subquery and reads neither the session nor the server, holding one SELECT, is supported, "
             "so the tables that query reads cannot be ordered before it",
             eval.formatForErrorMessage(), backQuoteIfNeed(owner.first), backQuoteIfNeed(owner.second));
-    forEachNode(*query.ast, [&](const IAST & node)
-    {
-        if (const auto * with = node.as<ASTWithElement>())
-            query.cte_names.insert(with->name);
-    });
+    std::vector<WithScope> scopes;
+    collectWithSubqueryReads(
+        *query.ast, scopes, context->getSettingsRef()[Setting::enable_global_with_statement], query.cte_reads);
     return query;
 }
 
@@ -2463,15 +2539,12 @@ std::vector<TableInfo> resolveTables(
         const auto visit = [&](const IAST & node, bool in_table_expression, const EvalQuery * eval_query)
         {
             /// The server qualifies the tables a stored query names, but not the ones in the query `eval` generates: those
-            /// resolve against the session database like a database-less name, unless a `WITH` subquery has the name. That
-            /// subquery may be visible in another scope only, so a name it has still counts when the owning database has a
-            /// table of that name: ordering the table first is harmless where the subquery is read.
+            /// resolve against the session database like a database-less name, unless a `WITH` subquery in scope has the name.
             if (const auto * table_id = node.as<ASTTableIdentifier>())
             {
                 if (!table_id->getDatabaseName().empty())
                     references.push_back({table_id->getDatabaseName(), table_id->shortName()});
-                else if (eval_query && (!eval_query->cte_names.contains(table_id->shortName())
-                    || known_tables.contains({row.database, table_id->shortName()})))
+                else if (eval_query && !eval_query->cte_reads.contains(&node))
                     references.push_back({"", table_id->shortName()});
             }
             /// A bare name after `IN` there is read as a column or an alias first, so it counts only when it names a table
@@ -2479,7 +2552,7 @@ std::vector<TableInfo> resolveTables(
             if (const auto * function = node.as<ASTFunction>(); eval_query && function && functionIsInOrGlobalInOperator(function->name)
                 && function->arguments && function->arguments->children.size() == 2)
                 if (const auto * identifier = function->arguments->children[1]->as<ASTIdentifier>(); identifier && !identifier->compound()
-                    && known_tables.contains({row.database, identifier->name()}))
+                    && !eval_query->cte_reads.contains(identifier) && known_tables.contains({row.database, identifier->name()}))
                     references.push_back({"", identifier->name()});
             /// A parameterized view is called like a table function, by its `[db.]name`, which the analyzer splits at the dot.
             const auto * table_expression = node.as<ASTTableExpression>();

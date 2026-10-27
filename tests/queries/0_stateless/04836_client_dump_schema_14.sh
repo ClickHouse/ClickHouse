@@ -63,6 +63,18 @@ round_trip cte_scope "
         eval('SELECT x FROM (WITH zzz_src AS (SELECT 1 AS x) SELECT x FROM zzz_src) UNION ALL SELECT x FROM zzz_src'));"
 echo "cte_scope: source before the query: $(dumped_before "$work/cte_scope.sql" d.zzz_src d.aaa)"
 
+# In its own scope, which includes the subqueries below it, a `WITH` subquery is read instead of a table of its name: this
+# query reads no table `foo`, although the owning database `d` and the omitted database `e` both have one.
+round_trip cte_shadow "
+    SET allow_experimental_eval_table_function = 1;
+    CREATE DATABASE d;
+    CREATE DATABASE e;
+    CREATE TABLE d.foo (x UInt64) ENGINE = Memory;
+    CREATE TABLE e.foo (x UInt64) ENGINE = Memory;
+    CREATE TABLE d.aaa (x UInt64) ENGINE = Remote('127.0.0.1',
+        eval('WITH foo AS (SELECT toUInt64(1) AS x) SELECT x FROM (SELECT x FROM foo) WHERE x IN foo'));"
+echo "cte_shadow: query not ordered after the table: $(dumped_before "$work/cte_shadow.sql" d.aaa d.foo)"
+
 # A query read from a table is known only when the CREATE runs, so the tables it reads cannot be ordered before it.
 rm -rf "$work/opaque"
 $CLICKHOUSE_LOCAL --path "$work/opaque" -n -q "
