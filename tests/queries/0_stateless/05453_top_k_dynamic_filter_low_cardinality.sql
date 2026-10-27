@@ -56,7 +56,7 @@ SELECT 'plan memory', count() > 0 FROM (
 ) WHERE explain LIKE '%TopN filter column%';
 SELECT 'plan group by', count() > 0 FROM (
     EXPLAIN actions = 1 SELECT s FROM t_lc GROUP BY s ORDER BY s LIMIT 5
-    SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1, max_rows_to_group_by = 0
+    SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, max_block_size = 64, max_threads = 1, max_rows_to_group_by = 0, enable_parallel_replicas = 0
 ) WHERE explain LIKE '%__topKFilter%';
 
 -- Each check prints whether the sort key values of the result, in order (as tuples, which keep `NULL`), are equal to those
@@ -136,12 +136,14 @@ SELECT 'memory desc', a = b, length(a) FROM (SELECT
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 1, use_top_k_dynamic_filtering_for_single_string_sort_column = 1, query_plan_max_limit_for_top_k_optimization = 100000, use_query_condition_cache = 0, use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc_memory ORDER BY s DESC LIMIT 30) SETTINGS use_top_k_dynamic_filtering = 0) AS b);
 
--- The CI profile sets `max_rows_to_group_by`, which disables the GROUP BY top-K optimization.
+-- The CI profile sets `max_rows_to_group_by`, which disables the GROUP BY top-K optimization, and the GROUP BY
+-- dynamic filter is not applied to reads from parallel replicas.
 SELECT 'group by', a = b, length(a) FROM (SELECT
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc GROUP BY s ORDER BY s LIMIT 5)
         SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1,
         use_top_k_dynamic_filtering_for_variable_length_types = 1, query_plan_max_limit_for_top_k_optimization = 100000,
-        use_query_condition_cache = 0, max_block_size = 64, max_threads = 1, max_rows_to_group_by = 0) AS a,
+        use_query_condition_cache = 0, max_block_size = 64, max_threads = 1, max_rows_to_group_by = 0,
+        enable_parallel_replicas = 0) AS a,
     (SELECT groupArray(tuple(s)) FROM (SELECT s FROM t_lc GROUP BY s ORDER BY s LIMIT 5)
         SETTINGS enable_group_by_top_k_optimization = 0) AS b);
 
