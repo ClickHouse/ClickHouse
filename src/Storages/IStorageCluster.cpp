@@ -61,7 +61,9 @@ namespace
 {
 
 /// Analyzer / wrap headers use `__tableN.col`; Iceberg min/max and hive partition
-/// listing match DAG inputs against storage column names.
+/// listing match DAG inputs against storage column names. Only used for inputs
+/// that are neither physical columns nor known identifiers of this table
+/// expression (wrap subquery planning restarts `N`).
 std::string_view stripTableQualifier(std::string_view name)
 {
     static constexpr std::string_view prefix = "__table";
@@ -78,9 +80,14 @@ std::string_view stripTableQualifier(std::string_view name)
     return name;
 }
 
+/// Inputs that are already physical storage columns are kept as is: a physical
+/// column may itself be named `__table1.bid`, and stripping its prefix would
+/// make the listing read a different column. Other inputs are resolved through
+/// the planner's identifier-to-column mapping of this table expression.
 std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
     const ActionsDAG & filter,
-    const StorageSnapshotPtr & storage_snapshot)
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info)
 {
     if (!storage_snapshot)
         return {};
@@ -89,13 +96,23 @@ std::optional<ActionsDAG> remapListingFilterInputsToStorageColumns(
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns();
 
+    const auto identifier_to_column = query_info.buildNodeNameToInputNodeColumn();
+
     std::unordered_map<std::string, ColumnWithTypeAndName> replacements;
     for (const auto * input : filter.getInputs())
     {
         if (input->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        String physical{stripTableQualifier(input->result_name)};
+        if (storage_snapshot->tryGetColumn(options, input->result_name))
+            continue;
+
+        String physical;
+        if (auto it = identifier_to_column.find(input->result_name); it != identifier_to_column.end())
+            physical = it->second.name;
+        else
+            physical = String{stripTableQualifier(input->result_name)};
+
         if (!storage_snapshot->tryGetColumn(options, physical))
             continue;
 
@@ -175,7 +192,7 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     listing_filter_dag.reset();
     if (filter)
     {
-        if (auto remapped = remapListingFilterInputsToStorageColumns(*filter, storage_snapshot))
+        if (auto remapped = remapListingFilterInputsToStorageColumns(*filter, storage_snapshot, query_info))
         {
             listing_filter_dag = std::move(*remapped);
             filter = &*listing_filter_dag;
