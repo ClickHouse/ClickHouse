@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
@@ -3587,9 +3588,22 @@ def test_explicit_tables_list_backup_with_shared_publication(started_cluster):
     for database in databases:
         check_tables_are_synchronized(instance, good, materialized_database=database)
 
-    instance.query(
-        f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup')"
-    )
+    # Reads of a nested table are served even before the background startup has populated the list of the
+    # replicated tables, while a backup is refused until then, so retry it for that reason only.
+    for attempt in range(60):
+        try:
+            instance.query(
+                f"BACKUP DATABASE {databases[1]} TO Disk('backups', 'mpg_explicit_tables_list_shared_publication_backup_{attempt}')"
+            )
+            break
+        except QueryRuntimeException as e:
+            if "has not finished its initial synchronization" not in str(e):
+                raise
+            time.sleep(1)
+    else:
+        raise AssertionError(
+            f"The backup of {databases[1]} was still refused after the restart"
+        )
 
     for database in databases:
         pg_manager.drop_materialized_db(database)
