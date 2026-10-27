@@ -222,9 +222,9 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
             array_col.column = function_array_resize->build(tmp_block)->execute(tmp_block, array_col.type, rows, /* dry_run = */ false);
 
             src_col = std::move(array_col);
-            any_array_map_ptr = src_col.column->convertToFullColumnIfConst();
         }
 
+        any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
         initAnyArray();
     }
     else if (is_left)
@@ -247,7 +247,7 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
             non_empty_array_columns[name] = function_builder->build(tmp_block)->execute(tmp_block, array_col.type, array_col.column->size(), /* dry_run = */ false);
         }
 
-        any_array_map_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
+        any_array_map_ptr = non_empty_array_columns.at(*columns.begin())->convertToFullColumnIfConst();
         initAnyArray();
     }
 }
@@ -288,6 +288,26 @@ ColumnPtr ArrayJoinResultIterator::cutAnyArray(size_t start, size_t length) cons
     return getArrayJoinColumn(any_array_map_ptr->cut(start, length)->convertToFullColumnIfReplicated());
 }
 
+ColumnPtr ArrayJoinResultIterator::cutArrayJoinColumn(const String & name, const ColumnPtr & column, const ColumnPtr & cut_any_col, size_t window_rows) const
+{
+    if (name == *array_join->columns.begin())
+        return cut_any_col;
+
+    ColumnPtr array_ptr = (array_join->is_left && !array_join->is_unaligned)
+        ? non_empty_array_columns.at(name)->cut(current_row, window_rows)
+        : getArrayJoinColumn(column->cut(current_row, window_rows)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
+    return array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+}
+
+DataTypePtr ArrayJoinResultIterator::getArrayJoinElementType(const DataTypeArray & type) const
+{
+    /// Under `array_join_use_nulls` the joined columns were already wrapped as `Nullable` in the constructor.
+    auto nested_type = type.getNestedType();
+    if (array_join->array_join_use_nulls)
+        nested_type = makeNullableOrLowCardinalityNullableSafe(nested_type);
+    return nested_type;
+}
+
 bool ArrayJoinResultIterator::hasNext() const
 {
     return total_rows != 0 && current_row < total_rows;
@@ -319,7 +339,6 @@ Block ArrayJoinResultIterator::next()
     size_t num_columns = block.columns();
     const auto & columns = array_join->columns;
     bool is_unaligned = array_join->is_unaligned;
-    bool is_left = array_join->is_left;
     const size_t window_rows = next_row - current_row;
     auto cut_any_col = cutAnyArray(current_row, window_rows);
     const auto * cut_any_array = typeid_cast<const ColumnArray *>(cut_any_col.get());
@@ -331,33 +350,17 @@ Block ArrayJoinResultIterator::next()
 
         if (columns.contains(current.name))
         {
-            /// Reuse cut_any_col if possible to avoid unnecessary cut.
-            if (!is_unaligned && !is_left && current.name == *columns.begin())
-            {
-                current.column = cut_any_col;
-                current.type = getArrayJoinDataType(current.type);
-            }
-            else
-                current.column = current.column->cut(current_row, window_rows);
-
-            if (const auto & type = getArrayJoinDataType(current.type))
-            {
-                ColumnPtr array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, window_rows)
-                                                                 : getArrayJoinColumn(current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
-                array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
-
-                const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
-                if (!is_unaligned && !array.hasEqualOffsets(*cut_any_array))
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
-
-                current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
-                auto nested_type = type->getNestedType();
-                if (array_join->array_join_use_nulls)
-                    nested_type = makeNullableOrLowCardinalityNullableSafe(nested_type);
-                current.type = nested_type;
-            }
-            else
+            const auto & type = getArrayJoinDataType(current.type);
+            if (!type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", current.name);
+
+            ColumnPtr array_ptr = cutArrayJoinColumn(current.name, current.column, cut_any_col, window_rows);
+            const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
+            if (!is_unaligned && !array.hasEqualOffsets(*cut_any_array))
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
+
+            current.column = array.getDataPtr();
+            current.type = getArrayJoinElementType(*type);
         }
         else if (enable_lazy_columns_replication && isLazyReplicationUseful(current.column))
         {
@@ -381,7 +384,6 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
     const auto & offsets = anyOffsets();
     const auto & columns = array_join->columns;
     const bool is_unaligned = array_join->is_unaligned;
-    const bool is_left = array_join->is_left;
 
     /// Skip fully-dead windows here, the inflating transform would push each empty chunk otherwise
     while (current_row < total_rows)
@@ -404,34 +406,16 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
         for (const auto & name : columns)
         {
             const auto & src = block.getByName(name);
-
-            /// Mirrors next(). The first aligned-inner column is already the unwrapped nested array
-            ColumnPtr column;
-            DataTypePtr branch_type;
-            if (!is_unaligned && !is_left && name == *columns.begin())
-            {
-                column = cut_any_col;
-                branch_type = getArrayJoinDataType(src.type);
-            }
-            else
-            {
-                column = src.column->cut(current_row, window_rows);
-                branch_type = src.type;
-            }
-
-            const auto & nested_type = getArrayJoinDataType(branch_type);
-            if (!nested_type)
+            const auto & type = getArrayJoinDataType(src.type);
+            if (!type)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", name);
 
-            ColumnPtr array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[name]->cut(current_row, window_rows)
-                                                             : getArrayJoinColumn(column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
-            array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
-
+            ColumnPtr array_ptr = cutArrayJoinColumn(name, src.column, cut_any_col, window_rows);
             const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
             if (!is_unaligned && !array.hasEqualOffsets(*cut_any_array))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
 
-            element_block.insert({array.getDataPtr(), nested_type->getNestedType(), name});
+            element_block.insert({array.getDataPtr(), getArrayJoinElementType(*type), name});
         }
 
         /// Row columns the filter reads are broadcast to the row's elements.

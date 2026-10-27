@@ -556,6 +556,58 @@ constexpr bool functionForcesTheReturnType()
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
 
+/// If the result cannot be wrapped in Nullable (e.g. Array), set the result of the null rows to the default value
+/// of the return type (e.g. an empty array). The parser still sees the values under the null map, which are not
+/// meaningful: `nullIf(x, x)` keeps `x`, and a null key is an empty string, which is a valid key in JSON.
+static ColumnPtr replaceNullRowsWithDefaults(const ColumnPtr & result, const ColumnsWithTypeAndName & args, size_t input_rows_count)
+{
+    VectorWithMemoryTracking<const NullMap *> null_maps;
+    for (const auto & arg : args)
+    {
+        /// A constant argument can be left wrapped in `ColumnConst` when other arguments are not constant.
+        /// If it is null, all rows are null.
+        if (isColumnConst(*arg.column))
+        {
+            if (input_rows_count && arg.column->isNullAt(0))
+            {
+                auto defaults = result->cloneEmpty();
+                defaults->insertManyDefaults(input_rows_count);
+                return defaults;
+            }
+        }
+        else if (const auto * nullable = typeid_cast<const ColumnNullable *>(arg.column.get()))
+            null_maps.push_back(&nullable->getNullMapData());
+    }
+
+    auto is_null_row = [&](size_t row)
+    {
+        for (const auto * null_map : null_maps)
+        {
+            if ((*null_map)[row])
+                return true;
+        }
+        return false;
+    };
+
+    size_t first_null_row = 0;
+    while (first_null_row < input_rows_count && !is_null_row(first_null_row))
+        ++first_null_row;
+    if (first_null_row == input_rows_count)
+        return result;
+
+    auto patched = result->cloneEmpty();
+    patched->reserve(input_rows_count);
+    patched->insertRangeFrom(*result, 0, first_null_row);
+    for (size_t row = first_null_row; row < input_rows_count; ++row)
+    {
+        if (is_null_row(row))
+            patched->insertDefault();
+        else
+            patched->insertFrom(*result, row);
+    }
+    return patched;
+}
+
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
 class ExecutableFunctionJSON final : public IExecutableFunction
 {
@@ -598,7 +650,12 @@ public:
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
             if (null_presence.has_nullable)
-                temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+            {
+                if (result_type->isNullable())
+                    temporary_result = wrapInNullable(temporary_result, columns_without_low_cardinality, result_type, input_rows_count);
+                else
+                    temporary_result = replaceNullRowsWithDefaults(temporary_result, columns_without_low_cardinality, input_rows_count);
+            }
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -611,7 +668,12 @@ public:
             ColumnPtr temporary_result = chooseAndRunJSONParser(temporary_columns, json_return_type, input_rows_count);
 
             if (null_presence.has_nullable)
-                temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+            {
+                if (result_type->isNullable())
+                    temporary_result = wrapInNullable(temporary_result, arguments, result_type, input_rows_count);
+                else
+                    temporary_result = replaceNullRowsWithDefaults(temporary_result, arguments, input_rows_count);
+            }
 
             if (result_type->lowCardinality())
                 temporary_result = recursiveLowCardinalityTypeConversion(temporary_result, json_return_type, result_type);
@@ -800,8 +862,10 @@ private:
 
         if (null_presence.has_null_constant)
             return makeNullable(std::make_shared<DataTypeNothing>());
+        /// If the return type cannot be Nullable (e.g. Array), return it as-is.
+        /// Null rows get the default value of the return type (e.g. an empty array), see `replaceNullRowsWithDefaults`.
         if (null_presence.has_nullable)
-            return makeNullable(json_return_type);
+            return makeNullableSafe(json_return_type);
         return json_return_type;
     }
 
