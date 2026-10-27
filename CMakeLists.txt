@@ -435,6 +435,14 @@ if (NOT ENABLE_FUZZING)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
 endif()
 
+# Zero automatic variables that have no initializer, so that reading one before it is written yields zero
+# instead of stale stack contents. Not in the sanitizer and fuzzer builds, which are not shipped: Memory
+# Sanitizer reports exactly such reads, and Undefined Behavior Sanitizer the invalid `bool` and enum values
+# they load. contrib/compiler-rt-cmake resets it, like the stack protector above.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -ftrivial-auto-var-init=zero")
+endif ()
+
 # Probe every page of a large stack allocation (big frames, `alloca`, VLAs) so that it cannot jump over
 # the guard page into another mapping. Only functions with frames larger than a page pay for it.
 # Clang ignores it (and `-Werror` turns the warning into an error) on Darwin, SunOS, WebAssembly and LoongArch.

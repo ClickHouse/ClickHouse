@@ -1725,6 +1725,8 @@ target_compile_definitions(musl PRIVATE
 # __init_ssp writes the canary into the thread pointer, so a function that reads it on entry and
 # again on return would see two different values; __init_tls and __set_thread_area set up the
 # thread pointer the canary is read through; memcpy and memset are called from that path.
+# They also keep their locals uninitialized: zeroing a large local is a call to memset, and the
+# dynamic linker's stage 2 in ldso/dynlink.c must not call extern symbols.
 set_source_files_properties(
     "${MUSL_SOURCE_DIR}/src/env/__init_tls.c"
     "${MUSL_SOURCE_DIR}/src/env/__libc_start_main.c"
@@ -1735,7 +1737,7 @@ set_source_files_properties(
     "${MUSL_SOURCE_DIR}/src/thread/aarch64/__set_thread_area.c"
     "${MUSL_SOURCE_DIR}/ldso/dlstart.c"
     "${MUSL_SOURCE_DIR}/ldso/dynlink.c"
-    PROPERTIES COMPILE_OPTIONS "-fno-stack-protector"
+    PROPERTIES COMPILE_OPTIONS "-fno-stack-protector;-ftrivial-auto-var-init=uninitialized"
 )
 
 target_compile_definitions(musl PUBLIC
@@ -1769,6 +1771,8 @@ target_compile_options(musl-rcrt1 PRIVATE
     -ffreestanding
     # Runs before the thread pointer and the canary exist (upstream musl NOSSP_OBJS covers all CRT objects).
     -fno-stack-protector
+    # A zeroed local can become a call to memset, which may not work before the relocations are applied.
+    -ftrivial-auto-var-init=uninitialized
     -fno-sanitize=all
     -fno-builtin
 )
