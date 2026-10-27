@@ -2147,10 +2147,30 @@ void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, b
             create.setDatabase(placement->database_name);
     }
 
+    bool current_database_is_hierarchical = !current_database.empty() && !catalog.isDatabaseExist(current_database);
+
+    /// The source of `AS` / `CLONE AS` is the existing table it refers to. It is resolved once, here, before the table is
+    /// created: resolving it again afterwards could select the new table itself (`CREATE TABLE `a.b`.t CLONE AS a.b.t`
+    /// with the source `a`.`b.t` - once `a.b`.`t` exists, `a.b.t` names it), and the partitions would be copied from it.
+    if (!create.as_table.empty())
+    {
+        StorageID as_id(create.as_database, create.as_table);
+        bool is_hierarchical = !as_id.database_name.empty() || as_id.table_name.contains('.') || current_database_is_hierarchical;
+        if (is_hierarchical)
+        {
+            StorageID resolved = catalog.resolveHierarchicalName(as_id, getContext());
+            /// A source that does not exist here is left as written: `ON CLUSTER`, it may exist on the other hosts only.
+            if (catalog.isTableExist(resolved, getContext()))
+            {
+                create.as_database = resolved.database_name;
+                create.as_table = resolved.table_name;
+            }
+        }
+    }
+
     /// The targets of a view (`TO a.b.t`, or `TO t` inside `USE a.b`) are the existing tables they refer to, or their placement.
     if (create.targets)
     {
-        bool current_database_is_hierarchical = !current_database.empty() && !catalog.isDatabaseExist(current_database);
         for (size_t i = 0; i < create.targets->targets.size(); ++i)
         {
             auto kind = create.targets->targets[i].kind;
