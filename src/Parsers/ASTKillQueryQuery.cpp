@@ -17,7 +17,11 @@ namespace ErrorCodes
 
 String ASTKillQueryQuery::getID(char delim) const
 {
-    return String("KillQueryQuery") + delim + (where_expression ? where_expression->getID() : "") + delim + String(sync ? "SYNC" : "ASYNC");
+    /// `where_expression` is a child, so the tree hash already covers it through the child recursion.
+    /// Keep it out of the node's own identity: otherwise the current-node hash of
+    /// `KILL QUERY WHERE {p:Expression}` differs from that of `KILL QUERY WHERE 0`, and the rewrite-rule
+    /// matcher stops at the `KILL` node instead of descending to bind the predicate placeholder.
+    return String("KillQueryQuery") + delim + String(sync ? "SYNC" : "ASYNC");
 }
 
 void ASTKillQueryQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const

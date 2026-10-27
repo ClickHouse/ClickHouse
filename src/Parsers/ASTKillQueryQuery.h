@@ -41,7 +41,7 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
-    /// `getID` folds only `where_expression` (which is also part of `children`) and `sync`; `type`
+    /// `getID` folds only `sync` (`where_expression` is part of `children`); `type`
     /// (`QUERY` / `MUTATION` / `PART_MOVE_TO_SHARD` / `TRANSACTION`), `test`, and the `ON CLUSTER`
     /// `cluster` name are plain members kept outside `children`. Fold them into the tree hash so the
     /// rewrite-rule matcher — which treats an equal tree hash as semantic equality — does not let a
