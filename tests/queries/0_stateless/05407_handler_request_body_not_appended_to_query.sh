@@ -16,7 +16,7 @@ H="hrb_${DB}"
 P="/hrb_${DB}"
 
 cleanup() {
-    for suffix in welcome capture capture_get insert; do
+    for suffix in welcome capture capture_get insert input input_no_format; do
         $CLICKHOUSE_CLIENT -q "DROP HANDLER IF EXISTS \`${H}_${suffix}\`"
     done
 }
@@ -51,3 +51,21 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_insert\` URL '${P}/insert' METHODS 
 printf 'hello\nworld\n' | ${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/insert" --data-binary @-
 $CLICKHOUSE_CLIENT -q "SELECT s FROM ${DB}.t05407 ORDER BY s"
 $CLICKHOUSE_CLIENT -q "DROP TABLE ${DB}.t05407"
+
+echo "=== the body is the data of an INSERT ... SELECT from input ==="
+$CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t05407_input (x UInt64) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_input\` URL '${P}/input' METHODS (POST) AS INSERT INTO ${DB}.t05407_input SELECT x FROM input('x UInt64') FORMAT TSV"
+printf '1\n2\n' | ${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/input" --data-binary @-
+$CLICKHOUSE_CLIENT -q "SELECT x FROM ${DB}.t05407_input ORDER BY x"
+
+echo "=== the body is never parsed as SQL, even without a literal FORMAT in the query ==="
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE ${DB}.t05407_input"
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_input_no_format\` URL '${P}/input_no_format' METHODS (POST) AS INSERT INTO ${DB}.t05407_input SELECT x FROM input('x UInt64')"
+printf 'UNION ALL SELECT 99 FORMAT TSV\n1\n' | ${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/input_no_format" --data-binary @- | grep -o -m1 "UNKNOWN_FORMAT"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM ${DB}.t05407_input"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ${DB}.t05407_input"
+
+echo "=== _request_body left in a named session is not used: it is bound from the current body ==="
+SESSION="session_05407_${DB}"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION}" --data-binary "SET param__request_body = 'Stale'"
+${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/welcome?session_id=${SESSION}" -H 'Content-Type: text/plain' --data-binary 'Alice'

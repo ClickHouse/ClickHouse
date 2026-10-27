@@ -14,3 +14,11 @@ BAD_ARGUMENTS
 === the body is still the data of an INSERT ===
 hello
 world
+=== the body is the data of an INSERT ... SELECT from input ===
+1
+2
+=== the body is never parsed as SQL, even without a literal FORMAT in the query ===
+UNKNOWN_FORMAT
+0
+=== _request_body left in a named session is not used: it is bound from the current body ===
+Welcome, Alice

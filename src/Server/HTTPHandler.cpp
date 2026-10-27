@@ -317,6 +317,7 @@ void HTTPHandler::processQuery(
 
     const AccessControl & access_control = session->sessionContext()->getAccessControl();
     NameToNameMap query_parameters = session->sessionContext()->getQueryParameters();
+    customizeInheritedQueryParams(query_parameters);
 
     auto param_could_be_skipped = [&] (const String & name)
     {
@@ -1442,6 +1443,12 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    /// A SQL-defined handler appends the request body to the text of its query only as the data of an `INSERT` (see
+    /// `SQLDefinedHandler::feeds_request_body_to_query`). Parse the query from the stored text alone, so that the body
+    /// is never parsed as SQL: otherwise a query without a literal data boundary, such as `INSERT INTO t SELECT x FROM
+    /// input('x UInt64')` without `FORMAT`, would be extended by a body starting with `UNION ALL SELECT ...`.
+    if (body_contract_known && feeds_request_body_to_query)
+        query_flags.parse_query_from_initial_buffer = true;
     query_flags.parse_server_owned_query_without_limits = has_server_owned_query;
 
     executeQuery(
@@ -1828,6 +1835,17 @@ bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameter
     }
 
     return false;
+}
+
+void PredefinedQueryHandler::customizeInheritedQueryParams(NameToNameMap & query_parameters)
+{
+    /// `_request_body` is bound only from the current request: from its body, or from a capture of the `URL REGEXP`
+    /// of a SQL-defined handler. A value left in a named session by `SET param__request_body = ...` would make
+    /// `getQuery` and `customizeContext` skip reading the body, so a SQL-defined handler would get a stale value
+    /// instead of the current body, and a configuration-defined handler would append the unread body to the text of
+    /// its query, letting the body extend the handler's SQL.
+    if (uses_request_body_param)
+        query_parameters.erase("_request_body");
 }
 
 void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)

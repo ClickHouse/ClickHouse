@@ -249,6 +249,25 @@ def test_predefined_query_handler():
         assert res_capture.status_code != 200
         assert b"BAD_ARGUMENTS" in res_capture.content
 
+        # A `_request_body` left in a named session must not be used either: it would leave the body unread, and
+        # the unread body would be appended to the handler's query. The parameter is bound from the current body.
+        session_params = {"session_id": "test_predefined_handler_request_body_session"}
+        res_set = cluster.instance.http_request(
+            "test_predefined_handler_request_body_session_query",
+            method="POST",
+            params={**session_params, "query": "SET param__request_body = 'Stale'"},
+        )
+        assert res_set.status_code == 200, res_set.content
+        res_session = cluster.instance.http_request(
+            "test_predefined_handler_request_body",
+            method="POST",
+            params=session_params,
+            headers={"Content-Type": "text/plain"},
+            data=" UNION ALL SELECT 'extra'".encode("utf8"),
+        )
+        assert res_session.status_code == 200, res_session.content
+        assert res_session.content == b"Welcome,  UNION ALL SELECT 'extra'\n"
+
         cluster.instance.http_request(
             "test_predefined_handler_get?max_threads=1&param_setting_name=max_threads",
             method="GET",

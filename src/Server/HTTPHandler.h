@@ -64,6 +64,11 @@ public:
 
     virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
+    /// Called for the query parameters inherited from the session (`SET param_<name> = ...` in a named session),
+    /// before the parameters of the request are applied. Removes those that the handler must bind only from the
+    /// current request.
+    virtual void customizeInheritedQueryParams(NameToNameMap & /* query_parameters */) {}
+
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
     virtual bool parsesHTTPPath() const { return false; }
@@ -295,6 +300,8 @@ public:
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
     bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
+
+    void customizeInheritedQueryParams(NameToNameMap & query_parameters) override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like
