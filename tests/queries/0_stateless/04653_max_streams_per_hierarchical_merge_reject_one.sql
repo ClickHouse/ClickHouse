@@ -25,7 +25,7 @@ SELECT '-- rejected on the serialized query plan path --';
 -- `serialize_query_plan = 1` alone does not serialize a local query: only distributed plan fragments
 -- are serialized. `make_distributed_plan` serializes every fragment (`serializeQueryPlan` in
 -- `DistributedPlanExecutor.cpp`), so the full sort below is really rebuilt from the serialized
--- plan settings on the worker. The fan-in itself remains local; serialization version 20 carries
+-- plan settings on the worker. The fan-in itself remains local; serialization version 21 carries
 -- the original value only for validation, and the rebuilt full sort rejects it when its pipeline
 -- is built.
 DROP TABLE IF EXISTS t_hier_merge_reject_one;

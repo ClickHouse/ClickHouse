@@ -131,10 +131,6 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// needs the new contract is not serialized for such a peer at all.
 /// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
-/// Version 20 also registers the `max_streams_per_hierarchical_merge_for_validation` plan setting. The
-/// hierarchical-merge fan-in remains local and is reset to `0` after deserialization; only the original
-/// value is carried so a worker that actually builds a full sort can reject the invalid value `1`.
-/// Serializing such a value to an older version fails closed because that version cannot carry it.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 /// Version 20 also registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
@@ -146,6 +142,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 21 also registers the `max_streams_per_hierarchical_merge_for_validation` plan setting. The
+/// hierarchical-merge fan-in remains local and is reset to `0` after deserialization; only the original
+/// value is carried so a worker that actually builds a full sort can reject the invalid value `1`.
+/// Serializing such a value to an older version fails closed because that version cannot carry it.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -231,7 +231,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
 /// First query-plan serialization version that knows the validation-only hierarchical-merge setting.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION = 20;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION = 21;
 /// First global query-plan version that writes version 1 of `ReadFromMergeTree`, which carries the
 /// `allow_query_condition_cache` flag bit. A read whose query-condition cache was disabled for
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
