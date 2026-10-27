@@ -6777,6 +6777,32 @@ void ReadFromMergeTree::createReadTasksForTextIndex(IndexReadTasks text_index_re
     required_source_columns = all_column_names;
 }
 
+/// Whether some part reads one of `column_names` from a `DEFAULT` that is not a constant: the part does not store the column,
+/// or stores another type (a pending `MODIFY COLUMN` replaces `NULL`s with the default).
+static bool partsReadNonConstantDefaults(const RangesInDataParts & parts, const ColumnsDescription & columns, const Names & column_names)
+{
+    for (const auto & name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+
+        const auto name_in_storage = column->getNameInStorage();
+        auto column_default = columns.getDefault(name_in_storage);
+        if (!column_default || column_default->expression->as<ASTLiteral>())
+            continue;
+
+        const auto & type = columns.getPhysical(name_in_storage).type;
+        if (std::ranges::any_of(parts, [&](const auto & part)
+            {
+                auto in_part = part.data_part->tryGetColumn(name_in_storage);
+                return !in_part || !in_part->type->equals(*type);
+            }))
+            return true;
+    }
+    return false;
+}
+
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
@@ -6790,6 +6816,9 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// disables the cache both for index analysis (`selectRangesToReadImpl`) and for the reader
     /// (`initializePipeline` derives `reader_settings.use_query_condition_cache` from it).
     if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+        disableQueryConditionCache();
+    /// The threshold depends on every part: one reading a default that may be non-deterministic makes the entries of all parts unsound.
+    else if (partsReadNonConstantDefaults(getParts(), storage_snapshot->metadata->getColumns(), all_column_names))
         disableQueryConditionCache();
 
     /// A TopK granule-skip decision recorded for one part is computed against the running

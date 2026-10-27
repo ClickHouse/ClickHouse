@@ -43,6 +43,13 @@ namespace MergeTreeSetting
 namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
+
+    bool readsAnyOf(const ActionsDAG::Node & node, const NameSet & columns)
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT)
+            return columns.contains(node.result_name);
+        return std::ranges::any_of(node.children, [&](const auto * child) { return readsAnyOf(*child, columns); });
+    }
 }
 namespace ErrorCodes
 {
@@ -422,8 +429,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         NameSet non_deterministic_outputs;
         if (dag)
         {
+            /// An input converted by `performRequiredConversions` may already hold a non-deterministic default.
             for (const auto * output : dag->getOutputs())
-                if (!VirtualColumnUtils::isDeterministic(output))
+                if (!VirtualColumnUtils::isDeterministic(output) || readsAnyOf(*output, non_deterministic_default_columns))
                     non_deterministic_outputs.insert(output->result_name);
 
             dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);

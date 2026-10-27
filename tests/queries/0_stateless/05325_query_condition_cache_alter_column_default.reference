@@ -30,7 +30,12 @@ DEFAULT now64 for NULL, WHERE	100000
 DEFAULT now64 for NULL, WHERE	100000
 DEFAULT now64 for NULL, PREWHERE	100000
 DEFAULT now64 for NULL, PREWHERE	100000
+DEFAULT reading a column filled by now64	100000
+DEFAULT reading a column filled by now64	100000
+DEFAULT now64, ORDER BY LIMIT	1
+DEFAULT now64, ORDER BY LIMIT	1
 05325_now_prewhere_hit	1	1
 05325_now_where_hit	1	1
 05325_prewhere_hit	1	1
+05325_top_k_hit	1	1
 05325_where_hit	1	1
