@@ -67,9 +67,12 @@ void handleSSH(int fd, const FrontendContext & ctx);
 /// server startup instead of every accepted connection. Called only when an 'ssh' listener exists.
 void validateSSHKeys(const ProxyConfiguration & config);
 
-/// Classify a SQL query as "select", "insert" or "other" by its leading keyword.
+/// Classify a SQL query as "select", "insert" or "other" by its leading keyword, using the server's lexer.
+/// A `WITH` query is a "select" or an "insert" by the first `SELECT` or `INSERT` outside of brackets,
+/// and a read query combined with other statements by `PARALLEL WITH` is "other".
 /// If @p is_prefix, the query is only the beginning of the query text; an empty string is returned
-/// when it ends before the leading keyword is complete, as the query type is not known then.
+/// when the prefix cannot establish the query type: it ends before the leading keyword is complete,
+/// or the query is a read query whose rest may still contain a write.
 String classifyQuery(std::string_view query, bool is_prefix = false);
 
 }

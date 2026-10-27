@@ -5,8 +5,11 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <Parsers/Lexer.h>
+
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 
@@ -28,51 +31,81 @@ namespace DB::Proxy
 
 String classifyQuery(std::string_view query, bool is_prefix)
 {
-    size_t i = 0;
-    /// Skip leading whitespace and SQL comments.
-    while (i < query.size())
+    /// Tokenized with the server's lexer, so that comments (nested, `--`, `//`, `#`) and literals
+    /// are recognized exactly as the server does.
+    Lexer lexer(query.data(), query.data() + query.size());
+    auto next_significant = [&]
     {
-        if (std::isspace(static_cast<unsigned char>(query[i])))
+        while (true)
         {
-            ++i;
+            Token token = lexer.nextToken();
+            if (token.isSignificant())
+                return token;
         }
-        else if (query.compare(i, 2, "--") == 0)
-        {
-            while (i < query.size() && query[i] != '\n')
-                ++i;
-        }
-        else if (query.compare(i, 2, "/*") == 0)
-        {
-            i += 2;
-            while (i + 1 < query.size() && !(query[i] == '*' && query[i + 1] == '/'))
-                ++i;
-            i += 2;
-        }
-        else
-        {
+    };
+
+    /// A token reaching the end of a prefix may continue past it: `/` may start a comment, `INS` may be `INSERT`.
+    auto is_cut = [&](const Token & token)
+    {
+        return is_prefix && (token.isEnd() || token.end == query.data() + query.size());
+    };
+
+    auto is_keyword = [](const Token & token, std::string_view keyword)
+    {
+        return token.type == TokenType::BareWord && token.size() == keyword.size()
+            && std::equal(token.begin, token.end, keyword.begin(),
+                [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; });
+    };
+
+    const Token first = next_significant();
+    if (is_cut(first))
+        return "";
+    if (is_keyword(first, "insert"))
+        return "insert";
+
+    const bool is_with = is_keyword(first, "with");
+    if (!is_with && !is_keyword(first, "select") && !is_keyword(first, "show") && !is_keyword(first, "describe")
+        && !is_keyword(first, "desc") && !is_keyword(first, "explain") && !is_keyword(first, "exists"))
+        return "other";
+
+    /// A read query is not established by its first keyword alone: a `WITH` clause may introduce an `INSERT`,
+    /// and a read statement may be combined with a write into `statement1 PARALLEL WITH statement2`.
+    /// Look at the rest of the query outside of brackets.
+    String result = is_with ? "" : "select";
+    size_t depth = 0;
+    bool after_parallel = false;
+    while (true)
+    {
+        const Token token = next_significant();
+        if (token.isEnd() || token.isError() || is_cut(token))
             break;
+
+        const bool parallel = depth == 0 && is_keyword(token, "parallel");
+        if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+        {
+            ++depth;
         }
+        else if (token.type == TokenType::ClosingRoundBracket || token.type == TokenType::ClosingSquareBracket)
+        {
+            if (depth > 0)
+                --depth;
+        }
+        else if (depth == 0 && token.type == TokenType::BareWord)
+        {
+            if (after_parallel && is_keyword(token, "with"))
+                return "other";
+            if (result.empty() && is_keyword(token, "insert"))
+                return "insert";
+            if (result.empty() && is_keyword(token, "select"))
+                result = "select";
+        }
+        after_parallel = parallel;
     }
 
-    size_t start = i;
-    while (i < query.size() && (std::isalpha(static_cast<unsigned char>(query[i])) || query[i] == '_'))
-        ++i;
-
-    /// The prefix ended within the leading whitespace and comments or within the first keyword,
-    /// so the rest of the query may start with any keyword.
-    if (is_prefix && i >= query.size())
+    /// The rest of a prefix may still turn the query into a write.
+    if (is_prefix)
         return "";
-
-    String keyword;
-    for (size_t j = start; j < i; ++j)
-        keyword += static_cast<char>(std::tolower(static_cast<unsigned char>(query[j])));
-
-    if (keyword == "select" || keyword == "with" || keyword == "show" || keyword == "describe"
-        || keyword == "desc" || keyword == "explain" || keyword == "exists")
-        return "select";
-    if (keyword == "insert")
-        return "insert";
-    return "other";
+    return result.empty() ? "other" : result;
 }
 
 FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, bool encrypt)

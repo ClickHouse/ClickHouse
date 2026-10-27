@@ -16,8 +16,11 @@
 
 #include <silk/fibers/fiber.h>
 
+#include <Server/HTTPQueryConstructor.h>
+
 #include <Poco/Ascii.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
@@ -70,22 +73,20 @@ struct HTTPBodyFraming
     bool expect_continue = false;       /// The client waits for `100 Continue` before sending the body.
 };
 
-struct QueryPrefix
-{
-    String data;
-    bool is_prefix = false;     /// Only the beginning of the body was read: it is longer, or the rest is in later chunks.
-};
-
 /// Without a `query` parameter, the body of the request is the query. Reads the beginning of the body
-/// (the bytes stay in the reader's buffer and are forwarded to the backend unchanged) to classify the query.
-/// Returns nothing if the body cannot be inspected: it is compressed, or its framing is not known.
-std::optional<QueryPrefix> readQueryPrefixFromBody(FiberSocket & client, RecordingReader & reader, const HTTPBodyFraming & framing)
+/// (the bytes stay in the reader's buffer and are forwarded to the backend unchanged) after @p query,
+/// the text from the URL, until the query type is established, the body ends, or 64 KiB of it are read.
+/// Returns an empty string if the type is not known: the body is compressed, its framing is not known,
+/// or the inspected beginning is not enough.
+String classifyQueryWithBody(FiberSocket & client, RecordingReader & reader, const HTTPBodyFraming & framing, String query)
 {
     /// Enough for the leading keyword after a reasonable amount of whitespace and comments.
     constexpr size_t max_prefix_bytes = 64 * 1024;
+    /// Each chunk is classified with the ones before it, so their number bounds the work.
+    constexpr size_t max_chunks = 256;
 
     if (framing.encoded || (!framing.chunked && !framing.content_length))
-        return std::nullopt;
+        return "";
 
     if (framing.expect_continue)
     {
@@ -96,28 +97,48 @@ std::optional<QueryPrefix> readQueryPrefixFromBody(FiberSocket & client, Recordi
         client.sendAll(response.data(), response.size());
     }
 
-    UInt64 size = 0;
-    if (framing.chunked)
+    if (!framing.chunked)
     {
-        /// Only the first chunk is inspected: chunk-size [ ";" chunk-ext ] CRLF chunk-data.
-        String chunk_header;
-        if (!reader.readLine(chunk_header, 1024))
-            return std::nullopt;
-        const String hex = Poco::trim(chunk_header.substr(0, chunk_header.find(';')));
-        if (hex.empty() || hex.size() > 15 || hex.find_first_not_of("0123456789abcdefABCDEF") != String::npos)
-            return std::nullopt;
-        size = std::stoull(hex, nullptr, 16);
-    }
-    else
-    {
-        size = *framing.content_length;
+        const UInt64 size = *framing.content_length;
+        const size_t length = std::min<UInt64>(size, max_prefix_bytes);
+        if (!reader.ensure(length))
+            return "";
+        query += reader.readFixed(length);
+        return classifyQuery(query, /*is_prefix=*/ length < size);
     }
 
-    const size_t length = std::min<UInt64>(size, max_prefix_bytes);
-    if (!reader.ensure(length))
-        return std::nullopt;
-    /// A chunked body may continue in the next chunks, even if they are empty.
-    return QueryPrefix{.data = reader.readFixed(length), .is_prefix = framing.chunked || length < size};
+    /// The chunks are read as long as the beginning of the query is not enough, for example, to see past
+    /// a comment opener split between chunks: chunk-size [ ";" chunk-ext ] CRLF chunk-data CRLF.
+    size_t body_bytes = 0;
+    for (size_t chunk = 0; chunk < max_chunks; ++chunk)
+    {
+        String chunk_header;
+        if (!reader.readLine(chunk_header, 1024))
+            return "";
+        const String hex = Poco::trim(chunk_header.substr(0, chunk_header.find(';')));
+        if (hex.empty() || hex.size() > 15 || hex.find_first_not_of("0123456789abcdefABCDEF") != String::npos)
+            return "";
+        const UInt64 size = std::stoull(hex, nullptr, 16);
+        if (size == 0)
+            return classifyQuery(query, /*is_prefix=*/ false);     /// The last chunk: the whole body is read.
+
+        const size_t length = std::min<UInt64>(size, max_prefix_bytes - body_bytes);
+        if (!reader.ensure(length))
+            return "";
+        query += reader.readFixed(length);
+        body_bytes += length;
+        if (length < size)
+            return classifyQuery(query, /*is_prefix=*/ true);
+
+        const String query_type = classifyQuery(query, /*is_prefix=*/ true);
+        if (!query_type.empty())
+            return query_type;
+
+        String chunk_end;
+        if (!reader.readLine(chunk_end, 1024) || !chunk_end.empty())
+            return "";
+    }
+    return "";
 }
 
 const StaticPageConfig * findStaticPage(const HTTPConfig & http, const String & path)
@@ -254,7 +275,9 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         if (colon == String::npos)
             continue;
         const String name = Poco::toLower(Poco::trim(header.substr(0, colon)));
-        const String value = Poco::trim(header.substr(colon + 1));
+        /// The server decodes RFC 2047 encoded words in every header value (`readHeaders`), so that
+        /// `X-ClickHouse-User: =?UTF-8?Q?alice?=` authenticates as `alice`, and the proxy has to route by the same value.
+        const String value = Poco::trim(Poco::Net::MessageHeader::decodeWord(Poco::trim(header.substr(colon + 1))));
 
         if (name == "content-length")
         {
@@ -318,6 +341,27 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     /// a `user` nor a `password` parameter is present.
     attributes.host = header_host.value_or("");
     attributes.database = header_database.value_or(param_database.value_or(""));
+
+    /// With the default `http_allow_database_as_path` and `http_allow_table_as_file`, the server takes
+    /// the database from a URL path such as `/db/table.format`, as `HTTPHandler::processQuery` does
+    /// (the legacy query endpoints `/` and `/query` are not parsed). A database in both the path and
+    /// a parameter or header must be the same, or the server rejects the request.
+    if (attributes.database.empty())
+    {
+        const String raw_path = target.substr(0, target.find('?'));
+        if (!raw_path.empty() && raw_path != "/" && raw_path != "/query")
+        {
+            try
+            {
+                attributes.database = parseHTTPPath(raw_path, /*allow_database=*/ true, /*allow_table=*/ true, /*allow_filters=*/ true).database;
+            }
+            catch (...)  // NOLINT(bugprone-empty-catch)
+            {
+                /// Not a `database/table` path: the server does not take a database from it either,
+                /// and it is a path of another handler or the server rejects the request.
+            }
+        }
+    }
     attributes.session_id = param_session_id.value_or("");
 
     /// As in `DynamicQueryHandler::getQuery`, the query is the first `query` URL parameter, a line break,
@@ -331,25 +375,16 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         if (param_query && !param_query->empty())
             query_head = *param_query + "\n";
 
-        bool is_prefix = false;
-        if (has_body)
-        {
-            /// With `decompress=1` the body is in the compressed native format and cannot be inspected.
-            std::optional<QueryPrefix> body_prefix;
-            if (!param_decompress)
-                body_prefix = readQueryPrefixFromBody(client, reader, body_framing);
+        /// The URL alone may already establish the query type (for example, an `INSERT` whose data is
+        /// in the body): then the body is not waited for, and is relayed as it arrives.
+        if (!query_head.empty())
+            attributes.query_type = classifyQuery(query_head, has_body);
 
-            if (body_prefix)
-            {
-                query_head += body_prefix->data;
-                is_prefix = body_prefix->is_prefix;
-            }
-            else
-            {
-                is_prefix = true;
-            }
-        }
-        attributes.query_type = classifyQuery(query_head, is_prefix);
+        /// With `decompress=1` the body is in the compressed native format and cannot be inspected.
+        if (attributes.query_type.empty() && has_body && !param_decompress)
+            attributes.query_type = classifyQueryWithBody(client, reader, body_framing, query_head);
+        else if (attributes.query_type.empty() && !has_body)
+            attributes.query_type = classifyQuery(query_head, /*is_prefix=*/ false);
     }
 
     if (header_user)
