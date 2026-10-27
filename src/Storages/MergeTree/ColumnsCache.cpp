@@ -3,16 +3,21 @@
 #include <optional>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/memory.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Defines.h>
 #include <IO/UncompressedCache.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -26,6 +31,10 @@ namespace ProfileEvents
 {
     extern const Event ColumnsCacheEvictedBytes;
     extern const Event ColumnsCacheEvictedEntries;
+    extern const Event ColumnsCacheFillWaits;
+    extern const Event ColumnsCacheFillWaitMicroseconds;
+    extern const Event ColumnsCacheFillWaitTimeouts;
+    extern const Event ColumnsCacheRedundantWrites;
 }
 
 namespace DB
@@ -416,7 +425,10 @@ size_t ColumnsCache::setManyImpl(
             if (existing && existing->coversMarks(entry->first_mark, entry->end_mark))
             {
                 if (from_shard)
+                {
                     already_resident[entry_idx] = true;
+                    ProfileEvents::increment(ProfileEvents::ColumnsCacheRedundantWrites);
+                }
                 else
                     stored_at[entry_idx] = position->second;
             }
@@ -626,6 +638,117 @@ void ColumnsCache::removeEntries(const std::vector<MappedPtr> & entries)
 bool ColumnsCache::containsAll(const std::vector<Key> & keys) const
 {
     return std::ranges::all_of(keys, [&](const Key & key) { return shards[shardIndex(key)]->contains(key); });
+}
+
+ColumnsCacheFillClaims ColumnsCache::claimFills(
+    const std::vector<Key> & needed, const std::vector<Key> & to_claim, std::vector<ColumnsCacheFillPtr> & in_progress)
+{
+    in_progress.clear();
+    ColumnsCacheFillClaims result;
+    result.cache = this;
+    if (needed.empty() && to_claim.empty())
+        return result;
+
+    std::lock_guard lock(fills_mutex);
+    for (const auto & key : needed)
+    {
+        auto it = fills.find(key);
+        if (it != fills.end() && std::ranges::find(in_progress, it->second) == in_progress.end())
+            in_progress.push_back(it->second);
+    }
+
+    if (!in_progress.empty() || to_claim.empty())
+        return result;
+
+    /// Allocated before the first key is claimed, so that nothing throws between claiming a key and
+    /// recording it in the result, which releases what it records: a key claimed and not released
+    /// would make its waiters wait until they give up.
+    result.fill = std::allocate_shared<ColumnsCacheFill>(ServerOwnedCacheEntryAllocator<ColumnsCacheFill>{});
+    result.keys.reserve(to_claim.size());
+
+    /// The registry is the server's, whichever query grows it.
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    for (const auto & key : to_claim)
+    {
+        if (fills.try_emplace(key, result.fill).second)
+            result.keys.push_back(key);
+    }
+    return result;
+}
+
+void ColumnsCache::releaseFills(ColumnsCacheFillClaims & claims)
+{
+    MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+    {
+        std::lock_guard lock(fills_mutex);
+        for (const auto & key : claims.keys)
+        {
+            /// The key is claimed by this reader until it is erased here, so nobody else can have put
+            /// another fill under it.
+            chassert(fills.contains(key) && fills.at(key) == claims.fill);
+            fills.erase(key);
+        }
+    }
+
+    {
+        std::lock_guard lock(claims.fill->mutex);
+        claims.fill->done = true;
+    }
+    claims.fill->done_cv.notify_all();
+}
+
+void ColumnsCache::waitForFills(const std::vector<ColumnsCacheFillPtr> & fills_to_wait, std::optional<UInt64> max_wait_ns)
+{
+    ProfileEvents::increment(ProfileEvents::ColumnsCacheFillWaits);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ColumnsCacheFillWaitMicroseconds);
+    CPULeaseParkGuard cpu_park;
+
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
+    using Clock = std::chrono::steady_clock;
+    const auto deadline = max_wait_ns ? Clock::now() + std::chrono::nanoseconds(*max_wait_ns) : Clock::time_point::max();
+
+    for (const auto & fill : fills_to_wait)
+    {
+        std::unique_lock lock(fill->mutex);
+        /// In slices, so that a cancelled query stops waiting promptly.
+        while (!fill->done_cv.wait_until(lock, std::min(Clock::now() + std::chrono::milliseconds(100), deadline), [&] { return fill->done; }))
+        {
+            if (Clock::now() >= deadline)
+            {
+                ProfileEvents::increment(ProfileEvents::ColumnsCacheFillWaitTimeouts);
+                return;
+            }
+            if (query_status)
+                query_status->throwIfKilled();
+        }
+    }
+}
+
+double ColumnsCache::readNanosecondsPerValue() const
+{
+    const double value = read_nanoseconds_per_value.load(std::memory_order_relaxed);
+    return value > 0 ? value : DEFAULT_READ_NANOSECONDS_PER_VALUE;
+}
+
+void ColumnsCache::recordRead(double nanoseconds_per_value)
+{
+    read_nanoseconds_per_value.store(
+        updateRunningAverage(read_nanoseconds_per_value.load(std::memory_order_relaxed), nanoseconds_per_value, 16), std::memory_order_relaxed);
+}
+
+ColumnsCacheFillClaims::ColumnsCacheFillClaims(ColumnsCacheFillClaims && other) noexcept
+    : cache(other.cache), fill(std::move(other.fill)), keys(std::move(other.keys))
+{
+    other.keys.clear();
+}
+
+ColumnsCacheFillClaims::~ColumnsCacheFillClaims()
+{
+    if (!keys.empty())
+        cache->releaseFills(*this);
 }
 
 void ColumnsCache::removeTable(const UUID & table_uuid)

@@ -614,6 +614,10 @@
     M(ColumnsCacheMisses, "Number of times a deserialized column was not found in the columns cache.", ValueType::Number) \
     M(ColumnsCacheEvictedBytes, "Number of bytes evicted from the columns cache.", ValueType::Bytes) \
     M(ColumnsCacheEvictedEntries, "Number of entries evicted from the columns cache.", ValueType::Number) \
+    M(ColumnsCacheFillWaits, "Number of times a read waited for another read to write the stripes it was about to read from the part to the columns cache.", ValueType::Number) \
+    M(ColumnsCacheFillWaitMicroseconds, "Time spent waiting for another read to write stripes to the columns cache.", ValueType::Microseconds) \
+    M(ColumnsCacheFillWaitTimeouts, "Number of times a read stopped waiting for another read to write stripes to the columns cache, because reading them itself was expected to be faster.", ValueType::Number) \
+    M(ColumnsCacheRedundantWrites, "Number of entries written to the columns cache whose granules the cache held already: the work of reading them from the part was duplicated.", ValueType::Number) \
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \

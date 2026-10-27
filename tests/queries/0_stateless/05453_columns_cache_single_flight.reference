@@ -1,0 +1,18 @@
+-- the second read waits for the first one and is served from the cache
+6442352640	196603
+6442352640	196603
+waits, timeouts, misses
+1	0	0
+-- a waiting read can be cancelled
+6442352640	196603
+394
+-- the wait is bounded: the second read finishes while the first one still holds the stripe
+6442352640	196603
+6442352640	196603
+waits, timeouts, misses
+1	1	1
+-- without columns_cache_wait_for_concurrent_fills the second read does not wait
+6442352640	196603
+6442352640	196603
+waits, timeouts, misses
+0	0	1

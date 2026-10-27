@@ -81,6 +81,8 @@ struct MergeTreeReaderSettings
     UInt64 query_condition_cache_settings_salt = 0;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
+    /// See `ColumnsCache::claimFills`.
+    bool columns_cache_wait_for_concurrent_fills = false;
     /// Identity of the schema the read runs with: a hash of the column list of the metadata
     /// snapshot of the query, computed once per read pool. It is part of every columns cache
     /// key, so that data deserialized under one schema can never be served to a read that

@@ -1005,6 +1005,10 @@ Whether to read from the columns cache when `use_columns_cache` is enabled. Acce
 Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 )", BETA, \
         {"26.10", true, true, "New setting to control writing to columns cache"}) \
+    DECLARE(Bool, columns_cache_wait_for_concurrent_fills, true, R"(
+Whether a read that is about to read a stripe from a `MergeTree` part waits when another read is reading the same stripe of the same column to write it to the columns cache, and then serves it from the cache instead of reading it a second time. Concurrent queries over data that is not in the cache yet - a dashboard querying a freshly merged part, the first queries after a restart - then read and deserialize every stripe once rather than once per query. Applies when `use_columns_cache` is enabled, to parts in the `Wide` format.
+)", BETA, \
+        {"26.11", true, true, "New setting: concurrent reads of the same stripes wait for one of them to fill the columns cache."}) \
     DECLARE(UInt64, columns_cache_max_estimated_bytes_to_write_to_cache, 0, R"(
 If the estimated size of the data a query reads from `MergeTree` parts exceeds this value, writes to the columns cache are inhibited for the entire query. The estimate is made in uncompressed bytes, which is what the cache is charged for, from the size of the columns the query reads (including `PREWHERE`, mutation and patch-part columns) scaled to the selected mark ranges, and the query is charged for all of it before it reads anything. This keeps a single large scan from displacing useful data from the cache, and from copying data into the cache that cannot stay there.
 

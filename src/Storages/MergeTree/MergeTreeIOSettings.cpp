@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool enable_reads_from_columns_cache;
     extern const SettingsBool enable_writes_to_columns_cache;
+    extern const SettingsBool columns_cache_wait_for_concurrent_fills;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
@@ -147,6 +148,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.enable_columns_cache_reads = settings[Setting::enable_reads_from_columns_cache];
     result.enable_columns_cache_writes = settings[Setting::enable_writes_to_columns_cache];
+    result.columns_cache_wait_for_concurrent_fills = settings[Setting::columns_cache_wait_for_concurrent_fills];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
