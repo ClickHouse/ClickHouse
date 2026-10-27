@@ -2351,7 +2351,7 @@ Possible values:
 )", 0, \
         {"26.5", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."}) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_single_string_sort_column, true, R"(
-Apply `use_top_k_dynamic_filtering` to a `MergeTree` table when `ORDER BY` has a single `String` column (also inside `Nullable`), even if `use_top_k_dynamic_filtering_for_variable_length_types` is `0`.
+Apply `use_top_k_dynamic_filtering` to a `MergeTree` table when `ORDER BY` has a single `String` column (also inside `Nullable` or `LowCardinality`), even if `use_top_k_dynamic_filtering_for_variable_length_types` is `0`.
 
 For such a column, the filter also drops the rows equal to the threshold once most rows of a block are equal to it (for example, a column of mostly empty strings). Each threshold value is checked on one block: the first one in which most rows pass the filter. Other sources, such as Parquet files, are not affected.
 
