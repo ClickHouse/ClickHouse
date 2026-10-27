@@ -516,15 +516,17 @@ private:
             {
                 if (!generator->next(uri))
                     break;
-                const size_t options = parseReplicasOfShard(uri, description, max_addresses_upper_bound, caller).size();
                 /// The URL that crosses the limit is not buffered: the query may still stop at one of
                 /// the addresses before it, and only if it does not, the next batch reports the limit.
-                if (generated + options > max_addresses_upper_bound)
+                /// This holds for a URL whose failover options alone exceed the limit as well, so they
+                /// are counted without throwing.
+                const auto options = countReplicasOfShard(uri, description, max_addresses_upper_bound, caller);
+                if (!options || generated + *options > max_addresses_upper_bound)
                 {
                     limit_exceeded = true;
                     break;
                 }
-                generated += options;
+                generated += *options;
                 fresh.push_back(std::move(uri));
             }
 

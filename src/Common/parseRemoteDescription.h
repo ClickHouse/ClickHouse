@@ -211,6 +211,17 @@ std::vector<String> parseReplicasOfShard(
     size_t max_addresses,
     const RemoteDescriptionCaller & caller);
 
+/// The number of replicas separated by `|` that `shard` expands into, as `parseReplicasOfShard` does,
+/// or `std::nullopt` when there are more than `max_addresses` of them. Unlike `parseReplicasOfShard`,
+/// it neither materializes the replicas nor throws on the limit, so that a reader generating the
+/// shards lazily can report the limit only once a query reads past the addresses before that shard.
+/// Still throws on a malformed pattern.
+std::optional<size_t> countReplicasOfShard(
+    const String & shard,
+    const String & description,
+    size_t max_addresses,
+    const RemoteDescriptionCaller & caller);
+
 /// A shard of a `shards,separated,by,commas` description together with its `replicas|separated|by|bars`.
 struct RemoteDescriptionShard
 {

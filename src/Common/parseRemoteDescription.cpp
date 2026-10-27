@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// See the declaration for the meaning of `generated`.
@@ -609,6 +610,28 @@ std::vector<String> parseReplicasOfShard(
         replicas.push_back(replica);
 
     return replicas;
+}
+
+std::optional<size_t> countReplicasOfShard(
+    const String & shard,
+    const String & description,
+    size_t max_addresses,
+    const RemoteDescriptionCaller & caller)
+{
+    /// Counted without the parser: it throws as soon as a group of alternatives exceeds the limit.
+    const auto cardinality = countAddresses(shard, 0, shard.size(), '|', std::nullopt);
+
+    if (cardinality.status == CardinalityStatus::Malformed)
+    {
+        /// The parser reports what exactly is malformed.
+        parseReplicasOfShard(shard, description, max_addresses, caller);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The replicas of shard '{}' are malformed, but the parser accepted them", shard);
+    }
+
+    if (cardinality.status == CardinalityStatus::Overflow || cardinality.value > max_addresses)
+        return std::nullopt;
+
+    return cardinality.value;
 }
 
 
