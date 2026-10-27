@@ -1,0 +1,9 @@
+-- a point on the key of the projection: the first phase is enough
+verdict: chosen
+sampled_marks: 30 / 600
+-- almost the whole table: the first verdict is too close to call, so the estimate reads the full budget
+verdict: too close to call
+sampled_marks: 120 / 600
+-- a budget that covers the scan reads every granule, as before
+verdict: chosen
+sampled_marks: 600 / 600

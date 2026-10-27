@@ -1087,9 +1087,25 @@ WhatIfCandidateResult evaluateProjection(
 
     if (settings.empirical)
     {
-        if (tryEstimateProjection(
-                result, *projection, filters_on_offsets, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
-                settings.projection_scan_budget_rows, weigh))
+        auto estimate = [&](WhatIfCandidateResult & estimated, UInt64 budget)
+        {
+            return tryEstimateProjection(
+                estimated, *projection, filters_on_offsets, relaxing_setting, read_step, baseline_parts, analysis.selected_marks, budget,
+                weigh);
+        };
+        /// when the budget does not cover the scan, a sample of a quarter of it comes first,
+        /// and the sample of the full budget only when the first verdict is too close to call
+        const UInt64 budget = settings.projection_scan_budget_rows;
+        UInt64 rows_to_scan = 0;
+        for (const auto & part : baseline_parts)
+            rows_to_scan += part.data_part->rows_count;
+        if (budget >= 4 && rows_to_scan > budget)
+        {
+            WhatIfCandidateResult first_phase = result;
+            if (estimate(first_phase, budget / 4) && first_phase.verdict != "too close to call")
+                return first_phase;
+        }
+        if (estimate(result, budget))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
