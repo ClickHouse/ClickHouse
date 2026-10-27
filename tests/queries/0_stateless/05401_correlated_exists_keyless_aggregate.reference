@@ -36,6 +36,11 @@
 1	0
 0	0
 1	1
+-- the HAVING sees count() of a group without rows as at runtime
+0	0
+1	1
+0	1
+1	1
 -- an always-NULL condition of an -If aggregate
 0	1
 1	1

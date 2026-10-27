@@ -78,6 +78,17 @@ INNER JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.
 ORDER BY o.number
 SETTINGS allow_experimental_lateral_join = 1;
 
+SELECT '-- the HAVING sees count() of a group without rows as at runtime';
+SELECT o.number, l.c
+FROM numbers(2) AS o
+INNER JOIN LATERAL (SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING assumeNotNull(nullIf(c, 0) + 42)) AS l ON true
+ORDER BY o.number
+SETTINGS allow_experimental_lateral_join = 1;
+SELECT o.number, EXISTS (
+    SELECT count() AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1
+    HAVING arrayExists(x -> assumeNotNull(nullIf(c, 0) + x) != 0, [42]))
+FROM numbers(2) AS o ORDER BY o.number;
+
 SELECT '-- an always-NULL condition of an -If aggregate';
 SELECT o.number, EXISTS (SELECT countIf(NULL) AS c FROM numbers(2) AS i WHERE i.number = o.number AND i.number = 1 HAVING c = 0)
 FROM numbers(2) AS o ORDER BY o.number;

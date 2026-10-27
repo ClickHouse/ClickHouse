@@ -668,7 +668,7 @@ bool filterRejectsGroupWithoutRows(const FilterStep & filter_step, const Aggrega
     if (QueryPlanOptimizations::isSensitiveToEvaluationCount(dag))
         return false;
 
-    /// `count()` is passed as a constant column, so a function that can tell it from a full column is unknown.
+    /// A function that depends on more than its argument values (`isConstant`, `dictGet`) is unknown.
     for (const auto & node : dag.getNodes())
     {
         if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
@@ -691,8 +691,13 @@ bool filterRejectsGroupWithoutRows(const FilterStep & filter_step, const Aggrega
             return aggregate.column_name == input->result_name && aggregate.function->getName() == "count"
                 && aggregate.function->getResultType()->equals(*input->result_type);
         });
-        if (is_count)
-            values.emplace(input, ColumnWithTypeAndName{input->result_type->createColumnConst(1, 0u), input->result_type, input->result_name});
+        if (!is_count)
+            continue;
+
+        /// A full column, as at runtime: over a constant NULL a function skips computing the value `assumeNotNull` reads.
+        auto column = input->result_type->createColumn();
+        column->insertDefault();
+        values.emplace(input, ColumnWithTypeAndName{std::move(column), input->result_type, input->result_name});
     }
 
     return QueryPlanOptimizations::filterResultForInputValues(dag, filter_step.getFilterColumnName(), std::move(values))
