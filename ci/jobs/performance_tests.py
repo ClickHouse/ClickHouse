@@ -1292,9 +1292,13 @@ def match_reference_debug_info():
         print("Patched binary has comparable line info, leaving reference as-is")
 
 
-# Both servers start with ASLR disabled, so that they load the executable at the same address (checked in the
-# Start stage). Linux only, like the CPU pinning.
-NO_ASLR_PREFIX = f"setarch {os.uname().machine} -R " if os.uname().sysname == "Linux" else ""
+# ASLR spread measurement for #127892 (not for merge): both servers start with ASLR enabled, batch 1 restarts them
+# ASLR_SPREAD_STARTS times and runs only ASLR_SPREAD_QUERIES (test file -> query indexes).
+NO_ASLR_PREFIX = ""
+ASLR_SPREAD_STARTS = int(os.environ.get("CHPC_ASLR_SPREAD_STARTS", "20"))
+ASLR_SPREAD_QUERIES = {"decimal_parse.xml": [0], "join_squashing_blocks.xml": [0],
+                       "logical_functions_small.xml": [15], "multiif.xml": [1]}
+ASLR_SPREAD_DEADLINE_SEC = 70 * 60
 
 
 class CHServer:
@@ -2713,6 +2717,9 @@ def main():
 
     # release_version = CHVersion.get_release_version()
     info = Info()
+    if batch_num != 0:
+        Result.create_from(status=Result.Status.OK, info="ASLR spread measurement (not for merge): batch 1 only").complete_job()
+        return
     reference_chain = []
 
     # Read before any stage, so that a resume attributes the same commits.
@@ -2794,7 +2801,7 @@ def main():
             assert pinned, f"No test placed in the job `{job}` exists"
             test_files = pinned
     else:
-        test_files = test_files[batch_num::total_batches]
+        test_files = sorted(ASLR_SPREAD_QUERIES)
     if nightly:
         # Every measured host runs the yardstick first.
         test_files.insert(0, "calibration.xml")
@@ -2852,6 +2859,10 @@ def main():
         while stage in stages:
             stages.pop(0)
         stages.insert(0, stage)
+    # No report, no CIDB inserts, no dashboard gate: the raw data of the spread is in logs.tar.zst.
+    for skipped_stage in (JobStages.REPORT, JobStages.CHECK_RESULTS):
+        if skipped_stage in stages:
+            stages.remove(skipped_stage)
 
     res = True
     results = []
@@ -3192,50 +3203,71 @@ def main():
             for old_result in Path(perf_wd).glob(pattern):
                 old_result.unlink()
 
-        def cleanup_user_files():
-            # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
-            # drop_query only drops tables. Keep the symlinks made in Configure, remove everything else.
-            for server_path in (perf_left, perf_right):
-                user_files = Path(server_path) / "db" / "user_files"
-                if not user_files.is_dir():
-                    continue
-                for entry in user_files.iterdir():
-                    # Dataset files are hardlinked from db_path and must outlive the tests.
-                    if (Path(db_path) / "user_files" / entry.name).exists():
-                        continue
-                    if entry.is_symlink():
-                        continue
-                    if entry.is_dir():
-                        shutil.rmtree(entry)
-                    else:
-                        entry.unlink()
-
-        def run_tests():
-            last_flush = time.monotonic()
-            for test in test_files:
-                clean = CHServer.run_test(
-                    "./tests/performance/" + test,
-                    max_queries=0 if nightly else 10,
-                    pr_number=info.pr_number,
-                    results_path=perf_wd,
-                    long=nightly,
+        def run_aslr_spread():
+            # Every measured start is a fresh pair of processes; the start of the Restart stage only serves Populate.
+            spread_dir = Path(perf_wd) / "aslr-spread"
+            shutil.rmtree(spread_dir, ignore_errors=True)
+            spread_dir.mkdir(parents=True)
+            stage_start = time.monotonic()
+            completed = 0
+            deadline_hit = False
+            ok = True
+            try:
+                for s in range(1, ASLR_SPREAD_STARTS + 1):
+                    if time.monotonic() - stage_start >= ASLR_SPREAD_DEADLINE_SEC:
+                        deadline_hit = True
+                        break
+                    leftCH.terminate()
+                    rightCH.terminate()
+                    if not leftCH.start() or not rightCH.start():
+                        ok = False
+                        break
+                    # SYSTEM STOP DISTRIBUTED SENDS does not survive a restart.
+                    for node_name, server in list(HELD_LOG_EXPORT):
+                        if not log_export.stop_distributed_sends(server.port):
+                            HELD_LOG_EXPORT.remove((node_name, server))
+                            log_export.stop(server.port)
+                    # The bases differ by design here, so the exit code of the check is ignored.
+                    bases = re.search(
+                        r"Executable base of the servers: (\S+) (\S+)",
+                        Shell.get_output(
+                            f"python3 {Path(__file__).resolve().parent}/scripts/perf/check_executable_base.py {perf_left}/db {perf_right}/db"
+                        ),
+                    )
+                    with open(spread_dir / "bases.tsv", "a", encoding="utf-8") as f:
+                        f.write(f"{s}\t{bases[1] if bases else ''}\t{bases[2] if bases else ''}\n")
+                    for test, indexes in sorted(ASLR_SPREAD_QUERIES.items()):
+                        name = test.removesuffix(".xml")
+                        # The test file goes first: --queries-to-run is a greedy nargs='*'.
+                        rc, out, err = Shell.get_res_stdout_stderr(
+                            f"./tests/performance/scripts/perf.py ./tests/performance/{test} --host localhost localhost \
+                                --port {CHServer.LEFT_SERVER_PORT} {CHServer.RIGHT_SERVER_PORT} \
+                                --binary {perf_left}/clickhouse {perf_right}/clickhouse \
+                                --http-port {CHServer.LEFT_SERVER_HTTP_PORT} {CHServer.RIGHT_SERVER_HTTP_PORT} \
+                                --min-runs 15 --cap 15 --cap-fast 15 --max-queries 0 --profile-seconds 0 \
+                                --stop-merges --pr-number {info.pr_number} \
+                                --queries-to-run {' '.join(map(str, indexes))}",
+                            verbose=True,
+                            strip=False,
+                        )
+                        (spread_dir / f"s{s:02d}-{name}-raw.tsv").write_text(out, encoding="utf-8")
+                        (spread_dir / f"s{s:02d}-{name}-err.log").write_text(err, encoding="utf-8")
+                        if rc != 0:
+                            ok = False
+                            break
+                    if not ok:
+                        break
+                    completed = s
+            finally:
+                (spread_dir / "summary.txt").write_text(
+                    f"starts completed: {completed} of {ASLR_SPREAD_STARTS}\n"
+                    f"deadline hit: {'yes' if deadline_hit else 'no'}\n",
+                    encoding="utf-8",
                 )
-                cleanup_user_files()
-                # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
-                if clean and nightly and f"./tests/performance/{test}" in s3_paths and not s3_service.clear_write_namespaces():
-                    name = test.removesuffix(".xml")
-                    with open(f"{perf_wd}/{name}-err.log", "a") as f:
-                        f.write(f"{name}: S3 cleanup failed, stopping the batch\n")
-                    clean = False
-                if nightly and time.monotonic() - last_flush >= NIGHTLY_FLUSH_INTERVAL_SEC:
-                    flush_log_export(log_export_servers)
-                    last_flush = time.monotonic()
-                if not clean:
-                    break
-            return True
+            return ok
 
         commands = [
-            run_tests,
+            run_aslr_spread,
         ]
         results.append(
             Result.from_commands_run(name=CIDB_TEST_CASES_RESULT_NAME, command=commands)
