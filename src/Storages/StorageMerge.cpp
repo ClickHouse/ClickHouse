@@ -2038,6 +2038,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
         auto child_select_query_options = SelectQueryOptions(processed_stage).positionalArgumentsAlreadyResolved();
         child_select_query_options.is_local_plan_for_distributed_query = true;
+        /// The passes already ran on the whole query and fixed the common header: run only the resolve passes, as on a shard.
+        child_select_query_options.ignore_ast_optimizations = true;
 
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
