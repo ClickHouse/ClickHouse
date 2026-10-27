@@ -39,9 +39,6 @@ SUPPORT_IS_DISABLED
 CANNOT_PARSE_INPUT_ASSERTION_FAILED
 BAD_ARGUMENTS
 BAD_ARGUMENTS
---- SYSTEM RELOAD DICTIONARY returns as soon as the reload has started
-no output
-loaded
 --- errors raised after the main work has started are only logged
 only logged
 --- a settings constraint of the user is enforced on a background query
