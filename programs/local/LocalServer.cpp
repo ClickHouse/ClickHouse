@@ -58,6 +58,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Storages/MergeTree/ColumnsCache.h>
 #include <Common/StackTrace.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -1505,6 +1506,16 @@ void LocalServer::processConfig()
             "`--dump-schema` with an explicit database list cannot be combined with `--dump-schema-exclude`");
     if (dump_schema)
     {
+        /// With ZooKeeper or Keeper, loading a `ReplicatedMergeTree` table or a `Replicated` database changes its state
+        /// there before the first query: the table removes the `force_restore_data` flag of its replica, and its attachment
+        /// creates or updates the metadata of the replica and starts replication. Without one, they load read-only.
+        if (zkutil::hasZooKeeperConfig(getClientConfiguration()) || getClientConfiguration().has("auxiliary_zookeepers"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Option '--dump-schema' cannot be combined with a configuration that defines ZooKeeper or Keeper "
+                "(`zookeeper`, `keeper`, `keeper_server` or `auxiliary_zookeepers`): loading the replicated tables of the "
+                "data path would change their state there. Use a configuration without them, the replicated tables then "
+                "load read-only");
+
         /// The dump must leave the data it reads as it was, but loading the metadata starts every table, and its
         /// background work with it, before the first query. Before the context reads them from the configuration:
         /// `MergeTree` tables are read-only whatever their definitions say, so no merge, mutation, TTL, move or

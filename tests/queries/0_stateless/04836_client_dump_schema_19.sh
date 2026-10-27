@@ -5,8 +5,9 @@
 # --dump-schema leaves the source as it was. In clickhouse-local, loading the metadata starts every table, but the dump
 # must not refresh a refreshable materialized view, run a pending mutation or TTL merge, stream a `FileLog` into its view,
 # or send the blocks that a `Distributed` table has queued. Loading a table must not remove a temporary mutation file or
-# start a deduplication log either. A database-less reference must not make the dump list the tables of an omitted
-# `Remote` database either: that queries the server the database points to.
+# start a deduplication log either, and a replicated table must not reach ZooKeeper, so the dump refuses a configuration
+# with one. A database-less reference must not make the dump list the tables of an omitted `Remote` database either: that
+# queries the server the database points to.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -122,6 +123,34 @@ fi
 echo "rows the shard received: $($CLICKHOUSE_CLIENT --query 'SELECT count() FROM dist_dst')"
 $CLICKHOUSE_CLIENT --query "DROP TABLE dist_dst"
 rm -rf "$DIST_PATH" "$DIST_DUMP_FILE" "$DIST_CONFIG" "$ERR_FILE"
+
+echo '--- clickhouse-local: a dump does not use ZooKeeper, and loads a replicated table read-only without it ---'
+REPLICATED_PATH="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_replicated"
+REPLICATED_DUMP_FILE="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_replicated.sql"
+ZOOKEEPER_CONFIG="${TMP_DIR}/${CLICKHOUSE_TEST_UNIQUE_NAME}_zookeeper.xml"
+rm -rf "$REPLICATED_PATH"
+# Attached without ZooKeeper, so the table has no replica there, and nothing listens on the port of the configuration: the
+# dump must refuse it before a table could connect, whatever the configuration names.
+$CLICKHOUSE_LOCAL --path "$REPLICATED_PATH" --multiquery --query "
+CREATE DATABASE d;
+ATTACH TABLE d.r UUID '04836190-0000-4000-8000-000000000019' (x UInt64)
+    ENGINE = ReplicatedMergeTree('/test/04836_client_dump_schema_19/r', 'r1') ORDER BY x;
+"
+echo '<clickhouse><zookeeper><node><host>localhost</host><port>1</port></node></zookeeper></clickhouse>' > "$ZOOKEEPER_CONFIG"
+BEFORE=$(snapshot "$REPLICATED_PATH")
+$CLICKHOUSE_LOCAL --config-file "$ZOOKEEPER_CONFIG" --path "$REPLICATED_PATH" --dump-schema=d > /dev/null 2>"$ERR_FILE"
+echo "dump with ZooKeeper configured: rc=$?, refused: $(grep -c 'configuration that defines ZooKeeper or Keeper' "$ERR_FILE")"
+$CLICKHOUSE_LOCAL --path "$REPLICATED_PATH" --dump-schema=d > "$REPLICATED_DUMP_FILE" 2>"$ERR_FILE" \
+    || echo "FAIL: dump failed: $(cat "$ERR_FILE")"
+echo "replicated table dumped: $(grep -c '^CREATE TABLE d\.r ' "$REPLICATED_DUMP_FILE")"
+AFTER=$(snapshot "$REPLICATED_PATH")
+if [ "$BEFORE" = "$AFTER" ]; then
+    echo 'data path unchanged by the dumps'
+else
+    echo 'FAIL: the dumps changed the data path:'
+    diff <(echo "$BEFORE") <(echo "$AFTER")
+fi
+rm -rf "$REPLICATED_PATH" "$REPLICATED_DUMP_FILE" "$ZOOKEEPER_CONFIG" "$ERR_FILE"
 
 echo '--- an omitted Remote database is not listed for a database-less reference ---'
 REMOTE_SOURCE_DB="${DB}_fx_source"

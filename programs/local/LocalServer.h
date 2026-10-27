@@ -61,7 +61,8 @@ protected:
 
     std::string_view dumpSchemaConflicts() const override
     {
-        return "`--query`, `--queries-file`, `--file`, `--structure`, `--input-format` or a file, pipe or socket on stdin";
+        return "`--query`, `--queries-file`, `--file`, `--structure`, `--input-format`, a file, pipe or socket on stdin, or a "
+               "configuration that defines ZooKeeper or Keeper";
     }
 
     void printHelpMessage(const OptionsDescription & options_description) override;

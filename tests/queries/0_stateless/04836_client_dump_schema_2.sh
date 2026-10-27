@@ -94,7 +94,7 @@ rm -f "$STDIN_FILE"
 
 echo '--- each frontend help names what it refuses with --dump-schema ---'
 $CLICKHOUSE_LOCAL --help | tr -s ' \n' ' ' \
-    | grep -c -F 'Cannot be combined with `--query`, `--queries-file`, `--file`, `--structure`, `--input-format` or a file, pipe or socket on stdin.'
+    | grep -c -F 'Cannot be combined with `--query`, `--queries-file`, `--file`, `--structure`, `--input-format`, a file, pipe or socket on stdin, or a configuration that defines ZooKeeper or Keeper.'
 $CLICKHOUSE_CLIENT --help | tr -s ' \n' ' ' \
     | grep -c -F 'Cannot be combined with `--query`, `--queries-file`, `--external` (including `--scalar`) or input on stdin.'
 
