@@ -21,6 +21,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Method to compress `.metadata.json` file.
+An empty string lets the catalog choose the codec when it writes the first metadata file. Set `none` to request uncompressed metadata.
 
 ## iceberg_metadata_log_level {#iceberg_metadata_log_level}
 

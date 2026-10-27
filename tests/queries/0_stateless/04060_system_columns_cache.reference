@@ -1,7 +1,7 @@
 database	String			Database name of the table the part belongs to.		
 table	String			Table name.		
 table_uuid	UUID			UUID of the table. Stable across renames.		
-part	String			Name of the data part.		
+part	String			Name of the data part. For a part of a projection, the name of the parent part and the name of the projection, as `parent_part:projection`.		
 column	String			Name of the column.		
 row_begin	UInt64			Starting row index of the cached range (inclusive).		
 row_end	UInt64			Ending row index of the cached range (exclusive).		

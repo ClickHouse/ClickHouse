@@ -19,6 +19,7 @@ namespace ErrorCodes
 /** Wrapper for compressed column data.
   * The only supported operations are:
   * - decompress (reconstruct the source column)
+  * - get the separately compressed parts of the source column, see `getParts`
   * - get size in rows or bytes.
   *
   * It is needed to implement in-memory compression
@@ -36,8 +37,8 @@ class ColumnCompressed final : public COWHelper<IColumnHelper<ColumnCompressed>,
 public:
     using Lazy = std::function<ColumnPtr()>;
 
-    ColumnCompressed(size_t rows_, size_t bytes_, Lazy lazy_)
-        : rows(rows_), bytes(bytes_), lazy(lazy_)
+    ColumnCompressed(size_t rows_, size_t bytes_, Lazy lazy_, Columns parts_ = {})
+        : rows(rows_), bytes(bytes_), lazy(lazy_), parts(std::move(parts_))
     {
     }
 
@@ -51,6 +52,11 @@ public:
     {
         return lazy();
     }
+
+    /// The parts of the source column, which share the compressed data (not counted in `byteSize`), or empty if it can be
+    /// decompressed only as a whole: `ColumnString` {offsets as `ColumnUInt64`}, `ColumnArray` {data, offsets},
+    /// `ColumnNullable` {nested, null map}, `ColumnTuple` {elements}, `ColumnMap` {nested array}.
+    const Columns & getParts() const { return parts; }
 
     /** Wrap uncompressed column without compression.
       * Method can be used when compression is not worth doing.
@@ -146,6 +152,7 @@ protected:
     size_t bytes;
 
     Lazy lazy;
+    Columns parts;
 
 private:
     [[noreturn]] static void throwMustBeDecompressed()

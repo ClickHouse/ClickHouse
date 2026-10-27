@@ -18,7 +18,6 @@ INSERT INTO lkj_fact SELECT number, number * 10 FROM numbers(1000);   -- k 0..99
 INSERT INTO lkj_dim  SELECT number, number * 100 FROM numbers(500);   -- k 0..499
 INSERT INTO lkj_mt   SELECT number, number * 100 FROM numbers(500);   -- k 0..499
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
