@@ -59,6 +59,16 @@ SELECT
     round(lengthSpheroid([(-68.3, -54.8), (-70.65, -33.45)]::LineString), 3),
     round(lengthSpheroid([(0., -60.), (10., -60.), (20., -75.)]::LineString), 3);
 
+-- Opposite latitudes with a tiny longitude difference, in both directions.
+SELECT
+    round(lengthSpheroid([(0., -45.), (1e-10, 45.)]::LineString), 3),
+    round(lengthSpheroid([(1e-10, 45.), (0., -45.)]::LineString), 3),
+    round(lengthSpheroid([(0., -45.), (1e-6, 45.)]::LineString), 3),
+    round(lengthSpheroid([[(0., -45.), (1e-10, 45.)]]::MultiLineString), 3);
+
+-- Almost along the equator.
+SELECT round(lengthSpheroid([(0., -1e-12), (170., 1e-12)]::LineString), 3);
+
 -- A NaN or infinite coordinate has no position on the spheroid.
 SELECT
     lengthSpheroid([(0., nan), (1., 0.)]::LineString),
