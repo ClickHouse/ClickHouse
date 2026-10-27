@@ -458,6 +458,9 @@ bool StorageObjectStorage::prefersLargeBlocks() const
 
 bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) const
 {
+    /// The files of a data lake snapshot can have other formats than the one new files are written in.
+    if (configuration->isDataLakeConfiguration())
+        return FormatFactory::instance().checkParallelizeOutputAfterReadingForAnyFormat(context);
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
