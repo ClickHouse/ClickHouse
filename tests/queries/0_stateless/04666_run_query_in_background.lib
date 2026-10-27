@@ -123,16 +123,22 @@ function shared_native_and_http_tests()
     $run "SYSTEM RESTART REPLICA t" | grep -o -m1 BAD_ARGUMENTS
 
     echo '--- SYSTEM RELOAD DICTIONARY returns as soon as the reload has started'
-    local fifo="${CLICKHOUSE_USER_FILES_UNIQUE}_${run}.fifo"
+    local fifo="${CLICKHOUSE_USER_FILES_UNIQUE}_${run}.fifo" fifo_fd
     rm -f "$fifo"
     mkfifo "$fifo"
-    # Lazy, so only the RELOAD below reads the fifo: an eager load at CREATE would wait for a writer forever.
+    # Held read-write, so a load reading the fifo never blocks in open() and waits only for the close below.
+    exec {fifo_fd}<>"$fifo"
+    # Lazy, so only the RELOAD below reads the fifo: an eager load at CREATE would wait for that close forever.
     $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY d_slow_${run} (k UInt64, v UInt64) PRIMARY KEY k
         SOURCE(CLICKHOUSE(QUERY 'SELECT k, v FROM file(''${fifo}'', ''TSV'', ''k UInt64, v UInt64'')'))
         LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
     out=$($run "SYSTEM RELOAD DICTIONARY d_slow_${run}")
     [[ -z "$out" ]] && echo "no output"
-    printf '1\t1\n' > "$fifo"
+    # A failed load is retried, and other tests may reload all dictionaries: later loads read a regular file.
+    printf '1\t1\n' > "${fifo}.tmp"
+    mv "${fifo}.tmp" "$fifo"
+    printf '1\t1\n' >&"$fifo_fd"
+    exec {fifo_fd}>&-
     wait_for "status = 'LOADED' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd_slow_${run}'"
     echo "loaded"
     $CLICKHOUSE_CLIENT -q "DROP DICTIONARY d_slow_${run}"
