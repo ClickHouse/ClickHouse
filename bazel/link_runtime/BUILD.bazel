@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
     alias(
         name = name,
         actual = select({
-            "@platforms//cpu:aarch64": "@clickhouse_sysroot//:" + name,
+            "@platforms//cpu:aarch64": "@arm_gnu_aarch64//:" + name,
             "@platforms//cpu:x86_64": "@ubuntu_focal_amd64//:" + name,
         }),
     )

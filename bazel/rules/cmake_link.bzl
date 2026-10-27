@@ -4,6 +4,7 @@ load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("//bazel/link_runtime:defs.bzl", "link_runtime_root")
 load("//bazel/rules:cmake_link_data.bzl", "CMAKE_LINK")
 load("//bazel/rules:cmake_link_data_aarch64.bzl", CMAKE_LINK_AARCH64 = "CMAKE_LINK")
 
@@ -135,7 +136,7 @@ def _cmake_link_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name)
 
     # Only relative Bazel artifact names are used for filesystem access.
-    sysroot = "{}/linux-{}/{}-linux-gnu/libc".format(ctx.attr._sysroot.label.workspace_root, ctx.attr.arch, ctx.attr.arch)
+    sysroot = "{}/linux-{}/{}-linux-gnu/libc".format(link_runtime_root(ctx.attr._sysroot), ctx.attr.arch, ctx.attr.arch)
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")

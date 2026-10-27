@@ -4,6 +4,7 @@ load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("//bazel/link_runtime:defs.bzl", "link_runtime_root")
 load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
 
@@ -60,7 +61,7 @@ def _cmake_cargo_impl(ctx):
     glibc_headers = ctx.attr._glibc_headers[DirectoryInfo]
     args.add("--linux-headers", linux_headers.path)
     args.add("--glibc-headers", glibc_headers.path)
-    args.add_all(["--mount", ctx.attr._link_files.label.workspace_root, "contrib/sysroot"])
+    args.add_all(["--mount", link_runtime_root(ctx.attr._link_files), "contrib/sysroot"])
     args.add_all(ctx.files._link_files, before_each = "--source")
     source_depsets = [
         ctx.attr.workspace_sources[DefaultInfo].files,

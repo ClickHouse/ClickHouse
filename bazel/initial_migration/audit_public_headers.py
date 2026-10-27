@@ -16,7 +16,7 @@ from audit_full_dwyu import (
 # that contract before trusting other DWYU, rules_cc or toolchain definitions.
 SOURCE_SHA256 = {
     ".bazelversion": "14ebdd5f5d8dfccb0fc574ea9aabecc07d7cdd99d53e4fc01e58f9c3d23d18ef",
-    "MODULE.bazel": "9f6f12358f44356d29f8f05edc1be0cbf648913ff3c66bac7fa0103cea09d1cf",
+    "MODULE.bazel": "098c08c9953408e95034f5bbe84091fc7591cfd0c12dbdea02c428cf6e7985c2",
     "bazel/rules/dwyu.bzl": "d9bcd9782eb753ca8287bbb7698216bfd56251fc0c35adebb05edaf3d9b1637f",
     "bazel/rules/dwyu_tool.bzl": "9fbe5b5759ed86eb74c46f2bf753dd922cbf767fadb6fc52b9ca7e09ce38260f",
     "bazel/rules/BUILD.bazel": "5419adcf5cedb4752e8a4303bb5b413115b96c3bdd234b2cf11302d3ea457b81",

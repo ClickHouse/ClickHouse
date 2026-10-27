@@ -22,6 +22,10 @@ single_version_override(
 include("//bazel:contrib.MODULE.bazel")
 include("//bazel:clickstack.MODULE.bazel")
 
+arm_gnu_aarch64 = use_repo_rule("//bazel/link_runtime:arm.bzl", "arm_gnu_aarch64")
+
+arm_gnu_aarch64(name = "arm_gnu_aarch64")
+
 ubuntu_focal_amd64 = use_repo_rule("//bazel/link_runtime:ubuntu.bzl", "ubuntu_focal_amd64")
 
 ubuntu_focal_amd64(name = "ubuntu_focal_amd64")

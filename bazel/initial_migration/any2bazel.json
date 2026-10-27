@@ -9,6 +9,10 @@
   "ignore": {
     "include_map": [
       {
+        "from": "bazel-out/k8-opt/bin/external/+arm_gnu_aarch64+arm_gnu_aarch64",
+        "to": "contrib/sysroot"
+      },
+      {
         "from": "external/+ubuntu_focal_amd64+ubuntu_focal_amd64",
         "to": "contrib/sysroot"
       },
