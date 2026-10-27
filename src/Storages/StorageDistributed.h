@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/ActionBlocker.h>
+#include <Common/MultiVersion.h>
 #include <Interpreters/Cluster.h>
 
 #include <pcg_random.hpp>
@@ -40,6 +41,24 @@ class ConnectionPoolWithFailover;
 using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
 
 class IStorageCluster;
+
+/// The sharding key of a `Distributed` table analyzed for some columns.
+struct DistributedShardingKey
+{
+    ExpressionActionsPtr expression;
+    /// The name of the key column in the result of `expression`.
+    String column_name;
+    bool is_deterministic = false;
+    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
+    /// in `distributedWriteFromClusterStorage`.
+    bool is_deterministic_in_scope_of_query = false;
+    bool has_unbuilt_set = false;
+
+    /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
+    void checkSetsAreBuilt() const;
+};
+
+using DistributedShardingKeyPtr = std::shared_ptr<const DistributedShardingKey>;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -157,10 +176,9 @@ public:
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
-    const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
-    /// A stored key whose `IN` set is never built still loads, so this is checked again before the key is used.
-    void checkShardingKeySetsAreBuilt() const;
-    const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
+    /// The sharding key analyzed for `columns`, which a query may have taken before or after a concurrent `ALTER`.
+    /// Null without a sharding key.
+    DistributedShardingKeyPtr getAnalyzedShardingKey(const ColumnsDescription & columns) const;
     const String & getRelativeDataPath() const { return relative_data_path; }
 
     /// @param flush - if true the do flush (DistributedAsyncInsertDirectoryQueue::flushAllData()),
@@ -203,10 +221,15 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info) const;
+        const SelectQueryInfo & query_info,
+        const DistributedShardingKeyPtr & analyzed) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
-        ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
+        ClusterPtr cluster,
+        const SelectQueryInfo & query_info,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context,
+        const DistributedShardingKey & analyzed) const;
 
     /// This method returns optimal query processing stage.
     ///
@@ -224,13 +247,19 @@ private:
     ///
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
-    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(
+        const SelectQueryInfo & query_info, const Settings & settings, const DistributedShardingKeyPtr & analyzed) const;
 
     /// The stage `getQueryProcessingStage` returns, chosen after the shards to query are known.
     QueryProcessingStage::Enum chooseQueryProcessingStage(
-        QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const;
+        QueryProcessingStage::Enum to_stage,
+        const Settings & settings,
+        size_t nodes,
+        const SelectQueryInfo & query_info,
+        const DistributedShardingKeyPtr & analyzed) const;
 
-    bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
+    bool isShardingKeySuitsQueryTreeNodeExpression(
+        const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info, const DistributedShardingKey & analyzed) const;
 
     /// Throws when the remote table has a column among `key_columns` whose conversion to the type
     /// declared here does not preserve the order and distinctness (see `conversionPreservesOrder`),
@@ -278,13 +307,8 @@ private:
 
     bool has_sharding_key;
     ASTPtr sharding_key;
-    bool sharding_key_is_deterministic = false;
-    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
-    /// in `distributedWriteFromClusterStorage`.
-    bool sharding_key_is_deterministic_in_scope_of_query = false;
-    ExpressionActionsPtr sharding_key_expr;
-    bool sharding_key_has_unbuilt_set = false;
-    String sharding_key_column_name;
+    /// The sharding key analyzed for the current columns. Empty without a sharding key.
+    MultiVersion<DistributedShardingKey> analyzed_sharding_key;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;

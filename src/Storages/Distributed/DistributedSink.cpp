@@ -193,6 +193,7 @@ DistributedSink::DistributedSink(
     ContextPtr context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
+    DistributedShardingKeyPtr analyzed_sharding_key_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
@@ -201,6 +202,7 @@ DistributedSink::DistributedSink(
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
+    , analyzed_sharding_key(std::move(analyzed_sharding_key_))
     , query_ast(createInsertToRemoteTableQuery(storage.remote_storage.database_name, storage.remote_storage.table_name, columns_to_send_))
     , query_string(query_ast->formatWithSecretsOneLine())
     , cluster(cluster_)
@@ -256,7 +258,7 @@ void DistributedSink::writeAsync(const Block & block)
     }
     else
     {
-        if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
+        if (analyzed_sharding_key && (cluster->getShardsInfo().size() > 1))
         {
             writeSplitAsync(block);
             return;
@@ -767,11 +769,11 @@ DistributedSink::~DistributedSink()
 
 IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
-    storage.checkShardingKeySetsAreBuilt();
+    analyzed_sharding_key->checkSetsAreBuilt();
     Block current_block_with_sharding_key_expr = source_block;
-    storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
+    analyzed_sharding_key->expression->execute(current_block_with_sharding_key_expr);
 
-    const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
+    const auto & key_column = current_block_with_sharding_key_expr.getByName(analyzed_sharding_key->column_name);
 
     return StorageDistributed::createSelector(cluster, key_column);
 }

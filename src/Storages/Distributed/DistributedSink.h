@@ -25,6 +25,8 @@ namespace DB
 
 class Context;
 class StorageDistributed;
+struct DistributedShardingKey;
+using DistributedShardingKeyPtr = std::shared_ptr<const DistributedShardingKey>;
 class PushingPipelineExecutor;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
@@ -43,6 +45,7 @@ public:
         ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
+        DistributedShardingKeyPtr analyzed_sharding_key_,
         const ClusterPtr & cluster_,
         bool insert_sync_,
         UInt64 insert_timeout_,
@@ -103,6 +106,7 @@ private:
 
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
+    DistributedShardingKeyPtr analyzed_sharding_key;
     ASTPtr query_ast;
     String query_string;
     ClusterPtr cluster;
