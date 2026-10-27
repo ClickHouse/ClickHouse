@@ -162,17 +162,8 @@ inline PackedStringRef & ALWAYS_INLINE keyHolderGetKey(DB::ArenaPackedStringHold
 
 inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaPackedStringHolder & holder)
 {
-    if (holder.key.heapSize() == 0)
-        return;
-
-    if (holder.key.isMedium())
-    {
-        holder.key.setMediumPointer(holder.pool.insert(holder.key.getMediumPtr(), holder.key.getMediumSize()));
-    }
-    else
-    {
-        holder.key.setLargePointer(holder.pool.insert(holder.key.getLargePtr(), holder.key.getLargeSize()));
-    }
+    if (const size_t size = holder.key.heapSize())
+        holder.key.setHeapPointer(holder.pool.insert(holder.key.getHeapPtr(), size));
 }
 
 inline void ALWAYS_INLINE keyHolderDiscardKey(DB::ArenaPackedStringHolder &)
