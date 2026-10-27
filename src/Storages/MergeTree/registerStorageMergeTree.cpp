@@ -1227,6 +1227,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.allow_tuple_element_aggregation = false;
     }
 
+    /// `load_tables_readonly` applies after the settings the definition states, which can say `table_readonly = 0`: the table
+    /// loads its parts read-only, and a non-replicated one starts no background work. Only the settings the table runs with
+    /// change, its definition keeps the stated value. A `ReplicatedMergeTree` definition is checked for the setting first.
+    const bool load_readonly = context->getServerSettings()[ServerSetting::load_tables_readonly];
+
     if (replicated)
     {
         /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
@@ -1240,6 +1245,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (is_fresh_definition && !is_ddl_replay && !is_stored_definition
             && (*storage_settings)[MergeTreeSetting::table_readonly])
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
+        if (load_readonly)
+            (*storage_settings)[MergeTreeSetting::table_readonly] = true;
 
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
@@ -1265,9 +1272,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             create_query_zk_retries_info);
     }
 
-    /// After the settings the definition states, which can say `table_readonly = 0`: the table loads its parts read-only and
-    /// starts no background work. Only the settings it runs with change, its definition keeps the stated value.
-    if (context->getServerSettings()[ServerSetting::load_tables_readonly])
+    if (load_readonly)
         (*storage_settings)[MergeTreeSetting::table_readonly] = true;
 
     return std::make_shared<StorageMergeTree>(
