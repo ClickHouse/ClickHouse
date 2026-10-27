@@ -4,7 +4,7 @@
 
 -- The `GROUP BY` top-K heap with a `COLLATE` on a matched key: it must rank groups in the collation order of the
 -- final sort, on every path (single and composite keys, NULLs, threads, spilling, remote partial aggregation over
--- both the query text and a serialized plan, the dynamic filter and its query condition cache entries).
+-- both the query text and a serialized plan), and a collated key gets no dynamic filter.
 -- Every query runs with the optimization off and then on, so the reference holds identical pairs. The off run reads
 -- in large blocks and does not spill, which does not change its result and keeps it cheap.
 -- A collated heap starts only once a stream's table holds 32768 keys and its last block inserted almost only new
@@ -27,7 +27,6 @@ SET use_top_k_dynamic_filtering_for_variable_length_types = 0;
 
 DROP TABLE IF EXISTS t_05407;
 DROP TABLE IF EXISTS t_05407_spill;
-DROP TABLE IF EXISTS t_05407_qcc;
 
 -- Under 'en': a0 < á0 < a1 < á1 < a10 < ... < m... < Z...; in bytes: Z... < a... < m... < á...
 CREATE TABLE t_05407 (s String, ns Nullable(String), lcs LowCardinality(String), b UInt8)
@@ -180,7 +179,7 @@ SELECT ns, count() FROM remote('127.0.0.1,localhost', currentDatabase(), t_05407
 SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 1, max_threads = 1, max_block_size = 1024,
     enable_group_by_top_k_optimization = 1, log_comment = '05407_remote_plan_nullable';
 
--- The heap publishes a collated boundary, so the `__topKFilter` of the read must compare under the same collation.
+-- A collated key gets no `__topKFilter`: it would compare every read row under the collation, also after the heap gives up.
 SELECT 'dynamic filter';
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1,
@@ -188,24 +187,9 @@ SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group
 SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1,
     max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_dynamic_filter';
-SELECT countIf(explain LIKE '%\_\_topKFilter%') > 0 FROM (EXPLAIN actions = 1
+SELECT countIf(explain LIKE '%\_\_topKFilter%') FROM (EXPLAIN actions = 1
     SELECT s, count() FROM t_05407 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
     SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1, enable_group_by_top_k_dynamic_filtering = 1);
-
--- Under 'en' the boundary 'a' empties the granules of 'B'; in byte order 'B' is the answer, so the second query must
--- not reuse the query condition cache entries of the first.
-SELECT 'query condition cache';
-CREATE TABLE t_05407_qcc (id UInt64, s String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 64;
-INSERT INTO t_05407_qcc SELECT number, multiIf(number < 33792, concat('m', toString(number)), number < 33920, 'a', 'B')
-FROM numbers(34816) SETTINGS max_insert_threads = 1;
-SELECT s, count() FROM t_05407_qcc WHERE id != 100000 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 1
-SETTINGS use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, enable_group_by_top_k_dynamic_filtering = 1,
-    use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1, max_block_size = 512,
-    enable_group_by_top_k_optimization = 1, log_comment = '05407_qcc';
-SELECT s, count() FROM t_05407_qcc WHERE id != 100000 GROUP BY s ORDER BY s ASC LIMIT 1
-SETTINGS use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, enable_group_by_top_k_dynamic_filtering = 1,
-    use_top_k_dynamic_filtering_for_variable_length_types = 1, max_threads = 1, max_block_size = 512,
-    enable_group_by_top_k_optimization = 1;
 
 -- A `COLLATE` on a key that cannot be collated is left to the sort, which rejects it.
 SELECT 'not collatable';
@@ -330,7 +314,7 @@ SELECT 'forced heap';
 SELECT s, b, count() FROM (SELECT concat('l', leftPad(toString(99999 - intDiv(number, 2)), 5, '0')) AS s,
     intDiv(number, 2) % 2 AS b FROM numbers_mt(160000))
 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 100000,
+SETTINGS max_threads = 4, max_block_size = 65536, group_by_two_level_threshold = 100000,
     group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 0;
 SELECT s, b, count() FROM (SELECT concat('l', leftPad(toString(99999 - intDiv(number, 2)), 5, '0')) AS s,
     intDiv(number, 2) % 2 AS b FROM numbers_mt(160000))
@@ -354,7 +338,7 @@ INNER JOIN
     SELECT query_id, log_comment FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND log_comment IN ('05407_dynamic_filter', '05407_gave_up', '05407_late_lc', '05407_late_start', '05407_plain_at_once',
-            '05407_qcc', '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_threads',
+            '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_threads',
             '05407_threads_adaptive', '05407_ties_asc', '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
 ) AS i ON q.initial_query_id = i.query_id
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
@@ -381,4 +365,3 @@ GROUP BY log_comment;
 
 DROP TABLE t_05407;
 DROP TABLE t_05407_spill;
-DROP TABLE t_05407_qcc;

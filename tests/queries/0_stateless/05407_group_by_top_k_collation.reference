@@ -177,10 +177,7 @@ a0	10
 a1	11
 á1	10
 a10	11
-1
-query condition cache
-a	128
-B	896
+0
 not collatable
 0
 start condition
@@ -317,7 +314,6 @@ engaged
 05407_late_lc	1	1	1
 05407_late_start	1	1	1
 05407_plain_at_once	1	1	1
-05407_qcc	1	1	1
 05407_remote_plan	1	1	1
 05407_remote_plan_nullable	1	1	1
 05407_remote_text	1	1	1

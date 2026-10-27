@@ -120,6 +120,14 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     String key_name = aggregating_step.getParams().keys.front();
     auto log = getLogger("optimizeGroupByTopK");
 
+    /// `__topKFilter` would compare every read row with the boundary under the collation, and it keeps doing so
+    /// after the heap gives up.
+    if (!collators.empty() && collators.front())
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} is sorted with COLLATE", key_name);
+        return nullptr;
+    }
+
     /// Descend through the steps that pass the key column through without computing anything
     /// over it, down to the reading step.
     QueryPlan::Node * node = aggregating_node->children.front();
@@ -224,7 +232,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
         return nullptr;
     }
 
-    SortColumnDescription key_sort_description(key_name, direction, nulls_direction, collators.empty() ? nullptr : collators.front());
+    SortColumnDescription key_sort_description(key_name, direction, nulls_direction);
     auto threshold_tracker = createTopKThresholdTracker(key_sort_description, *key_column.type);
 
     /// `where_clause = true` keeps `MergeTreeDataSelectExecutor` from narrowing the read up front to the granules
