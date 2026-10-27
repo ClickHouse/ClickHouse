@@ -2946,3 +2946,34 @@ In the preceding DWYU builds ([ARM64](https://app.buildbuddy.io/invocation/9a1b8
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/ea467415-2211-4a99-8fd1-9cb7c323f535): The analyzer build reported `SUCCESS`. Bazel recorded report files for `//contrib/arrow-cmake:arrow_cmake_headers`, `@clickhouse_usearch//:usearch`. This comparison records no new per-target grades.
 
 [ARM64 DWYU](https://app.buildbuddy.io/invocation/5e8c448d-fb30-4bd9-bfc2-894a7829dad3): The analyzer build reported `SUCCESS`. Bazel recorded report files for `//base:pcg_random`, `//contrib/arrow-cmake:arrow_cmake_headers`, `@clickhouse_usearch//:usearch`. This comparison records no new per-target grades.
+
+## 3c0cbce76
+
+At [3c0cbce76](https://github.com/dzbarsky/clickhouse/commit/3c0cbce7691838f7a370a648b937a136906c999d), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. Unstripped ClickHouse and unit-test hashes are compared with the [preceding build](https://github.com/dzbarsky/clickhouse/commit/9035fe568ad5dc1cf309b9a4c6dedc88d0f2412e).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/65476ddd-073b-41ee-8022-cf69283aae2b) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/65476ddd-073b-41ee-8022-cf69283aae2b) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/65476ddd-073b-41ee-8022-cf69283aae2b) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/82434136-1407-46ee-9f60-48ac87cdbb98) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/82434136-1407-46ee-9f60-48ac87cdbb98) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/82434136-1407-46ee-9f60-48ac87cdbb98) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+[The LLVM change](https://github.com/dzbarsky/clickhouse/commit/36346387ac8d2d2f9bab475f3c945551ee6af713) makes AggregateFunctions, Dictionaries, URL functions and system tables depend on `@clickhouse_llvm_project//:llvm` instead of listing the LLVM components separately. The library exposes 32 components per CPU and keeps six private. Together with the removal of redundant dependencies on libraries already supplied by other targets, this removed 96 direct dependency edges per CPU.
+
+On each CPU, the ClickHouse linker command and the unit-test linker response file were byte-for-byte unchanged. Each build completed 19 targets and passed 29 runtime checks. The new query read the `domain` and `sum` rows of `system.functions`, applied `domain` to a URL for each name, and returned `['domain.example','sum.example']` with one aggregate function. Three compiler checks verified the ZooKeeper object with logging disabled and the radix-sort and wrap-in-nullable benchmark objects.
+
+All seven processed Rust archives matched their previous SHA-256 values and byte counts on each CPU. The [ARM64 build](https://app.buildbuddy.io/invocation/82434136-1407-46ee-9f60-48ac87cdbb98) confirmed the same seven Arm GNU inputs and outputs of the registered `llvm-strip --strip-debug` actions as in the [original digest table](#ecd39e5e3). Neither build requested an experimental glibc link.
+
+### Dependency reports
+
+[The DWYU change](https://github.com/dzbarsky/clickhouse/commit/3c0cbce7691838f7a370a648b937a136906c999d) skips symbol scans for a `cc_library` with source headers that only forwards other libraries’ objects and has no linker inputs of its own. The developer audit still checks the headers.
+
+[Preceding x86-64 DWYU](https://app.buildbuddy.io/invocation/ea467415-2211-4a99-8fd1-9cb7c323f535): 2 report files were initially ungraded. verified clean: `//contrib/arrow-cmake:arrow_cmake_headers`, `@clickhouse_usearch//:usearch`.
+
+[Preceding ARM64 DWYU](https://app.buildbuddy.io/invocation/5e8c448d-fb30-4bd9-bfc2-894a7829dad3): 3 report files were initially ungraded. verified clean: `//base:pcg_random`, `//contrib/arrow-cmake:arrow_cmake_headers`, `@clickhouse_usearch//:usearch`.
+
+[x86-64 DWYU setup](https://app.buildbuddy.io/invocation/40148839-ec69-4531-bf00-96c8d4133b4a) exited 1: `different H30 strict limits`. No analyzer ran; there is no current DWYU scan result. All 3 offered targets remain ungraded.
+
+[ARM64 DWYU setup](https://app.buildbuddy.io/invocation/fc007502-2219-4c33-8f8e-6da3f5171886) exited 1: `different H30 strict limits`. No analyzer ran; there is no current DWYU scan result. All 3 offered targets remain ungraded.
