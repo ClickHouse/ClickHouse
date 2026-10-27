@@ -1408,7 +1408,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
             pass_count += filter[filter_offset + i];
         if (pass_count == 0)
         {
-            data += num_values;
+            skip(num_values);
             return;
         }
         bool direct = converter->isTrivial();
