@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Disks/DiskFactory.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -29,8 +30,10 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#endif
+
+#if USE_GOOGLE_CLOUD
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #endif
 
