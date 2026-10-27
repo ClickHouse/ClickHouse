@@ -1,0 +1,18 @@
+show_create	1	1
+code_lengths	68	100	132	164	196	228	260
+full_precision_rows	2000
+plan	1	1
+exact_2bit	1
+exact_3bit	1
+exact_4bit	1
+exact_5bit	1
+exact_6bit	1
+exact_7bit	1
+exact_8bit	1
+self_2bit	1
+self_3bit	1
+self_4bit	1
+self_5bit	1
+self_6bit	1
+self_7bit	1
+self_8bit	1
