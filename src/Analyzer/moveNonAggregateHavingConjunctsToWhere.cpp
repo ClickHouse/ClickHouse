@@ -62,6 +62,19 @@ DataTypePtr getArgumentType(const QueryTreeNodePtr & argument)
     return removeLowCardinalityAndNullable(argument->getResultType());
 }
 
+/// Whether the optional time zone argument at `index` is omitted or is an empty string. In both cases the function
+/// uses the time zone of the executing server.
+bool isTimeZoneArgumentUnbound(const QueryTreeNodes & arguments, size_t index)
+{
+    if (arguments.size() <= index)
+        return true;
+    const auto * constant_node = arguments[index] ? arguments[index]->as<ConstantNode>() : nullptr;
+    if (!constant_node)
+        return false;
+    const auto & value = constant_node->getValue();
+    return value.getType() == Field::Types::String && value.safeGet<String>().empty();
+}
+
 /// Whether the function converts between a Unix timestamp and its calendar representation in the time zone
 /// of the executing server, without a `DateTime` or `DateTime64` value with an implicit time zone in between.
 bool dependsOnServerTimeZone(const FunctionNode & function_node)
@@ -84,9 +97,9 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         return true;
 
     /// The `parseDateTime` family parses a string in the time zone of the server when the optional third argument
-    /// is omitted, and attaches the name of that time zone to the result type, so the type looks explicitly bound.
+    /// is omitted or empty, and attaches the name of that time zone to the result type, so the type looks explicitly bound.
     if (function_name.starts_with("parseDateTime") && !function_name.starts_with("parseDateTimeBestEffort")
-        && arguments.size() < 3)
+        && isTimeZoneArgumentUnbound(arguments, 2))
         return true;
 
     /// A `Date` or `Date32` is converted to a point in time at its midnight in the time zone of the server,
@@ -176,13 +189,16 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
   * a non-deterministic table function, like `generateRandom`. With `abort_on_side_effects`, a subquery with a function
   * with observable side effects (like `timeSeriesStoreTags`) cancels the rewrite, as at the top level.
   *
+  * Subqueries and table functions are inspected only with `inspect_subqueries`. The compatibility rewrite of the analyzer
+  * skips them, like the legacy rewrite, because it must move the conjuncts with the columns that are not grouped.
+  *
   * With `keep_server_dependent_conjuncts`, a conjunct also stays in `HAVING` if its result may differ between
   * servers: if it contains a function that is not deterministic at all (like `shardNum`, `hostName` or `dictGet`),
   * or reads a table or a table function, in a subquery or as the right-hand side of `IN`. A subquery without `FROM`,
   * which reads `system.one`, is still moved.
   * Such a conjunct also stays in `HAVING` if it has a value of type `DateTime` or `DateTime64` without an explicit time zone
   * (like `toHour(toDateTime(k))`), uses `toUnixTimestamp` or the `parseDateTime` family without the time zone argument
-  * to parse a string, converts a number as a Unix timestamp
+  * (or with an empty one) to parse a string, converts a number as a Unix timestamp
   * to a `Date` or `Date32` (like `toDate(k)`) or to a string (like `fromUnixTimestamp(k, '%F')`), or converts a `Date`
   * or `Date32` to a point in time (like `toRelativeSecondNum(d)`): the result depends
   * on the time zone of the server, which may differ between the shards and the initiator.
@@ -200,7 +216,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
     const QueryTreeNodePtr & node,
     bool keep_server_dependent_conjuncts,
     bool keep_index_hint_conjuncts,
-    bool abort_on_side_effects)
+    bool abort_on_side_effects,
+    bool inspect_subqueries)
 {
     HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
 
@@ -226,7 +243,11 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
 
         auto current_type = current->getNodeType();
         if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
+        {
+            if (!inspect_subqueries)
+                continue;
             inside_subquery = true;
+        }
 
         if (check_server_dependent
             && (current_type == QueryTreeNodeType::CONSTANT || current_type == QueryTreeNodeType::COLUMN
@@ -249,7 +270,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
         else if (auto * table_function_node = current->as<TableFunctionNode>())
         {
             const auto & table_function = table_function_node->getTableFunction();
-            if (check_server_dependent || !table_function || !table_function->isDeterministicInScopeOfQuery())
+            if (check_server_dependent
+                || (inspect_subqueries && (!table_function || !table_function->isDeterministicInScopeOfQuery())))
                 keep_in_having();
         }
         else if (auto * table_node = current->as<TableNode>())
@@ -415,7 +437,8 @@ void moveNonAggregateHavingConjunctsToWhere(
     {
         auto action = classifyHavingConjunctForMove(
             conjunct, keep_server_dependent_conjuncts, keep_index_hint_conjuncts,
-            /*abort_on_side_effects=*/ keep_pre_aggregation_expressions);
+            /*abort_on_side_effects=*/ keep_pre_aggregation_expressions,
+            /*inspect_subqueries=*/ keep_pre_aggregation_expressions || keep_server_dependent_conjuncts);
         if (action == HavingConjunctMoveAction::AbortRewrite)
             return;
         classifications.push_back(action);

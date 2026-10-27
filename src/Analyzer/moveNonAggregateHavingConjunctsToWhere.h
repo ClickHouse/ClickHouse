@@ -13,12 +13,14 @@ class QueryNode;
   *
   * Conjuncts containing aggregate, `grouping`, `arrayJoin` or non-deterministic functions stay in `HAVING`,
   * as well as conjuncts with subqueries containing non-deterministic or stateful functions or table functions.
+  * Subqueries and table functions are inspected only with `keep_server_dependent_conjuncts` or `keep_pre_aggregation_expressions`:
+  * the compatibility rewrite of the analyzer skips them, like the legacy rewrite.
   * With `keep_index_hint_conjuncts`, conjuncts containing `indexHint` also stay in `HAVING`: in `HAVING` it is always true,
   * while in `WHERE` it prunes granules and leaves partial groups. The legacy rewrite moved them, so the compatibility
   * rewrite of the analyzer keeps doing it.
   * With `keep_server_dependent_conjuncts`, conjuncts whose result may differ between servers also stay in `HAVING`:
   * the ones with functions like `shardNum` or `dictGet`, reading a table or a table function, or depending on the time zone
-  * of the server (including any value of type `Dynamic` or `JSON`, which may hold a `DateTime`), like `toHour(toDateTime(k))`, `toDate(k)` for a numeric `k`, `parseDateTime(s, format)` without the time zone argument or `toRelativeSecondNum(d)` for a `Date` `d`. This is needed when
+  * of the server (including any value of type `Dynamic` or `JSON`, which may hold a `DateTime`), like `toHour(toDateTime(k))`, `toDate(k)` for a numeric `k`, `parseDateTime(s, format)` without the time zone argument (or with an empty one) or `toRelativeSecondNum(d)` for a `Date` `d`. This is needed when
   * the query runs on a shard, while `HAVING` would be executed on the initiator.
   * The right-hand side of `GLOBAL IN` is not considered server-dependent, because the initiator sends the same set to every server.
   * If any conjunct contains a window function or a stateful function, nothing is moved.
