@@ -1281,6 +1281,74 @@ def test_system_named_collections_implicit_selection_on_cluster():
     node1.query("DROP NAMED COLLECTION backup_nc")
 
 
+def test_system_named_collections_except_data():
+    node1.query("CREATE NAMED COLLECTION backup_nc AS key1 = 'nc_secret_value'")
+
+    node1.query("CREATE USER u1")
+    node1.query("GRANT CLUSTER ON *.* TO u1")
+    node1.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
+    node1.query("GRANT BACKUP ON *.* TO u1")
+
+    # Returns the exported collection entries and the `system.named_collections` table definition
+    # files of a backup.
+    def backup_nc_files(backup_name):
+        entries, metadata = [], []
+        for dir_path, _, file_names in os.walk(get_path_to_backup(backup_name)):
+            if os.path.basename(dir_path) == "named_collections":
+                entries += file_names
+            elif os.path.basename(dir_path) == "system":
+                metadata += [f for f in file_names if f == "named_collections.sql"]
+        return entries, metadata
+
+    # `EXCEPT DATA FROM TABLE` keeps only the table's definition in the backup, which exports no
+    # collection, so the backup requires none of the rights reading the values requires.
+    backup_name = new_backup_name()
+    node1.query(
+        "BACKUP TABLE system.named_collections EXCEPT DATA FROM TABLE system.named_collections "
+        f"ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+    entries, metadata = backup_nc_files(backup_name)
+    assert entries == []
+    assert metadata != []
+
+    # The same holds for a wildcard selection with `backup_named_collections = 1`.
+    backup_name = new_backup_name()
+    node1.query(
+        "BACKUP DATABASE system EXCEPT DATA FROM TABLES system.named_collections "
+        f"ON CLUSTER 'cluster' TO {backup_name} SETTINGS backup_named_collections = 1",
+        user="u1",
+    )
+    entries, metadata = backup_nc_files(backup_name)
+    assert entries == []
+    assert metadata != []
+
+    # With the setting unset, the initiator must not rewrite the table out of a wildcard selection
+    # already excluding its data: the rewrite would drop the table's definition too.
+    backup_name = new_backup_name()
+    node1.query(
+        "BACKUP DATABASE system EXCEPT DATA FROM TABLES system.named_collections "
+        f"ON CLUSTER 'cluster' TO {backup_name}",
+        user="u1",
+    )
+    entries, metadata = backup_nc_files(backup_name)
+    assert entries == []
+    assert metadata != []
+
+    # Requests which do export the collections keep requiring the rights.
+    expected_error = "necessary to have the grant SHOW NAMED COLLECTIONS, SHOW NAMED COLLECTIONS SECRETS ON *"
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {new_backup_name()}",
+        user="u1",
+    )
+    assert expected_error in node1.query_and_get_error(
+        f"BACKUP DATABASE system ON CLUSTER 'cluster' TO {new_backup_name()} SETTINGS backup_named_collections = 1",
+        user="u1",
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc")
+
+
 def test_backup_required_privileges_address_default_database():
     # The addresses of 'cluster_address_default_db' set `default_database`, so an unqualified
     # table name in the dispatched query resolves on every host to that database, not to the

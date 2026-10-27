@@ -532,20 +532,21 @@ struct BackupsWorker::BackupStarter
             /// a query dispatched by an older initiator, which checks none of the rights the export
             /// requires, never exports the collections (see `backupNamedCollections`).
             if (!backup_settings.backup_named_collections.has_value()
-                && BackupUtils::wildcardSelectionCoversSystemNamedCollections(backup_query->elements))
+                && BackupUtils::wildcardSelectionExportsSystemNamedCollections(backup_query->elements))
             {
-                /// An element explicitly naming the table keeps its hard access requirement (see
-                /// `getRequiredAccessToBackup`) whether or not the wildcard elements are rewritten, so
-                /// the query is about to fail the access check: skip the warning and the rewrite. The
-                /// element may be written unqualified, so it is checked against the effective database
-                /// of every selected address, the same way the access check resolves it.
+                /// An element explicitly naming the table (without excluding its data) keeps its hard
+                /// access requirement (see `getRequiredAccessToBackup`) whether or not the wildcard
+                /// elements are rewritten, so the query is about to fail the access check: skip the
+                /// warning and the rewrite. The element may be written unqualified, so it is checked
+                /// against the effective database of every selected address, the same way the access
+                /// check resolves it.
                 bool explicitly_selected = false;
                 for (const auto * address : cluster->filterAddressesByShardOrReplica(backup_settings.shard_num, backup_settings.replica_num))
                 {
                     auto elements = backup_query->elements;
                     ASTBackupQuery::setCurrentDatabase(
                         elements, address->default_database.empty() ? backup_context->getCurrentDatabase() : address->default_database);
-                    if (BackupUtils::explicitSelectionCoversSystemNamedCollections(elements))
+                    if (BackupUtils::explicitSelectionExportsSystemNamedCollections(elements))
                     {
                         explicitly_selected = true;
                         break;

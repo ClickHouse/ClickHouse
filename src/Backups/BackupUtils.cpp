@@ -77,9 +77,15 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 
 namespace
 {
-    bool wildcardElementCoversSystemNamedCollections(const ASTBackupQuery::Element & element)
+    /// Whether a DATABASE or ALL element selects the data of `system.named_collections`: the element
+    /// must select the table and must not exclude its data. A table whose data is excluded (`EXCEPT
+    /// DATA FROM TABLES`) keeps only its definition in the backup, which exports no collection.
+    bool wildcardElementExportsSystemNamedCollections(const ASTBackupQuery::Element & element)
     {
         static const DatabaseAndTableName system_named_collections{DatabaseCatalog::SYSTEM_DATABASE, "named_collections"};
+
+        if (element.except_data_tables.contains(system_named_collections))
+            return false;
 
         if (element.type == ASTBackupQuery::DATABASE)
             return (element.database_name == system_named_collections.first)
@@ -98,26 +104,28 @@ bool isSystemNamedCollectionsTable(const QualifiedTableName & table_name)
     return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "named_collections");
 }
 
-bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
+bool wildcardSelectionExportsSystemNamedCollections(const ASTBackupQuery::Elements & elements)
 {
-    return std::ranges::any_of(elements, wildcardElementCoversSystemNamedCollections);
+    return std::ranges::any_of(elements, wildcardElementExportsSystemNamedCollections);
 }
 
 void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements & elements)
 {
     for (auto & element : elements)
-        if (wildcardElementCoversSystemNamedCollections(element))
+        if (wildcardElementExportsSystemNamedCollections(element))
             element.except_tables.emplace(DatabaseCatalog::SYSTEM_DATABASE, "named_collections");
 }
 
-bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements)
+bool explicitSelectionExportsSystemNamedCollections(const ASTBackupQuery::Elements & elements)
 {
     return std::ranges::any_of(
         elements,
         [](const ASTBackupQuery::Element & element)
         {
+            /// `EXCEPT DATA FROM TABLE` on the element keeps only the table's definition in the
+            /// backup, which exports no collection.
             return (element.type == ASTBackupQuery::TABLE) && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-                && (element.table_name == "named_collections");
+                && (element.table_name == "named_collections") && !element.except_data;
         });
 }
 
@@ -134,10 +142,12 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 required_access.emplace_back(AccessType::BACKUP, element.database_name, element.table_name);
                 /// Naming the table explicitly exports the collections unless `backup_named_collections`
-                /// turns the export off (see `backupNamedCollections`).
+                /// turns the export off (see `backupNamedCollections`) or `EXCEPT DATA FROM TABLE` keeps
+                /// only the table's definition in the backup.
                 exports_named_collections |= (backup_named_collections != false)
                     && (element.database_name == DatabaseCatalog::SYSTEM_DATABASE)
-                    && (element.table_name == "named_collections");
+                    && (element.table_name == "named_collections")
+                    && !element.except_data;
                 break;
             }
 
@@ -151,11 +161,11 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP, element.database_name);
-                /// A DATABASE or ALL element selecting the table requires the rights only with
+                /// A DATABASE or ALL element selecting the table's data requires the rights only with
                 /// `backup_named_collections = true`: with the setting unset such an element exports
                 /// the collections only if the user holds the rights (see `backupNamedCollections`),
                 /// so nothing is required.
-                exports_named_collections |= (backup_named_collections == true) && wildcardElementCoversSystemNamedCollections(element);
+                exports_named_collections |= (backup_named_collections == true) && wildcardElementExportsSystemNamedCollections(element);
                 break;
             }
 
@@ -163,7 +173,7 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
             {
                 /// TODO: It's better to process `element.except_databases` & `element.except_tables` somehow.
                 required_access.emplace_back(AccessType::BACKUP);
-                exports_named_collections |= (backup_named_collections == true) && wildcardElementCoversSystemNamedCollections(element);
+                exports_named_collections |= (backup_named_collections == true) && wildcardElementExportsSystemNamedCollections(element);
                 break;
             }
         }

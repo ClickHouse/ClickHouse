@@ -1,0 +1,12 @@
+an explicit selection excluding the table's data requires no rights to read the values
+1
+the table definition is in the backup
+0
+the same selection with the data keeps requiring the rights
+1
+a wildcard selection with backup_named_collections = 1 excluding the table's data requires no rights
+1
+the table definition is in the backup
+0
+the same selection with the data keeps requiring the rights
+1

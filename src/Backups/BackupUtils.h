@@ -24,22 +24,27 @@ DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements);
 /// Whether a specified name is the name of the `system.named_collections` table.
 bool isSystemNamedCollectionsTable(const QualifiedTableName & table_name);
 
-/// Whether a DATABASE or ALL element of the query selects the `system.named_collections` table.
-bool wildcardSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements);
+/// Whether a DATABASE or ALL element of the query selects the data of the `system.named_collections`
+/// table. An element selecting the table but excluding its data (`EXCEPT DATA FROM TABLES`) keeps
+/// only the table's definition in the backup, which exports no collection.
+bool wildcardSelectionExportsSystemNamedCollections(const ASTBackupQuery::Elements & elements);
 
-/// Whether a TABLE element of the query names the `system.named_collections` table.
-bool explicitSelectionCoversSystemNamedCollections(const ASTBackupQuery::Elements & elements);
+/// Whether a TABLE element of the query names the `system.named_collections` table without excluding
+/// its data through `EXCEPT DATA FROM TABLE`.
+bool explicitSelectionExportsSystemNamedCollections(const ASTBackupQuery::Elements & elements);
 
-/// Excludes `system.named_collections` from every wildcard (DATABASE or ALL) element covering it,
-/// through the element's `EXCEPT TABLES` clause. `BackupsWorker` rewrites a dispatched ON CLUSTER
-/// query this way when the initiating user may not read the collection values: the hosts then
-/// skip the export, and - unlike a forwarded, resolved `backup_named_collections = false` - the
-/// rewritten query stays accepted by hosts predating that setting.
+/// Excludes `system.named_collections` from every wildcard (DATABASE or ALL) element selecting its
+/// data, through the element's `EXCEPT TABLES` clause. `BackupsWorker` rewrites a dispatched ON
+/// CLUSTER query this way when the initiating user may not read the collection values: the hosts
+/// then skip the export, and - unlike a forwarded, resolved `backup_named_collections = false` - the
+/// rewritten query stays accepted by hosts predating that setting. An element already excluding the
+/// table's data exports nothing and is left as written, keeping the table's definition in the backup.
 void excludeSystemNamedCollectionsFromWildcardSelection(ASTBackupQuery::Elements & elements);
 
 /// Returns access required to execute BACKUP query. `backup_named_collections` is the value of the
-/// backup setting of the same name; it decides whether selecting the `system.named_collections`
-/// table requires the rights to read the collections' values (see `BackupSettings`).
+/// backup setting of the same name; it decides whether selecting the data of the
+/// `system.named_collections` table requires the rights to read the collections' values (see
+/// `BackupSettings`). A selection excluding the table's data requires none of those rights.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements, std::optional<bool> backup_named_collections);
 
 /// Checks the definition of a restored table - it must correspond to the definition from the backup.
