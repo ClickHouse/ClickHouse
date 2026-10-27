@@ -7,8 +7,6 @@
 -- The assertions use the estimate of the range alone as the reference rather than a fixed number, so
 -- they hold whatever the default factors are.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_not_const;
 DROP TABLE IF EXISTS t_not_const_dim;
 DROP TABLE IF EXISTS t_not_const_estimates;
