@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -669,6 +670,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
         const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
         if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+
+        /// `IN` casts the key into the type of the set, where a `FixedString` element pads the key, so
+        /// `s IN (SELECT toFixedString('a', 2))` matches both `'a'` and `'a\0'` of a `String` column. The cast
+        /// of the set into the type of the index keeps the padding and would hash `'a\0'` only, so decline.
+        if (anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); })
+            && !recursiveRemoveLowCardinality(removeNullable(type))->equals(*recursiveRemoveLowCardinality(removeNullable(index_type))))
             return false;
 
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);

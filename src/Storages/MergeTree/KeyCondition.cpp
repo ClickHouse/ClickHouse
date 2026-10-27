@@ -2350,6 +2350,24 @@ static bool fixedStringConstantLosesPadding(
     return !fixed_string_input_type || fixed_string_input_type->getN() < constant_bytes.size();
 }
 
+/// A `FixedString` inside a composite type, such as `Array(FixedString(N))`, is compared with a `String` element of the
+/// other side zero-padded (`[toFixedString('a', 2)] = ['a']`), but the conversion of a value to another type keeps its
+/// padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`). So a constant or a set element of such a type
+/// converted to the input type of a key expression names other key values than the ones that match it. A top-level
+/// `FixedString` is handled by the callers (see `fixedStringConstantLosesPadding`).
+static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_type, const DataTypePtr & input_type)
+{
+    auto has_nested_fixed_string = [](const DataTypePtr & type)
+    {
+        return !isFixedString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+    };
+
+    const auto value_type_not_null = removeNullable(recursiveRemoveLowCardinality(value_type));
+    const auto input_type_not_null = removeNullable(recursiveRemoveLowCardinality(input_type));
+    return !value_type_not_null->equals(*input_type_not_null)
+        && (has_nested_fixed_string(value_type_not_null) || has_nested_fixed_string(input_type_not_null));
+}
+
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
 
 /// The values one step below and one step above each value of a `Decimal32` or `Decimal64` column, or nothing if a value is
@@ -2557,6 +2575,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             /// The chain casts the constant to the argument type of its first function.
             const auto transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
             if (fixedStringConstantLosesPadding(value, is_fixed_string, transform_input_type)
+                || nestedFixedStringConversionChangesValues(constant.type, transform_input_type)
                 || floatValuesMissKeyValues(constant.column, constant.type, transform_input_type, std::make_shared<DataTypeFloat64>())
                 || !tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
                 continue;
@@ -3310,6 +3329,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     {
         /// The DAG casts the constant to its input type.
         if (fixedStringConstantLosesPadding(value, is_fixed_string, candidate.dag.input_type)
+            || nestedFixedStringConversionChangesValues(constant.type, candidate.dag.input_type)
             || floatValuesMissKeyValues(constant.column, constant.type, candidate.dag.input_type, std::make_shared<DataTypeFloat64>()))
             continue;
 
@@ -3605,6 +3625,12 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
                 && !element_type->equals(*predicate_column_type))
                 return false;
         }
+
+        /// The membership of a value in a set with a `FixedString` nested in a composite type compares the `FixedString`
+        /// zero-padded, but the conversion of the elements keeps the padding.
+        if (nestedFixedStringConversionChangesValues(
+                set_element_type, mapping.set_transform ? mapping.set_transform->input_type : key_column_type))
+            return false;
 
         /// A float element over a `Decimal`, `DateTime64` or `Time64` input names a key point that misses matching values,
         /// as a float constant does, unless the cast is exact (see `floatValuesMissKeyValues`). `IN` compares the value
