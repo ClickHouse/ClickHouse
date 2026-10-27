@@ -245,6 +245,58 @@ TEST(DeltaLakeAzureKernelHelper, ConnectionStringSetsAccountName)
     const auto key = findBuilderOption(options, "azure_storage_account_key");
     ASSERT_TRUE(key.has_value());
     ASSERT_EQ(*key, "dGVzdGtleQ==");
+    ASSERT_FALSE(findBuilderOption(options, "azure_skip_signature").has_value());
+}
+
+/// A connection string without a key or a SAS token must not let the kernel fall back to the managed identity.
+TEST(DeltaLakeAzureKernelHelper, KeylessConnectionStringSkipsSignature)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    const std::string connection_string = "AccountName=testaccount;BlobEndpoint=https://endpoint.example;";
+    params.endpoint.storage_account_url = connection_string;
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = DB::AzureBlobStorage::ConnectionString{connection_string};
+    params.forbid_implicit_credentials = true;
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    ASSERT_FALSE(findBuilderOption(options, "azure_storage_account_key").has_value());
+    const auto skip_signature = findBuilderOption(options, "azure_skip_signature");
+    ASSERT_TRUE(skip_signature.has_value());
+    ASSERT_EQ(*skip_signature, "true");
+}
+
+/// The same holds for an empty connection string without a SAS token.
+TEST(DeltaLakeAzureKernelHelper, EmptyConnectionStringWithoutSasSkipsSignature)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    params.endpoint.storage_account_url = "https://testaccount.blob.core.windows.net";
+    params.endpoint.container_name = "testcontainer";
+    params.forbid_implicit_credentials = true;
+    ASSERT_EQ(params.auth_method.index(), 0u);
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto skip_signature = findBuilderOption(options, "azure_skip_signature");
+    ASSERT_TRUE(skip_signature.has_value());
+    ASSERT_EQ(*skip_signature, "true");
+}
+
+/// A keyless connection string is unsigned even with the opt-in: the Azure SDK treats it as anonymous.
+TEST(DeltaLakeAzureKernelHelper, KeylessConnectionStringWithOptInIsUnsigned)
+{
+    DB::AzureBlobStorage::ConnectionParams params;
+    const std::string connection_string = "AccountName=testaccount;BlobEndpoint=https://endpoint.example;";
+    params.endpoint.storage_account_url = connection_string;
+    params.endpoint.container_name = "testcontainer";
+    params.auth_method = DB::AzureBlobStorage::ConnectionString{connection_string};
+    params.forbid_implicit_credentials = false;
+
+    const auto options = DeltaLake::getAzureBuilderOptions(params);
+
+    const auto skip_signature = findBuilderOption(options, "azure_skip_signature");
+    ASSERT_TRUE(skip_signature.has_value());
+    ASSERT_EQ(*skip_signature, "true");
 }
 
 #endif
