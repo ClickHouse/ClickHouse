@@ -520,6 +520,19 @@ struct ScanPlan
 };
 
 /// plans the scan, or returns false with the reason if a query limit forbids it
+/// the rows and the marks of a full scan of the parts
+std::pair<UInt64, UInt64> scanSize(const RangesInDataParts & parts)
+{
+    UInt64 rows = 0;
+    UInt64 marks = 0;
+    for (const auto & part : parts)
+    {
+        rows += part.data_part->rows_count;
+        marks += part.data_part->index_granularity->getMarksCountWithoutFinal();
+    }
+    return {rows, marks};
+}
+
 bool planScan(
     WhatIfCandidateResult & result,
     ScanPlan & plan,
@@ -528,12 +541,8 @@ bool planScan(
     UInt64 projection_scan_budget_rows,
     const Settings & query_settings)
 {
-    UInt64 rows_to_scan = 0;
-    for (const auto & part_with_ranges : baseline_parts)
-    {
-        rows_to_scan += part_with_ranges.data_part->rows_count;
-        plan.marks_to_scan += part_with_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
-    }
+    const auto [rows_to_scan, marks_to_scan] = scanSize(baseline_parts);
+    plan.marks_to_scan = marks_to_scan;
     plan.sample_step
         = samplingStep(rows_to_scan, plan.marks_to_scan, projection_scan_budget_rows, query_settings[Setting::max_rows_to_read]);
 
@@ -800,6 +809,7 @@ void setVerdict(
     else if ((chosen_in != 0 && chosen_in != weighed) || beats_base(marks_low) != beats_base(marks_high))
     {
         result.verdict = "too close to call";
+        result.larger_sample_can_settle = !built.samples.empty() && (chosen_in == 0 || chosen_in == weighed);
         result.verdict_reason = fmt::format(
             "{} against {} from the base table, and the layout a merge would leave is not recorded in a part, so the "
             "comparison comes out both ways over `marks_span`",
@@ -1093,20 +1103,24 @@ WhatIfCandidateResult evaluateProjection(
                 estimated, *projection, filters_on_offsets, relaxing_setting, read_step, baseline_parts, analysis.selected_marks, budget,
                 weigh);
         };
-        /// when the budget does not cover the scan, a sample of a quarter of it comes first,
-        /// and the sample of the full budget only when the first verdict is too close to call
+        /// a small sample often settles the verdict, and a read limit keeps one sample so that the two cannot pass it
         const UInt64 budget = settings.projection_scan_budget_rows;
-        UInt64 rows_to_scan = 0;
-        for (const auto & part : baseline_parts)
-            rows_to_scan += part.data_part->rows_count;
-        if (budget >= 4 && rows_to_scan > budget)
+        const auto [rows_to_scan, marks_to_scan] = scanSize(baseline_parts);
+        const size_t step = samplingStep(rows_to_scan, marks_to_scan, budget, 0);
+        UInt64 first_phase_elapsed_us = 0;
+        if (budget >= 4 && read_settings[Setting::max_rows_to_read] == 0 && read_settings[Setting::max_bytes_to_read] == 0 && step > 1
+            && samplingStep(rows_to_scan, marks_to_scan, budget / 4, 0) > step)
         {
             WhatIfCandidateResult first_phase = result;
-            if (estimate(first_phase, budget / 4) && first_phase.verdict != "too close to call")
+            if (estimate(first_phase, budget / 4) && !first_phase.larger_sample_can_settle)
                 return first_phase;
+            first_phase_elapsed_us = first_phase.elapsed_us;
         }
         if (estimate(result, budget))
+        {
+            result.elapsed_us += first_phase_elapsed_us;
             return result;
+        }
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
     else

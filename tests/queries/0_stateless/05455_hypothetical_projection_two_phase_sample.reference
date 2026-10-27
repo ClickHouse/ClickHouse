@@ -7,3 +7,9 @@ sampled_marks: 120 / 600
 -- a budget that covers the scan reads every granule, as before
 verdict: chosen
 sampled_marks: 600 / 600
+-- a read limit keeps one sample, so the two samples together cannot pass it
+verdict: chosen
+sampled_marks: 120 / 600
+-- rows of different widths: the first verdict is final
+verdict: too close to call
+sampled_marks: 30 / 600

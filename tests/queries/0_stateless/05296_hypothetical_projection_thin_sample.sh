@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fewer sampled rows than the part has granules: each sampled row stands for ten granules here, and the
+# fewer sampled rows than the part has granules: each sampled row stands for twenty granules here, and the
 # twin table with the projection materialized is the ground truth the sampled span has to contain
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -q "
 for where in "b < 500" "b < 100"; do
     out=$($CLICKHOUSE_CLIENT -q "
         CREATE HYPOTHETICAL PROJECTION p_b ON t_thin (SELECT * ORDER BY b);
-        EXPLAIN WHATIF projection_scan_budget_rows = 60 SELECT count() FROM t_thin WHERE ${where} SETTINGS ${PIN};
+        EXPLAIN WHATIF projection_scan_budget_rows = 30 SELECT count() FROM t_thin WHERE ${where} SETTINGS ${PIN};
         SELECT '--- real ---';
         EXPLAIN indexes = 1 SELECT count() FROM t_thin_real WHERE ${where} SETTINGS ${PIN}, prefer_optimize_projection = 1;
     ")

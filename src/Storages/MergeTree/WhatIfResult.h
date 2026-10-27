@@ -36,6 +36,8 @@ struct WhatIfCandidateResult
     UInt64 estimated_marks_high = 0;
     String verdict;
     String verdict_reason;
+    /// the verdict is too close to call only because of the sampling error, so a larger sample can settle it
+    bool larger_sample_can_settle = false;
 
     enum EmpiricalStatus { Ok, Unsupported, Disabled };
     EmpiricalStatus empirical_status = Disabled;
