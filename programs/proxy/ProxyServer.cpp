@@ -47,6 +47,7 @@ struct AcceptParams
     int listen_fd;
     const FrontendContext * ctx;
     std::atomic<bool> * stopped;
+    ConnectionRegistry * connections;
 };
 
 void dispatch(FiberSocket & client, const FrontendContext & ctx)
@@ -107,20 +108,38 @@ int connectionFiber(HandlerParams * params) noexcept
     return 0;
 }
 
-/// Spawn a detached connection handler: the future deletes itself once the fiber completes.
-void spawnConnection(int fd, const FrontendContext * ctx)
+/// The future of a connection handler, which unregisters the connection once the handler's fiber completes.
+struct HandlerFuture : silk::FiberFuture
 {
-    auto * future = new silk::FiberFuture;
+    ConnectionRegistry * connections = nullptr;
+    int fd = -1;
+};
+
+void onHandlerFinished(silk::FiberFuture * future) noexcept
+{
+    auto * handler = static_cast<HandlerFuture *>(future);
+    handler->connections->remove(handler->fd);
+    delete handler;
+}
+
+/// Spawn a connection handler. It is registered until its fiber completes, so that the server can end it and wait for it.
+void spawnConnection(int fd, const FrontendContext * ctx, ConnectionRegistry * connections)
+{
+    auto * future = new HandlerFuture;
+    future->connections = connections;
+    future->fd = fd;
+    connections->add(fd);
     int run_result = silk::FiberScheduler::run(connectionFiber, HandlerParams{fd, ctx}, future);
     if (run_result != 0)
     {
         LOG_WARNING(ctx->log, "Cannot allocate a fiber for a new connection; dropping it");
+        connections->remove(fd);
         delete future;
         [[maybe_unused]] int err = ::close(fd);
         return;
     }
-    if (!future->subscribe(+[](silk::FiberFuture * f) noexcept { delete f; }))
-        delete future;    /// The handler already finished; clean up now.
+    if (!future->subscribe(onHandlerFinished))
+        onHandlerFinished(future);    /// The handler already finished; clean up now.
 }
 
 /// Errors that persist until some resource is released. Retrying them without a pause busy-spins a scheduler thread.
@@ -155,11 +174,44 @@ int acceptLoop(AcceptParams * params) noexcept
             /// Transient error (e.g. the peer aborted before accept): keep listening.
             continue;
         }
-        spawnConnection(static_cast<int>(client_fd), params->ctx);
+        spawnConnection(static_cast<int>(client_fd), params->ctx, params->connections);
     }
     return 0;
 }
 
+}
+
+void ConnectionRegistry::add(int fd)
+{
+    std::lock_guard lock(mutex);
+    ++fds[fd];
+    ++handlers;
+}
+
+void ConnectionRegistry::remove(int fd)
+{
+    std::lock_guard lock(mutex);
+    if (auto it = fds.find(fd); it != fds.end() && --it->second == 0)
+        fds.erase(it);
+    --handlers;
+    /// Under the lock: once `waitAll` can observe zero handlers, the registry may be destroyed.
+    if (handlers == 0)
+        all_finished.notify_all();
+}
+
+void ConnectionRegistry::shutdownAll()
+{
+    std::lock_guard lock(mutex);
+    /// A handler closes its client socket before its fiber completes, so the descriptor may have been reused
+    /// in the meantime, but only by the proxy itself, while it is ending every connection anyway.
+    for (const auto & [fd, _] : fds)
+        ::shutdown(fd, SHUT_RDWR);
+}
+
+void ConnectionRegistry::waitAll()
+{
+    std::unique_lock lock(mutex);
+    all_finished.wait(lock, [&] { return handlers == 0; });
 }
 
 /// Owns a running accept loop: the parameters copied into its fiber and the future it completes on.
@@ -291,7 +343,7 @@ void ProxyServer::start(const Poco::Util::AbstractConfiguration & abstract_confi
     for (size_t i = 0; i < listen_sockets.size(); ++i)
     {
         auto state = std::make_unique<AcceptState>();
-        state->params = AcceptParams{listen_sockets[i]->sockfd(), frontend_contexts[i].get(), &stopped};
+        state->params = AcceptParams{listen_sockets[i]->sockfd(), frontend_contexts[i].get(), &stopped, &connections};
 
         AcceptState * raw = state.get();
         if (silk::FiberScheduler::run(acceptLoop, AcceptParams(raw->params), &raw->future) != 0)
@@ -330,9 +382,15 @@ void ProxyServer::stop()
 
     LOG_INFO(log, "Proxy stopped accepting connections");
 
+    /// End the connections in flight: shutting down their client sockets ends their handshakes and relays.
+    /// The scheduler can only be destroyed with no fibers, so wait for their handlers to complete.
+    /// The other waits of a handler (connecting to a backend, a hook, waiting for a backend) are bounded by timeouts.
+    connections.shutdownAll();
+    connections.waitAll();
+
     /// Join the health supervisor so no fiber remains scheduled, then stop the scheduler threads.
     /// Doing this before returning avoids a race between the still-running scheduler threads and
-    /// process teardown. In-flight client connections are dropped.
+    /// process teardown.
     if (health)
         health->join();
 
