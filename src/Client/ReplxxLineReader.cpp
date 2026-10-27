@@ -286,12 +286,6 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-static bool replxx_last_is_delimiter = false;
-void ReplxxLineReader::setLastIsDelimiter(bool flag)
-{
-    replxx_last_is_delimiter = flag;
-}
-
 ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     : LineReader
     (
@@ -360,7 +354,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_indent_multiline(false);
 
     if (highlighter)
-        rx.set_highlighter_callback(highlighter);
+    {
+        rx.set_highlighter_callback([this](const String & query, std::vector<Replxx::Color> & colors, int cursor_position)
+        {
+            highlighter(query, colors, cursor_position, last_is_delimiter);
+        });
+    }
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
@@ -376,9 +375,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     {
         /// If we allow multiline and there is already something in the input, start a newline.
         /// NOTE: Lexer is only available if we use highlighter.
-        if (highlighter && multiline && !replxx_last_is_delimiter)
+        if (highlighter && multiline && !last_is_delimiter)
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
-        replxx_last_is_delimiter = false;
+        last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };
     /// bind C-j to ENTER action.
