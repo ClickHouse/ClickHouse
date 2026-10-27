@@ -4,9 +4,9 @@
 #              are not allowed when `allow_feature_tier=0` (the Fast test default).
 #
 # Proves that `QueryOracleChecker::checkTLPAggregate` actually runs, via the
-# dedicated `ASTFuzzerOracleTLPAggregateChecks` profile event. The companion
-# smoke test (04256_04250) only asserts that oracle-enabled queries succeed —
-# with `ast_fuzzer_runs = 1` a random mutation may destroy the aggregate shape
+# dedicated `ASTFuzzerOracleTLPAggregateChecks` profile event. This is the only
+# test of the AST fuzzer oracle; keep it cheap.
+# With `ast_fuzzer_runs = 1` a random mutation may destroy the aggregate shape
 # (drop the WHERE, the aggregate, or the GROUP BY), silently skipping the
 # aggregate-oracle path while the test still passes. Here we retry until the
 # global counter increases, so the test fails when the path can never fire.
@@ -36,7 +36,7 @@ after=$before
 for _ in $(seq 1 100)
 do
     # `send_logs_level = 'fatal'` suppresses expected error-level log lines from
-    # random mutations that produce valid-but-nonsense queries (see 04256_04250).
+    # random mutations that produce valid-but-nonsense queries.
     # No `FORMAT Null` here: the oracle skips queries carrying an explicit
     # FORMAT clause, so discard the output via redirection instead.
     $CLICKHOUSE_CLIENT --query "

@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -80,6 +82,22 @@ public:
         const Block & input_header,
         const std::vector<size_t> & unneeded_output_positions);
 
+    /// The input positions `pruneDAGOutputsByPosition` would say are unneeded, without changing the DAG.
+    static std::vector<size_t> getUnneededInputPositions(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header,
+        const std::vector<size_t> & unneeded_output_positions);
+
+    /// For each column of the output header of a filter DAG, the position of the input column it is, unchanged: one the
+    /// filter passes through, or an input the DAG outputs as it is. Nothing for a column the DAG computes, an alias too.
+    static std::vector<std::optional<size_t>> mapOutputsToInputs(
+        const ActionsDAG & dag,
+        const String & filter_column_name,
+        bool remove_filter_column,
+        const Block & input_header);
+
 private:
     void updateOutputHeader() override;
 
@@ -98,8 +116,6 @@ private:
         /// The caller's positions the step drops: a pass-through column after a needed one of the same name is kept,
         /// even if nobody needs it.
         std::vector<size_t> dropped_output_positions;
-        /// The position of the filter column in the DAG's outputs, before any is removed.
-        size_t filter_output_position = 0;
 
         /// Whether the filter column is removed from the output header after the pruning: it already was, or nobody
         /// reads it any more.
@@ -107,15 +123,11 @@ private:
 
         /// Whether the output header changes.
         bool changes_output_header = false;
-        /// Whether the filter predicate folds to a constant through `materialize` once the filter column is dropped;
-        /// the rest of the plan is worked out on the folded DAG.
-        bool fold_filter_predicate = false;
 
         /// The DAG outputs that remain, in their order.
         ActionsDAG::NodeRawConstPtrs neededDAGOutputs(const ActionsDAG::NodeRawConstPtrs & outputs) const;
 
-        /// The part of the pruning that concerns the outputs: the fold of the predicate, the outputs that remain, and
-        /// the filter column flag.
+        /// The part of the pruning that concerns the outputs: the outputs that remain, and the filter column flag.
         void applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const;
 
         /// The positions of the input header nothing needs any more: the columns neither read nor passed on.

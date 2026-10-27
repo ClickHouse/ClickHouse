@@ -3,6 +3,7 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <Poco/Logger.h>
 
@@ -41,6 +42,11 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 
     void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr used_output);
+
+    /// Continues the caller's trace when the request carries W3C `traceparent`/`tracestate` headers:
+    /// returns a holder whose root span is the `SERVER` span of this request, or null without the header.
+    /// A malformed header is logged and ignored; the request is served regardless.
+    OpenTelemetry::TracingContextHolderPtr startTracingContext(const HTTPServerRequest & request) const;
 
     std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
 };

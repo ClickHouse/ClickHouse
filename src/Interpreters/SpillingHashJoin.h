@@ -9,6 +9,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/SpillableAdapter.h>
 #include <Common/SharedMutex.h>
 
 
@@ -45,7 +46,7 @@ class MergeJoin;
 ///
 /// While not pinned, hasDelayedBlocks returns true so that the pipeline includes the
 /// delayed-block transforms needed by GraceHashJoin. When HashJoin / ConcurrentHashJoin is used,
-/// getDelayedBlocks returns nullptr and the delayed transforms finish instantly.
+/// isDelayedBlocksProcessingEnabled is false and the probe streams close those transforms after the build.
 /// The read-in-order-through-join optimisation in optimizeReadInOrder.cpp asks
 /// canPreserveLeftBlockOrder first and, if the in-order plan is chosen, pins this join with
 /// keepLeftPipelineInOrder: from then on the spill fallback is MergeJoin, no delayed-block
@@ -97,6 +98,12 @@ public:
 
     StepAnalysisReport getAnalysisReport() const override;
 
+    ISpillable * getSpillable() override { return &spillable; }
+    /// While collecting: the whole right side, spilled by switching to the grace join.
+    /// After the switch: the grace join and unconverted concurrent slots. Nothing once the build ended in memory.
+    ProcessorMemoryStats getMemoryStats() const;
+    size_t spill(size_t at_least_bytes);
+
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;
     bool isParallelNonJoinedProcessingEnabled() const override;
@@ -115,6 +122,7 @@ public:
     /// Pinned to the left order, the spill fallback is MergeJoin, which needs no delayed-block
     /// transforms (and their outputs would be interleaved with the main ones, breaking the order).
     bool hasDelayedBlocks() const override { return !keep_left_block_order; }
+    bool isDelayedBlocksProcessingEnabled() const override;
 
     bool preservesLeftBlockOrder() const override { return keep_left_block_order; }
     bool canPreserveLeftBlockOrder() const override;
@@ -122,10 +130,6 @@ public:
 
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
-
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill(JoinBuildContext context) override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
@@ -141,6 +145,8 @@ public:
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
+    SpillableAdapter<SpillingHashJoin> spillable{*this};
+
     enum class State
     {
         COLLECTING, // Right-side blocks are being collected in HashJoin / ConcurrentHashJoin, no spilling yet.

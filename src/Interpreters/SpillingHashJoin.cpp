@@ -9,6 +9,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <atomic>
+
 namespace ProfileEvents
 {
 extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
@@ -200,21 +203,68 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     return hash_join->addBlockToJoin(block, num_rows, context);
 }
 
+ProcessorMemoryStats SpillingHashJoin::getMemoryStats() const
+{
+    if (state.load(std::memory_order_acquire) != State::COLLECTING)
+    {
+        /// Nothing to report for the MergeJoin fallback either: it writes the right side through
+        /// its disk writer as it arrives, so a pinned join holds no spillable memory.
+        if (!grace_join)
+            return {};
+
+        auto res = grace_join->getMemoryStats();
+        if (concurrent_join)
+        {
+            /// Unconverted slots still own memory; their counters are cleared by `releaseSlotBlocks`.
+            const auto unconverted_bytes = concurrent_join->getTotalByteCount();
+            res.spillable_memory_bytes += unconverted_bytes;
+            res.need_reserved_memory_bytes += unconverted_bytes;
+        }
+        return res;
+    }
+
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+    /// The released blocks stay alive while the grace join re-inserts them.
+    res.need_reserved_memory_bytes = res.spillable_memory_bytes;
+    return res;
+}
+
+size_t SpillingHashJoin::spill(size_t at_least_bytes)
+{
+    if (!at_least_bytes)
+        return 0;
+
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        size_t before = getTotalByteCount();
+        switchToExternalJoin(JoinBuildContext::serial(), /*spill_immediately=*/true);
+        size_t after = getTotalByteCount();
+        /// Check the new grace bucket's spillable estimate before requesting a repartition.
+        return before > after ? before - after : 0;
+    }
+
+    /// The MergeJoin fallback spills by construction, so a pinned join has nothing more to
+    /// release here (`grace_join` stays null).
+    return grace_join ? grace_join->spill(at_least_bytes) : 0;
+}
+
 void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill_immediately)
 {
     /// The target is pinned at plan time: MergeJoin when the plan requires the left stream's row
     /// order (the pipeline was then built without the delayed-block transforms GraceHashJoin
     /// needs), GraceHashJoin otherwise. Everything but the target join creation is the same.
-    ///
-    /// `spill_immediately` (the memory-pressure path) is meaningful only for GraceHashJoin,
-    /// where the handed-over data otherwise sits in the in-memory bucket 0 until the next spill
-    /// request. The MergeJoin fallback always spills immediately by construction:
-    /// `spillRightBlocksToDisk` switches to the disk writer before the first drained block.
     const State target_state = keep_left_block_order ? State::MERGE_JOIN : State::GRACE_HASH_JOIN;
     const JoinAlgorithm target_algorithm = keep_left_block_order ? JoinAlgorithm::PARTIAL_MERGE : JoinAlgorithm::GRACE_HASH;
     const ProfileEvents::Event switch_event = keep_left_block_order
         ? ProfileEvents::JoinSpillingHashJoinSwitchedToMergeJoin
         : ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin;
+
+    /// A scheduler-requested switch must partition the data, not just rebuild it in one bucket.
+    /// Meaningful only for GraceHashJoin: the MergeJoin fallback always spills immediately by
+    /// construction - `spillRightBlocksToDisk` switches to the disk writer before the first
+    /// drained block.
+    const size_t num_buckets = spill_immediately ? std::max<size_t>(initial_num_buckets, 2) : initial_num_buckets;
 
     const auto make_external_join = [&]() -> JoinPtr
     {
@@ -230,7 +280,7 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
         }
 
         grace_join = std::make_shared<GraceHashJoin>(
-            initial_num_buckets,
+            num_buckets,
             max_num_buckets,
             table_join,
             left_sample_block,
@@ -239,11 +289,6 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
             any_take_last_row,
             max_bytes_before_external_join);
         grace_join->initialize(*left_sample_block);
-        /// Moving the data into bucket 0 frees nothing on its own. Asking the grace join to spill
-        /// before it is fed doubles the bucket count on the first block, so half of what we hand
-        /// over goes to disk right away - even if this is the last block of the build phase.
-        if (spill_immediately)
-            grace_join->requestSpill(context);
         return grace_join;
     };
 
@@ -275,19 +320,25 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
 
             chosen_join = make_external_join();
 
+            /// `spill` has no build-stream identity. Replay under the exclusive lock before publishing
+            /// the new join, so its `serial` context cannot overlap another insert into that join.
+            if (spill_immediately)
+                tryConvertSlots(context);
+
             /// Set state BEFORE releasing the lock so new `addBlockToJoin` calls
             /// see the new state and go directly to `chosen_join`.
             state.store(target_state, std::memory_order_release);
         }
         /// Convert ConcurrentHashJoin slots into the external join.
         /// Other build-phase threads will also help via `addBlockToJoin`.
-        tryConvertSlots(context);
+        if (!spill_immediately)
+            tryConvertSlots(context);
 
         QueryExecutionCounters::addUsedJoinAlgorithm(target_algorithm);
         return;
     }
 
-    /// `requestSpill` can bring us here too, so look at the state again before rebuilding.
+    /// Re-check: another thread may have already switched.
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
 
@@ -359,74 +410,6 @@ void SpillingHashJoin::onBuildPhaseFinish()
         else
             hash_join->dropRightBlocksKeptForAnotherAlgorithm();
     }
-}
-
-size_t SpillingHashJoin::getSpillableBytes() const
-{
-    switch (state.load(std::memory_order_acquire))
-    {
-        case State::COLLECTING:
-            /// Switching to GraceHashJoin puts what was collected on disk, except the one bucket it keeps
-            /// in memory. An upper bound is fine here, the scheduler only ranks candidates by it.
-            /// Same for MergeJoin, which puts the whole sorted right side on disk.
-            return concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
-        case State::GRACE_HASH_JOIN:
-        case State::MERGE_JOIN:
-            return chosen_join->getSpillableBytes();
-        case State::IN_MEMORY_JOIN:
-            /// Build phase finished in memory, nothing left to spill.
-            return 0;
-    }
-}
-
-void SpillingHashJoin::requestSpill(JoinBuildContext context)
-{
-    switch (state.load(std::memory_order_acquire))
-    {
-        case State::COLLECTING:
-            /// The switch functions re-check the state, so a concurrent switch is harmless.
-            switchToExternalJoin(context, /*spill_immediately=*/true);
-            return;
-        case State::GRACE_HASH_JOIN:
-        case State::MERGE_JOIN:
-            chosen_join->requestSpill(context);
-            return;
-        case State::IN_MEMORY_JOIN:
-            return;
-    }
-}
-
-bool SpillingHashJoin::canPreserveLeftBlockOrder() const
-{
-    /// The in-memory join processes the probe side when the build fits under the threshold, so it
-    /// must preserve the order on its own.
-    bool in_memory_join_preserves_order
-        = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
-
-    /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
-    /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
-    bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
-        && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
-        && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any);
-
-    return in_memory_join_preserves_order && merge_join_fallback_is_possible;
-}
-
-void SpillingHashJoin::keepLeftPipelineInOrder()
-{
-    /// The callers must check `canPreserveLeftBlockOrder` first (see IJoin::keepLeftPipelineInOrder).
-    /// In particular, RIGHT and FULL joins can never keep the left order: the non-joined right
-    /// rows are emitted out of band and have no position in the left order.
-    if (!canPreserveLeftBlockOrder())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "SpillingHashJoin cannot preserve the left block order for this join");
-
-    /// The pin must land before the build phase starts: the choice of the spill fallback and the
-    /// delayed-block transforms in the pipeline depend on it.
-    if (state.load(std::memory_order_acquire) != State::COLLECTING)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "SpillingHashJoin got the left-order pin after the build phase started");
-
-    keep_left_block_order = true;
 }
 
 void SpillingHashJoin::onProbePhaseFinish(std::optional<size_t> matched_right_rows)
@@ -574,6 +557,12 @@ IBlocksStreamPtr SpillingHashJoin::getDelayedBlocks()
 {
     chassert(chosen_join);
     return chosen_join->getDelayedBlocks();
+}
+
+bool SpillingHashJoin::isDelayedBlocksProcessingEnabled() const
+{
+    const auto current_state = state.load(std::memory_order_acquire);
+    return current_state != State::IN_MEMORY_JOIN && current_state != State::MERGE_JOIN;
 }
 
 }

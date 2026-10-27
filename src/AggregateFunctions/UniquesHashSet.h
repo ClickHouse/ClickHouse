@@ -291,17 +291,9 @@ private:
         }
     }
 
-    /// Insert a value.
-    void insertImpl(HashValue x)
+    /// Insert a non-zero value at a precomputed position, with linear probing.
+    void ALWAYS_INLINE insertAtPlace(HashValue x, size_t place_value)
     {
-        if (x == 0)
-        {
-            m_size += !has_zero;
-            has_zero = true;
-            return;
-        }
-
-        size_t place_value = place(x);
         while (buf[place_value] && buf[place_value] != x)
         {
             ++place_value;
@@ -317,6 +309,19 @@ private:
 
         buf[place_value] = x;
         ++m_size;
+    }
+
+    /// Insert a value.
+    void insertImpl(HashValue x)
+    {
+        if (x == 0)
+        {
+            m_size += !has_zero;
+            has_zero = true;
+            return;
+        }
+
+        insertAtPlace(x, place(x));
     }
 
     /** Insert a value into the new buffer that was in the old buffer.
@@ -784,22 +789,7 @@ public:
                         continue;
                     }
 
-                    size_t place_value = place_value_batch[j];
-                    while (buf[place_value] && buf[place_value] != x)
-                    {
-                        ++place_value;
-                        place_value &= mask();
-
-#ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
-                        ++collisions;
-#endif
-                    }
-
-                    if (buf[place_value] == x)
-                        continue;
-
-                    buf[place_value] = x;
-                    ++m_size;
+                    insertAtPlace(x, place_value_batch[j]);
                 }
 
                 if (unlikely(wide_candidate_mask))
@@ -891,13 +881,57 @@ public:
             shrinkIfNeed();
         }
 
-        for (size_t i = 0; i < rhs.buf_size(); ++i)
+        const size_t rhs_buf_size = rhs.buf_size();
+        size_t rhs_pos = 0;
+
+        /// Batching does not pay off for tiny states (e.g. merging millions of single-element
+        /// states), so the plain loop is used for them and the batched loop below is skipped.
+        if (rhs.m_size < insert_many_batch_size)
         {
-            if (rhs.buf[i] && good(rhs.buf[i]))
+            for (; rhs_pos < rhs_buf_size; ++rhs_pos)
             {
-                insertImpl(rhs.buf[i]);
-                shrinkIfNeed();
+                const HashValue x = rhs.buf[rhs_pos];
+                if (x && good(x))
+                {
+                    insertImpl(x);
+                    shrinkIfNeed();
+                }
             }
+        }
+
+        while (rhs_pos < rhs_buf_size)
+        {
+            /// Enough spare capacity: no resize/rehash can happen mid-batch, so place() can be
+            /// computed for the whole batch upfront, letting misses on the destination overlap.
+            if ((max_fill() - m_size) >= insert_many_batch_size)
+            {
+                std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                size_t cnt = 0;
+                while (rhs_pos < rhs_buf_size && cnt < insert_many_batch_size)
+                {
+                    const HashValue x = rhs.buf[rhs_pos];
+                    ++rhs_pos;
+                    if (x && good(x))
+                        hash_value[cnt++] = x;
+                }
+
+                std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                for (size_t j = 0; j < cnt; ++j)
+                    place_value_batch[j] = place(hash_value[j]);
+
+                for (size_t j = 0; j < cnt; ++j)
+                    insertAtPlace(hash_value[j], place_value_batch[j]);
+            }
+            else
+            {
+                /// good() must be re-evaluated per element: shrinkIfNeed() can raise skip_degree.
+                const HashValue x = rhs.buf[rhs_pos];
+                ++rhs_pos;
+                if (x && good(x))
+                    insertImpl(x);
+            }
+
+            shrinkIfNeed();
         }
 
         /// An incomplete state must not carry a wide set at all (see `markWideIncomplete`), so the
@@ -1028,6 +1062,7 @@ public:
 
         if (m_size <= 1)
         {
+            /// Fast path for tiny states, which are common when reading many stored single-element states.
             for (size_t i = 0; i < m_size; ++i)
             {
                 HashValue x = 0;
@@ -1040,16 +1075,24 @@ public:
         }
         else
         {
-            auto hs = std::make_unique<HashValue[]>(m_size);
-            rb.readStrict(reinterpret_cast<char *>(hs.get()), m_size * sizeof(HashValue));
+            constexpr size_t chunk_elements = 256;
+            HashValue chunk[chunk_elements];
 
-            for (size_t i = 0; i < m_size; ++i)
+            for (size_t left = m_size; left > 0;)
             {
-                DB::transformEndianness<std::endian::native, std::endian::little>(hs[i]);
-                if (hs[i] == 0)
-                    has_zero = true;
-                else
-                    reinsertImpl(hs[i]);
+                size_t chunk_size = std::min(left, chunk_elements);
+                rb.readStrict(reinterpret_cast<char *>(chunk), chunk_size * sizeof(HashValue));
+
+                for (size_t i = 0; i < chunk_size; ++i)
+                {
+                    DB::transformEndianness<std::endian::native, std::endian::little>(chunk[i]);
+                    if (chunk[i] == 0)
+                        has_zero = true;
+                    else
+                        reinsertImpl(chunk[i]);
+                }
+
+                left -= chunk_size;
             }
         }
 

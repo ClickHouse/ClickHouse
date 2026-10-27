@@ -14,6 +14,8 @@
                 <disk>disk_s3_plain_rewritable_03517</disk>
                 <path>disks/cache_03517/</path>
                 <max_size>1Mi</max_size>
+                <max_file_segment_size>256Ki</max_file_segment_size>
+                <boundary_alignment>256Ki</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </disk_cache_03517>
             <disk_encrypted_03517>

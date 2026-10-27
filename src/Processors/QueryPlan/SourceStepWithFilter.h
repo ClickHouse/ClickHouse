@@ -78,6 +78,10 @@ public:
     virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
     virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
 
+    /// The whole output is consumed only by `min` / `max` (see `FormatFilterInfo::min_max_from_statistics`).
+    virtual bool supportsMinMaxFromStatistics() const { return false; }
+    virtual void setMinMaxFromStatistics() {}
+
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
@@ -125,6 +129,7 @@ public:
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    void setStorageLimits(std::shared_ptr<const StorageLimitsList> storage_limits) { query_info.storage_limits = std::move(storage_limits); }
     FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
     PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
     ContextPtr getContext() const { return context; }

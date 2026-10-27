@@ -112,6 +112,18 @@ ClickHouse 支持以下几种约束：
   每种未设置的约束类型都会沿用前一个 profile 中的值，而每种
   已设置的约束类型都会替换为新 profile 中的值。
 
+## CONSTRAINT 与 `compatibility` 设置 {#constraints-and-compatibility}
+
+[`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置会将用户未显式设置的
+各项设置改为某个早期版本的默认值。它绝不会应用 CONSTRAINT 所拒绝的值：如果早期版本的默认值超出该设置的 `min`/`max`
+范围、属于其 `disallowed` 值之一，或者该设置为 `const`，则该设置保留当前默认值。对于被
+[`allow_feature_tier`](/zh/reference/settings/server-settings/settings/allow#allow_feature_tier) 禁用的层级中的设置，同样如此。
+`readonly` 设置不会以这种方式限制 `compatibility`，而是决定查询能否设置
+`compatibility`。
+
+`MergeTree` 设置仅遵循 default profile 中的 `compatibility`，该 profile 为所有表提供服务器级别的
+默认值。同样，如果 default profile 中带有 `merge_tree_` 前缀的 CONSTRAINT 或 `allow_feature_tier` 拒绝了早期版本的默认值，该设置也会保留当前默认值。
+
 ## 只读模式 {#read-only}
 
 只读模式由 `readonly` setting 启用，注意不要将其与 `readonly` CONSTRAINT 类型混淆。当 `readonly = 1` 时，原本会被拒绝修改的 setting，若有 `changeable_in_readonly` CONSTRAINT 允许，仍可被更改。该 setting 各取值的含义，请参阅
