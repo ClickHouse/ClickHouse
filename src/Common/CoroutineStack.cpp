@@ -61,15 +61,19 @@ CoroutineStack::CoroutineStack(size_t stack_size_)
 {
 }
 
-boost::context::stack_context CoroutineStack::allocate() const
+boost::context::stack_context CoroutineStack::allocate()
 {
     Stopwatch watch;
 
     size_t num_pages = 1 + (stack_size - 1) / page_size;
+    size_t guard_bytes = 0;
 
     if constexpr (guardPagesEnabled())
+    {
         /// Add one page at bottom that will be used as guard-page
         num_pages += 1;
+        guard_bytes = page_size;
+    }
 
     size_t num_bytes = num_pages * page_size;
     void * data = ::aligned_alloc(page_size, num_bytes);
@@ -98,6 +102,8 @@ boost::context::stack_context CoroutineStack::allocate() const
 #if defined(BOOST_USE_VALGRIND)
     sctx.valgrind_stack_id = VALGRIND_STACK_REGISTER(sctx.sp, data);
 #endif
+
+    last_allocated_bounds = {static_cast<const char *>(data) + guard_bytes, num_bytes - guard_bytes};
 
     ProfileEvents::increment(ProfileEvents::FiberStackAllocs);
     ProfileEvents::increment(ProfileEvents::FiberStackAllocBytes, num_bytes);
