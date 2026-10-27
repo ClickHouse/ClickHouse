@@ -195,7 +195,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 else
                     parser_shared_resources->parsing_runner.initThreadPool(
                         getFormatParsingThreadPool().get(), parser_shared_resources->max_parsing_threads, ThreadName::PARQUET_DECODER, CurrentThread::getGroup());
-
+            });
+        parser_shared_resources->initOpaqueOnce([&]
+            {
                 auto ext = std::make_shared<Parquet::SharedResourcesExt>();
 
                 ext->total_memory_low_watermark = format_settings.parquet.memory_low_watermark;
@@ -393,7 +395,8 @@ Chunk ParquetV3BlockInputFormat::read()
 
 
         auto chunk = getChunkForCount(size_t(footer->metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
+        if (format_filter_info && format_filter_info->need_row_numbers)
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
         return chunk;
