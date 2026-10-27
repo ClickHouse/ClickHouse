@@ -788,9 +788,12 @@ void registerStorageStripeLog(StorageFactory & factory)
                 args.engine_name, args.engine_args.size());
 
         String disk_name = getDiskName(*args.storage_def, args.getContext());
+        /// A custom disk referred to by name is kept registered for as long as the table uses it. The
+        /// registration is taken before the disk is looked up, so the disk cannot be released in between.
+        auto custom_disk_registration = args.getContext()->tryGetCustomDiskRegistration(disk_name);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        return std::make_shared<StorageStripeLog>(
+        auto storage = std::make_shared<StorageStripeLog>(
             disk,
             args.relative_data_path,
             args.table_id,
@@ -799,6 +802,8 @@ void registerStorageStripeLog(StorageFactory & factory)
             args.comment,
             args.mode,
             args.getContext());
+        storage->setCustomDiskRegistration(std::move(custom_disk_registration));
+        return storage;
     }, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

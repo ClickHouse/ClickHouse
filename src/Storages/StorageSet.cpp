@@ -386,9 +386,15 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
-        return std::make_shared<StorageSet>(
+        String disk_name = set_settings[SetSetting::disk];
+        /// A custom disk referred to by name is kept registered for as long as the table uses it. The
+        /// registration is taken before the disk is looked up, so the disk cannot be released in between.
+        auto custom_disk_registration = args.getContext()->tryGetCustomDiskRegistration(disk_name);
+        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        auto storage = std::make_shared<StorageSet>(
             disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
+        storage->setCustomDiskRegistration(std::move(custom_disk_registration));
+        return storage;
     }, SecretArgumentsSpec{}, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
     Documentation{
         .description = R"DOCS_MD(

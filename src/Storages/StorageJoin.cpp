@@ -499,6 +499,9 @@ void registerStorageJoin(StorageFactory & factory)
             }
         }
 
+        /// A custom disk referred to by name is kept registered for as long as the table uses it. The
+        /// registration is taken before the disk is looked up, so the disk cannot be released in between.
+        auto custom_disk_registration = args.getContext()->tryGetCustomDiskRegistration(disk_name);
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         if (engine_args.size() < 3)
@@ -566,7 +569,7 @@ void registerStorageJoin(StorageFactory & factory)
             key_names.push_back(*opt_key);
         }
 
-        return std::make_shared<StorageJoin>(
+        auto storage = std::make_shared<StorageJoin>(
             disk,
             args.relative_data_path,
             args.table_id,
@@ -580,6 +583,8 @@ void registerStorageJoin(StorageFactory & factory)
             args.comment,
             join_any_take_last_row,
             persistent);
+        storage->setCustomDiskRegistration(std::move(custom_disk_registration));
+        return storage;
     };
 
     factory.registerStorage(

@@ -9,6 +9,7 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Disks/CustomDiskRegistration.h>
 #include <Disks/IDisk.h>
 
 
@@ -27,6 +28,9 @@ friend class StripeLogSource;
 friend class StripeLogSink;
 
 public:
+    /// Keeps the custom disk the table uses registered, see `Context::tryGetCustomDiskRegistration`.
+    void setCustomDiskRegistration(CustomDiskRegistrationPtr registration) { custom_disk_registration = std::move(registration); }
+
     StorageStripeLog(
         DiskPtr disk_,
         const String & relative_path_,
@@ -101,6 +105,10 @@ private:
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, std::chrono::seconds lock_timeout);
 
+
+    /// Keeps a custom disk that the table refers to by name (`SETTINGS disk = '<name>'`) registered for as
+    /// long as the table exists. Declared before `disk`, so it is destroyed after it.
+    CustomDiskRegistrationPtr custom_disk_registration;
     const DiskPtr disk;
     String table_path;
 
