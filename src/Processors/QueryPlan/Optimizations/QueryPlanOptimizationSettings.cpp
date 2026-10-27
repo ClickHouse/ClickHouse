@@ -104,6 +104,7 @@ namespace Setting
     extern const SettingsBool optimize_min_max_from_files;
     extern const SettingsBoolForce query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
+    extern const SettingsBool query_plan_optimize_read_in_order_skip_offset;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_remove_unused_columns;
@@ -355,6 +356,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     enable_full_text_index = from[Setting::enable_full_text_index];
     const auto & through_join = from[Setting::query_plan_read_in_order_through_join];
     read_in_order_through_join = through_join.is_keyword ? 2 : through_join.base.value;
+    read_in_order_skip_offset = read_in_order && from[Setting::query_plan_optimize_read_in_order_skip_offset];
     /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
     /// incompatible with distributed execution. When make_distributed_plan is enabled,
     /// always use the materialization path (materializeQueryPlanReferences) instead.

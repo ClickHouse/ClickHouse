@@ -28,6 +28,9 @@ public:
     size_t getLimit() const { return limit; }
     size_t getOffset() const { return offset; }
 
+    /// Used by the read-in-order OFFSET-skip optimization to reduce the offset by the rows skipped on read.
+    void setOffset(size_t offset_) { offset = offset_; }
+
     /// Number of leading rows a source must produce for this `LIMIT` to be satisfiable,
     /// i.e. `limit + offset`. Empty when that sum does not fit in `UInt64`, so there is no
     /// representable bound to push down.
