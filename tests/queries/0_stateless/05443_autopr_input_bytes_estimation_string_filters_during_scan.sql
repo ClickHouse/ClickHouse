@@ -1,6 +1,7 @@
 -- Tags: no-parallel
 -- no-parallel: the checks of the reads served from the uncompressed and the columns caches need the entries to stay there,
--- and the caches are shared with the other tests, which evict them.
+-- and the caches are shared with the other tests, which evict them. The caches are cleared for the same reason: the entries
+-- left by the previous runs evict those of this one.
 
 -- `apply_string_filters_during_scan` reads the values that do not match a substring condition of PREWHERE
 -- as empty strings. The input-bytes estimate is based on the in-memory size of the read columns, so it
@@ -109,11 +110,13 @@ SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_
 
 -- The blocks taken decompressed from the uncompressed cache are read all the same: the second query reads
 -- nothing from disk, and its estimate is the same as the one of the first query.
+SYSTEM CLEAR UNCOMPRESSED CACHE;
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_1';
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_2';
 
 -- The rows served from the columns cache are not read from the part, so the estimate is taken from a sample of
 -- the columns then, and the second query reads nothing from disk.
+SYSTEM CLEAR COLUMNS CACHE;
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
     columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, log_comment='columns_cache_1';
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
