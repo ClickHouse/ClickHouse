@@ -60,29 +60,93 @@ function shared_native_and_http_tests()
     out=$($run "SELECT 1")
     [[ -z "$out" ]] && echo "no output"
 
-    echo '--- CREATE TABLE AS SELECT in background'
-    $run "CREATE TABLE t_ctas_${run} ENGINE = MergeTree ORDER BY n AS SELECT number AS n FROM numbers(10)"
-    wait_for "count() = 10 FROM t_ctas_${run}"
+    echo '--- CREATE TABLE AS SELECT returns as soon as the SELECT has started'
+    local slow_select="SELECT number AS n FROM numbers(100) WHERE NOT ignore(sleepEachRow(0.1)) SETTINGS max_block_size = 1"
+    local ctas_id="ctas_${run}_${CLICKHOUSE_DATABASE}"
+    out=$($run "CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$ctas_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$ctas_id'"
+    echo "still populating after the client returned"
+    wait_for "count() = 100 FROM t_ctas_slow_${run}"
     echo "created with rows"
-    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_${run}"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
+
+    echo '--- CREATE OR REPLACE TABLE AS SELECT returns as soon as the SELECT has started'
+    local replace_id="replace_${run}_${CLICKHOUSE_DATABASE}"
+    $CLICKHOUSE_CLIENT -q "CREATE TABLE t_ctas_slow_${run} (n UInt64) ENGINE = MergeTree ORDER BY n"
+    out=$($run "CREATE OR REPLACE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "$replace_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = '$replace_id'"
+    echo "still populating after the client returned"
+    wait_for "count() = 100 FROM t_ctas_slow_${run}"
+    echo "replaced with rows"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
+
+    echo '--- EXECUTE AS CREATE TABLE AS SELECT returns as soon as the SELECT has started'
+    out=$($run "EXECUTE AS default CREATE TABLE t_ctas_slow_${run} ENGINE = MergeTree ORDER BY n AS $slow_select" "execute_as_$ctas_id")
+    [[ -z "$out" ]] && echo "no output"
+    wait_for "count() = 1 FROM system.processes WHERE query_id = 'execute_as_$ctas_id'"
+    wait_for "count() = 100 FROM t_ctas_slow_${run}"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_ctas_slow_${run}"
 
     echo '--- enabling the setting for a whole session is rejected'
     $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"
 
-    echo '--- a query that cannot run in the background fails asynchronously'
+    echo '--- a query that cannot run in the background fails synchronously'
     local set_id="set_${run}_${CLICKHOUSE_DATABASE}"
-    $run "SET max_threads = 4" "$set_id"
-    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$set_id' AND exception_code != 0"
-    echo "failed asynchronously"
+    $run "SET max_threads = 4" "$set_id" | grep -o -m1 THERE_IS_NO_SESSION
 
-    echo '--- a background query runs as the submitting user, and a missing grant is denied asynchronously'
+    echo '--- a background query runs as the submitting user, and a missing grant is denied synchronously'
     local user="user_${run}_${CLICKHOUSE_DATABASE}"
     $CLICKHOUSE_CLIENT -q "CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_result_rows = 4 CONST; GRANT INSERT ON t TO $user"
     local denied_id="denied_${run}_${CLICKHOUSE_DATABASE}"
     out=$($run "INSERT INTO t SELECT count() FROM t" "$denied_id" 1 "$user")
-    [[ -z "$out" ]] && echo "no output"
+    grep -o -m1 ACCESS_DENIED <<< "$out"
+    $run "BACKUP TABLE t TO Disk('backups', '${denied_id}')" "" 1 "$user" | grep -o -m1 ACCESS_DENIED
+    $CLICKHOUSE_CLIENT -q "BACKUP TABLE t TO Disk('backups', '${denied_id}_restore')" > /dev/null
+    $CLICKHOUSE_CLIENT -q "GRANT BACKUP ON t TO $user"
+    $run "BACKUP TABLE t TO Disk('backups', '${denied_id}')" "" 1 "$user" | grep -o -m1 ACCESS_DENIED
+    $CLICKHOUSE_CLIENT -q "GRANT WRITE ON DISK TO $user"
+    $run "BACKUP TABLE t TO Disk('backups', '${denied_id}_incremental') SETTINGS base_backup = File('${denied_id}_restore')" "" 1 "$user" | grep -o -m1 ACCESS_DENIED
+    $run "BACKUP TABLE t ON CLUSTER test_shard_localhost TO Disk('backups', '${denied_id}_cluster')" "" 1 "$user" | grep -o -m1 ACCESS_DENIED
+    $run "RESTORE TABLE t AS t_restored FROM Disk('backups', '${denied_id}_restore')" "" 1 "$user" | grep -o -m1 ACCESS_DENIED
     wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$denied_id' AND user = '$user' AND exception_code = 497"
-    echo "denied asynchronously"
+
+    echo '--- errors raised inside the interpreter before the main work are returned synchronously'
+    $run "OPTIMIZE TABLE t DRY RUN PARTS 'all_1_1_0' FINAL" | grep -o -m1 BAD_ARGUMENTS
+    $run "ALTER TABLE t UPDATE n = n + 1 WHERE 1" | grep -o -m1 CANNOT_UPDATE_COLUMN
+    $run "ALTER TABLE t MODIFY COLUMN n String" | grep -o -m1 ALTER_OF_COLUMN_IS_FORBIDDEN
+    $run "DROP TABLE t SETTINGS max_table_size_to_drop = 1" | grep -o -m1 TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT
+    $run "DELETE FROM t WHERE n = 1 SETTINGS enable_lightweight_delete = 0" | grep -o -m1 SUPPORT_IS_DISABLED
+    $run "BACKUP TABLE t TO Disk('backups', 'unused') SETTINGS compression_level = 'abc'" | grep -o -m1 CANNOT_PARSE_INPUT_ASSERTION_FAILED
+    $run "SYSTEM RELOAD DICTIONARY d_missing" | grep -o -m1 BAD_ARGUMENTS
+    $run "SYSTEM RESTART REPLICA t" | grep -o -m1 BAD_ARGUMENTS
+
+    echo '--- SYSTEM RELOAD DICTIONARY returns as soon as the reload has started'
+    local fifo="${CLICKHOUSE_USER_FILES_UNIQUE}_${run}.fifo"
+    rm -f "$fifo"
+    mkfifo "$fifo"
+    # Lazy, so only the RELOAD below reads the fifo: an eager load at CREATE would wait for a writer forever.
+    $CLICKHOUSE_CLIENT -q "CREATE DICTIONARY d_slow_${run} (k UInt64, v UInt64) PRIMARY KEY k
+        SOURCE(CLICKHOUSE(QUERY 'SELECT k, v FROM file(''${fifo}'', ''TSV'', ''k UInt64, v UInt64'')'))
+        LAYOUT(FLAT()) LIFETIME(0) SETTINGS(dictionary_lazy_load = 1)"
+    out=$($run "SYSTEM RELOAD DICTIONARY d_slow_${run}")
+    [[ -z "$out" ]] && echo "no output"
+    printf '1\t1\n' > "$fifo"
+    wait_for "status = 'LOADED' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd_slow_${run}'"
+    echo "loaded"
+    $CLICKHOUSE_CLIENT -q "DROP DICTIONARY d_slow_${run}"
+    rm -f "$fifo"
+
+    echo '--- errors raised after the main work has started are only logged'
+    local logged_id="logged_${run}_${CLICKHOUSE_DATABASE}"
+    $run "OPTIMIZE TABLE t PARTITION ID 'missing' FINAL SETTINGS optimize_throw_if_noop = 1" "${logged_id}_optimize"
+    $run "BACKUP TABLE t_missing TO Disk('backups', '${logged_id}')" "${logged_id}_backup"
+    $run "INSERT INTO t SELECT throwIf(number = 5) FROM numbers(10)" "${logged_id}_insert"
+    $run "INSERT INTO t SELECT 1 PARALLEL WITH ALTER TABLE t UPDATE n = n + 1 WHERE 1" "${logged_id}_parallel_with"
+    wait_for_query_log "count() = 4 FROM system.query_log WHERE current_database = currentDatabase()
+        AND (query_id, exception_code) IN (('${logged_id}_optimize', 388), ('${logged_id}_backup', 60), ('${logged_id}_insert', 395), ('${logged_id}_parallel_with', 420))"
+    echo "only logged"
 
     echo '--- a settings constraint of the user is enforced on a background query'
     $run "SELECT 1 SETTINGS max_result_rows = 8" "" 1 "$user" | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'

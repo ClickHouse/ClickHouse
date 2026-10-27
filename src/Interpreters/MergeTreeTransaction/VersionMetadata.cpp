@@ -66,6 +66,11 @@ bool VersionMetadata::isVisible(CSN snapshot_version, TransactionID current_tid)
     return visible;
 }
 
+bool VersionMetadata::isVisibleByLatestSnapshot()
+{
+    return getInfo().creation_tid.isNonTransactional() || isVisible(TransactionManager::instance().getLatestSnapshot());
+}
+
 bool VersionMetadata::isVisible(const VersionInfo & current_info, CSN snapshot_version, TransactionID current_tid)
 {
     if (auto visible = current_info.isVisible(snapshot_version, current_tid))

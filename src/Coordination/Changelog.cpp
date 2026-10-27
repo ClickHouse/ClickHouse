@@ -24,6 +24,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SipHash.h>
@@ -56,6 +57,8 @@ namespace ProfileEvents
     extern const Event KeeperChangelogStartupStitchMicroseconds;
     extern const Event KeeperChangelogStartupReadEntries;
     extern const Event KeeperChangelogStartupReadBytes;
+    extern const Event DirectorySync;
+    extern const Event DirectorySyncElapsedMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -81,6 +84,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
 }
 
 namespace FailPoints
@@ -92,6 +97,7 @@ namespace FailPoints
     extern const char keeper_changelog_readahead_park_armed[];
     extern const char keeper_changelog_readahead_pre_drain[];
     extern const char keeper_changelog_readahead_fill_exception[];
+    extern const char keeper_changelog_preallocate_no_space[];
 }
 
 namespace
@@ -238,6 +244,31 @@ std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint
     return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
+namespace
+{
+
+/// Throws on failure, unlike the `getDirectorySyncGuard` destructor.
+void syncParentDirectory(const DiskPtr & disk, const std::string & file_path)
+{
+    const auto * local_disk = dynamic_cast<const DiskLocal *>(disk.get());
+    if (!local_disk)
+        return;
+
+    const std::string directory = (fs::path(local_disk->getPath()) / file_path).parent_path().string();
+    int fd = ::open(directory.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, directory, "Cannot open directory {}", directory);
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(fd); });
+
+    ProfileEvents::increment(ProfileEvents::DirectorySync);
+    Stopwatch watch;
+    if (::fsync(fd) == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, directory, "Cannot fsync directory {}", directory);
+    ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
+}
+
+}
+
 /// Appendable log writer
 /// New file on disk will be created when:
 /// - we have already "rotation_interval" amount of logs in a single file
@@ -321,6 +352,7 @@ public:
             chassert(file_buf);
             last_index_written.reset();
             current_file_description = std::move(file_description);
+            directory_sync_pending = log_file_settings.force_sync;
 
             if (log_file_settings.compress_logs)
                 compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
@@ -347,7 +379,8 @@ public:
     bool appendRecord(ChangelogRecord && record)
     {
         const auto * file_buffer = tryGetFileBaseBuffer();
-        chassert(file_buffer && current_file_description);
+        if (!file_buffer || !current_file_description)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Log writer wasn't initialized for any file");
 
         chassert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
         // check if log file reached the limit for amount of records it can contain
@@ -432,6 +465,12 @@ public:
 
                 if (!compressed_buffer)
                     ProfileEvents::increment(ProfileEvents::KeeperChangelogFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+                if (directory_sync_pending)
+                {
+                    syncParentDirectory(current_file_description->disk, current_file_description->path);
+                    directory_sync_pending = false;
+                }
             }
             else
                 file_buffer->next();
@@ -590,6 +629,12 @@ private:
                     file_buffer->getFD(), FALLOC_FL_KEEP_SIZE, 0, log_file_settings.max_size + log_file_settings.overallocate_size);
             } while (res < 0 && errno == EINTR);
 
+            fiu_do_on(FailPoints::keeper_changelog_preallocate_no_space,
+            {
+                res = -1;
+                errno = ENOSPC;
+            });
+
             if (res != 0)
             {
                 if (errno == ENOSPC)
@@ -626,6 +671,9 @@ private:
     std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
 
     bool prealloc_done{false};
+
+    /// A file fsync does not persist its directory entry, which is not known to be durable even for a segment left by a previous run.
+    bool directory_sync_pending{false};
 
     LogFileSettings log_file_settings;
 
@@ -4154,9 +4202,6 @@ void Changelog::appendCompletionThread()
     bool append_ok = false;
     while (append_completion_queue.pop(append_ok))
     {
-        if (!append_ok)
-            current_writer->finalize();
-
         // we shouldn't start the raft_server before sending it here
         if (auto raft_server_locked = raft_server.lock())
             raft_server_locked->notify_log_append_completion(append_ok);

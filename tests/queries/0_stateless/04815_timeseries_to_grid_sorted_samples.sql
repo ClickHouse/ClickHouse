@@ -19,7 +19,7 @@ SELECT
     timeSeriesResetsToGrid(100, 200, 20, 100)(ts, vals) AS resets,
     timeSeriesDerivToGrid(100, 200, 20, 100)(ts, vals) AS deriv,
     timeSeriesPredictLinearToGrid(100, 200, 20, 100, 60)(ts, vals) AS predict,
-    timeSeriesResampleToGridWithStaleness(100, 200, 20, 100)(ts, vals) AS resample
+    timeSeriesLastToGrid(100, 200, 20, 100)(ts, vals) AS resample
 FORMAT Vertical;
 
 -- A shuffled array reliably tests the out-of-order add path.
@@ -39,7 +39,7 @@ SELECT
     timeSeriesResetsToGrid(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesResetsToGrid(100, 200, 20, 100)(ts, vals),
     timeSeriesDerivToGrid(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesDerivToGrid(100, 200, 20, 100)(ts, vals),
     timeSeriesPredictLinearToGrid(100, 200, 20, 100, 60)(shuffled_ts, shuffled_vals) = timeSeriesPredictLinearToGrid(100, 200, 20, 100, 60)(ts, vals),
-    timeSeriesResampleToGridWithStaleness(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesResampleToGridWithStaleness(100, 200, 20, 100)(ts, vals);
+    timeSeriesLastToGrid(100, 200, 20, 100)(shuffled_ts, shuffled_vals) = timeSeriesLastToGrid(100, 200, 20, 100)(ts, vals);
 
 -- When several samples share a timestamp, the largest real value wins, and a NaN (a Prometheus stale marker) loses
 -- to any real value, in whatever order the samples arrive. Each check must equal the aggregation of its explicit

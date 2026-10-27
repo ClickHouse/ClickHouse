@@ -58,6 +58,8 @@
 0
 --- explain: read distributed with use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0 ---
 1
+--- explain: read distributed when the PREWHERE cannot carry the filter ---
+1
 --- Top-K disabled, ORDER BY b, a LIMIT 5, local ---
 0	0
 0	1000

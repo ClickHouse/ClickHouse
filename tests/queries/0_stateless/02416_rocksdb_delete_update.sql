@@ -40,3 +40,28 @@ SELECT * FROM 02416_rocksdb ORDER BY key;
 SELECT '-----------';
 
 DROP TABLE IF EXISTS 02416_rocksdb;
+
+-- The same on a table with a TTL, where values are stored with a trailing creation timestamp.
+-- Mutations never take the bulk insert path, so the rows they write must come back unchanged
+-- next to bulk inserted ones.
+DROP TABLE IF EXISTS 02416_rocksdb_ttl;
+
+CREATE TABLE 02416_rocksdb_ttl (key UInt64, value String) Engine=EmbeddedRocksDB(300) PRIMARY KEY(key) SETTINGS optimize_for_bulk_insert = 0;
+
+INSERT INTO 02416_rocksdb_ttl VALUES (1, 'Some string'), (2, 'Some other string');
+ALTER TABLE 02416_rocksdb_ttl MODIFY SETTING optimize_for_bulk_insert = 1;
+INSERT INTO 02416_rocksdb_ttl VALUES (3, 'Bulk inserted string');
+
+SELECT * FROM 02416_rocksdb_ttl ORDER BY key;
+SELECT '-----------';
+
+ALTER TABLE 02416_rocksdb_ttl UPDATE value = 'Another' WHERE key = 1;
+
+SELECT * FROM 02416_rocksdb_ttl ORDER BY key;
+SELECT '-----------';
+
+DELETE FROM 02416_rocksdb_ttl WHERE key = 2;
+
+SELECT * FROM 02416_rocksdb_ttl ORDER BY key;
+
+DROP TABLE IF EXISTS 02416_rocksdb_ttl;

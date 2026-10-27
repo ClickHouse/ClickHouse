@@ -17,7 +17,7 @@ QUERY_ID="${CLICKHOUSE_DATABASE}_single_log_check"
 rm -rf "$TABLE_PATH"
 
 $CLICKHOUSE_CLIENT \
-    --allow_experimental_delta_lake_writes=1 \
+    --allow_delta_lake_writes=1 \
     --allow_delta_lake_create_table=1 \
     --query_id "$QUERY_ID" \
     --query "CREATE TABLE t_dl_single (id Int32, name String) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet)"

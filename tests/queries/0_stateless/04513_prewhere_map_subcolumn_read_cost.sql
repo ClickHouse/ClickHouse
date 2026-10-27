@@ -7,10 +7,8 @@
 -- and use equality conditions on both sides so that both are "good" conditions
 -- (isConditionGood only returns true for equals).
 
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 SET use_statistics = 0;
 SET explain_query_plan_default = 'legacy';

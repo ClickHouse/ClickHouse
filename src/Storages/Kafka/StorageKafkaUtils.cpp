@@ -13,6 +13,8 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/SecretArgumentsSpec.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -28,6 +30,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -36,6 +40,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -113,7 +118,13 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -358,6 +369,12 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
+        SecretArgumentsSpec{
+            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+            /// secret and makes the collection name optional, so a named argument can be the first one.
+            .secret_settings = Kafka::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
@@ -462,6 +479,19 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
+
+## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
+
+When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
+
+For `ENGINE = Kafka(named_collection)`, use two namespaces in the named collection:
+
+- Top-level `kafka_*` keys are Kafka table-engine settings, such as `kafka_security_protocol` and `kafka_sasl_mechanism`.
+- Keys nested under `<kafka>` are extended `librdkafka` settings, including the OIDC properties above.
+
+The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
 
 Examples:
 
@@ -933,6 +963,53 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+String validateBrokerList(const String & broker_list, const ContextPtr & context)
+{
+    /// The remote host filter must see exactly the host and port librdkafka will dial, so the value is
+    /// not passed on as it was written: every entry is parsed here, validated, and the returned list is
+    /// rebuilt from the parsed entries. The rebuilt entries are `[SCHEME://]host:port` with an explicit
+    /// port, a form librdkafka re-parses to the same host and port.
+    ///
+    /// librdkafka reads `metadata.broker.list` as a C string, splits it on `,` and ` `, cuts an entry at
+    /// the first `/` after the `scheme://` prefix, substitutes `localhost` for an empty host, and
+    /// connects to port 9092 when none is given (`rd_kafka_broker_name_parse`). An entry which such a
+    /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable
+    /// ASCII - is rejected instead of repaired.
+
+    if (broker_list.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka broker list must not contain NUL characters");
+
+    Names brokers;
+    boost::split(brokers, broker_list, [](char c) { return c == ',' || c == ' '; });
+
+    Names canonical_brokers;
+    canonical_brokers.reserve(brokers.size());
+
+    for (String & broker : brokers)
+    {
+        boost::trim(broker);
+        if (broker.empty())
+            continue;
+
+        String scheme;
+        if (const auto scheme_end = broker.find("://"); scheme_end != String::npos)
+        {
+            scheme = broker.substr(0, scheme_end + strlen("://"));
+            broker = broker.substr(scheme_end + strlen("://"));
+
+            /// The underscore appears in the librdkafka protocols `sasl_plaintext` and `sasl_ssl`.
+            for (const char c : scheme.substr(0, scheme_end))
+                if (!isAlphaASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protocol in Kafka broker '{}{}'", scheme, broker);
+        }
+
+        canonical_brokers.push_back(
+            scheme + context->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(broker, 9092, "Kafka broker"));
+    }
+
+    return boost::algorithm::join(canonical_brokers, ",");
 }
 
 void consumerGracefulStop(

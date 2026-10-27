@@ -21,10 +21,12 @@ SELECT count()
 FROM test_3 AS a, test_3 AS b, test_3 AS c, test_3 AS d
 WHERE (a.id = (b.id + 1)) AND (b.id = (c.id + 100)) AND ((c.id % 11111) = ((d.id % 12345) + 17))
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_default_shuffle_join_bucket_count = 3,
-    query_plan_use_new_logical_join_step=1, distributed_plan_force_exchange_kind='Persisted';
+    query_plan_use_new_logical_join_step=1, distributed_plan_force_exchange_kind='Persisted',
+    distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count()
 FROM test_3 AS a, test_3 AS b, test_3 AS c, test_3 AS d
 WHERE (a.id = (b.id + 1)) AND (b.id = (c.id + 100)) AND ((c.id % 11111) = ((d.id % 12345) + 17))
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_default_shuffle_join_bucket_count = 3,
-    query_plan_use_new_logical_join_step=1, distributed_plan_force_exchange_kind='Streaming';
+    query_plan_use_new_logical_join_step=1, distributed_plan_force_exchange_kind='Streaming',
+    distributed_plan_fallback_to_local_execution = 0;

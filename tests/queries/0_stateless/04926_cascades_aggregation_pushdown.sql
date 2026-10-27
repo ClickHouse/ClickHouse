@@ -37,7 +37,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- filter moves into PREWHERE decides between a `Filter` and an `Expression` step in it
 SET enable_join_runtime_filters = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 -- the physical build-side choice, the runtime-filter row threshold and the pre-cascades
 -- join-order pass (which attaches the row estimates) decide the pinned push-right shapes
 -- (all three settings are randomized by the test harness)
@@ -63,6 +62,8 @@ EXPLAIN SELECT count() FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t
 SELECT '-- 2b. negative: non-deterministic join condition function (`rand`) blocks the pushdown, classic shape';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key AND rand() % 2 = 0 GROUP BY t1.key;
 
+-- Preserving the left key's NDV after the `LEFT JOIN` makes a local aggregation cheaper
+-- than a distributed merge of almost one group per row.
 SELECT '-- 3. near-unique keys: pushdown does not pay off, classic shape';
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 99000000}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
@@ -94,13 +95,16 @@ SELECT '-- 5b. additional GROUP BY key from the right side: still pushed';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name;
 
 SELECT '-- 6. execution: count() per key over LEFT JOIN (keys 0-7 match, 8 and 9 do not)';
-SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 6b. execution: count() per key over INNER JOIN (keys 8 and 9 drop out)';
-SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 7. execution: sum(t1.value) per (t1.key, t2.name) over LEFT JOIN';
-SELECT t1.key AS k, t2.name AS n, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name ORDER BY k, n;
+SELECT t1.key AS k, t2.name AS n, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name ORDER BY k, n
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 8. the same executions without the distributed planner must match';
 SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
@@ -114,11 +118,13 @@ SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 10
 
 SELECT '-- 9. duplicate right-side keys: each pushed group is duplicated by the join and merged m times';
 EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
-SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 10. mixed condition (equi + non-equi): the pushed side groups by (key, value)';
 EXPLAIN SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k;
-SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 11. the same executions without the distributed planner must match';
 SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
@@ -178,10 +184,10 @@ EXPLAIN SELECT count() FROM t_push_facts AS t1 ASOF JOIN t_push_dims_multi AS t2
 SELECT '-- 26. task-budget sanity: 3 joins under an aggregation must not exhaust the task limit';
 -- asserts that the cascades planner produces a distributed plan without a budget exception; the
 -- shape is deterministic (the preamble pins the join-order, join-swap and runtime-filter
--- settings session-wide). The classic shape wins here: `t_push_dims_multi` has no stat-hint
--- entry at this point, so the pushed join subtree lacks the estimates the cardinality gate
--- needs and no pushdown alternative is built. `use_hash_table_stats_for_join_reordering` is
--- pinned to its default because this is the only canary with three joins, so the join-order
+-- settings session-wide). The NDV of the preserved `t1.key` survives the first two `LEFT JOIN`
+-- steps, allowing a partial aggregation below the last join despite the missing stat hint for
+-- `t_push_dims_multi`. `use_hash_table_stats_for_join_reordering` is pinned to its default
+-- because this is the only canary with three joins, so the join-order
 -- search has freedom: the msan flaky check (2026-09-02) flipped the `t_push_dims` /
 -- `t_push_dims_multi` sibling order under the randomized value 0.
 EXPLAIN SELECT count() FROM t_push_facts AS t1

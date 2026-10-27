@@ -1,0 +1,32 @@
+digraph {
+    rankdir="UD";
+    n0[label="SelectWithUnionQuery (children 1)"];
+    n1[label="ExpressionList (children 1)"];
+    n2[label="SelectQuery (children 3)"];
+    n3[label="ExpressionList (children 1)"];
+    n4[label="Identifier number (alias x)"];
+    n3 -> n4;
+    n5[label="TablesInSelectQuery (children 1)"];
+    n6[label="TablesInSelectQueryElement (children 1)"];
+    n7[label="TableExpression (children 1)"];
+    n8[label="Function numbers (children 1)"];
+    n9[label="ExpressionList (children 1)"];
+    n10[label="Literal UInt64_2"];
+    n9 -> n10;
+    n8 -> n9;
+    n7 -> n8;
+    n6 -> n7;
+    n5 -> n6;
+    n11[label="Function greater (children 1)"];
+    n12[label="ExpressionList (children 2)"];
+    n13[label="Identifier x"];
+    n14[label="Literal UInt64_0"];
+    n12 -> n13;
+    n12 -> n14;
+    n11 -> n12;
+    n2 -> n3;
+    n2 -> n5;
+    n2 -> n11;
+    n1 -> n2;
+    n0 -> n1;
+}

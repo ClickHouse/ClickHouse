@@ -163,10 +163,9 @@ SELECT id FROM tab_phrase WHERE hasPhrase(description, 'C++ and') ORDER BY id SE
 
 DROP TABLE tab_phrase;
 
--- 6. `hasPhrase` on a `splitByRegexp` index combined with a postprocessor is explicitly rejected: the
--- index rewrite would otherwise assume whitespace-splitting and `splitByNonAlpha` tokens, giving wrong
--- results for a tokenizer that preserves `#`/`+`. Without a postprocessor the combination is supported
--- (section 5). Rejecting is safer than silently falling back to the default `splitByNonAlpha`.
+-- 6. `hasPhrase` on a `splitByRegexp` index combined with a postprocessor. The rewrite compares the
+-- postprocessed token sequences instead of rejoining them into a string, so a tokenizer that preserves
+-- `#`/`+` answers the same with and without the index.
 
 DROP TABLE IF EXISTS tab_phrase_pp;
 
@@ -182,6 +181,12 @@ SETTINGS index_granularity = 2;
 
 INSERT INTO tab_phrase_pp VALUES (1, 'we use C++ and go'), (2, 'built with C# and react');
 
-SELECT id FROM tab_phrase_pp WHERE hasPhrase(description, 'C# and') SETTINGS use_skip_indexes = 1; -- { serverError BAD_ARGUMENTS }
+SELECT 'phrase + postprocessor: hasPhrase([C# and]) -> 2';
+SELECT id FROM tab_phrase_pp WHERE hasPhrase(description, 'C# and') SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab_phrase_pp WHERE hasPhrase(description, 'C# and') SETTINGS use_skip_indexes = 0;
+
+SELECT 'phrase + postprocessor: hasPhrase([C++ and]) -> 1';
+SELECT id FROM tab_phrase_pp WHERE hasPhrase(description, 'C++ and') SETTINGS use_skip_indexes = 1;
+SELECT id FROM tab_phrase_pp WHERE hasPhrase(description, 'C++ and') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_phrase_pp;

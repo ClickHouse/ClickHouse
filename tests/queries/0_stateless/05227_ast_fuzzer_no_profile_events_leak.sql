@@ -3,9 +3,7 @@
 
 CREATE TABLE t_seed (x UInt64) ENGINE = MergeTree ORDER BY x;
 
-SET ast_fuzzer_runs = 50, ast_fuzzer_any_query = 1;
-INSERT INTO t_seed SELECT * FROM numbers(100);
-SET ast_fuzzer_runs = 0;
+INSERT INTO t_seed SELECT * FROM numbers(100) SETTINGS ast_fuzzer_runs = 50, ast_fuzzer_any_query = 1, send_logs_level = 'fatal';
 
 SYSTEM FLUSH LOGS query_log;
 
