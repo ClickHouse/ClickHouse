@@ -257,7 +257,6 @@ cc_library(
         "@clickhouse_llvm_project//:LLVMGlobalISel",
         "@clickhouse_llvm_project//:LLVMRuntimeDyld",
         "@clickhouse_llvm_project//:LLVMSelectionDAG",
-        "@clickhouse_llvm_project//:cxx",
         "@clickhouse_mariadb_connector_c//:_mariadbclient",
         "@clickhouse_mecab//:_mecab",
         "//src/Functions:minizip_link",

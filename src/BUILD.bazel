@@ -1657,8 +1657,6 @@ cc_library(
         "@clickhouse_abseil_cpp//:absl_strerror",
         "@clickhouse_abseil_cpp//:absl_symbolize",
         "@clickhouse_openssl//:crypto",
-        "@clickhouse_llvm_project//:cxx",
-        "//base/glibc-compatibility",
         "@clickhouse_openssl//:ssl",
         "@clickhouse_cctz//:tzdata",
         "//base/widechar_width",

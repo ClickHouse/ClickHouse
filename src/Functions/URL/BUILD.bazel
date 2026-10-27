@@ -171,7 +171,6 @@ cc_library(
         "//src/Common/ZooKeeper:clickhouse_common_zookeeper_base",
         "//src/Dictionaries/Embedded:clickhouse_dictionaries_embedded",
         "//src/Server/grpc_protos:clickhouse_grpc_protos",
-        "@clickhouse_llvm_project//:cxx",
         "//src:dbms",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_common",
         "@clickhouse_google_cloud_cpp//:google_cloud_cpp_rest_internal",

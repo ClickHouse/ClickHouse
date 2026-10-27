@@ -10,6 +10,7 @@ from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
 
+CXX = '@clickhouse_llvm_project//:cxx'
 GLIBC_COMPATIBILITY = '//base/glibc-compatibility'
 UNWIND = '@clickhouse_llvm_project//:unwind'
 TZDATA = '@clickhouse_cctz//:tzdata'
@@ -85,10 +86,10 @@ DEPENDENCIES = {
         '@clickhouse_double_conversion//:_double-conversion',
         '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
     ], [], []),
-    ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
-    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([*PRIVATE_VENDOR_DEPS, MINIZIP, S2, UPB_WIRE], [], []),
-    ('src/Dictionaries', 'clickhouse_dictionaries'): ([*PRIVATE_VENDOR_DEPS, MINIZIP, S2], [], []),
-    ('src/Storages/System', 'clickhouse_storages_system'): ([*PRIVATE_VENDOR_DEPS, MINIZIP, S2, UPB_WIRE], [], []),
+    ('src', 'clickhouse_common_io'): ([CXX, GLIBC_COMPATIBILITY, MINIZIP], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([*PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2, UPB_WIRE], [], []),
+    ('src/Dictionaries', 'clickhouse_dictionaries'): ([*PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2], [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([*PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2, UPB_WIRE], [], []),
     ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
     ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
@@ -115,8 +116,9 @@ DEPENDENCIES = {
         '//base:pcg_random', '//bazel:clickhouse_config_headers', '@clickhouse_boost//:boost_headers_no_openssl',
         '@clickhouse_croaring//:_roaring__compile_0', '@clickhouse_datasketches_cpp//:datasketches_cpp',
     ], ['//src:headers'], []),
+    ('src/Functions/array', 'clickhouse_functions_array'): ([CXX], [], []),
     ('src/Functions/URL', 'clickhouse_functions_url'): ([
-        *PRIVATE_VENDOR_DEPS, MINIZIP, S2,
+        *PRIVATE_VENDOR_DEPS, CXX, MINIZIP, S2,
         '@clickhouse_mongo_c_driver//:_libbson',
         '@clickhouse_arrow//:_orc',
     ], [], []),
