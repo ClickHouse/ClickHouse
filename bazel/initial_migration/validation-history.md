@@ -2753,3 +2753,37 @@ ARM64 [DWYU](https://app.buildbuddy.io/invocation/fa29a3e9-2849-4825-a85b-d8a1fc
 The x86-64 AggregateFunctions report lists 15 unverified link dependencies, compared with 21 in the [preceding build](#9ee3644c7). The analyzer reported no actionable finding and exited with status 1.
 
 The first builds of this source ([x86-64](https://app.buildbuddy.io/invocation/6d299b22-77f6-42f5-ae98-62ec67172e51) and [ARM64](https://app.buildbuddy.io/invocation/7003dd14-99f2-41e7-b323-c96d4fbefd7b)) also matched the native CMake hashes, but completed only 11 of 12 targets and ran no DWYU reports. The RocksDB query returned `1` on both CPUs. RocksDB also wrote an `io_uring` diagnostic to process stdout, so the fixture’s stdout comparison failed. The successful builds above read the SQL result from a fresh output file and recorded process stdout and stderr separately.
+
+## 1238cfa9d
+
+At [1238cfa9d](https://github.com/dzbarsky/clickhouse/commit/1238cfa9d3ae2ec115686b3f8426c8d79dcd6a27), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The unstripped ClickHouse and unit-test binaries are compared with the [preceding published Bazel build](https://github.com/dzbarsky/clickhouse/commit/c1d2686f3255a001b680670b8cf04158a6dc17d2).
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) | `//src:unit_tests_dbms` | `c9853ee988eaaeef0a0f769642062797e2957fd770804734224b16f6ee3efc8d` | 811968216 | Differs from previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c640d5e0-5d25-4afa-9fbb-6aaaf4997cf1) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/c640d5e0-5d25-4afa-9fbb-6aaaf4997cf1) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/c640d5e0-5d25-4afa-9fbb-6aaaf4997cf1) | `//src:unit_tests_dbms` | `67e685b37675bae5403ee50292cb51261651b80451dfa3530188b6a09cdd3a54` | 795059280 | Differs from previous Bazel |
+
+Both native builds completed all 12 requested targets and passed all 23 runtime checks. They ran the [upstream MergeTree partition mutation and `OPTIMIZE FINAL`](../../tests/queries/0_stateless/02399_merge_tree_mutate_in_partition.sql#L5), returned [all four reference rows](../../tests/queries/0_stateless/02399_merge_tree_mutate_in_partition.reference#L6), and verified that ClickHouse used its checked `/dev/shm` directory. They also checked Hive registration and argument validation and ran the file decryption unit test.
+
+Five MergeTree implementation headers moved from `hdrs` to `srcs`. TimeSeries and TableFunctions removed redundant Zstandard dependencies; TableFunctions also removed its Silk fibers dependency. The AWS AVX2, AWS ARM CRC32C and LLVM BLAKE3 assembly targets now declare which CPUs can build them. `//src:headers` depends directly on OpenSSL’s `crypto` and `ssl` instead of re-exporting Hive Metastore and Thrift.
+
+The production ClickHouse link arguments stayed unchanged. In the unit-test link, the complete Hive Metastore and Thrift object groups moved earlier. The builds checked both argument lists against their expected order.
+
+An earlier run of the MergeTree and dependency changes produced matching stripped binaries on both CPUs. The [x86-64 build](https://app.buildbuddy.io/invocation/a46fe854-d90c-411d-9b6f-4571e6899162) passed all 21 runtime checks. In the [ARM64 build](https://app.buildbuddy.io/invocation/8f8437e2-8f94-48cf-a24d-38691a2fda12), the MergeTree SQL failed because ClickHouse could not reserve 1 MiB. That build completed 11 of 12 targets; it did not validate the ARM64 runtime. The earlier x86-64 cache-only DWYU test verified no owners, and the ARM64 build did not start DWYU.
+
+BuildBuddy recorded 5,124 remote executions and 50,687 remote cache hits on x86-64 and 5,124 remote executions and 51,157 remote cache hits on ARM64 across the native builds, including their validation targets.
+
+A separate full ClickHouse link substituted six glibc shared-library and loader interfaces generated from the sysroot exports. It kept the sysroot’s `libc_nonshared.a` and GCC startup objects; the production build still uses the sysroot.
+
+| Native build | Experimental stripped SHA-256 | Bytes | Compared with native CMake |
+| --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches |
+| [ARM64](https://app.buildbuddy.io/invocation/c640d5e0-5d25-4afa-9fbb-6aaaf4997cf1) | — | — | Not run: 0 bytes free, 3 GiB required |
+
+x86-64: DWYU refused the 6 offered targets before running an analyzer because their extracted HTTP archives were redirected. No targets received a grade.
+
+ARM64: DWYU refused the 6 offered targets before running an analyzer because their extracted HTTP archives were redirected. No targets received a grade.

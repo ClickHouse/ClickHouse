@@ -63,7 +63,7 @@ The final ClickHouse link takes `Scrt1.o`, `crti.o`, and `crtn.o` from
 On each CPU, it also declares 12 glibc link and
 loader files plus GCC's `crtbeginS.o` and `crtendS.o` from the
 [pinned ClickHouse sysroot](https://github.com/ClickHouse/sysroot/tree/6dd29c222896e54de24e7af1b191c92e4cf2e229).
-In [focused link fixtures](bazel/initial_migration/validation-history.md#5d0f29e2c), the LLVM 0.8.26 glibc stubs bound 12 of 519 native ClickHouse imports on x86-64 and 6 of 521 on ARM64 to `libpthread.so.0` instead of `libc.so.6`, including `pthread_self`. The link keeps the 12 glibc library and loader files to preserve those bindings.
+In [focused link fixtures](bazel/initial_migration/validation-history.md#5d0f29e2c), the LLVM 0.8.26 glibc stubs bound 12 of 519 native ClickHouse imports on x86-64 and 6 of 521 on ARM64 to `libpthread.so.0` instead of `libc.so.6`, including `pthread_self`. The link keeps the 12 glibc library and loader files to preserve those bindings. A [separate full-executable link](bazel/initial_migration/validation-history.md#1238cfa9d) tested glibc interfaces generated from the sysroot exports. The experimental x86-64 binary matched native CMake after stripping. The ARM64 executor reported zero free bytes before linking, so there is no experimental ARM64 hash.
 
 GCC's `crtbeginS.o` adds weak references to `_ITM_registerTMCloneTable` and
 `_ITM_deregisterTMCloneTable` that are present in the native CMake binaries.
@@ -81,18 +81,14 @@ which requires the sysroot's `libgcc.a`.
 
 ## Binary comparison
 
-At [c1d2686f3](https://github.com/dzbarsky/clickhouse/commit/c1d2686f3255a001b680670b8cf04158a6dc17d2), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The raw ClickHouse and DBMS unit-test comparisons use the preceding [Bazel build](https://github.com/dzbarsky/clickhouse/commit/9ee3644c77322e4d75ae2589ff2da690018d1dbe).
+At [1238cfa9d](https://github.com/dzbarsky/clickhouse/commit/1238cfa9d3ae2ec115686b3f8426c8d79dcd6a27), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
-| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
-| --- | --- | --- | ---: | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/1cb65da1-0283-4f27-acd0-cf9a45aac7e2) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
-| [x86-64](https://app.buildbuddy.io/invocation/1cb65da1-0283-4f27-acd0-cf9a45aac7e2) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
-| [x86-64](https://app.buildbuddy.io/invocation/1cb65da1-0283-4f27-acd0-cf9a45aac7e2) | `//src:unit_tests_dbms` | `5320b37d3c6425cd10d42b2a577937e216951fe893ea371c403e255a31f55150` | 811964120 | Matches previous Bazel |
-| [ARM64](https://app.buildbuddy.io/invocation/3f006ae0-2609-4dd4-ad47-9ef1d937a2e6) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
-| [ARM64](https://app.buildbuddy.io/invocation/3f006ae0-2609-4dd4-ad47-9ef1d937a2e6) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
-| [ARM64](https://app.buildbuddy.io/invocation/3f006ae0-2609-4dd4-ad47-9ef1d937a2e6) | `//src:unit_tests_dbms` | `adc168bf15d62ea9b9bbf4abc313964f73b44164ceeac6fbd7b0a338939ca0e1` | 795059648 | Matches previous Bazel |
+| Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
+| --- | --- | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/b7d6c86f-841d-4371-9f7d-02861539d9ea) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/c640d5e0-5d25-4afa-9fbb-6aaaf4997cf1) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-[Validation details](bazel/initial_migration/validation-history.md#c1d2686f3).
+The [validation history](bazel/initial_migration/validation-history.md#1238cfa9d) records the unstripped ClickHouse and unit-test hashes.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -211,4 +207,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-[c1d2686f3](https://github.com/dzbarsky/clickhouse/commit/c1d2686f3255a001b680670b8cf04158a6dc17d2): See the per-CPU DWYU results in the validation history. [Validation details](bazel/initial_migration/validation-history.md#c1d2686f3).
+The [validation history](bazel/initial_migration/validation-history.md#1238cfa9d) for [1238cfa9d](https://github.com/dzbarsky/clickhouse/commit/1238cfa9d3ae2ec115686b3f8426c8d79dcd6a27) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
