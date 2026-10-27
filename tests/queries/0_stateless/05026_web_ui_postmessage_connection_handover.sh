@@ -297,3 +297,15 @@ history_host=$(echo "$content" | sed -n '/^        function updateHistory() {$/,
     && echo "$content" | sed -n '/^        function applyConnectionFromHost(data) {$/,/^        }$/p' | grep -qxF "            updateHistory();" \
     && echo bound || echo stale)
 echo "binary history=${history_host}"
+
+# A handover that carries neither `user` nor `password` clears them, and the server then falls back to
+# its default authentication - unless the browser attaches HTTP Basic credentials it cached from an
+# earlier login, which the server would honor as the identity of the request. So every query these
+# pages send carries `Authorization: never`, which keeps the browser from attaching them.
+for page in merges binary
+do
+    content=$(fetch_page "${page}")
+    fetches=$(echo "$content" | grep -cE '\bfetch\(')
+    suppressed=$(echo "$content" | grep -cF "'Authorization': 'never'")
+    [ "${fetches}" = "${suppressed}" ] && echo "${page} cached_basic_auth=suppressed" || echo "${page} cached_basic_auth=sent"
+done

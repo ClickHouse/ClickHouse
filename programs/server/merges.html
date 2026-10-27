@@ -402,7 +402,9 @@ async function load() {
         loading = true;
         document.getElementById('play').value = '⏹';
 
-        response = await fetch(url, { method: "POST", body: query });
+        /// `Authorization: never` keeps the browser from attaching stored HTTP Basic credentials, which the
+        /// server would otherwise use when `user` and `password` are absent from the URL.
+        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 

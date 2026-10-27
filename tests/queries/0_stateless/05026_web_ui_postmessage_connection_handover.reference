@@ -16,3 +16,5 @@ handover dashboard=invalidated schema=invalidated jemalloc=invalidated processor
 jemalloc fragmentation=bound
 dashboard history_save=bound history_password=cleared
 binary history=bound
+merges cached_basic_auth=suppressed
+binary cached_basic_auth=suppressed

@@ -209,7 +209,10 @@
                     `&param_z=${coords.z}&param_x=${coords.x}&param_y=${coords.y}` +
                     `&enable_http_compression=1&network_compression_method=zstd&network_zstd_compression_level=6`;
 
-                const response = await fetch(request_url, { method: 'POST', body: sql });
+                /// `Authorization: never` keeps the browser from attaching stored HTTP Basic credentials, which the
+                /// server would otherwise use when `user` and `password` are absent from the URL - e.g. after a
+                /// handover that clears them.
+                const response = await fetch(request_url, { method: 'POST', body: sql, headers: { 'Authorization': 'never' } });
 
                 if (generation != connection_generation) return;
 
@@ -378,6 +381,7 @@
                 `${url}&default_format=JSON`,
                 {
                     method: 'POST',
+                    headers: { 'Authorization': 'never' },
                     body: `SELECT encodeXMLComponent(demangle(addressToSymbol(${addr_int}::UInt64))) AS name,
                                   encodeXMLComponent(addressToLine(${addr_int}::UInt64)) AS line`
                 }).then(response => response.json().then(o => {
