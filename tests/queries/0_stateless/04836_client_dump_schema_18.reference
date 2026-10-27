@@ -13,6 +13,10 @@ materialized_view: same definition: 1
 view: dump rc=0, archive gate: 0
 view: replay rc=0
 view: same definition: 1
+as_values: dump rc=0, archive gate: 0
+as_values: replay rc=0
+materialized_view_format: dump rc=0, archive gate: 0
+materialized_view_format: replay rc=0
 collection_archive: dump rc=0, archive gate: 1
 collection_archive: replay rc=0
 collection_archive: same definition: 1

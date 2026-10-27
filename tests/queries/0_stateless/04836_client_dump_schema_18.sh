@@ -4,7 +4,9 @@
 # --dump-schema emits `allow_archive_path_syntax` for an archive path (`a.tar :: data.csv`) in a table function that
 # CREATE parses: the one a table is created AS, and one in the SELECT of a materialized view. A plain view parses its
 # SELECT only when it is read, under the reader's setting, so it does not need the gate. A `URL` or `S3` call can also
-# take the path from a named collection. Every dump is replayed in a session that has the setting at 0.
+# take the path from a named collection. Every dump is replayed in a session that has the setting at 0. Only a location is
+# split, so data that looks like an archive path, such as the rows of `values`, needs no gate, which a replay where the
+# setting is constrained to 0 could not set.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -55,6 +57,40 @@ round_trip materialized_view mv "
 
 # A plain view stores its columns, so its replay does not parse the table function at all.
 round_trip view v "CREATE VIEW d.v AS SELECT x FROM file('$work/a.tar :: data.csv', CSV, 'x UInt64');" ""
+
+# Dumps the objects of `$2` and replays the dump where `allow_archive_path_syntax` is 0 and cannot be changed.
+constrained_users="$work/constrained_users.xml"
+constrained_config="$work/constrained.xml"
+cat > "$constrained_users" <<XML
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_archive_path_syntax>0</allow_archive_path_syntax>
+            <constraints><allow_archive_path_syntax><const/></allow_archive_path_syntax></constraints>
+        </default>
+    </profiles>
+    <users><default><password></password><profile>default</profile><quota>default</quota></default></users>
+    <quotas><default></default></quotas>
+</clickhouse>
+XML
+echo "<clickhouse><users_config>${constrained_users}</users_config></clickhouse>" > "$constrained_config"
+constrained_round_trip() {
+    local name=$1 ddl=$2
+    rm -rf "$work/src" "$work/dst"
+    $CLICKHOUSE_LOCAL --path "$work/src" -n -q "CREATE DATABASE d; $ddl"
+    $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/$name.sql" 2>/dev/null
+    echo "$name: dump rc=$?, archive gate: $(grep -c '^SET allow_archive_path_syntax' "$work/$name.sql")"
+    $CLICKHOUSE_LOCAL --config-file "$constrained_config" --path "$work/dst" -n --queries-file "$work/$name.sql" 2>&1 \
+        | grep -o 'Code: [0-9]*' | head -1
+    echo "$name: replay rc=${PIPESTATUS[0]}"
+}
+
+# The rows of `values` and the data of `format` are not a location.
+constrained_round_trip as_values "CREATE TABLE d.t AS values('s String', 'a.tar :: data.csv');"
+constrained_round_trip materialized_view_format "
+    CREATE TABLE d.src (s String) ENGINE = Memory;
+    CREATE MATERIALIZED VIEW d.mv ENGINE = Memory
+        AS SELECT s FROM d.src WHERE s IN (SELECT s FROM format(CSV, 's String', 'a.tar :: data.csv'));"
 
 # A `URL` or `S3` table reads its location from the `url` of a named collection it names, so the dump looks for an archive
 # path there too. A session that sees the values masked cannot tell, so it emits the gate anyway.

@@ -3543,19 +3543,39 @@ bool namedCollectionMayNameArchivePath(const ASTFunction & function, const Named
         || (!url.empty() && !filename.empty() && isArchivePath((std::filesystem::path(url) / filename).string()));
 }
 
-/// Whether `carrier`, a table engine or table function that CREATE parses, may name a file inside an archive, in a string
-/// literal or through a named collection, which the dump session reads only if a call names one.
-bool mayNameArchivePath(const IAST & carrier, const NamedCollectionsReader & named_collections)
+/// Whether the location of `function`, a table function or, with `is_engine`, a table engine, may name a file inside an
+/// archive: the path of `File` and `file`, or the URL of the `S3` and `URL` families, in a string or through a named
+/// collection, which the dump session reads only if a call names one. Only the location is split, not the other arguments,
+/// such as a format or a structure, and not the arguments of other functions, such as the rows of `values`.
+bool locationMayNameArchivePath(const ASTFunction & function, bool is_engine, const NamedCollectionsReader & named_collections)
+{
+    const bool is_file = equalsCaseInsensitive(function.name, "file") || equalsCaseInsensitive(function.name, "fileCluster");
+    if (!function.arguments || !(is_file || readsLocationFromNamedCollection(function.name)))
+        return false;
+    if (namedCollectionMayNameArchivePath(function, named_collections))
+        return true;
+    /// `File(format, path)` names its path second, and a `*Cluster` function names its cluster first.
+    const size_t slot = (is_file && is_engine) || endsWithCaseInsensitive(function.name, "Cluster") ? 1 : 0;
+    const auto & arguments = function.arguments->children;
+    if (arguments.size() <= slot)
+        return false;
+    const ASTPtr & location = arguments[slot];
+    if (const auto * literal = location->as<ASTLiteral>())
+        return literal->value.getType() == Field::Types::String && isArchivePath(literal->value.safeGet<String>());
+    /// A named collection is read above. Any other location, which CREATE computes or reads from an alias, may name one.
+    String name;
+    return !tryGetIdentifierNameInto(location, name) || !readsLocationFromNamedCollection(function.name);
+}
+
+/// Whether `carrier`, a table function or, with `is_engine`, a table engine that CREATE parses, or a table function among its
+/// arguments, may name a file inside an archive in its location.
+bool mayNameArchivePath(const IAST & carrier, bool is_engine, const NamedCollectionsReader & named_collections)
 {
     bool found = false;
     forEachNode(carrier, [&](const IAST & node)
     {
-        if (found)
-            return;
-        if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
-            found = isArchivePath(literal->value.safeGet<String>());
-        else if (const auto * function = node.as<ASTFunction>())
-            found = namedCollectionMayNameArchivePath(*function, named_collections);
+        if (const auto * function = node.as<ASTFunction>(); function && !found)
+            found = locationMayNameArchivePath(*function, is_engine && &node == &carrier, named_collections);
     });
     return found;
 }
@@ -4358,7 +4378,7 @@ ReplayGateNeeds collectReplayGateNeeds(
                 if (startsWithCaseInsensitive(engine->name, "Iceberg") && has_geometry_column)
                     needs.iceberg_geo_types = true;
                 /// `File`, `URL` and the `S3` family split an archive path at CREATE only under `allow_archive_path_syntax`.
-                if (mayNameArchivePath(*engine, named_collections))
+                if (mayNameArchivePath(*engine, /* is_engine= */ true, named_collections))
                     needs.archive_path = true;
             }
         }
@@ -4367,14 +4387,14 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// the source it parsed until it is attached again, and a SELECT that CREATE analyzes (a materialized view's)
         /// parses its table functions, where an `S3` URI with an archive path does not parse without the setting.
         /// A plain view's SELECT is parsed only when the view is read, under the reader's setting.
-        if (create->as_table_function && mayNameArchivePath(*create->as_table_function, named_collections))
+        if (create->as_table_function && mayNameArchivePath(*create->as_table_function, /* is_engine= */ false, named_collections))
             needs.archive_path = true;
         if (create->select)
             forEachNode(*create->select, [&](const IAST & node)
             {
                 const auto * table_expression = node.as<ASTTableExpression>();
                 if (table_expression && table_expression->table_function
-                    && mayNameArchivePath(*table_expression->table_function, named_collections))
+                    && mayNameArchivePath(*table_expression->table_function, /* is_engine= */ false, named_collections))
                     needs.archive_path = true;
             }, unread_select);
 
