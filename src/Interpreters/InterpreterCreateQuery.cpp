@@ -705,10 +705,11 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 namespace
 {
 
-/// The gate guards only new declarations; tables that have them load, are restored and are altered without it.
+/// The gate guards only new declarations; tables that have them load, are restored, are altered and are refreshed without it.
 void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
-    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getParentTable()
+        && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
 }
 
