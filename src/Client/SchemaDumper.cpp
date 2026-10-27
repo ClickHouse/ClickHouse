@@ -4942,7 +4942,10 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
     /// A table the analyzer resolves by name. A database-less name is a CTE; the stored query names the database of every table.
     const auto reads_passively = [&](const IAST & name_node)
     {
-        const auto * identifier = name_node.as<ASTIdentifier>();
+        /// A table in FROM is an `ASTTableIdentifier`, and `as` matches the exact class, so both are tried.
+        const ASTIdentifier * identifier = name_node.as<ASTTableIdentifier>();
+        if (!identifier)
+            identifier = name_node.as<ASTIdentifier>();
         if (!identifier || identifier->name_parts.empty() || identifier->name_parts.size() > 2)
             return false;
         if (identifier->name_parts.size() == 1)
@@ -4966,7 +4969,8 @@ bool analysisStaysOnServer(const IAST & query, const ProbeCatalog & catalog, con
         else if (const auto * function = node.as<ASTFunction>(); function && !table_functions.contains(&node))
         {
             const ASTs arguments = function->arguments ? function->arguments->children : ASTs{};
-            if (functionIsInOrGlobalInOperator(function->name) && arguments.size() == 2 && arguments[1]->as<ASTIdentifier>())
+            if (functionIsInOrGlobalInOperator(function->name) && arguments.size() == 2
+                && (arguments[1]->as<ASTIdentifier>() || arguments[1]->as<ASTTableIdentifier>()))
                 passive = reads_passively(*arguments[1]);
             passive = passive && functionAnalyzesPassively(*function, context);
         }
