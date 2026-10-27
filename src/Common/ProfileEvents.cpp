@@ -1115,26 +1115,20 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
     M(AdaptiveAggregationLocalFreezes, "How many local hash tables the adaptive aggregation froze at the freeze threshold.", ValueType::Number) \
-    M(AdaptiveAggregationGiveUps, "How many threads gave up on freezing in the adaptive aggregation because their stream held few distinct keys.", ValueType::Number) \
-    M(AdaptiveAggregationPressureStandDowns, "How many threads in the adaptive aggregation left the learning phase for good because memory pressure crossed the external aggregation threshold, so their local tables spill through the ordinary external aggregation.", ValueType::Number) \
     M(AdaptiveAggregationThaws, "How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.", ValueType::Number) \
     M(AdaptiveAggregationProbeBypasses, "How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.", ValueType::Number) \
-    M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged before deduplication.", ValueType::Number) \
-    M(AdaptiveAggregationStagedRecordsMerged, "How many staged records the adaptive aggregation merged away as duplicate keys at publish and at the seal.", ValueType::Number) \
-    M(AdaptiveAggregationStagedBytes, "How many key bytes the adaptive aggregation staged for the merge-time drain.", ValueType::Bytes) \
-    M(AdaptiveAggregationSealedChunks, "How many coalesced chunks the adaptive aggregation sealed from buffered staging batches.", ValueType::Number) \
-    M(AdaptiveAggregationStagedChunkSplits, "How many staged chunks the adaptive aggregation cut along bucket boundaries at publication because one chunk's drain was estimated over the pressure part bound.", ValueType::Number) \
-    M(AdaptiveAggregationStagedChunkPiecesOverBound, "How many pieces of a cut staged chunk the adaptive aggregation published still over the bound the chunk was cut to meet. A chunk is cut along bucket boundaries, and record by record inside a bucket that is over the bound on its own, so this is a single record whose staged bytes alone are over the bound; such a piece is claimed whole, and its drain can overshoot the pressure part by that much.", ValueType::Number) \
-    M(AdaptiveAggregationStagedClaimsClosedAtBound, "How many claims of staged chunks by the adaptive aggregation's drains were closed before a chunk whose addition would have taken the batch to the pressure part bound, leaving that chunk to the next claim. The bound holds for the batch as drained, so two chunks each just under it - two pieces of a cut chunk that are single records over half a part - are drained into two tables rather than one; only a first chunk that is over the bound alone is claimed regardless.", ValueType::Number) \
-    M(AdaptiveAggregationSealNormalizations, "How many staged argument columns the adaptive aggregation seal normalized from a wrapped representation (Const, Replicated, Sparse, LowCardinality) to the dense form the drain consumes.", ValueType::Number) \
-    M(AdaptiveAggregationDrainedRecords, "How many delayed records the adaptive aggregation drained into the shared table at merge time.", ValueType::Number) \
-    M(AdaptiveAggregationPressureSweeps, "How many times the adaptive aggregation drained staged records early because of memory pressure.", ValueType::Number) \
-    M(AdaptiveAggregationPressureDrainedRecords, "How many staged records the adaptive aggregation drained early under memory pressure.", ValueType::Number) \
-    M(AdaptiveAggregationSpillDrains, "How many spill requests from the memory scheduler the adaptive aggregation served by writing staged records or shared drain residue to disk instead of leaving the adaptive path.", ValueType::Number) \
-    M(AdaptiveAggregationSpillBacklogSheds, "How many times the adaptive aggregation shed the staged backlog because a thread on the baseline algorithm - one the thaw put back there, or one that stood down on its own - was about to spill while staged records were still resident.", ValueType::Number) \
-    M(AdaptiveAggregationResidueReleases, "How many times the adaptive aggregation wrote its shared drain table out because a thread back on the baseline algorithm was about to spill on account of it.", ValueType::Number) \
-    M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out under memory pressure, at the part bound or on an explicit spill request.", ValueType::Number) \
-    M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.", ValueType::Number) \
+    M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged into its partition buffers.", ValueType::Number) \
+    M(AdaptiveAggregationStagedBytes, "How many key bytes the adaptive aggregation staged into its partition buffers.", ValueType::Bytes) \
+    M(AdaptiveAggregationDrainedRecords, "How many staged records the adaptive aggregation drained into the merge's tables.", ValueType::Number) \
+    M(AdaptiveAggregationSpills, "How many times a thread of the adaptive aggregation wrote its staged records to disk, because the query crossed the external aggregation threshold or the memory scheduler asked for a spill.", ValueType::Number) \
+    M(AdaptiveAggregationSpilledRecords, "How many staged records the adaptive aggregation wrote to disk under memory pressure.", ValueType::Number) \
+    M(AdaptiveAggregationSpilledBytes, "How many bytes of staged records the adaptive aggregation wrote to disk under memory pressure, before compression.", ValueType::Bytes) \
+    M(AdaptiveAggregationFrozenTableSpills, "How many times a thread of the adaptive aggregation wrote its frozen local table to disk, because the query crossed the external aggregation threshold while the table's aggregate states kept growing, or the memory scheduler asked for a spill.", ValueType::Number) \
+    M(AdaptiveAggregationMergeUnits, "How many merge units, runs of the partitions of a two-level bucket merged in one table, the adaptive aggregation merged and converted.", ValueType::Number) \
+    M(AdaptiveAggregationPrunedUnits, "How many merge units the adaptive aggregation skipped without draining them, because no group in them could reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.", ValueType::Number) \
+    M(AdaptiveAggregationPrunedRecords, "How many staged records the adaptive aggregation's merge skipped, because their group could not reach the descending top-K by `count`, `uniqExact` or `uniqExactIf`.", ValueType::Number) \
+    M(AdaptiveAggregationCountFirstUnits, "How many merge units of the adaptive aggregation counted their groups first and built the other aggregate states only for the best groups by the count, because the aggregation feeds `ORDER BY count() LIMIT n` and its final conversion keeps only those.", ValueType::Number) \
+    M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose arena slot the adaptive aggregation's merge released right after the bucket's last unit was converted. The slot holds the merged states of one unit at a time, so the states of every earlier unit are released after its own conversion.", ValueType::Number) \
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
     M(AggregationThresholdTopKMerges, "Number of two-level buckets merged through the top-K threshold merge (Fagin's Threshold Algorithm) instead of the ordinary merge of every group.", ValueType::Number) \
     M(AggregationThresholdTopKMergedGroups, "Number of groups the top-K threshold merge actually merged and ranked as candidates.", ValueType::Number) \
@@ -1804,6 +1798,14 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetPrefetcherReadEntireFile, "The total number of read with ReadMode::EntireFileIsInMemory by DB::Parquet::Prefetcher", ValueType::Number) \
     M(ParquetRowsFilterExpression, "The total number of rows that were passed through filter", ValueType::Number) \
     M(ParquetColumnsFilterExpression, "The total number of columns that were passed through filter", ValueType::Number) \
+    M(VortexFilterPushdownConjunctsPushed, "Number of top-level WHERE conjuncts translated and pushed into a Vortex scan", ValueType::Number) \
+    M(VortexFilterPushdownConjunctsDropped, "Number of top-level WHERE conjuncts that could not be translated for a Vortex scan and are only applied by ClickHouse afterwards", ValueType::Number) \
+    M(VortexScanSplits, "Number of splits delivered by Vortex scans", ValueType::Number) \
+    M(VortexScanEmptySplits, "Number of Vortex scan splits whose rows were all dropped by the pushed-down filter. Such a split is delivered, and so counted, only when the scan preserves the file order (`input_format_vortex_preserve_order`) - that is the only reader that has anything to do with it", ValueType::Number) \
+    M(VortexReadRequests, "Number of read requests a Vortex scan issued through the ClickHouse read buffer", ValueType::Number) \
+    M(VortexReadBytes, "Number of bytes a Vortex scan read through the ClickHouse read buffer", ValueType::Bytes) \
+    M(VortexConvertMicroseconds, "Time spent turning the Arrow arrays a Vortex scan delivers into ClickHouse columns", ValueType::Microseconds) \
+    M(VortexReadWaitMicroseconds, "Time the pipeline spent waiting for a Vortex scan to deliver the next split", ValueType::Microseconds) \
     M(ParquetRowsDecodedAsDictionaryIndexes, "Number of rows of Parquet PREWHERE input columns read as dictionary indexes, so that the functions applied to such a column are evaluated once per dictionary value", ValueType::Number) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
