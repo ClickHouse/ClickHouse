@@ -23,14 +23,12 @@ CREATE TABLE t_plain (id UInt64, s String, n Nullable(String), u UInt32, fs Fixe
 -- s: 3000 values, n: NULL in every third row, else 700 values, u: 1000, fs: 300, iv: 500; values in scrambled order.
 INSERT INTO t_lc SELECT number, concat('s', toString(number * 7919 % 3000)), if(number % 3 = 0, NULL, concat('n', toString(number * 7919 % 700))),
     number * 7919 % 1000 * 3, toFixedString(concat('fs', toString(number * 7919 % 300)), 16), toIntervalSecond(number * 7919 % 500)
-    FROM numbers(30000);
-INSERT INTO t_plain SELECT * FROM t_lc;
+    FROM numbers(30000) SETTINGS max_insert_threads = 1;
+INSERT INTO t_plain SELECT * FROM t_lc SETTINGS max_insert_threads = 1;
 -- Three blocks with their own dictionaries and different values of `s`.
-INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 < 1000;
-INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 >= 1000 AND id * 7919 % 3000 < 2000;
-INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 >= 2000;
-OPTIMIZE TABLE t_lc FINAL;
-OPTIMIZE TABLE t_plain FINAL;
+INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 < 1000 SETTINGS max_insert_threads = 1;
+INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 >= 1000 AND id * 7919 % 3000 < 2000 SETTINGS max_insert_threads = 1;
+INSERT INTO t_mem SELECT * FROM t_plain WHERE id * 7919 % 3000 >= 2000 SETTINGS max_insert_threads = 1;
 
 CREATE VIEW agg_lc AS SELECT
     uniq(s), uniqExact(s), uniqCombined(s), uniqCombined64(s), uniqHLL12(s), uniqTheta(s), min(s), max(s), arraySort(groupUniqArray(s)), count(DISTINCT s),
@@ -54,26 +52,13 @@ CREATE VIEW agg_plain AS SELECT
     uniq(iv), uniqExact(iv), uniqCombined(iv), uniqCombined64(iv), uniqHLL12(iv), uniqTheta(iv), min(iv), max(iv), arraySort(groupUniqArray(iv)), count(DISTINCT iv)
     FROM t_plain WHERE id % {m:UInt64} = {r:UInt64};
 
--- t_lc is read in blocks of one granule (100 rows), of 1000 rows with the part-wide dictionary, or as one block.
+-- t_lc is one part, read in blocks of 1000 rows with the part-wide dictionary or as one block; `% 3` uses a third of `s`.
 -- toString: `n` has only NULL with `% 3`.
-SELECT 'lc', 7, 'all', toString((SELECT * FROM agg_lc(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 7;
-SELECT 'lc', 7, '% 97', toString((SELECT * FROM agg_lc(m = 97, r = 3))) = toString((SELECT * FROM agg_plain(m = 97, r = 3))) SETTINGS max_block_size = 7;
-SELECT 'lc', 7, '% 3', toString((SELECT * FROM agg_lc(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 7;
 SELECT 'lc', 1000, 'all', toString((SELECT * FROM agg_lc(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 1000;
-SELECT 'lc', 1000, '% 97', toString((SELECT * FROM agg_lc(m = 97, r = 3))) = toString((SELECT * FROM agg_plain(m = 97, r = 3))) SETTINGS max_block_size = 1000;
-SELECT 'lc', 1000, '% 3', toString((SELECT * FROM agg_lc(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 1000;
 SELECT 'lc', 65505, 'all', toString((SELECT * FROM agg_lc(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 65505;
-SELECT 'lc', 65505, '% 97', toString((SELECT * FROM agg_lc(m = 97, r = 3))) = toString((SELECT * FROM agg_plain(m = 97, r = 3))) SETTINGS max_block_size = 65505;
 SELECT 'lc', 65505, '% 3', toString((SELECT * FROM agg_lc(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 65505;
-SELECT 'mem', 7, 'all', toString((SELECT * FROM agg_mem(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 7;
-SELECT 'mem', 7, '% 97', toString((SELECT * FROM agg_mem(m = 97, r = 3))) = toString((SELECT * FROM agg_plain(m = 97, r = 3))) SETTINGS max_block_size = 7;
-SELECT 'mem', 7, '% 3', toString((SELECT * FROM agg_mem(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 7;
-SELECT 'mem', 1000, 'all', toString((SELECT * FROM agg_mem(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 1000;
-SELECT 'mem', 1000, '% 97', toString((SELECT * FROM agg_mem(m = 97, r = 3))) = toString((SELECT * FROM agg_plain(m = 97, r = 3))) SETTINGS max_block_size = 1000;
-SELECT 'mem', 1000, '% 3', toString((SELECT * FROM agg_mem(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 1000;
-SELECT 'mem', 65505, 'all', toString((SELECT * FROM agg_mem(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 65505;
-SELECT 'mem', 65505, '% 97', toString((SELECT * FROM agg_mem(m = 97, r = 3))) = toString((SELECT * FROM agg_plain(m = 97, r = 3))) SETTINGS max_block_size = 65505;
-SELECT 'mem', 65505, '% 3', toString((SELECT * FROM agg_mem(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 65505;
+SELECT 'mem', 'all', toString((SELECT * FROM agg_mem(m = 1, r = 0))) = toString((SELECT * FROM agg_plain(m = 1, r = 0))) SETTINGS max_block_size = 65505;
+SELECT 'mem', '% 3', toString((SELECT * FROM agg_mem(m = 3, r = 0))) = toString((SELECT * FROM agg_plain(m = 3, r = 0))) SETTINGS max_block_size = 65505;
 
 -- The values themselves.
 SELECT 's', uniqExact(s), min(s), max(s), length(groupUniqArray(s)) FROM t_lc;

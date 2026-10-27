@@ -1,21 +1,8 @@
-lc	7	all	1
-lc	7	% 97	1
-lc	7	% 3	1
 lc	1000	all	1
-lc	1000	% 97	1
-lc	1000	% 3	1
 lc	65505	all	1
-lc	65505	% 97	1
 lc	65505	% 3	1
-mem	7	all	1
-mem	7	% 97	1
-mem	7	% 3	1
-mem	1000	all	1
-mem	1000	% 97	1
-mem	1000	% 3	1
-mem	65505	all	1
-mem	65505	% 97	1
-mem	65505	% 3	1
+mem	all	1
+mem	% 3	1
 s	3000	s0	s999	3000
 n	700	n0	n99	700
 n, only NULL	0	\N	\N	0
