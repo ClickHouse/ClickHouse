@@ -8965,7 +8965,8 @@ void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutatio
 void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(
     std::vector<MergeTreeMutationStatus> & statuses,
     const CommittingBlocks & committing_blocks,
-    bool committing_blocks_loaded) const
+    bool committing_blocks_loaded,
+    const std::unordered_set<String> & mutations_in_committing_blocks) const
 {
     std::vector<MergeTreeMutationStatus *> to_check;
     {
@@ -8990,6 +8991,14 @@ void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(
     std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
     for (auto * status : to_check)
     {
+        /// A mutation loaded by the log pull after `committing_blocks` were read may have an older INSERT
+        /// that reserved its block after that read, or affect a partition that was not read at all.
+        /// It stays unknown until a later read checks it in order.
+        if (!mutations_in_committing_blocks.contains(status->id))
+        {
+            status->progress.reset();
+            continue;
+        }
         const bool older_insert_commits = std::ranges::any_of(status->block_numbers, [&](const auto & partition_and_block)
         {
             auto it = committing_blocks.find(partition_and_block.first);
@@ -9032,16 +9041,18 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
         return statuses;
     }
 
-    /// Check if any active mutation needs its older INSERT status synchronized.
+    /// Active mutations that may still wait for an older INSERT. Only these are checked against the committing
+    /// blocks read below: those are read for their partitions, and every INSERT older than them reserved its
+    /// block before they were created, so before the read.
     PartitionIdsHint partition_ids;
-    bool needs_older_inserts_check = false;
+    std::unordered_set<String> mutations_in_committing_blocks;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
         for (const auto & status : statuses)
         {
             if (status.is_done || mutations_without_older_inserts.contains(status.id))
                 continue;
-            needs_older_inserts_check = true;
+            mutations_in_committing_blocks.insert(status.id);
             for (const auto & [partition_id, _] : status.block_numbers)
                 partition_ids.insert(partition_id);
         }
@@ -9049,7 +9060,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 
     CommittingBlocks committing_blocks;
     bool committing_blocks_loaded = false;
-    if (needs_older_inserts_check)
+    if (!mutations_in_committing_blocks.empty())
     {
         try
         {
@@ -9065,6 +9076,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
                 const_cast<StorageReplicatedMergeTree *>(this)->queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
                 committing_blocks_loaded = true;
                 /// Refresh statuses so newly pulled log entries are reflected in parts_to_do.
+                /// The pull also loads new mutations, which `resetProgressWhileOlderInsertsCommit` leaves unknown.
                 statuses = queue.getMutationsStatus();
             }
         }
@@ -9168,7 +9180,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     }
 
     /// An older INSERT that has not published its part yet is work of unknown size, even with known parts left.
-    resetProgressWhileOlderInsertsCommit(statuses, committing_blocks, committing_blocks_loaded);
+    resetProgressWhileOlderInsertsCommit(statuses, committing_blocks, committing_blocks_loaded, mutations_in_committing_blocks);
 
     /// Denominators are dropped by `dropMutationInitialBytes` on the queue transitions that remove
     /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot

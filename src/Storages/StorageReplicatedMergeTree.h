@@ -486,11 +486,13 @@ private:
     /// Called by the queue when a mutation is done or leaves it: a done mutation reports progress 1
     /// whatever the denominator was, so the bookkeeping goes at the transition, not on the next read.
     void dropMutationInitialBytes(const String & mutation_id);
-    /// Unsets `progress` of mutations that still wait for an older INSERT to publish its part.
+    /// Unsets `progress` of mutations that still wait for an older INSERT to publish its part,
+    /// and of those not in `mutations_in_committing_blocks`, which `committing_blocks` were not read for.
     void resetProgressWhileOlderInsertsCommit(
         std::vector<MergeTreeMutationStatus> & statuses,
         const CommittingBlocks & committing_blocks,
-        bool committing_blocks_loaded) const;
+        bool committing_blocks_loaded,
+        const std::unordered_set<String> & mutations_in_committing_blocks) const;
 
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
