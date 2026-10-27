@@ -40,7 +40,7 @@ HTTPHeaderEntries AnthropicProvider::getHeaders() const
     return headers;
 }
 
-AIResponse AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
+AIResponse AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts)
 {
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);

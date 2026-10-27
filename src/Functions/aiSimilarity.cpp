@@ -199,7 +199,10 @@ public:
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
+            *provider, model, dimensions, getName(),
+            getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
+            inputs, max_batch_size, max_retries,
+            retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
