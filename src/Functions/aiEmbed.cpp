@@ -161,7 +161,10 @@ public:
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
+            *provider, model, dimensions,
+            getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
+            inputs, max_batch_size, max_retries,
+            retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
