@@ -161,6 +161,8 @@ public:
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
+    bool supportsGranuleCache() const override { return true; }
+
     /// The filter is sized by the number of distinct values, so about half of its bits are set.
     /// It still compresses when adjacent granules have the same values, or, with several columns,
     /// when the filters of columns with fewer distinct values are mostly zeros, so the codec is chosen per block.
