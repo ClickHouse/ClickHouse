@@ -18,9 +18,15 @@ query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_restore"
 failpoint="named_collections_restore_pause_after_write"
 restore_output="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_restore.out"
 
+# A leftover SQL-created collection of a previously failed test would be captured by the backup
+# and restored before this test's collections (the entries are restored in name order), holding
+# the failpoint below on its entry instead of on ${collection_a}; this test owns the server
+# (no-parallel), so drop such leftovers.
+${CLICKHOUSE_CLIENT} --query "SELECT name FROM system.named_collections WHERE source = 'SQL'" | while read -r leftover; do
+    ${CLICKHOUSE_CLIENT} --query "DROP NAMED COLLECTION IF EXISTS \`${leftover}\`"
+done
+
 ${CLICKHOUSE_CLIENT} -m --query "
-DROP NAMED COLLECTION IF EXISTS ${collection_a};
-DROP NAMED COLLECTION IF EXISTS ${collection_b};
 CREATE NAMED COLLECTION ${collection_a} AS key_backup = '1';
 CREATE NAMED COLLECTION ${collection_b} AS key_backup = '1';
 "

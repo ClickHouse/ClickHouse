@@ -28,8 +28,11 @@ INSERT INTO nc_data_table SELECT number FROM numbers(1000);
 "
 
 echo "backup"
+# The backup selects the test's own database, not ALL: the server may hold other databases with
+# data (the preloaded `test.hits`, in particular), which `RESTORE ALL` below would then try to
+# restore into their existing non-empty tables.
 ${CLICKHOUSE_CLIENT} --query "
-    BACKUP TABLE system.named_collections, ALL EXCEPT DATABASES system TO ${backup_name}
+    BACKUP TABLE system.named_collections, DATABASE ${CLICKHOUSE_DATABASE} TO ${backup_name}
 " | grep -c "BACKUP_CREATED"
 
 echo "the backup entry is FileEncryption ciphertext without the plaintext statement"
