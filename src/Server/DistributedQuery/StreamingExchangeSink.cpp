@@ -409,7 +409,7 @@ bool StreamingExchangeSink::tryReadFromSocketNonBlocking(char * buffer, size_t b
 
 void StreamingExchangeSink::abandonDelivery(const String & reason)
 {
-    LOG_DEBUG(log, "Abandoning delivery to exchange stream {}: {}", stream_name, reason);
+    LOG_TRACE(log, "Abandoning delivery to exchange stream {}: {}", stream_name, reason);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterDeliveriesAbandoned);
     markNoMoreDataNeeded();
 }
@@ -465,10 +465,19 @@ void StreamingExchangeSink::receiveControlPacket()
         /// Normal end of the stream: after the sink sent the end-of-stream packet, the source reads it
         /// and closes without sending NoMoreDataNeeded. EOF is fine only with nothing left to send.
         if (!end_of_stream_added || send_queue_bytes > 0)
+        {
+            /// The receiver of an advisory stream may close it when it no longer needs the data. This is
+            /// expected, so no exception is made.
+            if (advisory)
+            {
+                abandonDelivery("the peer closed the stream");
+                return;
+            }
             throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED,
                 "Peer half-closed exchange stream {} without sending NoMoreDataNeeded "
                 "(end_of_stream_added={}, unsent={})",
                 stream_name, end_of_stream_added, send_queue_bytes);
+        }
 
         LOG_TRACE(log, "Peer closed exchange stream {} after reading the end-of-stream packet", stream_name);
         markNoMoreDataNeeded();
