@@ -1,11 +1,5 @@
--- Top-k dynamic filtering and skip-index top-k put floating point sort keys on the
--- lock-free `TopKThresholdTrackerNumeric` path, which has boundary logic of its own:
--- a `NaN` boundary must never become the threshold, and the initial threshold is
--- `+-inf` rather than the maximum finite value. Compare the optimized and the
--- unoptimized result for `Float64` / `Float32` data containing `nan`, `inf` and
--- `-inf`. `NULLS FIRST` (which flips where `NaN` sorts) is checked only on data where
--- every block's top-k consists of `nan`: with a finite threshold `__topKFilter` drops
--- `nan` rows under `NULLS FIRST` (https://github.com/ClickHouse/ClickHouse/issues/116705).
+-- Top-k dynamic filtering and skip-index top-k put floating point sort keys on the lock-free `TopKThresholdTrackerNumeric` path, which has boundary logic of its own: a `NaN` boundary must never become the threshold, and the initial threshold is `+-inf` rather than the maximum finite value. Compare the optimized and the unoptimized result for `Float64` / `Float32` data containing `nan`, `inf` and `-inf`.
+-- `NULLS FIRST` (which flips where `NaN` sorts) is checked here only on data where every block's top-k consists of `nan`. Mixed data under `NULLS FIRST`, where `__topKFilter` must keep `nan` rows against a finite threshold, is covered by `05453_topk_float_nan_nulls_first_wrong_results` (https://github.com/ClickHouse/ClickHouse/issues/116705).
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
