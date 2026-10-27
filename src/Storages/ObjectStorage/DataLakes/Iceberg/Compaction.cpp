@@ -251,6 +251,8 @@ static Plan getPlan(
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
     std::unordered_set<Iceberg::IcebergPathFromMetadata> referenced_file_paths;
+    /// A manifest is listed by every later snapshot of an append-only history; read and authorize it once.
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::ManifestFileIterator::ManifestFileEntriesHandle> manifest_file_handles;
     for (const auto & snapshot : snapshots_info)
     {
         referenced_file_paths.insert(snapshot.manifest_list_path);
@@ -263,8 +265,16 @@ static Plan getPlan(
             referenced_file_paths.insert(manifest_file.manifest_file_path);
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
-            auto files_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id), external_storages);
+            auto handle_it = manifest_file_handles.find(manifest_file.manifest_file_path);
+            if (handle_it == manifest_file_handles.end())
+                handle_it = manifest_file_handles
+                                .emplace(
+                                    manifest_file.manifest_file_path,
+                                    getManifestFileEntriesHandle(
+                                        object_storage, persistent_table_components, context, log, manifest_file,
+                                        static_cast<Int32>(current_schema_id), external_storages))
+                                .first;
+            const auto & files_handle = handle_it->second;
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -280,30 +290,32 @@ static Plan getPlan(
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                referenced_file_paths.insert(data_file->parsed_entry->file_path_key);
                 auto partition_index = plan.partition_encoder.encodePartition(data_file->normalized_partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
-                const auto & raw_metadata_path = data_file->parsed_entry->file_path_key.serialize();
-                auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
-                    persistent_table_components.table_location,
-                    raw_metadata_path, object_storage, external_storages, context,
-                    persistent_table_components.path_resolver);
-
-                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
-                    data_file,
-                    raw_metadata_path,
-                    0,
-                    Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor),
-                    resolved_storage,
-                    resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 const auto & manifest_file_plan = manifest_files[manifest_file.manifest_file_path];
                 /// Keyed by the metadata path rather than the physical file: position deletes match a data file by that spelling.
                 const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 if (!plan.path_to_data_file.contains(data_file_path))
                 {
+                    const auto raw_metadata_path = data_file_path.serialize();
+                    auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
+                        persistent_table_components.table_location,
+                        raw_metadata_path, object_storage, external_storages, context,
+                        persistent_table_components.path_resolver);
+                    if (!isObjectInTableDirectory(
+                            resolved_storage, resolved_key, object_storage, persistent_table_components.table_path))
+                        plan.external_files.push_back(data_file_path);
+
+                    IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
+                        data_file,
+                        raw_metadata_path,
+                        0,
+                        Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor),
+                        resolved_storage,
+                        resolved_key);
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_files = {manifest_file_plan},
