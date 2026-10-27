@@ -90,6 +90,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsString default_replica_name;
     extern const ServerSettingsString default_replica_path;
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -1263,6 +1264,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             need_check_table_structure,
             create_query_zk_retries_info);
     }
+
+    /// After the settings the definition states, which can say `table_readonly = 0`: the table loads its parts read-only and
+    /// starts no background work. Only the settings it runs with change, its definition keeps the stated value.
+    if (context->getServerSettings()[ServerSetting::load_tables_readonly])
+        (*storage_settings)[MergeTreeSetting::table_readonly] = true;
 
     return std::make_shared<StorageMergeTree>(
         args.table_id,

@@ -25,8 +25,9 @@ rm -rf "$LOCAL_PATH"
 mkdir -p "$LOCAL_PATH/filelog"
 # clickhouse-local accepts a `FileLog` path only inside its working directory.
 cd "$LOCAL_PATH" || exit 1
-# The view starts stopped here, so `dst` stays empty until a run refreshes it. Merges of `mut` and TTL merges of `ttl`
-# are stopped for this run only, which leaves the mutation pending and the expired rows in place for the next run.
+# The view starts stopped here, so `dst` stays empty until a run refreshes it. Merges of `mut` and `mut_writable` and TTL
+# merges of `ttl` are stopped for this run only, which leaves the mutations pending and the expired rows in place for the
+# next run. `mut_writable` states `table_readonly = 0`, which the dump must not follow.
 $CLICKHOUSE_LOCAL --path "$LOCAL_PATH" --stop_refreshable_materialized_views_on_startup=1 --multiquery --query "
 CREATE DATABASE d;
 CREATE TABLE d.dst (x UInt64) ENGINE = MergeTree ORDER BY x;
@@ -35,6 +36,10 @@ CREATE TABLE d.mut (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO d.mut SELECT number, 0 FROM numbers(5);
 SYSTEM STOP MERGES d.mut;
 ALTER TABLE d.mut UPDATE y = 1 WHERE 1 SETTINGS mutations_sync = 0;
+CREATE TABLE d.mut_writable (x UInt64, y UInt64) ENGINE = MergeTree ORDER BY x SETTINGS table_readonly = 0;
+INSERT INTO d.mut_writable SELECT number, 0 FROM numbers(5);
+SYSTEM STOP MERGES d.mut_writable;
+ALTER TABLE d.mut_writable UPDATE y = 1 WHERE 1 SETTINGS mutations_sync = 0;
 CREATE TABLE d.ttl (t DateTime, x UInt64) ENGINE = MergeTree ORDER BY x TTL t + INTERVAL 1 SECOND;
 SYSTEM STOP TTL MERGES d.ttl;
 INSERT INTO d.ttl SELECT now() - 100, number FROM numbers(5);

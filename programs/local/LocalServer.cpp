@@ -1507,12 +1507,13 @@ void LocalServer::processConfig()
     {
         /// The dump must leave the data it reads as it was, but loading the metadata starts every table, and its
         /// background work with it, before the first query. Before the context reads them from the configuration:
-        /// `MergeTree` tables are read-only, so no merge, mutation, TTL, move or cleanup runs, and nothing is
-        /// inserted, so `Kafka`, `RabbitMQ`, `NATS`, `S3Queue` and `FileLog` do not stream into their views.
+        /// `MergeTree` tables are read-only whatever their definitions say, so no merge, mutation, TTL, move or
+        /// cleanup runs, and nothing is inserted, so `Kafka`, `RabbitMQ`, `NATS`, `S3Queue` and `FileLog` do not
+        /// stream into their views.
         /// In front of the other layers, so neither the configuration file nor the command line undoes it.
         /// The refreshes of refreshable materialized views are stopped below, with the query settings.
         getClientConfiguration().addFront(getConfigurationFromXMLString(
-            "<clickhouse><merge_tree><table_readonly>1</table_readonly></merge_tree>"
+            "<clickhouse><load_tables_readonly>1</load_tables_readonly>"
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation></clickhouse>").duplicate(), false);
     }
 
