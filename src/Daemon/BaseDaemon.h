@@ -119,8 +119,7 @@ public:
     /// argv0 is needed to change process name (consequently, it is needed for scripts involving "pgrep", "pidof" to work correctly).
     void shouldSetupWatchdog(char * argv0_);
 
-    /// If this process is the server that the watchdog started by re-executing the binary (see `setupWatchdog`),
-    /// restores what `execve` reset and returns true; then no watchdog must be set up.
+    /// Returns true if this process is the server that the watchdog re-executed, after restoring what `execve` reset.
     bool setupWatchdogChild(const char * argv0_);
 
     /// Hash of the binary for integrity checks.

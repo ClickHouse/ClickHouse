@@ -121,8 +121,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 
 
 #if defined(OS_LINUX)
-/// The command line the kernel started this process with: unlike the `argv` of the application, it still
-/// contains the name of the application (`clickhouse server ...`). Empty if it cannot be read.
+/// Unlike the `argv` of the application, this still contains the name of the application (`clickhouse server ...`).
 static VectorWithMemoryTracking<std::string> readCommandLine()
 {
     VectorWithMemoryTracking<std::string> args;
@@ -134,8 +133,7 @@ static VectorWithMemoryTracking<std::string> readCommandLine()
 #endif
 
 
-/// Blocks until the watchdog closes the pipe, so that the notifications of the child to the service manager
-/// are sent after the ones of the watchdog.
+/// Blocks until the watchdog closes the pipe, so the child notifies the service manager after the watchdog.
 static void waitForWatchdog(Poco::Pipe & notify_sync)
 {
     notify_sync.close(Poco::Pipe::CLOSE_WRITE);
@@ -661,8 +659,7 @@ bool BaseDaemon::setupWatchdogChild([[maybe_unused]] const char * argv0_)
 
     pid_t pid = 0;
     bool parsed = tryParse(pid, env_pid) && pid > 0;
-    /// Not passed on to the processes that the server starts. Empty means absent, as `unsetenv` is trapped in
-    /// debug builds (base/harmful).
+    /// Cleared (empty = absent) for the processes that the server starts: `unsetenv` is trapped in debug builds.
     (void)setenv("CLICKHOUSE_WATCHDOG_PID", "", 1); // NOLINT(concurrency-mt-unsafe)
     if (!parsed)
         return false;
@@ -723,9 +720,7 @@ void BaseDaemon::setupWatchdog()
     [[maybe_unused]] bool ignores_signals = false;
 
 #if defined(OS_LINUX)
-    /// Each server process is a new image of the running binary, so that it does not share the address space
-    /// layout and the stack protector canary of the watchdog. Between `fork` and `execve` the child only makes
-    /// system calls, so everything is prepared here.
+    /// Between `fork` and `execve` the child only makes system calls, so the argv and environment are built here.
     VectorWithMemoryTracking<std::string> exec_args = readCommandLine();
     if (exec_args.empty())
         throw Exception(ErrorCodes::SYSTEM_ERROR,
@@ -779,8 +774,7 @@ void BaseDaemon::setupWatchdog()
             if (ignores_signals)
                 for (int sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM})
                     (void)signal(sig, SIG_DFL);
-            /// The server user may be unable to enter the launch directory, which absolute paths do not need,
-            /// but the new image cannot start in a working directory that was removed.
+            /// The server user may be unable to enter the launch directory, but the new image needs a working directory.
             char working_directory[PATH_MAX];
             if (0 == chdir(original_working_directory.c_str()) || getcwd(working_directory, sizeof(working_directory)))
                 execve("/proc/self/exe", exec_argv.data(), exec_envp.data());

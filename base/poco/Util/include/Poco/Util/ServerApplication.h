@@ -154,10 +154,7 @@ namespace Util
         int run();
         virtual void waitForTerminationRequest();
         virtual bool shouldDetach() const;
-        /// Returns whether --daemon detaches the process (fork, setsid,
-        /// standard streams to /dev/null) before the initialization.
-        /// The option sets application.runAsDaemon either way.
-        /// The default implementation returns true.
+        /// Whether --daemon detaches the process. The option sets application.runAsDaemon either way.
         void defineOptions(OptionSet & options);
 
     private:
