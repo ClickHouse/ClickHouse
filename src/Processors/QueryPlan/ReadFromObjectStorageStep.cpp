@@ -30,6 +30,7 @@
 
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #endif
 
 
@@ -421,6 +422,19 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     const String data_source = configuration->getDataSourceDescription();
     hash.update(data_source.size());
     hash.update(data_source);
+
+#if USE_AWS_S3
+    /// A URL with `versionId` makes every read fetch that version of the object, bypassing the check of
+    /// the listed `ETag`, while the metadata of the object (and so its `ETag` in the key of the file)
+    /// describes the latest version. An `ALTER NAMED COLLECTION` followed by a `DETACH` / `ATTACH` may
+    /// select another version, keeping the UUID of the table, the paths and the `ETag`s.
+    if (const auto * s3_object_storage = dynamic_cast<const S3ObjectStorage *>(object_storage.get()))
+    {
+        const String version_id = s3_object_storage->getURI().version_id;
+        hash.update(version_id.size());
+        hash.update(version_id);
+    }
+#endif
 
     /// Whether a column is read from the file or from the Hive partition in its path (and with which type)
     /// is captured by the table when it is loaded (`use_hive_partitioning`), so a `DETACH` / `ATTACH`,
