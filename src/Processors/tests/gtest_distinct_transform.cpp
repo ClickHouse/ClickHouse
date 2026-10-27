@@ -39,6 +39,14 @@ Chunk makeChunk(const std::vector<UInt64> & values)
     return Chunk(std::move(columns), values.size());
 }
 
+struct MarkerChunkInfo : public ChunkInfoCloneable<MarkerChunkInfo>
+{
+    explicit MarkerChunkInfo(UInt64 id_) : id(id_) {}
+    MarkerChunkInfo(const MarkerChunkInfo &) = default;
+
+    UInt64 id;
+};
+
 /// Runs the chunks through a `DistinctTransform` and returns the total number of the output rows.
 size_t runDistinct(SharedHeader header, Chunks chunks, bool allow_abandoning, bool skip_null_keys)
 {
@@ -362,4 +370,59 @@ TEST(DistinctTransformMemory, PassThroughBeforePackingDuplicateKeys)
             EXPECT_EQ(duplicates.getNumRows(), packed ? rows : 0);
         }
     }).join();
+}
+
+TEST(DistinctTransformCoalescing, KeepsChunksWithChunkInfo)
+{
+    const auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")});
+
+    /// A chunk with a `ChunkInfo` (here also a rowless marker chunk) must not be squashed with the held
+    /// back rows: they are emitted before it, and it reaches the consumer with its `ChunkInfo` and in order.
+    Chunks chunks;
+    chunks.push_back(makeChunk({1, 2}));
+    chunks.push_back(makeChunk({2, 3}));
+    chunks.push_back(makeChunk({3, 4}));
+    chunks.back().getChunkInfos().add(std::make_shared<MarkerChunkInfo>(1));
+    chunks.push_back(makeChunk({}));
+    chunks.back().getChunkInfos().add(std::make_shared<MarkerChunkInfo>(2));
+    chunks.push_back(makeChunk({4, 5}));
+
+    auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
+    auto transform = std::make_shared<DistinctTransform>(
+        header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false,
+        /*max_bytes_before_pass_through_=*/ 0, /*shared_set_bytes_=*/ nullptr, /*coalesce_rows_=*/ 1000);
+
+    connect(source->getPort(), transform->getInputs().front());
+
+    auto * output_port = &transform->getOutputs().front();
+    auto processors = std::make_shared<Processors>();
+    processors->emplace_back(std::move(source));
+    processors->emplace_back(std::move(transform));
+
+    QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+    PullingPipelineExecutor executor(pipeline);
+
+    /// Each output chunk as its values and the id of its marker (0 for none).
+    std::vector<std::pair<std::vector<UInt64>, UInt64>> output;
+    Chunk chunk;
+    while (executor.pull(chunk))
+    {
+        std::vector<UInt64> values;
+        if (chunk.hasRows())
+        {
+            const auto & column = assert_cast<const ColumnUInt64 &>(*chunk.getColumns().front());
+            values.assign(column.getData().begin(), column.getData().end());
+        }
+        auto marker = chunk.getChunkInfos().get<MarkerChunkInfo>();
+        output.emplace_back(std::move(values), marker ? marker->id : 0);
+    }
+
+    const std::vector<std::pair<std::vector<UInt64>, UInt64>> expected{
+        {{1, 2, 3}, 0},
+        {{4}, 1},
+        {{}, 2},
+        {{5}, 0},
+    };
+    EXPECT_EQ(output, expected);
 }
