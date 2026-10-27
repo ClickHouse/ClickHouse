@@ -16,3 +16,7 @@ waits, timeouts, misses
 6442352640	196603
 waits, timeouts, misses
 0	0	1
+-- a stripe another read wrote after this read looked its range up is served from the cache
+25769607168	393210
+25769607168	393210
+16	16

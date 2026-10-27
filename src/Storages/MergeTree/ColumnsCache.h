@@ -312,8 +312,8 @@ public:
     /// can still be rejected (budget, invalidation, size), and the waiters then read for themselves.
     ColumnsCacheFillClaims claimFills(const std::vector<Key> & needed, const std::vector<Key> & to_claim, std::vector<ColumnsCacheFillPtr> & in_progress);
 
-    /// Wait until the fills are released, but no longer than `max_wait_ns` if it is given. Observes the
-    /// cancellation of the query, and parks the CPU lease of the thread meanwhile.
+    /// Wait until the fills are released, but no longer than `max_wait_ns` if it is given, nor after the
+    /// query is cancelled. Parks the CPU lease of the thread meanwhile.
     ///
     /// A claim does not say how fast the claimant reads: it can read from slower storage, or get
     /// little CPU. So a reader waits at most `MAX_WAIT_TO_READ_RATIO` times as long as it would take

@@ -499,6 +499,9 @@ ColumnsCacheFillClaims MergeTreeReaderWide::claimColumnsCacheFills(
     auto claims = columns_cache->claimFills(needed, to_claim, in_progress);
     if (in_progress.empty())
     {
+        /// The stripes another reader wrote and released after the range was looked up are served from the
+        /// cache: a reader that trails another one through a part finds most of its stripes written so.
+        refreshColumnsCacheStripes(first_stripe, end_stripe);
         if (!claims.empty())
             FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_after_claim);
         return claims;

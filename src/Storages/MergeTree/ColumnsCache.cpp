@@ -713,7 +713,8 @@ void ColumnsCache::waitForFills(const std::vector<ColumnsCacheFillPtr> & fills_t
     for (const auto & fill : fills_to_wait)
     {
         std::unique_lock lock(fill->mutex);
-        /// In slices, so that a cancelled query stops waiting promptly.
+        /// In slices, so that a cancelled query stops waiting promptly. It does not throw: the reader that
+        /// waits would take the exception for a broken part. The query is cancelled by its pipeline.
         while (!fill->done_cv.wait_until(lock, std::min(Clock::now() + std::chrono::milliseconds(100), deadline), [&] { return fill->done; }))
         {
             if (Clock::now() >= deadline)
@@ -721,8 +722,8 @@ void ColumnsCache::waitForFills(const std::vector<ColumnsCacheFillPtr> & fills_t
                 ProfileEvents::increment(ProfileEvents::ColumnsCacheFillWaitTimeouts);
                 return;
             }
-            if (query_status)
-                query_status->throwIfKilled();
+            if (query_status && query_status->isKilled())
+                return;
         }
     }
 }
