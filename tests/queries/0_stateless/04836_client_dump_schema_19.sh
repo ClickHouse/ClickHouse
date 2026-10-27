@@ -102,7 +102,8 @@ fi
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 echo "dump queries naming the Remote database: $($CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.query_log
-    WHERE event_date >= yesterday() AND toUnixTimestamp64Micro(event_time_microseconds) >= ${START} AND type = 'QueryStart'
+    WHERE current_database = currentDatabase() AND event_date >= yesterday()
+        AND toUnixTimestamp64Micro(event_time_microseconds) >= ${START} AND type = 'QueryStart'
         AND query LIKE '%${REMOTE_DB}%' AND query NOT LIKE '%system.query_log%'")"
 echo "queries the Remote database sent to its server: $($CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.query_log

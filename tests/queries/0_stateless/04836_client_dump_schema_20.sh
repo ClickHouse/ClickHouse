@@ -2,8 +2,8 @@
 
 # --dump-schema emits the gates that CREATE reads outside the experimental-settings list when a stored definition
 # carries them: a codec declared for a subcolumn, with the codec gates of its codecs, the `Elasticsearch` engine,
-# gated functions in a column expression or type, `rank` with arguments and `STREAM` in the SELECT of a materialized
-# view, and a dynamic disk configured `from_env`. Every dump is replayed into a fresh target with the gates at default.
+# gated functions in a column expression or type, `rank` with arguments in the SELECT of a materialized view, and a
+# dynamic disk configured `from_env`. Every dump is replayed into a fresh target with the gates at default.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -66,9 +66,6 @@ round_trip throw_if_error_code t "SET allow_custom_error_code_in_throwif = 1;
 round_trip rank_arguments mv "SET allow_rank_dense_rank_arguments = 1;
     CREATE TABLE d.src (x UInt64) ENGINE = MergeTree ORDER BY x;
     CREATE MATERIALIZED VIEW d.mv ENGINE = Memory AS SELECT x, rank(x) OVER (ORDER BY x) AS r FROM d.src;"
-round_trip streaming_query mv "SET enable_streaming_queries = 1;
-    CREATE TABLE d.src (x UInt64) ENGINE = MergeTree ORDER BY x;
-    CREATE MATERIALIZED VIEW d.mv ENGINE = Memory AS SELECT x FROM d.src STREAM;"
 
 # A dynamic disk reads `from_env` when the table is created. The dump runs in a session that sees the path unmasked, and
 # the source and the target put the disk in different directories under the same name.

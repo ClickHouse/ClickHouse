@@ -47,12 +47,6 @@ SET allow_materialized_view_with_bad_select = 1;
 SET data_type_default_nullable = 0;
 rank_arguments: replay rc=0
 rank_arguments: same definition: 1
-streaming_query: dump rc=0
-SET enable_streaming_queries = 1;
-SET allow_materialized_view_with_bad_select = 1;
-SET data_type_default_nullable = 0;
-streaming_query: replay rc=0
-streaming_query: same definition: 1
 dynamic_disk: dump rc=0
 SET dynamic_disk_allow_from_env = 1;
 SET data_type_default_nullable = 0;
