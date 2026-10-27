@@ -24,6 +24,7 @@ public:
     WriteBufferFromAzureDataLakeStorage(
         const AzureBlobStorage::Endpoint & endpoint_,
         const AzureBlobStorage::AuthMethod & auth_method_,
+        bool drop_credentials_,
         const Azure::Storage::Blobs::BlobClientOptions & blob_client_options_,
         const String & blob_path_,
         size_t buf_size_,
@@ -67,9 +68,11 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
+/// `drop_credentials` ignores `auth_method` and builds a client that sends no credentials.
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
     const AzureBlobStorage::Endpoint & endpoint,
     const AzureBlobStorage::AuthMethod & auth_method,
+    bool drop_credentials,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
     const String & blob_path);
 
