@@ -16,7 +16,6 @@
 #include <Functions/IFunction.h>
 
 #include <algorithm>
-#include <list>
 #include <unordered_set>
 
 namespace DB
@@ -658,15 +657,24 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
 
     /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn. The original
     /// ones keep a flattened `Nested` field such as `n.z` a column of its own, as its `DEFAULT` is.
+    NamesAndTypesList candidates;
     NamesAndTypesList columns_to_evaluate;
     NameSet added;
     for (const auto & column : reader->getOriginalRequestedColumns())
     {
-        if (columns_to_reevaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
-            columns_to_evaluate.push_back(column);
+        if (result.columns_filled_by_defaults.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
+        {
+            candidates.push_back(column);
+            if (columns_to_reevaluate.contains(column.name))
+                columns_to_evaluate.push_back(column);
+        }
     }
 
-    evaluateDefaultsInRowsFilledByDefaults(*reader, result, block, columns_to_evaluate);
+    evaluateDefaultsInRowsFilledByDefaults(*reader, result, block, candidates, columns_to_evaluate);
+
+    added.clear();
+    for (const auto & column : columns_to_evaluate)
+        added.insert(column.name);
 
     for (size_t pos : positions_filled_by_defaults)
     {
@@ -720,48 +728,73 @@ void MergeTreeReadersChain::forgetPatchedRows(ReadResult & result, const Block &
 }
 
 void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
-    const IMergeTreeReader & reader, const ReadResult & result, Block & block, const NamesAndTypesList & columns_to_evaluate)
+    const IMergeTreeReader & reader,
+    const ReadResult & result,
+    Block & block,
+    const NamesAndTypesList & candidates,
+    NamesAndTypesList & columns_to_evaluate)
 {
     /// Evaluating each column separately, `evaluateDefaults` would evaluate anew the missing columns its expression
     /// reads through, so that two columns reading the same `b DEFAULT a + rand()` would no longer agree in a row.
     /// They are evaluated once, as columns of their own, and removed from the block afterwards.
+    ///
+    /// Such a missing column gets a new value here, so the other candidates that read it are evaluated again too,
+    /// even if they read no patched column: for `b DEFAULT rand64()`, `z DEFAULT a + b` and `y DEFAULT b`, evaluating
+    /// only `z` again after `a` is patched would leave `y` with the value of `b` the first evaluation gave. A missing
+    /// column has no value to keep from one read to the next anyway: its `DEFAULT` is evaluated on every read.
+    NameSet names_to_evaluate;
+    for (const auto & column : columns_to_evaluate)
+        names_to_evaluate.insert(column.name);
+
+    std::vector<std::pair<NameAndTypePair, NameSet>> missing_inputs_of_candidates;
+    for (const auto & candidate : candidates)
+    {
+        if (names_to_evaluate.contains(candidate.name))
+            continue;
+
+        NameSet missing_inputs;
+        for (const auto & input : reader.getMissingDefaultInputs({candidate}, block))
+            missing_inputs.insert(input.name);
+
+        if (!missing_inputs.empty())
+            missing_inputs_of_candidates.emplace_back(candidate, std::move(missing_inputs));
+    }
+
     auto intermediates = reader.getMissingDefaultInputs(columns_to_evaluate, block);
+    bool added_candidates = true;
+    while (added_candidates && !missing_inputs_of_candidates.empty())
+    {
+        added_candidates = false;
+        NameSet intermediate_names;
+        for (const auto & column : intermediates)
+            intermediate_names.insert(column.name);
+
+        for (const auto & [candidate, missing_inputs] : missing_inputs_of_candidates)
+        {
+            if (names_to_evaluate.contains(candidate.name))
+                continue;
+
+            if (std::ranges::any_of(missing_inputs, [&](const String & input) { return intermediate_names.contains(input); }))
+            {
+                columns_to_evaluate.push_back(candidate);
+                names_to_evaluate.insert(candidate.name);
+                added_candidates = true;
+            }
+        }
+
+        if (added_candidates)
+            intermediates = reader.getMissingDefaultInputs(columns_to_evaluate, block);
+    }
+
     size_t num_rows = block.rows();
     for (const auto & column : intermediates)
         block.insert({column.type->createColumnConstWithDefaultValue(num_rows), column.type, column.name});
 
-    std::list<NameAndTypePair> remaining(intermediates.begin(), intermediates.end());
-    remaining.insert(remaining.end(), columns_to_evaluate.begin(), columns_to_evaluate.end());
-    NameSet remaining_names;
-    for (const auto & column : remaining)
-        remaining_names.insert(column.name);
-
-    std::vector<NameAndTypePair> order;
-    order.reserve(remaining.size());
-    while (!remaining.empty())
-    {
-        /// A `DEFAULT` reads the final values of the columns evaluated again before it, not the stale ones,
-        /// so a column goes only after all of the others its expression reads. `DEFAULT` expressions have no cycles.
-        /// A subcolumn such as `z.x` goes after its parent `z` too: `evaluateDefaults` takes it from the parent
-        /// when the block has one, so it must be the final value of the parent, not the stale one.
-        auto it = std::find_if(remaining.begin(), remaining.end(), [&](const NameAndTypePair & column)
-        {
-            if (column.isSubcolumn() && remaining_names.contains(column.getNameInStorage()))
-                return false;
-
-            NameSet others = remaining_names;
-            others.erase(column.name);
-            return reader.getDefaultsDependingOn({column.name}, others).empty();
-        });
-
-        if (it == remaining.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cyclic dependency between the DEFAULT expressions of columns {}",
-                fmt::join(remaining_names, ", "));
-
-        order.push_back(*it);
-        remaining_names.erase(it->name);
-        remaining.erase(it);
-    }
+    /// A `DEFAULT` reads the final values of the columns evaluated again before it, not the stale ones.
+    NamesAndTypesList all_columns = intermediates;
+    all_columns.insert(all_columns.end(), columns_to_evaluate.begin(), columns_to_evaluate.end());
+    auto ordered = reader.orderByDefaultDependencies(all_columns);
+    std::vector<NameAndTypePair> order(ordered.begin(), ordered.end());
 
     /// The rows in which each column is evaluated; a null filter stands for all of them. A column of `columns_to_evaluate`
     /// is evaluated in its rows of `result.rows_filled_by_defaults`. An intermediate only serves the columns that read it,
@@ -822,24 +855,32 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
             skipped.insert(it->name);
     }
 
-    for (const auto & column_to_evaluate : order)
+    auto same_filter = [](const ColumnPtr & lhs, const ColumnPtr & rhs)
     {
-        if (skipped.contains(column_to_evaluate.name))
-            continue;
+        if (lhs == rhs)
+            return true;
+        if (!lhs || !rhs)
+            return false;
 
-        const auto & filter_column = filters[column_to_evaluate.name];
+        const auto & lhs_data = assert_cast<const ColumnUInt8 &>(*lhs).getData();
+        const auto & rhs_data = assert_cast<const ColumnUInt8 &>(*rhs).getData();
+        return lhs_data.size() == rhs_data.size() && std::equal(lhs_data.begin(), lhs_data.end(), rhs_data.begin());
+    };
+
+    auto evaluate = [&](const NamesAndTypesList & batch, const ColumnPtr & filter_column)
+    {
         if (!filter_column)
         {
-            reader.evaluateDefaults(block, {column_to_evaluate});
-            continue;
+            reader.evaluateDefaults(block, batch);
+            return;
         }
 
-        /// The expression is executed only in the rows that hold its `DEFAULT`. In a patched row,
-        /// it may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
+        /// The expressions are executed only in the rows that hold their `DEFAULT`. In a patched row,
+        /// one may throw on values its result is never used for, e.g. `intDiv(100, a)` with `a` patched to 0.
         const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
         size_t num_filtered_rows = countBytesInFilter(filter);
         if (num_filtered_rows == 0)
-            continue;
+            return;
 
         Block filtered;
         for (const auto & column : block)
@@ -851,25 +892,60 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
             filtered.insert({column.column->filter(filter, num_filtered_rows), column.type, column.name});
         }
 
-        reader.evaluateDefaults(filtered, {column_to_evaluate});
+        reader.evaluateDefaults(filtered, batch);
 
-        auto & target = block.getByName(column_to_evaluate.name);
-        auto new_values = removeSpecialRepresentations(filtered.getByName(column_to_evaluate.name).column->convertToFullColumnIfConst());
-        auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
-        chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
-
-        auto combined = new_values->cloneEmpty();
-        combined->reserve(filter.size());
-        for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
+        for (const auto & column_to_evaluate : batch)
         {
-            if (filter[row])
-                combined->insertFrom(*new_values, filtered_row++);
-            else
-                combined->insertFrom(*old_values, row);
+            auto & target = block.getByName(column_to_evaluate.name);
+            auto new_values = removeSpecialRepresentations(filtered.getByName(column_to_evaluate.name).column->convertToFullColumnIfConst());
+            auto old_values = removeSpecialRepresentations(target.column->convertToFullColumnIfConst());
+            chassert(new_values->size() == num_filtered_rows && old_values->size() == filter.size());
+
+            auto combined = new_values->cloneEmpty();
+            combined->reserve(filter.size());
+            for (size_t row = 0, filtered_row = 0; row < filter.size(); ++row)
+            {
+                if (filter[row])
+                    combined->insertFrom(*new_values, filtered_row++);
+                else
+                    combined->insertFrom(*old_values, row);
+            }
+
+            target.column = std::move(combined);
+        }
+    };
+
+    /// The consecutive columns evaluated in the same rows are evaluated together, in one expression: one reading
+    /// another of them reads its new value there, as it would after it. A table may have hundreds of `DEFAULT`
+    /// columns reading one patched column, and this is done for every block. The expression computes a subcolumn
+    /// such as `b.x` only as a part of `b`, so a column reading `b.x` goes after it, not together with it.
+    NamesAndTypesList batch;
+    NameSet batch_subcolumns;
+    ColumnPtr batch_filter;
+    for (const auto & column_to_evaluate : order)
+    {
+        if (skipped.contains(column_to_evaluate.name))
+            continue;
+
+        const auto & filter = filters[column_to_evaluate.name];
+        if (!batch.empty()
+            && (!same_filter(batch_filter, filter)
+                || std::ranges::any_of(inputs[column_to_evaluate.name], [&](const String & input) { return batch_subcolumns.contains(input); })))
+        {
+            evaluate(batch, batch_filter);
+            batch.clear();
+            batch_subcolumns.clear();
         }
 
-        target.column = std::move(combined);
+        if (batch.empty())
+            batch_filter = filter;
+        batch.push_back(column_to_evaluate);
+        if (column_to_evaluate.isSubcolumn())
+            batch_subcolumns.insert(column_to_evaluate.name);
     }
+
+    if (!batch.empty())
+        evaluate(batch, batch_filter);
 
     for (const auto & column : intermediates)
         block.erase(column.name);
@@ -921,24 +997,29 @@ void MergeTreeReadersChain::reevaluateDefaultsAfterPatches(ReadResult & result, 
 
     /// The requested-column entries carry what `evaluateDefaults` needs for a subcolumn. The original
     /// ones keep a flattened `Nested` field such as `n.z` a column of its own, as its `DEFAULT` is.
+    NamesAndTypesList candidates;
     NamesAndTypesList columns_to_evaluate;
     NameSet added;
     for (size_t i = 0; i <= reader_index; ++i)
     {
         for (const auto & column : range_readers[i].getReader()->getOriginalRequestedColumns())
         {
-            if (names_to_evaluate.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
-                columns_to_evaluate.push_back(column);
+            if (result.columns_filled_by_defaults.contains(column.name) && block.has(column.name) && added.emplace(column.name).second)
+            {
+                candidates.push_back(column);
+                if (names_to_evaluate.contains(column.name))
+                    columns_to_evaluate.push_back(column);
+            }
         }
     }
 
     if (columns_to_evaluate.empty())
         return;
 
-    LOG_TEST(log, "Evaluating defaults of columns {} again after applying patches to columns {}",
-        columns_to_evaluate.toString(), fmt::join(patched_columns, ", "));
+    evaluateDefaultsInRowsFilledByDefaults(*reader, result, block, candidates, columns_to_evaluate);
 
-    evaluateDefaultsInRowsFilledByDefaults(*reader, result, block, columns_to_evaluate);
+    LOG_TEST(log, "Evaluated defaults of columns {} again after applying patches to columns {}",
+        columns_to_evaluate.toString(), fmt::join(patched_columns, ", "));
 
     for (size_t pos = 0; pos < result.columns.size(); ++pos)
         result.columns[pos] = block.getByPosition(pos).column;

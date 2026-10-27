@@ -104,6 +104,11 @@ public:
     /// in storage. For a subcolumn, which `evaluateDefaults` takes from its parent, the parent is among them too.
     NameSet getDefaultExpressionInputs(const String & name) const;
 
+    /// Returns `columns` ordered so that a column goes after the others of `columns` its `DEFAULT` expression reads,
+    /// directly or through another `DEFAULT` column the part does not store, and a subcolumn goes after its parent.
+    /// Keeps the order of `columns` otherwise.
+    NamesAndTypesList orderByDefaultDependencies(const NamesAndTypesList & columns) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
@@ -364,6 +369,32 @@ private:
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
+
+    /// The `DEFAULT` expressions of the table, analyzed once per reader rather than for each block:
+    /// the defaults are evaluated again after patches for every block read.
+    struct DefaultExpressionsGraph
+    {
+        ColumnsDescription combined_columns;
+        /// The source columns the `DEFAULT` expression of a column reads, as written.
+        std::unordered_map<String, NameSet> required_columns;
+        /// The columns of `required_columns` the part does not store: their values come from their `DEFAULT`.
+        NameSet missing_in_part;
+        /// The columns the part does not store whose `DEFAULT` expression reads a column, by the name of that
+        /// column both as written and in storage.
+        std::unordered_map<String, std::vector<String>> missing_readers;
+        /// The names in storage of the columns above and of the columns their expressions read.
+        std::unordered_map<String, String> names_in_storage;
+
+        String getNameInStorage(const String & name) const;
+    };
+
+    const DefaultExpressionsGraph & getDefaultExpressionsGraph() const;
+
+    /// Returns the names in storage of the columns the `DEFAULT` of `name_in_storage` reads, directly or
+    /// through another `DEFAULT` column the part does not store.
+    static NameSet getDefaultInputsInStorage(const DefaultExpressionsGraph & graph, const String & name_in_storage);
+
+    mutable std::unique_ptr<DefaultExpressionsGraph> default_expressions_graph;
 };
 
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;

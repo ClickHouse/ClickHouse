@@ -108,8 +108,15 @@ private:
     /// their values in `block`; the other columns of `block` are the inputs. The expression of a column is executed
     /// only in its rows of `result.rows_filled_by_defaults` (in every row if it has none there); the patched rows keep
     /// their values. A column is evaluated after the others of `columns_to_evaluate` its expression reads.
+    /// Adds to `columns_to_evaluate` the columns of `candidates` (the `DEFAULT` columns in `block` that may be evaluated
+    /// again) that read a missing column through which the expressions of `columns_to_evaluate` read, as that column
+    /// is evaluated anew.
     static void evaluateDefaultsInRowsFilledByDefaults(
-        const IMergeTreeReader & reader, const ReadResult & result, Block & block, const NamesAndTypesList & columns_to_evaluate);
+        const IMergeTreeReader & reader,
+        const ReadResult & result,
+        Block & block,
+        const NamesAndTypesList & candidates,
+        NamesAndTypesList & columns_to_evaluate);
 
     /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
     /// once more, after patches were applied to `patched_columns` of the result accumulated up to
