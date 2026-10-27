@@ -164,7 +164,7 @@ CMAKE_LINK = {
     "@clickhouse_vectorscan//:_vectorscan__compile_1",
     "@clickhouse_vectorscan//:_vectorscan__compile_2",
     "@clickhouse_croaring//:_roaring__compile_0",
-    "@clickhouse_croaring//:_roaring__compile_1",
+    "@clickhouse_croaring//:_roaring",
     "@clickhouse_cppkafka//:_cppkafka",
     "@clickhouse_librdkafka//:_rdkafka__compile_0",
     "//contrib/librdkafka-cmake:rdhttp_poco_transport",

@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -28,31 +27,23 @@ ch_cc_library(
 )
 
 ch_cc_library(
-    name = "_roaring__compile_1",
+    name = "_roaring",
     srcs = [
         "src/roaring.c",
         "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
     ],
+    hdrs = glob(["cpp/**/*.hh"]),
     copts = [
         "-w",
         "-std=gnu11",
         "-include",
         "contrib/croaring-cmake/page_aligned_functions.h",
     ],
-    implementation_deps = [
-        ":_roaring__compile_0",
-    ],
-    language = "C",
-)
-
-cc_library(
-    name = "_roaring",
-    hdrs = glob(["cpp/**/*.hh"]),
     includes = [
         "cpp",
     ],
+    language = "C",
     deps = [
         ":_roaring__compile_0",
-        ":_roaring__compile_1",
     ],
 )

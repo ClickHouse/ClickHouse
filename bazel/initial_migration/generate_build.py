@@ -164,7 +164,7 @@ def declare_external_compiler_headers(root):
     for repository, target, field, header, old, replacement in (
         ("clickhouse_abseil_cpp", "absl_status", "hdrs", "absl/types/optional_ref.h",
          ":absl_internal_optional_ref", ":absl_hardening"),
-        ("clickhouse_croaring", "_roaring__compile_1", "srcs",
+        ("clickhouse_croaring", "_roaring", "srcs",
          "@clickhouse//contrib/croaring-cmake:page_aligned_functions.h",
          "@clickhouse//contrib/croaring-cmake:page_aligned_functions", None),
     ):

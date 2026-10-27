@@ -396,6 +396,8 @@ def compile_group_name(name, index, sources):
     # Keep the one-file libc++ hardening group in src/Common on both CPUs.
     if name == 'clickhouse_common_io' and list(sources) == ['src/Common/IntervalTree.cpp']:
         return 'interval_tree'
+    if name == '_roaring' and list(sources) == ['contrib/croaring/src/roaring.c']:
+        return name
     return f'{name}__compile_{index}'
 
 
@@ -1075,12 +1077,10 @@ class BuildFile:
             'srcs': list(core), 'hdrs': Glob(['include/**/*.h']), 'includes': ['include'],
             'language': 'C', 'copts': list(core_flags),
         })
-        self.rule('ch_cc_library', '_roaring__compile_1', {
+        self.rule('ch_cc_library', '_roaring', {
             'srcs': [*aligned, '@clickhouse//contrib/croaring-cmake:page_aligned_functions.h'],
-            'language': 'C', 'copts': [*aligned_flags, '-include', header], 'implementation_deps': [':_roaring__compile_0'],
-        })
-        self.rule('cc_library', '_roaring', {
-            'hdrs': Glob(['cpp/**/*.hh']), 'includes': ['cpp'], 'deps': [':_roaring__compile_0', ':_roaring__compile_1'],
+            'hdrs': Glob(['cpp/**/*.hh']), 'includes': ['cpp'], 'deps': [':_roaring__compile_0'],
+            'language': 'C', 'copts': [*aligned_flags, '-include', header],
         })
 
     def target(self, name, variants, input_name=None):
