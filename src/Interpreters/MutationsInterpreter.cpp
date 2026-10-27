@@ -1725,22 +1725,50 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ttl_target_columns.push_back(dependency.column_name);
             }
 
+            /// Any `TTL_TARGET` dependency makes the mutation run the full TTL pass
+            /// (`ExecuteTTLType::NORMAL`), and `TTLTransform` then executes *every* column TTL of the
+            /// table whose target is in the block - not only the ones reached through the rewritten
+            /// columns. On a compact part all columns are in the block, so an independent column TTL
+            /// (`z ... TTL d + INTERVAL ...`) whose bound has expired resets `z` as well, while on a
+            /// wide part it would not. Make the outcome independent of the part format and visible to
+            /// the rest of `prepare`: stream every column TTL target together with its TTL inputs, so
+            /// each target is reset consistently and lands in `changed_columns` (a skip index, a
+            /// projection or a statistic reading it is then rebuilt instead of hardlinked), and treat
+            /// it as a TTL target in the checks below.
+            NameSet column_ttl_targets;
+            if (!ttl_target_columns.empty())
+            {
+                for (const auto & [ttl_column_name, ttl_entry] : metadata_snapshot->getColumnTTLs())
+                {
+                    column_ttl_targets.insert(ttl_column_name);
+                    dependencies.emplace(ttl_column_name, ColumnDependency::TTL_TARGET);
+                    for (const auto & expression_column : ttl_entry.expression_columns.getNames())
+                        dependencies.emplace(expression_column, ColumnDependency::TTL_EXPRESSION);
+                    if (std::ranges::find(ttl_target_columns, ttl_column_name) == ttl_target_columns.end())
+                        ttl_target_columns.push_back(ttl_column_name);
+                }
+            }
+
             /// A TTL-driven reset must not touch a merge-semantic column either.
             /// `checkTTLExpressions` forbids a column TTL only on sorting / partition key columns,
             /// so a table with e.g. `sign Int8 TTL c + INTERVAL ...` is valid, and `MATERIALIZE
             /// COLUMN c` would reset `sign` through the TTL side effect after the direct and
-            /// dependent-MATERIALIZED checks above have already passed. Follow the same fail-close
-            /// approach and refuse the command up front. (UNIQUE KEY columns need no such check:
-            /// TTL is not supported on tables with UNIQUE KEY at all.)
-            for (const auto & ttl_target_column : ttl_target_columns)
+            /// dependent-MATERIALIZED checks above have already passed. The same holds for an
+            /// independent column TTL on such a column, which the full TTL pass executes too. Follow
+            /// the same fail-close approach and refuse the command up front. Only columns that have
+            /// a column TTL can be reset: a row TTL marks every physical column as `TTL_TARGET`, but
+            /// it only deletes rows and never resets the sign / version / is_deleted value, so it
+            /// must not trigger this refusal. (UNIQUE KEY columns need no such check: TTL is not
+            /// supported on tables with UNIQUE KEY at all.)
+            for (const auto & merge_key_column : merge_key_columns)
             {
-                if (std::ranges::find(merge_key_columns, ttl_target_column) != merge_key_columns.end())
+                if (column_ttl_targets.contains(merge_key_column))
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
-                        "Refused to materialize column {} because it drives a TTL that resets column {}, "
-                        "which is used as the sign, version or is_deleted column of the table engine, "
-                        "which the merge logic depends on. Resetting it could change the collapsing or "
-                        "replacing semantics of existing data",
-                        backQuote(command.column_name), backQuote(ttl_target_column));
+                        "Refused to materialize column {} because it makes the mutation re-evaluate the column TTLs, "
+                        "and one of them resets column {}, which is used as the sign, version or is_deleted column "
+                        "of the table engine, which the merge logic depends on. Resetting it could change the "
+                        "collapsing or replacing semantics of existing data",
+                        backQuote(command.column_name), backQuote(merge_key_column));
             }
 
             /// A TTL-driven reset must not leave a stored MATERIALIZED column stale either. Any
