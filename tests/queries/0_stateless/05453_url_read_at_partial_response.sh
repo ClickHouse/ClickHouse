@@ -66,7 +66,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+class Server(ThreadingHTTPServer):
+    # The client drops the connection when it rejects a response before reading its body.
+    def handle_error(self, request, client_address):
+        if not isinstance(sys.exc_info()[1], ConnectionError):
+            super().handle_error(request, client_address)
+
+server = Server(('127.0.0.1', 0), Handler)
 with open(sys.argv[2], 'w') as f:
     f.write(str(server.server_address[1]))
 server.serve_forever()
