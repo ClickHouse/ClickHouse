@@ -200,6 +200,13 @@ crate.annotation(
 )
 use_repo(crate, "chdig_crates", "delta_crates")
 
+# Clang records its source filename in ThinLTO bitcode bundled into Rust archives.
+crate.annotation(
+    crate = "cc",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:cc-rs-thinlto-source-path.patch"],
+)
+
 # Let cc-rs use Cargo's OPT_LEVEL for CityHash. A later -Wall enables the
 # C-linkage warning again, so keep that diagnostic a warning under -Werror.
 crate.annotation(

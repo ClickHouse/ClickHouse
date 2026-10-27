@@ -1,4 +1,5 @@
 exports_files([
+    "cc-rs-thinlto-source-path.patch",
     "cityhash-cargo-profile.patch",
     "cppkafka-error-include.patch",
     "dwyu-compiler-preprocessing.patch",
