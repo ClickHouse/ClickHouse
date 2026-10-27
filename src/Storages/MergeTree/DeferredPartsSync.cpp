@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Disks/StoragePolicy.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -34,6 +35,23 @@ bool DeferredPartsSync::isEnabled(const MergeTreeData & storage, const StorageMe
 
     const auto disks = storage.getStoragePolicy()->getDisks();
     return std::ranges::all_of(disks, [](const auto & disk) { return disk->getDataSourceDescription().type == DataSourceType::Local; });
+}
+
+DeferredPartsSync::~DeferredPartsSync()
+{
+    if (parts.empty())
+        return;
+
+    try
+    {
+        syncAll();
+    }
+    catch (...)
+    {
+        /// The insert is not acknowledged anyway, and the files that failed to sync are remembered,
+        /// so a retry of the insert that is deduplicated against these parts fails as well.
+        tryLogCurrentException(getLogger("DeferredPartsSync"), "Cannot sync the parts committed by a failed insert");
+    }
 }
 
 void DeferredPartsSync::add(MergeTreeDataPartPtr part)

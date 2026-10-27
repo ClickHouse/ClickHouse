@@ -33,6 +33,14 @@ public:
     /// With `group_fsync_before_insert_finish = 'auto'`, it is enabled only for non-replicated tables.
     static bool isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot);
 
+    DeferredPartsSync() = default;
+    DeferredPartsSync(const DeferredPartsSync &) = delete;
+    DeferredPartsSync & operator=(const DeferredPartsSync &) = delete;
+
+    /// If the insert fails or is cancelled, the parts that it has already committed stay in the table.
+    /// They are synced here, so that they are not left without fsync on any exit path.
+    ~DeferredPartsSync();
+
     /// Adding a part that is already queued does nothing.
     void add(MergeTreeDataPartPtr part);
 
