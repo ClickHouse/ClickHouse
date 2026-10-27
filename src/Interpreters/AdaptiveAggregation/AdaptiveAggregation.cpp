@@ -169,7 +169,11 @@ AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers
 }
 
 bool Aggregator::advanceAdaptiveProducer(
-    AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const
+    AggregatedDataVariants & result,
+    AdaptiveAggregationProducer & adaptive,
+    size_t rows,
+    bool over_external_threshold,
+    bool top_k_waits) const
 {
     /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
     /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
@@ -188,7 +192,7 @@ bool Aggregator::advanceAdaptiveProducer(
     if (adaptive.isLearning())
     {
         std::get<AdaptiveAggregationProducer::LearningState>(adaptive.phase).rows += rows;
-        if (adaptiveFreezeBoundReached(result))
+        if (!top_k_waits && adaptiveFreezeBoundReached(result))
             freezeAdaptive(result, adaptive);
     }
     return true;
@@ -250,8 +254,6 @@ bool Aggregator::adaptiveTableWorthSpilling(
 
 void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
 {
-    freezeWaitingTopKHeap(result);
-
     /// A table that was written to disk freezes again with the records and the bins it already has.
     if (!adaptive.partitions)
     {

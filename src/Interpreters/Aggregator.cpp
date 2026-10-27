@@ -142,11 +142,17 @@ size_t convertedBlockSize(size_t table_size, size_t max_block_size, size_t max_r
     return std::min(max_block_size, table_size) + 1;
 }
 
+/// A heap with a `COLLATE` key waits for its start check, unless `observation_rows` is 0.
+bool topKHeapStartsLate(const DB::Aggregator::Params & params)
+{
+    return params.top_k && params.top_k->hasCollators() && params.top_k->observation_rows != 0;
+}
+
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    /// A collated heap leaves the table to grow as without the optimization until it starts, so it takes the same size hint.
-    if (params.top_k && !params.top_k->hasCollators())
+    /// A heap that waits to start leaves the table to grow as without the optimization until then, so it takes the same size hint.
+    if (params.top_k && !topKHeapStartsLate(params))
     {
         result.init(method_chosen);
         ProfileEvents::increment(ProfileEvents::AggregationHashTablesInitializedAsTwoLevel, result.isTwoLevel());
@@ -190,7 +196,7 @@ void initDataVariantsWithSizeHint(
 
 bool topKHeapWaits(const DB::Aggregator::Params & params, const DB::TopKAggregationHeapBase & heap)
 {
-    return params.top_k && params.top_k->hasCollators() && !heap.heap_column && !heap.frozen && !heap.start_allowed;
+    return topKHeapStartsLate(params) && !heap.heap_column && !heap.frozen && !heap.start_allowed;
 }
 
 /// Collection and use of the statistics should be enabled. `repeat_dominated` is the adaptive verdict of the run (see
@@ -602,15 +608,6 @@ static Strings topKCollationLocales(const Aggregator::Params::TopKParams & top_k
     for (const auto & collator : top_k.collators)
         locales.push_back(collator ? collator->getLocale() : String{});
     return locales;
-}
-
-void Aggregator::freezeWaitingTopKHeap(AggregatedDataVariants & result) const
-{
-    if (auto * heap = params.top_k ? result.topKHeap() : nullptr; heap && topKHeapWaits(params, *heap))
-    {
-        heap->frozen = true;
-        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-    }
 }
 
 void Aggregator::Params::explain(ExplainFormatSettings & settings) const
@@ -2490,6 +2487,11 @@ bool Aggregator::executeOnBlock(Columns columns,
     const bool top_k_waits = top_k_heap && topKHeapWaits(params, *top_k_heap);
     const bool top_k_active = params.top_k && !result.topKHeapInactive() && !top_k_waits;
 
+    /// The frozen kernel does not consult the heap, so a collated heap that runs or starts with this block keeps its
+    /// stream off the adaptive path.
+    if (adaptive && adaptive->isLearning() && top_k_heap && params.top_k->hasCollators() && !top_k_heap->frozen && !top_k_waits)
+        adaptive->standDown();
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -2564,7 +2566,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const,
             aggregator_tracker ? result.memory_tracker.get() : nullptr);
     }
-    else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
+    else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const && !top_k_waits
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold
              && adaptiveLearningSlices(*adaptive))
     {
@@ -2608,15 +2610,31 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// A collated heap tests every row with a locale comparison, which costs more than the hash-table work it saves
     /// unless the rows keep inserting new keys. So it starts only once the table holds `collated_top_k_min_keys` keys
-    /// and the last block inserted new keys for at least `collated_top_k_min_new_key_share` of its rows, re-checked
-    /// after every block until it starts or gives up at the adaptive freeze. Measured on 20M rows, `LIMIT 10`, 'en':
-    /// a heap started at 1M or 3M keys is 1.5x or 1.2x slower with 1 thread; at 12.6M keys it is 1.6x faster.
+    /// and the last block inserted new keys for at least `collated_top_k_min_new_key_share` of its rows. A learning
+    /// adaptive producer takes that decision once: it stands down for a heap that starts, and a heap that does not
+    /// gives up so that the table can freeze. Without one, the check repeats after every block until the heap starts.
+    /// Measured on 20M rows, `LIMIT 10`, 'en': a heap started at 1M or 3M keys is 1.5x or 1.2x slower with 1 thread;
+    /// at 12.6M keys it is 1.6x faster.
     static constexpr size_t collated_top_k_min_keys = 32768;
     static constexpr double collated_top_k_min_new_key_share = 0.995;
-    if (top_k_waits && result_size >= collated_top_k_min_keys && row_end > row_begin
-        && static_cast<double>(result_size - keys_before_block)
+    if (top_k_waits && result_size >= collated_top_k_min_keys && row_end > row_begin)
+    {
+        auto & heap = *result.topKHeap();
+        const bool learning = adaptive && adaptive->isLearning();
+        if (static_cast<double>(result_size - keys_before_block)
             >= collated_top_k_min_new_key_share * static_cast<double>(row_end - row_begin))
-        result.topKHeap()->start_allowed = true;
+        {
+            heap.start_allowed = true;
+            if (learning)
+                adaptive->standDown();
+        }
+        else if (learning)
+        {
+            heap.frozen = true;
+            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+        }
+    }
+    const bool top_k_still_waits = top_k_waits && topKHeapWaits(params, *result.topKHeap());
 
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     const bool over_external_threshold = params.max_bytes_before_external_group_by
@@ -2629,7 +2647,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         std::optional<MemoryTrackerSwitcher> scope;
         aggregator_scope(scope, /*table_may_freeze=*/adaptive->isLearning());
-        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, over_external_threshold);
+        stays_adaptive = advanceAdaptiveProducer(result, *adaptive, row_end - row_begin, over_external_threshold, top_k_still_waits);
     }
     if (stays_adaptive)
     {

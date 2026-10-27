@@ -2314,7 +2314,7 @@ The optimization is disabled when the requested `LIMIT` is higher than [query_pl
 
 The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
 
-With `COLLATE` on a ranked key, each aggregation stream starts the heap only once its hash table is large and a block still inserts mostly new keys, and gives it up when it stops keeping new keys out of the hash table, because otherwise the comparisons under the collation cost more than they save.
+With `COLLATE` on a ranked key, each aggregation stream starts the heap only once its hash table is large and a block still inserts mostly new keys, and gives it up when it stops keeping new keys out of the hash table, because otherwise the comparisons under the collation cost more than they save. A stream that starts such a heap does not use the adaptive aggregator (see `enable_adaptive_aggregator`), and a stream whose start check fails while the adaptive aggregator still learns gives the heap up at that point.
 
 Possible values:
 
@@ -2325,7 +2325,7 @@ Possible values:
     DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
 For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity, if the heap is full or has a `COLLATE` key. A frozen heap means aggregation continues as if the optimization were disabled.
 
-The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze and the one of a heap with a `COLLATE` key that stops keeping new keys out of the hash table (the heap still freezes when a boundary tie-set overgrows it).
+The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze and the one of a heap with a `COLLATE` key that stops keeping new keys out of the hash table (the heap still freezes when a boundary tie-set overgrows it). `0` also starts a heap with a `COLLATE` key with the first block instead of waiting for its start check.
 
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL, \

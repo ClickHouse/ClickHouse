@@ -11,6 +11,7 @@
 -- keys, so the tables begin with 33792 distinct starter keys m0, m1, ..., which a single stream reads first. A read
 -- can return a whole granule as one block, so `index_granularity` stays at most 1024 to start the heap at their end.
 -- Under 'en' they sort after a... and before Z..., so they are outside every tested result.
+-- `group_by_top_k_optimization_observation_rows = 0` starts the heap at once, so only the forced case sets it.
 
 SET max_rows_to_group_by = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
@@ -19,7 +20,7 @@ SET optimize_aggregation_in_order = 0;
 SET exact_rows_before_limit = 0;
 SET serialize_query_plan = 0;
 SET enable_parallel_replicas = 0;
-SET group_by_top_k_optimization_observation_rows = 0;
+SET group_by_top_k_optimization_observation_rows = 65536;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET use_query_condition_cache = 0;
 SET use_top_k_dynamic_filtering_for_variable_length_types = 0;
@@ -127,6 +128,17 @@ SELECT s, count() FROM (SELECT if(number < 160000, concat('m', toString(number))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 4, max_block_size = 1024, enable_adaptive_aggregator = 0, enable_group_by_top_k_optimization = 1,
     log_comment = '05407_threads';
+-- The same with the adaptive aggregator: a stream whose heap starts stands down from it.
+SELECT s, count() FROM (SELECT if(number < 160000, concat('m', toString(number)),
+    concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997))) AS s FROM numbers_mt(200000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 65536, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (SELECT if(number < 160000, concat('m', toString(number)),
+    concat(['Z', 'a', 'á'][number % 3 + 1], toString(number % 997))) AS s FROM numbers_mt(200000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1, log_comment = '05407_threads_adaptive';
 
 -- After the starters every row is a new key that ranks better than all before it, so the started heap admits each
 -- one and the arena grows with their 2000-byte payloads until the table crosses the two-level byte threshold and
@@ -240,12 +252,12 @@ SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
 SELECT lcs, s, count() FROM t_05407 GROUP BY lcs, s ORDER BY lcs ASC COLLATE 'en', s ASC LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_late_lc';
--- A heap that has not started by the adaptive freeze gives up, and the table freezes.
-SELECT s, count() FROM (SELECT concat('k', toString(number % 5000)) AS s FROM numbers_mt(200000))
+-- A heap whose start check fails while the adaptive aggregator learns gives up, and the table freezes.
+SELECT s, count() FROM (SELECT concat('k', toString(intDiv(number, 2))) AS s FROM numbers_mt(160000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 2, max_block_size = 65536, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 1000,
     group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 0;
-SELECT s, count() FROM (SELECT concat('k', toString(number % 5000)) AS s FROM numbers_mt(200000))
+SELECT s, count() FROM (SELECT concat('k', toString(intDiv(number, 2))) AS s FROM numbers_mt(160000))
 GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 2, max_block_size = 1024, enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 1000,
     group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
@@ -312,6 +324,21 @@ GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 16384, group_by_top_k_optimization_observation_rows = 1,
     enable_group_by_top_k_optimization = 1, log_comment = '05407_run_after_sample';
 
+-- Every key comes twice, so the start check would fail; with `observation_rows = 0` the heap runs from the first block
+-- and keeps each stream off the adaptive aggregator. Keys descend, so the prefix heap evicts on every new key.
+SELECT 'forced heap';
+SELECT s, b, count() FROM (SELECT concat('l', leftPad(toString(99999 - intDiv(number, 2)), 5, '0')) AS s,
+    intDiv(number, 2) % 2 AS b FROM numbers_mt(160000))
+GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 0;
+SELECT s, b, count() FROM (SELECT concat('l', leftPad(toString(99999 - intDiv(number, 2)), 5, '0')) AS s,
+    intDiv(number, 2) % 2 AS b FROM numbers_mt(160000))
+GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, enable_group_by_top_k_optimization = 1,
+    group_by_top_k_optimization_observation_rows = 0, log_comment = '05407_forced_repeats';
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the table froze.
@@ -328,7 +355,7 @@ INNER JOIN
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
         AND log_comment IN ('05407_dynamic_filter', '05407_gave_up', '05407_late_lc', '05407_late_start', '05407_plain_at_once',
             '05407_qcc', '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_threads',
-            '05407_ties_asc', '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
+            '05407_threads_adaptive', '05407_ties_asc', '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
 ) AS i ON q.initial_query_id = i.query_id
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
 GROUP BY i.log_comment
@@ -343,6 +370,14 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_da
         '05407_run_one_key', '05407_run_repeats')
 GROUP BY log_comment
 ORDER BY log_comment;
+
+SELECT 'forced heap engaged';
+SELECT log_comment, sum(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS pruned,
+    sum(ProfileEvents['AdaptiveAggregationLocalFreezes']) AS adaptive_freezes
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
+    AND log_comment = '05407_forced_repeats'
+GROUP BY log_comment;
 
 DROP TABLE t_05407;
 DROP TABLE t_05407_spill;

@@ -40,7 +40,6 @@
 
     <!-- High cardinality string: URL (~10M unique values) -->
     <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC LIMIT 10 FORMAT Null</query>
-    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
 
     <!-- Medium cardinality: RegionID (~10K unique values) -->
     <query>SELECT RegionID, count() FROM hits_100m_single GROUP BY RegionID ORDER BY RegionID ASC LIMIT 10 FORMAT Null</query>

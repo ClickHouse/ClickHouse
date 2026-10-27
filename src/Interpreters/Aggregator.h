@@ -924,11 +924,15 @@ private:
 
     /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion: writes its staged
     /// records to disk when the query is `over_external_threshold`, thaws a frozen table whose staged stream repeats,
-    /// and freezes a learning table at its bounds. A learning table counts the block's `rows` toward the end of its
-    /// slicing (see `adaptiveLearningSlices`). Returns false once the producer is on the baseline path, whose checks
-    /// then apply.
+    /// and, unless a collated top-K heap still waits to start (`top_k_waits`), freezes a learning table at its bounds.
+    /// A learning table counts the block's `rows` toward the end of its slicing (see `adaptiveLearningSlices`). Returns
+    /// false once the producer is on the baseline path, whose checks then apply.
     bool advanceAdaptiveProducer(
-        AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t rows, bool over_external_threshold) const;
+        AggregatedDataVariants & result,
+        AdaptiveAggregationProducer & adaptive,
+        size_t rows,
+        bool over_external_threshold,
+        bool top_k_waits) const;
 
     /// Whether a learning table reached a bound of the freeze: its key count or its own tracked memory, so the caller
     /// reports the thread's unreported allocations to the table's tracker first (see `executeOnBlock`).
@@ -953,9 +957,6 @@ private:
     /// (see `adaptiveTableWorthSpilling`), so the caller reports the thread's unreported allocations to the table's
     /// tracker first (see `executeOnBlock`).
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
-
-    /// A collated top-K heap still waiting to start gives up at the adaptive freeze (see `freezeAdaptive`).
-    void freezeWaitingTopKHeap(AggregatedDataVariants & result) const;
 
     /// The thaw transition: the producer returns to the baseline path for good, keeping the records it staged.
     void thawAdaptive(const AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;

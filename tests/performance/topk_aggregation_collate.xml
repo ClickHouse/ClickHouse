@@ -1,0 +1,10 @@
+<test run_all_queries="1">
+    <!-- `GROUP BY` top-K with `COLLATE` on the ranked key, at default settings, against the optimization off. -->
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL DESC COLLATE 'en' LIMIT 10 FORMAT Null</query>
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC COLLATE 'en' LIMIT 10 SETTINGS group_by_top_k_optimization_observation_rows = 0 FORMAT Null</query>
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL DESC COLLATE 'en' LIMIT 10 SETTINGS group_by_top_k_optimization_observation_rows = 0 FORMAT Null</query>
+    <query>SELECT URL, count() FROM hits_100m_single GROUP BY URL ORDER BY URL ASC COLLATE 'en' LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0 FORMAT Null</query>
+    <query>SELECT s, count() FROM (SELECT toString(number) AS s FROM numbers_mt(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 FORMAT Null</query>
+    <query>SELECT s, count() FROM (SELECT toString(number) AS s FROM numbers_mt(20000000)) GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0 FORMAT Null</query>
+</test>

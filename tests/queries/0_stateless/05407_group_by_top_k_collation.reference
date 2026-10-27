@@ -112,6 +112,16 @@ a0	13
 a1	13
 á1	13
 a10	13
+a0	13
+á0	14
+a1	13
+á1	13
+a10	13
+a0	13
+á0	14
+a1	13
+á1	13
+a10	13
 external aggregation
 1
 Z996	10
@@ -224,16 +234,16 @@ a0	a0	10
 a1	a1	11
 á1	á1	10
 a10	a10	11
-k0	40
-k1	40
-k10	40
-k100	40
-k1000	40
-k0	40
-k1	40
-k10	40
-k100	40
-k1000	40
+k0	2
+k1	2
+k10	2
+k100	2
+k1000	2
+k0	2
+k1	2
+k10	2
+k100	2
+k1000	2
 running heap
 a0	95
 a1	95
@@ -290,6 +300,17 @@ m1	1
 m10	1
 m100	1
 m1000	1
+forced heap
+l20000	1	2
+l20001	0	2
+l20002	1	2
+l20003	0	2
+l20004	1	2
+l20000	1	2
+l20001	0	2
+l20002	1	2
+l20003	0	2
+l20004	1	2
 engaged
 05407_dynamic_filter	1	1	1
 05407_gave_up	0	1	1
@@ -302,6 +323,7 @@ engaged
 05407_remote_text	1	1	1
 05407_spill	1	1	1
 05407_threads	1	1	1
+05407_threads_adaptive	1	1	1
 05407_ties_asc	1	1	1
 05407_ties_desc	1	1	1
 05407_wait_repeats	0	1	1
@@ -313,3 +335,5 @@ running heap engaged
 05407_run_new_keys	1	0
 05407_run_one_key	1	1
 05407_run_repeats	1	1
+forced heap engaged
+05407_forced_repeats	1	0
