@@ -1065,6 +1065,12 @@ void StorageMergeTree::alter(
                 }
                 throw;
             }
+
+            /// As in `startMutation`, a mutation that has no parts to process (e.g. on a table without
+            /// parts) is completed right at creation. It is marked only here, still under the lock of
+            /// the registration, because the rollback above assumes the registered entry is not done.
+            if (mutation_registered)
+                markFinishedMutations(mutation_version);
         }
 
         /// Schema is committed and the mutation (if any) is queued; don't hold DDLGuard across
@@ -1314,7 +1320,8 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         addPreparedMutationEntry(std::move(prepared));
         /// A mutation that has no parts to process (e.g. on a table without parts) is completed
         /// right at creation. Do not mark from `addPreparedMutationEntry`: the `alter` path
-        /// registers entries through it and its rollback assumes they are not done yet.
+        /// registers entries through it and its rollback assumes they are not done yet, so it
+        /// marks them itself once it can no longer roll back.
         markFinishedMutations(version);
 
         /// `prepareMutationEntry` added the mutation to the transaction before the entry
