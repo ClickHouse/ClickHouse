@@ -954,6 +954,18 @@ void StatementGenerator::generateNextTablePartition(
             }
         }
     }
+    else if (t.isAnyIcebergEngine() && t.iceberg_partition_key.has_value() && !detached && rg.nextMediumNumber() < 81)
+    {
+        /// An existing partition of an Iceberg table, or a made-up one, which DROP PARTITION skips
+        const String pval = rg.nextMediumNumber() < 86
+            ? fc.tableGetRandomKeyValue(t.getDatabaseName(), t.getBaseName(), t.iceberg_partition_key.value())
+            : FuzzConfig::getRandomFuzzedPartitionValue(rg.nextInFullRange());
+
+        if ((table_has_partitions = !pval.empty()))
+        {
+            pexpr->set_partition(pval);
+        }
+    }
     if (!table_has_partitions && supports_all && rg.nextBool())
     {
         pexpr->set_all(true);
@@ -1422,7 +1434,18 @@ void StatementGenerator::generateInsertToTable(
                       entry.path.size() > 1 ? "Array(" : "",
                       entry.getBottomType()->typeName(false, false),
                       entry.path.size() > 1 ? ")" : "");
-                  ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(entry.getBottomName());
+                  if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
+                  {
+                      const int32_t second = entry.special == ColumnSpecial::SIGN ? -1 : 0;
+
+                      ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(
+                          fmt::format("if({} % 2 = 0, {}, 1)", entry.getBottomNameSQL(), second));
+                  }
+                  else
+                  {
+                      ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+                          entry.getBottomName());
+                  }
                   first = false;
               }
               grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
@@ -1568,23 +1591,25 @@ void StatementGenerator::generateUpdateSets(
 
             columnPathRef(entry, uset->mutable_col());
             Expr * expr = uset->mutable_expr();
+            const bool is_special = entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED;
 
-            if (rg.nextBool())
+            if (is_special || rg.nextBool())
             {
                 /// Set constant value
                 String buf;
                 LiteralValue * lv = expr->mutable_lit_val();
 
-                if ((entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
-                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
-                {
-                    buf = "DEFAULT";
-                }
-                else if (entry.special == ColumnSpecial::SIGN || entry.special == ColumnSpecial::IS_DELETED)
+                if (is_special)
                 {
                     const String second = entry.special == ColumnSpecial::SIGN ? "-1" : "0";
 
                     buf += rg.nextBool() ? "1" : second;
+                }
+                else if (
+                    (entry.dmod.has_value() && entry.dmod.value() == DModifier::DEF_DEFAULT && rg.nextMediumNumber() < 6)
+                    || (entry.path.size() == 1 && rg.nextLargeNumber() < 2))
+                {
+                    buf = "DEFAULT";
                 }
                 else
                 {
@@ -2188,7 +2213,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              {
                  generateNextTablePartition(rg, 1, rg.nextSmallNumber() < 3, true, t, ati->mutable_detach_partition()->mutable_partition());
              }},
-            {5 * static_cast<uint32_t>(no_oracle && is_mt),
+            {5 * static_cast<uint32_t>(no_oracle && (is_mt || t.isAnyIcebergEngine())),
              [&]
              { generateNextTablePartition(rg, 1, rg.nextSmallNumber() < 3, true, t, ati->mutable_drop_partition()->mutable_partition()); }},
             {5 * static_cast<uint32_t>(is_mt),
@@ -3201,6 +3226,33 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
                   bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
           }},
          {everything, [&] { bre->set_all(true); }}});
+    if (rg.nextSmallNumber() < 3)
+    {
+        /// EXCEPT DATA FROM TABLE[S]: back up table definitions without their rows
+        if (bre->has_bobject() && bre->bobject().sobject() != SQLObject::DATABASE)
+        {
+            /// A single-object element can only name its own object
+            bre->add_except_data_tables()->CopyFrom(bre->bobject().object().est());
+        }
+        else
+        {
+            /// A DATABASE element can name its own tables, ALL can name any
+            const std::optional<String> dname
+                = bre->has_bobject() ? std::make_optional(bre->bobject().object().database().value()) : std::nullopt;
+            const auto in_scope = [&](const SQLTable & t) { return t.isAttached() && (!dname || t.getDatabaseName() == dname.value()); };
+
+            if (collectionHas<SQLTable>(in_scope))
+            {
+                const uint32_t ntables = rg.randomInt<uint32_t>(1, 3);
+
+                for (uint32_t i = 0; i < ntables; i++)
+                {
+                    rg.pickRandomly(filterCollection<SQLTable>(in_scope)).get().setName(bre->add_except_data_tables(), rg.nextBool());
+                }
+            }
+        }
+        bre->set_except_data_plural(rg.nextBool());
+    }
     setClusterClause(rg, cluster, br->mutable_cluster());
     setBackupOut(rg, br->mutable_out());
 
@@ -3271,7 +3323,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
              {restore_database,
               [&] { cluster = backupOrRestoreDatabase(bre->mutable_bobject(), rg.pickValueRandomlyFromMap(backup.databases)); }}});
     }
-
+    /// No EXCEPT DATA FROM TABLE[S] here: it is BACKUP only, RESTORE rejects it with BAD_ARGUMENTS
     setClusterClause(rg, cluster, br->mutable_cluster());
     br->mutable_out()->CopyFrom(backup.bout);
     if (backup.out_format.has_value())

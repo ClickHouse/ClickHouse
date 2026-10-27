@@ -1,10 +1,8 @@
 -- Tags: distributed
 
-{% for enable_analyzer in [1] %}
 {% for prefer_localhost in [1, 0] %}
 
 -- { echo }
-SET enable_analyzer = {{ enable_analyzer }};
 SET prefer_localhost_replica = {{ prefer_localhost }};
 
 -- Positive OFFSET
@@ -63,5 +61,4 @@ SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', num
 SELECT count() FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 2 WITH TIES);
 SELECT groupArray(number) FROM (SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(10)) ORDER BY number LIMIT 3 OFFSET 2 WITH TIES);
 
-{% endfor %}
 {% endfor %}

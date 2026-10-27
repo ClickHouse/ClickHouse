@@ -599,5 +599,16 @@ The source tree ships proof-of-concept drivers under `programs/server/user_defin
 
 These example drivers are intended as a starting point; review and harden the sandboxing for your environment before exposing them to untrusted users.
 
+### Third-party drivers {#third-party-drivers}
+
+Drivers can also come from outside ClickHouse. These are maintained by their authors, not by ClickHouse; review them as you would the example drivers before exposing them to untrusted users:
+
+- [`HyperlightPython`](https://github.com/hyperlight-dev/hyperlight-unikraft/tree/main/integrations/clickhouse) - runs a Python function body in a [Hyperlight](https://github.com/hyperlight-dev/hyperlight) micro-VM with its own kernel. Hyperlight is a [Cloud Native Computing Foundation](https://www.cncf.io/projects/hyperlight/) sandbox project. Each block of rows starts from a snapshot of the guest, so the code has no network, no access to the server's files, and no state between queries. Requires Linux with `/dev/kvm`.
+
+  ```sql
+  CREATE FUNCTION py_words ARGUMENTS (s String) RETURNS UInt64
+  ENGINE = HyperlightPython AS 'return len(s.split())';
+  ```
+
 ## Related Content {#related-content}
 - [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
