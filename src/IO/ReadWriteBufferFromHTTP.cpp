@@ -6,11 +6,14 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/NetException.h>
+#include <Common/StringUtils.h>
 #include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+
+#include <charconv>
 
 
 namespace ProfileEvents
@@ -79,6 +82,20 @@ Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
     return requestCredentialSecrets(request);
 }
 
+/// The first byte of a `Content-Range: bytes <first>-<last>/<length>` value, `std::nullopt` if the value is not one.
+std::optional<size_t> parseContentRangeStart(std::string_view content_range)
+{
+    constexpr std::string_view unit = "bytes ";
+    if (content_range.size() < unit.size() || !equalsCaseInsensitive(content_range.substr(0, unit.size()), unit))
+        return std::nullopt;
+    content_range.remove_prefix(unit.size());
+    size_t first = 0;
+    const auto [ptr, ec] = std::from_chars(content_range.data(), content_range.data() + content_range.size(), first);
+    if (ec != std::errc() || ptr == content_range.data() + content_range.size() || *ptr != '-')
+        return std::nullopt;
+    return first;
+}
+
 }
 
 namespace ErrorCodes
@@ -89,6 +106,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNEXPECTED_END_OF_FILE;
 }
 
 ReadInterruptedException::ReadInterruptedException(std::exception_ptr original_exception_)
@@ -770,56 +788,97 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
     size_t total_bytes_copied = 0;
     size_t bytes_copied = 0;
     bool is_canceled = false;
+    const size_t file_size = *file_info->file_size;
 
-    doWithRetries(
-        /*callable=*/ [&] ()
+    /// The callback counts from the beginning of `to`, while every response is copied from the current position.
+    std::function<bool(size_t)> progress;
+    if (progress_callback)
+        progress = [&](size_t copied_from_response)
         {
-            auto range = HTTPRange{offset, offset + n - 1};
+            if (progress_callback(total_bytes_copied + copied_from_response))
+                is_canceled = true;
+            return is_canceled;
+        };
 
-            Poco::Net::HTTPResponse response;
-            auto result = callImpl(response, method, range, false);
-
-            if (response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT &&
-                (offset != 0 || offset + n < *file_info->file_size))
+    /// A 206 response may carry only a part of the requested range (RFC 9110, 15.3.7): then the rest is requested again.
+    while (n > 0 && !is_canceled && offset < file_size)
+    {
+        doWithRetries(
+            /*callable=*/ [&] ()
             {
-                String explanation = fmt::format(
-                    "When reading with readBigAt {}. "
-                    "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
-                    maskedURI(initial_uri),
-                    *range.begin, *range.end,
-                    toString(response.getStatus()), response.getReason());
+                auto range = HTTPRange{offset, offset + n - 1};
 
-                throw HTTPException(
-                    ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
-                    Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
-                    response.getReason(),
-                    explanation,
-                    headerCredentialSecrets(http_header_entries));
-            }
+                Poco::Net::HTTPResponse response;
+                auto result = callImpl(response, method, range, false);
 
-            copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);
+                if (response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT &&
+                    (offset != 0 || offset + n < file_size))
+                {
+                    String explanation = fmt::format(
+                        "When reading with readBigAt {}. "
+                        "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
+                        maskedURI(initial_uri),
+                        *range.begin, *range.end,
+                        toString(response.getStatus()), response.getReason());
 
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
+                    throw HTTPException(
+                        ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                        current_uri.toString(),
+                        Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
+                        response.getReason(),
+                        explanation,
+                        headerCredentialSecrets(http_header_entries));
+                }
 
-            offset += bytes_copied;
-            total_bytes_copied += bytes_copied;
-            to += bytes_copied;
-            n -= bytes_copied;
-            bytes_copied = 0;
-        },
-        /*on_retry=*/ [&] ()
-        {
-            ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
+                const bool partial = response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT;
+                if (partial)
+                {
+                    const String content_range = response.get("Content-Range", "");
+                    if (parseContentRangeStart(content_range) != offset)
+                        throw Exception(
+                            ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                            "When reading with readBigAt {}. The server returned the range '{}' instead of one starting at {}",
+                            maskedURI(initial_uri), content_range, offset);
+                }
 
-            offset += bytes_copied;
-            total_bytes_copied += bytes_copied;
-            to += bytes_copied;
-            n -= bytes_copied;
-            bytes_copied = 0;
-        });
+                copyFromReadBufferWithProgressCallback(*result, to, n, progress, &bytes_copied, &is_canceled);
 
-    chassert(total_bytes_copied == initial_n || is_canceled);
+                ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
+
+                const size_t bytes_before_eof = std::min(n, file_size - offset);
+                if (bytes_copied < bytes_before_eof && !is_canceled)
+                {
+                    if (!partial)
+                        throw Exception(
+                            ErrorCodes::UNEXPECTED_END_OF_FILE,
+                            "When reading with readBigAt {}. The server returned the whole file with {} bytes, but its size is {}",
+                            maskedURI(initial_uri), bytes_copied, file_size);
+                    if (bytes_copied == 0)
+                        throw NetException(
+                            ErrorCodes::UNEXPECTED_END_OF_FILE,
+                            "When reading with readBigAt {}. The response for the range [{}, {}] has no data",
+                            maskedURI(initial_uri), *range.begin, *range.end);
+                }
+
+                offset += bytes_copied;
+                total_bytes_copied += bytes_copied;
+                to += bytes_copied;
+                n -= bytes_copied;
+                bytes_copied = 0;
+            },
+            /*on_retry=*/ [&] ()
+            {
+                ProfileEvents::increment(ProfileEvents::ReadWriteBufferFromHTTPBytes, bytes_copied);
+
+                offset += bytes_copied;
+                total_bytes_copied += bytes_copied;
+                to += bytes_copied;
+                n -= bytes_copied;
+                bytes_copied = 0;
+            });
+    }
+
+    chassert(total_bytes_copied == initial_n || is_canceled || offset >= file_size);
     return total_bytes_copied;
 }
 
