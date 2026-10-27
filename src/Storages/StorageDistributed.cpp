@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Utils.h>
 
 #include <Disks/IVolume.h>
 
@@ -27,6 +26,7 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/Utils.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -818,37 +818,27 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     if (!remote_table_storage)
         return;
 
-    /// `ALIAS` columns cross the same cast, so they are compared too.
-    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
-    const auto & declared_columns = storage_snapshot->metadata->getColumns();
+    /// A column no key reads is converted above the shards' sort and reductions like any other
+    /// expression and is simply carried along, so only the key columns are compared.
+    /// `std::nullopt` means the key columns are unknown and every column is compared.
     const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
-    for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
-    {
-        /// A column no key reads is converted above the shards' sort and reductions like any other
-        /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
-        /// there is none of this check's business. `std::nullopt` means the key columns are unknown
-        /// and every column has to be checked.
-        if (key_columns && !key_columns->contains(remote_column.name))
-            continue;
-
-        auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
-        if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
-            throw Exception(
-                ErrorCodes::INCOMPATIBLE_COLUMNS,
-                "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
-                "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
-                "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
-                "cannot be processed. Declare the column with "
-                "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
-                "a Nullable of it",
-                backQuoteIfNeed(remote_column.name),
-                remote_column.type->getName(),
-                remote_table_id.getNameForLogs(),
-                declared_column->type->getName(),
-                getStorageID().getNameForLogs(),
-                remote_column.type->getName(),
-                declared_column->type->getName());
-    }
+    const auto remote_snapshot = remote_table_storage->getStorageSnapshotWithoutData(remote_metadata, local_context);
+    if (auto conversion = findOrderBreakingConversion(*remote_snapshot, *storage_snapshot, key_columns ? &*key_columns : nullptr))
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
+            "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
+            "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
+            "cannot be processed. Declare the column with "
+            "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
+            "a Nullable of it",
+            backQuoteIfNeed(conversion->name),
+            conversion->source_type->getName(),
+            remote_table_id.getNameForLogs(),
+            conversion->declared_type->getName(),
+            getStorageID().getNameForLogs(),
+            conversion->source_type->getName(),
+            conversion->declared_type->getName());
 }
 
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp

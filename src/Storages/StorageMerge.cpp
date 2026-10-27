@@ -27,7 +27,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
@@ -88,6 +87,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
+#include <Storages/Utils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -590,13 +590,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     DatabaseTablesIterators database_table_iterators = database_name_or_regexp.getDatabaseIterators(local_context);
 
-    size_t selected_table_size = 0;
-    bool any_child_conversion_breaks_order = false;
-    /// These are the types `convertAndFilterSourceStream` casts every child stream to, because the
-    /// same snapshot builds the common header (see `read`). Aliases cross that boundary as well, so
-    /// they are compared too; `Ephemeral` is not, since it is never read from a source table.
-    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
-    const auto & declared_columns = storage_snapshot->metadata->getColumns();
+    std::vector<std::pair<StoragePtr, StorageMetadataPtr>> selected_tables;
 
     for (const auto & iterator : database_table_iterators)
     {
@@ -608,26 +602,19 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
             auto table = nested.get() == this ? nested : tableForRead(database, iterator->name(), nested, local_context);
             if (table && table.get() != this)
             {
-                ++selected_table_size;
                 const auto table_metadata = table->getInMemoryMetadataPtr(local_context, false);
                 stage_in_source_tables = std::max(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
                         table->getStorageSnapshot(table_metadata, local_context), query_info));
-
-                for (const auto & child_column : table_metadata->getColumns().get(order_relevant_columns))
-                {
-                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
-                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
-                        any_child_conversion_breaks_order = true;
-                }
+                selected_tables.emplace_back(table, table_metadata);
             }
 
             iterator->next();
         }
     }
 
-    auto stage = selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    auto stage = selected_tables.size() == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
 
     /// Caller asked for WithMergeableState but a child reported a higher stage
     /// (e.g. Distributed with `distributed_group_by_no_merge=1` reports Complete).
@@ -646,8 +633,16 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     /// Gated on the effective stage, not on `to_stage`: a single-node `Distributed` child returns
     /// `Complete` even for a `FetchColumns` request, and that is deliberately kept above.
-    if (stage > QueryProcessingStage::FetchColumns && any_child_conversion_breaks_order)
-        return QueryProcessingStage::FetchColumns;
+    /// `convertAndFilterSourceStream` casts every child stream to the types of `storage_snapshot`
+    /// (the common header, see `read`) after the child's own sort or aggregation.
+    if (stage > QueryProcessingStage::FetchColumns)
+    {
+        for (const auto & [table, table_metadata] : selected_tables)
+        {
+            if (findOrderBreakingConversion(*table->getStorageSnapshotWithoutData(table_metadata, local_context), *storage_snapshot))
+                return QueryProcessingStage::FetchColumns;
+        }
+    }
 
     return stage;
 }
@@ -1232,6 +1227,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     storage_merge->getStorageID().getNameForLogs());
             }
 
+            auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
+
             /// `StorageMerge::getQueryProcessingStage` refuses a delegated stage when a child's type
             /// converts to the declared one without preserving the order, but it decides that from
             /// its own child enumeration and metadata snapshots. This loop reads a later, frozen
@@ -1242,27 +1239,19 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// own sort or aggregation, so this fails the query instead of returning wrong rows.
             if (common_processed_stage > QueryProcessingStage::FetchColumns)
             {
-                const auto & declared_columns = merge_storage_snapshot->metadata->getColumns();
-                const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
-                for (const auto & child_column : storage_metadata_snapshot->getColumns().get(order_relevant_columns))
-                {
-                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
-                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
-                        throw Exception(
-                            ErrorCodes::INCOMPATIBLE_COLUMNS,
-                            "Column {} of table {} has type {}, which does not preserve the order when converted to "
-                            "the type {} declared by {}. The query processing stage was chosen before this type was "
-                            "visible, most likely because the table was altered, or started matching the regexp, "
-                            "while the query was being planned. Retry the query",
-                            backQuoteIfNeed(child_column.name),
-                            storage->getStorageID().getNameForLogs(),
-                            child_column.type->getName(),
-                            declared_column->type->getName(),
-                            storage_merge->getStorageID().getNameForLogs());
-                }
+                if (auto conversion = findOrderBreakingConversion(*nested_storage_snapshot, *merge_storage_snapshot))
+                    throw Exception(
+                        ErrorCodes::INCOMPATIBLE_COLUMNS,
+                        "Column {} of table {} has type {}, which does not preserve the order when converted to "
+                        "the type {} declared by {}. The query processing stage was chosen before this type was "
+                        "visible, most likely because the table was altered, or started matching the regexp, "
+                        "while the query was being planned. Retry the query",
+                        backQuoteIfNeed(conversion->name),
+                        storage->getStorageID().getNameForLogs(),
+                        conversion->source_type->getName(),
+                        conversion->declared_type->getName(),
+                        storage_merge->getStorageID().getNameForLogs());
             }
-
-            auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
 
             Names column_names_as_aliases;
             Names real_column_names = all_column_names;
