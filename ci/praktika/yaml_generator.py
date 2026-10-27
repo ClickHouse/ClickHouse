@@ -168,7 +168,7 @@ jobs:
   {JOB_NAME_NORMALIZED}:
     runs-on: [{RUNS_ON}]
     needs: [{NEEDS}]{IF_EXPRESSION}
-    name: "{JOB_NAME_GH}"{TIMEOUT_MINUTES}
+    name: "{JOB_NAME_GH}"{CONTINUE_ON_ERROR}{TIMEOUT_MINUTES}
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
@@ -421,6 +421,9 @@ class PullRequestPushYamlGen:
                 RUNS_ON=", ".join(job.runs_on),
                 NEEDS=needs,
                 JOB_NAME_GH=job_name.replace('"', '\\"'),
+                CONTINUE_ON_ERROR=(
+                    "\n    continue-on-error: true" if job.continue_on_error else ""
+                ),
                 JOB_NAME=job_name.replace(
                     "'", "'\\''"
                 ),  # ' must be escaped so that yaml commands are properly parsed

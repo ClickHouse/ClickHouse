@@ -155,6 +155,16 @@ LOOM_SECRETS = [
     ),
 ]
 
+# This credential can write the private Vercel Blob store consumed as a build
+# input by the docs frontend. Attach it only to the publishing job, rather than
+# registering it with every workflow.
+REFERENCE_SNAPSHOT_PUBLISH_SECRET = Secret.Config(
+    name="clickhouse-vercel-reference-blob-read-write-token",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
+)
+REFERENCE_SNAPSHOT_PUBLISH_SECRETS = [REFERENCE_SNAPSHOT_PUBLISH_SECRET]
+
 # In-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com (amd64) /
 # ports.ubuntu.com (arm64) are frequently unreachable over IPv4 from the runners
 # and have no IPv6 route; the in-region mirror is reachable and fast. Passed as
@@ -464,6 +474,8 @@ class JobNames:
     COMPATIBILITY = "Compatibility check"
     SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
+    REFERENCE_SNAPSHOT = "Docs reference snapshot"
+    PUBLISH_REFERENCE_SNAPSHOT = "Publish docs reference snapshot"
     DOCS_EXAMPLES = "Docs examples"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -570,6 +582,7 @@ class ArtifactNames:
     CH_RISCV64 = "CH_RISCV64_BIN"
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
+    REFERENCE_SNAPSHOT = "REFERENCE_SNAPSHOT"
     CH_WASM64 = "CH_WASM64_BIN"
     CH_WASM_PARSER = "CH_WASM_PARSER_BIN"
 
@@ -767,6 +780,11 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_RELEASE_PERFORMANCE_REFERENCE,
             ArtifactNames.CH_ARM_RELEASE_PERFORMANCE_REFERENCE,
         ]
+    )
+    reference_snapshot = Artifact.Config(
+        name=ArtifactNames.REFERENCE_SNAPSHOT,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/reference-snapshot.tar.zst",
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(
         name="...",
