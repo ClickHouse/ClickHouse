@@ -16,6 +16,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
+#include <base/getMemoryAmount.h>
 
 namespace
 {
@@ -96,6 +97,14 @@ struct DirtyDecayDisabler
 /// has to refresh it itself, otherwise it would read a `stats.allocated` snapshot that predates the frees.
 void testNegativeTrackerIsCorrectedToAllocatedNotResident(DB::MemoryWorker::MemoryUsageSource expected_source)
 {
+    /// `MemoryWorker::start` also starts the dirty pages purging thread, which on hosts with less than 4 GiB
+    /// of memory (including a cgroup limit) sets `dirty_decay_ms` to 0 for all arenas, overriding
+    /// `DirtyDecayDisabler` and purging the freed pages the test relies on. Skip before allocating anything
+    /// or shifting the global tracker, so that the skipped test leaves no state behind.
+    const size_t memory_amount = getMemoryAmount();
+    if (memory_amount > 0 && memory_amount < (4ul << 30))
+        GTEST_SKIP() << "The test needs at least 4 GiB of memory, available: " << memory_amount;
+
     const DirtyDecayDisabler dirty_decay_disabler;
 
     /// Allocate and free a lot of memory, like a large query does. jemalloc keeps the freed pages
