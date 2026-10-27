@@ -46,7 +46,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -542,10 +541,12 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
         query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
 
-        query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
-        merge_tree_settings->sanityCheck(
-            query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            query_context->wasBackgroundPoolAutoLowered());
+        /// The settings of a projection start from the built-in defaults, and a projection cannot set the
+        /// `number_of_free_entries_in_pool_to_*` settings: its parts are merged by its table, whose settings are checked
+        /// against the background pool when the table is created or altered. Checking the built-in values against the pool
+        /// refused every projection on a server whose small pool is matched by lower values in the `merge_tree` section of
+        /// the configuration or in the table's `SETTINGS`.
+        merge_tree_settings->sanityCheckWithoutBackgroundPool();
     }
 
     /// Ensure index_granularity_bytes is non-zero to prevent the projection from falling back
