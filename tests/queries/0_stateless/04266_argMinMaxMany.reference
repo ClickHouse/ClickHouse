@@ -68,3 +68,11 @@ AggregateFunction(argMaxMany(3), UInt64, UInt64)
 ['b']
 [NULL,3]
 [NULL,1]
+['one']	one
+['one']	one
+['one','two','null']
+['two','one','null']
+['one','two','null']
+['two','one','null']
+['one']
+['one']
