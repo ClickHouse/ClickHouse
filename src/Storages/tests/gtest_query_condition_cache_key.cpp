@@ -30,7 +30,7 @@ ObjectInfo makeObjectInfo(const String & path, std::optional<String> etag, bool 
 TEST(QueryConditionCacheKey, StrongEtagIsUsedAsKey)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", "strong-etag", /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*object_storage=*/ nullptr, /*is_data_lake=*/ false);
     ASSERT_TRUE(key.has_value());
     EXPECT_EQ(*key, QueryConditionCache::makeFilePartName("bucket/data.parquet", "strong-etag"));
 }
@@ -42,7 +42,7 @@ TEST(QueryConditionCacheKey, StrongEtagIsUsedAsKey)
 TEST(QueryConditionCacheKey, WeakEtagBypassesCache)
 {
     auto object_info = makeObjectInfo("hdfs/data.parquet", "1700000000_42", /*etag_is_strong=*/ false);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*object_storage=*/ nullptr, /*is_data_lake=*/ false);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -51,7 +51,7 @@ TEST(QueryConditionCacheKey, WeakEtagBypassesCache)
 TEST(QueryConditionCacheKey, EmptyEtagBypassesCache)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", "", /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*object_storage=*/ nullptr, /*is_data_lake=*/ false);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -59,7 +59,7 @@ TEST(QueryConditionCacheKey, EmptyEtagBypassesCache)
 TEST(QueryConditionCacheKey, MissingMetadataBypassesCache)
 {
     auto object_info = makeObjectInfo("bucket/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*is_data_lake=*/ false);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, /*object_storage=*/ nullptr, /*is_data_lake=*/ false);
     EXPECT_FALSE(key.has_value());
 }
 
@@ -68,12 +68,12 @@ TEST(QueryConditionCacheKey, MissingMetadataBypassesCache)
 TEST(QueryConditionCacheKey, DataLakeUsesIdentifierWithoutEtag)
 {
     auto weak = makeObjectInfo("lake/data.parquet", "1700000000_42", /*etag_is_strong=*/ false);
-    auto weak_key = StorageObjectStorageSource::makeQueryConditionCacheKey(weak, /*is_data_lake=*/ true);
+    auto weak_key = StorageObjectStorageSource::makeQueryConditionCacheKey(weak, /*object_storage=*/ nullptr, /*is_data_lake=*/ true);
     ASSERT_TRUE(weak_key.has_value());
     EXPECT_EQ(*weak_key, "lake/data.parquet");
 
     auto no_meta = makeObjectInfo("lake/data.parquet", std::nullopt, /*etag_is_strong=*/ true);
-    auto no_meta_key = StorageObjectStorageSource::makeQueryConditionCacheKey(no_meta, /*is_data_lake=*/ true);
+    auto no_meta_key = StorageObjectStorageSource::makeQueryConditionCacheKey(no_meta, /*object_storage=*/ nullptr, /*is_data_lake=*/ true);
     ASSERT_TRUE(no_meta_key.has_value());
     EXPECT_EQ(*no_meta_key, "lake/data.parquet");
 }
@@ -100,19 +100,24 @@ struct DataLakeObjectInfo : ObjectInfo
 TEST(QueryConditionCacheKey, DataLakeMetadataPathSecretsAreHidden)
 {
     DataLakeObjectInfo signed_url("bucket/p.parquet", "http://minio/bucket/p.parquet?X-Amz-Signature=secret_05402");
-    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(signed_url, /*is_data_lake=*/ true);
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(signed_url, /*object_storage=*/ nullptr, /*is_data_lake=*/ true);
     ASSERT_TRUE(key.has_value());
     EXPECT_TRUE(key->starts_with("http://minio/bucket/p.parquet#path="));
     EXPECT_EQ(key->find("secret_05402"), String::npos);
 
     DataLakeObjectInfo other_signature("bucket/p.parquet", "http://minio/bucket/p.parquet?X-Amz-Signature=other");
-    EXPECT_NE(*key, *StorageObjectStorageSource::makeQueryConditionCacheKey(other_signature, /*is_data_lake=*/ true));
+    EXPECT_NE(
+        *key,
+        *StorageObjectStorageSource::makeQueryConditionCacheKey(other_signature, /*object_storage=*/ nullptr, /*is_data_lake=*/ true));
 
     DataLakeObjectInfo userinfo("bucket/p.parquet", "s3://user:password_05402@bucket/p.parquet");
-    auto userinfo_key = StorageObjectStorageSource::makeQueryConditionCacheKey(userinfo, /*is_data_lake=*/ true);
+    auto userinfo_key
+        = StorageObjectStorageSource::makeQueryConditionCacheKey(userinfo, /*object_storage=*/ nullptr, /*is_data_lake=*/ true);
     ASSERT_TRUE(userinfo_key.has_value());
     EXPECT_EQ(userinfo_key->find("password_05402"), String::npos);
 
     DataLakeObjectInfo plain("bucket/p.parquet", "s3://bucket/p.parquet");
-    EXPECT_EQ(*StorageObjectStorageSource::makeQueryConditionCacheKey(plain, /*is_data_lake=*/ true), "s3://bucket/p.parquet");
+    EXPECT_EQ(
+        *StorageObjectStorageSource::makeQueryConditionCacheKey(plain, /*object_storage=*/ nullptr, /*is_data_lake=*/ true),
+        "s3://bucket/p.parquet");
 }

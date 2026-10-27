@@ -514,7 +514,7 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     const ObjectStoragePtr & object_storage,
     const UUID & table_uuid)
 {
-    String identifier = object_info->getQueryConditionCacheIdentifier();
+    String identifier = object_info->getQueryConditionCacheIdentifier(object_storage);
     if (table_uuid == UUIDHelpers::Nil)
     {
         const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, object_storage, /*include_connection_info=*/true);
@@ -527,9 +527,10 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     return makeQueryConditionCacheKey(identifier, *object_info, configuration.isDataLakeConfiguration());
 }
 
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, bool is_data_lake)
 {
-    return makeQueryConditionCacheKey(object_info.getQueryConditionCacheIdentifier(), object_info, is_data_lake);
+    return makeQueryConditionCacheKey(object_info.getQueryConditionCacheIdentifier(object_storage), object_info, is_data_lake);
 }
 
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
@@ -1233,7 +1234,8 @@ Chunk StorageObjectStorageSource::generate()
         if (reader.use_top_k_query_condition_cache_key && reader.getInputFormat() && !isCancelled())
         {
             const auto * input_format = reader.getInputFormat();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*reader.getObjectInfo(), configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(
+                *reader.getObjectInfo(), object_storage, configuration->isDataLakeConfiguration());
             auto buckets_opt = input_format->getMatchedBuckets();
             if (query_condition_cache_key && buckets_opt.has_value())
                 pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{

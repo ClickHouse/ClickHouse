@@ -84,7 +84,9 @@ struct ObjectInfo
     /// table metadata, since files in different storages can have the same key. That path can carry secrets (the
     /// userinfo or a signed query of a URI), while the key is visible in `system.query_condition_cache` and in the
     /// logs, so such a path is replaced by the path without them, followed by a hash of the complete identifier.
-    String getQueryConditionCacheIdentifier() const;
+    /// A file outside `base_storage` is read with a client whose access depends on the query settings, so the identifier
+    /// also names that client.
+    String getQueryConditionCacheIdentifier(const ObjectStoragePtr & base_storage) const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

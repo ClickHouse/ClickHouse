@@ -162,7 +162,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
-                const auto query_condition_cache_key = last_object_info->getQueryConditionCacheIdentifier();
+                const auto query_condition_cache_key = last_object_info->getQueryConditionCacheIdentifier(object_storage);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
                     query_condition_cache_key,
@@ -217,17 +217,21 @@ String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
     return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
 }
 
-String ObjectInfo::getQueryConditionCacheIdentifier() const
+String ObjectInfo::getQueryConditionCacheIdentifier(const ObjectStoragePtr & base_storage) const
 {
     const auto metadata_path = getPathInDataLakeMetadata();
     if (!metadata_path)
         return getIdentifier(/*include_file_bucket_info=*/ false);
 
-    String identifier = getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
+    String result = getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
     String redacted_path = metadata_path->substr(0, metadata_path->find_first_of("?#"));
-    if (!maskURIUserinfo(redacted_path) && redacted_path.size() == metadata_path->size())
-        return identifier;
-    return getIdentifierForPath(redacted_path, /*include_file_bucket_info=*/ false) + "#path=" + sipHash128String(identifier);
+    if (maskURIUserinfo(redacted_path) || redacted_path.size() != metadata_path->size())
+        result = getIdentifierForPath(redacted_path, /*include_file_bucket_info=*/ false) + "#path=" + sipHash128String(result);
+
+    /// The name of an external storage is an opaque digest of the endpoint and the credentials of its client.
+    if (const auto storage = getResolvedStorage(base_storage); storage != base_storage)
+        result += "#storage=" + storage->getDiskName();
+    return result;
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

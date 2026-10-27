@@ -2261,19 +2261,44 @@ void IcebergMetadata::drop(ContextPtr context)
         propagate_credentials = external_files_drop_propagate_credentials;
     }
 
+    /// The metadata may have changed since `checkCanBeDropped`, and `context` does not have the dropping user's grants,
+    /// so a path outside the table directory is resolved and read only if `checkCanBeDropped` checked it.
+    /// No grant allows such a path to the background context, so it tells the paths inside the table directory.
+    const auto background_context = Context::getGlobalContextInstance()->getBackgroundContext();
+    bool unauthorized_path = false;
+    auto check_authorized = [&](const Iceberg::IcebergPathFromMetadata & path)
+    {
+        const auto serialized_path = path.serialize();
+        if (authorized.contains(serialized_path))
+            return;
+        unauthorized_path = true;
+        if (!isPathReadGranted(
+                persistent_components.table_location, serialized_path, object_storage, background_context,
+                persistent_components.path_resolver))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Deleting the file '{}' outside the table directory was not authorized by a `DROP` query in this server process",
+                maskCredentialsInURI(serialized_path));
+        unauthorized_path = false;
+    };
+
     /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
-    /// Only the files checked by `checkCanBeDropped` are deleted: the metadata may have changed since then.
-    auto external_files = tryCollectExternalFilesToDeleteOnDrop(
-        withCredentialsPolicy(context, allow_server_credentials, propagate_credentials), /* check_before_read */ {});
-    size_t unauthorized_files
-        = std::erase_if(external_files, [&](const auto & file) { return !authorized.contains(file.path.serialize()); });
-    if (unauthorized_files)
+    std::vector<Iceberg::ExternalFile> external_files;
+    try
+    {
+        external_files = tryCollectExternalFilesToDeleteOnDrop(
+            withCredentialsPolicy(context, allow_server_credentials, propagate_credentials), check_authorized);
+    }
+    catch (const Exception & e)
+    {
+        if (!unauthorized_path)
+            throw;
         LOG_WARNING(
             log,
-            "Keeping {} file(s) of the Iceberg table at '{}' that live outside its directory: deleting them was not "
-            "authorized by a `DROP` query in this server process. They have to be removed manually.",
-            unauthorized_files,
-            persistent_components.table_path);
+            "Keeping the files of the Iceberg table at '{}' that live outside its directory: {}. They have to be removed manually.",
+            persistent_components.table_path,
+            e.displayText());
+    }
 
     /// Delete leaves first, one per request: a partial batch failure could delete the manifest needed for retry.
     std::reverse(external_files.begin(), external_files.end());

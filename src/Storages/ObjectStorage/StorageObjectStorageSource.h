@@ -108,7 +108,8 @@ public:
         const ObjectStoragePtr & object_storage,
         const UUID & table_uuid);
     /// The key for a table with a UUID, from the path of the object within its storage.
-    static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+    static std::optional<String> makeQueryConditionCacheKey(
+        const ObjectInfo & object_info, const ObjectStoragePtr & object_storage, bool is_data_lake);
     static std::optional<String> makeQueryConditionCacheKey(const String & identifier, const ObjectInfo & object_info, bool is_data_lake);
 
 protected:
