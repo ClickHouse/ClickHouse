@@ -1,0 +1,7 @@
+--- the metadata removal of DROP DATABASE fails ---
+FAULT_INJECTED
+0
+--- the surviving metadata still holds the collection ---
+--- the database is attached back from the metadata and the collection is released once it is dropped ---
+1
+0

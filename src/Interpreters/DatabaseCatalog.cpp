@@ -111,6 +111,7 @@ namespace FailPoints
 {
     extern const char database_catalog_drop_finally_before_id_erase[];
     extern const char drop_database_fail_before_drop[];
+    extern const char drop_database_fail_before_metadata_removal[];
     extern const char database_catalog_drop_finally_after_notify[];
 }
 
@@ -841,10 +842,26 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         if (!managed_by_shared_catalog)
         {
-            /// Old ClickHouse versions did not store database.sql files
-            /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-            default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
-            default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+            try
+            {
+                fiu_do_on(FailPoints::drop_database_fail_before_metadata_removal,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the metadata of the dropped database");
+                });
+
+                /// Old ClickHouse versions did not store database.sql files
+                /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+                default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
+                default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+            }
+            catch (...)
+            {
+                /// The database is gone from the catalog, but its `CREATE DATABASE` metadata may survive and
+                /// be replayed by a later `ATTACH DATABASE` or server start, like the one of a detached
+                /// database: keep the named collections it references protected.
+                NamedCollectionFactory::instance().markDependenciesDetached(StorageID::createDatabaseOnly(database_name));
+                throw;
+            }
         }
 
         if (db_uuid != UUIDHelpers::Nil)
