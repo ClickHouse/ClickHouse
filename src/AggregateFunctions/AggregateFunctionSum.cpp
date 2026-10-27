@@ -20,7 +20,8 @@ namespace
 template <typename T>
 struct SumSimple
 {
-    /// @note It uses slow Decimal128/256 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
+    /// @note Decimals are summed in Decimal128/256 (cause we need such a variant). Batches without keys are vectorized
+    /// (see `sumIntoInt128`), but per-row additions are slower than in sumWithOverflow for Decimal32/64.
     using ResultType = std::conditional_t<is_decimal<T>,
                                         std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
                                         NearestFieldType<T>>;
