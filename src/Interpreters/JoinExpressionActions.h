@@ -196,6 +196,9 @@ public:
 
     JoinActionRef findNode(const String & column_name, bool is_input = false, bool throw_if_not_found = true) const;
     JoinActionRef addInput(const String & column_name, const DataTypePtr & type, size_t source_relation);
+    /// Same as `addInput` for a join of two inputs, but keeps the inputs in the order of the input headers:
+    /// a left input goes after the last left one, a right input goes last.
+    JoinActionRef addInputOfSide(const String & column_name, const DataTypePtr & type, JoinTableSide side);
 
     std::shared_ptr<ActionsDAG> getActionsDAG() const;
 

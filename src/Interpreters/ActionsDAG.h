@@ -201,6 +201,8 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
+    /// Same as `addInput`, but the new input takes `position` in `getInputs()` instead of the last place.
+    const Node & addInputAt(size_t position, std::string name, DataTypePtr type);
     const Node & addColumn(
         ColumnConstPtr column,
         DataTypePtr type,
@@ -317,6 +319,11 @@ public:
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
+
+    /// Whether two nodes compute the same value once their arguments do (arguments are not compared): equal
+    /// constants, or deterministic calls of one function resolved for the same result type with the same
+    /// captured settings. `deduplicateSubtrees` merges only such nodes.
+    static bool isSameOperation(const Node & lhs, const Node & rhs);
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs

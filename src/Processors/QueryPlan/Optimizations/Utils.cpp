@@ -131,19 +131,19 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     return false;
 }
 
+bool isInsensitiveToEvaluationCount(const IFunctionBase & function)
+{
+    return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
+}
+
 bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
 {
-    auto is_insensitive = [](const IFunctionBase & function)
-    {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
-    };
-
     /// A lambda without captures is constant-folded into a `COLUMN` node holding a `ColumnFunction`, which
     /// hides the functions of its body from a plain scan over the function nodes; `allNodeFunctions`
     /// descends into it.
     for (const auto & node : dag.getNodes())
     {
-        if (!allNodeFunctions(node, is_insensitive))
+        if (!allNodeFunctions(node, isInsensitiveToEvaluationCount))
             return true;
     }
 

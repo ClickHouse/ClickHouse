@@ -311,6 +311,22 @@ JoinActionRef JoinExpressionActions::addInput(const String & column_name, const 
     return JoinActionRef(actions_dag_node, data);
 }
 
+JoinActionRef JoinExpressionActions::addInputOfSide(const String & column_name, const DataTypePtr & type, JoinTableSide side)
+{
+    const auto & inputs = data->actions_dag.getInputs();
+    size_t position = inputs.size();
+    if (side == JoinTableSide::Left)
+    {
+        position = 0;
+        while (position < inputs.size() && JoinActionRef(inputs[position], data).fromLeft())
+            ++position;
+    }
+
+    const auto * actions_dag_node = &data->actions_dag.addInputAt(position, column_name, type);
+    data->expression_sources[actions_dag_node].set(side == JoinTableSide::Left ? 0 : 1);
+    return JoinActionRef(actions_dag_node, data);
+}
+
 ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
 {
     return getSubDAG(std::views::single(action));

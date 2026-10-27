@@ -1,0 +1,32 @@
+<test>
+    <create_query>CREATE TABLE reuse_join_keys_events (c1 LowCardinality(String), c2 Int64, c3 JSON, c4 DateTime64(3)) ENGINE = MergeTree ORDER BY (c1, c2, c4)</create_query>
+    <create_query>CREATE TABLE reuse_join_keys_dim (c5 Int64, c4 DateTime64(3), c6 Int64, c7 Int64) ENGINE = MergeTree ORDER BY (c6, c4)</create_query>
+
+    <fill_query>
+        INSERT INTO reuse_join_keys_events SELECT 'e1', number % 50000,
+            concat('{{"k1":"v', toString(number % 20), '","k2":"', toString(number % 20000), '"',
+                arrayStringConcat(arrayMap(i -> concat(',"f', toString(i), '":"', repeat('x', 20), toString(number % 97), '"'), range(10))), '}}'),
+            toDateTime64('2026-01-01 00:00:00', 3) + toIntervalSecond(number % 1000000)
+        FROM numbers(100000)
+    </fill_query>
+    <fill_query>INSERT INTO reuse_join_keys_dim SELECT number, toDateTime64('2026-01-01 00:00:00', 3), number % 1000, 1 FROM numbers(20000)</fill_query>
+
+    <query>
+        SELECT JSONExtractString(toString(e.c3), 'k1') AS a1, count(*) AS a2, countDistinct(JSONExtractString(toString(e.c3), 'k2')) AS a3,
+            min(e.c4) AS a4, max(e.c4) AS a5, dateDiff('day', min(e.c4), max(e.c4)) AS a6
+        FROM reuse_join_keys_events AS e
+        INNER JOIN reuse_join_keys_dim AS s ON JSONExtractString(toString(e.c3), 'k2') = toString(s.c5)
+        WHERE (e.c1 = 'e1') AND (JSONExtractString(toString(e.c3), 'k1') != '') AND (s.c7 = 1)
+        GROUP BY a1 ORDER BY a2 DESC
+        FORMAT Null
+    </query>
+    <query>
+        SELECT count() FROM reuse_join_keys_events AS e
+        INNER JOIN reuse_join_keys_dim AS s ON JSONExtractString(toString(e.c3), 'k2') = toString(s.c5)
+        WHERE e.c1 = 'e1' AND JSONExtractString(toString(e.c3), 'k1') != ''
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS reuse_join_keys_events</drop_query>
+    <drop_query>DROP TABLE IF EXISTS reuse_join_keys_dim</drop_query>
+</test>
