@@ -547,7 +547,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,9 +907,196 @@
+@@ -440,9 +907,217 @@
  
          preprocessor_results.append(pp_output)
  
@@ -635,6 +635,24 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        return None
 +    return compiled
 +
++def _only_forwarded_objects(ctx, owner, inventory):
++    """This cc_library has source headers but no objects or other linker inputs of its own."""
++    if ctx.rule.kind != "cc_library" or ctx.rule.files.srcs or ctx.rule.files.additional_compiler_inputs:
++        return False
++    headers = ctx.rule.files.hdrs + ctx.rule.files.textual_hdrs
++    if not headers or not all([f.is_source and not f.is_directory for f in headers]):
++        return False
++    for record in inventory:
++        if record["owner"] == owner["target"] and (record["libraries"] or record["flags"] or record["inputs"] or record["linkstamps"]):
++            return False
++        for lib in record["libraries"]:
++            if owner["target"] in lib["object_owners"].values():
++                return False
++            # Archive type and llvm-nm failures are reported from actual archive contents.
++            if not lib["objects"] and not lib["unchecked_objects"] and (lib["static"] or lib["pic_static"]):
++                return False
++    return any([lib["objects"] for i in owner["records"] for lib in inventory[i]["libraries"]])
++
 +def _owned_symbols(ctx, target, deps, implementation_deps, sources, producer = None, archive_scans = None):
 +    inventory = []
 +    interned = {}
@@ -674,6 +692,13 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +
 +    public = [_symbol_route(dep, inventory, interned, objects, archives) for dep in deps]
 +    private = [_symbol_route(dep, inventory, interned, objects, archives) for dep in implementation_deps]
++    metadata = dict(owner = owner, deps = public, implementation_deps = private, inventory = inventory)
++    symbols = ctx.actions.declare_file("{}.dwyu_owned_symbols.json".format(target.label.name))
++    if producer == None and _only_forwarded_objects(ctx, owner, inventory):
++        metadata["only_forwarded_objects"] = True
++        ctx.actions.write(symbols, json.encode(metadata))
++        return [symbols]
++
 +    nm = ctx.actions.declare_file("{}.dwyu_nm.txt".format(ctx.label.name))
 +    if objects:
 +        argv = ctx.actions.args()
@@ -703,12 +728,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        scan = shared.get(file) or dwyu_scan_archive(ctx, file, "{}.dwyu_archive_{}".format(ctx.label.name, index))
 +        archive_manifest[file.path] = dict(symbols = scan.symbols.path, status = scan.status.path, magic = scan.magic.path)
 +        archive_outputs.extend([scan.symbols, scan.status, scan.magic])
-+    symbols = ctx.actions.declare_file("{}.dwyu_owned_symbols.json".format(target.label.name))
 +    ctx.actions.write(symbols, json.encode(dict(
-+        owner = owner,
-+        deps = public,
-+        implementation_deps = private,
-+        inventory = inventory,
++        metadata,
 +        objects = objects.keys(),
 +        executable_objects = [f.path for f in executable_objects or []],
 +        incomplete_executable_objects = incomplete_executable_objects,
@@ -747,7 +768,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      """
      Implementation for the "Depend on What You Use" (DWYU) aspect.
  
-@@ -458,9 +1112,47 @@
+@@ -458,9 +1133,47 @@
      # Check whether DWYU should run on this target
      #
  
@@ -796,7 +817,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Skip targets which the user explicitly excluded from the analysis.
      # In contrast to the other skipping mechanisms we still propagate the reports of the dependencies.
-@@ -510,17 +1202,37 @@
+@@ -510,17 +1223,37 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -840,7 +861,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # TODO Investigate if we can prevent running this multiple times for the same dep if multiple
      #      target_under_inspection have the same dependency
-@@ -529,26 +1241,43 @@
+@@ -529,26 +1262,43 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -888,7 +909,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,18 +1289,30 @@
+@@ -560,18 +1310,30 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -923,7 +944,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -582,5 +1323,335 @@
+@@ -582,5 +1344,335 @@
          arguments = [args],
      )
  
@@ -1752,7 +1773,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,369 @@
+@@ -71,6 +82,388 @@
      return options;
  }
  
@@ -1884,7 +1905,8 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +    std::ifstream input{manifest};
 +    if (!input) abortWithError("Cannot read DWYU link manifest ", manifest);
 +    const auto data = nlohmann::json::parse(input);
-+    const auto symbols_by_file = readObjectSymbols(data);
++    const bool only_forwarded_objects = data.value("only_forwarded_objects", false);
++    const auto symbols_by_file = only_forwarded_objects ? std::map<std::string, OwnedSymbols>{} : readObjectSymbols(data);
 +    const auto& inventory = data.at("inventory");
 +    const auto& owner = data.at("owner");
 +    const auto owner_name = owner.at("target").get<std::string>();
@@ -1912,6 +1934,10 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +                });
 +            }
 +    }
++    if (only_forwarded_objects && (!owner_forwards || !own_files.empty() || !wrapped_inputs.empty() ||
++                                  has_raw_assembly || incomplete_executable))
++        abortWithError("Invalid DWYU header library link metadata for ", owner_name);
++
 +    std::set<std::string> own_defined;
 +    std::set<std::string> own_undefined;
 +    std::set<std::string> own_weak_undefined;
@@ -1958,6 +1984,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +                    linking_deps.insert(name);
 +                    if (input_owner != name) forwarded_deps.insert(name);
 +                }
++                if (only_forwarded_objects) continue;
 +                for (const auto& library : entry.at("libraries")) {
 +                    for (const auto& path : library.at("objects").template get<std::vector<std::string>>()) {
 +                        const SymbolOwner real_owner{input_owner, path};
@@ -1994,6 +2021,13 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +                if (indices.empty() || indices.back() != reason_index) indices.push_back(reason_index);
 +            }
 +        };
++        if (only_forwarded_objects && entry.at("owner") == owner_name &&
++            (!entry.at("libraries").empty() || !entry.at("flags").empty() ||
++             !entry.at("linkstamps").empty() || !entry.at("inputs").empty()))
++            abortWithError("DWYU header library has its own linker input: ", owner_name);
++        if (only_forwarded_objects && std::any_of(entry.at("libraries").begin(), entry.at("libraries").end(),
++                [](const auto& library) { return !library.at("objects").empty(); }))
++            reason("", "uninspected_object_symbols", true);
 +        if (!entry.at("flags").empty()) reason("", "user_link_flags", true);
 +        if (!entry.at("linkstamps").empty()) reason("", "linkstamps", true);
 +        for (const auto& file : entry.at("inputs").get<std::vector<std::string>>())
@@ -2011,12 +2045,18 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
 +            }
 +            for (const auto& path : directories) reason(path, "unchecked_object_directory", true);
 +            for (const auto& path : files) {
++                if (only_forwarded_objects) {
++                    if (library.at("object_owners").at(path) == owner_name)
++                        abortWithError("DWYU header library owns a forwarded object: ", path);
++                    continue;
++                }
 +                const auto& symbols = symbols_by_file.at(path);
 +                if (symbols.malformed) reason(path, "malformed_object_nm", true);
 +                if (!symbols.unsupported.empty()) reason(path, "unsupported_nm_kind", false);
 +            }
 +            if (files.empty() && directories.empty()) {
 +                if (!path.empty()) {
++                    if (only_forwarded_objects) abortWithError("Missing DWYU archive scan for ", path);
 +                    auto it = archives.find(path);
 +                    if (it == archives.end())
 +                        it = archives.emplace(path, readArchiveSymbols(path, data.at("archives").at(path))).first;
@@ -2122,7 +2162,7 @@ diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/p
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +465,90 @@
+@@ -91,21 +484,90 @@
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =

@@ -346,7 +346,7 @@ def validate_link_evidence(report):
     reasons = report.get("link_input_reasons")
     if not isinstance(reasons, list):
         raise ValueError("missing or invalid DWYU link input reasons")
-    fileless = {"user_link_flags", "linkstamps"}
+    fileless = {"user_link_flags", "linkstamps", "uninspected_object_symbols"}
     file_reasons = {
         "additional_link_input", "unchecked_object_directory", "static_archive",
         "unreadable_archive", "thin_archive", "unsupported_archive",
@@ -376,6 +376,8 @@ def validate_link_evidence(report):
             occurrences[key] = route["target"]
 
 
+    if any(reason["reason"] == "uninspected_object_symbols" for reason in reasons) and (owned or forwarded):
+        raise ValueError("DWYU proved a symbol without reading the owner's objects")
     holds = report.get("unverified_link_deps", [])
     details = report.get("unverified_link_reasons")
     if (not isinstance(details, dict) or set(details) != set(holds)
