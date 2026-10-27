@@ -11,6 +11,9 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -256,6 +259,9 @@ namespace CurrentMetrics
     extern const Metric FreezePartThreads;
     extern const Metric FreezePartThreadsActive;
     extern const Metric FreezePartThreadsScheduled;
+    extern const Metric MergeTreeStatisticsLoaderThreads;
+    extern const Metric MergeTreeStatisticsLoaderThreadsActive;
+    extern const Metric MergeTreeStatisticsLoaderThreadsScheduled;
     extern const Metric ColumnsDescriptionsCacheSize;
 }
 
@@ -1195,17 +1201,166 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     auto statistics_cache = getContext()->getStatisticsCache();
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
+    /// The statistics are loaded in parallel, and merged in the order of parts, so that the estimator does not depend on the scheduling.
+    /// The statistics of a part are released right after merging, so only the statistics of one batch of parts are held at once.
+    std::vector<ColumnsStatistics> parts_statistics(parts.size());
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-    for (const auto & part : parts)
-    {
-        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
-        auto stats = part.data_part->loadStatistics(required_columns_set, statistics_cache.get());
-        estimator_builder.incrementRowCount(part.data_part->rows_count);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
-    }
+    loadStatisticsOfPartsInParallel(
+        parts.size(),
+        local_context->getSettingsRef()[Setting::max_threads],
+        [&](size_t part_index)
+        {
+            auto statistics = parts[part_index].data_part->tryLoadStatisticsFromCache(required_columns_set, statistics_cache.get());
+            if (!statistics)
+                return false;
+            ProfileEvents::increment(ProfileEvents::LoadedStatistics);
+            parts_statistics[part_index] = std::move(*statistics);
+            return true;
+        },
+        [&](size_t part_index)
+        {
+            ProfileEvents::increment(ProfileEvents::LoadedStatistics);
+            parts_statistics[part_index] = parts[part_index].data_part->loadStatistics(required_columns_set, statistics_cache.get());
+        },
+        [&](size_t part_index)
+        {
+            estimator_builder.incrementRowCount(parts[part_index].data_part->rows_count);
+            for (const auto & [column_name, stat] : parts_statistics[part_index])
+                estimator_builder.addStatistics(column_name, stat);
+            parts_statistics[part_index] = {};
+        });
 
     return estimator_builder.getEstimator();
+}
+
+void MergeTreeData::loadStatisticsOfPartsInParallel(
+    size_t num_parts,
+    size_t max_threads,
+    const std::function<bool(size_t)> & try_load_part_from_memory,
+    const std::function<void(size_t)> & load_part,
+    const std::function<void(size_t)> & consume_part)
+{
+    if (max_threads <= 1)
+    {
+        for (size_t part_index = 0; part_index < num_parts; ++part_index)
+        {
+            load_part(part_index);
+            consume_part(part_index);
+        }
+        return;
+    }
+
+    /// The parts are processed in windows of consecutive parts, and every window is consumed before the next one is
+    /// loaded, so that the loaded statistics of at most `window_size` parts are held at once, whether they were in
+    /// memory or not. They may be large, they are not freed by the eviction from the statistics cache while held,
+    /// and they are loaded without accounting in the memory tracker of the query.
+    const size_t window_size = std::min(num_parts, max_threads * 4);
+
+    /// The parts of the current window that are not in memory, and their exceptions, by the position in `parts_to_load`.
+    std::vector<size_t> parts_to_load;
+    parts_to_load.reserve(window_size);
+    std::vector<std::exception_ptr> exceptions(window_size);
+    std::atomic<size_t> next_index = 0;
+    std::atomic<bool> has_exception = false;
+
+    /// Created on the first window with more than one part to load, so a warm query does not use the pool at all.
+    /// A pool of its own, like the analysis of indexes in `filterPartsByPrimaryKeyAndSkipIndexes`: the caller
+    /// may run in a thread of any shared pool, and waiting there for the jobs of the same pool could deadlock.
+    /// Declared after the variables above to be destroyed first: its destructor joins the jobs that still use them
+    /// when scheduling throws.
+    std::optional<ThreadPool> pool;
+
+    /// Loads the parts of `parts_to_load` from `next_index` until all of them are taken.
+    /// The parts are taken in their order, so when a part throws, every part before it has been taken and is loaded
+    /// to the end: the exception of the first failed part is the same for any scheduling.
+    /// The pool is finished once its destructor has started (scheduling has thrown), then the other parts are abandoned.
+    auto load_parts = [&]
+    {
+        while (!has_exception.load(std::memory_order_relaxed) && !(pool && pool->isFinished()))
+        {
+            const size_t index = next_index.fetch_add(1, std::memory_order_relaxed);
+            if (index >= parts_to_load.size())
+                break;
+
+            try
+            {
+                load_part(parts_to_load[index]);
+            }
+            catch (...)
+            {
+                exceptions[index] = std::current_exception();
+                has_exception.store(true, std::memory_order_relaxed);
+            }
+        }
+    };
+
+    /// The next part to consume.
+    size_t consumed_end = 0;
+
+    for (size_t window_begin = 0; window_begin < num_parts;)
+    {
+        const size_t window_end = std::min(num_parts, window_begin + window_size);
+
+        /// The parts whose statistics are already in memory are loaded in the calling thread in a single pass, without
+        /// checking first whether they are in memory: that is only a copy, much cheaper than scheduling a job, and it
+        /// does not look up the statistics twice. Such a part is consumed at once if no part before it is left to load.
+        parts_to_load.clear();
+        for (size_t part_index = window_begin; part_index < window_end; ++part_index)
+        {
+            if (!try_load_part_from_memory(part_index))
+                parts_to_load.push_back(part_index);
+            else if (parts_to_load.empty())
+            {
+                consume_part(part_index);
+                consumed_end = part_index + 1;
+            }
+        }
+
+        next_index.store(0, std::memory_order_relaxed);
+        if (parts_to_load.size() == 1)
+        {
+            load_parts();
+        }
+        else if (parts_to_load.size() > 1)
+        {
+            const size_t num_threads = std::min(max_threads, window_size);
+            if (!pool)
+                pool.emplace(
+                    CurrentMetrics::MergeTreeStatisticsLoaderThreads,
+                    CurrentMetrics::MergeTreeStatisticsLoaderThreadsActive,
+                    CurrentMetrics::MergeTreeStatisticsLoaderThreadsScheduled,
+                    num_threads);
+
+            const size_t num_jobs = std::min(num_threads, parts_to_load.size());
+            for (size_t job = 0; job < num_jobs; ++job)
+            {
+                pool->scheduleOrThrowOnError(
+                    [&, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_LOAD_STATISTICS);
+                        load_parts();
+                    });
+            }
+
+            pool->wait();
+        }
+
+        /// Consume the rest of the window in the order of parts, the loaded parts together with the parts in between,
+        /// which were loaded from memory.
+        for (size_t index = 0; consumed_end < window_end; ++consumed_end)
+        {
+            if (index < parts_to_load.size() && parts_to_load[index] == consumed_end)
+            {
+                if (auto & exception = exceptions[index])
+                    std::rethrow_exception(exception);
+                ++index;
+            }
+
+            consume_part(consumed_end);
+        }
+
+        window_begin = window_end;
+    }
 }
 
 bool MergeTreeData::supportsFinal() const
