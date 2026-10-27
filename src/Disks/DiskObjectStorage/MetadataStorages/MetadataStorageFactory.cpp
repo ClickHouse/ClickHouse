@@ -221,10 +221,21 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
         std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
-        /// Hard links make the metadata of a directory unreadable by older servers, so they are opt-in.
-        bool enable_hard_links = config.getBool(config_prefix + ".enable_hard_links", false);
+        /// Hard links make the metadata of a directory unreadable by servers older than 26.10, so they can be disabled.
+        bool enable_hard_links = config.getBool(config_prefix + ".enable_hard_links", true);
 
-        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix, enable_hard_links);
+        /// Like `enable_hard_links`, the snapshot settings are read only when the disk is created,
+        /// `SYSTEM RELOAD CONFIG` does not apply them.
+        PlainRewritableSnapshotSettings snapshot_settings;
+        snapshot_settings.enabled = config.getBool(config_prefix + ".metadata_snapshot_enabled", snapshot_settings.enabled);
+        snapshot_settings.write_delay_ms = config.getUInt64(config_prefix + ".metadata_snapshot_write_delay_ms", snapshot_settings.write_delay_ms);
+
+        /// A disk attached with `read_only` is wrapped with `ReadOnlyDiskWrapper` after the metadata storage is created,
+        /// and its object storage is writable. It has to consume the snapshot and never publish or remove it.
+        bool read_only_disk = config.getBool(config_prefix + ".read_only", false);
+
+        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
+            local_object_storage, key_compatibility_prefix, enable_hard_links, snapshot_settings, read_only_disk);
     });
 }
 

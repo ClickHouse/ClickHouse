@@ -9,7 +9,7 @@ CREATE TABLE test_table
 DROP VIEW IF EXISTS test_view;
 CREATE VIEW test_view AS SELECT id, value FROM test_table;
 
-EXPLAIN header = 1 SELECT sum(id) FROM test_view settings enable_analyzer=1;
+EXPLAIN header = 1 SELECT sum(id) FROM test_view;
 
 DROP VIEW test_view;
 DROP TABLE test_table;

@@ -13,7 +13,7 @@ select * from remote('127.0.0.2', 'system.numbers_mt') where number in (select *
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-while true
+while clickhouse_test_time_left
 do
     res=$($CLICKHOUSE_CLIENT -q "select query, event_time from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$QUERY_ID' and current_database = '$CLICKHOUSE_DATABASE' and query like 'select%' limit 1")
     if [ -n "$res" ]; then
