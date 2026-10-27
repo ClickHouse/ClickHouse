@@ -5,14 +5,22 @@ namespace DB
 
 SinkToStorage::SinkToStorage(SharedHeader header) : ExceptionKeepingTransform(header, header, false) {}
 
-void SinkToStorage::setInsertStartGate(InsertStartGatePtr gate)
+void SinkToStorage::setInsertStartGate(InsertStartGatePtr gate, bool isolate_check)
 {
     insert_start_gate = std::move(gate);
+    isolated_pre_write_outcome.reset();
     if (!insert_start_gate)
         return;
 
     if (auto check = getPreWriteCheck(); check.check)
+    {
+        if (isolate_check)
+        {
+            isolated_pre_write_outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
+            check.isolated = isolated_pre_write_outcome;
+        }
         insert_start_gate->addCheck(std::move(check));
+    }
 }
 
 void SinkToStorage::runPreWriteCheck()
@@ -29,6 +37,10 @@ void SinkToStorage::runPreWriteCheck()
     /// observe its outcome - including a failure, which every one of them rethrows - instead of running
     /// the checks again against the state as it is a moment later.
     insert_start_gate->run();
+
+    /// The outcome is written under the lock of the gate that makes the decision, which `run` acquires as well.
+    if (isolated_pre_write_outcome && isolated_pre_write_outcome->exception)
+        std::rethrow_exception(isolated_pre_write_outcome->exception);
 }
 
 void SinkToStorage::runHiddenPreWriteChecks(const StorageID * forwarded_to) const

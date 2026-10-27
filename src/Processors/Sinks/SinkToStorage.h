@@ -25,8 +25,10 @@ public:
 
     virtual void setHasDependentMaterializedViews(bool /*has_dependent_views*/) {}
 
-    /// Registers the pre-write check of this sink in the gate (see `getPreWriteCheck`).
-    void setInsertStartGate(InsertStartGatePtr gate);
+    /// Registers the pre-write check of this sink in the gate (see `getPreWriteCheck`). With `isolate_check`
+    /// (a materialized view branch whose errors are ignored) the failure of the check rejects only this sink,
+    /// see `InsertStartGate::Check::isolated`.
+    void setInsertStartGate(InsertStartGatePtr gate, bool isolate_check = false);
 
     /// A sink that forwards the write through a nested INSERT running in this query's context
     /// (`AliasSink`) receives the per-query registry its gate came from and threads it into that
@@ -81,6 +83,7 @@ private:
     std::vector<std::shared_ptr<const Context>> interpreter_context;
 
     InsertStartGatePtr insert_start_gate;
+    std::shared_ptr<InsertStartGate::DeferredOutcome> isolated_pre_write_outcome;
     std::vector<HiddenPreWriteCheck> hidden_pre_write_checks;
 
     void onConsume(Chunk chunk) override;

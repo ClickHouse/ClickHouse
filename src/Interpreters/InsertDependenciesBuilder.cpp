@@ -3,6 +3,7 @@
 #include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 
 #include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ForkProcessor.h>
 #include <Processors/ResizeProcessor.h>
@@ -768,6 +769,20 @@ StoragePtr tryGetDistributedLocalTarget(const StorageDistributed & distributed, 
     return DatabaseCatalog::instance().tryGetTable(StorageID(local_database, distributed.getRemoteTableName()), context);
 }
 
+bool canInsertIntoAnyColumn(const IStorage & storage, const ContextPtr & context)
+{
+    const auto storage_id = storage.getStorageID();
+    const auto access = context->getAccess();
+    if (access->isGranted(AccessType::INSERT, storage_id.getDatabaseName(), storage_id.getTableName()))
+        return true;
+
+    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    for (const auto & column : metadata->getColumns().getInsertable())
+        if (access->isGranted(AccessType::INSERT, storage_id.getDatabaseName(), storage_id.getTableName(), column.name))
+            return true;
+    return false;
+}
+
 /// Where a deferred pre-write check registered by `registerHiddenPreWriteChecks` comes from.
 struct HiddenCheckOrigin
 {
@@ -896,10 +911,17 @@ void registerHiddenPreWriteChecks(
 
     if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
     {
+        /// The check runs before the nested INSERT checks the access rights of `context` to the table, and its
+        /// failure tells the number and the sizes of the parts of the table. So it is registered only if the
+        /// context may insert into the table (into any of its columns - the same failure is observable then by
+        /// a direct INSERT). Otherwise the nested INSERT fails with `ACCESS_DENIED` before writing anything.
+        if (!canInsertIntoAnyColumn(*storage, context))
+            return;
+
         auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
-        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by});
+        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome, origin.enforced_by, /*isolated=*/ nullptr});
         result.push_back({origin.forwarded_to, std::move(gate), std::move(outcome), context, origin.enforced_here});
     }
 }
@@ -2472,7 +2494,12 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         /// The gate is keyed by the physical destination table: different materialized views
         /// converging on the same target table share one gate. The id of the storage itself carries
         /// its UUID, which tells a recreated table from the dropped one with the same name.
-        sink->setInsertStartGate(insert_start_gates->get(inner_storage->getStorageID()));
+        ///
+        /// The error of a materialized view branch is ignored under `materialized_views_ignore_errors`, so the
+        /// rejection of its check must not reject a sibling branch writing into the same table with other limits.
+        sink->setInsertStartGate(
+            insert_start_gates->get(inner_storage->getStorageID()),
+            /* isolate_check= */ !view_id.empty() && materialized_views_ignore_errors);
         /// A forwarding sink (`AliasSink`) threads the registry into the nested INSERT it runs, so
         /// the sinks created there share this query's gates. A no-op for the other sinks.
         sink->setInsertStartGateRegistry(insert_start_gates);

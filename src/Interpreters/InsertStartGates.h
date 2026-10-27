@@ -56,6 +56,11 @@ public:
         /// register the deferred checks of a forwarding storage behind them (a `Buffer` behind an `Alias`)
         /// once more, but possibly after the decision has been made, see `addCheck`.
         std::weak_ptr<const void> enforced_by;
+        /// Set for the check of a sink whose errors are ignored - a materialized view branch under
+        /// `materialized_views_ignore_errors`. Its failure is stored here and rethrown only by that sink:
+        /// the rejection of an ignored branch must not reject a sibling branch writing into the same table
+        /// with different limits. Not set together with `deferred`.
+        std::shared_ptr<DeferredOutcome> isolated;
     };
 
     /// `InsertStartGates::get` moves the checks of a merged gate without allocating, so it cannot fail half way.
@@ -104,10 +109,11 @@ public:
             return;
         }
 
-        /// A deferred check is never deduplicated: its forwarding sink waits for its own outcome.
-        if (!check.deferred)
+        /// A deferred or an isolated check is never deduplicated: its sink waits for its own outcome.
+        if (!check.deferred && !check.isolated)
             for (const auto & existing : checks)
-                if (!existing.deferred && !existing.key.owner_before(check.key) && !check.key.owner_before(existing.key))
+                if (!existing.deferred && !existing.isolated
+                    && !existing.key.owner_before(check.key) && !check.key.owner_before(existing.key))
                     return;
 
         checks.push_back(std::move(check));
@@ -140,7 +146,7 @@ public:
             {
                 for (const auto & check : checks)
                 {
-                    if (!check.deferred)
+                    if (!check.deferred && !check.isolated)
                     {
                         check.check();
                         continue;
@@ -152,8 +158,16 @@ public:
                     }
                     catch (...)
                     {
-                        check.deferred->exception = std::current_exception();
-                        failed_deferred.emplace_back(check.enforced_by, check.deferred);
+                        has_failed_checks = true;
+                        if (check.deferred)
+                        {
+                            check.deferred->exception = std::current_exception();
+                            failed_deferred.emplace_back(check.enforced_by, check.deferred);
+                        }
+                        else
+                        {
+                            check.isolated->exception = std::current_exception();
+                        }
                     }
                 }
             }
@@ -175,6 +189,10 @@ private:
     std::mutex mutex;
     bool done = false;
     std::exception_ptr exception;
+
+    /// Whether a deferred or an isolated check failed when the decision was made. Such a gate is not lent to
+    /// a group write, see `InsertStartGates::get`.
+    bool has_failed_checks = false;
 
     /// Registered while the gate is not `done`.
     std::vector<Check> checks;
@@ -286,6 +304,12 @@ public:
         /// keep observing it through their registry, while a write on behalf of its buffered rows is a
         /// new write that decides anew.
         ///
+        /// The same holds for a gate whose decision was an acceptance for some of its sinks only - a deferred
+        /// check (e.g. with the limits of a `Buffer` over the table) or the check of an ignored view branch
+        /// failed. The group write - e.g. an `OPTIMIZE` or a background flush of that `Buffer` writing out
+        /// the rows the query left in it - is not necessarily one of the writes the decision accepted, so it
+        /// decides anew with its own limits instead of being mistaken for one of them.
+        ///
         /// The gates are locked at once, in the order of their addresses, which is global as well. A gate
         /// may be shared with registries that are not locked here, so another group write can merge one
         /// of them concurrently; in that case the gates are collected again.
@@ -331,7 +355,7 @@ public:
 
             for (const auto & candidate : candidates)
             {
-                if (candidate->done && !candidate->exception)
+                if (candidate->done && !candidate->exception && !candidate->has_failed_checks)
                 {
                     gate = candidate;
                     break;
@@ -390,7 +414,7 @@ public:
                 candidate->checks.clear();
             }
 
-            /// A participant holding a gate that rejected a write keeps it - see above - and does not
+            /// A participant holding a gate that rejected a write (or a part of it) keeps it - see above - and does not
             /// adopt the new one: the rejection is the pre-write decision of that query, and the write on
             /// behalf of its rows must not be mistaken for a decision the query itself made. The same
             /// holds for a different gate that has already accepted a write of that query. Every gate in
