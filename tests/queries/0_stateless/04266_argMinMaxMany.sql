@@ -187,3 +187,24 @@ SELECT argMinManyMerge(1)(s) FROM
 -- Nullable arguments, so such rows are kept and the NULL is returned as-is (documented behaviour).
 SELECT argMaxMany(2)(d, number) FROM (SELECT number, if(number = 4, NULL, number)::Dynamic AS d FROM numbers(5));
 SELECT argMinMany(2)(d, number) FROM (SELECT number, if(number = 0, NULL, number)::Dynamic AS d FROM numbers(5));
+
+-- NULL nested inside a composite val type is the worst candidate, like a nested NaN and like
+-- argMin/argMax: it is evicted in favor of any non-NULL value and sorts last in the output.
+SELECT argMinMany(1)(a, v), argMin(a, v) FROM VALUES('a String, v Tuple(Nullable(Int64))', ('null', (NULL,)), ('one', (1,))) SETTINGS max_threads = 1;
+SELECT argMaxMany(1)(a, v), argMax(a, v) FROM VALUES('a String, v Tuple(Nullable(Int64))', ('null', (NULL,)), ('one', (1,))) SETTINGS max_threads = 1;
+SELECT argMinMany(3)(a, v) FROM VALUES('a String, v Tuple(Nullable(Int64))', ('null', (NULL,)), ('one', (1,)), ('two', (2,)));
+SELECT argMaxMany(3)(a, v) FROM VALUES('a String, v Tuple(Nullable(Int64))', ('null', (NULL,)), ('one', (1,)), ('two', (2,)));
+SELECT argMinMany(3)(a, v) FROM VALUES('a String, v Array(Nullable(Int64))', ('null', [NULL]), ('one', [1]), ('two', [2]));
+SELECT argMaxMany(3)(a, v) FROM VALUES('a String, v Array(Nullable(Int64))', ('null', [NULL]), ('one', [1]), ('two', [2]));
+SELECT argMinManyMerge(1)(s) FROM
+(
+    SELECT argMinManyState(1)(a, v) AS s FROM (SELECT 'null' AS a, tuple(CAST(NULL, 'Nullable(Int64)')) AS v)
+    UNION ALL
+    SELECT argMinManyState(1)(a, v) AS s FROM (SELECT 'one' AS a, tuple(CAST(1, 'Nullable(Int64)')) AS v)
+);
+SELECT argMaxManyMerge(1)(s) FROM
+(
+    SELECT argMaxManyState(1)(a, v) AS s FROM (SELECT 'null' AS a, tuple(CAST(NULL, 'Nullable(Int64)')) AS v)
+    UNION ALL
+    SELECT argMaxManyState(1)(a, v) AS s FROM (SELECT 'one' AS a, tuple(CAST(1, 'Nullable(Int64)')) AS v)
+);

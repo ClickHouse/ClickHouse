@@ -54,7 +54,7 @@ struct Entry
 /// The comparison recurses into `Array`, `Tuple` and `Map` values, so that a `NaN` nested inside an
 /// accepted composite `val` type such as `Tuple(Float64, UInt8)` or `Array(Float64)` follows the
 /// same rule as a top-level `Float64` one, instead of falling back to `Field`'s ordering and
-/// outranking every real value.
+/// outranking every real value. A nested `NULL` follows the same rule as a `NaN`.
 int compareVals(const Field & lhs, const Field & rhs, int nan_direction);
 
 int compareValSequences(const FieldVector & lhs, const FieldVector & rhs, int nan_direction)
@@ -73,6 +73,19 @@ int compareValSequences(const FieldVector & lhs, const FieldVector & rhs, int na
 
 int compareVals(const Field & lhs, const Field & rhs, int nan_direction)
 {
+    /// A `NULL` nested inside a composite `val` such as `Tuple(Nullable(Int64))` is the worst candidate,
+    /// like a `NaN` and like `ColumnNullable::compareAt` with the same direction hint. Without this,
+    /// the type tag comparison below would order it before every non-`NULL` value, which makes it the
+    /// best candidate for `argMinMany`.
+    const bool lhs_is_null = lhs.isNull();
+    const bool rhs_is_null = rhs.isNull();
+    if (lhs_is_null || rhs_is_null)
+    {
+        if (lhs_is_null && rhs_is_null)
+            return 0;
+        return lhs_is_null ? nan_direction : -nan_direction;
+    }
+
     /// Values of different types are ordered by the type tag first, exactly like `Field` does.
     if (lhs.getType() != rhs.getType())
         return lhs.getType() < rhs.getType() ? -1 : 1;
@@ -423,6 +436,7 @@ If there are multiple rows with equal `val`, which of the associated `arg` value
 Both parts the `arg` and the `val` behave as [aggregate functions](/reference/functions/aggregate-functions): rows where a `Nullable` `arg` or `val` is `NULL` are [skipped](/reference/functions/aggregate-functions#null-processing).
 A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
 A `NaN` in `val`, also one nested inside a `Tuple`, `Array` or `Map`, is the worst candidate: it is returned only when there are not enough other values.
+The same applies to a `NULL` nested inside a `Tuple`, `Array` or `Map` `val`.
 
 **See also**
 
@@ -490,6 +504,7 @@ If there are multiple rows with equal `val`, which of the associated `arg` value
 Both parts the `arg` and the `val` behave as [aggregate functions](/reference/functions/aggregate-functions): rows where a `Nullable` `arg` or `val` is `NULL` are [skipped](/reference/functions/aggregate-functions#null-processing).
 A `NULL` stored inside a `Dynamic` `arg` is not a `Nullable` value and is kept.
 A `NaN` in `val`, also one nested inside a `Tuple`, `Array` or `Map`, is the worst candidate: it is returned only when there are not enough other values.
+The same applies to a `NULL` nested inside a `Tuple`, `Array` or `Map` `val`.
 
 **See also**
 
