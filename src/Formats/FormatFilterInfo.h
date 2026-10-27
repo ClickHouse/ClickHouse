@@ -155,9 +155,10 @@ struct FormatFilterInfo
 
     ColumnMapperPtr column_mapper;
 
-    /// Only set when `column_mapper` above was swapped for a per-file mapper (data lake schema
-    /// evolution, e.g. Iceberg): the CURRENT/query-side mapper, i.e. the one `column_mapper` held
-    /// before the swap. Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
+    /// The CURRENT/query-side mapper of a data lake (e.g. Iceberg). It matters when `column_mapper`
+    /// above was swapped for a per-file mapper (schema evolution), and it is set even when the
+    /// current-schema mapper is not given to the reader as `column_mapper` (a table whose write
+    /// format differs from the format of the file). Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
     /// extracted from it) reference columns by their current/query-side name, not the name they had
     /// in the schema this particular file was written under, so resolving a filter's column name back
     /// to a `field_id` requires this mapper, not the per-file one.
@@ -169,8 +170,11 @@ struct FormatFilterInfo
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
     /// else. Sorted, unique, absolute (pre-filtering) row indexes within the file. The format must
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
-    /// in this exact order. Only supported by the Parquet format.
+    /// in this exact order. Supported by Parquet and Vortex.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    // True if someone will use ChunkInfoRowNumbers downstream
+    bool need_row_numbers = false;
 
     /// TopN dynamic filtering; see the struct comment. Assigned by the reading step when the plan
     /// optimization applies (`SourceStepWithFilterBase::setTopKFilter`); formats that don't support

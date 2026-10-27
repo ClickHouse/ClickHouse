@@ -284,6 +284,8 @@ public:
     /// nested function (with the same places) and the presence byte is folded separately.
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override { return nested_function->getEstimatedMergeWork(place); }
+    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {

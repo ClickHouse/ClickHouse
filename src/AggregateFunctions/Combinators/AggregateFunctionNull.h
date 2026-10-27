@@ -182,6 +182,11 @@ public:
 
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
     [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    [[nodiscard]] size_t getEstimatedMergeWork(ConstAggregateDataPtr place) const override
+    {
+        return nested_function->getEstimatedMergeWork(nestedPlace(place));
+    }
+    [[nodiscard]] size_t getStateBytesPerDistinctInput() const override { return nested_function->getStateBytesPerDistinctInput(); }
 
     [[nodiscard]] bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
