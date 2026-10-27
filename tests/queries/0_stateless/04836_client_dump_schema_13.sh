@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # --dump-schema cases from review: a view the analyzer inlines into a probed query, a table created AS a table function,
-# a quoted named-collection key, a parameterized view called in a Remote target, and table-function structures that are
-# computed or carry a NULL modifier.
+# a parameterized view, named-collection override keys written as strings, and structures of the table function that a
+# local Remote table reads.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,12 +23,21 @@ round_trip() {
     $CLICKHOUSE_LOCAL --path "$work/src" -n -q "$ddl"
     $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/$name.sql" 2>/dev/null
     echo "$name: dump rc=$?"
+    grep '^SET ' "$work/$name.sql"
     $CLICKHOUSE_LOCAL --path "$work/dst" "$@" -n --queries-file "$work/$name.sql" 2>&1 | grep -o 'Code: [0-9]*' | head -1
     echo "$name: replay rc=${PIPESTATUS[0]}"
 }
 
+# Prints whether the dump `$1` creates `$2` before `$3`.
+dumped_before() {
+    local first second
+    first=$(grep -n "^CREATE [A-Z ]*$2 " "$1" | head -1 | cut -d: -f1)
+    second=$(grep -n "^CREATE [A-Z ]*$3 " "$1" | head -1 | cut -d: -f1)
+    [ -n "$first" ] && [ -n "$second" ] && [ "$first" -lt "$second" ] && echo yes || echo no
+}
+
 # Under `analyzer_inline_views` the analyzer replaces a view with its query, so the probes of a materialized view that
-# reads a view must not run the scalar subquery of that view.
+# reads a view must not run the scalar subquery of that view. Each probe reads only the rows of its own result.
 $CLICKHOUSE_CLIENT -n -q "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.src (x UInt64) ENGINE = Memory;
     CREATE VIEW ${CLICKHOUSE_DATABASE}.v AS SELECT x, (SELECT sum(number) FROM numbers(1234567)) AS s FROM ${CLICKHOUSE_DATABASE}.src;
@@ -36,9 +45,10 @@ $CLICKHOUSE_CLIENT -n -q "
 $CLICKHOUSE_CLIENT --analyzer_inline_views=1 --dump-schema "$CLICKHOUSE_DATABASE" > /dev/null 2>&1
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
-    SELECT 'inlined view scalar subquery runs: ' || toString(count()) FROM system.query_log
+    SELECT 'probes: ' || toString(count() > 0) || ', probes that ran the scalar subquery: ' || toString(countIf(read_rows > result_rows))
+    FROM system.query_log
     WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
-        AND query LIKE 'EXPLAIN QUERY TREE%' AND read_rows > 0"
+        AND query LIKE 'EXPLAIN QUERY TREE%'"
 
 # Creating `aaa_mv` resolves the `loop` of `aaa_loop`, so `aaa_loop` must follow `zzz_src`, which reading `base` puts
 # on the dependency level of `aaa_mv`.
@@ -48,30 +58,31 @@ round_trip as_table_function "
     CREATE VIEW d.zzz_src AS SELECT id FROM d.base;
     CREATE TABLE d.aaa_loop (id UInt64) AS loop('d', 'zzz_src');
     CREATE MATERIALIZED VIEW d.aaa_mv ENGINE = Memory AS SELECT id FROM d.aaa_loop;"
+echo "as_table_function: source dumped first: $(dumped_before "$work/as_table_function.sql" d.zzz_src d.aaa_loop)"
 
-# Creating a local Remote table analyzes its target, which calls the parameterized view.
+# A parameterized view is called like a table function; reading `base` puts it on the dependency level of `aaa_mv`.
 round_trip parameterized_view "
     CREATE DATABASE d;
-    CREATE VIEW d.zzz_p AS SELECT {n:UInt64} AS x;
-    CREATE TABLE d.aaa_proxy (x UInt64) ENGINE = Remote('127.0.0.1', view(SELECT x FROM d.zzz_p(n = 1)));"
+    CREATE TABLE d.base (x UInt64) ENGINE = Memory;
+    CREATE TABLE d.b_src (x UInt64) ENGINE = Memory;
+    CREATE VIEW d.zzz_p AS SELECT x FROM d.base WHERE x = {n:UInt64};
+    CREATE MATERIALIZED VIEW d.aaa_mv ENGINE = Memory AS SELECT s.x AS x FROM d.b_src AS s INNER JOIN d.zzz_p(n = 1) AS p ON s.x = p.x;"
+echo "parameterized_view: view dumped first: $(dumped_before "$work/parameterized_view.sql" d.zzz_p d.aaa_mv)"
 
-# The only gated type is in a structure that the server folds from strings.
-round_trip computed_structure "
+# Creating a local Remote table resolves its table-function target, which validates the types of its structure.
+round_trip remote_structure "
     SET allow_suspicious_low_cardinality_types = 1;
     CREATE DATABASE d;
-    CREATE TABLE d.t (n UInt64)
-    ENGINE = Remote('127.0.0.1', view(SELECT count() AS n FROM format(CSV, concat('x LowCardinality(', 'UInt64)'), '1\n')));"
-grep '^SET ' "$work/computed_structure.sql"
+    CREATE TABLE d.t (x UInt64) ENGINE = Remote('127.0.0.1', format(CSV, 'x LowCardinality(UInt64)', '1\n'));"
 
 # The only gated type is the one the NULL modifier makes, and the target turns its gate off.
 round_trip null_modifier "
     CREATE DATABASE d;
-    CREATE TABLE d.t (n UInt64)
-    ENGINE = Remote('127.0.0.1', view(SELECT count() AS n FROM format(CSV, 'x Tuple(a UInt8) NULL', '(1)\n')));" \
+    CREATE TABLE d.t (n UInt64) ENGINE = Remote('127.0.0.1', format(CSV, 'x Tuple(a UInt8) NULL', '(1)\n'));" \
     --enable_nullable_tuple_type=0
-grep '^SET ' "$work/null_modifier.sql"
 
-# A named-collection override key may be a string; the collection's own table does not exist.
+# A table engine reads a named-collection override key written as a string, while a table function in a query does not:
+# the analyzer folds that argument into a constant first. `aab_target` and `aad_own` are not what is read.
 nc_users="$work/nc_users.xml"
 nc_config="$work/nc.xml"
 cat > "$nc_users" <<EOF
@@ -100,12 +111,17 @@ EOF
 rm -rf "$work/nc"
 $CLICKHOUSE_LOCAL --config-file "$nc_config" --path "$work/nc" -n -q "
     CREATE DATABASE d;
-    CREATE NAMED COLLECTION nc_quoted AS host = '127.0.0.1', db = 'd', table = 'missing';
-    CREATE TABLE d.zzz_src (id UInt64) ENGINE = Memory;
-    CREATE VIEW d.aaa_reader AS SELECT * FROM remote(nc_quoted, 'table' = 'zzz_src');"
+    CREATE TABLE d.base (id UInt64) ENGINE = Memory;
+    CREATE TABLE d.aab_target (id UInt64) ENGINE = Memory;
+    CREATE TABLE d.aad_own (id UInt64) ENGINE = Memory;
+    CREATE VIEW d.zzz_own AS SELECT id FROM d.base;
+    CREATE VIEW d.zzz_target AS SELECT id FROM d.base;
+    CREATE NAMED COLLECTION nc_query AS host = '127.0.0.1', db = 'd', table = 'zzz_own';
+    CREATE NAMED COLLECTION nc_engine AS host = '127.0.0.1', db = 'd', table = 'aad_own';
+    CREATE VIEW d.aaa_query AS SELECT * FROM remote(nc_query, 'table' = 'aab_target');
+    CREATE TABLE d.aac_engine (id UInt64) ENGINE = Remote(nc_engine, 'table' = 'zzz_target');"
 $CLICKHOUSE_LOCAL --config-file "$nc_config" --path "$work/nc" --format_display_secrets_in_show_and_select=1 \
     --dump-schema d > "$work/nc.sql" 2>/dev/null
-echo "quoted_key: dump rc=$?"
-src_line=$(grep -n 'CREATE TABLE d\.zzz_src' "$work/nc.sql" | head -1 | cut -d: -f1)
-reader_line=$(grep -n 'CREATE VIEW d\.aaa_reader' "$work/nc.sql" | head -1 | cut -d: -f1)
-echo "quoted_key: source dumped first: $([ -n "$src_line" ] && [ -n "$reader_line" ] && [ "$src_line" -lt "$reader_line" ] && echo yes || echo no)"
+echo "string_keys: dump rc=$?"
+echo "string_keys: query after the collection's table: $(dumped_before "$work/nc.sql" d.zzz_own d.aaa_query)"
+echo "string_keys: engine after the overriding table: $(dumped_before "$work/nc.sql" d.zzz_target d.aac_engine)"

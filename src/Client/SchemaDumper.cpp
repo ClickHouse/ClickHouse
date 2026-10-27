@@ -769,20 +769,13 @@ std::optional<String> tryReadNamedCollectionValue(const ASTPtr & arg, const Clus
     return std::nullopt;
 }
 
-/// Reads a named-collection override key the way `getKeyValueFromAST` does: an identifier, or a constant such as `'table'`.
-std::optional<String> tryReadNamedCollectionKey(const ASTPtr & arg, const ClusterLocality & clusters)
-{
-    String key;
-    if (tryGetIdentifierNameInto(arg, key))
-        return key;
-    return tryReadNamedCollectionValue(arg, clusters);
-}
-
 /// Mirrors the named-collection branch of `parseRemoteFunctionArguments`: the collection's own keys
-/// with the call's `key = value` overrides applied on top.
+/// with the call's `key = value` overrides applied on top. `getKeyValueFromAST` also reads a key such as `'table'`,
+/// but in a table expression the analyzer folds such an argument into a constant first, so it overrides nothing
+/// there; `constant_keys` says that the call is not in a table expression, but a table engine or the like.
 RemoteCollectionTarget resolveRemoteNamedCollection(
     const ASTFunction & function, const String & name, const std::map<String, String> & collection,
-    const ClusterLocality & clusters)
+    const ClusterLocality & clusters, bool constant_keys)
 {
     auto refuse = [&](std::string_view reason)
     {
@@ -801,10 +794,15 @@ RemoteCollectionTarget resolveRemoteNamedCollection(
         if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
             continue;
         String key;
-        if (auto key_text = tryReadNamedCollectionKey(equals->arguments->children[0], clusters))
-            key = std::move(*key_text);
-        else
-            refuse("an override key is not a constant the dump can read");
+        if (!tryGetIdentifierNameInto(equals->arguments->children[0], key))
+        {
+            if (!constant_keys)
+                continue;
+            if (auto key_text = tryReadNamedCollectionValue(equals->arguments->children[0], clusters))
+                key = std::move(*key_text);
+            else
+                refuse("an override key is not a constant the dump can read");
+        }
         /// Credentials and the sharding key name no table and reach no address.
         if (key == "user" || key == "username" || key == "password" || key == "sharding_key")
             continue;
@@ -855,7 +853,7 @@ RemoteCollectionTarget resolveRemoteNamedCollection(
 
 /// Whether a `remote*` call has a replica the server reads without a connection, the way
 /// `parseRemoteFunctionArguments` builds its ad-hoc cluster from the first argument.
-Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocality & clusters)
+Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocality & clusters, bool constant_keys)
 {
     const auto & first = function.arguments->children.at(0);
     bool secure = equalsCaseInsensitive(function.name, "remoteSecure");
@@ -864,7 +862,7 @@ Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocal
     {
         if (const auto * collection = tryGetRemoteNamedCollection(function, name, clusters))
         {
-            auto target = resolveRemoteNamedCollection(function, name, *collection, clusters);
+            auto target = resolveRemoteNamedCollection(function, name, *collection, clusters, constant_keys);
             return remoteDescriptionLocality(target.addresses, secure, clusters);
         }
         return clusters.names().local.contains(name) ? Locality::Local : Locality::Remote;
@@ -876,7 +874,7 @@ Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocal
 }
 
 /// Whether a `cluster*`/`remote*` call reads its table argument on this instance.
-Locality distributedFunctionLocality(const ASTFunction & function, const ClusterLocality & clusters)
+Locality distributedFunctionLocality(const ASTFunction & function, const ClusterLocality & clusters, bool constant_keys)
 {
     if (!function.arguments || function.arguments->children.empty())
         return Locality::Remote;
@@ -885,11 +883,11 @@ Locality distributedFunctionLocality(const ASTFunction & function, const Cluster
             ? Locality::Local
             : Locality::Remote;
     /// A `remote*` call needs no second argument: a named collection can carry the table itself.
-    return remoteFunctionLocality(function, clusters);
+    return remoteFunctionLocality(function, clusters, constant_keys);
 }
 
 /// Returns the argument subtree that cannot contain local dependencies for non-local `remote`/`cluster`.
-const IAST * remoteFunctionArgumentsToSkip(const IAST & node, const ClusterLocality & clusters)
+const IAST * remoteFunctionArgumentsToSkip(const IAST & node, const ClusterLocality & clusters, bool constant_keys)
 {
     const auto * function = node.as<ASTFunction>();
     if (!function || !function->arguments)
@@ -898,22 +896,26 @@ const IAST * remoteFunctionArgumentsToSkip(const IAST & node, const ClusterLocal
     {
         /// Nothing a non-local call names is read on this instance, so the whole argument list goes:
         /// callers compare against direct children, and an argument node is not one.
-        if (function->arguments->children.size() >= 2 && distributedFunctionLocality(*function, clusters) != Locality::Local)
+        if (function->arguments->children.size() >= 2
+            && distributedFunctionLocality(*function, clusters, constant_keys) != Locality::Local)
             return function->arguments.get();
     }
     return nullptr;
 }
 
+/// Visits `node` and its subtree, except what a call that reads nothing locally names. The visitor also gets whether the
+/// node is in a table expression, whose table functions the analyzer resolves.
 template <typename Visitor>
-void visitLocalAST(const IAST * node, const ClusterLocality & clusters, Visitor && visitor)
+void visitLocalAST(const IAST * node, const ClusterLocality & clusters, Visitor && visitor, bool in_table_expression = false)
 {
     if (!node)
         return;
-    visitor(*node);
-    const IAST * skip = remoteFunctionArgumentsToSkip(*node, clusters);
+    in_table_expression |= node->as<ASTTableExpression>() != nullptr;
+    visitor(*node, in_table_expression);
+    const IAST * skip = remoteFunctionArgumentsToSkip(*node, clusters, /* constant_keys= */ !in_table_expression);
     for (const auto & child : node->children)
         if (child.get() != skip)
-            visitLocalAST(child.get(), clusters, visitor);
+            visitLocalAST(child.get(), clusters, visitor, in_table_expression);
 }
 
 /// Reads a table identifier or `db.name` string; an empty database is resolved by the caller.
@@ -1217,9 +1219,10 @@ std::optional<size_t> promQLTableFunctionShortArgumentCount(std::string_view nam
 }
 
 /// Collects table references from dictionary, join, `IN`, and local `cluster`/`remote` function arguments.
+/// `constant_keys` is as for `resolveRemoteNamedCollection`.
 void collectFunctionArgumentReferences(
     const IAST & node, const ClusterLocality & clusters,
-    std::vector<TableReference> & out)
+    std::vector<TableReference> & out, bool constant_keys)
 {
     if (const auto * function = node.as<ASTFunction>())
     {
@@ -1242,7 +1245,7 @@ void collectFunctionArgumentReferences(
                         if (const auto * collection = tryGetRemoteNamedCollection(*function, collection_name, clusters))
                         {
                             auto target = resolveRemoteNamedCollection(
-                                *function, collection_name, *collection, clusters);
+                                *function, collection_name, *collection, clusters, constant_keys);
                             if (!target.target_is_table_function && !target.table.empty())
                                 targets.push_back({target.database, target.table});
                             return;
@@ -1337,7 +1340,7 @@ void collectFunctionArgumentReferences(
                 if (dependency)
                     targets.push_back({dependency->first, dependency->second});
             };
-            const Locality locality = distributedFunctionLocality(*function, clusters);
+            const Locality locality = distributedFunctionLocality(*function, clusters, constant_keys);
             if (locality == Locality::Local)
                 read_target(out);
             else if (locality == Locality::Unknown)
@@ -1625,9 +1628,9 @@ void collectNamedCollectionsFromTableFunction(
             const auto * equals = arguments[i]->as<ASTFunction>();
             if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
                 continue;
-            /// A key the dump cannot read may be `database` too; `collect_nested` reads only a table function anyway.
-            const auto key = tryReadNamedCollectionKey(equals->arguments->children[0], clusters);
-            if (!key || *key == "database" || *key == "db")
+            /// A key that is not an identifier may be `database` too; `collect_nested` reads only a table function anyway.
+            String key;
+            if (!tryGetIdentifierNameInto(equals->arguments->children[0], key) || key == "database" || key == "db")
                 collect_nested(equals->arguments->children[1]);
         }
     }
@@ -1970,7 +1973,7 @@ std::vector<TableInfo> resolveTables(
         }
 
         std::vector<TableReference> references;
-        collectFunctionArgumentReferences(*engine, clusters, references);
+        collectFunctionArgumentReferences(*engine, clusters, references, /* constant_keys= */ true);
         for (const auto & reference : references)
         {
             if (!reference.remote_via.empty())
@@ -2127,7 +2130,7 @@ std::vector<TableInfo> resolveTables(
         };
 
         std::vector<TableReference> references;
-        visitLocalAST(select_ast.get(), clusters, [&](const IAST & node)
+        visitLocalAST(select_ast.get(), clusters, [&](const IAST & node, bool in_table_expression)
         {
             if (const auto * table_id = node.as<ASTTableIdentifier>(); table_id && !table_id->getDatabaseName().empty())
                 references.push_back({table_id->getDatabaseName(), table_id->shortName()});
@@ -2147,7 +2150,7 @@ std::vector<TableInfo> resolveTables(
                 else if (call->name.find('.', dot + 1) == String::npos)
                     references.push_back({call->name.substr(0, dot), call->name.substr(dot + 1)});
             }
-            collectFunctionArgumentReferences(node, clusters, references);
+            collectFunctionArgumentReferences(node, clusters, references, /* constant_keys= */ !in_table_expression);
             collectMergeAndLoopReferences(
                 node, all_table_names_by_db, undumped_databases, omitted_tables, row.database,
                 clusters.context, references, row.unchecked_references);
@@ -2952,6 +2955,27 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
         {
         }
     };
+    /// A local `Remote` table resolves its table-function target at CREATE, and a table created `AS` a table function
+    /// resolves it when a reader such as a materialized view is created, so their structures are read like the ones
+    /// of a table expression.
+    if (const auto * create = ast.as<ASTCreateQuery>())
+    {
+        if (create->as_table_function)
+            table_functions.insert(create->as_table_function);
+        std::vector<const ASTStorage *> storages;
+        if (create->storage)
+            storages.push_back(create->storage);
+        if (create->targets)
+            for (const auto * inner : create->targets->getInnerEngines())
+                storages.push_back(inner);
+        for (const auto * storage : storages)
+            if (const auto * engine = storage->engine; engine && engine->arguments
+                && (equalsCaseInsensitive(engine->name, "Remote") || equalsCaseInsensitive(engine->name, "RemoteSecure")))
+                for (const auto & argument : engine->arguments->children)
+                    if (const auto * function = argument->as<ASTFunction>();
+                        function && TableFunctionFactory::instance().isTableFunctionName(function->name))
+                        table_functions.insert(argument.get());
+    }
     forEachNode(ast, [&](const IAST & node)
     {
         if (const auto * table_expression = node.as<ASTTableExpression>(); table_expression && table_expression->table_function)
@@ -2975,27 +2999,7 @@ String nameTokens(const IAST & ast, const IAST * skip, bool with_types, std::vec
                         end = args.size() == 3 ? 2 : 0;
                     }
                     for (size_t i = begin; i < end; ++i)
-                    {
                         forEachNode(*args[i], [&](const IAST & argument) { add_types_in_string(argument, true); });
-                        /// A structure computed from strings, such as `concat('x LowCardinality(', 'UInt64)')`, is folded
-                        /// only by the server: like a computed CAST target, it keeps every type gate. `merge` wraps a database
-                        /// regexp in `REGEXP`, which is no structure.
-                        ASTPtr value = args[i];
-                        if (const auto * equals = value->as<ASTFunction>(); equals && equals->name == "equals" && equals->arguments
-                            && equals->arguments->children.size() == 2)
-                            value = equals->arguments->children[1];
-                        const auto * computed = value->as<ASTFunction>();
-                        bool from_strings = false;
-                        if (computed && validated_types && !equalsCaseInsensitive(computed->name, "REGEXP")
-                            && !TableFunctionFactory::instance().isTableFunctionName(computed->name))
-                            forEachNode(*value, [&](const IAST & part)
-                            {
-                                const auto * literal = part.as<ASTLiteral>();
-                                from_strings |= literal && literal->value.getType() == Field::Types::String;
-                            });
-                        if (from_strings)
-                            validated_types->push_back(value);
-                    }
                 }
             }
             else
