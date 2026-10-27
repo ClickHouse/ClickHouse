@@ -38,6 +38,8 @@ A `SELECT` query can use the plan cache when all of the following hold:
   applicable row policy calls a non-deterministic function (e.g. `today`, `currentUser`) is not cached either. A query reading a
   table whose applicable row policy calls a SQL user-defined function is not cached either: the function body is inlined into the
   filter while the plan is built, and a concurrent `CREATE OR REPLACE FUNCTION` could leave the plan with a body the cache cannot detect.
+  A query reading a table with a constraint that calls such a function (e.g. `getSetting`) is not cached either: the constraint-based
+  optimizations (`optimize_using_constraints`, ...) fold the constraint into the plan.
 - The query contains no call of a function that checks access rights while the query is analyzed (introspection functions such as
   `demangle`, dictionary functions, AI functions, `joinGet`, `getMacro`, ...), including inside expanded view bodies, row policies and
   `ALIAS` columns of tables read inside expanded view bodies. Such a call with constant arguments is folded into a constant, and a cache hit

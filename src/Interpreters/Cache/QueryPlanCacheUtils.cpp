@@ -400,6 +400,20 @@ bool isStorageEligibleForPlanCache(const StoragePtr & storage, const StorageMeta
     return true;
 }
 
+/// Table constraints are analyzed into the plan by the constraint-based optimizations
+/// (`convert_query_to_cnf`, `optimize_using_constraints`, `optimize_substitute_columns`): their
+/// expressions are folded and used to rewrite the query predicate, while they never appear in the
+/// analyzed query tree checked by `queryTreeIsEligibleForPlanCache`. A constraint calling a
+/// non-deterministic function (e.g. `getSetting`) would be frozen into the cached plan, and the
+/// constraint text in the schema fingerprint does not capture the folded value.
+bool constraintsContainFunctionsUnsafeForQueryPlanCache(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    for (const auto & constraint : metadata.getConstraints().getConstraints())
+        if (astContainsFunctionsUnsafeForQueryPlanCache(constraint, context))
+            return true;
+    return false;
+}
+
 /// Fills a dependency record from a resolved storage. Returns false if the storage makes the
 /// plan uncacheable.
 bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, const ContextPtr & context)
@@ -475,6 +489,13 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
                 "Not caching plan: ALIAS column {} of {}.{} uses a function unsafe for the plan cache", column.name, dep.database, dep.table);
             return false;
         }
+    }
+
+    if (constraintsContainFunctionsUnsafeForQueryPlanCache(*metadata, context))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: a constraint of {}.{} uses a function unsafe for the plan cache", dep.database, dep.table);
+        return false;
     }
 
     dep.row_policy_hash = row_policy_info.hash;
@@ -1112,8 +1133,8 @@ namespace
 {
 
 /// The metadata expressions of a dependency that are analyzed into a cacheable plan: the body of an
-/// expanded view and the `ALIAS` column expressions. Both are checked with the same predicate when
-/// the plan is stored (`ASTDependencyCollector` and `fillDependency`).
+/// expanded view, the `ALIAS` column expressions and the constraints. They are checked with the same
+/// predicate when the plan is stored (`ASTDependencyCollector` and `fillDependency`).
 bool areMetadataExpressionsStillCacheable(const StoragePtr & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
 {
     if (isViewExpandedInCacheablePlan(storage) && metadata.select.inner_query
@@ -1127,7 +1148,7 @@ bool areMetadataExpressionsStillCacheable(const StoragePtr & storage, const Stor
             return false;
     }
 
-    return true;
+    return !constraintsContainFunctionsUnsafeForQueryPlanCache(metadata, context);
 }
 
 }
