@@ -125,27 +125,32 @@ expand_template(
     template = ":src/libmongoc/src/mongoc/mongoc-version.h.in",
 )
 
+_MONGOC_ONLY_COMMON_HEADERS = [
+    "src/common/src/common-bson-dsl-private.h",
+    "src/common/src/mlib/timer.h",
+]
+
+_MONGO_COMMON_SRCS = [":config/contrib/mongo-c-driver/src/common/src/common-config.h"] + glob(
+    [
+        "src/common/src/*.c",
+        "src/common/src/**/*.h",
+    ],
+    exclude = _MONGOC_ONLY_COMMON_HEADERS + ["src/common/src/mlib/str_vec.h"],
+)
+
 ch_cc_library(
     name = "_libbson",
-    srcs = glob(["src/libbson/src/bson/*.c"]) + ["src/libbson/src/jsonsl/jsonsl.c"] + glob([
-        "src/common/src/*.c",
+    srcs = glob(["src/libbson/src/bson/*.c"]) + ["src/libbson/src/jsonsl/jsonsl.c"] + _MONGO_COMMON_SRCS + glob([
         "src/libbson/src/bson/*-private.h",
         "src/libbson/src/jsonsl/*.h",
     ]),
     hdrs = [
-        ":config/contrib/mongo-c-driver/src/common/src/common-config.h",
         ":config/contrib/mongo-c-driver/src/libbson/src/bson/config.h",
         ":config/contrib/mongo-c-driver/src/libbson/src/bson/version.h",
     ] + glob(
-        [
-            "src/common/src/**/*.h",
-            "src/libbson/src/bson/*.h",
-        ],
-        exclude = [
-            "src/common/src/mlib/str_vec.h",
-            "src/libbson/src/bson/*-private.h",
-        ],
-    ),
+        ["src/libbson/src/bson/*.h"],
+        exclude = ["src/libbson/src/bson/*-private.h"],
+    ) + _MONGOC_ONLY_COMMON_HEADERS,
     includes = [
         "src/common/src",
         "src/libbson/src",
@@ -178,7 +183,7 @@ _MONGOC_PUBLIC_HEADERS = glob(
 
 ch_cc_library(
     name = "_libmongoc",
-    srcs = glob(["src/libmongoc/src/mongoc/*.c"]) + glob(["src/common/src/*.c"]) + [
+    srcs = glob(["src/libmongoc/src/mongoc/*.c"]) + _MONGO_COMMON_SRCS + [
         "src/utf8proc-2.11.3/utf8proc.c",
         ":config/contrib/mongo-c-driver/src/libmongoc/src/mongoc/mongoc-config-private.h",
     ] + glob(
