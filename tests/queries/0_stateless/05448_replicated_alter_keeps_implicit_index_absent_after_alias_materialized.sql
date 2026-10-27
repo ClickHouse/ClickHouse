@@ -42,5 +42,18 @@ SELECT 'issuer', count() FROM t_05448_r1 WHERE b = 0;
 SELECT 'follower', count() FROM t_05448_r2 WHERE b = 0;
 SELECT 'without skip indices', count() FROM t_05448_r1 WHERE b = 0 SETTINGS use_skip_indexes = 0;
 
+-- An explicit `minmax` index added after the drop says nothing about the files under the implicit name,
+-- so dropping it again must not bring the implicit index back over the files of `a + 1`.
+SELECT 'explicit index round trip';
+ALTER TABLE t_05448_r1 ADD INDEX i_b b TYPE minmax GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_05448_r1 DROP INDEX i_b SETTINGS alter_sync = 2, mutations_sync = 2;
+SELECT table, name FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table LIKE 't_05448_r%' ORDER BY table, name;
+
+-- The queries read the column, because a trivial `count` could bypass the index.
+SELECT 'issuer', sum(a + 1) FROM t_05448_r1 WHERE b = 0;
+SELECT 'follower', sum(a + 1) FROM t_05448_r2 WHERE b = 0;
+SELECT 'without skip indices', sum(a + 1) FROM t_05448_r1 WHERE b = 0 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_05448_r1 SYNC;
 DROP TABLE t_05448_r2 SYNC;

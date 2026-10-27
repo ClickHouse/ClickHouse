@@ -106,13 +106,14 @@ SETTINGS add_minmax_index_for_numeric_columns = 1;
 
 INSERT INTO t_explicit_ops VALUES (1, 2), (3, 4);
 
--- Test 7: Explicit index on same column (should not create duplicate implicit index)
+-- Test 7: Explicit index on same column. The existing implicit index stays next to it, as with a local
+-- `ALTER`: an explicit `minmax` index neither removes nor restores the implicit one of an existing column.
 SELECT 'Before adding explicit index:';
 SELECT name, type, expr FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 't_explicit_ops'
 ORDER BY name;
 
--- Add explicit minmax index on column b (should not duplicate the implicit one)
+-- Add explicit minmax index on column b (the implicit one is kept)
 ALTER TABLE t_explicit_ops ADD INDEX idx_explicit_b b TYPE minmax GRANULARITY 1;
 SYSTEM SYNC REPLICA t_explicit_ops;
 
@@ -121,7 +122,7 @@ SELECT name, type, expr FROM system.data_skipping_indices
 WHERE database = currentDatabase() AND table = 't_explicit_ops'
 ORDER BY name;
 
--- Verify only one index exists per column
+-- Count the minmax indices per column
 SELECT column_name, count() as index_count FROM (
     SELECT arrayJoin(splitByChar(',', expr)) as column_name
     FROM system.data_skipping_indices
@@ -131,7 +132,7 @@ SELECT column_name, count() as index_count FROM (
 GROUP BY column_name
 ORDER BY column_name;
 
--- Test 8: Drop explicit index (implicit should remain/regenerate)
+-- Test 8: Drop explicit index (implicit should remain)
 ALTER TABLE t_explicit_ops DROP INDEX idx_explicit_b;
 SYSTEM SYNC REPLICA t_explicit_ops;
 

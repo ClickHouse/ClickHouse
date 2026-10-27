@@ -38,5 +38,37 @@ SELECT sum(a + 1) FROM t_replicated WHERE b = 0;
 SELECT sum(a + 1) FROM t_replicated WHERE b = 0 SETTINGS use_skip_indexes = 0;
 SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_replicated' ORDER BY name;
 
+-- A change of the type that keeps the stored bytes (`UInt32` <-> `DateTime`) rewrites nothing either.
+DROP TABLE IF EXISTS t_local_dt;
+DROP TABLE IF EXISTS t_replicated_dt;
+
+CREATE TABLE t_local_dt (a UInt64, payload String, b UInt32 ALIAS toUInt32(a + 1))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    packed_skip_index_max_bytes = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 1;
+INSERT INTO t_local_dt SELECT number, toString(number) FROM numbers(100000);
+ALTER TABLE t_local_dt MODIFY COLUMN b UInt32 DEFAULT 0;
+ALTER TABLE t_local_dt MATERIALIZE COLUMN b SETTINGS mutations_sync = 2;
+ALTER TABLE t_local_dt MODIFY COLUMN b DateTime DEFAULT toDateTime(0);
+ALTER TABLE t_local_dt MODIFY COLUMN b UInt32 DEFAULT 0;
+SELECT sum(a + 1) FROM t_local_dt WHERE b = 0;
+SELECT sum(a + 1) FROM t_local_dt WHERE b = 0 SETTINGS use_skip_indexes = 0;
+SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_local_dt' ORDER BY name;
+
+CREATE TABLE t_replicated_dt (a UInt64, payload String, b UInt32 ALIAS toUInt32(a + 1))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_replicated_dt_05452', 'r1') ORDER BY tuple()
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    packed_skip_index_max_bytes = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 1;
+INSERT INTO t_replicated_dt SELECT number, toString(number) FROM numbers(100000);
+ALTER TABLE t_replicated_dt MODIFY COLUMN b UInt32 DEFAULT 0;
+ALTER TABLE t_replicated_dt MATERIALIZE COLUMN b SETTINGS mutations_sync = 2;
+ALTER TABLE t_replicated_dt MODIFY COLUMN b DateTime DEFAULT toDateTime(0);
+ALTER TABLE t_replicated_dt MODIFY COLUMN b UInt32 DEFAULT 0;
+SELECT sum(a + 1) FROM t_replicated_dt WHERE b = 0;
+SELECT sum(a + 1) FROM t_replicated_dt WHERE b = 0 SETTINGS use_skip_indexes = 0;
+SELECT name FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_replicated_dt' ORDER BY name;
+
 DROP TABLE t_local;
 DROP TABLE t_replicated;
+DROP TABLE t_local_dt;
+DROP TABLE t_replicated_dt;

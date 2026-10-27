@@ -35,13 +35,15 @@ auto_minmax_index_a	minmax	a
 auto_minmax_index_b	minmax	b
 After adding explicit index on b:
 auto_minmax_index_a	minmax	a
+auto_minmax_index_b	minmax	b
 idx_explicit_b	minmax	b
 a	1
-b	1
+b	2
 After dropping explicit index:
 auto_minmax_index_a	minmax	a
 auto_minmax_index_b	minmax	b
 After adding index and column:
+auto_minmax_index_a	minmax	a
 auto_minmax_index_b	minmax	b
 auto_minmax_index_c	minmax	c
 idx_explicit_a	minmax	a

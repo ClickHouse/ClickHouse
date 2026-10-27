@@ -16,6 +16,10 @@ class IDatabase;
 struct MergeTreeSettings;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 
+/// Whether `ALTER ... MODIFY COLUMN` changing the type of a stored column from `from` to `to` keeps its bytes on
+/// disk, so no mutation rewrites the column (e.g. `UInt32` <-> `DateTime`, or equal types).
+bool isTypeChangeKeepingStoredData(const IDataType & from, const IDataType & to);
+
 /// Describes whether an ALTER requires rewriting existing parts.
 /// Non-empty `lazy_settings` means that the on-disk representation changes without an immediate
 /// mutation: old parts are converted on read and rewritten by later merges. Such conversions

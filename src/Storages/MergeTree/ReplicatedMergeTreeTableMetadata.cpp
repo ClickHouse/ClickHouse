@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -540,21 +541,6 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     return diff;
 }
 
-static bool hasMinMaxIndexOnColumn(const StorageInMemoryMetadata & metadata, const String & column_name)
-{
-    /// `column_names` of an index over an expression alias hold the columns of the expanded alias
-    /// expression rather than the alias itself (see `IndexDescription::initExpressionInfo`), so match an
-    /// implicit index by its generated name, as `dropImplicitIndicesForColumn` does.
-    return std::ranges::any_of(metadata.secondary_indices, [&](const IndexDescription & index)
-    {
-        if (index.type != "minmax")
-            return false;
-        if (index.isImplicitlyCreated())
-            return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
-        return !index.column_names.empty() && index.column_names.front() == column_name;
-    });
-}
-
 StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(const ColumnsDescription & new_columns, const VirtualColumnsDescription & virtuals, ContextPtr context, const StorageInMemoryMetadata & old_metadata) const
 {
     StorageInMemoryMetadata new_metadata = old_metadata;
@@ -700,6 +686,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     };
 
     std::unordered_set<String> stale_implicit_index_columns;
+    std::unordered_map<String, const IndexDescription *> kept_implicit_indices;
     NameSet redefined_alias_columns;
     for (const auto & column : new_metadata.columns)
     {
@@ -721,27 +708,35 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         /// Implicit indices are not stored in Keeper, so every replicated ALTER regenerates them. An
         /// earlier ALTER may have deliberately dropped the implicit index of a column because the files
         /// of the existing parts were built for its previous definition - for example, over the
-        /// expression of an alias. Keep it absent while the column stays as it is: re-creating it on an
-        /// unrelated ALTER would reuse those stale files and prune wrong. This holds after the column
+        /// expression of an alias. Keep it absent while the column keeps its stored data: re-creating it
+        /// on an unrelated ALTER would reuse those stale files and prune wrong. This holds after the column
         /// becomes physical too (`MODIFY COLUMN b ... DEFAULT 0` of `b ALIAS a + 1`): materializing it
         /// rewrites only the indices of the current metadata and carries the files of the absent index
-        /// over unchanged. The local ALTER path keeps the absence by editing the metadata in place. A
-        /// column without any `minmax` index in the old metadata is only possible after such a drop,
-        /// after `MergeTreeData::setProperties` refused to create the index over files of a previous
-        /// column with the same name, or when the policy does not cover the column - and then it is not
-        /// re-created anyway. `DROP INDEX` of an explicit `minmax` index sees that index in the old
-        /// metadata, so the implicit one still replaces it.
-        /// The same holds for a physical column that stays physical with the same type and changes only
-        /// its default (`MODIFY COLUMN b UInt64 DEFAULT 1` after the above): no mutation rewrites it, so the
-        /// stale files stay in the parts.
+        /// over unchanged. It also holds for a physical column that stays physical and changes only its
+        /// default, or its type in a way that keeps the stored bytes (`UInt32` <-> `DateTime`): no mutation
+        /// rewrites it, so the stale files stay in the parts.
+        /// The local ALTER path keeps the presence or absence of the implicit index by editing the metadata
+        /// in place, and an explicit `minmax` index over the column neither removes nor restores it there.
+        /// Mirror that by looking only at the implicit index itself: an explicit `minmax` index added after
+        /// the drop says nothing about the files under the implicit name, so dropping it again must not bring
+        /// the implicit index back; and an implicit index that coexists with an explicit one is kept.
         const auto is_physical = [](const ColumnDescription & c)
         {
             return c.default_desc.kind != ColumnDefaultKind::Alias && c.default_desc.kind != ColumnDefaultKind::Ephemeral;
         };
         const bool keeps_stored_data = !redefined
-            || (is_physical(old_column) && is_physical(column) && old_column.type->equals(*column.type));
-        if (keeps_stored_data && !hasMinMaxIndexOnColumn(old_metadata, column.name))
-            stale_implicit_index_columns.insert(column.name);
+            || (is_physical(old_column) && is_physical(column) && isTypeChangeKeepingStoredData(*old_column.type, *column.type));
+        if (keeps_stored_data)
+        {
+            const auto old_implicit_index = std::ranges::find_if(old_metadata.secondary_indices, [&](const IndexDescription & index)
+            {
+                return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name;
+            });
+            if (old_implicit_index == old_metadata.secondary_indices.end())
+                stale_implicit_index_columns.insert(column.name);
+            else if (!redefined)
+                kept_implicit_indices.emplace(column.name, &*old_implicit_index);
+        }
     }
 
     /// The implicit index of an expression alias is built over its expanded expression, so the
@@ -759,7 +754,18 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     /// duplicates if an explicit index already exists.
     for (const auto & column : new_metadata.columns)
     {
-        if (!stale_implicit_index_columns.contains(column.name))
+        if (stale_implicit_index_columns.contains(column.name))
+            continue;
+
+        /// `addImplicitIndicesForColumn` does not add the index next to an explicit `minmax` one.
+        if (auto it = kept_implicit_indices.find(column.name);
+            it != kept_implicit_indices.end() && !new_metadata.secondary_indices.has(it->second->name))
+        {
+            IndexDescription index = *it->second;
+            index.recalculateWithNewColumns(new_metadata.columns, context);
+            new_metadata.secondary_indices.push_back(std::move(index));
+        }
+        else
             new_metadata.addImplicitIndicesForColumn(column, context);
     }
     new_metadata.addImplicitIndicesForVirtualColumns(context);
