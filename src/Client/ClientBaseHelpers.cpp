@@ -189,8 +189,7 @@ bool isCloudEndpoint(const std::string & host)
 }
 
 #if USE_REPLXX
-/// A lead byte spans only the continuation bytes that follow it, so a malformed sequence never covers the next character
-/// (e.g. a closing bracket) and never runs past `end`.
+/// Like `UTF8::seqLength`, but a malformed sequence covers only the continuation bytes that follow it, up to `end`.
 static size_t codePointLength(const char * pos, const char * end)
 {
     const size_t max_length = std::min<size_t>(UTF8::seqLength(*pos), end - pos);
