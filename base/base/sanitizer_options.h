@@ -82,9 +82,42 @@ const char * __tsan_default_suppressions()
     /// matches any frame, so it covers the whole callee subtree. That subtree is only
     /// `bytesSize`, a read-only size computation, and a use-after-free blinded there still
     /// surfaces on the next access to the same request in `dispatchThread`.
+    ///
+    /// The `oneshot` entries cover the handover of a segment read in the Rust `vortex` library:
+    /// the sender writes the payload and publishes it with `swap(MESSAGE, AcqRel)`, and the
+    /// receiver loads the state relaxed and reads the payload behind a standalone `fence(Acquire)`,
+    /// which is a valid release/acquire pair. `rustc` does not tell ThreadSanitizer about
+    /// `core::sync::atomic::fence` (unlike clang, which models `std::atomic_thread_fence`), so
+    /// every such handover is reported as a race on the payload. Both the sending and the
+    /// receiving side are named, because either can be the stack that a report is matched on.
+    ///
+    /// Only the three functions that touch the payload are named - `write_message`,
+    /// `take_message` and `drop_message` - plus the callers they are inlined into (`Sender::send`,
+    /// and the `poll` of both the blocking `Receiver` and the `AsyncReceiver` future that `oneshot`
+    /// 0.2 hands out for `.await`), so that a
+    /// race anywhere else in the crate (the state machine, the waker, the allocation) is still
+    /// reported. `race:` matches any frame, so a wider pattern would also blind a
+    /// heap-use-after-free seen through it.
+    ///
+    /// The `kanal` entries are the same false positive in the permit channel of a Vortex scan
+    /// (`FFI_VortexScan::permits`): a receiver that frees a waiting sender reads the sender's
+    /// `Signal` and publishes the outcome with a release store of its state, and the sender's
+    /// `Signal::poll` loads that state relaxed and goes on behind a standalone `fence(Acquire)`,
+    /// after which the sender future reuses the signal's memory. Only the receiving side's
+    /// `Signal` methods are named - `recv`, the `wake` it calls, and `send` for a
+    /// payload-carrying channel - not the futures and the queue around them.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
-           "race:^DB::getRequestBytesCost\n";
+           "race:^DB::getRequestBytesCost\n"
+           "race:oneshot::channel::Channel*::write_message\n"
+           "race:oneshot::channel::Channel*::take_message\n"
+           "race:oneshot::channel::Channel*::drop_message\n"
+           "race:oneshot::sender::Sender*::send\n"
+           "race:oneshot::receiver::Receiver*::poll\n"
+           "race:oneshot::receiver::AsyncReceiver*::poll\n"
+           "race:kanal::signal::Signal*::recv\n"
+           "race:kanal::signal::Signal*::wake\n"
+           "race:kanal::signal::Signal*::send\n";
 }
 #endif
 
