@@ -1,0 +1,10 @@
+dump rc=0
+aaa_view after the source: yes
+aab_engine after the source: yes
+aac_proxy after the source: yes
+aae_cluster after the source: yes
+replay rc=0
+1
+1
+local with the macro: dump rc=0, after the source: yes
+local without the macro: dump rc=48, refused as unexpandable: 1

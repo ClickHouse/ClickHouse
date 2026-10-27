@@ -530,7 +530,7 @@ struct ClusterLocality
     std::function<UInt16()> tcp_port_secure;
     /// clickhouse-local listens on no port, so it treats any address with an explicit port as remote.
     bool treat_local_port_as_remote = false;
-    /// `Context::tryGetCluster` expands macros before looking a cluster up, but a stored definition
+    /// `Clusters::getCluster` expands server macros before looking a cluster up, but a stored definition
     /// keeps the placeholder text, so the same expansion has to happen before the lookups here.
     std::function<const std::map<String, String> &()> macros;
     /// Named collections the dump session can read, by name and then key. `remote*` resolves an
@@ -574,6 +574,23 @@ String expandClusterMacros(const String & name, const std::map<String, String> &
             break;
     }
     return current;
+}
+
+/// The name a `remote*` or `cluster*` cluster argument is looked up by: `Clusters::getCluster` expands the server
+/// macros of a stored placeholder such as `{default_cluster_macro}` first. The server fails the lookup when a
+/// placeholder has no server macro, such as `{database}`, which only an object could fill, so a name that does not
+/// expand fully is refused rather than guessed at.
+String expandClusterName(const String & name, const ASTFunction & function, const ClusterLocality & clusters)
+{
+    if (!name.contains('{'))
+        return name;
+    String expanded = expandClusterMacros(name, clusters.macros());
+    if (expanded.contains('{'))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot expand cluster name {} of {} for --dump-schema: the connected server's macros expand it only to {}, "
+            "and the server fails a lookup by such a name, so whether its table reference is a local dependency is unknown",
+            backQuoteIfNeed(name), function.formatForErrorMessage(), backQuoteIfNeed(expanded));
+    return expanded;
 }
 
 bool isClusterTableFunctionName(const String & name)
@@ -638,8 +655,7 @@ String resolveClusterOfFunction(const ASTFunction & function, const ClusterLocal
             "Cannot statically resolve the cluster name of {} for --dump-schema: "
             "whether its table reference is a local dependency depends on the cluster's local replicas",
             function.formatForErrorMessage());
-    if (cluster_name->contains('{'))
-        cluster_name = expandClusterMacros(*cluster_name, clusters.macros());
+    cluster_name = expandClusterName(*cluster_name, function, clusters);
     if (!clusters.names().known.contains(*cluster_name))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot resolve cluster {} of {} on the connected server for --dump-schema: "
@@ -715,9 +731,10 @@ struct RemoteCollectionTarget
 };
 
 /// The collection a `remote*` identifier first argument names: `parseRemoteFunctionArguments` tries
-/// named collections before configured clusters. Returns null when the name is a cluster and the call
-/// cannot be in the collection form, and refuses otherwise - a collection the dump session cannot see
-/// would otherwise pass for a remote address and lose the dependency edge.
+/// named collections, by the name as written, before configured clusters, by the name with macros expanded.
+/// Returns null when the name is a cluster and the call cannot be in the collection form, and refuses
+/// otherwise - a collection the dump session cannot see would otherwise pass for a remote address and
+/// lose the dependency edge.
 const std::map<String, String> * tryGetRemoteNamedCollection(
     const ASTFunction & function, const String & name, const ClusterLocality & clusters)
 {
@@ -731,7 +748,7 @@ const std::map<String, String> * tryGetRemoteNamedCollection(
         std::next(arguments.begin()),
         arguments.end(),
         [](const ASTPtr & argument) { return argument->as<ASTFunction>() != nullptr || argument->as<ASTSetQuery>() != nullptr; });
-    const bool is_cluster = clusters.names().known.contains(name);
+    const bool is_cluster = clusters.names().known.contains(expandClusterName(name, function, clusters));
     if (is_cluster && !may_be_collection)
         return nullptr;
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -865,7 +882,7 @@ Locality remoteFunctionLocality(const ASTFunction & function, const ClusterLocal
             auto target = resolveRemoteNamedCollection(function, name, *collection, clusters, constant_keys);
             return remoteDescriptionLocality(target.addresses, secure, clusters);
         }
-        return clusters.names().local.contains(name) ? Locality::Local : Locality::Remote;
+        return clusters.names().local.contains(expandClusterName(name, function, clusters)) ? Locality::Local : Locality::Remote;
     }
     const auto * literal = first->as<ASTLiteral>();
     if (!literal || literal->value.getType() != Field::Types::String)
