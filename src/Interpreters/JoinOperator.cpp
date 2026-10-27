@@ -270,7 +270,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
     enable_join_key_only_hash_tables = settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables];
-    enable_join_robin_hood_hash_tables = settings[QueryPlanSerializationSetting::enable_join_robin_hood_hash_tables];
+    enable_join_robin_hood_hash_tables = version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ROBIN_HOOD_HASH_TABLES
+        || settings[QueryPlanSerializationSetting::enable_join_robin_hood_hash_tables];
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
     enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
@@ -524,7 +525,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::enable_join_key_only_hash_tables] = enable_join_key_only_hash_tables;
-    settings[QueryPlanSerializationSetting::enable_join_robin_hood_hash_tables] = enable_join_robin_hood_hash_tables;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ROBIN_HOOD_HASH_TABLES)
+        settings[QueryPlanSerializationSetting::enable_join_robin_hood_hash_tables] = enable_join_robin_hood_hash_tables;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;

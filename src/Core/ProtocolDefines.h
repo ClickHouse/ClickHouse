@@ -142,6 +142,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
 /// Version 21 also registers the `adaptive_aggregator_disable_thaw` plan setting, written only towards a peer at this
 /// version or above. A peer below it thaws as it always did, which changes no result.
+/// Version 21 also adds the `enable_join_robin_hood_hash_tables` join step setting.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -178,6 +179,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOUR
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that knows `enable_join_robin_hood_hash_tables`. Below it, the name is not
+/// written, because a strict named schema makes an older peer throw on an unknown name, and a plan from such a peer is
+/// read with the Robin Hood mode on, as the join hash tables of 26.10 have it. The mode changes only the speed and the
+/// memory of a join, not its result.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_ROBIN_HOOD_HASH_TABLES = 21;
 /// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
 /// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
 /// aggregation with its own two-level decision.
