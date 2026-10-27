@@ -310,11 +310,19 @@ private:
 };
 
 /// The alternative form is computed against a storage with only the source columns of the key, so the
-/// rewrite passes do not see the other columns of the table. In the query, a rewrite to a subcolumn
-/// read (e.g. of `m['k']` to `m.key_k` by `FunctionToSubcolumnsPass`) is not applied when the table has
-/// a column of the same name, and then that name refers to the other column, not to the key. This
-/// does not depend on the settings, so it is checked for every table rather than cached.
-bool readsOtherTableColumn(
+/// rewrite passes do not see the other columns of the table, and the names of the alternative form can
+/// refer to other columns in the real table:
+/// - A rewrite to a subcolumn read (e.g. of `m['k']` to `m.key_k` by `FunctionToSubcolumnsPass`) is not
+///   applied in the query when the table has a column of the same name, and then that name refers to
+///   the other column, not to the key. Likewise, the name can resolve as a subcolumn of another column
+///   of the table (e.g. `j.m.key_k` as a subcolumn of a `JSON` column `j` rather than of the key's
+///   column `j.m`). So the subcolumn read is rejected if its name, or any prefix of it other than the
+///   key's source column, is a column of the table.
+/// - A rewritten (sub)expression can be named as another column of the table (e.g. a column named
+///   `if(greater(v, 0), v, 0)` while the key is `multiIf(v > 0, v, 0)`), and the filter on that column
+///   would be matched with the key by name.
+/// This does not depend on the settings, so it is checked for every table rather than cached.
+bool collidesWithOtherTableColumn(
     const AlternativeKeyExpression & alternative_key,
     const ExpressionActionsPtr & expression,
     const ColumnsDescription & table_columns)
@@ -323,9 +331,40 @@ bool readsOtherTableColumn(
     for (const auto & column : expression->getRequiredColumns())
         key_source_columns.insert(column);
 
-    for (const auto * input : alternative_key.expression->getActionsDAG().getInputs())
-        if (!key_source_columns.contains(input->result_name) && table_columns.has(input->result_name))
+    for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT)
+        {
+            if (table_columns.has(node.result_name))
+                return true;
+            continue;
+        }
+
+        if (key_source_columns.contains(node.result_name))
+            continue;
+
+        /// The storage column the subcolumn is read from in the dummy table: the longest prefix that is a
+        /// source column of the key, see `getRequiredStorageColumns`.
+        String source_column;
+        for (size_t pos = node.result_name.rfind('.'); pos != String::npos && pos != 0; pos = node.result_name.rfind('.', pos - 1))
+        {
+            String prefix = node.result_name.substr(0, pos);
+            if (key_source_columns.contains(prefix))
+            {
+                source_column = std::move(prefix);
+                break;
+            }
+        }
+
+        if (table_columns.has(node.result_name))
             return true;
+        for (size_t pos = node.result_name.find('.'); pos != String::npos; pos = node.result_name.find('.', pos + 1))
+        {
+            String prefix = node.result_name.substr(0, pos);
+            if (prefix != source_column && table_columns.has(prefix))
+                return true;
+        }
+    }
 
     return false;
 }
@@ -367,7 +406,7 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
             key_kind,
             context,
             [&] { return computeAlternativeExpression(expression_list_ast, expression, column_names, register_key, context); });
-        if (alternative_key && readsOtherTableColumn(*alternative_key, expression, table_columns))
+        if (alternative_key && collidesWithOtherTableColumn(*alternative_key, expression, table_columns))
             return nullptr;
         return alternative_key;
     }

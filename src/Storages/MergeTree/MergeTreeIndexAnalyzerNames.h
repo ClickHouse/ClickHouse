@@ -45,9 +45,11 @@ class MergeTreeIndexMinMax;
   * `column_names` is parallel to `index.column_names` and `expression` computes the same index
   * columns in the rewritten form.
   *
-  * The rewritten form is not used either when it reads a column by a name that is another column of the
+  * The rewritten form is not used either when one of its names can refer to another column of the
   * table, `table_columns`: e.g. the rewrite of `m['k']` to the subcolumn `m.key_k` is not applied to the
-  * query when the table has a column `m.key_k`, and the name refers to that column.
+  * query when the table has a column `m.key_k`, and the name refers to that column; a subcolumn name
+  * can resolve through another column of the table (`j.m.key_k` through a `JSON` column `j`); and a
+  * rewritten expression can have the name of another column (`if(greater(v, 0), v, 0)`).
   *
   * The result is cached by the content of the key (its AST and the stored key expression) and the
   * query's changed settings and current database, because computing it runs the query tree passes.
