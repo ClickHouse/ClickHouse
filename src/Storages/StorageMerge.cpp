@@ -2105,10 +2105,26 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    /// A read cannot produce `ALIAS` columns, so the policy must consume the columns they are computed from.
-    replaceAliasColumnsInQuery(expr, storage_columns, {}, local_context);
+    /// A read cannot produce `ALIAS` columns, so the policy should consume the columns they are computed from. That is
+    /// not possible for an `ALIAS` over a virtual column (`_table`): the policy then reads the `ALIAS` column.
+    TreeRewriterResultPtr syntax_result;
+    if (!storage_columns.getAliases().empty())
+    {
+        ColumnsDescription columns_with_virtuals = storage_columns;
+        for (const auto & virtual_column : storage_metadata_snapshot->virtuals)
+            if (!columns_with_virtuals.has(virtual_column.name))
+                columns_with_virtuals.add(ColumnDescription(virtual_column.name, virtual_column.type));
 
-    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
+        ASTPtr expanded_expr = expr->clone();
+        replaceAliasColumnsInQuery(expanded_expr, columns_with_virtuals, {}, local_context);
+
+        syntax_result = TreeRewriter(local_context, /* no_throw = */ true).analyze(expanded_expr, needed_columns);
+        if (syntax_result)
+            expr = std::move(expanded_expr);
+    }
+
+    if (!syntax_result)
+        syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
