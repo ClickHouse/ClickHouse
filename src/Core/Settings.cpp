@@ -9295,7 +9295,7 @@ Approximate probability of failure for a keeper request during insert. Valid val
     DECLARE(UInt64, bernoulli_sample_seed, 1, R"(
 Seed for the experimental Bernoulli sampling path (`allow_experimental_bernoulli_sample`). `0` re-seeds randomly per query (the seed is derived from the initial query id and the query start time, so every read of the query - including reads on remote shards and replicas - shares it, while repeated executions under the same `query_id` still draw fresh samples). Any nonzero value is deterministic per part. Has no effect on tables with a `SAMPLE BY` key.
 )", 0, \
-        {"26.10", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."}) \
+        {"26.11", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."}) \
     DECLARE(Bool, force_aggregation_in_order, false, R"(
 The setting is used by the server itself to support distributed queries. Do not change it manually, because it will break normal operations. (Forces use of aggregation in order on remote nodes during distributed aggregation).
 )", IMPORTANT) \
@@ -10807,7 +10807,7 @@ In particular, when the right table is reranged, the per-key split controlled by
     DECLARE(Bool, allow_experimental_bernoulli_sample, false, R"(
 Allow the `SAMPLE` clause on `MergeTree`-family tables created without a `SAMPLE BY` key. Each row is independently kept with the requested probability. `SAMPLE k OFFSET m` is still rejected. See [SAMPLE Clause](/sql-reference/statements/select/sample#bernoulli-sampling).
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."}) \
+        {"26.11", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."}) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
 Set to false to force the old full-mutation behavior.
