@@ -142,7 +142,6 @@ size_t convertedBlockSize(size_t table_size, size_t max_block_size, size_t max_r
     return std::min(max_block_size, table_size) + 1;
 }
 
-/// A heap with a `COLLATE` key waits for its start check, unless `observation_rows` is 0.
 bool topKHeapStartsLate(const DB::Aggregator::Params & params)
 {
     return params.top_k && params.top_k->hasCollators() && params.top_k->observation_rows != 0;
@@ -151,7 +150,7 @@ bool topKHeapStartsLate(const DB::Aggregator::Params & params)
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    /// A heap that waits to start leaves the table to grow as without the optimization until then, so it takes the same size hint.
+    /// A heap that waits to start lets the table grow as without the optimization, so it takes the same size hint.
     if (params.top_k && !topKHeapStartsLate(params))
     {
         result.init(method_chosen);
@@ -2487,8 +2486,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     const bool top_k_waits = top_k_heap && topKHeapWaits(params, *top_k_heap);
     const bool top_k_active = params.top_k && !result.topKHeapInactive() && !top_k_waits;
 
-    /// The frozen kernel does not consult the heap, so a collated heap that runs or starts with this block keeps its
-    /// stream off the adaptive path.
+    /// The frozen kernel does not consult the heap, so a running collated heap keeps its stream off the adaptive path.
     if (adaptive && adaptive->isLearning() && top_k_heap && params.top_k->hasCollators() && !top_k_heap->frozen && !top_k_waits)
         adaptive->standDown();
 
@@ -2610,11 +2608,8 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     /// A collated heap tests every row with a locale comparison, which costs more than the hash-table work it saves
     /// unless the rows keep inserting new keys. So it starts only once the table holds `collated_top_k_min_keys` keys
-    /// and the last block inserted new keys for at least `collated_top_k_min_new_key_share` of its rows. A learning
-    /// adaptive producer takes that decision once: it stands down for a heap that starts, and a heap that does not
-    /// gives up so that the table can freeze. Without one, the check repeats after every block until the heap starts.
-    /// Measured on 20M rows, `LIMIT 10`, 'en': a heap started at 1M or 3M keys is 1.5x or 1.2x slower with 1 thread;
-    /// at 12.6M keys it is 1.6x faster.
+    /// and the last block inserted new keys for at least `collated_top_k_min_new_key_share` of its rows. Measured on
+    /// 20M rows, `LIMIT 10`, 'en', 1 thread: a heap started at 1M or 3M keys is 1.5x or 1.2x slower, at 12.6M 1.6x faster.
     static constexpr size_t collated_top_k_min_keys = 32768;
     static constexpr double collated_top_k_min_new_key_share = 0.995;
     if (top_k_waits && result_size >= collated_top_k_min_keys && row_end > row_begin)

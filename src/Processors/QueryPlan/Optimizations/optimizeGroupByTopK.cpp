@@ -120,8 +120,7 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
     String key_name = aggregating_step.getParams().keys.front();
     auto log = getLogger("optimizeGroupByTopK");
 
-    /// `__topKFilter` would compare every read row with the boundary under the collation, and it keeps doing so
-    /// after the heap gives up.
+    /// `__topKFilter` would compare every read row under the collation, even after the heap gives up.
     if (!collators.empty() && collators.front())
     {
         LOG_TRACE(log, "No dynamic filter: the key {} is sorted with COLLATE", key_name);

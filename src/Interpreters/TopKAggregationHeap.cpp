@@ -141,20 +141,8 @@ bool TopKAggregationHeapBase::shouldFreeze() const
 
 /// A heap with a `COLLATE` key tests every row with a locale comparison, which pays off only while the rows it skips
 /// would have inserted new keys: a skipped repeat saves just a lookup into a table that stays small. So once it has
-/// filled, the heap hashes each block's keys and estimates the share of rows it keeps out of the table as new keys:
-/// over 1 key in 2^`collated_sample_bits` by hash, whose skipped rows count when the sample lacks the key, and bounded
-/// by the rows whose hash is not in a direct-mapped table of `collated_recent_key_slots` recent hashes, which sees a
-/// few hot keys the sample misses. A window of `collated_sample_window` sampled rows (2^`collated_sample_bits` times as many rows when
-/// only the second estimate decides) with either below `collated_min_new_key_share` extends a run of repeats; the heap
-/// freezes once the run reaches `collated_repeat_rows_per_skipped_key` rows per key skipped so far, because freezing
-/// inserts those keys after all. Past `collated_sample_max_keys` sampled keys (about 2M skipped) only the recent hashes
-/// of 1/`collated_block_slices_after_sample` of each block decide: a skipped key outside them would cost a lookup into
-/// a large table, which the comparison wins.
-/// Measured on 20M rows, `LIMIT 10`, 'en', heap off / without this check / with it: 1 thread, 100K keys in cycles
-/// 268 / 494 / 274 ms, 1M 315 / 466 / 340 ms, 1M in descending order 328 / 740 / 324 ms, 5 keys after 100K unique ones
-/// 140 / 331 / 106 ms; 16 threads, 1M keys in cycles 106 / 40 / 48 ms (as with the heap off when the run needs no
-/// length). Past the sample, heap off / on: 1M keys in cycles after 3M unique ones 844 / 419 ms, and 97M rows of one
-/// key after them 896 / 596 ms (1632 ms without the recent hashes).
+/// filled, it estimates the share of new keys among the rows it skips, from a hash sample and a table of recent key
+/// hashes, and freezes after a run of windows dominated by repeats, since freezing inserts the skipped keys after all.
 static constexpr UInt32 collated_sample_bits = 6;
 static constexpr UInt64 collated_sample_window = 256;
 static constexpr double collated_min_new_key_share = 0.5;
@@ -169,7 +157,6 @@ bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_colu
         || row_end <= row_begin)
         return false;
 
-    /// Past the sample, a slice of each block stands for all of it; the slice moves through the block from block to block.
     size_t begin = row_begin;
     size_t rows = row_end - row_begin;
     UInt64 weight = 1;
