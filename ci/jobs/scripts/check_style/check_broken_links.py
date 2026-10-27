@@ -81,6 +81,19 @@ def trim_url(url):
     return url
 
 
+def trim_markdown_destination(url):
+    """Remove text following a Markdown link destination."""
+    parentheses = 0
+    for index, char in enumerate(url):
+        if char == "(":
+            parentheses += 1
+        elif char == ")":
+            if parentheses == 0:
+                return url[:index]
+            parentheses -= 1
+    return url
+
+
 def extract_urls(path, line):
     is_docs = path.startswith(DOCS_PATH_PREFIX)
     urls = []
@@ -90,7 +103,10 @@ def extract_urls(path, line):
             continue
         if APT_SOURCE_RE.search(prefix):
             continue
-        url = trim_url(match.group(0))
+        url = match.group(0)
+        if is_docs and prefix.endswith("]("):
+            url = trim_markdown_destination(url)
+        url = trim_url(url)
         if url:
             urls.append(url)
     return urls
