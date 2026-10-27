@@ -247,10 +247,17 @@ void SettingsConstraints::checkRemovedSettings(const SettingsProfileElements & o
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source, bool skip_config_defined_profiles, bool actor_is_config_defined) const
+void SettingsConstraints::check(
+    const Settings & current_settings,
+    const SettingsProfileElements & profile_elements,
+    SettingSource source,
+    bool skip_config_defined_profiles,
+    bool actor_is_config_defined,
+    const SettingsConstraints * resolved_constraints) const
 {
     boost::container::flat_set<UUID> visited_profiles;
-    checkProfileElements(current_settings, profile_elements, source, visited_profiles, skip_config_defined_profiles, actor_is_config_defined);
+    checkProfileElements(
+        current_settings, profile_elements, source, visited_profiles, skip_config_defined_profiles, actor_is_config_defined, resolved_constraints);
 }
 
 void SettingsConstraints::checkProfileElements(
@@ -259,7 +266,8 @@ void SettingsConstraints::checkProfileElements(
     SettingSource source,
     boost::container::flat_set<UUID> & visited_profiles,
     bool skip_config_defined_profiles,
-    bool actor_is_config_defined) const
+    bool actor_is_config_defined,
+    const SettingsConstraints * resolved_constraints) const
 {
     /// An XML config profile may define a value and a writability constraint for the same setting
     /// as two separate elements (e.g. `<setting>false</setting>` and `<constraints><setting><readonly/></setting></constraints>`).
@@ -289,14 +297,16 @@ void SettingsConstraints::checkProfileElements(
                 continue;
             auto profile = access_control->tryRead<SettingsProfile>(profile_id);
             if (profile)
-                checkProfileElements(current_settings, profile->elements, SettingSource::PROFILE, visited_profiles, skip_config_defined_profiles, actor_is_config_defined);
+                checkProfileElements(
+                    current_settings, profile->elements, SettingSource::PROFILE, visited_profiles, skip_config_defined_profiles,
+                    actor_is_config_defined, resolved_constraints);
             continue;
         }
 
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
-        checkProfileElementValues(current_settings, element, source, actor_is_config_defined);
+        checkProfileElementValues(current_settings, element, source, actor_is_config_defined, resolved_constraints);
         /// A trusted config-defined admin may declare looser writability than the current constraints.
         if (!actor_is_config_defined)
             checkProfileElementWritability(element, writability_map);
@@ -315,7 +325,8 @@ void SettingsConstraints::checkProfileElementValues(
     const Settings & current_settings,
     const SettingsProfileElement & element,
     SettingSource source,
-    bool actor_is_config_defined) const
+    bool actor_is_config_defined,
+    const SettingsConstraints * resolved_constraints) const
 {
     if (element.value)
     {
@@ -337,7 +348,7 @@ void SettingsConstraints::checkProfileElementValues(
 
     /// With `settings_constraints_replace_previous` a constraint replaces the one it overrides as a whole, so
     /// a bound it leaves out is lifted for whoever gets it. It must keep every bound the actor is subject to;
-    /// the values it declares are checked above.
+    /// the values it declares are checked above. At login the constraint the user ends up with is checked instead.
     if (actor_is_config_defined || !element.isConstraint() || element.writability == SettingConstraintWritability::CONST
         || !access_control || !access_control->doesSettingsConstraintsReplacePrevious())
         return;
@@ -346,15 +357,43 @@ void SettingsConstraints::checkProfileElementValues(
     if (it == constraints.end())
         return;
     const auto & bound = it->second;
-    bool keeps_disallowed_values = std::ranges::all_of(bound.disallowed_values, [&](const Field & value)
+
+    Constraint declared;
+    const Constraint * kept = &declared;
+    if (resolved_constraints)
     {
-        return std::ranges::any_of(element.disallowed_values, [&](const Field & element_value)
-        {
-            return settingCastValueUtil(setting_name, element_value) == value;
-        });
-    });
-    if ((!bound.min_value.isNull() && !element.min_value) || (!bound.max_value.isNull() && !element.max_value) || !keeps_disallowed_values)
-        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+        auto resolved_it = resolved_constraints->constraints.find(setting_name);
+        if (resolved_it == resolved_constraints->constraints.end())
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+        kept = &resolved_it->second;
+        if (kept->writability == SettingConstraintWritability::CONST)
+            return;
+    }
+    else
+    {
+        if (element.min_value)
+            declared.min_value = *element.min_value;
+        if (element.max_value)
+            declared.max_value = *element.max_value;
+        for (const auto & value : element.disallowed_values)
+            declared.disallowed_values.push_back(settingCastValueUtil(setting_name, value));
+    }
+
+    auto throw_lifted = [&](std::string_view what, const Field & value)
+    {
+        throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+            "Setting {} should not be changed: its constraint leaves out the {} {}, which would lift it",
+            setting_name, what, applyVisitor(FieldVisitorToString(), value));
+    };
+    if (!bound.min_value.isNull() && kept->min_value.isNull())
+        throw_lifted("minimum", bound.min_value);
+    if (!bound.max_value.isNull() && kept->max_value.isNull())
+        throw_lifted("maximum", bound.max_value);
+    for (const auto & value : bound.disallowed_values)
+    {
+        if (std::ranges::find(kept->disallowed_values, value) == kept->disallowed_values.end())
+            throw_lifted("disallowed value", value);
+    }
 }
 
 void SettingsConstraints::checkProfileElementWritability(
@@ -437,6 +476,63 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
             getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
         }
     }
+}
+
+void SettingsConstraints::clampResetToDefault(
+    const Settings & current_settings,
+    std::vector<String> & names,
+    SettingsChanges & clamped_changes,
+    SettingSource source) const
+{
+    std::vector<String> allowed_resets;
+    allowed_resets.reserve(names.size());
+
+    for (const auto & name : names)
+    {
+        if (settingIsBuiltin(name))
+        {
+            /// A reset of a built-in setting is an assignment of its declared default, so it is clamped
+            /// as such. `checkOrClamp` erases a change it refuses, and also one that does not change the
+            /// value - the latter is a no-op reset, so dropping it is what we want either way.
+            const Field default_value = settingDefaultValue(name);
+            SettingsChanges reset_as_change{SettingChange{name, default_value}};
+            checkOrClamp(current_settings, reset_as_change, CLAMP_ON_VIOLATION, source);
+
+            if (reset_as_change.empty())
+                continue;
+
+            if (reset_as_change.front().value == default_value)
+                allowed_resets.push_back(name);
+            else
+                clamped_changes.push_back(reset_as_change.front());
+
+            continue;
+        }
+
+        /// Custom settings have no declared default: resetting one removes it, and there cannot be a
+        /// value constraint for such a setting, so the reset is either performed as written or dropped.
+        Field current_value;
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (has_current_value)
+                break;
+            has_current_value = current_settings.tryGet(equivalent_name, current_value);
+        }
+
+        if (!has_current_value)
+        {
+            /// Resetting an absent custom setting is a no-op; preserve that behavior.
+            allowed_resets.push_back(name);
+            continue;
+        }
+
+        SettingChange change{name, current_value};
+        if (getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, CLAMP_ON_VIOLATION, source))
+            allowed_resets.push_back(name);
+    }
+
+    names = std::move(allowed_resets);
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const

@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_join_fixed_hash_table_conversion
+## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Habilita la conversión de la tabla hash a un array plano para joins cuando la clave es un único entero con un rango de valores pequeño.
 
-## enable_join_key_only_hash_tables
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ Habilita la conversión de la tabla hash a un array plano para joins cuando la c
 
 Use tablas hash que almacenen únicamente las claves de join, sin referencia a una fila del lado derecho, para los joins cuyo resultado nunca puede contener un valor de una fila del lado derecho: `LEFT ANTI` y `LEFT SEMI` cuando no se selecciona ninguna columna del lado derecho. Estas tablas tienen celdas más pequeñas y permiten descartar los bloques del lado derecho en lugar de almacenarlos.
 
-## enable_join_runtime_filters
+## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,15 +38,22 @@ Use tablas hash que almacenen únicamente las claves de join, sin referencia a u
 
 Filtra el lado izquierdo usando el conjunto de claves de JOIN recopiladas del lado derecho durante la ejecución.
 
-## enable_join_runtime_filters_index_analysis
+## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Los filtros en tiempo de ejecución de JOIN pasaron a ser una característica de nivel Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nueva configuración para habilitar el filtrado de JOIN mediante análisis dinámico de índices"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Los filtros en tiempo de ejecución de JOIN pasaron a ser una funcionalidad del nivel Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nueva configuración para habilitar el filtrado de JOIN mediante el análisis dinámico de índices"}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "1"},{"label": "Permite descartar gránulos del lado de sondeo (izquierdo) de un JOIN mediante el filtro en tiempo de ejecución generado a partir del lado de construcción (derecho)."}]}]} />
 
-Ejecuta un segundo análisis de índices (mediante use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) para descartar gránulos en el lado izquierdo de un JOIN.
+Descarta gránulos del lado de sondeo de un JOIN mediante el filtro en tiempo de ejecución generado a partir del lado de construcción; consulta `enable_join_runtime_filters`.
+Solo tiene efecto si `use_skip_indexes_on_data_read = 1`.
+Solo se pueden descartar gránulos si la join key es una columna de la clave primaria del lado de sondeo o está cubierta por un índice de omisión `minmax`, `set` o `bloom_filter`.
+Si el filtro en tiempo de ejecución conserva los valores exactos de la clave, el predicado utilizado para descartar gránulos es un conjunto `IN` de esos valores; de lo contrario, se utiliza el rango entre el valor mínimo y el máximo de la clave (lo que permite descartar menos gránulos).
 
-## enable_join_transitive_predicates
+Solo tiene efecto cuando el lado de sondeo del JOIN se lee localmente. Los descriptores que determinan qué gránulos se descartan se asocian al paso de lectura durante la optimización del plan de consulta, pero no se transfieren cuando ese paso se reconstruye para ejecutarlo de forma remota. Por tanto, no se descartan gránulos con réplicas paralelas (`enable_parallel_replicas = 1`) ni con un plan de consulta distribuido (`make_distributed_plan = 1`). En esos modos, la configuración no tiene efecto: la consulta devuelve el mismo resultado y el filtro en tiempo de ejecución de JOIN se comporta exactamente igual que si esta configuración estuviera deshabilitada; únicamente se pierde la posibilidad de descartar gránulos.
+
+Tampoco se descartan gránulos cuando el lado de sondeo se lee con `FINAL` (esta operación no está implementada para las lecturas con `FINAL`, y `optimizeLazyFinal` reconstruye la lectura sin los descriptores), ni en tablas con datos pendientes, mutaciones `ALTER` o partes de parche. En estos casos, la configuración tampoco tiene efecto.
+
+## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 
 <BetaBadge />
 

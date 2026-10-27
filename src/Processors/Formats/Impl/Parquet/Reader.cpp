@@ -1,12 +1,20 @@
 
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
+#include <Common/Allocator.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
@@ -18,11 +26,14 @@
 #include <DataTypes/TypeTree.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <Common/SipHash.h>
+#include <Common/findExtreme.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/extractStringValueFilters.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
@@ -34,12 +45,14 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/SelectQueryInfo.h>
 #include <base/scope_guard.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <algorithm>
 #include <bit>
 #include <mutex>
+#include <numeric>
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -64,10 +77,33 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetRowsDecodedAsDictionaryIndexes;
+    extern const Event ParquetFooterReadMicroseconds;
+    extern const Event ParquetDecompressedBytes;
+    extern const Event ParquetPagesDecompressedToSkipRows;
+    extern const Event ColumnsCacheHits;
+    extern const Event ColumnsCacheMisses;
 }
 
 namespace DB::Parquet
 {
+
+/// parquet-cpp before Arrow 3.0 wrote `DataPageV2` pages compressed but set their `is_compressed` flag to false
+/// (ARROW-10353). Such files carry the application name `parquet-cpp` with a version below 2.0.0; later versions
+/// call themselves `parquet-cpp-arrow`. Arrow C++ decompresses their pages anyway (ARROW-17100), and so do we.
+static bool writesCompressedV2PagesAsUncompressed(std::string_view created_by)
+{
+    static constexpr std::string_view prefix = "parquet-cpp version ";
+    if (!created_by.starts_with(prefix))
+        return false;
+    created_by.remove_prefix(prefix.size());
+    if (created_by.empty() || !isNumericASCII(created_by.front()))
+        return false;
+    UInt64 major = 0;
+    for (size_t i = 0; i < created_by.size() && isNumericASCII(created_by[i]) && major < 2; ++i)
+        major = major * 10 + static_cast<UInt64>(created_by[i] - '0');
+    return major < 2;
+}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
@@ -81,6 +117,20 @@ static int thriftEnumToInt(const E & e)
     return static_cast<int>(v);
 }
 
+/// The smallest memory limit in effect for the current thread: of the query, of the user, or of the server.
+/// 0 if there is none.
+static size_t memoryLimitOfCurrentThread()
+{
+    size_t limit = 0;
+    for (MemoryTracker * tracker = CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
+    {
+        const Int64 hard_limit = tracker->getHardLimit();
+        if (hard_limit > 0 && (limit == 0 || size_t(hard_limit) < limit))
+            limit = size_t(hard_limit);
+    }
+    return limit;
+}
+
 template <typename E>
 static bool isValidThriftEnum(const E & e, const std::map<int, const char *> & valid_values)
 {
@@ -92,6 +142,23 @@ static void checkThriftEnum(const E & e, const std::map<int, const char *> & val
 {
     if (!isValidThriftEnum(e, valid_values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
+}
+
+/// These enums are closed, so an out-of-range value can only be corruption. Must run before the
+/// metadata is copied or moved: the generated copy and move constructors load every enum field.
+static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
+{
+    for (const parq::SchemaElement & element : file_metadata.schema)
+    {
+        auto check = [&](const auto & value, const std::map<int, const char *> & valid_values, std::string_view what)
+        {
+            if (!isValidThriftEnum(value, valid_values))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} {} of Parquet column {}", what, thriftEnumToInt(value), element.name);
+        };
+        check(element.type, parq::_Type_VALUES_TO_NAMES, "physical type");
+        check(element.repetition_type, parq::_FieldRepetitionType_VALUES_TO_NAMES, "repetition type");
+        check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
+    }
 }
 
 static void decompressLZ4Raw(const char * data, size_t compressed_size, size_t uncompressed_size, char * out)
@@ -142,6 +209,7 @@ static bool tryDecompressLZ4Hadoop(const char * data, size_t compressed_size, si
 
 static void decompress(const char * data, size_t compressed_size, size_t uncompressed_size, parq::CompressionCodec::type codec, char * out)
 {
+    ProfileEvents::increment(ProfileEvents::ParquetDecompressedBytes, uncompressed_size);
     CompressionMethod method = CompressionMethod::None;
     switch (codec)
     {
@@ -231,8 +299,12 @@ void Reader::init(const ReadOptions & options_, const Block & sample_block_, For
     format_filter_info = format_filter_info_;
 }
 
-parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size)
+const parq::FileMetaData Reader::empty_file_metadata{};
+
+std::shared_ptr<const FileFooter> Reader::readFileFooter(Prefetcher & prefetcher, size_t footer_read_size)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParquetFooterReadMicroseconds);
+
     /// Parquet file ends with:
     ///  * serialized FileMetaData struct,
     ///  * [4 bytes] size of serialized FileMetaData struct,
@@ -261,32 +333,31 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
         throw Exception(ErrorCodes::INCORRECT_DATA, "Bad metadata size in parquet file: {} bytes", metadata_size_i32);
 
     size_t metadata_size = size_t(metadata_size_i32);
-    size_t buf_offset = 0;
+    auto footer = std::make_shared<FileFooter>();
     if (metadata_size + 8 > initial_read_size)
     {
         size_t remaining_bytes_to_read = metadata_size + 8 - initial_read_size;
-        buf.resize(metadata_size);
-        memmove(buf.data() + remaining_bytes_to_read, buf.data(), initial_read_size - 8);
-        prefetcher.readSync(buf.data(), remaining_bytes_to_read, file_size - metadata_size - 8);
+        footer->serialized.resize(metadata_size);
+        memcpy(footer->serialized.data() + remaining_bytes_to_read, buf.data(), initial_read_size - 8);
+        prefetcher.readSync(footer->serialized.data(), remaining_bytes_to_read, file_size - metadata_size - 8);
     }
     else
     {
-        buf_offset = initial_read_size - 8 - metadata_size;
+        footer->serialized.assign(buf.data() + initial_read_size - 8 - metadata_size, metadata_size);
     }
 
-    parq::FileMetaData file_metadata = {};
-    deserializeThriftStruct(file_metadata, buf.data() + buf_offset, metadata_size);
+    deserializeFileMetaDataWithoutColumnChunks(
+        footer->metadata, footer->serialized.data(), footer->serialized.size(), footer->column_chunk_offsets);
+    checkSchemaElementEnums(footer->metadata);
+    return footer;
+}
 
+void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb)
+{
     /// Some writers incorrectly set dictionary_page_offset offset to 0 when there's no dictionary
     /// page at offset 0 in the file. Work around it.
-    for (auto & rg : file_metadata.row_groups)
-    {
-        for (auto & col : rg.columns)
-        {
-            if (col.meta_data.__isset.dictionary_page_offset && col.meta_data.dictionary_page_offset == 0)
-                col.meta_data.__isset.dictionary_page_offset = false;
-        }
-    }
+    if (column.meta_data.__isset.dictionary_page_offset && column.meta_data.dictionary_page_offset == 0)
+        column.meta_data.__isset.dictionary_page_offset = false;
 
     /// Consider two quirks:
     ///  (1) Some versions of spark didn't write dictionary_page_offset even when dictionary page is
@@ -299,26 +370,76 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
     ///   dictionary_page_offset.reset()
     /// Note: newer versions of DuckDB include version number in the `created_by` string, so this
     /// `if` only applies to relatively old versions. Newer versions don't have this bug.
-    if (file_metadata.created_by == "DuckDB")
+    if (written_by_old_duckdb && !column.__isset.offset_index_offset && column.meta_data.__isset.dictionary_page_offset)
     {
-        for (auto & rg : file_metadata.row_groups)
-        {
-            for (auto & col : rg.columns)
-            {
-                if (!col.__isset.offset_index_offset && col.meta_data.__isset.dictionary_page_offset)
-                {
-                    col.meta_data.data_page_offset = col.meta_data.dictionary_page_offset;
-                    col.meta_data.__isset.dictionary_page_offset = false;
-                    col.meta_data.dictionary_page_offset = 0;
-                }
-            }
-        }
+        column.meta_data.data_page_offset = column.meta_data.dictionary_page_offset;
+        column.meta_data.__isset.dictionary_page_offset = false;
+        column.meta_data.dictionary_page_offset = 0;
     }
-
-    return file_metadata;
 }
 
-void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
+void Reader::setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_)
+{
+    file_footer = std::move(footer);
+    cached_column_chunks = std::move(cached_column_chunks_);
+}
+
+size_t Reader::numColumnChunks(size_t row_group_idx) const
+{
+    return file_footer->numColumnChunks(row_group_idx);
+}
+
+const parq::ColumnChunk & Reader::getColumnChunk(size_t row_group_idx, size_t column_idx) const
+{
+    if (column_idx >= column_chunks.size() || !column_chunks[column_idx] || column_idx >= numColumnChunks(row_group_idx))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column chunk {} of Parquet row group {} was not parsed", column_idx, row_group_idx);
+    return column_chunks[column_idx]->chunks[row_group_idx];
+}
+
+void Reader::parseColumnChunks()
+{
+    std::vector<size_t> column_indices;
+    column_indices.reserve(primitive_columns.size());
+    for (const PrimitiveColumnInfo & column_info : primitive_columns)
+        column_indices.push_back(column_info.column_idx);
+    std::sort(column_indices.begin(), column_indices.end());
+    column_indices.erase(std::unique(column_indices.begin(), column_indices.end()), column_indices.end());
+
+    column_chunks.clear();
+    ensureColumnChunks(column_indices);
+}
+
+void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
+{
+    if (!column_indices.empty() && column_indices.back() >= column_chunks.size())
+        column_chunks.resize(column_indices.back() + 1);
+    std::vector<size_t> indices_to_parse;
+    for (size_t column_idx : column_indices)
+    {
+        if (column_chunks[column_idx])
+            continue;
+        if (column_idx < cached_column_chunks.size() && cached_column_chunks[column_idx])
+            column_chunks[column_idx] = cached_column_chunks[column_idx];
+        else
+            indices_to_parse.push_back(column_idx);
+    }
+
+    if (!indices_to_parse.empty())
+    {
+        std::vector<FileColumnChunks> parsed;
+        deserializeColumnChunks(
+            file_footer->serialized.data(), file_footer->serialized.size(), file_footer->column_chunk_offsets, indices_to_parse, parsed);
+        const bool written_by_old_duckdb = file_metadata().created_by == "DuckDB";
+        for (size_t k = 0; k < indices_to_parse.size(); ++k)
+        {
+            for (auto & column : parsed[k].chunks)
+                fixUpColumnChunk(column, written_by_old_duckdb);
+            column_chunks[indices_to_parse[k]] = std::make_shared<const FileColumnChunks>(std::move(parsed[k]));
+        }
+    }
+}
+
+void Reader::getHyperrectangleForRowGroup(size_t row_group_idx, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
@@ -328,9 +449,9 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             continue;
         if (!column_info.decoder.allow_stats)
             continue;
+        const auto & column_meta = getColumnChunk(row_group_idx, column_info.column_idx).meta_data;
         try
         {
-            const auto & column_meta = meta->columns.at(column_info.column_idx).meta_data;
             if (!column_meta.__isset.statistics)
                 continue;
 
@@ -341,8 +462,10 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             Range & range = hyperrectangle[column_info.idx_in_output_block];
 
             bool nullable = column_info.levels.back().def > 0;
+            /// Without arrays a valid chunk has num_values == num_rows.
             bool always_null = column_meta.statistics.__isset.null_count &&
-                            column_meta.statistics.null_count == column_meta.num_values;
+                            column_meta.statistics.null_count == column_meta.num_values &&
+                            (column_info.levels.back().rep > 0 || column_meta.num_values == file_metadata().row_groups.at(row_group_idx).num_rows);
             bool can_be_null = !column_meta.statistics.__isset.null_count ||
                             column_meta.statistics.null_count != 0;
             bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -391,14 +514,14 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
-std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta) const
+std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
 {
     if (!top_k_primitive_idx.has_value())
         return std::nullopt;
     const PrimitiveColumnInfo & column_info = primitive_columns[*top_k_primitive_idx];
+    const auto & column_meta = getColumnChunk(row_group_idx, column_info.column_idx).meta_data;
     try
     {
-        const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
         if (!column_meta.__isset.statistics)
             return std::nullopt;
 
@@ -532,8 +655,8 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
         if (!column_info.decoder.allow_stats || column_info.levels.back().rep > 0)
             return std::nullopt;
         /// Without the `TYPE_ORDER` column order, `min_value` / `max_value` have no defined meaning (parquet.thrift).
-        if (!file_metadata.__isset.column_orders || column_info.column_idx >= file_metadata.column_orders.size()
-            || !file_metadata.column_orders[column_info.column_idx].__isset.TYPE_ORDER)
+        if (!file_metadata().__isset.column_orders || column_info.column_idx >= file_metadata().column_orders.size()
+            || !file_metadata().column_orders[column_info.column_idx].__isset.TYPE_ORDER)
             return std::nullopt;
 
         /// Statistics of these types are the exact extremes in `min` / `max` order; strings may be truncated, floats
@@ -551,10 +674,10 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
     std::vector<Field> mins(num_columns);
     std::vector<Field> maxs(num_columns);
     bool has_rows = false;
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
-        const auto & meta = file_metadata.row_groups[row_group_idx];
-        if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
+        const auto & meta = file_metadata().row_groups[row_group_idx];
+        if (meta.num_rows < 0 || numColumnChunks(row_group_idx) != total_primitive_columns_in_file)
             return std::nullopt;
         if (meta.num_rows == 0 || (row_groups_to_read.has_value() && !row_groups_to_read->contains(row_group_idx)))
             continue;
@@ -563,7 +686,7 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
         for (size_t i = 0; i < num_columns; ++i)
         {
             const PrimitiveColumnInfo & column_info = *columns_info[i];
-            const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+            const auto & column_meta = getColumnChunk(row_group_idx, column_info.column_idx).meta_data;
             if (!column_meta.__isset.statistics)
                 return std::nullopt;
             const auto & statistics = column_meta.statistics;
@@ -643,9 +766,28 @@ std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::u
     return Chunk(std::move(columns), 2);
 }
 
+/// The first row that sorts first, for the column types `findExtreme*Index` supports; nullopt for others.
+template <typename... ColumnTypes>
+static std::optional<size_t> findTopKBestRowOfNumbers(const IColumn & column, int direction)
+{
+    std::optional<size_t> best_row;
+    auto try_column = [&]<typename ColumnType>(std::type_identity<ColumnType>)
+    {
+        const auto * typed_column = typeid_cast<const ColumnType *>(&column);
+        if (!typed_column)
+            return false;
+        const auto * data = typed_column->getData().data();
+        best_row = direction > 0 ? findExtremeMinIndex(data, 0, typed_column->size())
+                                 : findExtremeMaxIndex(data, 0, typed_column->size());
+        return true;
+    };
+    (try_column(std::type_identity<ColumnTypes>{}) || ...);
+    return best_row;
+}
+
 void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
 {
-    if (column.empty())
+    if (column.empty() || row_group.top_k_best_value_is_final)
         return;
 
     /// The same comparison the sorting transforms use, so "best" means "sorts first".
@@ -660,26 +802,48 @@ void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) c
         return direction * res;
     };
 
-    size_t best_row = 0;
-    for (size_t row = 1; row < column.size(); ++row)
-        if (compare(column, row, column, best_row) < 0)
-            best_row = row;
+    std::optional<size_t> best_row;
+    if (!collator)
+        best_row = findTopKBestRowOfNumbers<
+            ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
+            ColumnDecimal<Decimal32>, ColumnDecimal<Decimal64>, ColumnDecimal<DateTime64>>(column, direction);
+    if (!best_row)
+    {
+        best_row = 0;
+        for (size_t row = 1; row < column.size(); ++row)
+            if (compare(column, row, column, *best_row) < 0)
+                best_row = row;
+    }
 
-    if (!row_group.top_k_best_value || compare(column, best_row, *row_group.top_k_best_value, 0) < 0)
-        row_group.top_k_best_value = column.cut(best_row, 1);
+    if (row_group.top_k_best_value && compare(column, *best_row, *row_group.top_k_best_value, 0) >= 0)
+        return;
+    row_group.top_k_best_value = column.cut(*best_row, 1);
+
+    /// The statistics bound every row of the row group, so a best value equal to the bound cannot be improved.
+    if (row_group.top_k_sort_column_range)
+    {
+        const Range & range = *row_group.top_k_sort_column_range;
+        row_group.top_k_best_value_is_final
+            = (*row_group.top_k_best_value)[0] == (direction == 1 ? range.left : range.right);
+    }
 }
 
-bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
+bool Reader::spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_key_condition_idx) const
 {
     for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
     {
         if (bbox_pc_idx == SIZE_MAX)
             return false;
-        const auto & stats = meta.columns.at(primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
+        const auto & stats = getColumnChunk(row_group_idx, primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
         if (!stats.__isset.null_count || stats.null_count != 0)
             return false;
     }
     return true;
+}
+
+static size_t heapBytesOfField(const Field & field)
+{
+    return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
 }
 
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
@@ -703,7 +867,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         || options.format.parquet.spatial_filter_push_down)
     {
         geo_meta.emplace(); // Mark as "parsed" upfront; filled in on success, left empty on failure.
-        for (const auto & kv : file_metadata.key_value_metadata)
+        for (const auto & kv : file_metadata().key_value_metadata)
         {
             if (kv.key != "geo")
                 continue;
@@ -796,7 +960,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
         std::unordered_set<String> schema_leaf_paths;
         {
-            const auto & schema = file_metadata.schema;
+            const auto & schema = file_metadata().schema;
             if (schema.size() >= 2 && schema.at(0).num_children > 0)
             {
                 size_t schema_idx = 1;
@@ -893,7 +1057,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
     /// geo type resolution entirely (it will not re-parse).
     SchemaConverter schemer(
-        file_metadata,
+        *file_footer,
         options,
         &extended_sample_block,
         options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
@@ -912,6 +1076,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     primitive_columns = std::move(schemer.primitive_columns);
     total_primitive_columns_in_file = schemer.primitive_column_idx;
     output_columns = std::move(schemer.output_columns);
+    parseColumnChunks();
 
     /// Precalculate some column index mappings.
 
@@ -1073,15 +1238,25 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     std::vector<RowGroupCandidate> candidates;
     bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
-    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    key_condition_column_ranges.clear();
+    key_condition_column_ranges_complete = false;
+    const bool record_key_condition_ranges = !collect_key_condition_column_ranges.empty()
+        && options.format.parquet.filter_push_down && format_filter_info->key_condition && spatial_key_conditions.empty()
+        && !rows_to_read;
+    if (record_key_condition_ranges)
+        for (size_t idx : collect_key_condition_column_ranges)
+            if (idx < extended_sample_block.columns())
+                key_condition_column_ranges.push_back({.idx = idx, .ranges = {}, .bytes = 0});
+    size_t key_condition_column_ranges_bytes = 0;
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
-        const auto * meta = &file_metadata.row_groups[row_group_idx];
+        const auto * meta = &file_metadata().row_groups[row_group_idx];
         if (meta->num_rows < 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
         if (meta->num_rows == 0)
             continue; /// Empty row groups are valid in Parquet; skip them.
-        if (meta->columns.size() != total_primitive_columns_in_file)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
+        if (numColumnChunks(row_group_idx) != total_primitive_columns_in_file)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, numColumnChunks(row_group_idx), total_primitive_columns_in_file);
 
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
@@ -1105,7 +1280,26 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
             /// hyperrectangle from the four bbox primitives only.
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
-            getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
+            getHyperrectangleForRowGroup(row_group_idx, hyperrectangle, only_spatial_bbox);
+        }
+        /// `canSkipFile` matches ranges kept by different queries by position, which must be the same row group for every
+        /// query: no `continue` that depends on the query may come before this push (hence no recording with `rows_to_read`).
+        if (record_key_condition_ranges)
+        {
+            for (auto & column : key_condition_column_ranges)
+            {
+                const Range & range = hyperrectangle[column.idx];
+                const size_t range_bytes = sizeof(Range) + heapBytesOfField(range.left) + heapBytesOfField(range.right);
+                column.ranges.push_back(range);
+                column.bytes += range_bytes;
+                key_condition_column_ranges_bytes += range_bytes;
+            }
+            while (key_condition_column_ranges_bytes > max_key_condition_column_ranges_bytes)
+            {
+                auto largest = std::ranges::max_element(key_condition_column_ranges, {}, &KeyConditionColumnRanges::bytes);
+                key_condition_column_ranges_bytes -= largest->bytes;
+                key_condition_column_ranges.erase(largest);
+            }
         }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -1126,7 +1320,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             bool prune_by_spatial = false;
             for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
             {
-                if (!spatialBboxStatsHaveNoNulls(*meta, sci))
+                if (!spatialBboxStatsHaveNoNulls(row_group_idx, sci))
                     continue;
                 if (!spatial_key_conditions[sci]->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
                 {
@@ -1140,7 +1334,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         /// Fallback: geospatial_statistics on the geometry column itself.
         if (!geostats_spatial_filters.empty()
-            && rowGroupFailsSpatialFilters(*meta, primitive_columns, geostats_spatial_filters))
+            && rowGroupFailsSpatialFilters(*this, row_group_idx, geostats_spatial_filters))
             continue;
 
         candidates.push_back(RowGroupCandidate{
@@ -1149,11 +1343,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             .start_global_row_idx = total_rows - size_t(meta->num_rows),
             .requested_rows_slice = requested_rows_slice,
             .hyperrectangle = std::move(hyperrectangle),
-            .top_k_sort_column_range = getTopKSortColumnRange(*meta)});
+            .top_k_sort_column_range = getTopKSortColumnRange(row_group_idx)});
         if (candidates.back().top_k_sort_column_range.has_value()
             && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
             some_top_k_range_to_read = true;
     }
+
+    key_condition_column_ranges_complete = record_key_condition_ranges;
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.
@@ -1189,7 +1385,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         {
             ColumnChunk & column = row_group.columns[column_idx];
             size_t parquet_column_idx = primitive_columns[column_idx].column_idx;
-            column.meta = &meta->columns.at(parquet_column_idx);
+            column.meta = &getColumnChunk(candidate.row_group_idx, parquet_column_idx);
 
             /// Whether the innermost array element type is nullable.
             /// E.g. Nullable(String) or Array(Nullable(String)).
@@ -1265,7 +1461,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    initColumnsCache();
     initializePrefetches();
+    cached_column_chunks.clear();
 }
 
 /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to
@@ -1326,7 +1524,7 @@ void Reader::prepareBloomFilterCondition()
         if (!any_row_group_eligible)
             continue;
 
-        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata(), column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
@@ -1411,6 +1609,10 @@ void Reader::initializePrefetches()
         {
             ColumnChunk & column = row_group.columns[column_idx];
 
+            /// The data pages of a column served from the columns cache are not read. Its bloom filter,
+            /// dictionary filter and column index are still used, as they prune row groups and pages
+            /// for the other columns too: the dictionary page is read only for the dictionary filter.
+
             /// Dictionary page.
             size_t dict_page_length = 0;
             if (column.meta->meta_data.__isset.dictionary_page_offset)
@@ -1435,8 +1637,9 @@ void Reader::initializePrefetches()
                 /// request it explicitly when it is actually needed (`Prefetcher::startPrefetch` then
                 /// allows coalescing it with the other requested ranges again). A page shorter than
                 /// `min_bytes_for_seek` can still be read incidentally, which costs less than a seek.
-                column.dictionary_page_prefetch = prefetcher.registerRange(
-                    start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
+                if (!column.served_from_cache || column.use_dictionary_filter)
+                    column.dictionary_page_prefetch = prefetcher.registerRange(
+                        start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
             }
 
             /// Bloom filter.
@@ -1503,8 +1706,8 @@ void Reader::initializePrefetches()
                     max_header_length, /*likely_to_be_used=*/ true);
             }
 
-            /// Offset index.
-            if (use_offset_index &&
+            /// Offset index. A column served from the columns cache needs it only for the column index.
+            if (use_offset_index && (!column.served_from_cache || !primitive_columns[column_idx].column_index_conditions.empty()) &&
                 column.meta->__isset.offset_index_offset && column.meta->__isset.offset_index_length)
             {
                 column.offset_index_prefetch = prefetcher.registerRange(
@@ -1523,6 +1726,9 @@ void Reader::initializePrefetches()
 
             /// Data pages.
 
+            if (column.served_from_cache)
+                continue;
+
             column.data_pages_bytes = size_t(column.meta->meta_data.total_compressed_size) - dict_page_length;
 
             /// Old versions of parquet-mr wrote incorrect total_compressed_size, see PARQUET-816.
@@ -1530,7 +1736,7 @@ void Reader::initializePrefetches()
             /// But leave `data_pages_bytes` unchanged because it's used to check whether there are any
             /// more pages to read, and we don't want to start reading a page inside these 100 bytes.
             size_t data_pages_extra_bytes = 0;
-            if (file_metadata.created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
+            if (file_metadata().created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
                 data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
 
             column.data_pages_prefetch = prefetcher.registerRange(
@@ -1547,12 +1753,24 @@ void Reader::initializePrefetches()
         /// reads if it's small.
         /// Bloom filter ends when something else starts (or earlier). So we list all possible
         /// "something else" offsets and do binary search for each bloom filter to find where it ends.
+        /// Needs all column chunks, not only the ones we read.
+        size_t max_column_chunks = 0;
+        for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
+            max_column_chunks = std::max(max_column_chunks, numColumnChunks(row_group_idx));
+        std::vector<size_t> all_column_indices(max_column_chunks);
+        std::iota(all_column_indices.begin(), all_column_indices.end(), 0);
+        ensureColumnChunks(all_column_indices);
+
         std::vector<size_t> all_offsets;
-        all_offsets.reserve(file_metadata.row_groups.size() * file_metadata.schema.size() * 6);
-        for (const auto & rg : file_metadata.row_groups)
+        all_offsets.reserve(file_metadata().row_groups.size() * file_metadata().schema.size() * 6);
+        for (size_t column_idx = 0; column_idx < max_column_chunks; ++column_idx)
         {
-            for (const auto & col : rg.columns)
+            const auto & chunks = column_chunks[column_idx]->chunks;
+            for (size_t row_group_idx = 0; row_group_idx < chunks.size(); ++row_group_idx)
             {
+                if (column_idx >= numColumnChunks(row_group_idx))
+                    continue;
+                const auto & col = chunks[row_group_idx];
                 all_offsets.push_back(col.file_offset);
                 if (col.__isset.offset_index_offset)
                     all_offsets.push_back(col.offset_index_offset);
@@ -1782,6 +2000,18 @@ void Reader::preparePrewhere()
                 prewhere_info->prewhere_column_name,
                 row_level_filter ? &row_level_filter->actions : nullptr))
         {
+            /// The columns written to the columns cache in at least one row group, see `initColumnsCache`.
+            /// The writes are planned before this point; later they can only be cancelled.
+            std::vector<bool> columns_written_to_cache;
+            if (columns_cache_writes_possible)
+            {
+                columns_written_to_cache.assign(extended_sample_block.columns(), false);
+                for (const RowGroup & row_group : row_groups)
+                    for (size_t idx = 0; idx < row_group.columns_cache_writes.size(); ++idx)
+                        if (row_group.columns_cache_writes[idx].active)
+                            columns_written_to_cache[idx] = true;
+            }
+
             for (auto & pc : primitive_columns)
             {
                 if (pc.first_step_to_calculate == 0 || pc.first_step_to_calculate == SIZE_MAX)
@@ -1791,6 +2021,11 @@ void Reader::preparePrewhere()
                 /// Only plain String leaves, not inside arrays, decoded without conversion.
                 if (pc.max_array_def != 0 || !pc.decoder.string_converter || !pc.decoder.string_converter->isTrivial())
                     continue;
+                /// A column decoded with the filter has empty strings in place of the values that
+                /// don't match, so it must not be written to the columns cache. It is still filtered
+                /// by PREWHERE: the row groups served from the cache are not decoded at all.
+                if (!columns_written_to_cache.empty() && columns_written_to_cache[pc.idx_in_output_block])
+                    continue;
 
                 auto it = filters->find(extended_sample_block.getByPosition(pc.idx_in_output_block).name);
                 if (it != filters->end())
@@ -1798,6 +2033,26 @@ void Reader::preparePrewhere()
             }
         }
     }
+
+    /// `decode_dictionary_as_replicated`: the last step's single input, a plain column no other step reads.
+    if (steps.empty() || steps.back().input_idxs.size() != 1
+        || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions.getActionsDAG()))
+        return;
+    const auto & output_idx = sample_block_to_output_columns_idx.at(steps.back().input_idxs[0]);
+    if (!output_idx.has_value())
+        return;
+    const OutputColumnInfo & output_info = output_columns.at(*output_idx);
+    if (!output_info.is_primitive || output_info.is_missing_column || output_info.needs_cast || output_info.nullable_group
+        || output_info.primitive_start + 1 != output_info.primitive_end)
+        return;
+    PrimitiveColumnInfo & pc = primitive_columns.at(output_info.primitive_start);
+    /// A column that can be written to the columns cache is decoded as a full column,
+    /// so that the cache does not get a `ColumnReplicated`.
+    if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
+        return;
+    if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
+        && isLazyReplicationUseful(pc.decoded_type->createColumn()))
+        pc.decode_dictionary_as_replicated = true;
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -2018,8 +2273,23 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     /// non-matching entries then materialize empty strings without copying the data.
     /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
     /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
+    /// The mask is used only for the non-null rows, so nulls must not be credited with skipped bytes.
+    /// If the column is read for a later `PREWHERE` step, the earlier steps may have already filtered out
+    /// most rows, and the mask is consulted only for the rows that passed them. Their number is not known
+    /// when the dictionary is decoded (it is shared by all row subgroups), so do not credit the mask with
+    /// the rows of the column chunk at all, only with one row per entry.
     if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
-        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
+    {
+        Int64 non_null_values = 0;
+        if (column_info.first_step_to_calculate == 1)
+        {
+            const auto & meta_data = column.meta->meta_data;
+            non_null_values = std::max<Int64>(0, meta_data.num_values);
+            if (meta_data.statistics.__isset.null_count)
+                non_null_values -= std::clamp<Int64>(meta_data.statistics.null_count, 0, non_null_values);
+        }
+        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter, size_t(non_null_values));
+    }
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
@@ -2403,7 +2673,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     if (!computed)
     {
-        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, reservation, reserved_bytes);
+        value_hashes = hashDictionaryValues(reader.file_metadata(), reader.options, column, column_info, reservation, reserved_bytes);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
@@ -2562,7 +2832,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                     /// omits `null_counts` or contradicts itself with an all-null page).
                     if (c.spatial_key_condition_idx != SIZE_MAX
                         && (can_be_null || always_null
-                            || !spatialBboxStatsHaveNoNulls(*row_group.meta, c.spatial_key_condition_idx)))
+                            || !spatialBboxStatsHaveNoNulls(row_group.row_group_idx, c.spatial_key_condition_idx)))
                         return true;
                     return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
                 });
@@ -2734,6 +3004,55 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         n = std::max(n, size_t(128)); // avoid super tiny blocks if something is wrong with stats
         rows_per_subgroup = std::min(rows_per_subgroup, n);
     }
+
+    /// A row group that is read from the columns cache or written to it is read in its chunks: a row
+    /// subgroup that is a whole chunk is served the cached column itself, or written to the cache as
+    /// decoded, without a copy. The chunk is read whole even if the block size settings ask for less,
+    /// since the cache holds those rows anyway, and never together with another chunk.
+    const bool aligned_with_columns_cache = !row_group.cached_columns.empty() || !row_group.columns_cache_writes.empty();
+    if (aligned_with_columns_cache)
+    {
+        /// Unless a whole chunk of the columns would take a large part of the memory the query may use, while the block
+        /// size settings ask for less: then the row group is read in the blocks the settings ask for, still never
+        /// crossing a chunk, and is not written to the cache, which takes only whole chunks.
+        /// A chunk written to the cache is the server's only after it is decoded. A chunk served from the cache whole
+        /// takes no memory of the query in the reader, but the query processes it whole: e.g. a function of the column
+        /// allocates its result for the whole chunk. And the rows of a chunk that pass a filter, or that are in the
+        /// ranges of rows left by the column index, are copied out of it, see `getOrFormOutputColumn`.
+        /// When the size of the decoded strings of a column is not known, a whole chunk is not risked: the dictionary
+        /// of such a column is decoded in advance (see `ColumnChunk::decode_dictionary_early`), unless it does not
+        /// fit the memory budget of the reader either.
+        double bytes_per_row = 0;
+        bool size_unknown = false;
+        for (size_t i = 0; i < primitive_columns.size(); ++i)
+        {
+            const ColumnChunk & column = row_group.columns.at(i);
+            /// The columns served from the cache are counted below, by the size of the cached chunks.
+            if (column.served_from_cache)
+                continue;
+            bytes_per_row += estimateColumnMemoryBytesPerRow(column, row_group, primitive_columns.at(i));
+            size_unknown = size_unknown || decodedSizeIsUnknown(column, primitive_columns.at(i));
+        }
+        for (const auto & chunks : row_group.cached_columns)
+        {
+            size_t bytes = 0;
+            size_t rows = 0;
+            for (const auto & chunk : chunks)
+            {
+                bytes += chunk->byteSize();
+                rows += chunk->size();
+            }
+            if (rows)
+                bytes_per_row += static_cast<double>(bytes) / static_cast<double>(rows);
+        }
+        const size_t memory_limit = memoryLimitOfCurrentThread();
+        const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
+            && (size_unknown || bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4);
+        if (chunk_too_large)
+            row_group.columns_cache_writes.clear();
+        else
+            rows_per_subgroup = COLUMNS_CACHE_CHUNK_ROWS;
+    }
     chassert(rows_per_subgroup > 0);
 
     /// (Currently we turn each element of row_ranges into at least one row subgroup. If column index
@@ -2743,9 +3062,11 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     ///  `filter` to keep only the rows covered by ranges.)
     for (const auto [start, end] : row_ranges)
     {
-        for (size_t substart = start; substart < end; substart += rows_per_subgroup)
+        for (size_t substart = start; substart < end;)
         {
             size_t subend = std::min(end, substart + rows_per_subgroup);
+            if (aligned_with_columns_cache)
+                subend = std::min(subend, (substart / COLUMNS_CACHE_CHUNK_ROWS + 1) * COLUMNS_CACHE_CHUNK_ROWS);
 
             RowSubgroup & row_subgroup = row_group.subgroups.emplace_back();
             row_subgroup.start_row_idx = substart;
@@ -2782,11 +3103,15 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 if (output_idx.has_value())
                 {
                     const auto & info = output_columns.at(*output_idx);
-                    row_subgroup.output[idx].primitive_columns_remaining.store(info.primitive_end - info.primitive_start);
+                    /// A column served from the columns cache is formed from the cached column, not from primitive columns.
+                    const bool from_cache = !row_group.cached_columns.empty() && !row_group.cached_columns[idx].empty();
+                    row_subgroup.output[idx].primitive_columns_remaining.store(from_cache ? 0 : info.primitive_end - info.primitive_start);
                 }
             }
             if (options.format.defaults_for_omitted_fields)
                 row_subgroup.block_missing_values.init(sample_block->columns());
+
+            substart = subend;
         }
     }
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
@@ -2969,19 +3294,42 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     return res;
 }
 
-void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
+bool Reader::decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
+{
+    const auto & meta = column.meta->meta_data;
+    return !column_info.output_type->haveMaximumSizeOfValue()
+        && !(meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
+        && meta.__isset.dictionary_page_offset
+        && !column.dictionary.isInitialized();
+}
+
+size_t Reader::memoryEstimateLimit() const
+{
+    size_t watermark = std::max(options.format.parquet.memory_low_watermark, options.format.parquet.memory_high_watermark);
+    return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
+}
+
+void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
+    /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
+    constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
 
     size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
-    else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
-        output_num_values_estimate = column.meta->meta_data.num_values; // whole column chunk
     else
-        /// There are arrays, so we can't know exactly how many primitive values there are in
-        /// rows that pass the filter. Make a guess using average array length.
-        output_num_values_estimate = size_t(1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows) * static_cast<double>(column.meta->meta_data.num_values));
+    {
+        double num_values = static_cast<double>(column.meta->meta_data.num_values); // whole column chunk
+        if (row_subgroup.filter.rows_pass != size_t(row_group.meta->num_rows))
+            /// There are arrays, so we can't know exactly how many primitive values there are in
+            /// rows that pass the filter. Make a guess using average array length.
+            num_values *= 1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows);
+        size_t value_bytes = std::max(sizeof(IColumn::Offset),
+            column_info.decoded_type->haveMaximumSizeOfValue() ? column_info.decoded_type->getMaximumSizeOfValueInMemory() : 0);
+        if (num_values * static_cast<double>(value_bytes) < estimate_limit)
+            output_num_values_estimate = size_t(num_values);
+    }
 
     subchunk.arrays_offsets.resize(column_info.levels.back().rep);
     for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
@@ -2996,13 +3344,22 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.null_map->reserve(output_num_values_estimate);
     }
 
-    subchunk.column = column_info.decoded_type->createColumn();
+    if (column_info.decode_dictionary_as_replicated && !column.need_null_map && column.dictionary.isInitialized()
+        && column.dictionary.count * 2 <= row_subgroup.filter.rows_pass
+        && !(column.page.initialized && !column.page.is_dictionary_encoded))
+    {
+        subchunk.dictionary_values = getDictionaryValues(column, column_info);
+        subchunk.column = ColumnUInt32::create();
+    }
+    else
+        subchunk.column = column_info.decoded_type->createColumn();
     subchunk.column->reserve(output_num_values_estimate);
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
         double avg_len = estimateAverageStringLengthPerRow(column, row_group);
-        size_t bytes_to_reserve = size_t(1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass));
-        string_column->getChars().reserve(bytes_to_reserve);
+        double bytes_to_reserve = 1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass);
+        if (bytes_to_reserve < estimate_limit)
+            string_column->getChars().reserve(size_t(bytes_to_reserve));
     }
 
     /// Find ranges of rows that pass filter and decode them.
@@ -3130,6 +3487,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.null_map.reset();
     }
 
+    if (subchunk.dictionary_values)
+    {
+        /// Drop the values no read row references: the step must not evaluate them.
+        ColumnIndex indexes(std::move(subchunk.column));
+        ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
+        subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        subchunk.dictionary_values = nullptr;
+        ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
+    }
+
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk {} {}", subchunk.column->size(), row_subgroup.filter.rows_pass);
 
@@ -3150,7 +3517,30 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (prev_count == 1)
     {
         const auto & output_idx = sample_block_to_output_columns_idx.at(column_info.idx_in_output_block);
+
+        /// The null map left on a top-level primitive column marks the values replaced with
+        /// defaults (`input_format_null_as_default`). They are reported in the block missing values
+        /// (only for the columns of the sample block, and only with `input_format_defaults_for_omitted_fields`),
+        /// which the columns cache does not keep, so such a column is not written to the cache.
+        bool has_substituted_defaults = false;
+        if (!row_group.columns_cache_writes.empty())
+        {
+            const OutputColumnInfo & output_info = output_columns.at(output_idx.value());
+            if (output_info.is_primitive)
+            {
+                const auto & null_map_column = row_subgroup.columns.at(output_info.primitive_start).null_map;
+                if (null_map_column)
+                {
+                    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+                    has_substituted_defaults = memchr(null_map.data(), 1, null_map.size()) != nullptr;
+                }
+            }
+        }
+
         state.column = formOutputColumn(row_subgroup, output_idx.value(), row_subgroup.filter.rows_pass);
+
+        if (!row_group.columns_cache_writes.empty())
+            addToColumnsCacheWrite(row_group, row_subgroup, column_info.idx_in_output_block, state.column, has_substituted_defaults);
     }
 }
 
@@ -3391,7 +3781,8 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
         encoded_rep_size = size_t(header.data_page_header_v2.repetition_levels_byte_length);
 
         if (header.data_page_header_v2.__isset.is_compressed &&
-            !header.data_page_header_v2.is_compressed)
+            !header.data_page_header_v2.is_compressed &&
+            !writesCompressedV2PagesAsUncompressed(file_metadata().created_by))
         {
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
@@ -3414,7 +3805,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
 
         /// There's a dictionary page, but there was no dictionary_page_offset in ColumnMetaData.
         /// This is probably not allowed, but we have to support it because some writers wrote such
-        /// files, see comment in readFileMetaData.
+        /// files, see comment in fixUpColumnChunk.
         decodeDictionaryPageImpl(header, page.data, column, column_info);
         return false;
     }
@@ -3489,16 +3880,32 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
+        const UInt8 * rep = page.rep.data();
+        size_t remaining_rows = end_row_idx - page.next_row_idx;
+
+        /// Take a 64-byte block of repetition levels wholesale only while all of its row starts fit
+        /// in the remaining budget, so the row we have to stop at can't be inside a taken block.
+        while (new_value_idx + 64 <= page.num_values)
+        {
+            size_t row_starts = static_cast<size_t>(std::popcount(~bytes64MaskToBits64Mask(rep + new_value_idx)));
+            if (row_starts > remaining_rows)
+                break;
+            remaining_rows -= row_starts;
+            new_value_idx += 64;
+        }
+
         while (new_value_idx < page.num_values)
         {
-            if (page.rep[new_value_idx] == 0)
+            if (rep[new_value_idx] == 0)
             {
-                if (page.next_row_idx == end_row_idx)
+                if (remaining_rows == 0)
                     break;
-                page.next_row_idx += 1;
+                remaining_rows -= 1;
             }
             new_value_idx += 1;
         }
+
+        page.next_row_idx = end_row_idx - remaining_rows;
     }
     page.value_idx = new_value_idx;
 }
@@ -3541,6 +3948,8 @@ bool Reader::skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk
 
     if (encoded_values_to_skip > 0)
     {
+        if (page.codec != parq::CompressionCodec::UNCOMPRESSED)
+            ProfileEvents::increment(ProfileEvents::ParquetPagesDecompressedToSkipRows);
         decompressPageIfCompressed(page);
         if (!page.decoder)
             createPageDecoder(page, column, column_info);
@@ -3605,62 +4014,138 @@ static void processDefLevelsForInnermostColumn(
     size_t num_values, const UInt8 * def, UInt8 max_def, UInt8 max_array_def, size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
 {
     size_t num_encoded_values = 0;
-    for (size_t i = 0; i < num_values; ++i)
+    if constexpr (has_nulls)
     {
-        if constexpr (has_arrays)
-            if (def[i] < max_array_def)
-                continue; // empty array
+        /// The null map is grown to an upper bound and trimmed at the end: a value of an empty or
+        /// null ancestor array gets no element, so we write unconditionally and advance only for the
+        /// values we keep, and the next kept value overwrites the skipped write.
+        size_t prev_size = out_null_map->size();
+        out_null_map->resize(prev_size + num_values);
+        UInt8 * out = out_null_map->data() + prev_size;
 
-        bool is_null = false;
-        if constexpr (has_nulls)
+        for (size_t i = 0; i < num_values; ++i)
         {
-            is_null = def[i] != max_def;
-            out_null_map->push_back(is_null);
+            bool is_null = def[i] != max_def;
+            *out = is_null;
+            if constexpr (has_arrays)
+                out += def[i] >= max_array_def;
+            else
+                out += 1;
+            /// A skipped value has def[i] < max_array_def <= max_def, so it is never counted here.
+            num_encoded_values += !is_null;
         }
 
-        num_encoded_values += !is_null;
+        out_null_map->resize(out - out_null_map->data());
     }
+    else if constexpr (has_arrays)
+    {
+        for (size_t i = 0; i < num_values; ++i)
+            num_encoded_values += def[i] >= max_array_def;
+    }
+    else
+        num_encoded_values = num_values;
+
     out_num_encoded_values = num_encoded_values;
 }
 
 /// Produces array offsets at a given level of nested arrays.
-/// TODO [parquet]: Try simdifying.
+/// `num_new_instances` is how many array instances start in this span, which the caller knows
+/// exactly, so the output grows once. Returns how many elements this level produced, which is how
+/// many array instances the next deeper level starts.
+/// TODO [parquet]: Try simdifying. The loop below is branch-free, but its store address depends on a
+/// running sum of predicates, which auto-vectorization can't express.
 ///
 /// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
 /// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
 /// But I expect it would be slower because (a) simd would be less effective (especially after we
 /// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
+static UInt64 processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+    UInt8 parent_array_def, size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+
+    /// May point at the -1-st element, PaddedPODArray allows that. Normally that element is only
+    /// ever set to 0; if invalid rep levels make us set it to nonzero, the caller notices and throws.
+    UInt64 * out = out_offsets.data() + prev_size - 1;
+    UInt64 first_offset = *out;
+    UInt64 offset = first_offset;
+
+    /// A value with def[i] < parent_array_def has a null or empty ancestor array and starts no new
+    /// array instance. In particular:
+    ///  * `def[i] == array_def - 1` means this array is empty,
+    ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
+    ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
+    ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
+    /// `def` equals the level's index in `levels`, so array levels have strictly increasing def and
+    /// `def[i] >= array_def` implies `def[i] >= parent_array_def`; the element count below therefore
+    /// needs no separate check against parent_array_def.
     for (size_t i = 0; i < num_values; ++i)
     {
-        if (def[i] < parent_array_def)
-            /// Some ancestor is null or empty array.
-            /// In particular:
-            ///  * `def[i] == array_def - 1` means this array is empty,
-            ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
-            continue;
-
-        if (rep[i] < array_rep)
-        {
-            /// Previous array instance ended and a new array instance started.
-
-            /// May assign -1-st element, but normally only sets it to 0; if we set it to nonzero
-            /// because of invalid rep levels, the caller will notice and throw.
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-        }
-
+        /// Finalizes the previous array instance if a new one starts here, is overwritten otherwise.
+        *out = offset;
+        out += rep[i] < array_rep && def[i] >= parent_array_def;
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
-    out_offsets.back() = offset;
+    *out = offset;
+
+    chassert(out == out_offsets.data() + prev_size - 1 + num_new_instances);
+    return offset - first_offset;
+}
+
+/// Fused version of processRepDefLevelsForArray + processDefLevelsForInnermostColumn for the common
+/// case of exactly one array level. Then array_rep is 1, so `rep[i] <= array_rep` always holds, a new
+/// instance starts exactly at `rep[i] == 0`, and `array_def == max_array_def`; one pass over the
+/// levels can produce the offsets, the null map and the encoded value count. Nested arrays keep the
+/// general path.
+template <bool has_nulls>
+static void processRepDefLevelsForSingleArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 max_def, UInt8 max_array_def,
+    size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets,
+    size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
+{
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+    UInt64 * out_offset = out_offsets.data() + prev_size - 1;
+    UInt64 offset = *out_offset;
+
+    UInt8 * out_null = nullptr;
+    if constexpr (has_nulls)
+    {
+        size_t null_prev_size = out_null_map->size();
+        out_null_map->resize(null_prev_size + num_values);
+        out_null = out_null_map->data() + null_prev_size;
+    }
+
+    size_t num_encoded_values = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        /// False for a value of an empty or null array, which produces no element at any output.
+        bool in_array = def[i] >= max_array_def;
+
+        *out_offset = offset;
+        out_offset += rep[i] == 0;
+        offset += in_array;
+
+        if constexpr (has_nulls)
+        {
+            bool is_null = def[i] != max_def;
+            *out_null = is_null;
+            out_null += in_array;
+            num_encoded_values += !is_null;
+        }
+        else
+            num_encoded_values += in_array;
+    }
+    *out_offset = offset;
+    if constexpr (has_nulls)
+        out_null_map->resize(out_null - out_null_map->data());
+
+    chassert(out_offset == out_offsets.data() + prev_size - 1 + num_new_instances);
+    out_num_encoded_values = num_encoded_values;
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
@@ -3685,9 +4170,14 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     advanceValueIdxUntilRow(end_row_idx, page);
 
     /// Produce array offsets.
-    if (!page.rep.empty())
+    const bool single_array_level = !page.rep.empty() && column_info.levels.back().rep == 1;
+    if (!page.rep.empty() && !single_array_level)
     {
         UInt8 parent_array_def = 0;
+        /// The outermost array level has array_rep == 1, so it starts an instance exactly at each
+        /// row start, and advanceValueIdxUntilRow counted those. Each deeper level starts an instance
+        /// per element of the level above, which is what processRepDefLevelsForArray returns.
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
         for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
             const LevelInfo & level = column_info.levels[level_idx];
@@ -3695,9 +4185,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
-            processRepDefLevelsForArray(
+            num_new_instances = processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def,
+                num_new_instances, offsets);
 
             parent_array_def = level.def;
         }
@@ -3705,7 +4196,23 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Populate null map and find how many encoded values to read.
     size_t encoded_values_to_read = 0;
-    if (page.def.empty())
+    if (single_array_level)
+    {
+        auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(0)).getData();
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
+        if (subchunk.null_map)
+            processRepDefLevelsForSingleArray<true>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read,
+                &assert_cast<ColumnUInt8 &>(*subchunk.null_map).getData());
+        else
+            processRepDefLevelsForSingleArray<false>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read, nullptr);
+    }
+    else if (page.def.empty())
     {
         /// No nulls or arrays in this page.
         encoded_values_to_read = page.value_idx - prev_value_idx;
@@ -3736,6 +4243,15 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     }
 
     /// Decode values.
+
+    /// Dictionary indexes can't continue past a page that is not dictionary-encoded.
+    if (subchunk.dictionary_values && !page.is_dictionary_encoded)
+    {
+        auto values = column_info.decoded_type->createColumn();
+        column.dictionary.index(assert_cast<const ColumnUInt32 &>(*subchunk.column), *values);
+        subchunk.column = std::move(values);
+        subchunk.dictionary_values = nullptr;
+    }
 
     /// See if we can decompress the whole page directly into IColumn's memory.
     /// Skip when filter is set: direct read bypasses decode and would write all values without applying the filter.
@@ -3774,9 +4290,11 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
             if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
                 filter = nullptr;
+            if (subchunk.dictionary_values)
+                page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
             /// filtering, or when the decoder or the dictionary mode does not support the fusion.
-            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            else if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
@@ -3796,6 +4314,20 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     if (page.value_idx == page.num_values)
         page.decoder.reset();
+}
+
+const ColumnPtr & Reader::getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+{
+    if (!column.dictionary_values)
+    {
+        auto indexes = ColumnUInt32::create(column.dictionary.count);
+        std::iota(indexes->getData().begin(), indexes->getData().end(), UInt32(0));
+        auto values = column_info.decoded_type->createColumn();
+        values->reserve(column.dictionary.count);
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
+        column.dictionary_values = std::move(values);
+    }
+    return column.dictionary_values;
 }
 
 void Reader::decompressPageIfCompressed(PageState & page)
@@ -3941,7 +4473,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     return res;
 }
 
-ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block)
+ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgroup & row_subgroup, size_t idx_in_output_block)
 {
     chassert(row_subgroup.filter.rows_pass > 0);
     const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
@@ -3950,10 +4482,58 @@ ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx
     if (output_idx.has_value())
     {
         const auto & info = output_columns[*output_idx];
+        /// The chunk of the column in the cache that holds the rows of the subgroup: the row subgroups
+        /// of a row group served from the cache do not cross the chunks, see `intersectColumnIndexResultsAndInitSubgroups`.
+        const ColumnPtr * cached_column = nullptr;
+        size_t offset_in_cached_column = 0;
+        if (!row_group.cached_columns.empty() && !row_group.cached_columns[idx_in_output_block].empty())
+        {
+            const size_t chunk = row_subgroup.start_row_idx / COLUMNS_CACHE_CHUNK_ROWS;
+            cached_column = &row_group.cached_columns[idx_in_output_block].at(chunk);
+            offset_in_cached_column = row_subgroup.start_row_idx - chunk * COLUMNS_CACHE_CHUNK_ROWS;
+            chassert(offset_in_cached_column + row_subgroup.filter.rows_total <= (*cached_column)->size());
+        }
         /// Normally output column is formed by decodePrimitiveColumn. But if the column is missing
-        /// in the file, and we're returning default values, we form it here, i.e. during prewhere or delivery.
-        chassert(state.column || (info.primitive_start == info.primitive_end));
-        if (!state.column)
+        /// in the file, and we're returning default values, or if the column is served from the
+        /// columns cache, we form it here, i.e. during prewhere or delivery.
+        chassert(state.column || cached_column || (info.primitive_start == info.primitive_end));
+        if (!state.column && cached_column)
+        {
+            /// The rows of the subgroup that passed the filters so far. A subgroup that is the whole
+            /// chunk gets the column of the cache itself: a column is shared by reference counting and
+            /// copied by anyone who changes it (`IColumn::mutate`), so the cache cannot be changed
+            /// through the result. Otherwise `cut` and `index` copy the rows.
+            if (row_subgroup.filter.rows_pass == row_subgroup.filter.rows_total
+                && offset_in_cached_column == 0 && row_subgroup.filter.rows_total == (*cached_column)->size())
+            {
+                state.column = *cached_column;
+            }
+            else if (row_subgroup.filter.rows_pass == row_subgroup.filter.rows_total)
+            {
+                state.column = (*cached_column)->cut(offset_in_cached_column, row_subgroup.filter.rows_total);
+            }
+            else
+            {
+                /// Gather only the rows that passed. Copying the whole range before filtering would
+                /// allocate memory for the rejected rows, which the uncached path does not decode at all.
+                const IColumnFilter & mask = row_subgroup.filter.filter;
+                chassert(mask.size() == row_subgroup.filter.rows_total);
+                auto indexes = ColumnUInt64::create();
+                auto & indexes_data = indexes->getData();
+                indexes_data.reserve(row_subgroup.filter.rows_pass);
+                size_t i = 0;
+                for (; i + 64 <= mask.size(); i += 64)
+                {
+                    for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
+                        indexes_data.push_back(offset_in_cached_column + i + std::countr_zero(bits));
+                }
+                for (; i < mask.size(); ++i)
+                    if (mask[i])
+                        indexes_data.push_back(offset_in_cached_column + i);
+                state.column = (*cached_column)->index(*indexes, 0);
+            }
+        }
+        else if (!state.column)
             state.column = formOutputColumn(row_subgroup, *output_idx, row_subgroup.filter.rows_pass);
     }
     chassert(state.column);
@@ -3970,7 +4550,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         for (size_t idx_in_output_block : step.input_idxs)
         {
             const ColumnWithTypeAndName & col = extended_sample_block.getByPosition(idx_in_output_block);
-            block.insert({getOrFormOutputColumn(row_subgroup, idx_in_output_block), col.type, col.name});
+            block.insert({getOrFormOutputColumn(row_group, row_subgroup, idx_in_output_block), col.type, col.name});
         }
         addDummyColumnWithRowCount(block, row_subgroup.filter.rows_pass);
 
@@ -3998,8 +4578,19 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
+        auto materialize_replicated = [&]
+        {
+            if (step_idx == steps.size())
+                for (auto & state : row_subgroup.output)
+                    if (state.column)
+                        state.column = state.column->convertToFullColumnIfReplicated();
+        };
+
         if (!step.filter_column_name.has_value())
+        {
+            materialize_replicated();
             return;
+        }
 
         ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
@@ -4013,10 +4604,14 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             return;
         }
 
+        if (rows_pass == filter.size())
+            return;
+
         /// Filter columns that were already read.
         for (auto & state : row_subgroup.output)
             if (state.column)
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+        materialize_replicated();
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
@@ -4026,6 +4621,319 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
         row_subgroup.filter.filter = std::move(mut_filter.getData());
         row_subgroup.filter.rows_pass = rows_pass;
+    }
+}
+
+void Reader::initColumnsCache()
+{
+    if (!options.columns_cache)
+        return;
+    const ColumnsCacheOptions & cache_options = *options.columns_cache;
+    ColumnsCache & cache = *cache_options.cache;
+
+    /// The identity of an output column in the cache is made of what determines its values: the
+    /// file, its version and the format settings (all in `file_identity`), the columns of the file it
+    /// is read from, and the types it is decoded into and converted to. The name of the column alone
+    /// is not enough: a data lake can map a name to another column of the file after a schema change,
+    /// and the same column can be read as different types. The owning table (the nil UUID for a
+    /// table function) is a part of the identity too: the same file read by a table and by a table
+    /// function gives different entries, so an entry never takes the access rules of another path
+    /// in `system.columns_cache`.
+    columns_cache_identities.assign(extended_sample_block.columns(), 0);
+    bool any_column = false;
+    for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
+    {
+        const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
+        if (!output_idx.has_value())
+            continue;
+        const OutputColumnInfo & info = output_columns.at(*output_idx);
+        if (info.is_missing_column || info.primitive_start == info.primitive_end)
+            continue;
+
+        SipHash hash;
+        hash.update(cache_options.file_identity);
+        hash.update(info.input_type->getName());
+        hash.update(info.output_type->getName());
+        hash.update(info.nullable_group);
+        bool decoded = true;
+        for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+        {
+            const PrimitiveColumnInfo & primitive = primitive_columns[i];
+            /// A column read only for its statistics is never decoded.
+            if (primitive.first_step_to_calculate == SIZE_MAX)
+                decoded = false;
+            hash.update(primitive.column_idx);
+            hash.update(primitive.decoded_type->getName());
+            hash.update(primitive.output_type->getName());
+            hash.update(primitive.output_nullable);
+            hash.update(primitive.group_nullable);
+        }
+        if (!decoded)
+            continue;
+
+        columns_cache_identities[idx] = getColumnsCacheColumnIdentity(
+            cache_options.table_uuid, cache_options.file_path, extended_sample_block.getByPosition(idx).name, hash.get64());
+        any_column = true;
+    }
+
+    if (!any_column)
+    {
+        columns_cache_identities.clear();
+        return;
+    }
+
+    columns_cache_writes_possible = cache_options.enable_writes && canWriteToColumnsCache();
+    if (columns_cache_writes_possible)
+        columns_cache_generation = cache.getInvalidationGeneration(cache_options.table_uuid);
+
+    size_t hits = 0;
+    size_t misses = 0;
+    size_t estimated_bytes_to_write = 0;
+    for (RowGroup & row_group : row_groups)
+    {
+        if (!row_group.need_to_process)
+            continue;
+
+        for (size_t idx = 0; idx < columns_cache_identities.size(); ++idx)
+        {
+            const UInt128 & identity = columns_cache_identities[idx];
+            if (identity == 0)
+                continue;
+            const OutputColumnInfo & info = output_columns.at(*sample_block_to_output_columns_idx[idx]);
+
+            /// An entry holds a chunk of the column of a row group, see `COLUMNS_CACHE_CHUNK_ROWS`. The column
+            /// is served from the cache only if all its chunks are there: otherwise the column chunk is read
+            /// from the file anyway.
+            if (cache_options.enable_reads)
+            {
+                const size_t num_rows = size_t(row_group.meta->num_rows);
+                const size_t num_chunks = (num_rows + COLUMNS_CACHE_CHUNK_ROWS - 1) / COLUMNS_CACHE_CHUNK_ROWS;
+                const size_t first_stripe = row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP;
+                auto entries = num_chunks <= COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP
+                    ? cache.getMany(identity, first_stripe, first_stripe + num_chunks)
+                    : std::vector<ColumnsCache::MappedPtr>{};
+                bool all_chunks = !entries.empty();
+                for (size_t chunk = 0; chunk < entries.size() && all_chunks; ++chunk)
+                    all_chunks = entries[chunk] && entries[chunk]->rows == std::min(COLUMNS_CACHE_CHUNK_ROWS, num_rows - chunk * COLUMNS_CACHE_CHUNK_ROWS);
+                if (all_chunks)
+                {
+                    if (row_group.cached_columns.empty())
+                        row_group.cached_columns.resize(extended_sample_block.columns());
+                    auto & chunks = row_group.cached_columns[idx];
+                    chunks.reserve(entries.size());
+                    for (const auto & entry : entries)
+                        chunks.push_back(entry->column);
+                    for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                        row_group.columns[i].served_from_cache = true;
+                    ++hits;
+                    continue;
+                }
+                ++misses;
+            }
+
+            if (columns_cache_writes_possible && cache.shouldAdmit())
+            {
+                if (row_group.columns_cache_writes.empty())
+                    row_group.columns_cache_writes.resize(extended_sample_block.columns());
+                row_group.columns_cache_writes[idx].active = true;
+                for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
+                {
+                    ColumnChunk & column = row_group.columns[i];
+                    estimated_bytes_to_write += size_t(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
+                    column.decode_dictionary_early = decodedSizeIsUnknown(column, primitive_columns[i]);
+                }
+            }
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, hits);
+    ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses, misses);
+
+    /// The estimate budget of the query, charged with the uncompressed size of the column chunks
+    /// that are to be written, before anything is read. Once the query exceeds it, the writes are
+    /// disabled for the rest of the query, here and in all other readers.
+    if (estimated_bytes_to_write)
+    {
+        ColumnsCacheWriteBudget & budget = *cache_options.write_budget;
+        const size_t max_estimated_bytes = cache_options.max_estimated_bytes_to_write != 0
+            ? cache_options.max_estimated_bytes_to_write
+            : cache.maxSizeInBytes() / 2;
+        const size_t estimated_bytes = budget.estimated_bytes.fetch_add(estimated_bytes_to_write, std::memory_order_relaxed) + estimated_bytes_to_write;
+        if (estimated_bytes > max_estimated_bytes)
+            budget.writes_disabled.store(true, std::memory_order_relaxed);
+    }
+
+    if (columns_cache_writes_possible && !canWriteToColumnsCache())
+    {
+        columns_cache_writes_possible = false;
+        for (RowGroup & row_group : row_groups)
+            row_group.columns_cache_writes.clear();
+    }
+}
+
+bool Reader::canWriteToColumnsCache() const
+{
+    const ColumnsCacheOptions & cache_options = *options.columns_cache;
+    const ColumnsCacheWriteBudget & budget = *cache_options.write_budget;
+    if (budget.writes_disabled.load(std::memory_order_relaxed))
+        return false;
+
+    /// 0 means half of the size limit the cache has now, which shrinks under memory pressure, so it
+    /// is resolved on every check.
+    const size_t max_bytes = cache_options.max_bytes_to_write != 0
+        ? cache_options.max_bytes_to_write
+        : cache_options.cache->maxSizeInBytes() / 2;
+    return budget.bytes_written.load(std::memory_order_relaxed) < max_bytes;
+}
+
+void Reader::addToColumnsCacheWrite(
+    RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, ColumnPtr & column, bool has_substituted_defaults)
+{
+    auto & write = row_group.columns_cache_writes.at(idx_in_output_block);
+    if (!write.active)
+        return;
+
+    /// Only a whole chunk is kept, see `COLUMNS_CACHE_CHUNK_ROWS`: the row subgroups of a row group written to
+    /// the cache are its chunks, and one filtered by PREWHERE before this column was decoded, or cut short by the
+    /// column index, is not kept. Neither is a column with values replaced with defaults
+    /// (`input_format_null_as_default`): the cache does not keep which values are replaced, which a later query
+    /// may need for the block missing values, even if this query does not (e.g. the column is `PREWHERE`-only).
+    const size_t num_rows = size_t(row_group.meta->num_rows);
+    const size_t chunk = row_subgroup.start_row_idx / COLUMNS_CACHE_CHUNK_ROWS;
+    const size_t chunk_rows = std::min(COLUMNS_CACHE_CHUNK_ROWS, num_rows - chunk * COLUMNS_CACHE_CHUNK_ROWS);
+    const bool complete = row_subgroup.start_row_idx == chunk * COLUMNS_CACHE_CHUNK_ROWS
+        && row_subgroup.filter.rows_total == chunk_rows
+        && row_subgroup.filter.rows_pass == row_subgroup.filter.rows_total
+        && column->size() == chunk_rows
+        && !has_substituted_defaults;
+
+    /// The column is served from the cache only with all its chunks, see `initColumnsCache`: once a chunk cannot
+    /// be written, neither can the column, and the chunks already written only take space.
+    if (!complete)
+    {
+        withdrawColumnsCacheWrite(write);
+        return;
+    }
+
+    /// The budget is checked once for the column of the row group, before its first chunk: it is a soft threshold,
+    /// and the column that crosses it is written in full.
+    if (write.chunks_written == 0 && !canWriteToColumnsCache())
+    {
+        write.active = false;
+        return;
+    }
+
+    /// Give back the capacity the column holds beyond its values: the decoder reserves memory by an estimate,
+    /// which can be far off (for dictionary-encoded strings, it is the average length of the values of the
+    /// dictionary, not of the rows), and an entry retains - and is charged for - all its memory.
+    /// The column has just been formed and is not shared yet, so this reallocates it in place, without a copy.
+    static constexpr size_t min_bytes_to_free_by_shrinking = 4096;
+    if (column->use_count() == 1 && column->allocatedBytes() >= column->byteSize() + min_bytes_to_free_by_shrinking)
+    {
+        auto mutable_column = IColumn::mutate(std::move(column));
+        mutable_column->shrinkToFit();
+        column = std::move(mutable_column);
+    }
+
+    /// The decoded column itself becomes the entry, shared with the result of the read: no copy is made. It was
+    /// allocated by this query, and its memory is handed over to the server when the cache admits it, see `setMany`.
+    /// It is written at once rather than with the other chunks of the column: kept until then, the decoded chunks
+    /// of the whole row group would be charged to the query, although the query itself needs only the block it
+    /// is processing.
+    const ColumnsCacheOptions & cache_options = *options.columns_cache;
+    auto entry = makeColumnsCacheEntry();
+    {
+        /// The rest of the entry is the server's from the start, see `makeColumnsCacheEntry`.
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        entry->part_name = cache_options.file_path;
+        entry->column_name = extended_sample_block.getByPosition(idx_in_output_block).name;
+    }
+    entry->table_uuid = cache_options.table_uuid;
+    /// Kept also for an entry of a table: once the table is dropped, its entries can stay in the
+    /// cache with an unresolvable UUID, and only the source grant can be checked for them.
+    entry->source = cache_options.source;
+    entry->schema_identity = cache_options.file_identity;
+    entry->first_mark = 0;
+    entry->end_mark = 1;
+    entry->row_begin = row_group.start_global_row_idx + row_subgroup.start_row_idx;
+    entry->rows = chunk_rows;
+    entry->key = ColumnsCacheKey{columns_cache_identities.at(idx_in_output_block), row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + chunk};
+    entry->column = column;
+
+    std::vector<bool> resident;
+    const size_t bytes_admitted = cache_options.cache->setMany({entry}, columns_cache_generation, &resident);
+    if (bytes_admitted)
+        cache_options.write_budget->bytes_written.fetch_add(bytes_admitted, std::memory_order_relaxed);
+
+    /// The cache can reject the chunk, e.g. one larger than a shard of the cache, or one written after the cache was
+    /// dropped. Then the column cannot be served from the cache, and the chunks of it written before are of no use.
+    if (!resident.at(0))
+    {
+        withdrawColumnsCacheWrite(write);
+        return;
+    }
+
+    ++write.chunks_written;
+    write.entries.push_back(entry);
+}
+
+void Reader::withdrawColumnsCacheWrite(RowGroup::ColumnsCacheWrite & write) const
+{
+    write.active = false;
+
+    std::vector<ColumnsCache::MappedPtr> entries;
+    entries.reserve(write.entries.size());
+    for (const auto & weak_entry : write.entries)
+        if (auto entry = weak_entry.lock())
+            entries.push_back(std::move(entry));
+    write.entries.clear();
+
+    if (!entries.empty())
+        options.columns_cache->cache->removeEntries(entries);
+}
+
+void Reader::flushColumnsCacheWrites(RowGroup & row_group)
+{
+    if (row_group.columns_cache_writes.empty())
+        return;
+
+    /// A column of a row group is served from the cache only if all its chunks are there, see `initColumnsCache`.
+    /// A chunk is not written when no row subgroup decoded it, e.g. when the column index skipped its rows.
+    /// And a chunk that was admitted can be evicted by the chunks written after it, even of the same column,
+    /// when the column does not fit into the cache as a whole while each of its chunks does.
+    const size_t num_rows = size_t(row_group.meta->num_rows);
+    const size_t num_chunks = (num_rows + COLUMNS_CACHE_CHUNK_ROWS - 1) / COLUMNS_CACHE_CHUNK_ROWS;
+    std::vector<ColumnsCacheKey> keys;
+    for (size_t idx = 0; idx < row_group.columns_cache_writes.size(); ++idx)
+    {
+        auto & write = row_group.columns_cache_writes[idx];
+        if (!write.active)
+            continue;
+
+        bool complete = write.chunks_written == num_chunks;
+        if (complete)
+        {
+            keys.clear();
+            for (size_t chunk = 0; chunk < num_chunks; ++chunk)
+                keys.push_back(ColumnsCacheKey{
+                    columns_cache_identities.at(idx), row_group.row_group_idx * COLUMNS_CACHE_MAX_CHUNKS_PER_ROW_GROUP + chunk});
+            complete = options.columns_cache->cache->containsAll(keys);
+        }
+
+        if (!complete)
+            withdrawColumnsCacheWrite(write);
+    }
+    row_group.columns_cache_writes.clear();
+}
+
+void Reader::withdrawColumnsCacheWrites()
+{
+    for (RowGroup & row_group : row_groups)
+    {
+        for (auto & write : row_group.columns_cache_writes)
+            if (write.active)
+                withdrawColumnsCacheWrite(write);
+        row_group.columns_cache_writes.clear();
     }
 }
 

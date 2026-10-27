@@ -879,6 +879,7 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
+        <programname>clickhouse-production</programname>
         <address>syslog.remote:10514</address>
         <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
@@ -889,12 +890,13 @@ ClickHouse は、設定を更新するためにすべてのレプリカを同時
 
 `<syslog>` で使用できるキー:
 
-| Key        | Description                                                                                                                                                                                                                              |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `address`  | `host\[:port\]` 形式の syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                                               |
-| `hostname` | ログの送信元ホスト名です (省略可) 。                                                                                                                                                                                                                     |
-| `facility` | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) です。&quot;LOG&#95;&quot; プレフィックス付きの大文字で指定する必要があります。例: `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` など。デフォルト値は、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
-| `format`   | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                               |
+| Key           | Description                                                                                                                                                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`     | `host\[:port\]` 形式の syslog のアドレスです。省略した場合はローカルデーモンが使用されます。                                                                                                                                                                               |
+| `hostname`    | ログの送信元ホスト名です (省略可) 。                                                                                                                                                                                                                     |
+| `facility`    | syslog の [facility キーワード](https://en.wikipedia.org/wiki/Syslog#Facility) です。&quot;LOG&#95;&quot; プレフィックス付きの大文字で指定する必要があります。例: `LOG_USER`、`LOG_DAEMON`、`LOG_LOCAL3` など。デフォルト値は、`address` が指定されている場合は `LOG_USER`、それ以外の場合は `LOG_DAEMON` です。 |
+| `format`      | ログメッセージのフォーマットです。設定可能な値: `bsd` と `syslog.`                                                                                                                                                                                               |
+| `programname` | syslog メッセージで使用するプログラム名です。ローカル syslog では ident、`format=syslog` のリモート syslog では `APP-NAME` として使用されます。`format=bsd` の場合は効果がありません。空白を含まない、1〜48 文字の印字可能な ASCII 文字で指定します。デフォルト値は、ローカル syslog の場合はコマンド名で、リモート syslog の場合は未設定です。                 |
 
 **ログフォーマット**
 
@@ -925,7 +927,7 @@ JSON 形式のログ出力を有効にするには、次のスニペットを使
 <logger>
     <formatting>
         <type>json</type>
-        <!-- チャネルごと（log、errorlog、console、syslog）に設定することも、すべてのチャネルに対してグローバルに設定することもできます（グローバルに設定する場合はこのタグを省略してください）。 -->
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
         <!-- <channel></channel> -->
         <names>
             <date_time>date_time</date_time>
@@ -1218,6 +1220,7 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
 | `caConfig`                    | 信頼された CA 証明書を含むファイルまたはディレクトリへのパスです。ファイルを指す場合は、PEM フォーマットである必要があり、複数の CA 証明書を含めることができます。ディレクトリを指す場合は、CA 証明書ごとに 1 つの .pem ファイルが含まれている必要があります。ファイル名は、CA の subject 名のハッシュ値に基づいて参照されます。詳細については、[SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html) の man ページを参照してください。`certificateFile` や `privateKeyFile` と同様に、CA 証明書はファイルが変更されたとき、または `SYSTEM RELOAD CONFIG` の実行時に、再起動なしで再読み込みされます。 |                                                                                            |
 | `certificateFile`             | PEM形式のクライアント／サーバー証明書ファイルのパス。`privateKeyFile` に証明書が含まれている場合は省略できます。                                                                                                                                                                                                                                                                                                                                                                                        |                                                                                            |
 | `cipherList`                  | サポートされる OpenSSL 暗号方式。                                                                                                                                                                                                                                                                                                                                                                                                                                     | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `cipherSuites`                | サポートされる TLS 1.3 暗号スイート (OpenSSL の表記で指定)。空の値を指定した場合は、OpenSSL のデフォルトのスイートがそのまま使用されます。`cipherList` は TLS 1.2 以下にのみ適用されます。OpenSSL が認識できないスイート名は無視されます。認識可能なスイートが 1 つも含まれない値を指定するとエラーとなり、TLS コンテキストの初期化に失敗します。                                                                                                                                                                                                                                                 |                                                                                            |
 | `disableProtocols`            | 使用を許可しないプロトコル。                                                                                                                                                                                                                                                                                                                                                                                                                                            |                                                                                            |
 | `extendedVerification`        | 有効にすると、証明書の CN または SAN がピアのホスト名と一致することを検証します。                                                                                                                                                                                                                                                                                                                                                                                                             | `openSSL.client` では `true`、`openSSL.server` では `false`                                     |
 | `fips`                        | OpenSSL の FIPS モードを有効にします。ライブラリの OpenSSL バージョンが FIPS をサポートしている場合に使用できます。                                                                                                                                                                                                                                                                                                                                                                                  | `false`                                                                                    |
@@ -1263,6 +1266,33 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
         </invalidCertificateHandler>
     </client>
 </openSSL>
+```
+
+## placement {#placement}
+
+サーバーが稼働するクラウドのアベイラビリティゾーンとリージョンを指定します。アベイラビリティゾーンは、ZooKeeper クライアントが同じゾーン内のホストを優先するために使用します ([zookeeper](#zookeeper) セクションの `prefer_local_availability_zone`) 。ClickHouse Keeper もこの情報を使用し、`/keeper/availability_zone` ノードで公開します。
+
+`placement` セクションがない場合、アベイラビリティゾーンとリージョンは空になります。
+
+以下の設定を使用できます。
+
+| 設定                            | 説明                                                                                                | デフォルト値                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `use_imds`                    | クラウドプロバイダーのインスタンスメタデータサービスからアベイラビリティゾーンを取得します。AWS、GCP の順に試行します。有効にすると、ほかの設定はすべて無視され、リージョンは空になります。 | `false`                              |
+| `availability_zone`           | アベイラビリティゾーン。                                                                                      | 空                                    |
+| `availability_zone_from_file` | `availability_zone` が空の場合に、アベイラビリティゾーンを読み取る元のファイル。ファイルが存在しない場合、アベイラビリティゾーンは空になります。                | `/run/instance-metadata/node-zone`   |
+| `region`                      | リージョン。                                                                                            | 空                                    |
+| `region_from_file`            | `region` が空の場合に、リージョンを読み取る元のファイル。ファイルが存在しない場合、リージョンは空になります。                                       | `/run/instance-metadata/node-region` |
+
+配置先の情報は、サーバーの起動時に一度だけ読み取られます。
+
+**例**
+
+```xml
+<placement>
+    <availability_zone>us-east-1a</availability_zone>
+    <region>us-east-1</region>
+</placement>
 ```
 
 ## part_log {#part_log}
@@ -1611,7 +1641,7 @@ curl 127.0.0.1:9363/metrics
 
 システムログテーブルと同じ場所に `all_...` テーブル (`system.query_log` に対応する `system.all_query_log`、`system.text_log` に対応する `system.all_text_log` など) を作成するよう要求します。このテーブルは、対応するログテーブル、そのローテーションされたバージョン (`query_log_0`、`query_log_1`、…) 、および／またはクラスター内のすべてのレプリカにある同じテーブルをユニオンしたもので、`clusterAllReplicas(default, merge(system, '^query_log'))` のような構文を覚えなくても、これらすべてを一度にクエリできます。
 
-このセクションは任意です。指定する場合は、以下の設定の少なくとも1つを指定する必要があります。
+このセクションは任意です。デフォルトのサーバー設定ファイル `config.xml` には、`merge_rotated_tables` を有効にした状態でこのセクションが含まれているため、デフォルト構成のサーバーでは `all_...` テーブルが自動的に作成されます。作成タイミングは各ログの最初のフラッシュ時、または `prepare_system_log_tables_on_startup` が有効な場合は起動時です。なお、`cluster` 設定は明示的に指定する必要があります。`all_...` のいずれかの名前で既に存在し、この機能によって作成されたものではないテーブル (たとえば、データを含む手動で作成したテーブル) が置き換えられることはありません。そのテーブルはそのまま残され、サーバーログに警告が出力されます。そのテーブルを削除またはリネームすると、次回のログのフラッシュ時にユニオンテーブルが作成されます。この機能によって作成されたテーブルは、コメント末尾の目印となる文 `It is safe to drop this table at any time: it will be recreated automatically.` によって識別されます。セクションを指定する場合は、以下の設定の少なくとも1つを指定する必要があります。
 
 | 設定                     | 説明                                                                                                                                                               |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1626,9 +1656,9 @@ curl 127.0.0.1:9363/metrics
   `cluster` 設定を使用する場合、テーブル定義がクラスターを参照するため、テーブルをロードするにはクラスターが存在している必要があります。設定からクラスターを削除する場合は、`all_...` テーブルも削除してください (次回のフラッシュ時に、新しい設定に従って再作成されます) 。
 </Note>
 
-<Warning>
-  このセクションを有効にすると、`system` データベース内の `all_...` という名前はこの機能用に予約されます。これらの名前の独自テーブルは置かないでください。該当するテーブルがある場合は、このセクションを有効にする前にリネームしてください。
-</Warning>
+<Note>
+  `all_...` のいずれかの名前を持つテーブルがこの機能によって作成されたものとみなされ、定義が想定と異なる場合に置き換えの対象となるのは、そのテーブルが `merge` または `clusterAllReplicas` テーブル関数からデータを選択し、かつコメントに上記の目印となる文が含まれている場合に限られます。この文を独自のテーブルのコメントにコピーしないでください。
+</Note>
 
 **例**
 
@@ -1763,11 +1793,22 @@ URL 関連のストレージエンジンおよびテーブル関数で使用で�
 * ホストが IP アドレスとして指定されている場合は、URL で指定されたとおりにチェックされます。例: `[2a02:6b8:a::a]`.
 * リダイレクトがあり、かつリダイレクトのサポートが有効になっている場合は、各リダイレクト (location フィールド) がチェックされます。
 
+`\<host_regexp\>` XML タグで正規表現を追加する場合は、RE2 エンジンが使用され、ホスト全体に対して照合が行われます。例: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+`\<s3_bucket\>` XML タグで単一の S3 バケットを `host/bucket` または `host:port/bucket` の形式で追加する場合:
+
+* エンドポイントが多数の利用者で共有されている場合に有用です。たとえばパス形式の AWS エンドポイント `s3.us-west-2.amazonaws.com` でホスト全体を許可すると、そのホスト上のすべてのバケットが許可されてしまいます。
+* バケットはパースされた S3 URL から取得されるため、このエントリは `https://s3.us-west-2.amazonaws.com/my-bucket/...` と `https://my-bucket.s3.us-west-2.amazonaws.com/...` の両方に一致します。
+* S3 URL にのみ適用されます。対象は、`s3` テーブル関数およびエンジン、`S3` データベースエンジン、`S3` への `BACKUP`/`RESTORE`、および SQL で `disk` 関数を使用して作成された S3 ディスクです。
+* S3 から返される恒久的 (301) リダイレクトもバケットエントリに対してチェックされますが、一時的 (307) リダイレクトはホストのみでチェックされます。そのため、リストに `\<s3_bucket\>` エントリしか含まれていない場合、一時的リダイレクトは拒否されます。
+
 例:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 
@@ -2015,28 +2056,7 @@ PostgreSQL プロトコルでクライアントと通信するためのポート
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-ZooKeeper におけるデータパーツヘッダーの保存方式です。この設定は [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーにのみ適用されます。指定方法は次のとおりです。
-
-**`config.xml` ファイルの [merge&#95;tree](#merge_tree) セクションでグローバルに指定**
-
-ClickHouse は、この設定をサーバー上のすべてのテーブルに適用します。この設定はいつでも変更できます。既存のテーブルの動作も、設定の変更に応じて変わります。
-
-**各テーブルごとに指定**
-
-テーブルの作成時に、対応する[エンジン設定](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)を指定します。この設定を持つ既存のテーブルの動作は、グローバル設定が変更されても変わりません。
-
-**設定可能な値**
-
-* `0` — 機能は無効です。
-* `1` — 機能は有効です。
-
-[`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper) の場合、[レプリケート](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルは、データパーツのヘッダーを 1 つの `znode` を使ってコンパクトに保存します。テーブルに多数のカラムがある場合、この保存方式により ZooKeeper に格納されるデータ量を大幅に削減できます。
-
-<Note>
-  `use_minimalistic_part_header_in_zookeeper = 1` を適用すると、この設定をサポートしていないバージョンへ ClickHouse サーバー をダウングレードすることはできません。クラスター内のサーバーで ClickHouse をアップグレードする際は注意してください。すべてのサーバーを一度にアップグレードしないでください。新しいバージョンの ClickHouse は、テスト環境またはクラスター内の一部のサーバーで検証してから導入するほうが安全です。
-
-  この設定で保存済みのデータパーツヘッダーは、以前の (compact ではない) 形式には戻せません。
-</Note>
+廃止された設定で、何の効果もありません。[Replicated](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルは、常にデータパーツのヘッダーを 1 つの `znode` にコンパクトに保存します。古いバージョンで `columns` と `checksums` の子 `znodes` に分けて書き込まれたパーツヘッダーも、引き続き読み取ることができます。
 
 ## distributed_ddl {#distributed_ddl}
 

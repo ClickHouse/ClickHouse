@@ -357,7 +357,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 Las pruebas de rendimiento permiten medir y comparar el rendimiento de alguna parte aislada de ClickHouse mediante consultas sintéticas.
 Las pruebas de rendimiento se encuentran en `tests/performance/`.
 Cada prueba está representada por un archivo `.xml` con una descripción del caso de prueba.
-Las pruebas se ejecutan con la herramienta `docker/test/performance-comparison`. Consulte el archivo readme para ver cómo invocarla.
+Las pruebas se ejecutan mediante el trabajo de CI `ci/jobs/performance_tests.py`, en la imagen `ci/docker/performance-comparison`.
 
 Cada prueba ejecuta una o varias consultas (posiblemente con combinaciones de parámetros) en un bucle.
 
@@ -368,7 +368,7 @@ Siempre tiene sentido usar `perf top` u otras herramientas de `perf` durante las
 ## Herramientas y scripts de prueba {#test-tools-and-scripts}
 
 Algunos programas del directorio `tests` no son pruebas ya preparadas, sino herramientas de prueba.
-Por ejemplo, para `Lexer` hay una herramienta, `src/Parsers/tests/lexer`, que simplemente realiza la tokenización de stdin y escribe el resultado coloreado en stdout.
+Por ejemplo, para `Lexer` hay una herramienta, `src/Parsers/examples/lexer.cpp`, que simplemente realiza la tokenización de stdin y escribe el resultado coloreado en stdout.
 Puede usar este tipo de herramientas como ejemplos de código, así como para exploración y pruebas manuales.
 
 ## Pruebas diversas {#miscellaneous-tests}
@@ -509,9 +509,9 @@ Los fuzzers no se compilan de forma predeterminada.
 Para compilar los fuzzers, deben establecerse las opciones `-DENABLE_FUZZING=1` y `-DENABLE_TESTS=1`.
 Recomendamos deshabilitar Jemalloc al compilar fuzzers.
 La configuración utilizada para integrar el fuzzing de ClickHouse con
-Google OSS-Fuzz puede encontrarse en `docker/fuzz`.
+Google OSS-Fuzz puede encontrarse en `tests/fuzz`.
 
-También usamos una prueba de fuzzing sencilla para generar consultas SQL aleatorias y comprobar que el server no se cae al ejecutarlas.
+También usamos una prueba de fuzzing sencilla para generar consultas SQL aleatorias y comprobar que el servidor no se cae al ejecutarlas.
 Puede encontrarla en `00746_sql_fuzzy.python`.
 Esta prueba debe ejecutarse de forma continua (durante la noche y más tiempo).
 
@@ -592,7 +592,7 @@ ClickHouse proporciona diagnósticos que ayudarán a los ingenieros de operacion
 
 Las reglas de estilo de código se describen [aquí](/es/resources/develop-contribute/contribute/style).
 
-Para comprobar algunas infracciones de estilo habituales, puede usar el script `utils/check-style`.
+Para comprobar algunas infracciones de estilo habituales, puede usar el script `ci/jobs/scripts/check_style/check_cpp.sh` o ejecutar localmente la comprobación de estilo completa con `python -m ci.praktika run "Style check"`.
 
 Para imponer el estilo correcto en su código, puede usar `clang-format`.
 El archivo `.clang-format` se encuentra en la raíz del código fuente.
