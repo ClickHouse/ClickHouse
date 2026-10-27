@@ -47,7 +47,8 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
 {
     auto command = commandName(documents[0].documents[0]);
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     if (command == "buildInfo" || command == "buildinfo")
     {
@@ -144,7 +145,7 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 
@@ -156,12 +157,13 @@ std::vector<Document> DropDatabaseHandler::handle(const std::vector<OpMessageSec
     /// has to tolerate it rather than report an error the client does not expect.
     executor->execute(fmt::format("DROP DATABASE IF EXISTS {}", backQuoteIfNeed(database)));
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
     BSON_APPEND_UTF8(bson_doc, "dropped", database.c_str());
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

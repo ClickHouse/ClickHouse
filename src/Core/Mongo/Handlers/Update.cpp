@@ -177,7 +177,8 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         }
     }
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     /// `n` is the number of matched documents, which is known before the mutation is submitted.
     /// `nModified` - the number of documents whose values actually change - is not: a mutation is
@@ -191,7 +192,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

@@ -12,7 +12,8 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
     auto collection = getCollectionRef(documents[0].documents[0], "drop");
     String namespace_name = collection.database + "." + collection.collection;
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
     {
@@ -33,7 +34,7 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
     }
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

@@ -642,9 +642,10 @@ std::vector<Document> executeSelectIntoCursor(
             if (!json_data.IsObject())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is not a document");
 
-            bson_t * row_document = bson_new();
+            BsonPtr row_document_owner(bson_new());
+            bson_t * row_document = row_document_owner.get();
             appendFieldTree(row_document, tree, json_data, columns);
-            selected.emplace_back(row_document);
+            selected.emplace_back(std::move(row_document_owner));
 
             reply_size += 2 + std::to_string(selected.size() - 1).size() + selected.back().getBson()->len;
             if (reply_size > MAX_BSON_OBJECT_SIZE)
@@ -1278,13 +1279,14 @@ namespace
 /// Turns the current exception into the `{"errmsg": ..., "ok": 0}` document Mongo clients expect.
 std::vector<Document> makeErrorResponse()
 {
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     BSON_APPEND_UTF8(bson_doc, "errmsg", getCurrentExceptionMessage(false).c_str());
     BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

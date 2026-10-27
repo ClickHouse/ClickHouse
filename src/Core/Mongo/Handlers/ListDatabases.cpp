@@ -57,7 +57,8 @@ std::vector<Document> ListDatabasesHandler::handle(
             non_empty_databases.insert(std::move(name));
     }
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     {
         static constexpr std::string_view key_identifier = "databases";
@@ -90,7 +91,6 @@ std::vector<Document> ListDatabasesHandler::handle(
             /// writer is open; the envelope around it is checked below, once the reply is whole.
             if (databases.len > MAX_BSON_OBJECT_SIZE)
             {
-                bson_destroy(bson_doc);
                 throw Exception(
                     ErrorCodes::LIMIT_EXCEEDED,
                     "The list of databases is larger than the largest reply that can be sent ({} bytes)",
@@ -104,7 +104,6 @@ std::vector<Document> ListDatabasesHandler::handle(
 
     if (bson_doc->len > MAX_BSON_OBJECT_SIZE)
     {
-        bson_destroy(bson_doc);
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
             "The list of databases is larger than the largest reply that can be sent ({} bytes)",
@@ -112,7 +111,7 @@ std::vector<Document> ListDatabasesHandler::handle(
     }
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

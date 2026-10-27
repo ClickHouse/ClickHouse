@@ -101,7 +101,8 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     /// is still an error.
     if (!collectionHasSchema(collection, executor))
     {
-        bson_t * empty_reply = bson_new();
+        BsonPtr empty_reply_owner(bson_new());
+        bson_t * empty_reply = empty_reply_owner.get();
 
         bson_t values;
         static constexpr std::string_view key_identifier = "values";
@@ -110,7 +111,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         BSON_APPEND_DOUBLE(empty_reply, "ok", 1.0);
 
         std::vector<Document> result;
-        result.emplace_back(empty_reply);
+        result.emplace_back(std::move(empty_reply_owner));
         return result;
     }
 

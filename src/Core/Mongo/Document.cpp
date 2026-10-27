@@ -24,6 +24,15 @@ Document::Document(bson_t * bson_doc_) : bson_doc(bson_doc_)
     document = String(reinterpret_cast<const char *>(bson_get_data(bson_doc_)), doc_size);
 }
 
+Document::Document(BsonPtr bson_doc_)
+{
+    if (!bson_doc_)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Trying to construct a Mongo document from a null bson");
+    doc_size = bson_doc_->len;
+    document = String(reinterpret_cast<const char *>(bson_get_data(bson_doc_.get())), doc_size);
+    bson_doc = bson_doc_.release();
+}
+
 Document::Document(const String & json)
 {
     bson_error_t error;

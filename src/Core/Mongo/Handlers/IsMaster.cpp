@@ -7,7 +7,8 @@ namespace DB::MongoProtocol
 
 std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor>)
 {
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     BSON_APPEND_BOOL(bson_doc, "ismaster", true);
     BSON_APPEND_BOOL(bson_doc, "isWritablePrimary", true);
@@ -24,7 +25,7 @@ std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

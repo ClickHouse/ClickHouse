@@ -51,7 +51,8 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
     /// on the duplicate-namespace error to detect that somebody else created the collection first.
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
     {
-        bson_t * error_doc = bson_new();
+        BsonPtr error_doc_owner(bson_new());
+        bson_t * error_doc = error_doc_owner.get();
 
         String message = fmt::format("Collection already exists. NS: {}.{}", collection.database, collection.collection);
         BSON_APPEND_UTF8(error_doc, "errmsg", message.c_str());
@@ -60,7 +61,7 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
         BSON_APPEND_DOUBLE(error_doc, "ok", 0.0);
 
         std::vector<Document> result;
-        result.emplace_back(error_doc);
+        result.emplace_back(std::move(error_doc_owner));
         return result;
     }
 
@@ -79,11 +80,12 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
         collection.getQualifiedName(),
         quoteString(PLACEHOLDER_COLLECTION_COMMENT)));
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

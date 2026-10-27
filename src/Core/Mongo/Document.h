@@ -9,9 +9,21 @@
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
 
+#include <memory>
+
 
 namespace DB::MongoProtocol
 {
+
+struct BsonDeleter
+{
+    void operator()(bson_t * bson) const { bson_destroy(bson); }
+};
+
+/** Owns a `bson_t` while a reply is being built, until it is handed over to a `Document`. Building
+  * a reply can throw - a query it runs can be denied or fail - and the document must not leak then.
+  */
+using BsonPtr = std::unique_ptr<bson_t, BsonDeleter>;
 
 /// Owns a single BSON document, both in its wire representation (`document`) and as a
 /// parsed `bson_t` (`bson_doc`). The `bson_t` is owned by this object: it is released in
@@ -39,6 +51,9 @@ public:
     /// Takes ownership of `bson_doc_`, which must have been created by one of the
     /// `bson_new*` functions.
     explicit Document(bson_t * bson_doc_);
+    /// Takes ownership of `bson_doc_` once it is constructed, so the document is destroyed when the
+    /// construction throws as well.
+    explicit Document(BsonPtr bson_doc_);
     explicit Document(const String & json);
 
     void deserialize(ReadBuffer & in) override;

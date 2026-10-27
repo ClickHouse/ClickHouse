@@ -78,7 +78,8 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
         count = std::stoll(output);
     }
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     if (count <= INT32_MAX)
         BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(count));
@@ -87,7 +88,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 

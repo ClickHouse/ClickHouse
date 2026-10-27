@@ -74,14 +74,15 @@ std::vector<Document> AuthHandler::handle(const std::vector<OpMessageSection> & 
 
     executor->authenticate(user, password);
 
-    bson_t * bson_doc = bson_new();
+    BsonPtr bson_doc_owner(bson_new());
+    bson_t * bson_doc = bson_doc_owner.get();
 
     BSON_APPEND_BOOL(bson_doc, "done", true);
     BSON_APPEND_INT32(bson_doc, "conversationId", 1);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(std::move(bson_doc_owner));
     return result;
 }
 
