@@ -169,8 +169,11 @@ SELECT
     formatQueryFromJSON(injected) = formatQueryFromJSON(ast);
 
 -- A table-expression lookahead must stop at max_query_size lexer errors, including for INSERT.
-SELECT isNull(formatQueryOrNull('INSERT INTO t SELECT * FROM numbers(1)'))
-SETTINGS max_query_size = 32;
+-- Keep the outer query below the limit while the query being formatted exceeds it.
+SELECT
+    isNotNull(formatQueryOrNull('INSERT INTO t SELECT * FROM numbers(1)'))
+    AND isNull(formatQueryOrNull(concat('INSERT INTO t SELECT * FROM numbers(', repeat(' ', 2048), '1)')))
+SETTINGS max_query_size = 1024;
 
 -- Expansion-only aggregate arguments cannot be resolved into implicit grouping exclusions.
 SELECT * FROM values('k String, v UInt64', ('a', 1), ('a', 2))
