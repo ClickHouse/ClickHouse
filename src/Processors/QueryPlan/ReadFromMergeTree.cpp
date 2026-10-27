@@ -33,6 +33,7 @@
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -5373,6 +5374,72 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     return result.split_parts.layers.size();
 }
 
+/// A throwing `max_rows_to_read` fails the query as soon as the rows the sources announce exceed it, before anything
+/// is read (see `ReadProgressCallback::onProgress`). The same check as in `filterPartsByPrimaryKeyAndSkipIndexes`.
+static bool announcedRowsExceedReadRowLimits(
+    const ReadFromMergeTree::AnalysisResult & result, const Context & context, const SelectQueryInfo & query_info)
+{
+    size_t rows = result.selected_rows;
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < rows)
+        rows = query_info.trivial_limit;
+
+    const auto [limits, leaf_limits] = MergeTreeDataSelectExecutor::getRowLimits(context, query_info);
+    return (limits.max_rows && rows > limits.max_rows) || (leaf_limits.max_rows && rows > leaf_limits.max_rows);
+}
+
+/// Drops the granules that hold no row of the projection index, as `IndexReadRangesRefiner` does during the read.
+static void applyProjectionIndexBeforeReading(
+    ReadFromMergeTree::AnalysisResult & result,
+    MergeTreeProjectionIndexReader & projection_index_reader,
+    const ProjectionIndexReadRangesByIndex & projection_read_ranges,
+    const QueryStatusPtr & query_status)
+{
+    for (auto & part : result.parts_with_ranges)
+    {
+        auto it = projection_read_ranges.find(part.part_index_in_query);
+        if (it == projection_read_ranges.end())
+            continue;
+
+        if (query_status)
+            query_status->checkTimeLimit();
+
+        MergeTreeIndexReadResult index_read_result;
+        index_read_result.projection_index_read_result = projection_index_reader.read(it->second);
+        if (!index_read_result.projection_index_read_result)
+            continue;
+
+        const auto & index_granularity = *part.data_part->index_granularity;
+        MarkRanges ranges;
+        for (const auto & range : part.ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                if (index_read_result.canSkipMark(mark, index_granularity))
+                    continue;
+
+                if (!ranges.empty() && ranges.back().end == mark)
+                    ranges.back().end = mark + 1;
+                else
+                    ranges.emplace_back(mark, mark + 1);
+            }
+        }
+        part.ranges = std::move(ranges);
+    }
+
+    std::erase_if(result.parts_with_ranges, [](const auto & part) { return part.ranges.empty(); });
+
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = 0;
+    result.selected_marks = 0;
+    result.selected_rows = 0;
+    for (const auto & part : result.parts_with_ranges)
+    {
+        result.selected_ranges += part.ranges.size();
+        result.selected_marks += part.getMarksCount();
+        result.selected_rows += part.getRowsCount();
+    }
+}
+
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
@@ -5958,16 +6025,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (skip_index_reader && top_k_primary_key_column_position)
         skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
 
-    /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
-    /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
-    /// path, the join runtime-filter fallback or the top-K primary key pruning), it increments these
-    /// ProfileEvents itself after read-time pruning, so we must not increment the pre-pruning AnalysisResult counts here too.
-    if (!skip_index_reader)
-    {
-        ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
-        ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
-    }
-
     if (!projection_index_read_desc.read_ranges.empty())
     {
         auto empty_mutations_snapshot = mutations_snapshot->cloneEmpty();
@@ -6012,6 +6069,30 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
+
+        /// The projection index drops granules only during the read, after the rows a throwing `max_rows_to_read`
+        /// is checked against are announced. When they exceed the limit, apply it now instead, like the skip indexes
+        /// that `supportsSkipIndexesOnDataRead` keeps out of the read.
+        if (!is_parallel_reading_from_replicas && announcedRowsExceedReadRowLimits(result, *context, query_info))
+        {
+            applyProjectionIndexBeforeReading(
+                result, *projection_index_reader, projection_index_read_desc.read_ranges, context->getProcessListElement());
+            selected_marks = result.selected_marks;
+            selected_rows = result.selected_rows;
+            selected_parts = result.selected_parts;
+            projection_index_read_desc.read_ranges.clear();
+            projection_index_reader = nullptr;
+        }
+    }
+
+    /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
+    /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
+    /// path, the join runtime-filter fallback or the top-K primary key pruning), it increments these
+    /// ProfileEvents itself after read-time pruning, so we must not increment the pre-pruning AnalysisResult counts here too.
+    if (!skip_index_reader)
+    {
+        ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
+        ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
     }
 
     if (skip_index_reader || projection_index_reader)
