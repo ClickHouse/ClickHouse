@@ -1108,7 +1108,7 @@ WhatIfCandidateResult evaluateProjection(
         const auto [rows_to_scan, marks_to_scan] = scanSize(baseline_parts);
         const size_t step = samplingStep(rows_to_scan, marks_to_scan, budget, 0);
         UInt64 first_phase_elapsed_us = 0;
-        if (budget >= 4 && read_settings[Setting::max_rows_to_read] == 0 && read_settings[Setting::max_bytes_to_read] == 0 && step > 1
+        if (read_settings[Setting::max_rows_to_read] == 0 && read_settings[Setting::max_bytes_to_read] == 0 && step > 1
             && samplingStep(rows_to_scan, marks_to_scan, budget / 4, 0) > step)
         {
             WhatIfCandidateResult first_phase = result;
