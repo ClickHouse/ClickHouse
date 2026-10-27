@@ -1,0 +1,199 @@
+diff --git a/cc/private/cc_common.bzl b/cc/private/cc_common.bzl
+--- a/cc/private/cc_common.bzl
++++ b/cc/private/cc_common.bzl
+@@ -460,6 +460,7 @@
+         name,
+         srcs = [],
+         public_hdrs = [],
++        source_header_directories = _UNBOUND,
+         private_hdrs = [],
+         textual_hdrs = [],
+         additional_exported_hdrs = _UNBOUND,  # TODO(ilist@): remove, there are no uses
+@@ -495,6 +496,7 @@
+         module_interfaces = _UNBOUND,
+         non_compilation_additional_inputs = _UNBOUND):
+     if module_map != _UNBOUND or \
++       source_header_directories != _UNBOUND or \
+        additional_module_maps != _UNBOUND or \
+        additional_exported_hdrs != _UNBOUND or \
+        propagate_module_map_to_compile_action != _UNBOUND or \
+@@ -543,6 +545,7 @@
+         srcs = srcs,
+         module_interfaces = module_interfaces,
+         public_hdrs = public_hdrs,
++        source_header_directories = [] if source_header_directories == _UNBOUND else source_header_directories,
+         private_hdrs = private_hdrs,
+         textual_hdrs = textual_hdrs,
+         additional_exported_hdrs = additional_exported_hdrs,
+diff --git a/cc/private/compile/BUILD b/cc/private/compile/BUILD
+--- a/cc/private/compile/BUILD
++++ b/cc/private/compile/BUILD
+@@ -25,6 +25,7 @@
+         "//cc/private:cc_internal_bzl",
+         "//cc/private/rules_impl:native_cc_common_bzl",
+         "@bazel_skylib//lib:paths",
++        "@bazel_skylib//rules/directory:providers",
+     ],
+ )
+ 
+diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/cc_compilation_helper.bzl
+--- a/cc/private/compile/cc_compilation_helper.bzl
++++ b/cc/private/compile/cc_compilation_helper.bzl
+@@ -14,6 +14,7 @@
+ """Compilation helper for C++ rules."""
+ 
+ load("@bazel_skylib//lib:paths.bzl", "paths")
++load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
+ load(
+     "//cc/common:cc_helper_internal.bzl",
+     "extensions",
+@@ -411,6 +412,42 @@
+ 
+     actions.write(module_map.file, content = content, is_executable = True, mnemonic = "CppModuleMap")
+ 
++def _stage_public_header_directories(public_headers, directories, repo_path, include_dirs):
++    include_prefixes = tuple([d.rstrip("/") + "/" for d in include_dirs if d and d != "."])
++    declared = set(public_headers)
++    covered = set()
++    roots = []
++    prefixes = []
++    for target in directories:
++        info = target[DirectoryInfo]
++        files = target[DefaultInfo].files.to_list()
++        if len(files) != 1 or not files[0].is_source or files[0].path != info.path:
++            fail("{} must provide one source directory at {}".format(target.label, info.path))
++        if not info.path.startswith(repo_path + "/"):
++            fail("{} must be inside {}".format(info.path, repo_path))
++        prefix = info.path + "/"
++        if not prefix.startswith(include_prefixes):
++            continue
++        members = info.transitive_files.to_list()
++        if not members or not all([f.is_source and f.path.startswith(prefix) for f in members]):
++            fail("{} must enumerate the source files under {}".format(target.label, info.path))
++        if not declared.issuperset(members):
++            # This configuration does not publish every file in the directory.
++            continue
++        if not covered.isdisjoint(members):
++            fail("overlapping source_header_directories at {}".format(info.path))
++        covered.update(members)
++        roots.append(files[0])
++        prefixes.append(prefix)
++    if not roots:
++        return public_headers
++    individual = [f for f in public_headers if f not in covered]
++    directory_prefixes = tuple(prefixes)
++    for f in individual:
++        if f.path.startswith(directory_prefixes):
++            fail("source_header_directories did not enumerate {}".format(f.path))
++    return individual + roots
++
+ def _init_cc_compilation_context(
+         # DO NOT use ctx, this is a temporary placeholder
+         # to avoid adding a new field to CcCompilationHelper.
+@@ -427,6 +464,7 @@
+         local_includes,
+         feature_configuration,
+         public_headers_artifacts,
++        source_header_directories,
+         include_prefix,
+         strip_include_prefix,
+         non_module_map_headers,
+@@ -537,7 +575,20 @@
+     else:
+         virtual_to_original_headers = []
+ 
+-    declared_include_srcs.extend(public_headers.headers)
++    # Keep individual headers in HeaderInfo and module maps. Bazel checks .d
++    # entries against individual inputs outside system and external include dirs.
++    if (source_header_directories and repo_name and not include_prefix and not strip_include_prefix and
++        not feature_configuration.is_enabled(feature_names.HEADER_MODULES) and
++        not feature_configuration.is_enabled(feature_names.USE_HEADER_MODULES) and
++        not feature_configuration.is_enabled(feature_names.COMPILE_ALL_MODULES)):
++        declared_include_srcs.extend(_stage_public_header_directories(
++            public_headers.headers,
++            source_header_directories,
++            repo_path,
++            system_include_dirs_for_context + external_include_dirs,
++        ))
++    else:
++        declared_include_srcs.extend(public_headers.headers)
+     declared_include_srcs.extend(textual_headers.headers)
+     declared_include_srcs.extend(private_headers_artifacts)
+     declared_include_srcs.extend(additional_inputs)
+diff --git a/cc/private/compile/compile.bzl b/cc/private/compile/compile.bzl
+--- a/cc/private/compile/compile.bzl
++++ b/cc/private/compile/compile.bzl
+@@ -103,6 +103,7 @@
+         cc_toolchain,
+         srcs = [],
+         public_hdrs = [],
++        source_header_directories = [],
+         private_hdrs = [],
+         textual_hdrs = [],
+         additional_exported_hdrs = [],
+@@ -149,6 +150,7 @@
+         srcs: The list of source files to be compiled.",
+         public_hdrs: List of headers needed for compilation of srcs and may be included by
+             dependent rules transitively.
++        source_header_directories: Targets whose source directory contains declared public headers.
+         private_hdrs: List of headers needed for compilation of srcs and NOT to be included by
+             dependent rules. May be a list of File objects or a list of (File, Label) tuples.
+             The latter option exists for the method collectPerFileCopts() which in turn supports
+@@ -302,6 +304,7 @@
+         local_includes = local_includes,
+         feature_configuration = feature_configuration,
+         public_headers_artifacts = public_hdrs_artifacts,
++        source_header_directories = source_header_directories,
+         include_prefix = include_prefix,
+         strip_include_prefix = strip_include_prefix,
+         non_module_map_headers = [],
+diff --git a/cc/private/rules_impl/BUILD b/cc/private/rules_impl/BUILD
+--- a/cc/private/rules_impl/BUILD
++++ b/cc/private/rules_impl/BUILD
+@@ -68,6 +68,7 @@
+         "//cc/common:cc_debug_helper_bzl",
+         "//cc/common:cc_shared_library_info_bzl",
+         "@bazel_skylib//lib:paths",
++        "@bazel_skylib//rules/directory:providers",
+         "@com_google_protobuf//bazel/common:proto_info_bzl",
+     ],
+ )
+diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_library.bzl
+--- a/cc/private/rules_impl/cc_library.bzl
++++ b/cc/private/rules_impl/cc_library.bzl
+@@ -14,6 +14,7 @@
+ 
+ """cc_library Starlark declaration replacing native"""
+ 
++load("@bazel_skylib//rules/directory:providers.bzl", "DirectoryInfo")
+ load("//cc:use_cc_toolchain.bzl", "use_cc_toolchain")
+ load("//cc/common:cc_info.bzl", "CcInfo")
+ load("//cc/common:semantics.bzl", "semantics")
+@@ -283,6 +284,16 @@
+ </p>
+         """,
+         ),
++        "source_header_directories": attr.label_list(
++            providers = [DirectoryInfo],
++            doc = """
++Source directories whose contents are already declared in <code>hdrs</code>.
++Each target must provide the complete directory in <code>DefaultInfo.files</code>
++and enumerate its files in <code>DirectoryInfo</code>. With external include
++paths, these directories replace individual compile inputs. Header declarations
++and module maps still use the files in <code>hdrs</code>.
++""",
++        ),
+         "private_textual_srcs": attr.label_list(
+             allow_files = True,
+             flags = ["ORDER_INDEPENDENT", "DIRECT_COMPILE_TIME_INPUT"],
+diff --git a/cc/private/rules_impl/cc_library_impl.bzl b/cc/private/rules_impl/cc_library_impl.bzl
+--- a/cc/private/rules_impl/cc_library_impl.bzl
++++ b/cc/private/rules_impl/cc_library_impl.bzl
+@@ -97,6 +97,7 @@
+         module_interfaces = cc_helper.get_cpp_module_interfaces(ctx),
+         private_hdrs = cc_helper.get_private_hdrs(ctx),
+         public_hdrs = cc_helper.get_public_hdrs(ctx),
++        source_header_directories = ctx.attr.source_header_directories,
+         compilation_contexts = compilation_contexts,
+         implementation_compilation_contexts = implementation_compilation_contexts,
+         textual_hdrs = ctx.files.textual_hdrs,

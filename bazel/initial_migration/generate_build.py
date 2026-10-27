@@ -157,6 +157,7 @@ def declare_boost_header_libraries(build):
             raise ValueError(f"Duplicate Boost header library {name}")
         build.names.add(name)
     build.loads.setdefault("@rules_cc//cc:cc_library.bzl", set()).add("cc_library")
+    build.loads.setdefault("@clickhouse//bazel/rules:source_header_directories.bzl", set()).add("source_header_directories")
     build.rules.append(contents)
 
 
@@ -1522,13 +1523,14 @@ def main():
     # protobuf and private dependencies, and the ZXC per-instruction-set libraries.
     abseil = ROOT / 'bazel/dependencies/clickhouse_abseil_cpp.BUILD.bazel'
     arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
+    aws = ROOT / 'bazel/dependencies/clickhouse_aws.BUILD.bazel'
     msgpack = ROOT / 'bazel/dependencies/clickhouse_msgpack_c.BUILD.bazel'
     google_cloud = ROOT / 'bazel/dependencies/clickhouse_google_cloud_cpp.BUILD.bazel'
     zxc = ROOT / 'bazel/dependencies/clickhouse_zxc.BUILD.bazel'
     # gmock-all.cc, gtest-all.cc, and idna.cpp include their private_textual_srcs.
     # gRPC declares the public and private headers for grpc and grpc_unsecure.
     # PostgreSQL and Vectorscan own the headers installed by _CONFIGURED_FILES.
-    read_only = {abseil, arrow, msgpack, google_cloud, zxc,
+    read_only = {abseil, arrow, aws, msgpack, google_cloud, zxc,
                  ROOT / 'bazel/dependencies/clickhouse_capnproto.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_googletest.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_grpc.BUILD.bazel',
@@ -1614,8 +1616,8 @@ def main():
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
     # Preserve the CMake declarations for checking both CPUs and rewriting consumer labels.
-    configuration_inputs = {overlay: '\n'.join(builds[owner].rules)
-                            for overlay, owner in ((arrow, 'contrib/arrow'), (google_cloud, 'contrib/google-cloud-cpp'))}
+    configuration_inputs = {overlay: '\n'.join(builds[owner].rules) for overlay, owner in (
+        (arrow, 'contrib/arrow'), (aws, 'contrib/aws'), (google_cloud, 'contrib/google-cloud-cpp'))}
     for name, owner in sorted(owners.items()):
         if owner == 'contrib/arrow':
             if name not in arrow_targets:

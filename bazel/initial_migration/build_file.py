@@ -25,6 +25,11 @@ LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs'
 # These libraries already export their complete public C/C++ headers. Private
 # sources and generated configuration files must still be declared separately.
 PUBLIC_HEADERS = {
+    'contrib/aws': ((
+        'contrib/aws/generated/src/aws-cpp-sdk-glue/include/',
+        'contrib/aws/generated/src/aws-cpp-sdk-s3/include/',
+        'contrib/aws/src/aws-cpp-sdk-core/include/',
+    ), '_aws__compile_0'),
     'contrib/fmtlib': ('contrib/fmtlib/include/fmt/', '_fmt'),
     'contrib/flatbuffers': ('contrib/flatbuffers/include/flatbuffers/', '_flatbuffers'),
     'contrib/libuv': ('contrib/libuv/include/', '_uv'),
@@ -37,11 +42,6 @@ SOURCE_HEADER_DIRECTORIES = {
     # Abseil's include root contains its public headers and the CI options
     # header included in the captured CMake inputs. Publish both as headers.
     'contrib/abseil-cpp': ('absl', 'ci'),
-    'contrib/aws': (
-        'generated/src/aws-cpp-sdk-glue/include',
-        'generated/src/aws-cpp-sdk-s3/include',
-        'src/aws-cpp-sdk-core/include',
-    ),
     'contrib/postgres': ('src/include', 'src/interfaces/libpq'),
     'contrib/libpqxx': ('include',),
     **{owner: ('include',) for owner in REPOSITORIES

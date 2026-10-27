@@ -168,6 +168,11 @@ config_setting(
     values = {"compilation_mode": "opt"},
 )
 
+config_setting(
+    name = "strict_system_includes",
+    values = {"strict_system_includes": "true"},
+)
+
 bool_flag(
     name = "cmake_metadata",
     build_setting_default = False,

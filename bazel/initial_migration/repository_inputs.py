@@ -260,6 +260,10 @@ def repository(path):
 
 
 def configuration_owner(path):
+    if path == 'contrib/aws-cmake/include/aws/common/config.h':
+        return 'contrib/aws-c-common'
+    if path == 'contrib/aws-cmake/include/aws/crt/Config.h':
+        return 'contrib/aws-crt-cpp'
     prefix = '/'.join(path.split('/')[:2]).removesuffix('-cmake')
     if prefix not in REPOSITORIES:
         raise ValueError('No repository owns configured input: ' + path)

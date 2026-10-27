@@ -50,7 +50,14 @@ appear as `download outputs` in the profile even when the `.o` stays remote.
 To get a local copy of the executable, add `--remote_download_outputs=toplevel`
 to the build of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
-These x86-64 timing profiles used a local Bazel client with `--jobs=2000`
+ClickHouse stages complete public header directories from Boost and the AWS
+Glue and S3 SDKs with hermetic-llvm’s `headers_directory`. Bazel can reuse each
+directory’s Merkle digest across compiles. The libraries still declare individual
+headers for DWYU and module maps; `--strict_system_includes` also stages them
+individually.
+
+These x86-64 timing profiles predate the Boost and AWS directory change.
+They used a local Bazel client with `--jobs=2000`
 and a warm repository cache. Each run set a fresh target `--action_env` cache
 buster, kept the host action environment unchanged, and executed the final
 `ClickHouseNativeLink` on BuildBuddy. The hashes identify the `//:clickhouse` executables;
