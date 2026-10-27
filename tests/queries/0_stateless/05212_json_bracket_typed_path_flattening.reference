@@ -4,6 +4,15 @@ typed_object_path_chained
 where_filter
 1
 1
+prewhere_group_by
+1
+42	1
+untyped_object_path_chained
+42
+42
+deep_typed_prefix_chained
+3
+3
 dotted_typed_path
 10	10
 10	10
