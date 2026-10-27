@@ -63,6 +63,7 @@ Aggregator::Params makeMergeParams(const Names & keys, const AggregateDescriptio
         /*enable_adaptive_aggregator_=*/false,
         /*adaptive_aggregator_freeze_threshold_=*/0,
         /*adaptive_aggregator_freeze_threshold_bytes_=*/0,
+        /*adaptive_aggregator_disable_thaw_=*/false,
         /*use_aggregation_memory_tracker_=*/true);
     return params;
 }
