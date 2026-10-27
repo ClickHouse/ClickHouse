@@ -13,3 +13,12 @@ materialized_view: same definition: 1
 view: dump rc=0, archive gate: 0
 view: replay rc=0
 view: same definition: 1
+collection_archive: dump rc=0, archive gate: 1
+collection_archive: replay rc=0
+collection_archive: same definition: 1
+collection_plain: dump rc=0, archive gate: 0
+collection_plain: replay rc=0
+collection_plain: same definition: 1
+collection_masked: dump rc=0, archive gate: 1
+collection_masked: replay rc=0
+collection_masked: same definition: 1

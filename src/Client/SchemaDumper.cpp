@@ -530,6 +530,11 @@ struct ClusterNames
     std::set<String> local;
 };
 
+/// Named collections the dump session can read, by name and then key; a value it may not see reads `[HIDDEN]`.
+using NamedCollectionMap = std::map<String, std::map<String, String>>;
+/// Returns them, reading the server on first use, because most dumps name no collection.
+using NamedCollectionsReader = std::function<const NamedCollectionMap &()>;
+
 /// Cluster and server metadata used to classify distributed references as local dependencies.
 struct ClusterLocality
 {
@@ -543,10 +548,9 @@ struct ClusterLocality
     /// `Clusters::getCluster` expands server macros before looking a cluster up, but a stored definition
     /// keeps the placeholder text, so the same expansion has to happen before the lookups here.
     std::function<const std::map<String, String> &()> macros;
-    /// Named collections the dump session can read, by name and then key. `remote*` resolves an
-    /// identifier first argument against these before the clusters, so one can name a local address.
-    /// Fetched on first use because most dumps contain no such call.
-    std::function<const std::map<String, std::map<String, String>> &()> named_collections;
+    /// `remote*` resolves an identifier first argument against the named collections before the
+    /// clusters, so one can name a local address.
+    NamedCollectionsReader named_collections;
     /// Server hostnames and local cluster replica addresses considered local dependencies.
     std::function<const std::set<String> &()> local_hostnames;
     /// For mirroring the server's constant folding of `cluster*` name/table arguments.
@@ -2396,6 +2400,7 @@ std::vector<TableInfo> fetchTables(
     const ConnectionTimeouts & timeouts,
     const ClientInfo & client_info,
     ContextPtr context,
+    const NamedCollectionsReader & named_collections,
     const std::vector<String> & databases,
     const std::set<String> & undumped_databases,
     const std::map<String, String> & database_queries,
@@ -2442,31 +2447,8 @@ std::vector<TableInfo> fetchTables(
         return *cached;
     };
     clusters.treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
-    using NamedCollectionMap = std::map<String, std::map<String, String>>;
-    clusters.named_collections
-        = [&, cached = std::optional<NamedCollectionMap>{}]() mutable -> const NamedCollectionMap &
-    {
-        if (!cached)
-        {
-            cached.emplace();
-            executeQuery(connection, timeouts, client_info,
-                "SELECT name, tupleElement(kv, 1), tupleElement(kv, 2) "
-                "FROM system.named_collections ARRAY JOIN collection AS kv",
-                [&](const Block & block)
-                {
-                    if (block.empty())
-                        return;
-                    const Block full = unwrapColumns(block);
-                    const auto & name_col = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
-                    const auto & key_col = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
-                    const auto & value_col = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
-                    for (size_t i = 0; i < name_col.size(); ++i)
-                        (*cached)[name_col[i].safeGet<String>()].emplace(
-                            key_col[i].safeGet<String>(), value_col[i].safeGet<String>());
-                }, context->getSettingsRef());
-        }
-        return *cached;
-    };
+    /// The caller's reader keeps one copy of the collections for the whole dump.
+    clusters.named_collections = [&named_collections]() -> const NamedCollectionMap & { return named_collections(); };
     /// Macro metadata is needed only when a cluster name actually contains a placeholder.
     clusters.macros = [&, cached = std::optional<std::map<String, String>>{}]() mutable -> const std::map<String, String> &
     {
@@ -3066,19 +3048,104 @@ std::optional<std::vector<String>> dataLakeCatalogGates(const ASTStorage & stora
     return std::nullopt;
 }
 
-/// Whether a string literal of `ast` names a file inside an archive (`a.tar :: f.csv`). `File` splits it with
-/// `splitToArchivePathAndPathInArchive`, `S3` and `URL` with `getURIAndArchivePattern`, which also takes
-/// a `::` with spaces around it; either reads `allow_archive_path_syntax` first.
-bool hasArchivePathLiteral(const IAST & ast)
+/// Whether `path` names a file inside an archive (`a.tar :: f.csv`). `File` splits it with `splitToArchivePathAndPathInArchive`,
+/// `S3` and `URL` with `getURIAndArchivePattern`, which also takes a `::` with spaces around it; either reads
+/// `allow_archive_path_syntax` first.
+bool isArchivePath(const String & path)
+{
+    return !splitToArchivePathAndPathInArchive(path).first.empty() || getURIAndArchivePattern(path).second.has_value();
+}
+
+/// Whether the table engine or table function `name` builds an `S3` or `URL` configuration, which reads its location from
+/// the `url` of a named collection, joined with its `filename` for `S3`, and splits an archive path in it.
+bool readsLocationFromNamedCollection(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "url",
+        "urlCluster",
+        "s3",
+        "s3Cluster",
+        "S3Queue",
+        "gcs",
+        "cosn",
+        "oss",
+        "iceberg",
+        "icebergCluster",
+        "icebergS3",
+        "icebergS3Cluster",
+        "deltaLake",
+        "deltaLakeCluster",
+        "deltaLakeS3",
+        "deltaLakeS3Cluster",
+        "hudi",
+        "hudiCluster",
+        "paimon",
+        "paimonCluster",
+        "paimonS3",
+        "paimonS3Cluster",
+    };
+    return std::ranges::any_of(names, [&](std::string_view n) { return equalsCaseInsensitive(n, name); });
+}
+
+/// Whether the location `function` reads from the named collection it names may be inside an archive: the collection's
+/// `url` and `filename` with the call's `key = value` overrides applied. A collection the dump session cannot see, or
+/// sees masked, may hold one.
+bool namedCollectionMayNameArchivePath(const ASTFunction & function, const NamedCollectionsReader & named_collections)
+{
+    if (!function.arguments || !readsLocationFromNamedCollection(function.name))
+        return false;
+    const auto & arguments = function.arguments->children;
+    const size_t slot = endsWithCaseInsensitive(function.name, "Cluster") ? 1 : 0;
+    String name;
+    if (arguments.size() <= slot || !tryGetIdentifierNameInto(arguments[slot], name))
+        return false;
+    const auto & collections = named_collections();
+    const auto collection = collections.find(name);
+    if (collection == collections.end())
+        return true;
+
+    std::map<String, String> values = collection->second;
+    for (size_t i = slot + 1; i < arguments.size(); ++i)
+    {
+        const auto * equals = arguments[i]->as<ASTFunction>();
+        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+            continue;
+        /// A table engine also reads a key written as a string.
+        String key;
+        const auto * key_literal = equals->arguments->children[0]->as<ASTLiteral>();
+        if (key_literal && key_literal->value.getType() == Field::Types::String)
+            key = key_literal->value.safeGet<String>();
+        else if (!tryGetIdentifierNameInto(equals->arguments->children[0], key))
+            return true;
+        if (key != "url" && key != "filename")
+            continue;
+        const auto * value = equals->arguments->children[1]->as<ASTLiteral>();
+        if (!value || value->value.getType() != Field::Types::String)
+            return true;
+        values[key] = value->value.safeGet<String>();
+    }
+
+    const String url = values.contains("url") ? values.at("url") : "";
+    const String filename = values.contains("filename") ? values.at("filename") : "";
+    if (url == "[HIDDEN]" || filename == "[HIDDEN]")
+        return true;
+    return isArchivePath(url) || isArchivePath(filename)
+        || (!url.empty() && !filename.empty() && isArchivePath((std::filesystem::path(url) / filename).string()));
+}
+
+/// Whether `carrier`, a table engine or table function that CREATE parses, may name a file inside an archive, in a string
+/// literal or through a named collection, which the dump session reads only if a call names one.
+bool mayNameArchivePath(const IAST & carrier, const NamedCollectionsReader & named_collections)
 {
     bool found = false;
-    forEachNode(ast, [&found](const IAST & node)
+    forEachNode(carrier, [&](const IAST & node)
     {
-        const auto * literal = node.as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::String)
+        if (found)
             return;
-        const String & value = literal->value.safeGet<String>();
-        found |= !splitToArchivePathAndPathInArchive(value).first.empty() || getURIAndArchivePattern(value).second.has_value();
+        if (const auto * literal = node.as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            found = isArchivePath(literal->value.safeGet<String>());
+        else if (const auto * function = node.as<ASTFunction>())
+            found = namedCollectionMayNameArchivePath(*function, named_collections);
     });
     return found;
 }
@@ -3602,7 +3669,8 @@ bool analysisMayRunSubquery(const IAST & query)
 }
 
 ReplayGateNeeds collectReplayGateNeeds(
-    const std::vector<String> & create_queries, const ContextPtr & context, const AnalyzesOnSource & analyzes_on_source)
+    const std::vector<String> & create_queries, const ContextPtr & context, const AnalyzesOnSource & analyzes_on_source,
+    const NamedCollectionsReader & named_collections)
 {
     ReplayGateNeeds needs;
     std::vector<String> codec_gates_to_check = {"allow_suspicious_codecs"};
@@ -3822,7 +3890,7 @@ ReplayGateNeeds collectReplayGateNeeds(
                 if (startsWithCaseInsensitive(engine->name, "DeltaLake"))
                     needs.delta_lake_table = true;
                 /// `File`, `URL` and the `S3` family split an archive path at CREATE only under `allow_archive_path_syntax`.
-                if (engine->arguments && hasArchivePathLiteral(*engine->arguments))
+                if (mayNameArchivePath(*engine, named_collections))
                     needs.archive_path = true;
             }
         }
@@ -3831,13 +3899,14 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// the source it parsed until it is attached again, and a SELECT that CREATE analyzes (a materialized view's)
         /// parses its table functions, where an `S3` URI with an archive path does not parse without the setting.
         /// A plain view's SELECT is parsed only when the view is read, under the reader's setting.
-        if (create->as_table_function && hasArchivePathLiteral(*create->as_table_function))
+        if (create->as_table_function && mayNameArchivePath(*create->as_table_function, named_collections))
             needs.archive_path = true;
         if (create->select)
-            forEachNode(*create->select, [&needs](const IAST & node)
+            forEachNode(*create->select, [&](const IAST & node)
             {
                 const auto * table_expression = node.as<ASTTableExpression>();
-                if (table_expression && table_expression->table_function && hasArchivePathLiteral(*table_expression->table_function))
+                if (table_expression && table_expression->table_function
+                    && mayNameArchivePath(*table_expression->table_function, named_collections))
                     needs.archive_path = true;
             }, unread_select);
 
@@ -4039,7 +4108,8 @@ String replaySettingsPrelude(
     const std::vector<String> & create_queries,
     bool materialized_view_may_need_bad_select,
     const ContextPtr & context,
-    const AnalyzesOnSource & analyzes_on_source)
+    const AnalyzesOnSource & analyzes_on_source,
+    const NamedCollectionsReader & named_collections)
 {
     /// Nothing to replay means no gate can fire. Reachable whenever every database is predefined
     /// or excluded, which leaves the dump empty.
@@ -4072,7 +4142,7 @@ String replaySettingsPrelude(
         {"data_type_default_nullable", "0"},
     };
     /// Emit only dump-specific gates known by the source server and required by these statements.
-    const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source);
+    const ReplayGateNeeds needs = collectReplayGateNeeds(create_queries, context, analyzes_on_source, named_collections);
     auto is_needed = [&needs, materialized_view_may_need_bad_select](const String & name)
     {
         if (name == "database_replicated_allow_explicit_uuid")
@@ -4848,6 +4918,32 @@ void dumpDatabaseSchema(
         }
     };
 
+    /// Shared by the table scan and the prelude, which looks for archive paths in the collections.
+    const NamedCollectionsReader named_collections
+        = [&, cached = std::optional<NamedCollectionMap>{}]() mutable -> const NamedCollectionMap &
+    {
+        if (!cached)
+        {
+            cached.emplace();
+            executeQuery(connection, timeouts, client_info,
+                "SELECT name, tupleElement(kv, 1), tupleElement(kv, 2) "
+                "FROM system.named_collections ARRAY JOIN collection AS kv",
+                [&](const Block & block)
+                {
+                    if (block.empty())
+                        return;
+                    const Block full = unwrapColumns(block);
+                    const auto & name_col = typeid_cast<const ColumnString &>(*full.getByPosition(0).column);
+                    const auto & key_col = typeid_cast<const ColumnString &>(*full.getByPosition(1).column);
+                    const auto & value_col = typeid_cast<const ColumnString &>(*full.getByPosition(2).column);
+                    for (size_t i = 0; i < name_col.size(); ++i)
+                        (*cached)[name_col[i].safeGet<String>()].emplace(
+                            key_col[i].safeGet<String>(), value_col[i].safeGet<String>());
+                }, context->getSettingsRef());
+        }
+        return *cached;
+    };
+
     std::vector<TableInfo> tables;
     std::vector<size_t> order;
     if (!target_databases.empty())
@@ -4864,6 +4960,7 @@ void dumpDatabaseSchema(
             timeouts,
             client_info,
             context,
+            named_collections,
             target_databases,
             undumped_databases,
             create_database_query_by_db,
@@ -4890,7 +4987,8 @@ void dumpDatabaseSchema(
             dumped_creates,
             std::any_of(tables.begin(), tables.end(), [](const TableInfo & table) { return table.emit && table.needs_bad_select_gate; }),
             context,
-            analyzes_on_source);
+            analyzes_on_source,
+            named_collections);
 
         for (const auto & db : database_create_order)
             out << create_database_query_by_db.at(db) << ";\n\n";
@@ -4971,7 +5069,8 @@ void dumpDatabaseSchema(
                 tables.end(),
                 [&](const TableInfo & table) { return table.database == db && table.emit && table.needs_bad_select_gate; }),
             context,
-            analyzes_on_source);
+            analyzes_on_source,
+            named_collections);
         file << create_database_query_by_db.at(db) << ";\n\nUSE " << backQuoteIfNeed(db) << ";\n\n";
         for (size_t i : order)
             if (tables[i].emit && tables[i].database == db)
