@@ -29,6 +29,12 @@ SELECT count() FROM t_fixedstring_key WHERE a IN (SELECT toFixedString('a', 3)) 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM t_fixedstring_key WHERE a IN (SELECT toFixedString('a', 3))) WHERE explain ILIKE '%Parts:%' OR explain ILIKE '%Granules:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM t_fixedstring_key WHERE a IN (SELECT toFixedString('a', 3)) SETTINGS use_partition_pruning = 0) WHERE explain ILIKE '%Parts:%' OR explain ILIKE '%Granules:%';
 
+SELECT 'less';
+SELECT countIf(a < toFixedString('b', 3)) FROM t_fixedstring_key;
+SELECT count() FROM t_fixedstring_key WHERE a < toFixedString('b', 3) SETTINGS use_partition_pruning = 0;
+SELECT count() FROM t_fixedstring_key WHERE a < toFixedString('b', 3) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM t_fixedstring_key WHERE a < toFixedString('b', 3)) WHERE explain ILIKE '%Parts:%' OR explain ILIKE '%Granules:%';
+
 SELECT 'a nonzero byte past the key width matches nothing';
 SELECT countIf(a = toFixedString('ab', 3)) FROM t_fixedstring_key;
 SELECT count() FROM t_fixedstring_key WHERE a = toFixedString('ab', 3) SETTINGS use_partition_pruning = 0;
@@ -47,6 +53,13 @@ SELECT 'not equals';
 SELECT countIf(a != toFixedString('a', 3)) FROM t_fixedstring_key;
 SELECT count() FROM t_fixedstring_key WHERE a != toFixedString('a', 3) SETTINGS use_partition_pruning = 0;
 SELECT count() FROM t_fixedstring_key WHERE a != toFixedString('a', 3) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM t_fixedstring_key WHERE a != toFixedString('a', 3)) WHERE explain ILIKE '%Parts:%' OR explain ILIKE '%Granules:%';
+
+SELECT 'not in';
+SELECT countIf(a NOT IN (SELECT toFixedString('a', 3))) FROM t_fixedstring_key;
+SELECT count() FROM t_fixedstring_key WHERE a NOT IN (SELECT toFixedString('a', 3)) SETTINGS use_partition_pruning = 0;
+SELECT count() FROM t_fixedstring_key WHERE a NOT IN (SELECT toFixedString('a', 3)) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM t_fixedstring_key WHERE a NOT IN (SELECT toFixedString('a', 3))) WHERE explain ILIKE '%Parts:%' OR explain ILIKE '%Granules:%';
 
 SELECT 'nullable set';
 SELECT countIf(a IN (SELECT CAST(toFixedString('a', 3), 'Nullable(FixedString(3))'))) FROM t_fixedstring_key;
