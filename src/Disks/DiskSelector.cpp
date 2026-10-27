@@ -42,6 +42,40 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     return metadata_storage;
 }
 
+/// Unwraps encryption and cache layers like `unwrapEncryptedAndCacheLayers` does, but returns
+/// nothing instead of dereferencing a null pointer when the disk is not backed by object storage.
+/// This one runs for every pair of registered disks, local disks included.
+MetadataStoragePtr tryUnwrapEncryptedAndCacheLayers(DiskPtr disk)
+{
+    while (disk && disk->getDataSourceDescription().is_encrypted)
+        disk = disk->getDelegateDiskIfExists();
+
+    if (!disk)
+        return nullptr;
+
+    DiskObjectStoragePtr object_storage_disk = std::dynamic_pointer_cast<DiskObjectStorage>(disk);
+    if (!object_storage_disk)
+        return nullptr;
+
+    MetadataStoragePtr metadata_storage = object_storage_disk->getMetadataStorage();
+    while (auto * cache_metadata = dynamic_cast<MetadataStorageFromCacheObjectStorage *>(metadata_storage.get()))
+        metadata_storage = cache_metadata->getUnderlying();
+
+    return metadata_storage;
+}
+
+/// Whether both disks are layers over one and the same storage, as a `cache` or `encrypted` disk and
+/// the disk it wraps are. Such a pair reports one storage namespace by design: the layers share the
+/// metadata storage, while two separately configured disks have one each.
+bool areLayersOverOneStorage(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    const auto lhs_metadata_storage = tryUnwrapEncryptedAndCacheLayers(lhs);
+    if (!lhs_metadata_storage)
+        return false;
+
+    return lhs_metadata_storage.get() == tryUnwrapEncryptedAndCacheLayers(rhs).get();
+}
+
 /// Identity of the storage that a disk reads and writes.
 struct StorageNamespace
 {
@@ -144,6 +178,12 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
     for (const auto & [saved_disk_name, saved_disk] : disks)
     {
         if (saved_disk_name == disk_name)
+            continue;
+
+        /// A `cache` or `encrypted` disk sits on top of another disk and reports the namespace of the
+        /// disk it wraps. The two are one storage behind one metadata storage, not a duplicate
+        /// registration, so they are not a clash.
+        if (areLayersOverOneStorage(disk, saved_disk))
             continue;
 
         if (haveSameStorageNamespace(disk, saved_disk))
