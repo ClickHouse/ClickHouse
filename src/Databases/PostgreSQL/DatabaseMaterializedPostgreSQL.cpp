@@ -82,6 +82,7 @@ namespace FailPoints
 {
     extern const char materialized_postgresql_fail_nested_table_drop[];
     extern const char materialized_postgresql_fail_nested_drop_on_detach[];
+    extern const char materialized_postgresql_fail_persist_reload_marker[];
     extern const char materialized_postgresql_fail_nested_drop_on_attach[];
     extern const char materialized_postgresql_fail_database_startup[];
     extern const char materialized_postgresql_pause_after_stop_replication[];
@@ -1107,8 +1108,35 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             /// published and the setting is restored, so the failed `DETACH` was a no-op and can be
             /// retried.
             bool table_readded = false;
+            bool reload_marker_persisted = false;
             try
             {
+                /// The re-add truncates the surviving nested table before it reloads it. If the reload fails, or
+                /// the server restarts in the middle of it, nothing else records that the table is now empty or
+                /// partially loaded: the next startup would wrap it as available and resume from the existing
+                /// slot, which never brings the historical rows back. The same is true even before the re-add:
+                /// the table has been out of the publication, so the slot has already advanced past changes it
+                /// never received. Persist the reload intent first, reusing the partial-drop recovery marker:
+                /// until a startup completes, it keeps the tables hidden and forces a create-style startup that
+                /// reloads every table from a new snapshot. It must be durable before the original membership
+                /// is restored below, so that no restart can see the restored membership without it. A failure
+                /// to persist it skips the restore and the re-add (see `reload_marker_persisted`).
+                bool reload_marker_existed = false;
+                {
+                    /// The database disk can keep its metadata in Keeper, which requires a component for every request.
+                    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::detachTablePermanently");
+                    reload_marker_existed = getDisk()->existsFile(getPartialDropRecoveryMarkerPath());
+                }
+
+                fiu_do_on(FailPoints::materialized_postgresql_fail_persist_reload_marker,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure while persisting the reload marker of detached table `{}`", table_name);
+                });
+
+                persistPartialDropRecoveryMarker();
+                reload_marker_persisted = true;
+
                 /// Restore the persisted tables list durably before the re-add below truncates the surviving table:
                 /// a restart in the middle of the reload builds the replacement snapshot (and the publication) from
                 /// that list, and without this table in it the truncated nested table would be left out of
@@ -1121,20 +1149,6 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
                     throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                         "The replication handler is gone");
 
-                /// The re-add truncates the surviving nested table before it reloads it. If the reload fails, or
-                /// the server restarts in the middle of it, nothing else records that the table is now empty or
-                /// partially loaded: the next startup would wrap it as available and resume from the existing
-                /// slot, which never brings the historical rows back. Persist the reload intent first, reusing the
-                /// partial-drop recovery marker: until a startup completes, it keeps the tables hidden and forces
-                /// a create-style startup that reloads every table from a new snapshot. A failure to persist it
-                /// propagates before anything is truncated.
-                bool reload_marker_existed = false;
-                {
-                    /// The database disk can keep its metadata in Keeper, which requires a component for every request.
-                    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::detachTablePermanently");
-                    reload_marker_existed = getDisk()->existsFile(getPartialDropRecoveryMarkerPath());
-                }
-                persistPartialDropRecoveryMarker();
                 replication_handler->addTableToReplication(materialized_storage, table_name, /* clear_existing_data */ true);
                 table_readded = true;
                 /// A marker that existed before belongs to a recovery that is still pending, keep it.
@@ -1161,8 +1175,14 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
             }
 
             /// This must be durable even if `addTableToReplication` failed: keeping the wrapper only
-            /// in memory makes the recovery path disappear after a server restart.
-            rollback_tables_list();
+            /// in memory makes the recovery path disappear after a server restart. But only together with
+            /// the reload marker: restored membership without it lets the next startup resume this table
+            /// from the existing slot, which has already skipped the changes made while the table was out
+            /// of the publication (a row deleted meanwhile would survive for good). Without the marker the
+            /// table stays out of the persisted tables list instead: it is not replicated after a restart,
+            /// which fails closed, and until then the detach can be retried.
+            if (reload_marker_persisted)
+                rollback_tables_list();
 
             e.addMessage("while dropping the nested table of detached table `" + table_name + "`");
             throw;
