@@ -11,6 +11,9 @@ bazel build --config=x86_64 //:clickhouse
 bazel test --config=x86_64 //src:unit_tests_dbms
 ```
 
+The default is `-c opt`: ClickHouse C and C++ targets use `-O3` and define
+`NDEBUG`. Use `-c fastbuild` or `-c dbg` to keep assertions enabled.
+
 ## BuildBuddy remote execution
 
 Use a BuildBuddy API key with remote execution permission. Put these entries
@@ -41,9 +44,11 @@ bb remote --runner_exec_properties=EstimatedMemory=32GB \
   --host_jvm_args=-Xmx24g build --config=remote --config=x86_64 //:clickhouse
 ```
 
-Remote builds use `--remote_download_outputs=minimal`. To get a local copy
-of the executable, add `--remote_download_outputs=toplevel` to the build
-of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
+Remote builds use `--remote_download_outputs=minimal`. Bazel reads Clang’s `.d`
+files on the client to track which headers each compilation used. These reads
+appear as `download outputs` in the profile even when the `.o` stays remote.
+To get a local copy of the executable, add `--remote_download_outputs=toplevel`
+to the build of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Linux headers and link inputs
 
@@ -73,14 +78,14 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [5549bc23a](https://github.com/dzbarsky/clickhouse/commit/5549bc23a19eafb121bda4d10f49620e4fb9fd9f), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [40d783958](https://github.com/dzbarsky/clickhouse/commit/40d7839584e9ee28572bdbe03f3cdd1ea4f8ccf3), both `-c opt` builds produced the same stripped ClickHouse SHA-256 and byte count as native CMake.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/6deb8a2a-8d90-454e-87d2-5f2924902250) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/cda3f046-ecc8-4d3f-99bd-9c2daaba8026) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/7cd5e869-486a-4823-98be-92b2904a3c78) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/39164366-3242-4398-9a34-b92e5fc37c3e) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks.
+The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks for the previous comparison.
 
 To check a change against these references without downloading either ELF, run:
 
