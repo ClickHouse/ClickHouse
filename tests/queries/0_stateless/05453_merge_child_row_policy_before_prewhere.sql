@@ -7,6 +7,7 @@ SET query_plan_optimize_prewhere = 1;
 DROP ROW POLICY IF EXISTS p_05453_mt ON t_mt;
 DROP ROW POLICY IF EXISTS p_05453_memory ON t_memory;
 DROP ROW POLICY IF EXISTS p_05453_final ON t_final;
+DROP ROW POLICY IF EXISTS p_05453_final_ver ON t_final_ver;
 DROP ROW POLICY IF EXISTS p_05453_in ON t_in;
 DROP ROW POLICY IF EXISTS p_05453_alias ON t_alias;
 DROP ROW POLICY IF EXISTS p_05453_both_child ON t_both;
@@ -14,7 +15,7 @@ DROP ROW POLICY IF EXISTS p_05453_both_merge ON m_both;
 DROP ROW POLICY IF EXISTS p_05453_nested ON m_nested_inner;
 DROP ROW POLICY IF EXISTS p_05453_nested_both_child ON t_nested_both;
 DROP ROW POLICY IF EXISTS p_05453_nested_both_merge ON m_nested_both_inner;
-DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_final, t_final, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
+DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
     m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;
 
 CREATE TABLE t_mt (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
@@ -41,6 +42,15 @@ CREATE ROW POLICY p_05453_final ON t_final USING tenant = 'a' TO ALL;
 SELECT 'final prewhere', count() FROM m_final FINAL PREWHERE toUInt64(payload) > 10;
 SELECT 'final prewhere, policy before final', count() FROM m_final FINAL PREWHERE toUInt64(payload) > 10
 SETTINGS apply_row_policy_after_final = 0;
+
+CREATE TABLE t_final_ver (k UInt64, v UInt64, tenant String) ENGINE = ReplacingMergeTree(v) ORDER BY k;
+SYSTEM STOP MERGES t_final_ver;
+INSERT INTO t_final_ver VALUES (1, 1, 'a');
+INSERT INTO t_final_ver VALUES (1, 2, 'b');
+CREATE TABLE m_final_ver AS t_final_ver ENGINE = Merge(currentDatabase(), '^t_final_ver$');
+CREATE ROW POLICY p_05453_final_ver ON t_final_ver USING tenant = 'a' TO ALL;
+SELECT 'final order, policy after final', count() FROM m_final_ver FINAL SETTINGS apply_row_policy_after_final = 1;
+SELECT 'final order, policy before final', count() FROM m_final_ver FINAL SETTINGS apply_row_policy_after_final = 0;
 
 CREATE TABLE t_in_dst (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_in AS t_in_dst ENGINE = Buffer(currentDatabase(), t_in_dst, 1, 1000, 1000, 100000, 100000, 10000000, 10000000);
@@ -84,6 +94,7 @@ SELECT 'nested both prewhere', count() FROM m_nested_both_outer PREWHERE toUInt6
 DROP ROW POLICY p_05453_mt ON t_mt;
 DROP ROW POLICY p_05453_memory ON t_memory;
 DROP ROW POLICY p_05453_final ON t_final;
+DROP ROW POLICY p_05453_final_ver ON t_final_ver;
 DROP ROW POLICY p_05453_in ON t_in;
 DROP ROW POLICY p_05453_alias ON t_alias;
 DROP ROW POLICY p_05453_both_child ON t_both;
@@ -91,5 +102,5 @@ DROP ROW POLICY p_05453_both_merge ON m_both;
 DROP ROW POLICY p_05453_nested ON m_nested_inner;
 DROP ROW POLICY p_05453_nested_both_child ON t_nested_both;
 DROP ROW POLICY p_05453_nested_both_merge ON m_nested_both_inner;
-DROP TABLE m_mt, t_mt, m_memory, t_memory, m_final, t_final, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
+DROP TABLE m_mt, t_mt, m_memory, t_memory, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_both, t_both,
     m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;

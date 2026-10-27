@@ -5,6 +5,8 @@ mt rows	30
 memory prewhere	2
 final prewhere	2
 final prewhere, policy before final	2
+final order, policy after final	0
+final order, policy before final	1
 in prewhere	2
 alias prewhere	2
 both prewhere	2
