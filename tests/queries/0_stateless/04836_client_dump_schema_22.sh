@@ -19,6 +19,8 @@ trap 'rm -rf "$work"' EXIT
 # Every one of the two tables is dumped whatever the setting, which `filter` and `additional_table_filters` would drop.
 FILTER="position(toString(tuple(*)), 'must_be_exported') = 0"
 TABLE_FILTERS="{'system.tables': 'name != \\'must_be_exported\\''}"
+# The server has the tables of other tests too, so its filter names the test database.
+CLIENT_TABLE_FILTERS="{'system.tables': 'NOT (database = currentDatabase() AND name = \\'must_be_exported\\')'}"
 
 $CLICKHOUSE_LOCAL --path "$work/src" -n -q "
     CREATE DATABASE d;
@@ -52,4 +54,4 @@ dump_client() {
 dump_client filter --filter "$FILTER"
 dump_client select --select 1
 dump_client page --limit 10 --page 2
-dump_client additional_table_filters --additional_table_filters "$TABLE_FILTERS"
+dump_client additional_table_filters --additional_table_filters "$CLIENT_TABLE_FILTERS"
