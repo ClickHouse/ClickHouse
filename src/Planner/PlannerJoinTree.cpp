@@ -1787,6 +1787,10 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
         if (!right_table && !right_table_function)
             return false;
 
+        /// The right side is the one the replicas read with parallel replicas.
+        if (right_table && isRefreshableMaterializedViewSwapTarget(*right_table, context))
+            return false;
+
         const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
         if (parallelReplicasEnabledForStorage(right_storage, context, query_settings))
         {
@@ -2864,7 +2868,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// parallel replicas are applied later as a plan transformation (see QueryPlanOptimizations::applyParallelReplicas),
                 /// so skip the parallel-replicas construction here.
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
-                    && parallelReplicasEnabledForStorage(storage, query_context, settings))
+                    && parallelReplicasEnabledForStorage(storage, query_context, settings)
+                    && !(table_node && isRefreshableMaterializedViewSwapTarget(*table_node, query_context)))
                 {
                     /// The custom-key read below replaces the plan with a remote read at the fixed stage
                     /// `WithMergeableStateAfterAggregationAndLimit`, so it is only allowed when the requested
