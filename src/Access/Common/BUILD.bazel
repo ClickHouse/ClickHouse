@@ -17,7 +17,6 @@ ch_cc_library(
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_silk//:_silk_fibers",
         "@clickhouse_zstd//:_zstd",
-        "@clickhouse_openssl//:crypto",
         "//base/glibc-compatibility",
         "//src/Common:parser_support_api",
         "//src/Common",

@@ -5,7 +5,7 @@ from collections import Counter
 import json
 
 from initial_migration.first_party_packages import Build, CPUS, attributes, call_name, canonical_dependency
-from initial_migration.factor_build_selections import list_parts
+from initial_migration.factor_build_selections import cpu_choices, list_parts
 from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
@@ -34,6 +34,14 @@ ZOOKEEPER_LLVM_COMPONENTS = URL_LLVM_COMPONENTS + llvm_components('AsmPrinter', 
 FUNCTIONS_LLVM_COMPONENTS = ZOOKEEPER_LLVM_COMPONENTS + llvm_components(
     'BitstreamReader', 'CFGuard', 'CodeGenTypes', 'HipStdPar', 'IRPrinter', 'IRReader', 'SandboxIR',
 )
+
+# The retained implementation_dep publishes these libraries in its deps.
+PRIVATE_PROVIDERS = {
+    ('src/Access/Common', 'clickhouse_common_access'):
+        ('//src/Common', ['@clickhouse_openssl//:crypto']),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_no_log'):
+        (':clickhouse_common_zookeeper_base', llvm_components('AArch64CodeGen', 'X86CodeGen')),
+}
 
 # Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
 DEPENDENCIES = {
@@ -463,6 +471,10 @@ def apply(root):
                 node = Field().visit(node)
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
                 omit = {canonical(v) for v in discard}
+                provider = PRIVATE_PROVIDERS.get((package, name)) if field == 'implementation_deps' else None
+                inherited = provider and all(canonical(provider[0]) in row for row in values)
+                if inherited:
+                    omit.update(canonical(v) for v in provider[1])
                 insert_after = None
                 if (package, name, field) == ('src', 'clickhouse_common_io__compile_0', 'implementation_deps'):
                     # Keep widechar_width, Minizip and clickhouse_common_config after FrequencyHolder.o in unit_tests_dbms.
@@ -544,8 +556,12 @@ def apply(root):
                     edits.append((end, end, ', ' + json.dumps(UNWIND)))
                     continue
                 drop = omit | {canonical(v) for v in missing}
-                if (package, name, field) == ('programs', 'clickhouse__compile_0', 'deps'):
-                    # The final CMake link rule owns the x86-only harmful archive.
+                # The CMake program link owns the x86-only harmful archive. A private
+                # dependency supplied on both CPUs can also remove the last CPU difference.
+                if ((package, name, field) == ('programs', 'clickhouse__compile_0', 'deps')
+                        or inherited and all(isinstance(part, ast.List) or
+                            set(cpu_choices(part)) == {'@platforms//cpu:' + cpu for cpu in CPUS}
+                            for part in list_parts(node))):
                     remaining = [[v for v in build.values(node, cpu) if canonical(v) not in drop] for cpu in CPUS]
                     if remaining[0] == remaining[1]:
                         edits.append((*source.span(original), json.dumps(missing + remaining[0])))
