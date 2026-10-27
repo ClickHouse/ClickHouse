@@ -1,0 +1,12 @@
+<clickhouse>
+    <prometheus>
+        <handlers>
+            <my_metrics>
+                <url>/metrics</url>
+                <handler>
+                    <type>no_such_prometheus_type</type>
+                </handler>
+            </my_metrics>
+        </handlers>
+    </prometheus>
+</clickhouse>

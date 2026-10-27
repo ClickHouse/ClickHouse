@@ -4,7 +4,6 @@
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <Interpreters/FutureSetSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <chrono>
@@ -22,8 +21,6 @@ struct BuiltSetsByHash;
 using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
-
-struct DistributedPlanLocalObject;
 
 struct QueryPlanOptimizationSettings
 {
@@ -65,12 +62,10 @@ struct QueryPlanOptimizationSettings
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
-    bool legacy_array_join_function_nondeterministic_evaluation;
     bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
-    bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
@@ -90,13 +85,9 @@ struct QueryPlanOptimizationSettings
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
-    bool min_max_from_files;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
-    bool enable_group_by_top_k_dynamic_filtering;
-    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
-    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -133,8 +124,6 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
-    bool use_query_condition_cache_for_time_conditions;
-    double query_condition_cache_time_condition_grid_factor;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -144,15 +133,11 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
-    bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
-    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
-    /// query context's, read by the fallback decision. Null outside a query.
-    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
@@ -179,8 +164,6 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
-    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
-    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
@@ -224,7 +207,7 @@ struct QueryPlanOptimizationSettings
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
-    FutureSetSettings set_settings;
+    size_t use_index_for_in_with_subqueries_max_values;
     PreparedSetsCachePtr prepared_sets_cache;
 
     /// This is needed for conversion JoinLogical -> Join
@@ -266,7 +249,6 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
-    float automatic_parallel_replicas_max_duplicated_read_ratio;
 
     bool query_plan_optimize_primary_key = true;
 
@@ -282,6 +264,7 @@ struct QueryPlanOptimizationSettings
     /// of re-running the same subqueries.
     std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
+    bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 };
 

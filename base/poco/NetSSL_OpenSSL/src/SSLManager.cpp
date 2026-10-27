@@ -14,6 +14,7 @@
 
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/Context.h"
+#include "Poco/Net/DistrustedCertificates.h"
 #include "Poco/Net/Utility.h"
 #include "Poco/Net/PrivateKeyPassphraseHandler.h"
 #include "Poco/Net/RejectCertificateHandler.h"
@@ -41,7 +42,6 @@ const bool        SSLManager::VAL_ENABLE_DEFAULT_CA(true);
 const std::string SSLManager::CFG_CIPHER_LIST("cipherList");
 const std::string SSLManager::CFG_CYPHER_LIST("cypherList");
 const std::string SSLManager::VAL_CIPHER_LIST("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
-const std::string SSLManager::CFG_CIPHER_SUITES("cipherSuites");
 const std::string SSLManager::CFG_PREFER_SERVER_CIPHERS("preferServerCiphers");
 const std::string SSLManager::CFG_DELEGATE_HANDLER("privateKeyPassphraseHandler.name");
 const std::string SSLManager::VAL_DELEGATE_HANDLER("KeyConsoleHandler");
@@ -197,6 +197,20 @@ SSLManager::InvalidCertificateHandlerPtr SSLManager::clientCertificateHandler()
 
 int SSLManager::verifyCallback(bool server, int ok, X509_STORE_CTX* pStore)
 {
+	/// OpenSSL calls this for every certificate of the chain, with `ok` set to 1 if it has
+	/// no other errors, so this rejects a chain that contains a distrusted certificate at any
+	/// depth, whichever trust store (the system one, the configured one or the embedded one)
+	/// it was built from. The rejection is reported like any other verification error.
+	if (X509 * cert = X509_STORE_CTX_get_current_cert(pStore))
+	{
+		int distrusted = checkDistrustedCertificate(cert);
+		if (distrusted != X509_V_OK)
+		{
+			X509_STORE_CTX_set_error(pStore, distrusted);
+			ok = 0;
+		}
+	}
+
 	if (!ok)
 	{
 		int depth = X509_STORE_CTX_get_error_depth(pStore);
@@ -266,7 +280,6 @@ void SSLManager::initDefaultContext(bool server)
 	params.loadDefaultCAs = config.getBool(prefix + CFG_ENABLE_DEFAULT_CA, VAL_ENABLE_DEFAULT_CA);
 	params.cipherList = config.getString(prefix + CFG_CIPHER_LIST, VAL_CIPHER_LIST);
 	params.cipherList = config.getString(prefix + CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
-	params.cipherSuites = config.getString(prefix + CFG_CIPHER_SUITES, "");
 	bool requireTLSv1 = config.getBool(prefix + CFG_REQUIRE_TLSV1, false);
 	bool requireTLSv1_1 = config.getBool(prefix + CFG_REQUIRE_TLSV1_1, false);
 	bool requireTLSv1_2 = config.getBool(prefix + CFG_REQUIRE_TLSV1_2, false);
@@ -344,7 +357,9 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
+	/// Only an outbound connection has a requested host name to check: on an accepted socket this
+	/// would run against the client's address, which a client certificate does not name.
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else

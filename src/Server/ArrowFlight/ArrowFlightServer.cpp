@@ -7,7 +7,6 @@
 #include <Server/ArrowFlight/commandSelector.h>
 #include <Server/ArrowFlight/PollSession.h>
 
-#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -28,7 +27,6 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/ArrowFlightSource.h>
@@ -58,6 +56,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -336,8 +335,10 @@ namespace
     /// Creates a converter to convert ClickHouse blocks to the Arrow format.
     std::shared_ptr<CHColumnToArrowColumn> createCHToArrowConverter(const Block & header, ContextPtr query_context)
     {
-        auto ch_to_arrow_converter
-            = std::make_shared<CHColumnToArrowColumn>(header, "Arrow", ArrowFlight::arrowConversionSettings(query_context));
+        CHColumnToArrowColumn::Settings arrow_settings;
+        arrow_settings.output_string_as_string = true;
+        arrow_settings.output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary];
+        auto ch_to_arrow_converter = std::make_shared<CHColumnToArrowColumn>(header, "Arrow", arrow_settings);
         ch_to_arrow_converter->initializeArrowSchema();
         return ch_to_arrow_converter;
     }
@@ -593,7 +594,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             executor.getHeader().getColumnsWithTypeAndName(),
             "Arrow",
             nullptr,
-            ArrowFlight::arrowConversionSettings(query_context));
+            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
 
         if (schema_modifier)
         {
@@ -602,8 +603,6 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             schema = status.ValueUnsafe();
         }
 
-        const auto conversion_settings = ArrowFlight::arrowConversionSettings(query_context);
-
         std::optional<ColumnsWithTypeAndName> header;
         std::vector<Chunk> chunks;
         Block block;
@@ -611,7 +610,6 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         {
             if (!block.empty())
             {
-                removeSpecialColumnRepresentations(block);
                 if (block_modifier)
                     block_modifier(query_context, block);
                 if (!header)
@@ -621,7 +619,9 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
                 {
                     tables.emplace_back(
                         CHColumnToArrowColumn::calculateArrowTable(
-                            *header, "Arrow", chunks, conversion_settings, header->size(), schema));
+                            *header, "Arrow", chunks,
+                            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
+                            header->size(), schema));
                     chunks.clear();
                 }
             }
@@ -632,7 +632,9 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
         else if (single_table)
             tables.emplace_back(
         CHColumnToArrowColumn::calculateArrowTable(
-            *header, "Arrow", chunks, conversion_settings, header->size(), schema));
+            *header, "Arrow", chunks,
+            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
+            header->size(), schema));
 
         query_finished = true;
     }
@@ -806,7 +808,7 @@ arrow::Status ArrowFlightServer::GetSchema(
 
                     schema = CHColumnToArrowColumn::calculateArrowSchema(
                         executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
-                        ArrowFlight::arrowConversionSettings(query_context));
+                        {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
                     if (schema_modifier)
                     {
                         auto status = schema_modifier(schema);
@@ -1015,7 +1017,7 @@ arrow::Status ArrowFlightServer::evaluatePollDescriptor(const String & poll_desc
             chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
             std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::calculateArrowTable(
                 header, "Arrow", chunks,
-                ArrowFlight::arrowConversionSettings(poll_session->queryContext()),
+                {.output_string_as_string = true, .output_unsupported_types_as_binary = poll_session->queryContext()->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
                 header.size(), poll_session->getSchema());
             auto ticket_info = calls_data->createTicket(table);
             ticket = ticket_info->ticket;
@@ -1103,11 +1105,7 @@ arrow::Status ArrowFlightServer::DoGet(
 
                 Block block;
                 while (executor.pull(block))
-                {
-                    /// PullingPipelineExecutor returns sparse and other special column representations, which CHColumnToArrowColumn does not read.
-                    removeSpecialColumnRepresentations(block);
                     chunks.emplace_back(Chunk(block.getColumns(), block.rows()));
-                }
 
                 auto header = executor.getHeader();
                 auto ch_to_arrow_converter = createCHToArrowConverter(header, query_context);
@@ -1547,7 +1545,7 @@ arrow::Status ArrowFlightServer::DoAction(
                                 executor.getHeader().getColumnsWithTypeAndName(),
                                 "Arrow",
                                 nullptr,
-                                ArrowFlight::arrowConversionSettings(query_context));
+                                {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
                         }
                         block_io.onCancelOrConnectionLoss();
                     }

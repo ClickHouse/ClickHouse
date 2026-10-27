@@ -4,8 +4,6 @@
 #include <iterator>
 #include <memory>
 #include <span>
-#include <unordered_map>
-#include <unordered_set>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/UUID.h>
@@ -18,15 +16,12 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/TemporaryReplaceTableName.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -91,27 +86,6 @@ namespace ErrorCodes
 }
 
 
-void qualifyNamesFromLegacyMetadata(ASTCreateQuery & ast_create_query, const String & database_name, ContextPtr context)
-{
-    /// Metadata written before the table names were qualified at CREATE time — in particular the
-    /// names introduced by SQL UDF expansion into a view SELECT, a column DEFAULT expression or a
-    /// constraint — can contain unqualified names. They have to resolve against the database owning
-    /// the table and not against the current database of the loading context, which is unrelated to
-    /// this table: the analysis of the constraints executes their scalar subqueries, and the view
-    /// SELECT and the column defaults are kept in the metadata of the storage and are later resolved
-    /// under the context of the reading or inserting query.
-    /// The dictionary definitions are left alone: the nested `QUERY` of their source deliberately
-    /// resolves against the default database of the server (see `DDLDependencyVisitor`).
-    if (ast_create_query.is_dictionary)
-        return;
-
-    AddDefaultDatabaseVisitor visitor(context, database_name);
-    if (ast_create_query.select && ast_create_query.isView())
-        visitor.visitTableExpressions(*ast_create_query.select);
-    if (ast_create_query.columns_list)
-        visitor.visitTableExpressions(*ast_create_query.columns_list);
-}
-
 std::pair<String, StoragePtr> createTableFromAST(
     ASTCreateQuery ast_create_query,
     const String & database_name,
@@ -136,11 +110,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor::visit(*ast_create_query.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
-
-    /// The dependency graphs were built out of exactly the same repaired names, see
-    /// `TablesLoader::buildDependencyGraph`.
-    qualifyNamesFromLegacyMetadata(ast_create_query, database_name, context);
+        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -152,11 +122,6 @@ std::pair<String, StoragePtr> createTableFromAST(
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
-
-        /// The comment is not passed to a table function (unlike a table engine), so it has to be
-        /// applied to the storage explicitly when the definition is loaded back from the metadata.
-        if (ast_create_query.comment)
-            storage->setInMemoryMetadataComment(ast_create_query.comment->as<ASTLiteral &>().value.safeGet<String>());
 
         /// Re-establish the named collection dependency (if any) that `CREATE TABLE ... AS f(...)`
         /// registered, so that `DROP NAMED COLLECTION` stays blocked after a server restart.
@@ -621,13 +586,6 @@ void DatabaseOnDisk::renameTable(
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }
-    catch (...)
-    {
-        /// std::filesystem_error is not a Poco::Exception, and the storage hooks above may throw it.
-        setDetachedTableNotInUseForce(prev_uuid);
-        attachTable(local_context, table_name, table, table_data_relative_path);
-        throw;
-    }
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
@@ -840,58 +798,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     std::sort(metadata_files.begin(), metadata_files.end());
     metadata_files.erase(std::unique(metadata_files.begin(), metadata_files.end()), metadata_files.end());
-
-    auto table_name_of = [](const String & file_name) { return unescapeForFileName(file_name.substr(0, file_name.size() - 4)); };
-
-    /// A temporary table of `CREATE OR REPLACE` is only moved away from its name: renamed to the target or dropped.
-    /// Where a move is a copy followed by a removal, an interrupted one leaves the source as an exact copy of the destination.
-    std::vector<String> temporary_files;
-    for (const auto & [file_name, is_sql] : metadata_files)
-        if (is_sql && TemporaryReplaceTableName::fromString(table_name_of(file_name)))
-            temporary_files.push_back(file_name);
-
-    if (!temporary_files.empty())
-    {
-        const String database = getDatabaseName();
-        std::unordered_map<String, std::vector<String>> paths_by_name_hash;
-        for (const auto & [file_name, is_sql] : metadata_files)
-            if (is_sql)
-                paths_by_name_hash[TemporaryReplaceTableName::calculateHash(database, table_name_of(file_name))].push_back(
-                    getMetadataPath() + file_name);
-
-        std::unordered_set<String> stale_files;
-        for (const auto & file_name : temporary_files)
-        {
-            const String table_name = table_name_of(file_name);
-            const String path = getMetadataPath() + file_name;
-            const String content = readMetadataFile(db_disk, path);
-
-            std::vector<String> destinations;
-            if (auto it = paths_by_name_hash.find(TemporaryReplaceTableName::fromString(table_name)->name_hash);
-                it != paths_by_name_hash.end())
-                destinations = it->second;
-            if (auto ast = parseQueryFromMetadata(nullptr, getContext(), path, content, /*throw_on_error=*/false))
-                if (UUID uuid = ast->as<ASTCreateQuery &>().uuid; uuid != UUIDHelpers::Nil)
-                    destinations.push_back(DatabaseCatalog::instance().getPathForDroppedMetadata(StorageID(database, table_name, uuid)));
-
-            auto copy = std::ranges::find_if(
-                destinations,
-                [&](const String & destination)
-                { return destination != path && db_disk->existsFile(destination) && readMetadataFile(db_disk, destination) == content; });
-            if (copy == destinations.end())
-                continue;
-
-            stale_files.insert(file_name);
-            if (db_disk->isReadOnly())
-            {
-                LOG_WARNING(log, "Skipping {}: it is a copy of {}", path, *copy);
-                continue;
-            }
-            LOG_WARNING(log, "Removing {}: it is a copy of {}", path, *copy);
-            db_disk->removeFileIfExists(path);
-        }
-        std::erase_if(metadata_files, [&](const auto & file) { return file.second && stale_files.contains(file.first); });
-    }
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);

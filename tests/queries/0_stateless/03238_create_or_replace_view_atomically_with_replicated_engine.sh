@@ -12,7 +12,7 @@ TIMEOUT=60
 function create_or_replace_view_thread
 {
     for _ in {1..15}; do
-        ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&distributed_ddl_output_mode=none" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'"
+        ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
         [[ $SECONDS -ge "$TIMEOUT" ]] && break
     done
 }
@@ -20,12 +20,12 @@ function create_or_replace_view_thread
 function select_view_thread
 {
     for _ in {1..15}; do
-        ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view FORMAT NULL" 2>&1 | grep -v -P 'Code: (60|741)'
+        ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view" > /dev/null
         [[ $SECONDS -ge "$TIMEOUT" ]] && break
     done
 }
 
-${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&distributed_ddl_output_mode=none" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'"
+${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE VIEW ${CLICKHOUSE_DATABASE}_db.test_view AS SELECT 'abcdef'" > /dev/null
 
 select_view_thread &
 select_view_thread &

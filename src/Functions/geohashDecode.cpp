@@ -110,9 +110,8 @@ Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into
             "SELECT geohashDecode('ezs42') AS res",
             R"(
 ┌─res─────────────────────────────┐
-├──────longitude─┬───────latitude─┤
-│ -5.60302734375 │ 42.60498046875 │
-└────────────────┴────────────────┘
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
             )"
         }
     };

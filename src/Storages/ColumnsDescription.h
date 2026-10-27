@@ -44,7 +44,8 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    All = Reader | Plan,
+    Streaming = 4,
+    All = Reader | Plan | Streaming,
 };
 
 struct GetColumnsOptions
@@ -185,9 +186,6 @@ public:
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
-    /// Drops every column TTL, leaving the rest of each column as it is.
-    void clearColumnTTLs();
-    /// Drops every column TTL and puts each column back through the checks that `add` runs.
     void resetColumnTTLs();
 
     bool has(const String & column_name) const;
@@ -216,10 +214,7 @@ public:
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
 
-        invalidateGetCache();
-        /// Aliases don't have real subcolumns, they are derived from the expression.
-        if (it->default_desc.kind != ColumnDefaultKind::Alias)
-            addSubcolumns(it->name, it->type);
+        addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
     }
 

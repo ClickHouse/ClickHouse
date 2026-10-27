@@ -93,7 +93,7 @@
 	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
-	url = https://github.com/google/flatbuffers
+	url = https://github.com/ClickHouse/flatbuffers
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse/replxx
@@ -136,7 +136,7 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/ClickHouse/rocksdb
+	url = https://github.com/facebook/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/tukaani-project/xz
@@ -208,7 +208,7 @@
 	url = https://github.com/ClickHouse/nats.c
 [submodule "contrib/vectorscan"]
 	path = contrib/vectorscan
-	url = https://github.com/ClickHouse/vectorscan.git
+	url = https://github.com/ClickHouse/vectorscan
 [submodule "contrib/llvm-project"]
 	path = contrib/llvm-project
 	url = https://github.com/ClickHouse/llvm-project
@@ -265,7 +265,7 @@
 	url = https://github.com/awslabs/aws-c-auth
 [submodule "contrib/aws-c-cal"]
 	path = contrib/aws-c-cal
-	url = https://github.com/awslabs/aws-c-cal
+	url = https://github.com/ClickHouse/aws-c-cal
 [submodule "contrib/aws-c-sdkutils"]
 	path = contrib/aws-c-sdkutils
 	url = https://github.com/awslabs/aws-c-sdkutils
@@ -314,7 +314,7 @@
 	url = https://github.com/sqids/sqids-cpp.git
 [submodule "contrib/idna"]
 	path = contrib/idna
-	url = https://github.com/ClickHouse/idna
+	url = https://github.com/ada-url/idna.git
 [submodule "contrib/google-cloud-cpp"]
 	path = contrib/google-cloud-cpp
 	url = https://github.com/ClickHouse/google-cloud-cpp.git
@@ -326,7 +326,7 @@
 	url = https://github.com/ClickHouse/openssl.git
 [submodule "contrib/double-conversion"]
 	path = contrib/double-conversion
-	url = https://github.com/google/double-conversion
+	url = https://github.com/ClickHouse/double-conversion.git
 [submodule "contrib/mongo-cxx-driver"]
 	path = contrib/mongo-cxx-driver
 	url = https://github.com/ClickHouse/mongo-cxx-driver.git
@@ -351,9 +351,6 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
-[submodule "contrib/xgboost"]
-	path = contrib/xgboost
-	url = https://github.com/ClickHouse/xgboost
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -384,12 +381,6 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
-[submodule "contrib/ipcrypt2"]
-	path = contrib/ipcrypt2
-	url = https://github.com/jedisct1/ipcrypt2.git
-[submodule "contrib/heks"]
-	path = contrib/heks
-	url = https://github.com/ClickHouse/heks.git
 [submodule "contrib/musl"]
 	path = contrib/musl
 	url = https://github.com/ClickHouse/musl
@@ -423,9 +414,6 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/hellobertrand/zxc
-[submodule "contrib/dmlc-core"]
-	path = contrib/dmlc-core
-	url = https://github.com/dmlc/dmlc-core
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
@@ -453,9 +441,6 @@
 [submodule "contrib/cuCollections"]
 	path = contrib/cuCollections
 	url = https://github.com/NVIDIA/cuCollections.git
-[submodule "contrib/cucascade"]
-	path = contrib/cucascade
-	url = https://github.com/NVIDIA/cuCascade.git
 [submodule "contrib/nvtx"]
 	path = contrib/nvtx
 	url = https://github.com/NVIDIA/NVTX.git

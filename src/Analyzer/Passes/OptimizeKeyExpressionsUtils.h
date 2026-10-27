@@ -23,10 +23,7 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys);
 /// Returns a new key list with injective functions replaced by their non-constant arguments. An
 /// injective function gives the same grouping as its arguments, so the result does not change. When
 /// `allow_suspicious_types` is false, a function is left as is if unwrapping it would turn a
-/// `Dynamic` or `Variant` argument into a key. A node found in `keys_to_keep` is kept as it is and
-/// is not unwrapped further: `LIMIT BY` runs after aggregation, so it must not be rewritten past a
-/// `GROUP BY` key into columns that no longer exist there.
-QueryTreeNodes unwrapInjectiveFunctionsInKeys(
-    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashSet * keys_to_keep = nullptr);
+/// `Dynamic` or `Variant` argument into a key.
+QueryTreeNodes unwrapInjectiveFunctionsInKeys(const QueryTreeNodes & keys, bool allow_suspicious_types);
 
 }

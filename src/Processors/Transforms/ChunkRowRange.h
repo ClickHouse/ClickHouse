@@ -3,7 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Processors/Chunk.h>
 
-#include <span>
+#include <vector>
 
 namespace DB
 {
@@ -19,6 +19,6 @@ struct ChunkRowRange
 /// count. `slices` must be non-empty, ordered by `start`, non-overlapping, and each slice must stay within
 /// `[0, source_row_count)`. The source columns are reused when every row survives; otherwise one contiguous
 /// span is taken with a single `cut`, and a sparse selection falls back to a mask-based `filter`.
-UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, std::span<const ChunkRowRange> slices);
+UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkRowRange> & slices);
 
 }

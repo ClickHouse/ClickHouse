@@ -480,7 +480,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
     String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
-    auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+    auto provider = createAIProvider(
+        getContext(), params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
     if (input_rows_count == 0)
         return result_type->createColumn();

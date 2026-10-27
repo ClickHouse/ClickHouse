@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "会话设置",
+  "group": "Session Settings",
   "pages": [
     "zh/reference/settings/session-settings/additional",
     "zh/reference/settings/session-settings/aggregate",
@@ -35,7 +35,6 @@
     "zh/reference/settings/session-settings/cluster",
     "zh/reference/settings/session-settings/cluster-table",
     "zh/reference/settings/session-settings/collect-hash",
-    "zh/reference/settings/session-settings/columns-cache",
     "zh/reference/settings/session-settings/compatibility",
     "zh/reference/settings/session-settings/compatibility-ignore",
     "zh/reference/settings/session-settings/compile",
@@ -116,7 +115,6 @@
     "zh/reference/settings/session-settings/log",
     "zh/reference/settings/session-settings/log-queries",
     "zh/reference/settings/session-settings/log-query",
-    "zh/reference/settings/session-settings/logsql",
     "zh/reference/settings/session-settings/low-cardinality",
     "zh/reference/settings/session-settings/materialize",
     "zh/reference/settings/session-settings/materialize-statistics-on-insert",
@@ -259,7 +257,6 @@
     "zh/reference/settings/session-settings/vector-search",
     "zh/reference/settings/session-settings/wait-for",
     "zh/reference/settings/session-settings/webassembly-udf",
-    "zh/reference/settings/session-settings/weight-lowering",
     "zh/reference/settings/session-settings/write-through-distributed-cache",
     "zh/reference/settings/session-settings/other"
   ],

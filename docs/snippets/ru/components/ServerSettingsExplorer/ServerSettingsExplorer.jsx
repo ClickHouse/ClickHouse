@@ -36,9 +36,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 4,
+      count: 3,
       settings: [
-        { name: "allow_experimental_cluster_discovery", path: "/allow-experimental#allow_experimental_cluster_discovery", default: '""' },
         { name: "allow_experimental_executable_udf_drivers", path: "/allow-experimental#allow_experimental_executable_udf_drivers", default: "0" },
         { name: "allow_experimental_webassembly_udf", path: "/allow-experimental#allow_experimental_webassembly_udf", default: "0" },
         { name: "allow_experimental_webterminal", path: "/allow-experimental#allow_experimental_webterminal", default: "1" }
@@ -75,11 +74,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "asynchronous_metrics_*",
-      count: 4,
+      count: 3,
       settings: [
         { name: "asynchronous_metrics_enable_heavy_metrics", path: "/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
         { name: "asynchronous_metrics_keeper_metrics_only", path: "/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
-        { name: "asynchronous_metrics_key_values_mode", path: "/asynchronous-metrics#asynchronous_metrics_key_values_mode", default: "key_values" },
         { name: "asynchronous_metrics_update_period_s", path: "/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
       ],
       children: []
@@ -138,19 +136,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
-      label: "columns_cache_*",
-      count: 6,
-      settings: [
-        { name: "columns_cache_free_memory_ratio", path: "/columns-cache#columns_cache_free_memory_ratio", default: "0.15" },
-        { name: "columns_cache_history_window_ms", path: "/columns-cache#columns_cache_history_window_ms", default: "1000" },
-        { name: "columns_cache_policy", path: "/columns-cache#columns_cache_policy", default: "SLRU" },
-        { name: "columns_cache_size", path: "/columns-cache#columns_cache_size", default: "2147483648" },
-        { name: "columns_cache_size_ratio", path: "/columns-cache#columns_cache_size_ratio", default: "0.5" },
-        { name: "columns_cache_size_to_ram_ratio", path: "/columns-cache#columns_cache_size_to_ram_ratio", default: "0.1" }
-      ],
-      children: []
-    },
-    {
       label: "compiled_expression_*",
       count: 2,
       settings: [
@@ -191,11 +176,10 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "database_catalog_*",
-      count: 6,
+      count: 5,
       settings: [
         { name: "database_catalog_drop_error_cooldown_sec", path: "/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
         { name: "database_catalog_drop_table_concurrency", path: "/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
-        { name: "database_catalog_shutdown_table_concurrency", path: "/database-catalog#database_catalog_shutdown_table_concurrency", default: "0" },
         { name: "database_catalog_unused_dir_cleanup_period_sec", path: "/database-catalog#database_catalog_unused_dir_cleanup_period_sec", default: "86400" },
         { name: "database_catalog_unused_dir_hide_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
         { name: "database_catalog_unused_dir_rm_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
@@ -378,7 +362,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       label: "http_*",
       count: 4,
       settings: [
-        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "1" },
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
@@ -533,7 +517,15 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       ],
       children: []
     },
-    { label: "license_*", count: 1, settings: [{ name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }], children: [] },
+    {
+      label: "license_*",
+      count: 2,
+      settings: [
+        { name: "license_file", path: "/license#license_file", default: '""' },
+        { name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }
+      ],
+      children: []
+    },
     {
       label: "listen_*",
       count: 4,
@@ -559,7 +551,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       count: 2,
       settings: [
         { name: "logger.async", path: "/logger-async#logger.async", default: "1" },
-        { name: "logger.async_queue_max_size", path: "/logger-async#logger.async_queue_max_size", default: "65536" }
+        { name: "logger.async_queye_max_size", path: "/logger-async#logger.async_queye_max_size", default: "65536" }
       ],
       children: []
     },
@@ -585,7 +577,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 27,
+      count: 25,
       settings: [
         { name: "max_active_parts_loading_thread_pool_size", path: "/max#max_active_parts_loading_thread_pool_size", default: "64" },
         { name: "max_authentication_methods_per_user", path: "/max#max_authentication_methods_per_user", default: "100" },
@@ -596,8 +588,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_fetch_partition_thread_pool_size", path: "/max#max_fetch_partition_thread_pool_size", default: "64" },
         { name: "max_held_snapshots", path: "/max#max_held_snapshots", default: "0" },
         { name: "max_http_index_page_size", path: "/max#max_http_index_page_size", default: "10485760" },
-        { name: "max_iceberg_manifest_decode_thread_pool_free_size", path: "/max#max_iceberg_manifest_decode_thread_pool_free_size", default: "0" },
-        { name: "max_iceberg_manifest_decode_thread_pool_size", path: "/max#max_iceberg_manifest_decode_thread_pool_size", default: "100" },
         { name: "max_keep_alive_requests", path: "/max#max_keep_alive_requests", default: "10000" },
         { name: "max_materialized_views_count_for_table", path: "/max#max_materialized_views_count_for_table", default: "0" },
         { name: "max_merges_bandwidth_for_server", path: "/max#max_merges_bandwidth_for_server", default: "0" },
@@ -788,7 +778,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       label: "memory_worker_*",
       count: 8,
       settings: [
-        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "1" },
+        { name: "memory_worker_correct_memory_tracker", path: "/memory-worker#memory_worker_correct_memory_tracker", default: "0" },
         { name: "memory_worker_decay_adjustment_period_ms", path: "/memory-worker#memory_worker_decay_adjustment_period_ms", default: "5000" },
         { name: "memory_worker_dynamic_hard_limit", path: "/memory-worker#memory_worker_dynamic_hard_limit", default: "1" },
         { name: "memory_worker_period_ms", path: "/memory-worker#memory_worker_period_ms", default: "0" },
@@ -819,9 +809,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 3,
+      count: 2,
       settings: [
-        { name: "min_allocation_size_to_log_stack_trace", path: "/min#min_allocation_size_to_log_stack_trace", default: "0" },
         { name: "min_allocation_size_to_throw_on_memory_limit", path: "/min#min_allocation_size_to_throw_on_memory_limit", default: "0" },
         { name: "min_os_cpu_wait_time_ratio_to_drop_connection", path: "/min#min_os_cpu_wait_time_ratio_to_drop_connection", default: "0" }
       ],
@@ -1011,16 +1000,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_condition_cache_policy", path: "/query-condition#query_condition_cache_policy", default: "SLRU" },
         { name: "query_condition_cache_size", path: "/query-condition#query_condition_cache_size", default: "104857600" },
         { name: "query_condition_cache_size_ratio", path: "/query-condition#query_condition_cache_size_ratio", default: "0.5" }
-      ],
-      children: []
-    },
-    {
-      label: "reader_executor_*",
-      count: 3,
-      settings: [
-        { name: "reader_executor_memory_pressure_critical_level_pct", path: "/reader-executor#reader_executor_memory_pressure_critical_level_pct", default: "95" },
-        { name: "reader_executor_memory_pressure_elevated_level_pct", path: "/reader-executor#reader_executor_memory_pressure_elevated_level_pct", default: "75" },
-        { name: "reader_executor_memory_pressure_high_level_pct", path: "/reader-executor#reader_executor_memory_pressure_high_level_pct", default: "90" }
       ],
       children: []
     },
@@ -1337,7 +1316,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "Другое",
-      count: 125,
+      count: 120,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
@@ -1374,7 +1353,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "hdfs.libhdfs3_conf", path: "/other#hdfs.libhdfs3_conf", default: '""' },
         { name: "hsts_max_age", path: "/other#hsts_max_age" },
         { name: "iceberg_background_schedule_pool_size", path: "/other#iceberg_background_schedule_pool_size", default: "10" },
-        { name: "iceberg_manifest_decode_thread_pool_queue_size", path: "/other#iceberg_manifest_decode_thread_pool_queue_size", default: "10000" },
         { name: "ignore_empty_sql_security_in_create_view_query", path: "/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
         { name: "include_from", path: "/other#include_from", default: '""' },
         { name: "insert_deduplication_version", path: "/other#insert_deduplication_version", default: "new_unified_hash" },
@@ -1406,9 +1384,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.client.cacheSessions", path: "/other#openssl.client.cachesessions", default: "0" },
         { name: "openSSL.client.certificateFile", path: "/other#openssl.client.certificatefile", default: '""' },
         { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
-        { name: "openSSL.client.cipherSuites", path: "/other#openssl.client.ciphersuites", default: '""' },
         { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
-        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "1" },
+        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "0" },
         { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
         { name: "openSSL.client.invalidCertificateHandler.name", path: "/other#openssl.client.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
         { name: "openSSL.client.loadDefaultCAFile", path: "/other#openssl.client.loaddefaultcafile", default: "1" },
@@ -1421,7 +1398,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.server.cacheSessions", path: "/other#openssl.server.cachesessions", default: "0" },
         { name: "openSSL.server.certificateFile", path: "/other#openssl.server.certificatefile", default: '""' },
         { name: "openSSL.server.cipherList", path: "/other#openssl.server.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
-        { name: "openSSL.server.cipherSuites", path: "/other#openssl.server.ciphersuites", default: '""' },
         { name: "openSSL.server.disableProtocols", path: "/other#openssl.server.disableprotocols", default: '""' },
         { name: "openSSL.server.extendedVerification", path: "/other#openssl.server.extendedverification", default: "0" },
         { name: "openSSL.server.fips", path: "/other#openssl.server.fips", default: "0" },
@@ -1439,7 +1415,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "part_log", path: "/other#part_log" },
         { name: "path", path: "/other#path", default: "/var/lib/clickhouse/" },
         { name: "per_cpu_untracked_memory_thread_buffer", path: "/other#per_cpu_untracked_memory_thread_buffer", default: "32768" },
-        { name: "placement", path: "/other#placement" },
         { name: "point_in_polygon_cache_size", path: "/other#point_in_polygon_cache_size", default: "268435456" },
         { name: "prefixes_deserialization_thread_pool_thread_pool_queue_size", path: "/other#prefixes_deserialization_thread_pool_thread_pool_queue_size", default: "10000" },
         { name: "prepare_system_log_tables_on_startup", path: "/other#prepare_system_log_tables_on_startup", default: "0" },
@@ -1452,7 +1427,6 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "replica_group_name", path: "/other#replica_group_name", default: '""' },
         { name: "replicated_merge_tree", path: "/other#replicated_merge_tree" },
         { name: "restore_threads", path: "/other#restore_threads", default: "16" },
-        { name: "seccomp", path: "/other#seccomp", default: "log" },
         { name: "send_crash_reports", path: "/other#send_crash_reports" },
         { name: "series_keeper_path", path: "/other#series_keeper_path", default: "/clickhouse/series" },
         { name: "ssh_server", path: "/other#ssh_server" },
@@ -1653,7 +1627,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} {matchingCount === 1 ? "найдена настройка" : "найдено настроек"}
+            {matchingCount} найден{matchingCount === 1 ? "а" : "о"} {matchingCount === 1 ? "настройка" : "настроек"}
           </span>
         </div>
       )}

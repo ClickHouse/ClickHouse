@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/memcpySmall.h>
@@ -345,12 +345,6 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
-template <typename Vector>
-void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
-{
-    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
-}
-
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -365,12 +359,6 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
-}
-
-void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -1306,10 +1294,6 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         return error("Cannot parse JSON string: expected opening quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
-    /// `s` is an append target already holding previous values (for a column, all previous rows of the block),
-    /// so the size of the current value is the growth of `s`.
-    const size_t initial_size = s.size();
-
     while (!buf.eof())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
@@ -1317,12 +1301,8 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1367,9 +1347,6 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != opening_bracket)
         return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
 
-    /// See the comment about `initial_size` in readJSONStringInto.
-    const size_t initial_size = s.size();
-
     s.push_back(*buf.position());
     ++buf.position();
 
@@ -1382,12 +1359,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -2303,12 +2276,13 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// Nothing to append, and `in.position()` may be null.
-    if (additional_bytes == 0)
+    /// There are no new bytes to add to memory.
+    /// No need to do extra stuff.
+    if (new_bytes == 0)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resizeAmortized(new_bytes);
+    memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }

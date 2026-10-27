@@ -1,7 +1,7 @@
 -- Current defaults
 false	0	1
--- compatibility = 26.9 restores the API call quota
-false	1000	1
+-- compatibility = 26.8 restores the API call quota and the retry count
+false	1000	0
 -- compatibility = 26.6 restores the legacy defaults
 true	0	0
 0

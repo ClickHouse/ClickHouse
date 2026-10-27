@@ -49,7 +49,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
-#include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
 #include <filesystem>
@@ -431,17 +430,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
-    Macros::MacroExpansionInfo macro_info;
     zk_path = chooseZooKeeperPath(
         getContext(),
         table_id_,
         context_->getSettingsRef(),
         *queue_settings_,
         UUIDHelpers::Nil,
-        &zookeeper_name,
-        &macro_info);
-    if (macro_info.expanded_database)
-        keeper_path_database_name = table_id_.database_name;
+        &zookeeper_name);
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
@@ -1263,6 +1258,13 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// The post-processing runs before the Keeper requests are sent on purpose: an object found to
+    /// be no longer the generation that was ingested (`FILE_CHANGED_DURING_READ`, see
+    /// `ObjectStorageQueuePostProcessor::process`) throws out of here, so that the batch is not
+    /// committed as processed. The files then go back to unprocessed (their `Processing` nodes are
+    /// released when the sources are destroyed) and the newer generation is ingested on a later pass,
+    /// instead of staying in the bucket untracked for good. The objects of the batch that were moved
+    /// or deleted are gone from the bucket, so that pass does not ingest them again.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty()
@@ -2005,29 +2007,13 @@ void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_nam
     }
 }
 
-void StorageObjectStorageQueue::checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const
-{
-    /// Compared against the name the path was expanded with, not against the current one: the last step of
-    /// the Ordinary-to-Atomic conversion renames the database back to that name, which leaves the table on
-    /// its own Keeper node and must stay allowed.
-    if (!keeper_path_database_name || *keeper_path_database_name == new_database_name)
-        return;
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Cannot rename the database of Storage{}Queue table {} to {}, because its `keeper_path` setting "
-        "expands the {{database}} macro (possibly nested in another macro). The Keeper path would change "
-        "and the table would process every file again",
-        configuration->getEngineName(), getStorageID().getNameForLogs(), backQuoteIfNeed(new_database_name));
-}
-
 String StorageObjectStorageQueue::chooseZooKeeperPath(
     const ContextPtr & context_,
     const StorageID & table_id,
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
     UUID database_uuid,
-    String * result_zookeeper_name,
-    Macros::MacroExpansionInfo * result_macro_info)
+    String * result_zookeeper_name)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -2081,8 +2067,6 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
         result_zk_path = context_->getMacros()->expand(result_zk_path, info);
-        if (result_macro_info)
-            *result_macro_info = info;
     }
 
     if (result_zookeeper_name)
