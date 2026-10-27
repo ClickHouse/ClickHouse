@@ -1473,7 +1473,7 @@ Additionally:
 
 | Setting | Description                                                                                                                                                                                                 | Default Value       |
 |---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `level` | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
+| `level` | Maximum message level stored in the table. When set explicitly, the root logger level is raised to at least this value, so `text_log` can be more verbose than the server log file (`logger.level`). When not set, messages up to the most verbose level of the configured log outputs (`logger.level`, `console_log_level`, `errorlog_level`, `syslog_level`) are stored. | `Trace` (limited by the other log outputs when not set) |
 
 **Example**
 
