@@ -41,6 +41,8 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -51,6 +53,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDataType.h>
@@ -360,6 +363,11 @@ struct TableInfo
     NamedCollectionDependencies named_collections;
     /// Materialized view only: replay may reach a check that `allow_materialized_view_with_bad_select` relaxes.
     bool needs_bad_select_gate = false;
+    /// The user a view runs as (`DEFINER`). A user is not in any database, so the dump does not create it.
+    std::optional<String> definer;
+    /// Refreshable materialized view only: the views it waits for (`DEPENDS ON`). CREATE does not need them to exist, and
+    /// they may form a cycle, so they do not order the dump.
+    std::vector<std::pair<String, String>> refresh_dependencies;
 };
 
 /// A table of a dumped database as a probe of a stored query sees it, generated inner tables included.
@@ -1893,6 +1901,113 @@ NamedCollectionDependencies namedCollectionsOfCreate(const String & create_query
     return dependencies;
 }
 
+ASTPtr tryParseCreate(const String & create_query);
+
+/// What a secondary index of a `MergeTree` table declares that `MergeTreeIndexFactory::validate` and the index validators
+/// accept only on ATTACH, which loads a table the server already has, such as one an older version created, and refuse on
+/// CREATE whatever the settings. Only the checks the statement alone decides are mirrored. `context` builds the functions
+/// the expressions call, so every setting that gates a function must be on in it.
+std::optional<String> indexOnlyAttachAccepts(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!create.columns_list || !create.columns_list->indices)
+        return {};
+    /// A view or TimeSeries keeps its inner table engines in `targets`.
+    bool merge_tree = create.storage && create.storage->engine && endsWithCaseInsensitive(create.storage->engine->name, "MergeTree");
+    if (create.targets)
+        for (const auto * inner : create.targets->getInnerEngines())
+            merge_tree |= inner->engine && endsWithCaseInsensitive(inner->engine->name, "MergeTree");
+    if (!merge_tree)
+        return {};
+
+    for (const auto & child : create.columns_list->indices->children)
+    {
+        const auto * index = child->as<ASTIndexDeclaration>();
+        if (!index)
+            continue;
+        const String what = "secondary index " + backQuoteIfNeed(index->name);
+        const auto type = index->getType();
+        if (type && equalsCaseInsensitive(type->name, "hypothesis"))
+            return what + " has type `hypothesis`, which is no longer supported";
+
+        /// `validate` refuses an array join and a non-deterministic function anywhere in the expression, inside a lambda too.
+        std::optional<String> call;
+        if (const ASTPtr expression = index->getExpression())
+            forEachNode(*expression, [&](const IAST & node)
+            {
+                const auto * function = node.as<ASTFunction>();
+                if (call || !function)
+                    return;
+                if (function->name == "arrayJoin")
+                    call = what + " calls `arrayJoin`";
+                else if (const auto resolver = FunctionFactory::instance().tryGet(function->name, context);
+                         resolver && !resolver->isDeterministic())
+                    call = what + " calls the non-deterministic function " + backQuote(function->name);
+            });
+        if (call)
+            return call;
+
+        /// `bloomFilterIndexValidator` takes at most one parameter, a `Float64` false positive rate between 0 and 1.
+        if (type && equalsCaseInsensitive(type->name, "bloom_filter") && type->arguments && !type->arguments->children.empty())
+        {
+            const auto & arguments = type->arguments->children;
+            if (arguments.size() > 1)
+                return what + " of type `bloom_filter` has more than one parameter";
+            const auto * rate = arguments.front()->as<ASTLiteral>();
+            if (!rate || rate->value.getType() != Field::Types::Float64 || rate->value.safeGet<Float64>() < 0
+                || rate->value.safeGet<Float64>() > 1)
+                return what + " of type `bloom_filter` has a false positive rate that is not a `Float64` between 0 and 1";
+        }
+    }
+    return {};
+}
+
+/// Prepares the stored CREATE of an emitted object for replay, and records what it needs that the dump does not create.
+/// A refreshable materialized view runs a refresh as soon as CREATE makes it, which writes its target and reads its
+/// sources, unless the CREATE says `EMPTY`. The server does not store `EMPTY`, so the dump adds it, and replay recreates
+/// the schema without changing data. A secondary index that only ATTACH accepts is refused: its CREATE would fail.
+void prepareCreateForReplay(TableInfo & table, const String & engine, const ContextPtr & function_context)
+{
+    const ASTPtr ast = tryParseCreate(table.create_query);
+    auto * create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+    if (!create)
+    {
+        /// Without the AST the keyword is the only sign of a refresh, and replaying a refreshable view as stored runs one.
+        String lowercase = table.create_query;
+        std::transform(lowercase.begin(), lowercase.end(), lowercase.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (engine == "MaterializedView" && lowercase.contains("refresh"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot parse the stored CREATE for {}.{} for --dump-schema, so it cannot be dumped with `EMPTY`; replaying "
+                "a refreshable materialized view without it runs a refresh, which writes data",
+                backQuoteIfNeed(table.database), backQuoteIfNeed(table.name));
+        /// `reportDependenciesOutsideDumpSet` warns that it was not checked.
+        return;
+    }
+
+    if (const auto refused = indexOnlyAttachAccepts(*create, function_context))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot dump {}.{} for --dump-schema: its {}. The server accepts that only when it attaches a table it already "
+            "has, such as one created by an older version, so replaying its CREATE would fail; drop or replace the index first",
+            backQuoteIfNeed(table.database), backQuoteIfNeed(table.name), *refused);
+
+    /// The server stores `DEFINER = CURRENT_USER` with the name of the user who ran the CREATE. Only a view attached without
+    /// a user keeps `CURRENT_USER`, which replay resolves to the replaying user, so it needs nothing.
+    if (const auto * security = create->sql_security ? create->sql_security->as<ASTSQLSecurity>() : nullptr;
+        security && security->definer)
+        table.definer = security->definer->toString();
+
+    if (create->is_materialized_view && create->refresh_strategy)
+    {
+        /// The server qualifies these names when it creates the view, and resolves an unqualified one in the view's database.
+        if (const auto * dependencies = create->refresh_strategy->dependencies)
+            for (const auto & dependency : dependencies->children)
+                if (const auto * id = dependency->as<ASTTableIdentifier>())
+                    table.refresh_dependencies.emplace_back(
+                        id->getDatabaseName().empty() ? table.database : id->getDatabaseName(), id->shortName());
+        create->is_create_empty = true;
+        table.create_query = create->formatWithSecretsOneLine();
+    }
+}
+
 /// Combines server dependency columns with parsed view references and drops implicit storage.
 std::vector<TableInfo> resolveTables(
     std::vector<RawTableRow> rows,
@@ -2348,6 +2463,10 @@ std::vector<TableInfo> resolveTables(
                 for (const auto & dependency : row.loading_dependencies)
                     owner->second->loading_dependencies.push_back(dependency);
 
+    /// A function a setting gates refuses to be built without it, and the dump only asks the built function about itself.
+    const auto function_context = Context::createCopy(clusters.context);
+    enableAllExperimentalSettings(function_context);
+
     std::vector<TableInfo> tables;
     for (auto & row : rows)
     {
@@ -2373,6 +2492,8 @@ std::vector<TableInfo> resolveTables(
         table.unchecked_references = std::move(row.unchecked_references);
         table.unproven_remote_reads = std::move(row.unproven_remote_reads);
         table.named_collections = std::move(row.named_collections);
+        if (emit)
+            prepareCreateForReplay(table, row.engine, function_context);
         auto refuse_uuid_reference = [&](const std::pair<String, String> & dependency, const std::pair<String, String> & owner)
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -2668,7 +2789,17 @@ void reportDependenciesOutsideDumpSet(
                 }
             }
         }
+        /// A refreshable view whose `DEPENDS ON` view is missing is created, but waits for it and never refreshes.
+        for (const auto & dependency : table.refresh_dependencies)
+            if (!dumped_databases.contains(dependency.first) && !DatabaseCatalog::isPredefinedDatabase(dependency.first))
+                missing[{table.database, table.name, dependency.first, dependency.second}].reset();
     }
+
+    /// A user is not in any database either, and replay fails with `UNKNOWN_USER` where the user a view runs as is missing.
+    std::set<std::tuple<String, String, String>> definers;
+    for (const auto & table : tables)
+        if (table.emit && table.definer)
+            definers.emplace(table.database, table.name, *table.definer);
 
     /// A named collection is not in any database, so it is outside every dump set. Its values can
     /// include credentials, which a schema dump must not print, so it is reported rather than emitted.
@@ -2714,10 +2845,16 @@ void reportDependenciesOutsideDumpSet(
             << backQuoteIfNeed(collection) << ", which lives on the server rather than in a database and will not be "
             << "created by this dump; its values can include credentials, so the dump does not carry them.\n";
 
+    for (const auto & [database, name, user] : definers)
+        err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " runs as definer user "
+            << backQuoteIfNeed(user) << ", which lives on the server rather than in a database and will not be created by "
+            << "this dump.\n";
+
     for (const auto & table : tables)
         if (table.emit && table.named_collections.unscannable)
             err << "Warning: the stored CREATE of " << backQuoteIfNeed(table.database) << "." << backQuoteIfNeed(table.name)
-                << " could not be parsed here, so it was not checked for named collections; it is dumped as it is stored.\n";
+                << " could not be parsed here, so it was not checked for named collections, a definer user or an index that "
+                << "only ATTACH accepts; it is dumped as it is stored.\n";
 
     for (const auto & [database, name, collection] : unconfirmed_collections)
         err << "Warning: " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(name) << " may depend on named collection "
@@ -2770,7 +2907,7 @@ void reportDependenciesOutsideDumpSet(
             << "server and does not order the reader after it.\n";
 
     if (!missing.empty() || !unresolved.empty() || !collections.empty() || !database_collections.empty() || !unconfirmed_collections.empty()
-        || !unconfirmed_database_collections.empty())
+        || !unconfirmed_database_collections.empty() || !definers.empty())
         err << "Warning: replaying this dump into a fresh instance requires those objects to already exist.\n";
 }
 

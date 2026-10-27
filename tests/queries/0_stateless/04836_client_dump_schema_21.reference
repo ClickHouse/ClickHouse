@@ -1,0 +1,34 @@
+--- a refreshable materialized view is dumped with EMPTY ---
+dump rc=0, views dumped with EMPTY: 5
+Warning: d.depends depends on other.upstream, which is outside the dumped database(s) and will not be created by this dump.
+Warning: d.depends runs as definer user default, which lives on the server rather than in a database and will not be created by this dump.
+Warning: d.inner_append runs as definer user default, which lives on the server rather than in a database and will not be created by this dump.
+Warning: d.inner_replace runs as definer user default, which lives on the server rather than in a database and will not be created by this dump.
+Warning: d.to_append runs as definer user default, which lives on the server rather than in a database and will not be created by this dump.
+Warning: d.to_replace runs as definer user default, which lives on the server rather than in a database and will not be created by this dump.
+Warning: replaying this dump into a fresh instance requires those objects to already exist.
+rows written by the replay	0
+depends	MissingDependencies	1
+inner_append	Scheduled	1
+inner_replace	Scheduled	1
+to_append	Scheduled	1
+to_replace	Scheduled	1
+replay rc=0
+same definitions: 1
+--- a view that runs as a definer user ---
+dump rc=0
+Warning: d.mv runs as definer user alice, which lives on the server rather than in a database and will not be created by this dump.
+Warning: d.own runs as definer user default, which lives on the server rather than in a database and will not be created by this dump.
+Warning: d.v runs as definer user alice, which lives on the server rather than in a database and will not be created by this dump.
+Warning: replaying this dump into a fresh instance requires those objects to already exist.
+Code: 192
+replay with the user rc=0
+--- a secondary index that only ATTACH accepts ---
+hypothesis: dump rc=48, its secondary index i has type `hypothesis`, which is no longer supported
+rand: dump rc=48, its secondary index i calls the non-deterministic function `rand`
+lambda: dump rc=48, its secondary index i calls the non-deterministic function `rand`
+array_join: dump rc=48, its secondary index i calls `arrayJoin`
+bloom_filter_rate: dump rc=48, its secondary index i of type `bloom_filter` has a false positive rate that is not a `Float64` between 0 and 1
+bloom_filter_parameters: dump rc=48, its secondary index i of type `bloom_filter` has more than one parameter
+accepted: dump rc=0
+accepted: replay rc=0
