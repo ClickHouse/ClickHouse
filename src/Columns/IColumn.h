@@ -718,6 +718,9 @@ public:
     /// Zero, if could not be determined.
     [[nodiscard]] virtual size_t allocatedBytes() const = 0;
 
+    /// `sizeof` of the column object itself, which `allocatedBytes` does not count. Implemented by `COWHelper`.
+    [[nodiscard]] virtual size_t sizeOfObject() const = 0;
+
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}

@@ -65,6 +65,32 @@ def file_size(node, path):
     return int(bash(node, f"stat -c%s {shlex.quote(path)}").strip())
 
 
+def drop_text_index_caches(node):
+    # Edits keep the file size, so only cached content can hide them.
+    node.query(
+        "SYSTEM DROP TEXT INDEX CACHES; SYSTEM DROP MARK CACHE; SYSTEM DROP UNCOMPRESSED CACHE;"
+        " SYSTEM DROP MMAP CACHE; SYSTEM DROP PAGE CACHE"
+    )
+
+
+def cold_query(node, query, settings):
+    drop_text_index_caches(node)
+    return node.query(query, settings=settings).strip()
+
+
+def cold_query_error(node, query, settings):
+    drop_text_index_caches(node)
+    return node.query_and_get_error(query, settings=settings)
+
+
+def patch_file(node, path, backup, offset, data):
+    # Restores `path` from `backup`, then overwrites the bytes at `offset` with `data`, keeping the size.
+    bash(
+        node,
+        f"cp {backup} {path} && printf '{data}' | dd of={path} bs=1 seek={offset} conv=notrunc status=none",
+    )
+
+
 def test_empty_part_checksums(started_cluster):
     # Converted from stateless test 02253_empty_part_checksums.sh.
     # add_minmax_index_for_numeric_columns=0: Adds extra files, which changes the hashes
@@ -365,9 +391,10 @@ def test_text_index_corrupted_positions(started_cluster):
         ENGINE = MergeTree ORDER BY k
         -- min_bytes_for_full_part_storage=0: the test edits the raw skp_idx_txt.pos.idx file, which a
         -- packed part keeps inside data.packed instead of on disk.
+        -- Without a posting list codec the phrase is evaluated on the column and never reads .pos.
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
                  replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
-                 allow_experimental_text_index_phrase_search = 1
+                 allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor'
         """,
         settings={"enable_full_text_index": 1},
     )
@@ -394,50 +421,134 @@ def test_text_index_corrupted_positions(started_cluster):
     }
     query = "SELECT count() FROM t_pos WHERE hasPhrase(s, 'needle alpha')"
 
-    def drop_caches():
-        # The edits below keep the file size, so only cached content can hide them.
-        node1.query(
-            "SYSTEM DROP TEXT INDEX CACHES; SYSTEM DROP MARK CACHE; SYSTEM DROP UNCOMPRESSED CACHE;"
-            " SYSTEM DROP MMAP CACHE; SYSTEM DROP PAGE CACHE"
-        )
-
-    def phrase_count():
-        drop_caches()
-        return node1.query(query, settings=index_settings).strip()
-
-    def phrase_error():
-        drop_caches()
-        return node1.query_and_get_error(query, settings=index_settings)
-
     # Control: the intact index agrees with a plain scan, else the cases below would prove nothing.
     expected = node1.query(query, settings={"use_skip_indexes": 0}).strip()
-    assert phrase_count() == expected
+    assert cold_query(node1, query, index_settings) == expected
 
     # Every case keeps the file size. Shrinking it would leave the part's cached size stale, so the
     # query would fail on the seek rather than on the bytes under test.
 
     # Zeroed directory: the stored document count no longer matches the dictionary's.
     bash(node1, f"head -c {size} /dev/zero > {pos}")
-    assert "CORRUPTED_DATA" in phrase_error()
+    assert "CORRUPTED_DATA" in cold_query_error(node1, query, index_settings)
 
     # Oversized declared sizes: high bits set in the directory's leading bytes inflate every count.
-    bash(node1, f"cp {backup} {pos} && printf '\\xff\\xff\\xff\\xff' | dd of={pos} bs=1 seek=0 conv=notrunc status=none")
-    assert "CORRUPTED_DATA" in phrase_error()
+    patch_file(node1, pos, backup, 0, "\\xff\\xff\\xff\\xff")
+    assert "CORRUPTED_DATA" in cold_query_error(node1, query, index_settings)
 
     # A block size past this token's 6-byte blob but inside the file: only a bound taken from the
     # token's own length rejects it. Byte 2 is the first token's block size, asserted so the fixture
     # fails loudly if it ever drifts.
     bash(node1, f"cp {backup} {pos}")
     assert bash(node1, f"od -An -tu1 -N 3 {pos}").split() == ["100", "1", "3"]
-    bash(node1, f"printf '\\x64' | dd of={pos} bs=1 seek=2 conv=notrunc status=none")
-    assert "CORRUPTED_DATA" in phrase_error()
+    patch_file(node1, pos, backup, 2, "\\x64")
+    assert "CORRUPTED_DATA" in cold_query_error(node1, query, index_settings)
 
     # Restored: the query works again, so the failures came from the bytes, not a broken table.
     bash(node1, f"cp {backup} {pos}")
-    assert phrase_count() == expected
+    assert cold_query(node1, query, index_settings) == expected
 
     bash(node1, f"rm -f {backup}")
     node1.query("DROP TABLE t_pos SYNC")
+
+
+def test_text_index_corrupted_postings_rank_cursor(started_cluster):
+    # With rank cursors, phrase search must reject a posting segment off the segment size and positions whose
+    # document count differs from the posting list, not address the wrong position lists.
+    node1.query("DROP TABLE IF EXISTS t_pst SYNC")
+
+    node1.query(
+        """
+        CREATE TABLE t_pst
+        (
+            k UInt64,
+            s String,
+            INDEX txt(s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1, posting_list_block_size = 256) GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 100,
+                 replace_long_file_name_to_hash = 0, min_bytes_for_full_part_storage = 0,
+                 allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor'
+        """,
+        settings={"enable_full_text_index": 1},
+    )
+
+    pst_backup = "/tmp/t_pst_postings.orig"
+    pos_backup = "/tmp/t_pst_positions.orig"
+    try:
+        # 'aaa' is in every row, so its segments cover 256 rows each, and it sorts first, so its postings start
+        # the .pst file and its positions the .pos file. 'zzz' is rare and only after row 1024, so the walk loads
+        # segment 0 and then segment 4.
+        node1.query(
+            "INSERT INTO t_pst SELECT number, concat('aaa bbb', if(number >= 1024 AND number % 40 = 7, ' zzz aaa', ''))"
+            " FROM numbers(2000)"
+        )
+
+        part = get_active_part_path(node1, "t_pst")
+        pst = part + "skp_idx_txt.pst.idx"
+        pos = part + "skp_idx_txt.pos.idx"
+        bash(node1, f"cp {pst} {pst_backup} && cp {pos} {pos_backup}")
+
+        index_settings = {
+            "use_skip_indexes": 1,
+            "use_skip_indexes_on_data_read": 1,
+            "query_plan_direct_read_from_text_index": 1,
+            "use_query_condition_cache": 0,
+            "text_index_postings_intersection_algorithm": "leapfrog",
+        }
+        query = "SELECT count() FROM t_pst WHERE hasPhrase(s, 'zzz aaa')"
+        expected = node1.query(query, settings={"use_skip_indexes": 0}).strip()
+        assert cold_query(node1, query, index_settings) == expected
+
+        # Segment header: codec, payload bytes, doc count (256 is a 2-byte varint), first row id, then the payload
+        # and the block index: block count, then last row ids and offsets, one varint each per block.
+        data = [int(x) for x in bash(node1, f"od -An -tu1 -v -N 256 {pst}").split()]
+
+        def varint(offset):
+            value, shift = 0, 0
+            while True:
+                byte = data[offset]
+                offset += 1
+                value |= (byte & 0x7F) << shift
+                shift += 7
+                if byte < 0x80:
+                    return value, offset
+
+        def segment_end(offset):
+            offset = varint(offset)[1]
+            payload, offset = varint(offset)
+            offset = varint(varint(offset)[1])[1]
+            num_blocks, offset = varint(offset + payload)
+            for _ in range(2 * num_blocks):
+                offset = varint(offset)[1]
+            return offset
+
+        segment_4 = 0
+        for _ in range(4):
+            segment_4 = segment_end(segment_4)
+        assert data[segment_4 : segment_4 + 4] == [2, 20, 128, 2]
+
+        # Segment 4 is loaded, so a count off the segment size is rejected.
+        patch_file(node1, pst, pst_backup, segment_4 + 2, "\\xff\\x01")
+        assert (
+            "posting segment 4 holds 255 documents instead of 256"
+            in cold_query_error(node1, query, index_settings)
+        )
+        bash(node1, f"cp {pst_backup} {pst}")
+
+        # The positions of 'aaa' start with its document count (2000, a 2-byte varint) and its 16 blocks.
+        assert bash(node1, f"od -An -tu1 -N 3 {pos}").split() == ["208", "15", "16"]
+        patch_file(node1, pos, pos_backup, 0, "\\xcf")
+        assert (
+            "stored document count 1999 does not match the posting list (2000)"
+            in cold_query_error(node1, query, index_settings)
+        )
+        bash(node1, f"cp {pos_backup} {pos}")
+
+        assert cold_query(node1, query, index_settings) == expected
+    finally:
+        bash(node1, f"rm -f {pst_backup} {pos_backup}")
+        node1.query("DROP TABLE IF EXISTS t_pst SYNC")
 
 
 def test_packed_part_fetch_checksum(started_cluster):

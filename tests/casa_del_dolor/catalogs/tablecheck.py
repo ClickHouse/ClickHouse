@@ -26,6 +26,15 @@ try:
 except ImportError:
     _TEMPORAL_NTZ_TYPES = ()
 
+try:
+    from pyspark.sql.types import VariantType
+
+    # ClickHouse `JSON` maps to VARIANT, and the engines print it differently: e.g. Spark keeps
+    # null object fields (`{"k0":null}`) while ClickHouse drops them (`{}`)
+    _VARIANT_TYPES = (VariantType,)
+except ImportError:
+    _VARIANT_TYPES = ()
+
 from .laketables import SparkTable, LakeFormat, LakeCatalogs
 from integration.helpers.client import Client
 
@@ -66,7 +75,8 @@ class SparkAndClickHouseCheck:
                 TimestampType,
                 DateType,
             )
-            + _TEMPORAL_NTZ_TYPES,
+            + _TEMPORAL_NTZ_TYPES
+            + _VARIANT_TYPES,
         ):
             # Map type is not comparable in Spark, Struct is complicated.
             # TIMESTAMP_NTZ is excluded like TimestampType: its string form differs

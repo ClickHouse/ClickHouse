@@ -1,6 +1,7 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database, no-parallel-replicas
 -- Tag no-fasttest: depends on S3, Parquet and Iceberg
 -- Tag no-replicated-database: the replicated DDL worker evaluates the `IcebergLocal` arguments without the session, so it does not see the `TEMPORARY TABLE iceberg_path`
+-- Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the replicas use the query condition cache
 
 -- A filter or a row policy on a column that is added after the data file is read (a Hive partition column,
 -- a virtual column) uses the value of that column, even when the data file has a column with the same name.
