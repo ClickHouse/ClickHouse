@@ -273,6 +273,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
+    extern const char rmt_mutations_status_pause_before_pulling_log[];
     extern const char check_table_inject_retryable_zk_error[];
     extern const char check_table_inject_shutdown_abort[];
 }
@@ -9071,6 +9072,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
                 std::optional<PartitionIdsHint> hint(std::move(partition_ids));
                 /// Load committing blocks before pulling fresh logs, matching ReplicatedMergeTreeZooKeeperMergePredicate.
                 committing_blocks = getCommittingBlocks(zookeeper, zookeeper_path, hint, /*with_data=*/ false);
+                FailPointInjection::pauseFailPoint(FailPoints::rmt_mutations_status_pause_before_pulling_log);
                 /// Flush the local queue so it includes any commits whose block locks were removed before or during getCommittingBlocks.
                 /// The queue is not `mutable`, but pulling logs does not change the table: it only brings the queue up to date.
                 const_cast<StorageReplicatedMergeTree *>(this)->queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
