@@ -8,6 +8,17 @@ from initial_migration.prune_inherited_headers import ARCHES, CC_PROVIDERS, Docu
 NATIVE = frozenset({'cc_library', 'ch_cc_library'})
 FORWARD = CC_PROVIDERS | {'alias'}
 
+# These implementation_deps already link the complete library. Keep the package
+# header dependencies at the positions assigned by declare_first_party_header_deps.
+PRIVATE_COMPILE_GROUPS = {
+    **{('programs/' + program, 'clickhouse-' + program + '-lib'):
+       '//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0'
+       for program in ('benchmark', 'client', 'format', 'local', 'server')},
+    ('src/Common/benchmarks', 'benchmark_radix_sort_objects'): '//src:dbms__compile_1',
+    ('src/Common/benchmarks', 'wrap_in_nullable_objects'): '//src:dbms__compile_1',
+    ('src/Functions/UniqTheta', 'clickhouse_functions_uniqtheta'): '//src:dbms__compile_1',
+}
+
 
 class PublicDeps:
     def __init__(self, docs):
@@ -344,10 +355,10 @@ def prune_aggregate_deps(root, paths):
             if getattr(rule.func, 'id', None) not in NATIVE | {'llvm_cc_library', 'poco_cc_library'}:
                 continue
             attrs = {kw.arg: kw.value for kw in rule.keywords}
-            if not {'deps', 'implementation_deps'} <= attrs.keys():
+            private = attrs.get('implementation_deps')
+            if private is None:
                 continue
-            private = attrs['implementation_deps']
-            by_cpu = [(doc.labels(attrs['deps'], cpu), doc.labels(private, cpu))
+            by_cpu = [(doc.labels(attrs.get('deps'), cpu), doc.labels(private, cpu))
                       for cpu in (*ARCHES, 'default')]
             drop = set.union(*(pub & impl for pub, impl in by_cpu))
             if explicit_list(private, doc):
@@ -355,6 +366,9 @@ def prune_aggregate_deps(root, paths):
             else:
                 # A shared expression may contain other config settings: only use unconditional public deps.
                 drop &= set.intersection(*(pub for pub, _ in by_cpu))
+            group = PRIVATE_COMPILE_GROUPS.get((doc.package, attrs['name'].value))
+            if group and all(doc.reference(group.partition('__compile_')[0]) in impl for _, impl in by_cpu):
+                drop.add(doc.reference(group))
             if drop and (changes := editable_dependency_lists(doc, private, drop, doc.reference)):
                 private_edits.extend(changes)
         if private_edits:

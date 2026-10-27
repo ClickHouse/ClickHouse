@@ -15,7 +15,6 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "@clickhouse_boost//:boost_headers_no_openssl",
         "//src/Common",
-        "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/AggregateFunctions:headers",
         "//src/Parsers:clickhouse_parsers",
         "//programs/client:clickhouse-client-lib",

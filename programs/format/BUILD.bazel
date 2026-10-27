@@ -13,7 +13,6 @@ ch_cc_library(
         "//src/Common",
         "//src/Compression:clickhouse_compression",
         "@clickhouse_boost//:boost_headers_no_openssl",
-        "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/AggregateFunctions:headers",
         "//src/Dictionaries:clickhouse_dictionaries__compile_0",
         "//src/Functions:clickhouse_functions_obj__compile_0",

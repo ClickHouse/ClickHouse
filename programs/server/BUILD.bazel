@@ -59,7 +59,6 @@ ch_cc_library(
         "//base/poco/Util:_poco_util",
         "//src/Common",
         "//src/Compression:clickhouse_compression",
-        "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
         "//src/AggregateFunctions:headers",
         "//src/Common/ZooKeeper:headers",
         "//src/Daemon:headers",
