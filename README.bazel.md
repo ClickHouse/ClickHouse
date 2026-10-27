@@ -73,14 +73,14 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [d1988ae46](https://github.com/dzbarsky/clickhouse/commit/d1988ae46f0fb012a95da538e124a6026e5b0cd7), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
+At [2871135c1](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0134e281fa) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/60ac6503-597e-4623-a4a3-9ff4ce7c44ed) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/967fb67f-8a75-4b5a-9a27-897ff79a6230) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/4cb2f160-fd9d-4bd5-8d40-1da9553ff5a8) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
-The [validation history](bazel/initial_migration/validation-history.md#d1988ae46) records the unstripped hashes, the Rust archive comparisons, and the offline verification of the saved runtime and compiler results.
+The [validation history](bazel/initial_migration/validation-history.md#2871135c1) records the unstripped hashes, runtime checks and dependency reports.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -199,4 +199,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-The [validation history](bazel/initial_migration/validation-history.md#d1988ae46) for [d1988ae46](https://github.com/dzbarsky/clickhouse/commit/d1988ae46f0fb012a95da538e124a6026e5b0cd7) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.
+The [validation history](bazel/initial_migration/validation-history.md#2871135c1) for [2871135c1](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706) lists each CPU’s DWYU results. Targets without a verified report remain ungraded.

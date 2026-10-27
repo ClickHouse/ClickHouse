@@ -3014,3 +3014,36 @@ On both CPUs, `DwyuAnalyzeTarget` exited 1 for `//src/Dictionaries:dictionary_ap
 [x86-64 DWYU](https://app.buildbuddy.io/invocation/cb78756b-8a51-4b36-ac48-9c682ae00824) selected all three targets. Verified clean: `//src/Compression:codec_api`, `//src/Loggers:headers`. All three targets had zero owned object files and zero symbol or archive scans. `dictionary_api` forwarded 4,818 objects and remains ungraded.
 
 [ARM64 DWYU](https://app.buildbuddy.io/invocation/642b696f-c938-4fb7-80e7-9b5007c70512) selected all three targets. Verified clean: `//src/Compression:codec_api`, `//src/Loggers:headers`. All three targets had zero owned object files and zero symbol or archive scans. `dictionary_api` forwarded 4,805 objects and remains ungraded.
+
+## 2871135c1
+
+At [2871135c1](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706), the stripped ClickHouse binary matches native CMake byte for byte on x86-64 and ARM64. The table also compares each unstripped executable with the file produced by the preceding build attempt.
+
+| Native Bazel build | ELF | SHA-256 | Bytes | Comparison |
+| --- | --- | --- | ---: | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/967fb67f-8a75-4b5a-9a27-897ff79a6230) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 | Matches native CMake |
+| [x86-64](https://app.buildbuddy.io/invocation/967fb67f-8a75-4b5a-9a27-897ff79a6230) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 | Matches previous Bazel |
+| [x86-64](https://app.buildbuddy.io/invocation/967fb67f-8a75-4b5a-9a27-897ff79a6230) | `//src:unit_tests_dbms` | `5795432963558cf6273a731660eec9b76e10a6db386513ff526dcfea72a7f647` | 811964120 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/4cb2f160-fd9d-4bd5-8d40-1da9553ff5a8) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 | Matches native CMake |
+| [ARM64](https://app.buildbuddy.io/invocation/4cb2f160-fd9d-4bd5-8d40-1da9553ff5a8) | `//:clickhouse` | `52f3a2c3a1f0ba47b63141c45fc35f6fb210e6376b15ceac2afab4ba13b1a997` | 907067224 | Matches previous Bazel |
+| [ARM64](https://app.buildbuddy.io/invocation/4cb2f160-fd9d-4bd5-8d40-1da9553ff5a8) | `//src:unit_tests_dbms` | `717cb0513c9da39a17fa5a827613adf0f06b77e12b92268211fbf04a83e087c8` | 795058760 | Matches previous Bazel |
+
+The preceding [x86-64](https://app.buildbuddy.io/invocation/d7508057-fd7f-4390-82c1-bbbc38030f5d) and [ARM64](https://app.buildbuddy.io/invocation/23bff795-8530-4605-9455-f858ded538af) builds at [ee0dad8f1](https://github.com/dzbarsky/clickhouse/commit/ee0dad8f184bdbda1a2ffe52eb9163179f8b51d2) built 18 of 19 targets. Their stripped binaries matched native CMake, but `//bazel/fixtures/m11:owners` failed while inspecting libhdfs3. Eight of nine status files were present. Neither build verified the SDK or the runtime and compile checks, and neither started a DWYU build. The branch remained at the last published comparison.
+
+This comparison includes the earlier changes to the private Runtime/V1 and stream headers, the consolidated XRay library and the HDFS library that compiles `RpcClient.cpp`.
+
+[The S2 change](https://github.com/dzbarsky/clickhouse/commit/a0a7ba029cd464b0d6e63ed9969c26d6f0d21c78) removes five redundant dependencies and routes four link dependencies through `//src:s2_link`. The Functions library that compiles S2 code keeps its private dependency on `@clickhouse_s2geometry//:_s2`. From the previous action graphs, this projects removing S2 headers from 3,021 x86-64 and 3,022 ARM64 compilations. Those are projected input changes, not measured cache misses.
+
+[The vendor dependency change](https://github.com/dzbarsky/clickhouse/commit/2871135c17f960ad8c82eefe4262efb9a61e3706) keeps libcotp on Access/Common, zxc on Compression and libgsasl on libhdfs3. Five targets lose redundant dependencies; both Functions libraries preserve link order using `implementation_deps`.
+
+Both builds completed 19 targets. Nine original status files per CPU verified 30 runtime checks and three compile checks. The `RpcClient.cpp` compiler depfile lists the forced `port.h` and both generated headers it needs, `IpcConnectionContext.pb.h` and `RpcHeader.pb.h`. The check also verified the private provider for all eight generated HDFS headers. It does not require every HDFS source to read all eight. The ClickHouse link arguments, unit-test linker response, and ordered archive inputs for XRay (61 objects) and HDFS (90 on x86-64; 89 on ARM64) matched the preceding attempt. All seven processed Rust archives retained their byte counts and SHA-256 values, and ARM64 verified all seven `llvm-strip --strip-debug` input/output pairs. Neither build requested an experimental glibc link.
+
+Bazel reported these counts for the native builds: [x86-64](https://app.buildbuddy.io/invocation/967fb67f-8a75-4b5a-9a27-897ff79a6230): 3,032 remote executions and 52,802 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/4cb2f160-fd9d-4bd5-8d40-1da9553ff5a8): 3,033 remote executions and 53,279 remote cache hits.
+
+In the [x86-64](https://app.buildbuddy.io/invocation/a0b776c7-193f-4d47-be39-ae0134e281fa) and [ARM64](https://app.buildbuddy.io/invocation/60ac6503-597e-4623-a4a3-9ff4ce7c44ed) builds at [d1988ae46](https://github.com/dzbarsky/clickhouse/commit/d1988ae46f0fb012a95da538e124a6026e5b0cd7), two S2 headers disappeared from the inputs of 3,816 and 3,820 compile actions, and remote executions rose by 3,818 and 3,822 versus the preceding builds, suggesting the headers caused most of the increase without identifying individual cache misses.
+
+### Dependency reports
+
+[x86-64 DWYU](https://app.buildbuddy.io/invocation/af58af00-00ad-453c-ba28-e0a2dcc794e9) did not start an analyzer. The parent recorded `no configured owners fit`. All 8 offered targets remain ungraded.
+
+[ARM64 DWYU](https://app.buildbuddy.io/invocation/76f70f3b-9f85-438a-bdbd-4fa0a403fa1c) did not start an analyzer. The parent recorded `no configured owners fit`. All 9 offered targets remain ungraded.
