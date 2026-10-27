@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # An `ALTER TABLE ... MODIFY REFRESH` that changes only the interval must reschedule the view:
 # the refresh strategy's tree hash has to include the intervals, not only the node type.
+# `APPEND` keeps a `MergeTree` target valid in a `Replicated` database, where a replacing refresh needs a replicated table.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS mv_05407;
-    CREATE MATERIALIZED VIEW mv_05407 REFRESH EVERY 1 YEAR ENGINE = MergeTree ORDER BY x EMPTY AS SELECT 1 AS x;
+    CREATE MATERIALIZED VIEW mv_05407 REFRESH EVERY 1 YEAR APPEND ENGINE = MergeTree ORDER BY x EMPTY AS SELECT 1 AS x;
 "
 
 # The new schedule is applied by the refresh task's background scheduling, so wait for it.
@@ -26,7 +27,7 @@ wait_for_next_refresh_time()
 
 wait_for_next_refresh_time "next_refresh_time > now() + INTERVAL 10 DAY"
 
-$CLICKHOUSE_CLIENT -q "ALTER TABLE mv_05407 MODIFY REFRESH EVERY 1 DAY"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE mv_05407 MODIFY REFRESH EVERY 1 DAY APPEND"
 
 wait_for_next_refresh_time "next_refresh_time <= now() + INTERVAL 2 DAY"
 
