@@ -666,7 +666,7 @@ bool seccompAllowsIOUring(const ServerSettings & server_settings)
 {
 #if USE_SILK
     /// The silk runtime makes its rings before the filter is installed and keeps submitting to them.
-    if (server_settings[ServerSetting::enable_silk_runtime])
+    if (Silk::isFiberSchedulerInitialized())
         return true;
 #endif
     return server_settings[ServerSetting::seccomp_allow_io_uring];
@@ -2721,9 +2721,8 @@ try
                 requested_allow_io_uring && *requested_allow_io_uring != seccompAllowsIOUring(new_server_settings))
                 LOG_WARNING(
                     log,
-                    "Whether the seccomp policy allows `io_uring` (`seccomp_allow_io_uring`, `enable_silk_runtime`) was changed "
-                    "from {} to {} in the configuration, but it takes effect only after a restart: the seccomp policy of a "
-                    "running process cannot be changed",
+                    "The `seccomp_allow_io_uring` server setting was changed from `{}` to `{}` in the configuration, but it takes "
+                    "effect only after a restart: the seccomp policy of a running process cannot be changed",
                     *requested_allow_io_uring,
                     seccompAllowsIOUring(new_server_settings));
 

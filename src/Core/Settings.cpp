@@ -8482,7 +8482,7 @@ Possible values:
 )", 0) \
     \
     DECLARE(LocalFSReadMethod, storage_file_read_method, LocalFSReadMethod::pread, R"(
-Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
+Method of reading data from storage file, one of: `read`, `pread`, `mmap`, `io_uring`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). With an enforcing `seccomp` mode, such as the `trap` of the shipped configuration, `io_uring` also needs the `seccomp_allow_io_uring` server setting.
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
 Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.

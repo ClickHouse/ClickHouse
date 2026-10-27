@@ -483,7 +483,7 @@ def test_reloaded_io_uring_setting_does_not_replace_the_one_in_force(started_clu
         )
         # See `test_setting_from_zookeeper_is_the_one_installed` for the dots.
         assert trap_node.contains_in_log(
-            "allows .io_uring. (.seccomp_allow_io_uring., .enable_silk_runtime.) was changed from true to false"
+            "seccomp_allow_io_uring. server setting was changed from .true. to .false. in the configuration"
         )
 
     assert (
