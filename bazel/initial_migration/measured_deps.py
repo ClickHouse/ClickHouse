@@ -15,6 +15,7 @@ UNWIND = '@clickhouse_llvm_project//:unwind'
 TZDATA = '@clickhouse_cctz//:tzdata'
 SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
 MINIZIP = '@clickhouse_minizip_ng//:_minizip'
+UPB_WIRE = '@clickhouse_grpc//:upb_wire_lib'
 ARRAY_LENGTH = '//src/Functions/array:headers'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
 UNIT_TEST_FUNCTION_DEPS = [
@@ -77,14 +78,16 @@ DEPENDENCIES = {
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_libhdfs3', '_hdfs3__compile_0'): ([], ['@clickhouse_google_protobuf//:_libprotobuf'], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
+    **{('contrib/libfuzzer-cmake', name): (['@clickhouse_llvm_project//:cxxabi'], [], [])
+       for name in ('_fuzzer', '_fuzzer_no_main')},
     ('src', 'headers'): ([
         '@clickhouse_double_conversion//:_double-conversion',
         '@clickhouse_mongo_cxx_driver//:_bsoncxx', '@clickhouse_mongo_cxx_driver//:_mongocxx',
     ], [], []),
     ('src', 'clickhouse_common_io'): ([MINIZIP], [], []),
-    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP], [], []),
+    ('src/AggregateFunctions', 'clickhouse_aggregate_functions'): ([MINIZIP, UPB_WIRE], [], []),
     ('src/Dictionaries', 'clickhouse_dictionaries'): ([MINIZIP], [], []),
-    ('src/Storages/System', 'clickhouse_storages_system'): ([MINIZIP], [], []),
+    ('src/Storages/System', 'clickhouse_storages_system'): ([MINIZIP, UPB_WIRE], [], []),
     ('src', 'dbms__compile_4'): ([ARRAY_LENGTH], [], []),
     ('src/Functions', 'clickhouse_functions_obj__compile_2'): ([ARRAY_LENGTH], [], []),
     ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
@@ -433,7 +436,9 @@ def apply(root):
                     edits.append((start, start,
                                   'cc_library(name = "minizip_link", implementation_deps = [' +
                                   json.dumps(MINIZIP) + '], visibility = ["//src/Functions/array:__pkg__"])\n\n'))
-                direct = editable_dependency_lists(build, attrs['deps'], set(), canonical, replacements)
+                # capnp, icui18n and upb_textformat_lib already forward these libraries.
+                unused = {UPB_WIRE, '@clickhouse_capnproto//:_kj', '@clickhouse_icu//:_icuuc'}
+                direct = editable_dependency_lists(build, attrs['deps'], unused, canonical, replacements)
                 if direct is None:
                     raise ValueError(f'{name}: cannot replace the Minizip dependency in place')
                 edits.extend(direct)

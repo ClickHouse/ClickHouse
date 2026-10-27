@@ -646,6 +646,51 @@ def fold_component_libraries(root):
     path.write_text(load + source.rewrite(edits))
 
 
+def fold_component_interface(root):
+    """Keep CMake's ch_contrib::llvm interface on the libraries that forward dbms."""
+    import ast
+    from initial_migration.build_file import starlark
+    from initial_migration.compact_build import Source
+    from initial_migration.first_party_packages import attributes
+
+    repo = '@clickhouse_llvm_project//:'
+    public = None
+    for package, name in (
+        ('AggregateFunctions', 'clickhouse_aggregate_functions'), ('Dictionaries', 'clickhouse_dictionaries'),
+        ('Functions/URL', 'clickhouse_functions_url'), ('Storages/System', 'clickhouse_storages_system'),
+    ):
+        path = root / 'src' / package / 'BUILD.bazel'
+        source = Source(path.read_text())
+        attrs, = (attributes(rule) for _, rule in source.rules() if attributes(rule)['name'].value == name)
+        if set(attrs) != {'name', 'deps'}:
+            raise ValueError(f'{name} must still forward only its public dependencies')
+        deps = attrs['deps']
+        strings = [n for n in ast.walk(deps) if isinstance(n, ast.Constant)]
+        if any(n.value == repo + 'llvm' for n in strings):
+            continue
+
+        # LLVMXRay is the last REQUIRED_LLVM_LIBRARIES entry on both Linux CPUs.
+        last, = (n for n in strings if n.value == repo + 'LLVMXRay')
+        start, end = source.span(deps)[0], source.span(last)[1]
+        local = source.bytes[start:end].decode().replace(repo, ':') + ']'
+        labels = [n.value for n in ast.walk(ast.parse(local)) if isinstance(n, ast.Constant)]
+        if any(not label.startswith((':LLVM', '@platforms//cpu:')) for label in labels) or public not in (None, local):
+            raise ValueError(f'{name}: expected the same leading LLVM components and CPU selections')
+        public = local
+        path.write_text(source.rewrite([(start, end, f'["{repo}llvm"')]))
+
+    path = root / 'bazel/dependencies/clickhouse_llvm_project.BUILD.bazel'
+    source = Source(path.read_text())
+    declared = any(attributes(rule)['name'].value == 'llvm' for _, rule in source.rules())
+    if declared != (public is None):
+        raise ValueError('Expected all four public LLVM lists or an existing LLVM interface')
+    if public is not None:
+        # These six REQUIRED_LLVM_LIBRARIES publish no headers or compile options.
+        private = [':LLVM' + name for name in ('CFGuard', 'HipStdPar', 'IRPrinter', 'IRReader', 'ObjCARCOpts', 'SandboxIR')]
+        path.write_text(path.read_text().rstrip() + '\n\ncc_library(\n    name = "llvm",\n'
+                        f'    deps = {public},\n    implementation_deps = {starlark(private, 4, step=4)},\n)\n')
+
+
 def fold_outline_atomics(path):
     """Replace the repeated compiler-rt declarations only after checking every CMake variant."""
     import ast

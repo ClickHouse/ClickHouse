@@ -5523,3 +5523,61 @@ filegroup(
     name = "runtime_libcxxabi_headers",
     srcs = glob(["libcxxabi/include/**"]),
 )
+
+cc_library(
+    name = "llvm",
+    implementation_deps = [
+        ":LLVMCFGuard",
+        ":LLVMHipStdPar",
+        ":LLVMIRPrinter",
+        ":LLVMIRReader",
+        ":LLVMObjCARCOpts",
+        ":LLVMSandboxIR",
+    ],
+    deps = select({
+        "@platforms//cpu:x86_64": [],
+        "@platforms//cpu:aarch64": [
+            ":LLVMAArch64CodeGen",
+            ":LLVMAArch64Desc",
+            ":LLVMAArch64Info",
+        ],
+    }) + [
+        ":LLVMAggressiveInstCombine",
+        ":LLVMAnalysis",
+        ":LLVMAsmParser",
+        ":LLVMBinaryFormat",
+        ":LLVMCGData",
+        ":LLVMCodeGen",
+        ":LLVMCoroutines",
+        ":LLVMDebugInfoCodeView",
+        ":LLVMDebugInfoDWARF",
+        ":LLVMDemangle",
+        ":LLVMExecutionEngine",
+        ":LLVMFrontendAtomic",
+        ":LLVMFrontendHLSL",
+        ":LLVMFrontendOffloading",
+        ":LLVMFrontendOpenMP",
+        ":LLVMGlobalISel",
+        ":LLVMInstrumentation",
+        ":LLVMLinker",
+        ":LLVMMC",
+        ":LLVMMCParser",
+        ":LLVMObject",
+        ":LLVMObjectYAML",
+        ":LLVMPasses",
+        ":LLVMRemarks",
+        ":LLVMSupport",
+        ":LLVMTarget",
+        ":LLVMTargetParser",
+        ":LLVMVectorize",
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            ":LLVMX86CodeGen",
+            ":LLVMX86Desc",
+            ":LLVMX86Info",
+        ],
+        "@platforms//cpu:aarch64": [],
+    }) + [
+        ":LLVMXRay",
+    ],
+)

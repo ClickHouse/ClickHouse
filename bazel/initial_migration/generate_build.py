@@ -1924,6 +1924,7 @@ def main():
     # Consumers and source owners are final after the BUILD rule rewrites.
     prune_native_exports(ROOT, write=True)
     llvm_targets.fold_component_libraries(ROOT)
+    llvm_targets.fold_component_interface(ROOT)
     format_build_files(read_only=read_only)
     for path, original in maintained.items():
         if path.read_bytes() != original:
