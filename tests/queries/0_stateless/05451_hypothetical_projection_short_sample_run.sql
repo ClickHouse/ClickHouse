@@ -10,7 +10,8 @@ CREATE TABLE t_est (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
 CREATE TABLE t_real AS t_est;
 ALTER TABLE t_real ADD PROJECTION p (SELECT a, b ORDER BY b);
 
--- 301 granules in one part: with a step of 10 the last granule is a run of its own, and only its rows have b = 0
+-- 301 granules in one part: with a step of 10 the last granule is a run of its own
+-- only the rows of that granule have b = 0
 INSERT INTO t_est SELECT number, if(number >= 30000, 0, 1 + number % 50) FROM numbers(30100);
 INSERT INTO t_real SELECT number, if(number >= 30000, 0, 1 + number % 50) FROM numbers(30100);
 OPTIMIZE TABLE t_est FINAL;
