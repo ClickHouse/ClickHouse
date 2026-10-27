@@ -23,9 +23,8 @@ static inline const char* ifNotEmpty(const char* s)
 namespace
 {
 
-/// Replacement for the connector's own pvio_socket_wait_io_or_timeout, installed via
-/// MARIADB_OPT_IO_WAIT. Contract: `timeout` is in milliseconds and <= 0 means wait indefinitely;
-/// a return value below 1 is a failure, 1 means the socket is ready.
+/// Installed as MARIADB_OPT_IO_WAIT: `timeout` is in milliseconds and <= 0 waits indefinitely;
+/// returns 1 when the socket is ready and a value below 1 on failure.
 int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noexcept
 {
     static constexpr int slice_ms = 200;
@@ -46,15 +45,12 @@ int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noex
         {
             const int rc = poll(&poll_fd, 1, bounded ? std::min(remaining, slice_ms) : slice_ms);
 
-            /// Ready, or a failure other than a signal: hand it back untouched, errno included.
             if (rc != 0 && !(rc == -1 && errno == EINTR))
                 return rc;
 
             if (DB::CurrentThread::isInitialized() && DB::CurrentThread::get().isQueryCanceled())
                 return 0;
 
-            /// Recompute the budget from the start of the wait, so neither a signal nor a
-            /// slice boundary extends the deadline. An unbounded wait has no budget to spend.
             if (bounded)
             {
                 timespec now{};
@@ -70,15 +66,13 @@ int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noex
             }
         }
     }
-    /// Ok: invoked from C, so nothing may escape through the connector's frames. The only throwing
-    /// call is the cancellation predicate, and 0 is the failure value the caller already handles.
+    /// Ok: called from the connector's C frames, so nothing may escape; 0 is the failure it already handles.
     catch (...)
     {
         return 0;
     }
 }
 
-/// Scoped to connection establishment; post-connect reads and writes keep the library's own wait.
 struct ScopedCancellationAwareIoWait
 {
     MYSQL * driver;
@@ -88,7 +82,13 @@ struct ScopedCancellationAwareIoWait
         mysql_options(driver, MARIADB_OPT_IO_WAIT, reinterpret_cast<const void *>(&cancellationAwareIoWait));
     }
 
-    ~ScopedCancellationAwareIoWait() { mysql_options(driver, MARIADB_OPT_IO_WAIT, nullptr); }
+    /// A failed connect leaves `options.extension` null if reallocating it fails, and the
+    /// connector dereferences it unconditionally.
+    ~ScopedCancellationAwareIoWait()
+    {
+        if (driver->options.extension)
+            mysql_options(driver, MARIADB_OPT_IO_WAIT, nullptr);
+    }
 };
 
 }

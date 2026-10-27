@@ -274,8 +274,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
             app.logger().warning("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
 
-    /// The last attempt has no next iteration to reach the check above, and the full pool below
-    /// can still return a connection, so a cancelled query would be served or misreported.
+    /// The last attempt has no next iteration to reach the check above.
     DB::CurrentThread::checkIfNotCancelled();
 
     if (full_pool)
