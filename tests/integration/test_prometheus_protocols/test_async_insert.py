@@ -54,10 +54,10 @@ def get_profile_event(event):
     )
 
 
-def write_request_with_exemplar(metric_name):
+def write_request_with_exemplar(metric_name, samples=None):
     timestamp = 1724112000
     write_request = convert_time_series_to_protobuf(
-        [({"__name__": metric_name}, {timestamp: 1.5})]
+        [({"__name__": metric_name}, samples or {timestamp: 1.5})]
     )
     write_request.timeseries[0].exemplars.append(
         types_pb2.Exemplar(
@@ -67,6 +67,18 @@ def write_request_with_exemplar(metric_name):
         )
     )
     return write_request
+
+
+# Every bucket of samples goes to its own partition, so with `max_partitions_per_insert_block=1`
+# a write of samples in two buckets fails.
+TWO_BUCKETS = {1724112000: 1.5, 1724115601: 2.5}
+
+
+def create_table_with_partition_per_bucket():
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES INNER ENGINE=AggregatingMergeTree PARTITION BY bucket ORDER BY (id, bucket)"
+    )
 
 
 def test_async_insert_metric_families_deduplication_cache():
@@ -178,20 +190,19 @@ def test_async_insert_counts_dropped_exemplars():
 
 @pytest.mark.parametrize("async_insert", [0, 1])
 def test_async_insert_failure_counts_no_dropped_exemplars(async_insert):
-    node.query(
-        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
-        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
-    )
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+    create_table_with_partition_per_bucket()
 
-    write_request = write_request_with_exemplar("exemplar_rejected_metric")
+    write_request = write_request_with_exemplar("exemplar_rejected_metric", TWO_BUCKETS)
     before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
     response = get_response_to_remote_write(
-        node.ip_address, 9093, f"/write?async_insert={async_insert}", write_request
+        node.ip_address,
+        9093,
+        f"/write?async_insert={async_insert}&max_partitions_per_insert_block=1",
+        write_request,
     )
 
     # The write is rejected, so its exemplar is not counted as dropped.
-    assert "VIOLATED_CONSTRAINT" in response.text
+    assert "TOO_MANY_PARTS" in response.text
     assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 0
 
 
@@ -250,19 +261,15 @@ def test_async_insert_flush_timeout_counts_dropped_exemplars():
 
 
 def test_async_insert_failed_late_flush_counts_no_dropped_exemplars():
-    node.query(
-        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
-        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
-    )
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+    create_table_with_partition_per_bucket()
 
-    write_request = write_request_with_exemplar("exemplar_late_rejected_metric")
+    write_request = write_request_with_exemplar("exemplar_late_rejected_metric", TWO_BUCKETS)
     before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
     failed_before = get_profile_event("FailedAsyncInsertQuery")
     response = get_response_to_remote_write(
         node.ip_address,
         9093,
-        "/write?async_insert=1&wait_for_async_insert_timeout=0"
+        "/write?async_insert=1&max_partitions_per_insert_block=1&wait_for_async_insert_timeout=0"
         "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
         write_request,
     )
