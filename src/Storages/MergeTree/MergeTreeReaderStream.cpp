@@ -332,16 +332,30 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
     return data_buffer;
 }
 
-size_t takeBytesOfCompressedBlockRanges(CompressedBlockRanges & ranges)
+size_t CountedCompressedBlocks::take(const String & file, CompressedBlockRanges & ranges)
 {
-    std::sort(ranges.begin(), ranges.end());
+    std::lock_guard lock(mutex);
+    auto & counted_in_file = counted[file];
     size_t bytes = 0;
-    size_t counted_until = 0;
-    for (const auto & [begin, end] : ranges)
+    for (const auto & [range_begin, range_end] : ranges)
     {
-        if (end > std::max(begin, counted_until))
-            bytes += end - std::max(begin, counted_until);
-        counted_until = std::max(counted_until, end);
+        /// Only the bytes of the range that are not counted already, merging it into the counted ones.
+        size_t begin = range_begin;
+        size_t end = range_end;
+        size_t covered = 0;
+        auto it = counted_in_file.upper_bound(begin);
+        if (it != counted_in_file.begin() && std::prev(it)->second >= begin)
+            --it;
+        while (it != counted_in_file.end() && it->first <= range_end)
+        {
+            if (it->second > range_begin && it->first < range_end)
+                covered += std::min(range_end, it->second) - std::max(range_begin, it->first);
+            begin = std::min(begin, it->first);
+            end = std::max(end, it->second);
+            it = counted_in_file.erase(it);
+        }
+        bytes += range_end - range_begin - covered;
+        counted_in_file.emplace(begin, end);
     }
     ranges.clear();
     return bytes;
