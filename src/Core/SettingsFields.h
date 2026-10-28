@@ -200,6 +200,44 @@ using SettingFieldUInt32Auto = SettingAutoWrapper<SettingFieldUInt32>;
 using SettingFieldInt32Auto = SettingAutoWrapper<SettingFieldInt32>;
 using SettingFieldDoubleAuto = SettingAutoWrapper<SettingFieldDouble>;
 
+/// A Bool setting with a third, named value: accepts everything a Bool accepts plus `Keyword::value`.
+/// Mirrors `SettingAutoWrapper`: `base` holds the Bool, `is_keyword` tells that the third value is set.
+/// The members are defined in SettingsFields.cpp, which instantiates the struct for every keyword.
+template <typename Keyword>
+struct SettingFieldTriBool
+{
+    constexpr static std::string_view keyword = Keyword::value;
+    /// In the binary format a Bool is a varint 0/1 and a string starts with its length (see `readBinary`).
+    static_assert(keyword.size() > 1);
+
+    SettingFieldBool base;
+    bool is_keyword = false;
+    bool changed = false;
+
+    explicit SettingFieldTriBool(bool x = false) : base(x) {}
+    explicit SettingFieldTriBool(const Field & f);
+    SettingFieldTriBool(const SettingFieldTriBool &) = default;
+    SettingFieldTriBool & operator=(const SettingFieldTriBool &) = default;
+    SettingFieldTriBool & operator=(const Field & f);
+
+    bool isChanged() const { return changed; }
+    void setChanged(bool changed_) { changed = changed_; }
+
+    explicit operator Field() const;
+    String toString() const;
+    void parseFromString(const String & str);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+};
+
+struct SettingFieldKeywordForce
+{
+    constexpr static std::string_view value = "force";
+};
+
+using SettingFieldBoolForce = SettingFieldTriBool<SettingFieldKeywordForce>;
+
 /* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
  * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
