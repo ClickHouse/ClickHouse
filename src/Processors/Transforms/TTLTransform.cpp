@@ -146,16 +146,18 @@ TTLTransform::TTLTransform(
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
     bool force_,
-    bool ttl_delete_applied_by_merge_)
+    bool ttl_delete_applied_by_merge_,
+    bool apply_ttl_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
+    , apply_ttl(apply_ttl_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
 {
     auto old_ttl_infos = data_part->ttl_infos;
 
-    if (metadata_snapshot_->hasRowsTTL())
+    if (apply_ttl && metadata_snapshot_->hasRowsTTL())
     {
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
         auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
@@ -170,16 +172,19 @@ TTLTransform::TTLTransform(
         delete_algorithm = static_cast<const TTLDeleteAlgorithm *>(algorithms.back().get());
     }
 
-    for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
-        algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
-            getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
-            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+    if (apply_ttl)
+    {
+        for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
+            algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
+                getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
+                old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
-    for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
-        algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
-                getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
-                old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_, metadata_snapshot_));
+        for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
+            algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
+                    getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
+                    old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
+                    getInputPort().getHeader(), storage_, metadata_snapshot_));
+    }
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
@@ -205,7 +210,7 @@ TTLTransform::TTLTransform(
             expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
     }
 
-    const auto column_ttls = metadata_snapshot_->getColumnTTLs();
+    const auto column_ttls = apply_ttl ? metadata_snapshot_->getColumnTTLs() : TTLColumnsDescription{};
 
     const NameSet key_columns = metadata_snapshot_->getStorageColumnsRequiredForKeys();
     for (const auto & [name, _] : column_ttls)
@@ -277,6 +282,9 @@ TTLTransform::TTLTransform(
             if (auto it = column_ttls.find(dependent.name); it != column_ttls.end())
                 add_column_ttl_algorithm(it->first, it->second);
     }
+
+    if (!apply_ttl)
+        return;
 
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
         algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
@@ -393,6 +401,9 @@ Chunk TTLTransform::generate()
 
 void TTLTransform::finalize()
 {
+    if (!apply_ttl)
+        return;
+
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);

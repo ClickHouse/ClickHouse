@@ -23,7 +23,8 @@ public:
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
         bool force_,
-        bool ttl_delete_applied_by_merge_ = false
+        bool ttl_delete_applied_by_merge_ = false,
+        bool apply_ttl_ = true
     );
 
     String getName() const override { return "TTL"; }
@@ -47,6 +48,9 @@ private:
     bool all_data_dropped = false;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
     const bool ttl_delete_applied_by_merge = false;
+    /// False for a merge that must not apply TTL, e.g. while TTL merges are stopped: the transform only adds the
+    /// expired columns and keeps the TTL infos of the part.
+    const bool apply_ttl = true;
 
     PreparedSets::Subqueries subqueries_for_sets;
 
