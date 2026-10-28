@@ -2732,7 +2732,7 @@ The profile events `AdaptiveCodecBlocksPriced`, `AdaptiveCodecBlocksRepriced` an
 `AdaptiveCodecBytesDefault` and `AdaptiveCodecBytesWritten` sum the default codec's size and the written size of the sample blocks, so their ratio is the saving of adaptive selection, exact with period `1`.
 Streams whose only candidates are the default codec and `NONE` are not counted.
 )", EXPERIMENTAL, \
-        {"26.10", 8, 8, "New setting"}) \
+        {"26.11", 8, 8, "New setting"}) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
