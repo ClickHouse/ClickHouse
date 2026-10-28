@@ -73,7 +73,7 @@ SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimizat
 SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
 SELECT b, s, count() FROM t_05407 GROUP BY b, s ORDER BY b ASC, s ASC COLLATE 'en' LIMIT 5
-SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1;
+SETTINGS max_threads = 1, max_block_size = 1024, enable_group_by_top_k_optimization = 1, log_comment = '05407_composite_later';
 
 -- ORDER BY shorter than GROUP BY: the heap ranks `s` only and skips rows without evicting groups.
 -- LIMIT 4 takes both `b` of the two best `s`, so the selected set has no ties.
@@ -86,32 +86,32 @@ SELECT countIf(explain LIKE '%Top-K%collations=[en]%') FROM (EXPLAIN actions = 1
     SELECT s, b, count() FROM t_05407 GROUP BY s, b ORDER BY s ASC COLLATE 'en' LIMIT 4);
 
 -- Precomposed 'é' (C3A9) and 'e' + U+0301 (65CC81) are two groups that are equal under 'en'. The heap starts right
--- after the 32800 starters; its first cycle fills it with f5, f6, a, b and then admits c and both forms of é, so the
--- first trim has the two forms tied at the boundary: both must survive. The trailing count decides which form the
--- LIMIT keeps, so either eviction shows.
+-- after the 32800 starters; its first cycle fills it with f5, f6, a, b and then admits c, both forms of é and new
+-- f5<number> keys, one per row, until it trims with the two forms tied at the boundary: both must survive. The
+-- trailing count decides which form the LIMIT keeps, so either eviction shows.
 SELECT 'ties under collation';
 SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
     concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
-    concat('g', toString(r)))) AS s FROM numbers(42800))
+    concat('f5', toString(number)))) AS s FROM numbers(42800))
     GROUP BY s ORDER BY s ASC COLLATE 'en', c ASC LIMIT 4)
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
 SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
     concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
-    concat('g', toString(r)))) AS s FROM numbers(42800))
+    concat('f5', toString(number)))) AS s FROM numbers(42800))
     GROUP BY s ORDER BY s ASC COLLATE 'en', c ASC LIMIT 4)
 SETTINGS max_threads = 1, max_block_size = 800, enable_group_by_top_k_optimization = 1, log_comment = '05407_ties_asc';
 SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
     concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
-    concat('g', toString(r)))) AS s FROM numbers(42800))
+    concat('f5', toString(number)))) AS s FROM numbers(42800))
     GROUP BY s ORDER BY s ASC COLLATE 'en', c DESC LIMIT 4)
 SETTINGS max_threads = 1, max_block_size = 65536, enable_group_by_top_k_optimization = 0;
 SELECT hex(s), c FROM (SELECT s, count() AS c FROM (WITH (number - 32800) % 100 AS r SELECT if(number < 32800,
     concat('m', toString(number)), multiIf(r = 0, 'f5', r = 1, 'f6', r = 2, 'a', r = 3, 'b', r = 4, 'c',
     r = 5, char(0xC3, 0xA9), r = 6 AND intDiv(number - 32800, 100) % 3 != 2, concat('e', char(0xCC, 0x81)),
-    concat('g', toString(r)))) AS s FROM numbers(42800))
+    concat('f5', toString(number)))) AS s FROM numbers(42800))
     GROUP BY s ORDER BY s ASC COLLATE 'en', c DESC LIMIT 4)
 SETTINGS max_threads = 1, max_block_size = 800, enable_group_by_top_k_optimization = 1, log_comment = '05407_ties_desc';
 
@@ -393,21 +393,23 @@ SETTINGS max_threads = 4, max_block_size = 1024, group_by_two_level_threshold = 
 
 SYSTEM FLUSH LOGS query_log;
 
--- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, and the table froze.
+-- Whether the heap pruned (on the shards for the remote queries), the aggregation spilled, the table froze, and the
+-- heap trimmed in the tie cases.
 SELECT 'engaged';
 SELECT
     i.log_comment,
     sum(q.ProfileEvents['AggregationTopKRowsSkipped'] + q.ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS pruned,
     i.log_comment != '05407_spill' OR sum(q.ProfileEvents['ExternalAggregationWritePart']) > 0 AS spilled,
-    i.log_comment != '05407_gave_up' OR sum(q.ProfileEvents['AdaptiveAggregationLocalFreezes']) > 0 AS froze
+    i.log_comment != '05407_gave_up' OR sum(q.ProfileEvents['AdaptiveAggregationLocalFreezes']) > 0 AS froze,
+    NOT startsWith(i.log_comment, '05407_ties') OR sum(q.ProfileEvents['AggregationTopKKeysEvicted']) > 0 AS trimmed
 FROM system.query_log AS q
 INNER JOIN
 (
     SELECT query_id, log_comment FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND event_date >= yesterday()
-        AND log_comment IN ('05407_dynamic_filter', '05407_gave_up', '05407_late_lc', '05407_late_start', '05407_plain_at_once',
-            '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill', '05407_threads',
-            '05407_threads_adaptive', '05407_ties_asc', '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
+        AND log_comment IN ('05407_composite_later', '05407_dynamic_filter', '05407_gave_up', '05407_late_lc', '05407_late_start',
+            '05407_plain_at_once', '05407_remote_plan', '05407_remote_plan_nullable', '05407_remote_text', '05407_spill',
+            '05407_threads', '05407_threads_adaptive', '05407_ties_asc', '05407_ties_desc', '05407_wait_repeats', '05407_wait_small')
 ) AS i ON q.initial_query_id = i.query_id
 WHERE q.type = 'QueryFinish' AND q.event_date >= yesterday() AND (q.is_initial_query = NOT startsWith(i.log_comment, '05407_remote'))
 GROUP BY i.log_comment

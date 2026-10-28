@@ -339,21 +339,22 @@ l20002	1	2
 l20003	0	2
 l20004	1	2
 engaged
-05407_dynamic_filter	1	1	1
-05407_gave_up	0	1	1
-05407_late_lc	1	1	1
-05407_late_start	1	1	1
-05407_plain_at_once	1	1	1
-05407_remote_plan	1	1	1
-05407_remote_plan_nullable	1	1	1
-05407_remote_text	1	1	1
-05407_spill	1	1	1
-05407_threads	1	1	1
-05407_threads_adaptive	1	1	1
-05407_ties_asc	1	1	1
-05407_ties_desc	1	1	1
-05407_wait_repeats	0	1	1
-05407_wait_small	0	1	1
+05407_composite_later	1	1	1	1
+05407_dynamic_filter	1	1	1	1
+05407_gave_up	0	1	1	1
+05407_late_lc	1	1	1	1
+05407_late_start	1	1	1	1
+05407_plain_at_once	1	1	1	1
+05407_remote_plan	1	1	1	1
+05407_remote_plan_nullable	1	1	1	1
+05407_remote_text	1	1	1	1
+05407_spill	1	1	1	1
+05407_threads	1	1	1	1
+05407_threads_adaptive	1	1	1	1
+05407_ties_asc	1	1	1	1
+05407_ties_desc	1	1	1	1
+05407_wait_repeats	0	1	1	1
+05407_wait_small	0	1	1	1
 running heap engaged
 05407_run_after_sample	1	1
 05407_run_never_fills	0	1
