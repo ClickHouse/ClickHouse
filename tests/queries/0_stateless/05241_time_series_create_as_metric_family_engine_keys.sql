@@ -2,8 +2,6 @@
 -- table names the column with the name of a metric family differently in versions before 6, so the copied keys
 -- referring to it must be dropped and generated again for the version of the new table.
 
-DROP TABLE IF EXISTS ts_mf_keys_src;
-DROP TABLE IF EXISTS ts_mf_keys_copy;
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_mf_keys_src;
