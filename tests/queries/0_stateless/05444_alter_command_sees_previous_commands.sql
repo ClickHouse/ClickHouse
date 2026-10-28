@@ -104,6 +104,19 @@ ALTER TABLE t_alter_previous_commands_readd DROP COLUMN q, ADD COLUMN IF NOT EXI
 SELECT id, r FROM t_alter_previous_commands_readd;
 DROP TABLE t_alter_previous_commands_readd;
 
+-- And when that column is renamed before it is dropped, in a wide and in a compact part.
+CREATE TABLE t_alter_previous_commands_readd (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_alter_previous_commands_readd VALUES (1, 0);
+ALTER TABLE t_alter_previous_commands_readd RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN IF NOT EXISTS q UInt32 DEFAULT 7;
+SELECT id, q FROM t_alter_previous_commands_readd;
+DROP TABLE t_alter_previous_commands_readd;
+
+CREATE TABLE t_alter_previous_commands_readd (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns';
+INSERT INTO t_alter_previous_commands_readd VALUES (1, 0);
+ALTER TABLE t_alter_previous_commands_readd RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN IF NOT EXISTS q UInt32 DEFAULT 7;
+SELECT id, q FROM t_alter_previous_commands_readd;
+DROP TABLE t_alter_previous_commands_readd;
+
 CREATE TABLE t_alter_previous_commands_readd (id UInt64, n Nested(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_alter_previous_commands_readd VALUES (1, [42]);
 ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`;

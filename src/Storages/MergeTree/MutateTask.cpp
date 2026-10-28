@@ -617,6 +617,33 @@ static void splitAndModifyMutationCommands(
         }
     }
 
+    /// The stored missing-column marker that each drop of the batch removes, following the earlier renames of the batch.
+    std::unordered_map<const MutationCommand *, String> marker_dropped_by;
+    {
+        std::unordered_map<String, String> markers; /// name in the batch -> stored name
+        for (const auto & marker : part->getSerializationInfos().getMissingColumns())
+            markers.emplace(marker.name, marker.name);
+
+        for (const auto & command : commands)
+        {
+            auto it = markers.find(command.column_name);
+            if (it == markers.end())
+                continue;
+
+            if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            {
+                auto stored_name = it->second;
+                markers.erase(it);
+                markers[command.rename_to] = std::move(stored_name);
+            }
+            else if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+            {
+                marker_dropped_by.emplace(&command, it->second);
+                markers.erase(it);
+            }
+        }
+    }
+
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isPerFilePartStorage(part->getDataPartStorage())
         || part->getDataPartStorage().getType() != future_storage_type)
@@ -774,14 +801,14 @@ static void splitAndModifyMutationCommands(
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// Marker-only DROP/CLEAR must still update metadata and dependencies.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                if (auto it = marker_dropped_by.find(&command); it != marker_dropped_by.end())
                 {
-                    if (command.clear)
-                    {
-                        for_interpreter.push_back(command);
-                        mutated_columns.emplace(command.column_name);
-                    }
+                    for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = it->second});
+                }
+                else if (command.clear && part->getSerializationInfos().isMissingColumn(nameInPart(command.column_name)))
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
                     for_file_renames.push_back(command);
                 }
             }
@@ -1089,11 +1116,13 @@ static void splitAndModifyMutationCommands(
             else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// Marker-only DROP/CLEAR has the same logical effect as physical data.
-                String marker_name = nameInPart(command.column_name);
-                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                if (auto it = marker_dropped_by.find(&command); it != marker_dropped_by.end())
                 {
-                    if (command.clear)
-                        for_interpreter.push_back(command);
+                    for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = it->second});
+                }
+                else if (command.clear && part->getSerializationInfos().isMissingColumn(nameInPart(command.column_name)))
+                {
+                    for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
                 }
             }
@@ -1210,10 +1239,19 @@ getColumnsForNewDataPart(
     }
 
     /// Resolve marker-only drops after the complete rename chain is known.
+    NameSet removed_markers;
     for (const auto & command : all_commands)
     {
         if (command.type != MutationCommand::DROP_COLUMN || part_columns.has(command.column_name))
             continue;
+
+        /// A marker-only DROP names the marker as stored in the source part.
+        if (!command.clear)
+        {
+            if (serialization_infos.isMissingColumn(command.column_name))
+                removed_markers.insert(command.column_name);
+            continue;
+        }
 
         auto it = renamed_columns_to_from.find(command.column_name);
         const String & original_name = it != renamed_columns_to_from.end() ? it->second : command.column_name;
@@ -1351,6 +1389,9 @@ getColumnsForNewDataPart(
         SerializationInfoByName::MissingColumns new_missing;
         for (const auto & mc : serialization_infos.getMissingColumns())
         {
+            if (removed_markers.contains(mc.name))
+                continue;
+
             auto it = renamed_columns_from_to.find(mc.name);
             auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
 
