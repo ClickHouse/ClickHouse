@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int THERE_IS_NO_COLUMN;
 }
 
@@ -1155,17 +1156,27 @@ Chunk PCAPBlockInputFormat::read()
             if (tcp) inner = tcp->inner_pdu();
             else if (udp) inner = udp->inner_pdu();
 
-            /// `libtins` keeps the bytes after the TCP or UDP header as a raw PDU, which copies them
-            /// from the captured frame. They leave out the bytes past the IP length, such as the
-            /// Ethernet padding of short frames.
+            /// `libtins` keeps the bytes after the TCP or UDP header as a raw PDU. Its size leaves out
+            /// the bytes past the IP length, such as the Ethernet padding of short frames. The bytes
+            /// themselves are a contiguous range of the captured frame, so they are sliced from it at
+            /// the captured offset of that raw PDU, and only when `payload` is requested.
+            UInt32 payload_size = 0;
             if (const auto * raw_payload = dynamic_cast<const Tins::RawPDU *>(inner))
             {
-                const auto & bytes = raw_payload->payload();
-                payload = std::string_view(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+                payload_size = raw_payload->payload_size();
+                if (need[COL_PAYLOAD])
+                {
+                    const size_t payload_offset = offsetOfLayer(*pdu, *raw_payload, data, caplen);
+                    if (payload_offset + payload_size > caplen)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "The payload of packet {} in PCAP input at offset {} with size {} is past the captured length {}",
+                            packet_number, payload_offset, payload_size, caplen);
+                    payload = std::string_view(reinterpret_cast<const char *>(data) + payload_offset, payload_size);
+                }
             }
 
             if (need[COL_PAYLOAD_LENGTH])
-                col_payload_length->insertValue(static_cast<UInt32>(payload.size()));
+                col_payload_length->insertValue(payload_size);
             if (need[COL_PAYLOAD])
             {
                 col_payload->insertData(payload.data(), payload.size());
