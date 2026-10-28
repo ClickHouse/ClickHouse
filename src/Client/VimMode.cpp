@@ -572,14 +572,14 @@ void ReplxxLineReader::bindKey(char32_t key, T && f, int mode)
      * instead of running as an ordinary motion, e.g. `di$` must not act like `d$`. */
     if (mode == MODE_NORMAL && !std::u32string_view(U"wWb()[]{}<>").contains(key))
     {
-        handler = [this, handler = std::move(handler)](char32_t c)
+        handler = [this, inner = std::move(handler)](char32_t c)
         {
             if (flag)
             {
                 resetVim();
                 return Replxx::ACTION_RESULT::CONTINUE;
             }
-            return handler(c);
+            return inner(c);
         };
     }
     rx.bind_key(key, std::move(handler), mode);
