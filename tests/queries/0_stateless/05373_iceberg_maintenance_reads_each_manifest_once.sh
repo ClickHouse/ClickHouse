@@ -40,7 +40,6 @@ create_table "${TABLE}" "${TABLE_PATH}"
 # Every file passes the age filter, so a reachable file that is not collected is counted as an orphan.
 echo "junk" > "${TABLE_PATH}/data/orphan.parquet"
 find "${TABLE_PATH}" -type f -exec env TZ=UTC touch -t 202001010000 {} +
-# The writer leaves `v1.metadata.json` out of `metadata-log`, so it is counted as well.
 execute_logged "${TABLE}" "remove_orphan_files(older_than = '2023-01-01 00:00:00', dry_run = 1)"
 $CH --query "DROP TABLE ${TABLE}"
 rm -rf "${TABLE_PATH}"
