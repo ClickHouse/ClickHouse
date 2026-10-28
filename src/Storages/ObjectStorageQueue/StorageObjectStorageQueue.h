@@ -180,6 +180,12 @@ private:
     std::vector<UInt64> streaming_task_refresh_epochs;
     std::atomic<size_t> max_files_override{0};
 
+    /// Each parallel-insert task keeps its own active-registry lease across short polling intervals.
+    /// The Keeper node is shared by all tasks and must be removed only after the last lease is released.
+    std::mutex active_registry_mutex;
+    std::vector<UInt8> streaming_task_has_active_registry TSA_GUARDED_BY(active_registry_mutex);
+    size_t active_registry_users TSA_GUARDED_BY(active_registry_mutex) = 0;
+
     LoggerPtr log;
 
     void startup() override;
@@ -216,6 +222,10 @@ private:
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
     void threadFunc(size_t streaming_tasks_index);
+    void setStreamingTaskActiveRegistry(
+        size_t streaming_tasks_index,
+        bool active,
+        ObjectStorageQueueMetadata & metadata);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.

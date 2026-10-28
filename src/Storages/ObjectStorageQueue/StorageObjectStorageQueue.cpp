@@ -485,6 +485,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         streaming_tasks.emplace_back(std::move(task));
     }
     streaming_task_refresh_epochs.resize(task_count, 0);
+    streaming_task_has_active_registry.resize(task_count, false);
     max_files_override = 0;
 }
 
@@ -844,6 +845,39 @@ size_t StorageObjectStorageQueue::getDependencies() const
     return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
+void StorageObjectStorageQueue::setStreamingTaskActiveRegistry(
+    size_t streaming_tasks_index,
+    bool active,
+    ObjectStorageQueueMetadata & metadata)
+{
+    std::lock_guard lock(active_registry_mutex);
+    auto & task_has_active_registry = streaming_task_has_active_registry.at(streaming_tasks_index);
+
+    if (active)
+    {
+        /// Ensure the ephemeral node exists on every polling cycle. If Keeper replaced the
+        /// session between cycles, this recreates the node even when this task already has a lease.
+        metadata.registerActive(getStorageID());
+
+        if (!task_has_active_registry)
+        {
+            task_has_active_registry = true;
+            ++active_registry_users;
+        }
+        return;
+    }
+
+    if (!task_has_active_registry)
+        return;
+
+    task_has_active_registry = false;
+    chassert(active_registry_users > 0);
+    --active_registry_users;
+
+    if (active_registry_users == 0)
+        metadata.unregisterActive(getStorageID());
+}
+
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 {
     chassert(streaming_tasks_index < streaming_tasks.size());
@@ -879,7 +913,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         try
         {
-            metadata->unregisterActive(storage_id);
+            setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
         }
         catch (...)
         {
@@ -895,6 +929,15 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
         LOG_TRACE(log, "Streaming is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period);
 
+        try
+        {
+            setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
         std::lock_guard lock(mutex);
         reschedule_processing_interval_ms = disabled_streaming_reschedule_period;
     }
@@ -906,7 +949,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             {
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
-                metadata->registerActive(storage_id);
+                setStreamingTaskActiveRegistry(streaming_tasks_index, true, *metadata);
 
                 if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
@@ -927,6 +970,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             }
             else
             {
+                setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
                 LOG_TEST(log, "No ready attached dependencies");
             }
         }
@@ -951,7 +995,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
         {
             try
             {
-                metadata->unregisterActive(storage_id);
+                setStreamingTaskActiveRegistry(streaming_tasks_index, false, *metadata);
             }
             catch (...)
             {
