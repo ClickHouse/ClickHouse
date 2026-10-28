@@ -675,6 +675,37 @@ std::vector<std::vector<ColumnsCache::MappedPtr>> MergeTreeReaderCompact::lookup
     return entries;
 }
 
+bool MergeTreeReaderCompact::canServeFirstRangeFromCache() const
+{
+    /// The columns that are in the part but not cacheable are read from the part for every granule.
+    if (!columns_cache_reads_possible || has_columns_read_only_from_part || all_mark_ranges.getNumberOfMarks() == 0)
+        return false;
+
+    /// Only the first mark range matters: that is the only one the prefetch covers.
+    const auto & mark_range = all_mark_ranges.front();
+    const size_t end_mark = std::min(mark_range.end, data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal());
+    if (mark_range.begin >= end_mark)
+        return false;
+
+    const auto entries = lookupColumnsCache(mark_range.begin, end_mark);
+    const size_t first_stripe = stripes.stripeOf(mark_range.begin);
+    bool any_cacheable = false;
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (!column_cacheable[pos])
+            continue;
+        any_cacheable = true;
+
+        for (size_t mark = mark_range.begin; mark < end_mark; ++mark)
+        {
+            const size_t index = stripes.stripeOf(mark) - first_stripe;
+            if (index >= entries[pos].size() || !entries[pos][index] || !entries[pos][index]->coversMarks(mark, mark + 1))
+                return false;
+        }
+    }
+    return any_cacheable;
+}
+
 const ColumnsCache::MappedPtr & MergeTreeReaderCompact::cachedEntryFor(size_t pos, size_t mark) const
 {
     static const ColumnsCache::MappedPtr no_entry;

@@ -109,6 +109,12 @@ void MergeTreeReaderCompactMultipleBuffers::prefetchBeginOfRange(Priority priori
     if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
         return;
 
+    /// `readRows` serves a range that is in the columns cache without reading the part, so a
+    /// prefetch would spend the IO, and on remote storage the requests, that the cache avoids.
+    /// The entries can be evicted before the read: then the range is read without a prefetch.
+    if (canServeFirstRangeFromCache())
+        return;
+
     try
     {
         init();
