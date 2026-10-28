@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
+-- Tag no-parallel-replicas: the initiator sends the argument of `timeSeriesSamples` to the replicas unqualified,
+-- so they look the table up in the `default` database, see https://github.com/ClickHouse/ClickHouse/issues/118130.
 
 -- Since version 11 of the TimeSeries table engine a row of the samples table contains the samples of one series
 -- within one time bucket: the columns `samples` (a sorted array of tuples (timestamp, value)), `bucket`, `min_time`, `max_time`.
