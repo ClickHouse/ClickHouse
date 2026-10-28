@@ -1045,7 +1045,14 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     /// The footer carries the metadata version too, and its block list is read under that edition's
     /// assumptions, so an edition this reader does not know is rejected here rather than at the first
     /// message. Each message is checked again in `MessageReader::readNextMessage`.
-    const auto version = footer->version();
+    ///
+    /// Some writers of the V4 era left `Footer.version` unset, so it reads as the default `V1`, while every
+    /// message of the file is V4 (e.g. a part of the Arrow 0.14.1 integration files in `apache/arrow-testing`).
+    /// The Apache Arrow library does not check the footer version either. Read such a footer as V4: the
+    /// messages still carry their own version, and a message older than V4 is rejected by `readNextMessage`.
+    auto version = footer->version();
+    if (version < flatbuf::MetadataVersion_V4)
+        version = flatbuf::MetadataVersion_V4;
     if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
