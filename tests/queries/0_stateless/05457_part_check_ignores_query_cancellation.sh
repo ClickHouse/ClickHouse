@@ -24,6 +24,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cache_name="cache_05457_${CLICKHOUSE_DATABASE}"
 table="t_part_check_cancel"
 
+# The check thread logs under the table name, which a repeated run in the same database shares with
+# the earlier runs, so the log query below is bounded to this run.
+started_at=$($CLICKHOUSE_CLIENT --query "SELECT toString(now64(6))")
+
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS $table SYNC;
     CREATE TABLE $table (a UInt64)
@@ -76,7 +80,11 @@ downloader_pid=$!
 
 # The failpoint pauses every cache write on the server, so the first pause is not necessarily the
 # downloader's: additionally wait until the downloader holds the segment of this test's cache.
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT file_segment_pause_before_write PAUSE"
+# Bounded, so that a downloader that never writes to the cache is reported instead of blocking
+# the test until its timeout.
+if ! timeout 120 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT file_segment_pause_before_write PAUSE" > /dev/null 2>&1; then
+    echo "FAIL: no cache write paused on the failpoint"
+fi
 downloading=0
 for _ in {1..600}; do
     downloading=$($CLICKHOUSE_CLIENT --query "
@@ -138,7 +146,8 @@ for _ in {1..30}; do
     checks=$($CLICKHOUSE_CLIENT --query "
         SELECT count() FROM system.text_log
         WHERE logger_name LIKE concat(currentDatabase(), '.$table%PartCheckThread%')
-          AND message LIKE 'Checking part %'")
+          AND message LIKE 'Checking part %'
+          AND event_time_microseconds >= toDateTime64('$started_at', 6)")
     [[ "$checks" != "0" ]] && break
     sleep 0.1
 done
