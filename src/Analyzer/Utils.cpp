@@ -49,6 +49,8 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -74,9 +76,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool transform_null_in;
 }
 
@@ -904,6 +908,14 @@ TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tr
     buildTableExpressionsStackImpl(join_tree_node, result);
 
     return result;
+}
+
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
 }
 
 namespace
@@ -2081,6 +2093,14 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     }
 
     return true;
+}
+
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && storage == view_source && !context->isViewInnerQuery()
+        && storage_id.database_name == ITableFunction::getDatabaseName()
+        && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
 }
 
 }
