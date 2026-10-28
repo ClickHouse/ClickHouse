@@ -33,6 +33,7 @@ public:
 
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
+    void readGranule(size_t mark, size_t rows_to_read, MutableColumns & res_columns, const std::vector<bool> * columns_mask) override;
     void init();
 
     bool initialized = false;

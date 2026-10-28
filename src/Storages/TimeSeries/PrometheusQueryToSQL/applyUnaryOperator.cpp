@@ -117,7 +117,8 @@ SQLQueryPiece applyUnaryOperator(
         }
 
         case StoreMethod::CONST_STRING:
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         case StoreMethod::HISTOGRAM_RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
