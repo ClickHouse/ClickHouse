@@ -7,7 +7,6 @@
 -- the first token's postings (its intersection with the readable rows is empty) and the remaining tokens'
 -- posting lists are not read. The test asserts exactly one posting block is read.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 -- The assertions on `TextIndexReadPostings` below count posting lists read by one query, so keep them independent of what earlier queries have already put into the server-wide postings cache.
