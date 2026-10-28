@@ -166,7 +166,8 @@ bool isCompleteKeyLookup(const DataTypePtr & key_type, const DataTypePtr & value
         return false;
 
     return !is_element || value->equals(*key) || isString(value) || isNumber(value) || isNothing(value)
-        || (isDateOrDate32(value) && isDateOrDate32(key));
+        || (isDateOrDate32(value) && isDateOrDate32(key)) || (isDateTime64(value) && isDateTime64(key))
+        || (isFixedString(value) && isFixedString(key));
 }
 
 /// Single-column version of traverseDAGFilter (legacy)
@@ -398,6 +399,16 @@ bool traverseDAGFilter(
             const IColumn * value_column = right->column.get();
             if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
                 value_column = &column_const->getDataColumn();
+            if (const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(value_column))
+                value_column = &column_dynamic->getVariantColumn();
+            if (const auto * column_variant = typeid_cast<const ColumnVariant *>(value_column))
+            {
+                const auto discriminator
+                    = column_variant->size() == 1 ? column_variant->globalDiscriminatorAt(0) : ColumnVariant::NULL_DISCRIMINATOR;
+                value_column = discriminator == ColumnVariant::NULL_DISCRIMINATOR
+                    ? nullptr
+                    : &column_variant->getVariantByGlobalDiscriminator(discriminator);
+            }
             if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
                 value_column = &column_nullable->getNestedColumn();
             const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);

@@ -55,6 +55,9 @@ SELECT count() FROM t_kv_pair WHERE (a, b) = (SELECT ('x', toFixedString('V0', 3
 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', toFixedString('V0', 3)) AS Dynamic);
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', 'V0') AS Dynamic)) WHERE explain ILIKE '%ReadType%';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', 'V0') AS Variant(Tuple(String, String), UInt64))) WHERE explain ILIKE '%ReadType%';
+SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', CAST(toFixedString('V0', 3) AS Dynamic)) AS Dynamic);
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST((CAST('x' AS Dynamic), 'V0') AS Dynamic)) WHERE explain ILIKE '%ReadType%';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST((CAST('x' AS Variant(String, UInt64)), 'V0') AS Variant(Tuple(Variant(String, UInt64), String), UInt64))) WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_pair;
 
@@ -105,6 +108,25 @@ SELECT count() FROM t_kv_array_date WHERE key = [toDate32('2020-01-01')];
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array_date WHERE key = [toDate32('2020-01-01')]) WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_array_date;
+
+DROP TABLE IF EXISTS t_kv_array_datetime64;
+CREATE TABLE t_kv_array_datetime64 (key Array(DateTime64(3, 'UTC')), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
+INSERT INTO t_kv_array_datetime64 VALUES (['2020-01-01 00:00:00.123'], 0), (['2020-01-02 00:00:00.123'], 1);
+
+SELECT count() FROM t_kv_array_datetime64 WHERE key = [toDateTime64('2020-01-01 00:00:00.123000', 6, 'UTC')];
+SELECT count() FROM t_kv_array_datetime64 WHERE key = [toDateTime64('2020-01-01 00:00:00.123456', 6, 'UTC')];
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array_datetime64 WHERE key = [toDateTime64('2020-01-01 00:00:00.123000', 6, 'UTC')]) WHERE explain ILIKE '%ReadType%';
+
+DROP TABLE t_kv_array_datetime64;
+
+DROP TABLE IF EXISTS t_kv_tuple_fixed_string;
+CREATE TABLE t_kv_tuple_fixed_string (key Tuple(FixedString(3), UInt8), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
+INSERT INTO t_kv_tuple_fixed_string VALUES (('a', 1), 0), (('b', 1), 1);
+
+SELECT count() FROM t_kv_tuple_fixed_string WHERE key = (toFixedString('a', 2), 1);
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_tuple_fixed_string WHERE key = (toFixedString('a', 2), 1)) WHERE explain ILIKE '%ReadType%';
+
+DROP TABLE t_kv_tuple_fixed_string;
 
 DROP TABLE IF EXISTS t_kv_map;
 CREATE TABLE t_kv_map (key Map(String, DateTime('UTC')), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
