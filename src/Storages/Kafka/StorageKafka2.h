@@ -47,7 +47,10 @@ class ThreadStatus;
 /// offsets, it also stores the number of messages (intent size) it tried to insert from
 /// each topic. By storing the intent sizes it is possible to retry the same batch of
 /// messages in case of any errors and giving deduplication a chance to deduplicate
-/// blocks.
+/// blocks. When an intent is replayed, exactly the intended number of messages is
+/// consumed: not more (the batch never grows past the intent, even if the usual stop
+/// conditions would allow it), and not less (a batch that ends short of the intent is
+/// discarded and replayed later instead of being inserted with a different hash).
 ///
 /// To not complicate things too much, the current implementation makes sure to fetch
 /// messages only from a single topic-partition on a single thread at a time by

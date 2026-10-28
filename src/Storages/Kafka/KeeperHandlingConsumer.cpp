@@ -677,6 +677,15 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
             return std::make_pair(lock_info.committed_offset, lock_info.intent_size);
         });
 
+    if (intent_size.has_value())
+        LOG_TRACE(
+            log,
+            "Replaying the previous batch of {} messages for topic-partition [{}:{}] to produce a block identical to the failed "
+            "insert for deduplication",
+            *intent_size,
+            topic_partition.topic,
+            topic_partition.partition_id);
+
     MessageInfo message_info(*kafka_consumer);
     ReadBufferPtr buf;
     uint64_t consumed_messages = 0;
@@ -685,7 +694,11 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
     {
         while (true)
         {
-            buf = kafka_consumer->consume(topic_partition, intent_size);
+            /// When replaying an intent, never consume past it: a batch with different messages would have a different
+            /// hash, and deduplication could not filter out the messages inserted by the previous (failed) attempt.
+            const auto messages_left_in_intent
+                = intent_size.has_value() ? std::optional<uint64_t>(*intent_size - consumed_messages) : std::nullopt;
+            buf = kafka_consumer->consume(topic_partition, messages_left_in_intent);
             last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
             /// The batch is incomplete: `consume` dropped the messages it had pulled, but the Kafka
@@ -708,11 +721,35 @@ std::optional<KeeperHandlingConsumer::OffsetGuard> KeeperHandlingConsumer::poll(
                 ++consumed_messages;
                 last_read_offset = message_info.currentOffset();
             }
+            /// Each `consume` call returns at most one message and pulls at most `messages_left_in_intent` messages
+            /// into the consumer, so a replay cannot run past the intent.
+            chassert(!intent_size.has_value() || consumed_messages <= *intent_size);
             /// Let's call message sink even if we couldn't pull any messages, so it can count of how many failed polled attempts did we have
-            if (message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled()))
+            const bool sink_requests_stop
+                = message_sink(buf, message_info, kafka_consumer->hasMorePolledMessages(), kafka_consumer->isStalled());
+            const bool intent_is_fulfilled = intent_size.has_value() && consumed_messages >= *intent_size;
+            if (sink_requests_stop || intent_is_fulfilled)
             {
                 if (consumed_messages == 0)
                     return std::nullopt;
+
+                /// The batch ended short of the intent: the flush timer expired or the polls stalled before all the
+                /// intended messages arrived. Inserting a smaller batch would produce a different block hash, and
+                /// deduplication could not protect against duplicates. Drop the batch and let a later attempt replay
+                /// the intent from the committed offset.
+                if (intent_size.has_value() && consumed_messages < *intent_size)
+                {
+                    LOG_WARNING(
+                        log,
+                        "Replayed only {} messages out of the intended {} for topic-partition [{}:{}]. Discarding the batch, "
+                        "because deduplication cannot handle a block that differs from the failed insert",
+                        consumed_messages,
+                        *intent_size,
+                        topic_partition.topic,
+                        topic_partition.partition_id);
+                    rollbackToCommittedOffsets();
+                    return std::nullopt;
+                }
 
                 saveIntentSize(topic_partition, committed_offset, consumed_messages);
                 return OffsetGuard(*this, last_read_offset + 1);
