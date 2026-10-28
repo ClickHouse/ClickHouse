@@ -2509,8 +2509,12 @@ void Planner::buildQueryPlanIfNeeded()
     /// non-deterministic functions in the query text, where the determinism of some functions is not known
     /// yet: `groupArraySample(1)(x)` or `arrayReduce('groupArraySample(1)', ...)` are deterministic only with
     /// a seed. Check the resolved functions, after a subquery-level cache may have installed the capture.
+    /// A `STREAM` read (including the `STREAM BOUNDED UNORDERED` that an incremental refresh injects) reads
+    /// only the safe streaming prefix, which can stop before a committed part (e.g. behind the block number
+    /// of an unfinished insert). That prefix can later grow without any change of the active parts that
+    /// the modification hash covers, so the result is not determined by the hash either.
     if (auto consumed_object_sets = planner_context->getQueryContext()->getQueryConsumedObjectSets();
-        consumed_object_sets && queryTreeHasNonDeterministicFunction(query_tree))
+        consumed_object_sets && (queryTreeHasNonDeterministicFunction(query_tree) || queryTreeHasStreamRead(query_tree)))
         consumed_object_sets->markNonDeterministic();
 
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);

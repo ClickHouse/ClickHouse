@@ -99,6 +99,8 @@ struct QueryConsumedObjectSets
     /// such as `groupArraySample` without a seed, or `arrayReduce` of such an aggregate. The result can
     /// then change while every table it reads stays the same, so `computeQueryReferencedTablesModificationHash`
     /// fails closed for the rest of the query, and the result is neither cached nor certified at finalization.
+    /// Also called when the query reads a table with the `STREAM` modifier: the safe streaming prefix it
+    /// reads can grow while the modification hashes stay the same.
     void markNonDeterministic();
 
     bool isNonDeterministic() const;

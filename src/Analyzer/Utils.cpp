@@ -1024,6 +1024,29 @@ bool queryTreeHasNonDeterministicFunction(const QueryTreeNodePtr & node)
     return false;
 }
 
+bool queryTreeHasStreamRead(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * table_node = node->as<TableNode>())
+    {
+        if (const auto & modifiers = table_node->getTableExpressionModifiers(); modifiers && modifiers->hasStream())
+            return true;
+    }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        if (const auto & modifiers = table_function_node->getTableExpressionModifiers(); modifiers && modifiers->hasStream())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (queryTreeHasStreamRead(child))
+            return true;
+
+    return false;
+}
+
 namespace
 {
 
