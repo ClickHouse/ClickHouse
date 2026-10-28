@@ -167,6 +167,7 @@ Related `ProfileEvents`: `LanceFragmentsListed`, `LanceFragmentPacks`, `LanceFra
 - Writing to Lance datasets is not supported.
 - Lance indexes and vector search are not supported.
 - Unsupported Lance or Arrow types fail with an `Unsupported Lance column` exception.
+- `LanceS3` does not support custom S3 request headers (`headers(...)` or headers from the server configuration), or server-side encryption with customer-provided keys (SSE-C); such reads fail with `NOT_IMPLEMENTED`. Datasets with external base paths (e.g. shallow clones) are rejected with `BAD_ARGUMENTS`.
 - `LanceS3` requires an S3 disk; `LanceLocal` requires a local disk. Other disk types are rejected with `BAD_ARGUMENTS`.
 
 ## Cluster table function {#cluster-table-function}

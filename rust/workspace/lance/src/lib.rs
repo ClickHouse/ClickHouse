@@ -1149,6 +1149,7 @@ async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
             .load()
             .await
             .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))?;
+        ensure_no_external_base_paths(&dataset, origin)?;
         Ok(OpenedDataset { dataset, origin })
     } else {
         ensure_local_dataset_contained(&uri)?;
@@ -1245,13 +1246,16 @@ fn ensure_local_dataset_contained(uri: &str) -> FfiResult<()> {
 }
 
 // A manifest may reference data in other base paths, which are not checked by ClickHouse.
+// A local dataset must not read files outside of its directory. An S3 dataset is read through an object
+// store bound to the bucket of the dataset, which Lance would also use for the external bases in other
+// buckets, so it would read the wrong objects.
 fn ensure_no_external_base_paths(dataset: &Dataset, origin: ChLanceErrorOrigin) -> FfiResult<()> {
-    if origin == ChLanceErrorOrigin::Local && !dataset.manifest.base_paths.is_empty() {
+    if !dataset.manifest.base_paths.is_empty() {
         return Err(FfiError::new(
             ChLanceErrorKind::Unsupported,
             origin,
             format!(
-                "Lance dataset version {} references external base paths, which are not supported for local datasets",
+                "Lance dataset version {} references external base paths, which are not supported",
                 dataset.version().version
             ),
         ));

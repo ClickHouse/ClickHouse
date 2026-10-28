@@ -90,12 +90,14 @@ namespace S3AuthSetting
 {
 extern const S3AuthSettingsString region;
 extern const S3AuthSettingsBool no_sign_request;
+extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
 }
 #endif
 
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 }
 
@@ -1379,6 +1381,17 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
     if (const auto * s3_configuration = dynamic_cast<const StorageS3Configuration *>(configuration_ptr.get()))
     {
         const auto & auth_settings = s3_configuration->getAuthSettings();
+
+        /// The `Lance` object store is a separate client, which cannot send custom request headers or the
+        /// SSE-C key, so the requests would silently lack them (e.g. `x-amz-request-payer`) and fail or be
+        /// unable to decrypt the objects.
+        if (!auth_settings.getHeaders().empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Custom S3 request headers are not supported for `Lance` datasets");
+        if (!auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "S3 server-side encryption with customer-provided keys (SSE-C) is not supported for `Lance` datasets");
+
         options.uri = fmt::format("s3://{}/{}", s3_configuration->url.bucket, s3_configuration->url.key);
         options.use_s3 = true;
         /// `S3::URI` moves the bucket of a virtual-hosted-style URL out of its endpoint, but the `Lance`
