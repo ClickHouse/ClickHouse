@@ -513,8 +513,25 @@ TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
         return ColumnPtr(std::move(column));
     };
 
+    const auto make_shared_column = [&](size_t dictionary_size)
+    {
+        const auto source = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+        const auto & source_lc = assert_cast<const ColumnLowCardinality &>(*source);
+        return ColumnLowCardinality::create(source_lc.getDictionaryPtr(), source_lc.getIndexesPtr(), /*is_shared=*/true);
+    };
+
     DistinctLowCardinalityFilter lc_filter;
-    size_t retained_bytes = 0;
+
+    /// Shared dictionaries do not count towards the observation window, neither a new one nor one that recurs.
+    const auto early_shared_column = make_shared_column(4);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const auto mask = lc_filter.buildMaskIfApplicable(*early_shared_column, 3);
+        ASSERT_TRUE(mask.has_value());
+        EXPECT_EQ(mask->size(), i == 0 ? 3 : 0);
+    }
+
+    size_t retained_bytes = lc_filter.getTotalByteCount();
     for (size_t i = 0; i < num_chunks; ++i)
     {
         const auto mask = lc_filter.buildMaskIfApplicable(*make_column(i), num_rows);
@@ -530,9 +547,7 @@ TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
     EXPECT_EQ(lc_filter.estimateGrowthMemory(*make_column(num_chunks)), 0);
 
     /// A shared dictionary is still identified by content: its second chunk reuses the state of the first.
-    const auto source = makeLowCardinalityColumnWithLargeDictionary(type, 3, 3);
-    const auto & source_lc = assert_cast<const ColumnLowCardinality &>(*source);
-    const auto shared_column = ColumnLowCardinality::create(source_lc.getDictionaryPtr(), source_lc.getIndexesPtr(), /*is_shared=*/true);
+    const auto shared_column = make_shared_column(3);
     EXPECT_GT(lc_filter.estimateGrowthMemory(*shared_column), 0);
     const auto first_shared_mask = lc_filter.buildMaskIfApplicable(*shared_column, 3);
     ASSERT_TRUE(first_shared_mask.has_value());
