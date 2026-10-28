@@ -157,6 +157,9 @@ public:
 private:
     const MetadataTransactionPtr underlying;
     MetadataStorageFromCacheObjectStorage & metadata_storage;
+
+    /// Queues the blobs removed by the committed underlying transaction. Does not throw: see the implementation.
+    void submitRemovedBlobsAfterCommit() noexcept;
 };
 
 }

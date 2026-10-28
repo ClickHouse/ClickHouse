@@ -1,8 +1,22 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char cache_metadata_storage_fail_after_commit[];
+}
 
 MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_)
     : underlying(std::move(underlying_))
@@ -375,7 +389,7 @@ MetadataStorageFromCacheObjectStorageTransaction::MetadataStorageFromCacheObject
 void MetadataStorageFromCacheObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
 {
     underlying->commit(options);
-    metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+    submitRemovedBlobsAfterCommit();
 }
 
 TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
@@ -383,9 +397,32 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     auto result = underlying->tryCommit(options);
 
     if (isSuccessfulOutcome(result))
-        metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+        submitRemovedBlobsAfterCommit();
 
     return result;
+}
+
+void MetadataStorageFromCacheObjectStorageTransaction::submitRemovedBlobsAfterCommit() noexcept
+{
+    /// The metadata is already committed. If an exception escaped from here, the caller would take the
+    /// commit as failed and roll back the blobs written by the transaction (`DiskObjectStorageTransaction::undo`),
+    /// removing them from the wrapped object storage as well, while the committed metadata references them.
+    /// That would lose committed data. So a failure here (for example, of an allocation) is logged instead:
+    /// then the cache entries of the removed blobs are not dropped and stay until they are evicted.
+    try
+    {
+        fiu_do_on(FailPoints::cache_metadata_storage_fail_after_commit,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the commit of the metadata of a cached disk");
+        });
+
+        metadata_storage.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MetadataStorageFromCacheObjectStorage"),
+            "Cannot queue the blobs removed by a committed transaction to drop their cache entries");
+    }
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::writeStringToFile(const std::string & path, const std::string & data)
