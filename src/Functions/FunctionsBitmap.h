@@ -819,9 +819,24 @@ private:
         else
             container1 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[1]).getData();
 
+        if (is_column_const[0])
+        {
+            /// All lookups go to the same bitmap. Keep the container found by the previous lookup across rows:
+            /// values that share the high 16 bits (e.g. sorted or clustered keys) then skip the container search.
+            const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>((*container0)[0]);
+            typename AggregateFunctionGroupBitmapData<T>::Bitmap::BulkContext context;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const UInt64 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
+                vec_to[i] = bitmap_data_0.roaring_bitmap_with_small_set.rb_contains_bulk(data1, context);
+            }
+            return;
+        }
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
+            AggregateDataPtr data_ptr_0 = (*container0)[i];
             const UInt64 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
