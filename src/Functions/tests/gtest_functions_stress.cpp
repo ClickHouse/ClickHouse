@@ -338,6 +338,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesThrowDuplicateSeriesIf",
     "timeSeriesFromGrid",
     "timeSeriesRange",
+    "timeSeriesSliceSortedArray",
     "getMacro",
     "currentProfiles",
     "defaultProfiles",
