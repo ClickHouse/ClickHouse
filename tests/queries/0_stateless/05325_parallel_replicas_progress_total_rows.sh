@@ -31,4 +31,10 @@ do
     summary "$settings&optimize_read_in_order=1" "SELECT x FROM t_pr_progress WHERE NOT ignore(s) ORDER BY x FORMAT Null"
 done
 
+# The last replica, whose source receives the total from the coordinator, is unavailable and reads nothing.
+PR_UNAVAILABLE_SETTINGS="enable_parallel_replicas=1&max_parallel_replicas=3&cluster_for_parallel_replicas=test_cluster_1_shard_3_replicas_1_unavailable&parallel_replicas_for_non_replicated_merge_tree=1&automatic_parallel_replicas_mode=0&parallel_replicas_local_plan=0"
+echo "test_cluster_1_shard_3_replicas_1_unavailable"
+summary "$PR_UNAVAILABLE_SETTINGS" "SELECT count() FROM t_pr_progress WHERE NOT ignore(s) FORMAT Null"
+summary "$PR_UNAVAILABLE_SETTINGS&optimize_read_in_order=1" "SELECT x FROM t_pr_progress WHERE NOT ignore(s) ORDER BY x FORMAT Null"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_pr_progress"
