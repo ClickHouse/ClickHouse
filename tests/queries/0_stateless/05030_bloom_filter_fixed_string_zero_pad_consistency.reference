@@ -39,3 +39,13 @@ sparse_grams has wider fs	1
 tokenbf has str	1
 ngrambf mapContainsKey str	1
 ngrambf mapContainsValue str	1
+incomplete UTF-8 sequence before the padding
+scan has wider fs	1
+ngrambf has wider fs	1
+ngrambf has wider fs, skip indexes off	1
+ngrambf has str	1
+ngrambf has str with zero	1
+ngrambf hasAny str	1
+ngrambf hasAll str	1
+sparse_grams has wider fs	1
+ngrambf mapContainsKey bin	1

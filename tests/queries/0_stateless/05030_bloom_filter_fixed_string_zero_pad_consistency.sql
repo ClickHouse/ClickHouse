@@ -228,3 +228,63 @@ drop table tk_fs_arr;
 drop table plain_fs_map;
 drop table ng_fs_map_keys;
 drop table ng_fs_map_values;
+
+-- Removing the needle's trailing zero bytes is not enough: the element `unhex('6162C2')` of `FixedString(4)` is stored
+-- as `ab\xC2\0`, and `ngrams` reads `\xC2\0` as one UTF-8 sequence, but `\xC2` without the zero byte as another one,
+-- so the probe had a gram the stored value does not have. The probe is built from the needle padded to the element width.
+drop table if exists plain_fs_bin;
+drop table if exists ng_fs_bin;
+drop table if exists sg_fs_bin;
+drop table if exists plain_fs_bin_map;
+drop table if exists ng_fs_bin_map_keys;
+
+create table plain_fs_bin (id UInt64, v Array(FixedString(4))) engine = Log;
+create table ng_fs_bin (id UInt64, v Array(FixedString(4)), index idx v type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table sg_fs_bin (id UInt64, v Array(FixedString(4)), index idx v type sparse_grams(3, 100, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+
+insert into plain_fs_bin select number, [toFixedString(unhex(['6162C2', '78797A'][number + 1]), 4)] from numbers(2);
+insert into ng_fs_bin select number, [toFixedString(unhex(['6162C2', '78797A'][number + 1]), 4)] from numbers(2);
+insert into sg_fs_bin select number, [toFixedString(unhex(['6162C2', '78797A'][number + 1]), 4)] from numbers(2);
+
+select 'incomplete UTF-8 sequence before the padding';
+select 'scan has wider fs', (select arraySort(groupArray(id)) from (select id from plain_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id)) = [0];
+select 'ngrambf has wider fs',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id));
+select 'ngrambf has wider fs, skip indexes off',
+    (select arraySort(groupArray(id)) from (select id from ng_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id settings use_skip_indexes = 0))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id));
+select 'ngrambf has str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin where has(v, unhex('6162C2')) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin where has(v, unhex('6162C2')) order by id));
+select 'ngrambf has str with zero',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin where has(v, unhex('6162C200')) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin where has(v, unhex('6162C200')) order by id));
+select 'ngrambf hasAny str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin where hasAny(v, [unhex('6162C2')]) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin where hasAny(v, [unhex('6162C2')]) order by id));
+select 'ngrambf hasAll str',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin where hasAll(v, [unhex('6162C2')]) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin where hasAll(v, [unhex('6162C2')]) order by id));
+select 'sparse_grams has wider fs',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id))
+  = (select arraySort(groupArray(id)) from (select id from sg_fs_bin where has(v, toFixedString(unhex('6162C2'), 8)) order by id));
+
+create table plain_fs_bin_map (id UInt64, k Map(FixedString(4), UInt8)) engine = Log;
+create table ng_fs_bin_map_keys (id UInt64, k Map(FixedString(4), UInt8), index idx mapKeys(k) type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+
+insert into plain_fs_bin_map select number, map(toFixedString(unhex(['6162C2', '78797A'][number + 1]), 4), 1) from numbers(2);
+insert into ng_fs_bin_map_keys select number, map(toFixedString(unhex(['6162C2', '78797A'][number + 1]), 4), 1) from numbers(2);
+
+select 'ngrambf mapContainsKey bin',
+    (select arraySort(groupArray(id)) from (select id from plain_fs_bin_map where mapContainsKey(k, unhex('6162C2')) order by id))
+  = (select arraySort(groupArray(id)) from (select id from ng_fs_bin_map_keys where mapContainsKey(k, unhex('6162C2')) order by id));
+
+drop table plain_fs_bin;
+drop table ng_fs_bin;
+drop table sg_fs_bin;
+drop table plain_fs_bin_map;
+drop table ng_fs_bin_map_keys;

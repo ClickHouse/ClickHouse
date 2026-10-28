@@ -551,20 +551,27 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
-/// Removes the trailing zero bytes of a `String` value, or of each `String` element of an `Array` value, whatever their type.
-Field stripTrailingZerosInStringField(const Field & field)
+/// Brings a `String` value, or each `String` element of an `Array` value, whatever their type, to the bytes of the `FixedString(n)`
+/// value it is equal to under the zero-padding rule: the trailing zero bytes are removed, and the value is padded with zero bytes to `n`.
+/// A value that is longer than `n` without its trailing zero bytes is equal to no `FixedString(n)` value, and is returned without them.
+Field padStringFieldToFixedStringWidth(const Field & field, size_t n)
 {
     if (field.getType() == Field::Types::String)
-        return Field(String(stripTrailingZeros(field.safeGet<String>())));
+    {
+        String value(stripTrailingZeros(field.safeGet<String>()));
+        if (value.size() < n)
+            value.resize(n, '\0');
+        return Field(std::move(value));
+    }
 
     if (field.getType() == Field::Types::Array)
     {
-        Array stripped;
+        Array padded;
         const auto & elements = field.safeGet<Array>();
-        stripped.reserve(elements.size());
+        padded.reserve(elements.size());
         for (const auto & element : elements)
-            stripped.push_back(stripTrailingZerosInStringField(element));
-        return Field(std::move(stripped));
+            padded.push_back(padStringFieldToFixedStringWidth(element, n));
+        return Field(std::move(padded));
     }
 
     return field;
@@ -638,13 +645,14 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (zeroPaddedStringConstant(value_type) && isString(indexed_element_type))
                 return false;
 
-            /// Against a `FixedString` element these functions ignore the trailing zero bytes of the needle,
-            /// whether it is a `FixedString` or a `String`, so `has(arr, 'ab\0')` matches the element `'ab'`.
-            /// The needle's zero bytes would add terms the stored value does not have and prune its granule.
-            /// Removing them only drops terms, and every allowed tokenizer emits the terms of the stripped
-            /// value as terms of the stored one.
-            if (isFixedString(indexed_element_type))
-                const_value = stripTrailingZerosInStringField(const_value);
+            /// Against a `FixedString(N)` element these functions ignore the trailing zero bytes of the needle,
+            /// whether it is a `FixedString` or a `String`, so `has(arr, 'ab\0')` and `has(arr, 'ab')` match the
+            /// element `'ab'`, which is stored and tokenized as `'ab\0\0'` in `FixedString(4)`. The only stored
+            /// value the needle matches is the needle padded with zero bytes to N, so the probe is built from it.
+            /// It is not enough to remove the zero bytes: a tokenizer can split the stored value differently,
+            /// e.g. `ngrams` reads `\xC2\0` at the end of it as one UTF-8 sequence, and `\xC2` alone as another.
+            if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(indexed_element_type.get()))
+                const_value = padStringFieldToFixedStringWidth(const_value, fixed_string_type->getN());
         }
     }
 
