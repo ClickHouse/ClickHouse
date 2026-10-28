@@ -36,4 +36,10 @@ SELECT '-- too many combinations of groups keep the regex';
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c|d|e|f|g|h|i|j|k)(_|)(total|v|w|x|y|z|q|r|s|t)"}', 0, 2000, 'timestamp_and_value');
 SELECT count() FROM timeSeriesSelector(rx, '{__name__=~"(a|b|c|d|e|f|g|h|i|j|k)(_|)(total|v|w|x|y|z|q|r|s|t)"}', 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
+SELECT '-- a big group with literals around it keeps the regex, a big group alone is a list';
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')_total"}'), 0, 2000, 'timestamp_and_value');
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a|b|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')_total"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"a_(', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), '|total)"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM timeSeriesSelector(rx, concat('{__name__=~"(a_total|b_total|', arrayStringConcat(arrayMap(i -> 'x' || toString(i), range(150)), '|'), ')"}'), 0, 2000, 'timestamp_and_value') SETTINGS force_primary_key = 1;
+
 DROP TABLE rx;

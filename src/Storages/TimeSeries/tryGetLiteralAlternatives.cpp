@@ -7,7 +7,8 @@ namespace DB
 namespace
 {
 
-/// The most strings a group may be expanded to together with what precedes it, so that `(a|b)(c|d)...` cannot blow up.
+/// The most strings a group may be expanded to together with the literals around it,
+/// so that neither `(a|b)(c|d)...` nor a long literal next to a big group can blow up.
 constexpr size_t MAX_EXPANDED_TERMS = 100;
 
 std::optional<Strings> parseAlternation(std::string_view regex, size_t & pos);
@@ -29,7 +30,8 @@ std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos)
                 return {};
             ++pos;
 
-            if (terms.size() > 1 && group->size() > 1 && terms.size() * group->size() > MAX_EXPANDED_TERMS)
+            bool has_prefix = terms.size() > 1 || !terms.front().empty();
+            if (has_prefix && terms.size() * group->size() > MAX_EXPANDED_TERMS)
                 return {};
             Strings expanded;
             expanded.reserve(terms.size() * group->size());
@@ -42,6 +44,8 @@ std::optional<Strings> parseConcatenation(std::string_view regex, size_t & pos)
             return {};
         else
         {
+            if (terms.size() > MAX_EXPANDED_TERMS)
+                return {};
             for (auto & term : terms)
                 term += c;
             ++pos;

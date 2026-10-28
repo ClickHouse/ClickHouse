@@ -11,3 +11,6 @@
 7
 -- too many combinations of groups keep the regex
 7
+-- a big group with literals around it keeps the regex, a big group alone is a list
+6
+6
