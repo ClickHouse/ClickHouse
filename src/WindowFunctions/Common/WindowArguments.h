@@ -3,6 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <base/types.h>
 
+#include <deque>
 #include <span>
 #include <vector>
 
@@ -30,8 +31,6 @@ private:
 
 class WindowArguments
 {
-    size_t findBlock(size_t argument, Int64 position) const;
-
 public:
     struct Block
     {
@@ -40,17 +39,23 @@ public:
         Int64 end_position = 0;
     };
 
+    using Blocks = std::deque<Block>;
+
     explicit WindowArguments(std::vector<size_t> column_indices_);
 
-    void setBlocks(const std::vector<Block> & blocks_);
+    /// `at` takes positions counted from the partition start; `partition_start_` is that row's position in `blocks_`.
+    void setBlocks(const Blocks & blocks_, Int64 partition_start_);
 
     size_t size() const;
     ArgumentValue at(size_t argument, Int64 position) const;
 
 private:
+    const Block & findBlock(Int64 position) const;
+
     std::vector<size_t> column_indices;
-    std::vector<Block> blocks;
-    mutable std::vector<size_t> last_used_block_for_arg;
+    const Blocks * blocks = nullptr;
+    Int64 partition_start = 0;
+    mutable std::vector<const Block *> last_used_block_for_arg;
 };
 
 }

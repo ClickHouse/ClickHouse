@@ -5,6 +5,7 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <iterator>
 
 namespace DB
 {
@@ -47,25 +48,21 @@ void ArgumentValue::appendTo(IColumn & result) const
 
 WindowArguments::WindowArguments(std::vector<size_t> column_indices_)
     : column_indices(std::move(column_indices_))
-    , last_used_block_for_arg(column_indices.size(), 0)
+    , last_used_block_for_arg(column_indices.size(), nullptr)
 {
 }
 
-void WindowArguments::setBlocks(const std::vector<Block> & blocks_)
+void WindowArguments::setBlocks(const Blocks & blocks_, Int64 partition_start_)
 {
-    blocks = blocks_;
-    std::ranges::fill(last_used_block_for_arg, 0);
+    blocks = &blocks_;
+    partition_start = partition_start_;
+    std::ranges::fill(last_used_block_for_arg, nullptr);
 }
 
-size_t WindowArguments::findBlock(size_t argument, Int64 position) const
+const WindowArguments::Block & WindowArguments::findBlock(Int64 position) const
 {
-    size_t & last_block = last_used_block_for_arg[argument];
-    if (last_block < blocks.size() && blocks[last_block].first_position <= position && position < blocks[last_block].end_position)
-        return last_block;
-
-    const auto after = std::upper_bound(blocks.begin(), blocks.end(), position, [](Int64 value, const Block & block) { return value < block.first_position; });
-    last_block = after - blocks.begin() - 1;
-    return last_block;
+    const auto after = std::upper_bound(blocks->begin(), blocks->end(), position, [](Int64 value, const Block & block) { return value < block.first_position; });
+    return *std::prev(after);
 }
 
 size_t WindowArguments::size() const
@@ -75,8 +72,11 @@ size_t WindowArguments::size() const
 
 ArgumentValue WindowArguments::at(size_t argument, Int64 position) const
 {
-    const Block & block = blocks[findBlock(argument, position)];
-    return ArgumentValue(*block.columns[column_indices[argument]], position - block.first_position);
+    position += partition_start;
+    const Block *& block = last_used_block_for_arg[argument];
+    if (!block || position < block->first_position || block->end_position <= position)
+        block = &findBlock(position);
+    return ArgumentValue(*block->columns[column_indices[argument]], position - block->first_position);
 }
 
 }
