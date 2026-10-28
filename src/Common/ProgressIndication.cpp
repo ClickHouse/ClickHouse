@@ -151,7 +151,6 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 {
     std::lock_guard lock(progress_mutex);
 
-    static size_t increment = 0;
     static const char * indicators[8] = {
         "\033[1;30m→\033[0m",
         "\033[1;31m↘\033[0m",
@@ -163,7 +162,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
         "\033[1m↗\033[0m",
     };
 
-    const char * indicator = indicators[increment % 8];
+    const char * indicator = indicators[indicator_frame % 8];
 
     auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
 
@@ -430,7 +429,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
     }
 
     message << CLEAR_TO_END_OF_LINE;
-    ++increment;
+    ++indicator_frame;
 
     message.next();
 }

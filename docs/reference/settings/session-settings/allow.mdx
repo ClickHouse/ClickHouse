@@ -191,7 +191,7 @@ Enables delta-kernel writes feature.
 
 Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](/reference/settings/session-settings/max-number#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](/reference/settings/session-settings/force#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
 
-Not applied when [max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) or [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
+[max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) and [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) apply to the combined size of all partition sets while the streams remain separate.
 
 ## allow_distributed_ddl {#allow_distributed_ddl}
 
@@ -450,6 +450,20 @@ It does not control whether `Nullable(Tuple(...))` columns can be created in tab
 ClickHouse uses the value for this setting loaded at server startup.
 Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
+
+## allow_parallel_distinct {#allow_parallel_distinct}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "New setting to evaluate final `DISTINCT` in parallel using hash partitioning."}]}]}/>
+
+Evaluate the final `DISTINCT` on multiple threads by partitioning input streams by the hash of the `DISTINCT` columns. Equal keys reach the same stream, allowing each partition to be deduplicated independently.
+
+Unlike [allow_distinct_partitions_independently](/reference/settings/session-settings/allow#allow_distinct_partitions_independently), this does not require a relationship between the table's partition key and the `DISTINCT` columns. The number of input streams and hash partitions is capped independently of `max_threads` to bound the cost of splitting blocks and connecting streams.
+
+Hash partitioning is not applied to globally sorted input because `DISTINCT` preserves that order. [max_rows_in_distinct](/reference/settings/session-settings/max-rows#max_rows_in_distinct) and [max_bytes_in_distinct](/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) apply to the combined size of all hash partitions.
+
+`DISTINCT` without `ORDER BY` has no defined row order, so this optimization may return the same distinct values in a different order. As a result, `LIMIT`, `OFFSET`, or `LIMIT BY` over unordered `DISTINCT` results may select a different subset of rows.
 
 ## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
 
