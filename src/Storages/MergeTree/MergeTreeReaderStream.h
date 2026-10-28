@@ -168,7 +168,16 @@ protected:
     MarkInCompressedFile getStartOfNextStripeMark(size_t row_index, size_t column_position);
 
 private:
-    VectorWithMemoryTracking<MarkInCompressedFile> marks_in_file_order;
+    struct MarkInFile
+    {
+        MarkInCompressedFile mark;
+        size_t stripe;
+        size_t position;
+        size_t granule;
+        auto operator<=>(const MarkInFile &) const = default;
+    };
+    VectorWithMemoryTracking<MarkInFile> marks_in_file_order;
+    VectorWithMemoryTracking<size_t> stripe_of_granule;
 };
 
 /// Class for reading a single column from file that contains multiple columns

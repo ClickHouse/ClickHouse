@@ -39,6 +39,7 @@ DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_small_blocks;
 DROP TABLE IF EXISTS t_compact_cached_column;
 DROP TABLE IF EXISTS t_compact_cached_short_rows;
+DROP TABLE IF EXISTS t_compact_cached_empty_stream;
 DROP TABLE IF EXISTS t_compact_cached_shared_blocks;
 DROP TABLE IF EXISTS t_compact_cached_sparse_null_map;
 DROP TABLE IF EXISTS t_compact_cached_subcolumn_prefix;
@@ -173,6 +174,16 @@ SELECT sum(s.null) FROM t_compact_cached_sparse_null_map
 SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_sparse_null_map_1';
 SELECT sum(s.null) FROM t_compact_cached_sparse_null_map SETTINGS use_columns_cache=0, log_comment='cached_sparse_null_map_0';
 
+-- The mark of an empty stream coincides with the mark of the stream after it, which is not counted for the empty one.
+CREATE TABLE t_compact_cached_empty_stream(id UInt64, a Array(UInt64) CODEC(Delta, LZ4), payload String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
+INSERT INTO t_compact_cached_empty_stream SELECT number, [], repeat(hex(cityHash64(number)), 64) FROM numbers(8192);
+SELECT sum(arraySum(a)) FROM t_compact_cached_empty_stream SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1,
+    enable_writes_to_columns_cache=1, columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0 FORMAT Null;
+SELECT sum(arraySum(a)) FROM t_compact_cached_empty_stream
+SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_empty_stream_1' FORMAT Null;
+SELECT sum(arraySum(a)) FROM t_compact_cached_empty_stream SETTINGS use_columns_cache=0, log_comment='cached_empty_stream_0' FORMAT Null;
+
 -- A subcolumn served from the cache is counted with all the substreams it is read from, also its prefix (the keys of
 -- the dictionary of `LowCardinality`), which is written before the data of the column. The block that the prefix shares
 -- with the data of the sibling is taken up to the next mark, so the estimate is an upper bound here.
@@ -263,6 +274,7 @@ DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_small_blocks;
 DROP TABLE t_compact_cached_column;
 DROP TABLE t_compact_cached_short_rows;
+DROP TABLE t_compact_cached_empty_stream;
 DROP TABLE t_compact_cached_shared_blocks;
 DROP TABLE t_compact_cached_sparse_null_map;
 DROP TABLE t_compact_cached_subcolumn_prefix;
