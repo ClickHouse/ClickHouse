@@ -10,7 +10,9 @@
 # flags of that owner. A table of a `lazy_load_tables = 1` database is constructed on the first access,
 # and only then shares the lifecycle flags of the proxy that stood for it, so the flags were rebound while
 # a concurrent `ATTACH` could be reading them (a data race found by TSan). Load such tables cold while
-# another table is repeatedly attached over a root that overlaps theirs.
+# another table is repeatedly attached over a root that overlaps theirs. The competitor is also destroyed
+# by `DETACH ... SYNC` while it is still registered as the owner, so a table being attached concurrently
+# reads the identity of an owner that is being destroyed, which must not involve a virtual call.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

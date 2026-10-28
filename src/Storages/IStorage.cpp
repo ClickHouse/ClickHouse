@@ -415,6 +415,11 @@ StorageID IStorage::getStorageID() const
     if (auto loaded = getLoadedLazyTable())
         return loaded->getStorageID();
 
+    return getOwnStorageID();
+}
+
+StorageID IStorage::getOwnStorageID() const
+{
     std::lock_guard lock(id_mutex);
     return storage_id;
 }

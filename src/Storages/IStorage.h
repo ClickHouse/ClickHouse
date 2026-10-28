@@ -100,6 +100,13 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
+    /// The name stored in this object itself. Unlike getStorageID, never makes a virtual call, so it
+    /// may be used through a raw pointer to a storage that another thread may be destroying, e.g. for
+    /// the owner of a disk root in `MergeTreeData::acquireTableDiskRoots`, which stays registered
+    /// until the end of the destructor. For a lazily loaded table that has been loaded, this may be a
+    /// stale name of the proxy, so use getStorageID everywhere else.
+    StorageID getOwnStorageID() const;
+
     virtual std::vector<StorageID> getInnerStorageIDs() const { return {}; }
 
     virtual bool isMergeTree() const { return false; }
