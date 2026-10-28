@@ -7892,10 +7892,10 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.8", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."}) \
-    DECLARE(Bool, query_plan_two_pass_count_top_k, true, R"(
+    DECLARE(Bool, query_plan_two_pass_count_top_k, false, R"(
 Runs `GROUP BY k, s, ... ORDER BY count() DESC LIMIT n` over one MergeTree table, where `k` is an integer column and another key is a string, in passes over the rows of the most frequent values of `k` only, when a pilot over a sample of granules shows that this pays off. The result is the same.
 )", 0, \
-        {"26.11", false, true, "New setting: ORDER BY count() DESC LIMIT n over a multi-key GROUP BY in passes over the rows of frequent values of an integer key."}) \
+        {"26.11", false, false, "New setting: ORDER BY count() DESC LIMIT n over a multi-key GROUP BY in passes over the rows of frequent values of an integer key."}) \
     DECLARE(UInt64, query_plan_two_pass_count_top_k_min_rows, 10000000, R"(
 The minimum number of rows the read must select for `query_plan_two_pass_count_top_k` to apply.
 )", 0, \
