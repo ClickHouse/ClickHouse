@@ -30,7 +30,7 @@ function applied()
         SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (
             EXPLAIN SELECT k, s, count() FROM ${CLICKHOUSE_DATABASE}.t_two_pass_quota GROUP BY k, s ORDER BY count() DESC LIMIT 10)
         SETTINGS query_plan_two_pass_count_top_k = 1, query_plan_two_pass_count_top_k_min_rows = 0, enable_parallel_replicas = 0,
-            optimize_aggregation_in_order = 0,
+            optimize_aggregation_in_order = 0, serialize_query_plan = 0,
             max_rows_to_read = 0, max_bytes_to_read = 0, max_bytes_to_read_leaf = 0, max_rows_to_group_by = 0, max_rows_to_sort = 0,
             max_bytes_to_sort = 0, max_execution_speed = 0, max_execution_speed_bytes = 0, max_estimated_execution_time = 0"
 }

@@ -3,7 +3,7 @@
 
 -- A part written before ALTER ADD COLUMN lacks the column, and the reader computes it from its default in every pass.
 SET query_plan_two_pass_count_top_k = 1, query_plan_two_pass_count_top_k_min_rows = 0;
-SET enable_parallel_replicas = 0, use_query_condition_cache = 0, apply_mutations_on_fly = 0, optimize_aggregation_in_order = 0;
+SET enable_parallel_replicas = 0, use_query_condition_cache = 0, apply_mutations_on_fly = 0, optimize_aggregation_in_order = 0, serialize_query_plan = 0;
 -- Read, sort and speed limits disable the optimization: the test profile sets them all.
 SET max_rows_to_read = 0, max_bytes_to_read = 0, max_bytes_to_read_leaf = 0, max_rows_to_group_by = 0, max_rows_to_sort = 0,
     max_bytes_to_sort = 0, max_execution_speed = 0, max_execution_speed_bytes = 0, max_estimated_execution_time = 0;
