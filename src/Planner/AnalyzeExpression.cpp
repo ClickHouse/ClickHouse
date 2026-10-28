@@ -182,10 +182,26 @@ public:
         if (!resolver)
             return;
 
-        /// The argument names the analyzer passed are not kept in the query tree, and a function may
-        /// derive its result type from them (a named `tuple`). Such a function keeps the original
+        /// The argument names the analyzer passed are not kept in the query tree, but a function may
+        /// depend on them: `formatRow` writes them to the header of the output format. Restore them
+        /// from the expression as written, like `ExpressionAnalyzer` named the arguments.
+        auto argument_columns = function_node->getArgumentColumns();
+        const auto & arguments = function_node->getArguments().getNodes();
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            const auto & argument = arguments[i];
+            if (const auto * column_node = argument->as<ColumnNode>())
+                argument_columns[i].name = column_node->getColumnName();
+            else if (argument->hasOriginalAST())
+                argument_columns[i].name = argument->getOriginalAST()->getColumnName();
+            else
+                argument_columns[i].name = argument->formatASTForErrorMessage();
+        }
+
+        /// A function may also derive its result type from the argument names (a named `tuple`), and
+        /// they may still differ from the names the analyzer passed. Such a function keeps the original
         /// resolution: the actions must produce the type the analyzer resolved.
-        auto function_base = resolver->build(function_node->getArgumentColumns());
+        auto function_base = resolver->build(argument_columns);
         if (!function_base->getResultType()->equals(*function_node->getResultType()))
             return;
 
