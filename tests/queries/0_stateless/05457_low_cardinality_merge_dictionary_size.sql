@@ -1,6 +1,6 @@
 -- A merge writes one dictionary for a LowCardinality column whose values change from granule to granule and whose
 -- uniq statistics estimate a few times more values than low_cardinality_max_dictionary_size (8192).
--- k, kn: raised. r: eligible by statistics, but its granules use few values, so it is written as before.
+-- k, kn: raised. r: eligible by statistics, but its first 8 granules use few values, so it is written as before.
 -- s: not eligible. m: raised, then its values come in runs and it continues with the configured size.
 
 DROP TABLE IF EXISTS t_on;
@@ -31,22 +31,16 @@ INSERT INTO t_on SELECT
     number,
     'v' || toString(cityHash64(number, 1) % 20000),
     if(number % 10 = 0, NULL, 'v' || toString(cityHash64(number, 2) % 20000)),
-    'v' || toString(cityHash64(intDiv(number, 20)) % 20000),
+    if(intDiv(number, 8192) < 8, 'v' || toString(cityHash64(intDiv(number, 20)) % 20000), 'v' || toString(cityHash64(number, 6) % 20000)),
     'v' || toString(cityHash64(number, 3) % 1000),
-    if(number < 80000, 'v' || toString(cityHash64(number, 4) % 20000), 'v' || toString(cityHash64(intDiv(number, 20), 5) % 20000))
-FROM numbers(400000)
+    if(intDiv(number, 8192) BETWEEN 2 AND 10, 'v' || toString(cityHash64(intDiv(number, 20), 5) % 20000), 'v' || toString(cityHash64(number, 4) % 20000))
+FROM numbers(122880)
 SETTINGS materialize_statistics_on_insert = 1, materialize_statistics_on_insert_max_table_size = 0, max_insert_threads = 1, max_threads = 1,
     min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 1000000000, max_insert_block_size = 1000000;
 
-INSERT INTO t_off SELECT * FROM t_on ORDER BY n
-SETTINGS materialize_statistics_on_insert = 1, materialize_statistics_on_insert_max_table_size = 0, max_insert_threads = 1, max_threads = 1,
-    min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 1000000000, max_insert_block_size = 1000000;
-INSERT INTO t_split_on SELECT * FROM t_on ORDER BY n
-SETTINGS materialize_statistics_on_insert = 1, materialize_statistics_on_insert_max_table_size = 0, max_insert_threads = 1, max_threads = 1,
-    min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 1000000000, max_insert_block_size = 1000000;
-INSERT INTO t_split_off SELECT * FROM t_on ORDER BY n
-SETTINGS materialize_statistics_on_insert = 1, materialize_statistics_on_insert_max_table_size = 0, max_insert_threads = 1, max_threads = 1,
-    min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 1000000000, max_insert_block_size = 1000000;
+ALTER TABLE t_off ATTACH PARTITION tuple() FROM t_on;
+ALTER TABLE t_split_on ATTACH PARTITION tuple() FROM t_on;
+ALTER TABLE t_split_off ATTACH PARTITION tuple() FROM t_on;
 
 SELECT table, count(), max(level) FROM system.parts WHERE active AND database = currentDatabase() GROUP BY table ORDER BY table;
 
@@ -70,10 +64,10 @@ WITH (
         number AS n,
         'v' || toString(cityHash64(number, 1) % 20000) AS k,
         if(number % 10 = 0, NULL, 'v' || toString(cityHash64(number, 2) % 20000)) AS kn,
-        'v' || toString(cityHash64(intDiv(number, 20)) % 20000) AS r,
+        if(intDiv(number, 8192) < 8, 'v' || toString(cityHash64(intDiv(number, 20)) % 20000), 'v' || toString(cityHash64(number, 6) % 20000)) AS r,
         'v' || toString(cityHash64(number, 3) % 1000) AS s,
-        if(number < 80000, 'v' || toString(cityHash64(number, 4) % 20000), 'v' || toString(cityHash64(intDiv(number, 20), 5) % 20000)) AS m
-        FROM numbers(400000))
+        if(intDiv(number, 8192) BETWEEN 2 AND 10, 'v' || toString(cityHash64(intDiv(number, 20), 5) % 20000), 'v' || toString(cityHash64(number, 4) % 20000)) AS m
+        FROM numbers(122880))
 ) AS expected
 SELECT * FROM
 (

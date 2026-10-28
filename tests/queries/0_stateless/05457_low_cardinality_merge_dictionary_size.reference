@@ -13,10 +13,10 @@ m	1
 r	1
 s	0
 content
-t_off	400000	1
-t_on	400000	1
-t_split_off	400000	1
-t_split_on	400000	1
+t_off	122880	1
+t_on	122880	1
+t_split_off	122880	1
+t_split_on	122880	1
 dictionaries
 t_off	0	0	1	0
 t_on	1	1	1	1
