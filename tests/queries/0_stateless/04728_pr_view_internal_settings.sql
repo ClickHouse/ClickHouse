@@ -54,7 +54,6 @@ CREATE VIEW v_av_top AS SELECT a FROM v_av_body;
 CREATE VIEW v_plain_over_plain AS SELECT a FROM v_av_leaf;
 
 SET automatic_parallel_replicas_mode = 0;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1;
 
 -- parallel_replicas_local_plan is deliberately left to the runner's randomization: every
@@ -79,6 +78,11 @@ SELECT count() FROM v_plain_over_plain;
 
 -- Which relation is shipped to the replicas. An empty array means the query is not read through
 -- the coordinated remote path at all, which is the expected verdict once a view body opts out.
+-- This section reads the relation out of the shipped SQL, which only the query-based
+-- implementation produces; plan-based ships a plan fragment. The row counts above are what the
+-- test is really guarding, and they run under either implementation.
+SET parallel_replicas_plan_based = 0;
+
 SELECT '-- what is shipped to replicas';
 
 SELECT 'v_plain', arraySort(groupUniqArray(if(explain LIKE '%v_plain%', 'v_plain', if(explain LIKE '%mt_g%', 'mt_g', 'other'))))

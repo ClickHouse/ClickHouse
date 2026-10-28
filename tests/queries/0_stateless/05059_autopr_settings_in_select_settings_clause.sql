@@ -12,12 +12,12 @@
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t(WatchID UInt64, ClientIP UInt32, ResolutionWidth UInt16) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
+-- The cost model weighs the compressed bytes read against what the replicas would send. `WatchID` is stored
+-- uncompressed so that the read stays large however well this periodic data compresses in a given run.
+CREATE TABLE t(WatchID UInt64 CODEC(NONE), ClientIP UInt32, ResolutionWidth UInt16) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
 
 SET enable_parallel_replicas=1, parallel_replicas_local_plan=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
-
-SET enable_analyzer=1;
 
 -- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
 SET max_threads=4, max_block_size=128;
