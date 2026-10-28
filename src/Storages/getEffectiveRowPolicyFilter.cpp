@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageTimeSeries.h>
 
 namespace DB
 {
@@ -31,6 +32,12 @@ void collectRowPolicyFilters(const IStorage & storage, const ContextPtr & contex
     for (const auto & underlying : storage.getUnderlyingStorages())
         if (underlying)
             collectRowPolicyFilters(*underlying, context, result, visited);
+
+    /// The inner "tags" table of a TimeSeries table holds every tag of every series, so the policies of the TimeSeries
+    /// table apply to it as they are. The TimeSeries table's own read already evaluated them on its context.
+    if (!context->isTimeSeriesInnerReadByOwner())
+        if (auto owner = StorageTimeSeries::tryGetOwnerOfInnerTagsTable(storage_id, context))
+            collectRowPolicyFilters(*owner, context, result, visited);
 }
 
 }

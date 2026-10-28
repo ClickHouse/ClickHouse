@@ -59,6 +59,9 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
+    /// Returns the TimeSeries table whose inner "tags" table is `table_id`, or nullptr if `table_id` is not such a table.
+    static std::shared_ptr<const StorageTimeSeries> tryGetOwnerOfInnerTagsTable(const StorageID & table_id, const ContextPtr & local_context);
+
     /// Whether this table has a target of the given kind (the recent samples and time ranges targets are optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 

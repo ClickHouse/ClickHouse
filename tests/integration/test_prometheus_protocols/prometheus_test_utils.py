@@ -181,16 +181,17 @@ def convert_read_request_to_protobuf(
 
 
 # Reads a protobuf message of type from specified host and port via the RemoteRead protocol.
-def receive_protobuf_from_remote_read(host, port, path, read_request_proto):
-    response = get_response_to_remote_read(host, port, path, read_request_proto)
+def receive_protobuf_from_remote_read(host, port, path, read_request_proto, auth=None):
+    response = get_response_to_remote_read(host, port, path, read_request_proto, auth)
     return extract_protobuf_from_remote_read_response(response)
 
 
-def get_response_to_remote_read(host, port, path, read_request_proto):
+def get_response_to_remote_read(host, port, path, read_request_proto, auth=None):
     url = f"http://{host}:{port}/{path.strip('/')}"
     print(f"Posting {url}")
     response = requests.get(
         url,
+        auth=auth,
         data=snappy.compress(data=read_request_proto.SerializeToString()),
         headers={
             "Content-Encoding": "snappy",
