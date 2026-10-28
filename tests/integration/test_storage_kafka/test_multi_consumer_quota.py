@@ -436,9 +436,11 @@ TMP_QUOTA_LOG_RE = re.compile(
     r"\(available=(\d+), idx=(\d+)\)"
 )
 
-# Before the fix the quota alternated 1, 0, 1, 0, ...; after it the quota holds. 4 is well
-# above what the old code could reach and well below what the fixed code sustains.
-REQUIRED_NONZERO_RUN = 4
+# The inverted shrink condition reset a quota of 1 to 0 in the next round, so it never
+# produced two consecutive non-zero quotas. Longer runs are not guaranteed: the four replicas
+# share one schedule, so their rounds can overlap and re-contest the three leftover partitions
+# every round (quotas 1, 2, 0, 1, 2, 0, ...).
+REQUIRED_NONZERO_RUN = 2
 
 
 def collect_tmp_quota_sequences(instance, tables, consumer_idx=0):

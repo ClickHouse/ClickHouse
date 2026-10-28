@@ -4,4 +4,6 @@
 
     <query>SELECT count() FROM (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS l JOIN (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS r ON l.a &lt;=&gt; r.a</query>
     <query>SELECT count() FROM (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a, if(number % 3 = 0, NULL, number % 5)::Nullable(UInt8) AS b FROM numbers_mt(10000000)) AS l SEMI LEFT JOIN (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a, if(number % 3 = 0, NULL, number % 5)::Nullable(UInt8) AS b FROM numbers_mt(10000000)) AS r ON l.a &lt;=&gt; r.a AND l.b &lt;=&gt; r.b</query>
+    <query>SELECT count() FROM (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS l JOIN (SELECT if(number % 100000 = 0, NULL, number * 1000)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS r ON l.a &lt;=&gt; r.a SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM (SELECT if(number % 100000 = 0, NULL, number)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS l JOIN (SELECT if(number % 100000 = 0, NULL, number * 1000)::Nullable(UInt64) AS a FROM numbers_mt(10000000)) AS r ON l.a &lt;=&gt; r.a SETTINGS join_algorithm = 'partial_merge'</query>
 </test>
