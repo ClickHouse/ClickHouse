@@ -518,6 +518,37 @@ const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_ke
     return result;
 }
 
+std::unique_ptr<const DistributedShardingKey> analyzeShardingKey(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns)
+{
+    auto res = std::make_unique<DistributedShardingKey>();
+    res->expression = buildShardingKeyExpression(sharding_key, context, columns, false);
+    res->has_unbuilt_set = expressionActionsContainSet(
+        res->expression, [](const FutureSet & future_set) { return typeid_cast<const FutureSetFromSubquery *>(&future_set) != nullptr; });
+    res->column_name = sharding_key->getColumnName();
+    /// Building the expression analyzes (and may rewrite) the sharding key: e.g. the analyzer const-folds
+    /// `if(2, toInt32(id), t0)` down to `toInt32(id)`, so the raw AST name is absent from the expression
+    /// outputs. Resolve it to the actual output name so every consumer that looks the column up in the
+    /// expression's result (shard skipping, sharding key IN rewrite, DistributedSink selector) finds it.
+    if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(res->expression->getActionsDAG(), res->column_name))
+        res->column_name = node->result_name;
+    /// A `Set` table can change after rows are placed by it, as a `Join` table read by `joinGet` can.
+    res->is_deterministic = isExpressionActionsDeterministic(res->expression)
+        && !expressionActionsContainSet(res->expression, [](const FutureSet & future_set) { return future_set.isMutableDuringQuery(); });
+    res->is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(res->expression);
+    return res;
+}
+
+bool shardingKeyIsAnalyzedFor(const DistributedShardingKey & analyzed, const ColumnsDescription & columns)
+{
+    for (const auto & input : analyzed.expression->getRequiredColumnsWithTypes())
+    {
+        auto column = columns.tryGetPhysical(input.name);
+        if (!column || !column->type->equals(*input.type))
+            return false;
+    }
+    return true;
+}
+
 size_t getClusterQueriedNodes(const ContextPtr & context, const ClusterPtr & cluster)
 {
     size_t num_local_shards = cluster->getLocalShardCount();
@@ -622,22 +653,10 @@ StorageDistributed::StorageDistributed(
 
         /// Check that sharding_key exists in the table and has numeric type.
         checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
-        sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
-        sharding_key_has_unbuilt_set = expressionActionsContainSet(
-            sharding_key_expr, [](const FutureSet & future_set) { return typeid_cast<const FutureSetFromSubquery *>(&future_set) != nullptr; });
+        auto analyzed = analyzeShardingKey(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         if (is_fresh_definition)
-            checkShardingKeySetsAreBuilt();
-        sharding_key_column_name = sharding_key_->getColumnName();
-        /// Building the expression analyzes (and may rewrite) the sharding key: e.g. the analyzer const-folds
-        /// `if(2, toInt32(id), t0)` down to `toInt32(id)`, so the raw AST name is absent from the expression
-        /// outputs. Resolve it to the actual output name so every consumer that looks the column up in the
-        /// expression's result (shard skipping, sharding key IN rewrite, DistributedSink selector) finds it.
-        if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
-            sharding_key_column_name = node->result_name;
-        /// A `Set` table can change after rows are placed by it, as a `Join` table read by `joinGet` can.
-        sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr)
-            && !expressionActionsContainSet(sharding_key_expr, [](const FutureSet & future_set) { return future_set.isMutableDuringQuery(); });
-        sharding_key_is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(sharding_key_expr);
+            analyzed->checkSetsAreBuilt();
+        analyzed_sharding_key.set(std::move(analyzed));
     }
 
     if (!relative_data_path.empty())
@@ -671,6 +690,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
+    const auto analyzed = getAnalyzedShardingKey(storage_snapshot->metadata->getColumns());
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(local_context, cluster);
@@ -683,7 +703,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info, analyzed);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -702,7 +722,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
-    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info, analyzed);
 
     /// The query was analyzed against the columns declared here, but a shard resolves the remote
     /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
@@ -734,7 +754,11 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 }
 
 QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
-    QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const
+    QueryProcessingStage::Enum to_stage,
+    const Settings & settings,
+    size_t nodes,
+    const SelectQueryInfo & query_info,
+    const DistributedShardingKeyPtr & analyzed) const
 {
     if (settings[Setting::distributed_group_by_no_merge])
     {
@@ -783,7 +807,7 @@ QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
-    std::optional<QueryProcessingStage::Enum> optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
+    std::optional<QueryProcessingStage::Enum> optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings, analyzed);
     if (optimized_stage)
     {
         if (*optimized_stage == QueryProcessingStage::Complete)
@@ -857,7 +881,7 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
 /// 2. Sharding key expression is a deterministic function of col1, ..., coln and expression key is injective functions of these col1, ..., coln.
 /// 3. If the expression contains non-injective function, return false.
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
-    const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
+    const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info, const DistributedShardingKey & analyzed) const
 {
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
@@ -884,7 +908,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 
     const auto & expr_key_required_columns = expression_dag.getRequiredColumnsNames();
 
-    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    const auto & sharding_key_dag = analyzed.expression->getActionsDAG();
 
     for (const auto & col : sharding_key_dag.getRequiredColumnsNames())
     {
@@ -906,16 +930,17 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     /// For example, if the sharding key is `intHash64(user_id)`, then `getOutputs() = [intHash64(user_id), user_id]`. The `user_id` column is a source
     /// column but not a key value, and should be excluded from checks. We need to find the actual sharding key output
     /// node to check that it depends only on the allowed set of nodes (`irreducible_nodes`).
-    const ActionsDAG::Node * sharding_key_output = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
+    const ActionsDAG::Node * sharding_key_output = tryFindShardingKeyOutput(sharding_key_dag, analyzed.column_name);
     if (sharding_key_output == nullptr)
         return false;
     return allOutputsDependsOnlyOnAllowedNodes({sharding_key_output}, irreducibe_nodes, matches);
 }
 
-std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
+std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(
+    const SelectQueryInfo & query_info, const Settings & settings, const DistributedShardingKeyPtr & analyzed) const
 {
     bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || analyzed->is_deterministic);
 
     QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
     if (settings[Setting::distributed_push_down_limit])
@@ -939,21 +964,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // DISTINCT
     if (query_node.isDistinct())
     {
-        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), query_info))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getProjectionNode(), query_info, *analyzed))
             return {};
     }
 
     // GROUP BY
     if (query_info.has_aggregates || query_node.hasGroupBy())
     {
-        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), query_info))
+        if (!optimize_sharding_key_aggregation || !query_node.hasGroupBy() || query_node.isGroupByWithGroupingSets() || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getGroupByNode(), query_info, *analyzed))
             return {};
     }
 
     // LIMIT BY
     if (query_node.hasLimitBy())
     {
-        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), query_info))
+        if (!optimize_sharding_key_aggregation || !isShardingKeySuitsQueryTreeNodeExpression(query_node.getLimitByNode(), query_info, *analyzed))
             return {};
     }
 
@@ -1224,6 +1249,10 @@ void StorageDistributed::read(
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
         *modified_query_info.getCluster(), local_context, metadata_snapshot->columns);
 
+    const auto analyzed = getAnalyzedShardingKey(storage_snapshot->metadata->getColumns());
+    const ExpressionActionsPtr sharding_key_expr = analyzed ? analyzed->expression : nullptr;
+    const String sharding_key_column_name = analyzed ? analyzed->column_name : String{};
+
     ClusterProxy::executeQuery(
         query_plan,
         header,
@@ -1295,7 +1324,9 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
     /// DistributedSink will not own cluster, but will own ConnectionPools of the cluster
-    return std::make_shared<DistributedSink>(local_context, *this, metadata_snapshot, cluster, insert_sync, timeout, columns_to_send);
+    return std::make_shared<DistributedSink>(
+        local_context, *this, metadata_snapshot, getAnalyzedShardingKey(metadata_snapshot->getColumns()), cluster, insert_sync, timeout,
+        columns_to_send);
 }
 
 
@@ -1567,11 +1598,14 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         new_query->reset(new_query->table_function);
     }
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    const auto analyzed = getAnalyzedShardingKey(metadata_snapshot->getColumns());
+
     /// A `*Cluster` source hands files to shards by hashing their paths, so the rows a shard reads cannot
     /// satisfy the destination's sharding key - and with `parallel_distributed_insert_select = 2` the
     /// forwarded INSERT writes straight into the shard's local table, bypassing the key entirely.
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
-        && hasShardingKeyForReads() && sharding_key_is_deterministic_in_scope_of_query)
+        && hasShardingKeyForReads() && analyzed->is_deterministic_in_scope_of_query)
     {
         LOG_INFO(
             log,
@@ -1579,7 +1613,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
             "its deterministic sharding key ({}); falling back to the ordinary INSERT SELECT",
             getStorageID().getNameForLogs(),
             src_storage_cluster.getName(),
-            sharding_key_column_name);
+            analyzed->column_name);
         return {};
     }
 
@@ -1767,7 +1801,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     /// The sharding key itself is an engine argument and cannot be altered, so it is only revalidated
     /// against the new columns here; the `arrayJoin` rejection stays where the definition is introduced
     /// (the constructor), so an unrelated `ALTER` on a table created before that check does not throw.
-    checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
+    checkShardingKeyExistsAndIsNumeric(sharding_key ? sharding_key->clone() : nullptr, local_context, new_metadata.columns.getAllPhysical());
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
@@ -1778,8 +1812,13 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
+    std::unique_ptr<const DistributedShardingKey> new_analyzed_sharding_key;
+    if (has_sharding_key)
+        new_analyzed_sharding_key = analyzeShardingKey(sharding_key->clone(), getContext(), new_metadata.columns.getAllPhysical());
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+    if (new_analyzed_sharding_key)
+        analyzed_sharding_key.set(std::move(new_analyzed_sharding_key));
 }
 
 void StorageDistributed::initializeFromDisk()
@@ -2148,20 +2187,29 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
 }
 
+DistributedShardingKeyPtr StorageDistributed::getAnalyzedShardingKey(const ColumnsDescription & columns) const
+{
+    auto analyzed = analyzed_sharding_key.get();
+    if (!analyzed || shardingKeyIsAnalyzedFor(*analyzed, columns))
+        return analyzed;
+    return analyzeShardingKey(sharding_key->clone(), getContext(), columns.getAllPhysical());
+}
+
 ClusterPtr StorageDistributed::getOptimizedCluster(
     ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info) const
+    const SelectQueryInfo & query_info,
+    const DistributedShardingKeyPtr & analyzed) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
 
-    bool sharding_key_is_usable = !sharding_key_has_unbuilt_set
-        && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
+    bool sharding_key_is_usable = analyzed && !analyzed->has_unbuilt_set
+        && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || analyzed->is_deterministic);
 
     if (hasShardingKeyForReads() && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context, *analyzed);
         if (optimized)
             return optimized;
     }
@@ -2171,18 +2219,18 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     {
         if (!hasShardingKeyForReads())
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
-        checkShardingKeySetsAreBuilt();
+        analyzed->checkSetsAreBuilt();
         if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
-        throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key {} is not used", sharding_key_column_name);
+        throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key {} is not used", analyzed->column_name);
     }
 
     return {};
 }
 
-void StorageDistributed::checkShardingKeySetsAreBuilt() const
+void DistributedShardingKey::checkSetsAreBuilt() const
 {
-    if (sharding_key_has_unbuilt_set)
+    if (has_unbuilt_set)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Sharding expression cannot contain IN with a subquery or a non-Set table, because its set is never built");
 }
@@ -2220,7 +2268,8 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
     ClusterPtr cluster,
     const SelectQueryInfo & query_info,
     [[maybe_unused]] const StorageSnapshotPtr & storage_snapshot,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    const DistributedShardingKey & analyzed) const
 {
     if (!query_info.filter_actions_dag)
         return nullptr;
@@ -2231,8 +2280,8 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
     }
 
-    const ActionsDAG & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    const ActionsDAG::Node * expr_node = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
+    const ActionsDAG & sharding_key_dag = analyzed.expression->getActionsDAG();
+    const ActionsDAG::Node * expr_node = tryFindShardingKeyOutput(sharding_key_dag, analyzed.column_name);
     if (expr_node == nullptr)
         /// Sharding key column can't be resolved in the analyzed expression (e.g. a const-folded key like
         /// `if(2, toInt32(id), t0)`). Skip the optimization and query all shards instead of asserting.
