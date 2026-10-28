@@ -2355,6 +2355,9 @@ static bool fixedStringConstantLosesPadding(
 /// padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`). So a constant or a set element of such a type
 /// converted to the input type of a key expression names other key values than the ones that match it. A top-level
 /// `FixedString` is handled by the callers (see `fixedStringConstantLosesPadding`).
+/// The padding matters only where the other side can hold a string: a `FixedString` converted to a number is parsed
+/// both by the conversion and by the comparison, so `(toFixedString('123', 3), 5)` over `Tuple(UInt64, UInt64)` is safe.
+/// `Dynamic` and `JSON` can hold a string without showing it in the type.
 static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_type, const DataTypePtr & input_type)
 {
     auto has_nested_fixed_string = [](const DataTypePtr & type)
@@ -2362,10 +2365,16 @@ static bool nestedFixedStringConversionChangesValues(const DataTypePtr & value_t
         return !isFixedString(type) && anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
     };
 
+    auto can_hold_string = [](const DataTypePtr & type)
+    {
+        return anyInTypeTree(*type, [](const IDataType & t) { return isStringOrFixedString(t) || isDynamic(t) || isObject(t); });
+    };
+
     const auto value_type_not_null = removeNullable(recursiveRemoveLowCardinality(value_type));
     const auto input_type_not_null = removeNullable(recursiveRemoveLowCardinality(input_type));
     return !value_type_not_null->equals(*input_type_not_null)
-        && (has_nested_fixed_string(value_type_not_null) || has_nested_fixed_string(input_type_not_null));
+        && ((has_nested_fixed_string(value_type_not_null) && can_hold_string(input_type_not_null))
+            || (has_nested_fixed_string(input_type_not_null) && can_hold_string(value_type_not_null)));
 }
 
 static ColumnPtr tryCastColumnAccurateOrNull(const ColumnWithTypeAndName & column, const DataTypePtr & target_type);
