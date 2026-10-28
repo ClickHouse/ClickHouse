@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: use-rocksdb
+# Tags: no-fasttest, use-rocksdb
+# Tag no-fasttest: the XGBoost contrib is not built in the fast test.
 
 # --dump-schema in clickhouse-local leaves the data path as it was, also where loading repairs or cleans up files.
+# It also orders objects after the dictionary that their predictXGBoost call reads.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -81,3 +83,30 @@ $CLICKHOUSE_LOCAL --path "$work/orphan" --dump-schema > /dev/null 2> "$work/err.
 echo "dump rc=$?, refused: $(grep -c 'it has no metadata file' "$work/err.txt")"
 after=$(snapshot "$work/orphan")
 [ "$before" = "$after" ] && echo 'data path unchanged by the refused dump' || diff <(echo "$before") <(echo "$after")
+
+# Creates the objects in a fresh source, dumps database `d`, and replays the dump into a fresh target started with the
+# remaining arguments.
+round_trip() {
+    local name=$1 ddl=$2
+    shift 2
+    rm -rf "$work/rt_src" "$work/rt_dst"
+    $CLICKHOUSE_LOCAL --path "$work/rt_src" -n -q "$ddl"
+    $CLICKHOUSE_LOCAL --path "$work/rt_src" --dump-schema d > "$work/$name.sql" 2>/dev/null
+    echo "$name: dump rc=$?"
+    grep -E '^SET (enable_xgboost|allow_statistics|enable_zxc_codec)' "$work/$name.sql"
+    $CLICKHOUSE_LOCAL --path "$work/rt_dst" "$@" -n --queries-file "$work/$name.sql" > "$work/$name.out" 2>&1
+    echo "$name: replay rc=$?"
+    grep -o 'Code: [0-9]*' "$work/$name.out" | head -1
+}
+
+echo '--- an object is created after the dictionary its predictXGBoost call reads ---'
+round_trip xgboost "
+SET enable_xgboost = 1;
+CREATE DATABASE d;
+CREATE TABLE d.train (x1 Float64, x2 Float64, y Float64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO d.train SELECT number, intDiv(number, 7), 2 * number + 3 * intDiv(number, 7) FROM numbers(100);
+CREATE DICTIONARY d.zzz_model (x1 Float64, x2 Float64, y Float64) PRIMARY KEY (x1, x2)
+    SOURCE(CLICKHOUSE(TABLE 'train' DB 'd')) LAYOUT(XGBOOST(num_iterations 10)) LIFETIME(0);
+CREATE TABLE d.src (x1 Float64, x2 Float64) ENGINE = Memory;
+CREATE MATERIALIZED VIEW d.aaa_mv ENGINE = Memory AS SELECT predictXGBoost('d.zzz_model', x1, x2) AS p FROM d.src;
+CREATE TABLE d.aaa_default (x1 Float64, x2 Float64, p Float64 DEFAULT predictXGBoost('d.zzz_model', x1, x2)) ENGINE = Memory;"

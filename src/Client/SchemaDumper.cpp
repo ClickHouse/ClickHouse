@@ -1648,7 +1648,9 @@ void collectFunctionArgumentReferences(
                 }
             }
         }
-        else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || equalsCaseInsensitive(function->name, "dictionary"))
+        /// `predictXGBoost` also reads its dictionary when a query or a default is analyzed, and the server records no edge for it.
+        else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || equalsCaseInsensitive(function->name, "dictionary")
+                 || function->name == "predictXGBoost")
         {
             candidate = tryGetQualifiedNameFromFunctionArgument(*function, 0);
             candidate_kind = functionIsJoinGet(function->name) ? ReferenceKind::Join : ReferenceKind::Dictionary;
@@ -2474,7 +2476,18 @@ std::vector<TableInfo> resolveTables(
                 continue;
         }
         else if (row.engine != "View" && row.engine != "MaterializedView")
-            continue;
+        {
+            /// CREATE analyzes the column expressions, and a `predictXGBoost` there needs its dictionary.
+            if (row.create_query.find("predictXGBoost") == String::npos || database_info.at(row.database).is_external)
+                continue;
+            ParserCreateQuery create_parser;
+            ASTPtr create_ast = parseQuery(
+                create_parser, row.create_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            const auto * create = create_ast->as<ASTCreateQuery>();
+            if (!create || !create->columns_list)
+                continue;
+            select_ast = create->columns_list->ptr();
+        }
         else
         {
             try

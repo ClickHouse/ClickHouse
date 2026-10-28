@@ -7,3 +7,7 @@ data path unchanged by the refused dump
 --- a database without its metadata file is refused ---
 dump rc=48, refused: 1
 data path unchanged by the refused dump
+--- an object is created after the dictionary its predictXGBoost call reads ---
+xgboost: dump rc=0
+SET enable_xgboost = 1;
+xgboost: replay rc=0
