@@ -436,6 +436,8 @@ private:
 
     const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
+    /// One plus `IQueryPlanStep::getStepIndex` of `query_plan_step`, or 0 without a step.
+    size_t query_plan_step_id = 0;
     size_t query_plan_step_group = 0;
     StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 
