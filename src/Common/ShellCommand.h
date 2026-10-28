@@ -446,7 +446,7 @@ private:
     /// killed here.
     static void checkChildSetupReport(pid_t child_pid, int report_fd, bool own_process_group);
     /// Kills and reaps a child that has no `ShellCommand` to own it (its start could not be
-    /// established, or the constructor threw): the group it leads too, with `whole_group`. A child
+    /// established): the group it leads too, with `whole_group`. A child
     /// not reaped within a bound is handed to the reaper (`ShellCommandsHolder::addSignalledChild`).
     static void killAndReapOrphan(pid_t child_pid, bool whole_group) noexcept;
     /// What `killAndReapNoThrow` and `killAndReapOrphan` share: sends `SIGKILL` to the child - and to
