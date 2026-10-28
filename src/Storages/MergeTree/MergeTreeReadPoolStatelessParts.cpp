@@ -323,9 +323,11 @@ MergeTreeDataPartInfoForReaderPtr MergeTreeReadPoolStatelessParts::buildReaderIn
                 else if (!serialization_columns.empty())
                     column = serialization_columns.front();
             }
+            /// A column without its own info still follows the part-wide settings (`types_serialization_versions`),
+            /// which shape the streams of `Dynamic` and `JSON`.
             auto it = serialization_infos.find(column.getNameInStorage());
             auto serialization = it == serialization_infos.end()
-                ? IDataType::getSerialization(column)
+                ? IDataType::getSerialization(column, serialization_infos.getSettings())
                 : IDataType::getSerialization(column, *it->second);
 
             String filename;
