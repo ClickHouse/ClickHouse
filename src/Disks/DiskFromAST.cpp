@@ -287,7 +287,17 @@ static void checkTransientDiskLocalPaths(const Poco::Util::AbstractConfiguration
         auto type = config.getString(prefix + "type", is_root ? "local" : "");
         auto backend = (is_root && type == "local") ? type : config.getString(prefix + "object_storage_type", type);
         if (backend == "local" || backend == "local_blob_storage" || backend == "local_plain" || backend == "local_plain_rewritable")
+        {
             checkCustomLocalDiskPath(config.getString(prefix + "path", ""), context);
+
+            /// The same validation of the local configuration (a `path` ending with `/`, `keep_free_space_*`)
+            /// that `registerDiskLocal` and the local object storage creators run when they create the disk.
+            /// It does not create anything. The prefix is passed the same way the creators get it.
+            String path;
+            UInt64 keep_free_space_bytes = 0;
+            String config_prefix = prefix.empty() ? prefix : prefix.substr(0, prefix.size() - 1);
+            loadDiskLocalConfig("query-local disk", config, config_prefix, context, path, keep_free_space_bytes);
+        }
     };
 
     check_backend("", /* is_root */ true);
