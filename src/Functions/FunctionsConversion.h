@@ -2153,6 +2153,36 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
         return std::move(col_to);
     }
 
+    /// For the plain conversion from float to integer, the range of the values is checked for the whole column
+    /// after the loop, so that the loop has no early exit and can be vectorized.
+    /// The conversion of a value outside the range of the result type (including inf and nan) is undefined, and the
+    /// vectorized and the scalar code convert it differently: for example, 5e9 becomes 2147483648 or 705032704 in `UInt32`,
+    /// depending on the position of the row in the block. So a column with such a value is converted again by the loop below,
+    /// which reports inf and nan, and converts the other values the same way in every row.
+    if constexpr (is_floating_point<FromFieldType> && !is_floating_point<ToFieldType> && !is_big_int_v<ToFieldType>
+        && !std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+        && !std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
+    {
+        /// `BFloat16` is converted to an integer through `Float32`.
+        using CompareType = std::conditional_t<std::is_same_v<FromFieldType, BFloat16>, Float32, FromFieldType>;
+        /// The values with the integer part in the range of the result type, exclusive: (-129, 128) for `Int8`, (-1, 2^32) for `UInt32`.
+        /// When a bound is not representable in `CompareType`, the rounding can only make the range narrower.
+        constexpr auto lower_bound = static_cast<CompareType>(std::numeric_limits<ToFieldType>::lowest()) - 1;
+        constexpr auto upper_bound = static_cast<CompareType>(std::numeric_limits<ToFieldType>::max()) + 1;
+
+        const auto * from = vec_from.data();
+        auto * to = vec_to.data();
+        bool all_in_range = true;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const auto value = static_cast<CompareType>(from[i]);
+            all_in_range &= value > lower_bound && value < upper_bound;
+            to[i] = static_cast<ToFieldType>(from[i]);
+        }
+        if (all_in_range)
+            return std::move(col_to);
+    }
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         /// Handle NaN/Inf when converting from float to integer

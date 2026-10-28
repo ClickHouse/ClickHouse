@@ -17,6 +17,14 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
+template <typename Int>
+[[noreturn]] [[gnu::cold]] NO_INLINE void throwGCDLCMIntermediateResultOverflow(Int a, Int b)
+{
+    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                    "Intermediate result overflow (signed a = {}, signed b = {}, min = {}, max = {})",
+                    a, b, std::numeric_limits<Int>::lowest(), std::numeric_limits<Int>::max());
+}
+
 
 template <typename A, typename B, typename Impl, typename Name>
 struct GCDLCMImpl
@@ -45,9 +53,7 @@ struct GCDLCMImpl
             Int min = std::numeric_limits<Int>::lowest();
             Int max = std::numeric_limits<Int>::max();
             if (unlikely((a_s == min || a_s == max) || (b_s == min || b_s == max)))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                                "Intermediate result overflow (signed a = {}, signed b = {}, min = {}, max = {})",
-                                a_s, b_s, min, max);
+                throwGCDLCMIntermediateResultOverflow(a_s, b_s);
         }
 
         return Impl::applyImpl(a, b);

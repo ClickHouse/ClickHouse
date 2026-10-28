@@ -47,6 +47,11 @@ namespace ErrorCodes
 namespace
 {
 
+[[noreturn]] [[gnu::cold]] NO_INLINE void throwInvalidHistogramValue()
+{
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value (inf or nan) for aggregation by 'histogram' function");
+}
+
 /** distance compression algorithm implementation
   * http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf
   */
@@ -274,7 +279,7 @@ public:
         // nans break sort and compression
         // infs don't fit in bins partition method
         if (!isFinite(value))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value (inf or nan) for aggregation by 'histogram' function");
+            throwInvalidHistogramValue();
 
         points[size] = {value, weight};
         ++size;

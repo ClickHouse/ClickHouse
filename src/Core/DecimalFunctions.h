@@ -87,6 +87,16 @@ struct DataTypeDecimalTrait
     }
 };
 
+[[noreturn]] [[gnu::cold]] NO_INLINE inline void throwDecimalMathOverflow()
+{
+    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+}
+
+[[noreturn]] [[gnu::cold]] NO_INLINE inline void throwDecimalConvertOverflow()
+{
+    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
+}
+
 /// Calculates result = x * multiplier + delta.
 /// If the multiplication or the addition overflows, returns false or throws DECIMAL_OVERFLOW.
 template <typename T, bool throw_on_error>
@@ -96,14 +106,14 @@ inline bool multiplyAdd(const T & x, const T & multiplier, const T & delta, T & 
     if (common::mulOverflow(x, multiplier, multiplied))
     {
         if constexpr (throw_on_error)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throwDecimalMathOverflow();
         return false;
     }
 
     if (common::addOverflow(multiplied, delta, result))
     {
         if constexpr (throw_on_error)
-            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+            throwDecimalMathOverflow();
         return false;
     }
 
@@ -390,7 +400,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
             if (whole < 0)
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
+                    throwDecimalConvertOverflow();
                 else
                     return ReturnType(true);
             }
@@ -410,7 +420,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
         if (whole < min_to || whole > max_to)
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Convert overflow");
+                throwDecimalConvertOverflow();
             else
                 return ReturnType(true);
         }
