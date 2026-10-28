@@ -146,7 +146,11 @@ public:
                 else
                 {
                     const auto & column_node = node->as<ColumnNode &>();
-                    result = column_node.getColumnName();
+                    auto column_source = column_node.getColumnSourceOrNull();
+                    if (column_source && column_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
+                        result = calculateInterpolateColumnActionNodeName(column_node.getColumnName());
+                    else
+                        result = column_node.getColumnName();
                 }
 
                 break;
@@ -1542,6 +1546,11 @@ String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64
 String calculateConstantActionNodeName(const Field & constant_literal)
 {
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal);
+}
+
+String calculateInterpolateColumnActionNodeName(const String & target_name)
+{
+    return "__INTERPOLATE." + target_name;
 }
 
 String calculateWindowNodeActionName(const QueryTreeNodePtr & function_node, const QueryTreeNodePtr & window_node, const PlannerContext & planner_context, bool use_column_identifier_as_action_node_name)

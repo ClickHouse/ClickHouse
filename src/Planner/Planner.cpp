@@ -1517,12 +1517,27 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
 
         ActionsDAG interpolate_actions_dag;
+        ActionsDAG rename_dag;
+        NameSet target_column_names_set;
+        for (const auto & [_, column_name] : sort_analysis_result.interpolate_target_column_names)
+            target_column_names_set.insert(column_name);
+
         auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
             query_plan_column.column = nullptr;
-            interpolate_actions_dag.addInput(query_plan_column);
+
+            /// A target column is named by the user, so while the items are visited it is an input under a name no generated name can equal.
+            if (target_column_names_set.contains(query_plan_column.name))
+            {
+                auto name = calculateInterpolateColumnActionNodeName(query_plan_column.name);
+                const auto & target_input = rename_dag.addInput(query_plan_column);
+                rename_dag.getOutputs().push_back(&rename_dag.addAlias(target_input, name));
+                interpolate_actions_dag.addInput(name, query_plan_column.type);
+            }
+            else
+                interpolate_actions_dag.addInput(query_plan_column);
         }
 
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
@@ -1540,7 +1555,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         }
         else
         {
-            ActionsDAG rename_dag;
             const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
 
             /// `FillingTransform` rejects an ORDER BY column as an INTERPOLATE output by name, which a renamed target column no longer has.

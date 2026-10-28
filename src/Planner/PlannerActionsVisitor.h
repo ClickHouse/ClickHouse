@@ -83,6 +83,9 @@ String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64
 /// Calculate action node name for constant, data type will be derived from constant literal value
 String calculateConstantActionNodeName(const Field & constant_literal);
 
+/// Action node name of the column through which an INTERPOLATE expression reads the previous value of its target
+String calculateInterpolateColumnActionNodeName(const String & target_name);
+
 /** Calculate action node name for window node.
   * Window node action name can only be part of window function action name.
   * For column node column node identifier from planner context is used, if use_column_identifier_as_action_node_name = true.
