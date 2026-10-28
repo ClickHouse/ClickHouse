@@ -1,0 +1,21 @@
+--- CURRENT_USER is not a name
+OK
+--- refused
+GRANT role TO: refused
+GRANT privilege TO: refused
+REVOKE FROM: refused
+CREATE ROW POLICY TO: refused
+CREATE QUOTA TO ALL EXCEPT: refused
+CREATE USER GRANTEES: refused
+CREATE USER GRANTEES itself: refused
+--- nothing changed
+0
+['SELECT']
+0
+0
+0
+0
+--- a role-only list is not ambiguous
+1
+--- without the user, the name is the role
+1

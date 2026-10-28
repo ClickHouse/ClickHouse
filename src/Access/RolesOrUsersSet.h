@@ -58,6 +58,9 @@ struct RolesOrUsersSet
     /// Throws ACCESS_DENIED if any explicitly listed User belongs to the users.xml storage.
     void throwIfTargetingUsersFromUsersConfig(const AccessControl & access_control) const;
 
+    /// Throws if a name that may denote a user or a role denotes both, counting `new_user_names` as users.
+    static void throwIfAmbiguousNames(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const Strings & new_user_names = {});
+
     /// Returns a list of matching IDs. The function must not be called if `all` == `true`.
     std::vector<UUID> getMatchingIDs() const;
 
