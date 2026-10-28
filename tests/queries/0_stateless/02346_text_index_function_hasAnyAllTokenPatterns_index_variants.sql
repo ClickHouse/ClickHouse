@@ -299,6 +299,9 @@ SELECT 'JSON', count() FROM tab WHERE hasAnyTokenLike(j.k::String, 'prod%') SETT
 SELECT 'JSON', count() FROM tab WHERE hasAllTokenLike(j.k::String, ['env:prod-%']);
 SELECT 'JSON', count() FROM tab WHERE hasAllTokenLike(j.k::String, ['env:prod-%']) SETTINGS use_skip_indexes = 0;
 SELECT 'JSON', count() FROM tab WHERE hasAllTokenLike(j.k::String, ['env:prod-%']) SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'JSON', count() FROM tab WHERE hasAnyTokenRegexp(j.k::String, '^env:prod-(eu|us)$');
+SELECT 'JSON', count() FROM tab WHERE hasAnyTokenRegexp(j.k::String, '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON', count() FROM tab WHERE hasAnyTokenRegexp(j.k::String, '^env:prod-(eu|us)$') SETTINGS text_index_like_max_matched_tokens = 1;
 
 DROP TABLE tab;
 
@@ -328,6 +331,9 @@ SELECT 'Map', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS u
 SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']);
 SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']) SETTINGS use_skip_indexes = 0;
 SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']) SETTINGS text_index_like_max_matched_tokens = 1;
+SELECT 'Map', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^env:prod-(eu|us)$');
+SELECT 'Map', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^env:prod-(eu|us)$') SETTINGS text_index_like_max_matched_tokens = 1;
 
 DROP TABLE tab;
 
@@ -360,6 +366,9 @@ SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']);
 SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']) SETTINGS use_skip_indexes = 0;
 SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']) SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%'], 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^[^a]');
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^[^a]') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^[^a]') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 
@@ -382,6 +391,8 @@ SELECT 'JSON FixedString', count() FROM tab WHERE hasAnyTokenLike(j.k::FixedStri
 SELECT 'JSON FixedString', count() FROM tab WHERE hasAllTokenLike(j.k::FixedString(8), ['\0%']);
 SELECT 'JSON FixedString', count() FROM tab WHERE hasAllTokenLike(j.k::FixedString(8), ['\0%']) SETTINGS use_skip_indexes = 0;
 SELECT 'JSON FixedString', count() FROM tab WHERE hasAllTokenLike(j.k::FixedString(8), ['\0%'], 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAnyTokenRegexp(j.k::FixedString(8), '^[^a]');
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAnyTokenRegexp(j.k::FixedString(8), '^[^a]') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
@@ -415,6 +426,9 @@ SELECT 'Map', count() FROM tab WHERE hasAnyTokenLike(m['k'], 'prod%') SETTINGS u
 SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']);
 SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']) SETTINGS use_skip_indexes = 0;
 SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'Map', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^env:prod-(eu|us)$');
+SELECT 'Map', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'Map', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^env:prod-(eu|us)$') SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'Map', countIf(hasAnyTokenLike(m['k'], 'env:prod%')) FROM tab;
 
 DROP TABLE tab;
@@ -439,6 +453,8 @@ SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenLike(m['k'], '_%') SETTI
 SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']);
 SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']) SETTINGS use_skip_indexes = 0;
 SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^[^a]');
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenRegexp(m['k'], '^[^a]') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 
@@ -463,6 +479,8 @@ SELECT 'UInt64 key', count() FROM tab WHERE hasAnyTokenLike(m[1], 'env:prod%', '
 SELECT 'UInt64 key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod-%']);
 SELECT 'UInt64 key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod-%']) SETTINGS use_skip_indexes = 0;
 SELECT 'UInt64 key', count() FROM tab WHERE hasAllTokenLike(m[1], ['env:prod-%']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasAnyTokenRegexp(m[1], '^env:prod-(eu|us)$');
+SELECT 'UInt64 key', count() FROM tab WHERE hasAnyTokenRegexp(m[1], '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab;
 

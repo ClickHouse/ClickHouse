@@ -169,6 +169,9 @@ JSON	0
 JSON	16
 JSON	16
 JSON	16
+JSON	16
+JSON	16
+JSON	16
 Map	16
 Map	16
 Map	16
@@ -176,6 +179,9 @@ Map	16
 Map	16
 Map	0
 Map	0
+Map	16
+Map	16
+Map	16
 Map	16
 Map	16
 Map	16
@@ -187,9 +193,14 @@ FixedString	8
 FixedString	8
 FixedString	8
 FixedString	8
+FixedString	8
+FixedString	8
+FixedString	8
 JSON FixedString	64
 JSON FixedString	64
 JSON FixedString	64
+JSON FixedString	8
+JSON FixedString	8
 JSON FixedString	8
 JSON FixedString	8
 JSON FixedString	8
@@ -205,12 +216,19 @@ Map	16
 Map	16
 Map	16
 Map	16
+Map	16
+Map	16
+Map	16
 FixedString	64
 FixedString	64
 FixedString	64
 FixedString	8
 FixedString	8
 FixedString	8
+FixedString	8
+FixedString	8
+UInt64 key	16
+UInt64 key	16
 UInt64 key	16
 UInt64 key	16
 UInt64 key	16
