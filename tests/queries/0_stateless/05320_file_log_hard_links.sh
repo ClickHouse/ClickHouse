@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
-mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6,d7}
+mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6,d7,d8}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
 held2=${logs_dir}/held2.log
@@ -320,6 +320,33 @@ mv "${d7}/tmp.sym" "${d7}/d.log"
 printf '4\n' >> "${d7}/e.log"
 read_until file_log_dangling 4
 
+echo '-- a symbolic link read name that led to no file and then leads to a file read under another name does not read it, and its removal keeps that file'
+d8=${logs_dir}/d8
+outside=${logs_dir}/outside.log
+printf '1\n' > "${d8}/a.log"
+printf '10\n' > "${d8}/b.log"
+: > "${d8}/sync.log"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_recover (id UInt64) ENGINE = FileLog('${d8}/', 'TSV') SETTINGS poll_timeout_ms = 100"
+read_log file_log_recover
+sync_watch file_log_recover "${d8}/sync.log"
+ln "${d8}/a.log" "${outside}"
+ln -s ../outside.log "${d8}/s.log"
+printf '2\n' >> "${d8}/a.log"
+read_until file_log_recover 2
+rm "${d8}/a.log"
+printf '3\n' >> "${outside}"
+read_until file_log_recover 3
+${CLICKHOUSE_CLIENT} -q "SYSTEM RESET FILELOG file_log_recover FILE 's.log' OFFSET 0"
+rm "${outside}"
+# The link leads to no file: the read fails to open it, and retries it later.
+$(sed "s/--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}/--send_logs_level=fatal/g" <<< "${CLICKHOUSE_CLIENT}") --stream_like_engine_allow_direct_select=1 -q "SELECT _filename, id FROM file_log_recover"
+ln "${d8}/b.log" "${outside}"
+printf '11\n' >> "${d8}/b.log"
+read_until file_log_recover 11
+rm "${d8}/s.log"
+printf '12\n' >> "${d8}/b.log"
+read_until file_log_recover 12
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
@@ -327,4 +354,5 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_symlink"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_dangling"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_recover"
 rm -rf "${logs_dir}"

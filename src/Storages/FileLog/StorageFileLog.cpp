@@ -685,7 +685,8 @@ void StorageFileLog::openFilesAndSetPos()
                 /// The path may lead to another file now: read it from the start.
                 if (const UInt64 inode = getInode(getFullDataPath(file)); inode != file_ctx.inode)
                 {
-                    if (isTrackedByDirectoryEvents(file))
+                    /// A file read under another name is not read under this one too: the name waits like one that leads to no file.
+                    if (isTrackedByDirectoryEvents(file) || file_infos.meta_by_inode.contains(inode))
                     {
                         file_ctx.reader.reset();
                         file_ctx.status = FileStatus::NO_CHANGE;

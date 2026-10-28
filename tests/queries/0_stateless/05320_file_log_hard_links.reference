@@ -101,3 +101,10 @@ d.log	2
 d.log	3
 -- a dangling symbolic link renamed over the read name from inside the directory: a hard link reads on
 e.log	4
+-- a symbolic link read name that led to no file and then leads to a file read under another name does not read it, and its removal keeps that file
+a.log	1
+b.log	10
+a.log	2
+s.log	3
+b.log	11
+b.log	12
