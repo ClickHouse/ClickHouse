@@ -1,8 +1,11 @@
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ActionLockTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -10,21 +13,26 @@ namespace DB
 
 namespace ActionLocks
 {
-    extern const StorageActionBlockType PartsMerge = 1;
-    extern const StorageActionBlockType PartsFetch = 2;
-    extern const StorageActionBlockType PartsSend = 3;
-    extern const StorageActionBlockType ReplicationQueue = 4;
-    extern const StorageActionBlockType DistributedSend = 5;
-    extern const StorageActionBlockType PartsTTLMerge = 6;
-    extern const StorageActionBlockType PartsMove = 7;
-    extern const StorageActionBlockType PullReplicationLog = 8;
-    extern const StorageActionBlockType Cleanup = 9;
-    extern const StorageActionBlockType ViewRefresh = 10;
-    extern const StorageActionBlockType VirtualPartsUpdate = 11;
-    extern const StorageActionBlockType ReduceBlockingParts = 12;
-    extern const StorageActionBlockType ViewRefreshPause = 13;
-    extern const StorageActionBlockType StreamConsume = 14;
+    ACTION_LOCK_TYPES(ACTION_LOCK_DEFINE)
 }
+
+
+namespace
+{
+/// Null for an action type that is not in `ACTION_LOCK_TYPES`: a listing must not fail as a whole
+/// because one registered type has no display name.
+const char * tryGetActionName(StorageActionBlockType action_type)
+{
+    switch (action_type)
+    {
+#define ACTION_NAME_CASE(ID, VALUE, NAME) case ActionLocks::ID: return NAME;
+        ACTION_LOCK_TYPES(ACTION_NAME_CASE)
+#undef ACTION_NAME_CASE
+        default: return nullptr;
+    }
+}
+
+
 
 
 ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
@@ -60,6 +68,28 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 
     if (storage_locks.contains(table.get()))
         storage_locks[table.get()].erase(action_type);
+}
+
+Names ActionLocksManager::getStoppedActions(const StoragePtr & table) const
+{
+    Names actions;
+    if (!table)
+        return actions;
+
+    {
+        std::lock_guard lock(mutex);
+        const auto it = storage_locks.find(table.get());
+        if (it == storage_locks.end())
+            return actions;
+
+        /// Expired locks are only observed here, not removed ahead of `cleanExpired`.
+        for (const auto & [action_type, action_lock] : it->second)
+            if (!action_lock.expired())
+                if (const char * name = tryGetActionName(action_type))
+                    actions.emplace_back(name);
+    }
+    std::ranges::sort(actions);
+    return actions;
 }
 
 void ActionLocksManager::cleanExpired()
