@@ -1529,6 +1529,15 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
+    [[maybe_unused]] auto heap_should_skip = [&](size_t row) ALWAYS_INLINE -> bool
+    {
+        if constexpr (top_k && has_typed_key)
+            return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
+        else if constexpr (top_k)
+            return method.top_k_heap.shouldSkip(heap_key_cols, row);
+        return false;
+    };
+
     auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
     {
         if constexpr (top_k)
@@ -1598,8 +1607,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         if constexpr (top_k)
         {
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.hasBoundary()
-                               && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
+                            : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
             {
                 ++top_k_rows_skipped;
                 continue;
@@ -1752,10 +1760,12 @@ void NO_INLINE Aggregator::executeImplBatch(
     if constexpr (top_k && has_typed_key)
         typed_key_data = state.getKeyData();
 
-    [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
+    [[maybe_unused]] auto heap_should_skip = [&](size_t row) ALWAYS_INLINE -> bool
     {
-        if constexpr (top_k)
+        if constexpr (top_k && has_typed_key)
             return method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, row);
+        else if constexpr (top_k)
+            return method.top_k_heap.shouldSkip(heap_key_cols, row);
         return false;
     };
 
