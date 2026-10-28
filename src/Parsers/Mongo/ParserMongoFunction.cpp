@@ -16,6 +16,7 @@
 #include <Parsers/ASTExpressionList.h>
 
 #include <cmath>
+#include <map>
 #include <string_view>
 #include <unordered_map>
 
@@ -62,10 +63,55 @@ bool isOnlyRegularExpression(const rapidjson::Value & value)
   * not covered, because an array is not a constant here; and a field of nested arrays is
   * flattened through every level rather than one.
   */
-ASTPtr makeEqualityCondition(const std::string & field, ASTPtr constant)
+/// The BSON type category of a constant of a filter, as far as the type bracketing below cares.
+enum class ConstantCategory : uint8_t
+{
+    Boolean,
+    Number,
+    Other,
+};
+
+ConstantCategory constantCategory(const rapidjson::Value & value)
+{
+    if (value.IsBool())
+        return ConstantCategory::Boolean;
+    if (value.IsNumber())
+        return ConstantCategory::Number;
+    if (value.IsObject() && value.MemberCount() == 1)
+    {
+        auto wrapper = stringView(value.MemberBegin()->name);
+        if (wrapper == "$numberInt" || wrapper == "$numberLong" || wrapper == "$numberDouble" || wrapper == "$numberDecimal")
+            return ConstantCategory::Number;
+    }
+    return ConstantCategory::Other;
+}
+
+/** Mongo compares values of different BSON type categories as unequal, and a range predicate only
+  * selects values of the category of its constant ("type bracketing"), while ClickHouse stores a
+  * `Bool` as a number and compares it with numbers by value: `{"active": 1}` would select a
+  * document with `"active": true`. So a condition with a boolean constant is restricted to a field
+  * of type `Bool` - or an array of, or a nullable `Bool` - and one with a number to a field of
+  * another type. The type of the field is a constant, so the restriction folds away when the query
+  * is analyzed. Other categories need no restriction: ClickHouse refuses to compare, say, a string
+  * with a number rather than giving it a meaning.
+  */
+ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition)
+{
+    if (category == ConstantCategory::Other)
+        return condition;
+    auto field_is_boolean = makeASTFunction(
+        "match",
+        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)),
+        make_intrusive<ASTLiteral>(Field(String("^((Array|Nullable|LowCardinality)\\()*Bool\\)*$"))));
+    if (category == ConstantCategory::Number)
+        field_is_boolean = makeASTFunction("not", std::move(field_is_boolean));
+    return makeASTFunction("and", std::move(field_is_boolean), std::move(condition));
+}
+
+ASTPtr makeEqualityCondition(const std::string & field, ASTPtr constant, ConstantCategory category)
 {
     auto field_elements = makeASTFunction("flatten", makeASTFunction("array", make_intrusive<ASTIdentifier>(field)));
-    return makeASTFunction("has", std::move(field_elements), std::move(constant));
+    return withTypeBracket(field, category, makeASTFunction("has", std::move(field_elements), std::move(constant)));
 }
 
 /** The condition of a regular expression on a field. Mongo applies it element wise on an array
@@ -114,11 +160,12 @@ ASTPtr parseFieldOperator(
         if (!constant)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a constant", name);
         /// Mongo's equality is also its array membership test (see `makeEqualityCondition`).
+        auto category = constantCategory(argument);
         if (name == "$eq")
-            return makeEqualityCondition(field, constant);
+            return makeEqualityCondition(field, constant, category);
         if (name == "$ne")
-            return makeASTFunction("not", makeEqualityCondition(field, constant));
-        return makeASTFunction(it->second, identifier(), constant);
+            return makeASTFunction("not", makeEqualityCondition(field, constant, category));
+        return withTypeBracket(field, category, makeASTFunction(it->second, identifier(), constant));
     }
 
     if (name == "$regex" || name == "$regularExpression")
@@ -134,13 +181,18 @@ ASTPtr parseFieldOperator(
         if (!argument.IsArray())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be an array", name);
 
-        auto array = makeASTFunction("array");
+        /// The candidates are grouped by their type category, and each group is bracketed on its own
+        /// (see `withTypeBracket`): `[true, 1]` matches a boolean `true` and a number `1`.
+        std::map<ConstantCategory, ASTPtr> arrays;
         for (const auto & element : argument.GetArray())
         {
             auto constant = tryParseMongoConstant(element);
             if (!constant)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constants are supported in the array of '{}'", name);
-            array->arguments->children.push_back(std::move(constant));
+            auto & array = arrays[constantCategory(element)];
+            if (!array)
+                array = makeASTFunction("array");
+            array->as<ASTFunction &>().arguments->children.push_back(std::move(constant));
         }
 
         /** Mongo applies `$in` to an array field element wise: the document matches when any
@@ -152,8 +204,20 @@ ASTPtr parseFieldOperator(
           * candidates are constants; and a field of nested arrays is flattened through every
           * level rather than one.
           */
-        auto field_elements = makeASTFunction("flatten", makeASTFunction("array", identifier()));
-        auto condition = makeASTFunction("hasAny", array, std::move(field_elements));
+        ASTPtr condition;
+        if (arrays.empty())
+            condition = make_intrusive<ASTLiteral>(Field(false));
+        else
+        {
+            auto conditions = makeASTFunction("or");
+            for (auto & [category, array] : arrays)
+            {
+                auto field_elements = makeASTFunction("flatten", makeASTFunction("array", identifier()));
+                conditions->arguments->children.push_back(
+                    withTypeBracket(field, category, makeASTFunction("hasAny", std::move(array), std::move(field_elements))));
+            }
+            condition = conditions->arguments->children.size() == 1 ? conditions->arguments->children.front() : conditions;
+        }
         return name == "$in" ? condition : makeASTFunction("not", condition);
     }
 
@@ -305,7 +369,7 @@ bool MongoIdentityFunction::parseImpl(ASTPtr & node)
     /// cannot represent.
     if (auto constant = tryParseMongoConstant(data))
     {
-        node = makeEqualityCondition(edge_name, constant);
+        node = makeEqualityCondition(edge_name, constant, constantCategory(data));
         return true;
     }
 

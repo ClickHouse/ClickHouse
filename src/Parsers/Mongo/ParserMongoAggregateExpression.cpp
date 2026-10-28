@@ -93,7 +93,7 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$abs", "abs"},
     {"$ceil", "ceil"},
     {"$floor", "floor"},
-    {"$round", "round"},
+    {"$round", "roundBankers"},
     {"$trunc", "trunc"},
     {"$sqrt", "sqrt"},
     {"$exp", "exp"},

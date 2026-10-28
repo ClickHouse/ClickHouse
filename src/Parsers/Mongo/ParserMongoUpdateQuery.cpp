@@ -132,85 +132,13 @@ std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::str
     return values;
 }
 
-/** A constant converted to the type of the column `column` with `accurateCast`, which rejects a
-  * value the type cannot represent - a number out of its range, a fraction for an integer -
-  * instead of storing it wrapped around or truncated the way the conversion of the assigned value
-  * to the column type would. The conversion of a constant is folded when the mutation is
-  * validated, so the error is raised before the mutation is submitted. Anything else is returned
-  * as it is: a conversion that fails while the mutation runs would leave a failed mutation behind,
-  * retried with every merge and blocking the later ones.
-  */
-bool isCheckableConstant(const ASTPtr & ast)
-{
-    if (ast->as<ASTLiteral>())
-        return true;
-    /// The Extended JSON wrappers lower into functions of literals - a `CAST` for `$numberDecimal`,
-    /// `fromUnixTimestamp64Milli` for `$date` - and arrays nest. An embedded document becomes a
-    /// `JSON` value, which has no range to check.
-    const auto * function = ast->as<ASTFunction>();
-    if (!function || !function->arguments)
-        return false;
-    if (function->name == "CAST")
-    {
-        const auto & arguments = function->arguments->children;
-        const auto * type = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
-        if (!type || (type->value.getType() == Field::Types::String && type->value.safeGet<String>() == "JSON"))
-            return false;
-    }
-    for (const auto & argument : function->arguments->children)
-        if (!isCheckableConstant(argument))
-            return false;
-    return true;
-}
-
-/// Whether a checkable constant holds a value that `accurateCast` may truncate: a decimal, which loses
-/// the digits past the scale of a decimal column or the fraction for an integer one, or a double.
-bool hasFractionalConstant(const ASTPtr & ast)
-{
-    if (const auto * literal = ast->as<ASTLiteral>())
-        return literal->value.getType() == Field::Types::Float64;
-    const auto * function = ast->as<ASTFunction>();
-    if (!function || !function->arguments)
-        return false;
-    if (function->name == "CAST")
-    {
-        const auto & arguments = function->arguments->children;
-        const auto * type = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
-        if (type && type->value.getType() == Field::Types::String && type->value.safeGet<String>().starts_with("Decimal"))
-            return true;
-    }
-    for (const auto & argument : function->arguments->children)
-        if (hasFractionalConstant(argument))
-            return true;
-    return false;
-}
-
+/// A constant converted to the type of the column `column`, see `makeRepresentableConstant`.
 ASTPtr checkedConstant(ASTPtr value, const std::string & column)
 {
-    if (!isCheckableConstant(value))
-        return value;
-    auto converted
-        = makeASTFunction("accurateCast", value->clone(), makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(column)));
-    if (!hasFractionalConstant(value))
-        return converted;
-
-    /** `accurateCast` truncates the digits a decimal type does not keep - `1.5` becomes `1` in an
-      * `Int32` and `1.25` becomes `1.2` in a `Decimal(38, 1)` - so a value with fractional digits is
-      * also checked to come back unchanged when its conversion is converted back to its own type,
-      * which compares the two whatever the type of the column is. The check has to be folded while
-      * the mutation is validated, like the conversion, and `throwIf` is not folded, so the error is
-      * raised by a conversion that fails: the `CAST` of the message to an enumeration without it.
-      */
-    auto converted_back = makeASTFunction("accurateCast", converted->clone(), makeASTFunction("toTypeName", value->clone()));
-    auto exact = makeASTFunction(
-        "or", makeASTFunction("isNull", value->clone()), makeASTFunction("equals", std::move(converted_back), value->clone()));
-    auto message = fmt::format("The value assigned to the field '{}' cannot be represented exactly by the type of its column", column);
-    auto guard = makeASTFunction(
-        "CAST",
-        makeASTFunction("if", std::move(exact), make_intrusive<ASTLiteral>(Field(String())), make_intrusive<ASTLiteral>(Field(message))),
-        make_intrusive<ASTLiteral>(Field(String("Enum8('' = 0)"))));
-    return makeASTFunction(
-        "tupleElement", makeASTFunction("tuple", std::move(converted), std::move(guard)), make_intrusive<ASTLiteral>(Field(UInt64(1))));
+    return makeRepresentableConstant(
+        std::move(value),
+        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(column)),
+        fmt::format("The value assigned to the field '{}' cannot be represented exactly by the type of its column", column));
 }
 
 /** `$min` and `$max` compare in the BSON order, where `null` is less than any other value, so the

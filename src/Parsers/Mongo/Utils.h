@@ -112,6 +112,18 @@ ASTPtr makeMongoSortKey(ASTPtr key);
   */
 ASTPtr makeMongoOrderByElement(ASTPtr key, int direction);
 
+/** A constant converted to the type `type` - an expression that folds to the name of the type of
+  * the column the value goes to - with `accurateCast`, which rejects a value the type cannot
+  * represent - a number out of its range, a fraction for an integer - instead of storing it
+  * wrapped around or truncated the way the ordinary conversion to the column type would. A decimal
+  * or a double also has to come back unchanged from the conversion, otherwise the query fails with
+  * `message`. The conversion of a constant is folded when the query is analyzed, so the error is
+  * raised before anything is written or a mutation is submitted. Anything that is not a constant
+  * is returned as it is: a conversion that fails while a mutation runs would leave a failed
+  * mutation behind, retried with every merge and blocking the later ones.
+  */
+ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & message);
+
 /** Parses the JSON text of a query. A nesting deeper than `max_depth` - the `max_parser_depth` of
   * the query, zero for no limit - is rejected before anything recursive walks the value.
   */

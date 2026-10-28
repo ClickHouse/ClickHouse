@@ -1045,7 +1045,9 @@ void translateReplaceRoot(SelectChain & chain, const rapidjson::Value & new_root
 /** The names of the columns a `*` of a collection expands to, in order, as a scalar subquery:
   *
   *     (SELECT arrayMap(c -> c.2, arraySort(groupArray((position, name)))) FROM system.columns
-  *      WHERE database = '<database>' AND table = '<collection>' AND default_kind NOT IN ('MATERIALIZED', 'ALIAS', 'EPHEMERAL'))
+  *      WHERE database = '<database>' AND table = '<collection>' AND default_kind != 'EPHEMERAL'
+  *          AND (default_kind != 'MATERIALIZED' OR getSetting('asterisk_include_materialized_columns'))
+  *          AND (default_kind != 'ALIAS' OR getSetting('asterisk_include_alias_columns')))
   */
 ASTPtr makeCollectionColumnNames(const std::string & database, const std::string & collection)
 {
@@ -1062,9 +1064,16 @@ ASTPtr makeCollectionColumnNames(const std::string & database, const std::string
                 "groupArray",
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("position"), make_intrusive<ASTIdentifier>("name")))));
 
-    /// A `*` does not expand to the columns that are computed rather than stored.
-    auto kinds = makeASTFunction(
-        "tuple", makeLiteral(Field(String("MATERIALIZED"))), makeLiteral(Field(String("ALIAS"))), makeLiteral(Field(String("EPHEMERAL"))));
+    /// A `*` never expands to an `EPHEMERAL` column, and expands to a `MATERIALIZED` or an `ALIAS` one
+    /// only when `asterisk_include_materialized_columns` or `asterisk_include_alias_columns` says
+    /// so. The scalar subquery runs with the settings of the query, so it reads the same ones.
+    auto computed_kind_is_included = [](const String & kind, const String & setting)
+    {
+        return makeASTFunction(
+            "or",
+            makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("default_kind"), makeLiteral(Field(kind))),
+            makeASTFunction("getSetting", makeLiteral(Field(setting))));
+    };
     auto condition = makeASTFunction(
         "and",
         makeASTFunction(
@@ -1072,7 +1081,9 @@ ASTPtr makeCollectionColumnNames(const std::string & database, const std::string
             make_intrusive<ASTIdentifier>("database"),
             database.empty() ? makeASTFunction("currentDatabase") : makeLiteral(Field(database))),
         makeASTFunction("equals", make_intrusive<ASTIdentifier>("table"), makeLiteral(Field(collection))),
-        makeASTFunction("notIn", make_intrusive<ASTIdentifier>("default_kind"), std::move(kinds)));
+        makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("default_kind"), makeLiteral(Field(String("EPHEMERAL")))),
+        computed_kind_is_included("MATERIALIZED", "asterisk_include_materialized_columns"),
+        computed_kind_is_included("ALIAS", "asterisk_include_alias_columns"));
 
     SelectChain columns(makeCollectionSource("system", "columns"));
     columns.select_list = make_intrusive<ASTExpressionList>();

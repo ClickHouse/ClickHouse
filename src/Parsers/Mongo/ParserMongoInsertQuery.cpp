@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include <fmt/format.h>
+
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/Utils.h>
@@ -108,6 +111,42 @@ void flattenDocument(const std::string & prefix, const rapidjson::Value & docume
     }
 }
 
+/** The name of the type of the column `column` of the collection, which the value `value` goes to:
+  *
+  *     ifNull((SELECT type FROM system.columns WHERE database = '<database>' AND table = '<collection>' AND name = '<column>'),
+  *            toTypeName(<value>))
+  *
+  * A scalar subquery is `Nullable`, and `NULL` when there is no such column. Then the type of the
+  * value itself is taken, which checks nothing, and the insert fails on the missing column.
+  */
+ASTPtr makeColumnTypeName(const std::shared_ptr<QueryMetadata> & metadata, const std::string & column, const ASTPtr & value)
+{
+    const auto & database = metadata->getDatabaseName();
+    auto select = make_intrusive<ASTSelectQuery>();
+    auto expressions = make_intrusive<ASTExpressionList>();
+    expressions->children.push_back(make_intrusive<ASTIdentifier>("type"));
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expressions));
+    select->replaceDatabaseAndTable("system", "columns");
+    select->setExpression(
+        ASTSelectQuery::Expression::WHERE,
+        makeASTFunction(
+            "and",
+            makeASTFunction(
+                "equals",
+                make_intrusive<ASTIdentifier>("database"),
+                database.empty() ? ASTPtr(makeASTFunction("currentDatabase")) : ASTPtr(make_intrusive<ASTLiteral>(Field(database)))),
+            makeASTFunction(
+                "equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(Field(metadata->getCollectionName()))),
+            makeASTFunction("equals", make_intrusive<ASTIdentifier>("name"), make_intrusive<ASTLiteral>(Field(column)))));
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select));
+    union_query->list_of_selects = list_of_selects;
+    union_query->children.push_back(list_of_selects);
+    return makeASTFunction("ifNull", make_intrusive<ASTSubquery>(std::move(union_query)), makeASTFunction("toTypeName", value->clone()));
+}
+
 /** `INSERT INTO <collection> (<the fields of the documents>) SELECT <the values of one document>
   * UNION ALL <...of the next one> ...`. The insert goes into an existing table, so there is no
   * schema to infer: the columns are named by the fields of the documents, and every document of
@@ -172,9 +211,21 @@ bool buildInsertQuery(const std::vector<const rapidjson::Value *> & documents, c
     auto list_of_selects = make_intrusive<ASTExpressionList>();
     for (auto & row : rows)
     {
+        /** The conversion of the selected values to the types of the columns is not an accurate one,
+          * so a number out of the range of its column would be stored wrapped around and a decimal
+          * would lose its excess digits. The values are constants, so they are checked against the
+          * type of their column instead, as the wire insert and an update check them, and the
+          * query fails before anything is written.
+          */
         auto expressions = make_intrusive<ASTExpressionList>();
         for (auto & field : row)
-            expressions->children.push_back(std::move(field.value));
+        {
+            auto type = makeColumnTypeName(metadata, field.name, field.value);
+            expressions->children.push_back(makeRepresentableConstant(
+                std::move(field.value),
+                std::move(type),
+                fmt::format("The value inserted into the field '{}' cannot be represented exactly by the type of its column", field.name)));
+        }
 
         auto select = make_intrusive<ASTSelectQuery>();
         select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expressions));

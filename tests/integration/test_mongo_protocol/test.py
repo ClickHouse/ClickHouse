@@ -571,6 +571,13 @@ def test_find_by_bool_and_double(started_cluster):
     assert [doc["id"] for doc in collection.find({"score": {"$gt": 2.0}})] == [2]
     assert [doc["id"] for doc in collection.find({"active": {"$ne": True}})] == [2]
 
+    # A boolean and a number are different BSON types, although ClickHouse stores a `Bool` as a number.
+    assert [doc["id"] for doc in collection.find({"active": 1})] == []
+    assert [doc["id"] for doc in collection.find({"active": {"$in": [0, True]}})] == [1]
+    assert [doc["id"] for doc in collection.find({"id": True})] == []
+    assert collection.delete_many({"active": 1}).deleted_count == 0
+    assert collection.count_documents({}) == 2
+
 
 def test_unknown_operator_is_an_error(started_cluster):
     """An unsupported operator object must produce a controlled Mongo error, not a null

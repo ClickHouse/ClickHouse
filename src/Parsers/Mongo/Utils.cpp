@@ -490,6 +490,92 @@ std::optional<Int64> MongoQueryKeyNameExtractor::extractInt(const char * begin, 
     return result;
 }
 
+namespace
+{
+
+/// Whether `accurateCast` can check the value at all, see `makeRepresentableConstant`.
+bool isCheckableConstant(const ASTPtr & ast)
+{
+    if (ast->as<ASTLiteral>())
+        return true;
+    /// The Extended JSON wrappers lower into functions of literals - a `CAST` for `$numberDecimal`,
+    /// `fromUnixTimestamp64Milli` for `$date` - and arrays nest. An embedded document becomes a
+    /// `JSON` value, which has no range to check.
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+    if (function->name == "CAST")
+    {
+        const auto & arguments = function->arguments->children;
+        const auto * type = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
+        if (!type || (type->value.getType() == Field::Types::String && type->value.safeGet<String>() == "JSON"))
+            return false;
+    }
+    for (const auto & argument : function->arguments->children)
+        if (!isCheckableConstant(argument))
+            return false;
+    return true;
+}
+
+/// Whether a checkable constant holds a value that `accurateCast` may truncate: a decimal, which loses
+/// the digits past the scale of a decimal column or the fraction for an integer one, or a double.
+bool hasFractionalConstant(const ASTPtr & ast)
+{
+    if (const auto * literal = ast->as<ASTLiteral>())
+        return literal->value.getType() == Field::Types::Float64;
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+    if (function->name == "CAST")
+    {
+        const auto & arguments = function->arguments->children;
+        const auto * type = arguments.size() == 2 ? arguments[1]->as<ASTLiteral>() : nullptr;
+        if (type && type->value.getType() == Field::Types::String && type->value.safeGet<String>().starts_with("Decimal"))
+            return true;
+    }
+    for (const auto & argument : function->arguments->children)
+        if (hasFractionalConstant(argument))
+            return true;
+    return false;
+}
+
+}
+
+ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & message)
+{
+    if (!isCheckableConstant(value))
+        return value;
+    /// A floating point column narrower than a double rounds a value rather than misrepresenting it,
+    /// the way any double is already a rounded number, so the value is only checked to be a double:
+    /// `0.1` goes into a `Float32` column, which `accurateCast` would reject as inexact.
+    type = makeASTFunction(
+        "replaceRegexpAll",
+        std::move(type),
+        make_intrusive<ASTLiteral>(Field(String("\\b(BFloat16|Float32)\\b"))),
+        make_intrusive<ASTLiteral>(Field(String("Float64"))));
+    auto converted = makeASTFunction("accurateCast", value->clone(), std::move(type));
+    if (!hasFractionalConstant(value))
+        return converted;
+
+    /** `accurateCast` truncates the digits a decimal type does not keep - `1.5` becomes `1` in an
+      * `Int32` and `1.25` becomes `1.2` in a `Decimal(38, 1)` - so a value with fractional digits is
+      * also checked to come back unchanged when its conversion is converted back to its own type,
+      * which compares the two whatever the type of the column is. The check has to be folded while
+      * the query is analyzed, like the conversion, and `throwIf` is not folded while a mutation is
+      * validated, so the error is raised by a conversion that fails: the `CAST` of the message to an
+      * enumeration without it.
+      */
+    auto converted_back = makeASTFunction("accurateCast", converted->clone(), makeASTFunction("toTypeName", value->clone()));
+    auto exact = makeASTFunction(
+        "or", makeASTFunction("isNull", value->clone()), makeASTFunction("equals", std::move(converted_back), value->clone()));
+    auto guard = makeASTFunction(
+        "CAST",
+        makeASTFunction("if", std::move(exact), make_intrusive<ASTLiteral>(Field(String())), make_intrusive<ASTLiteral>(Field(message))),
+        make_intrusive<ASTLiteral>(Field(String("Enum8('' = 0)"))));
+    return makeASTFunction(
+        "tupleElement", makeASTFunction("tuple", std::move(converted), std::move(guard)), make_intrusive<ASTLiteral>(Field(UInt64(1))));
+}
+
 std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)
 {
     auto maybe_start_position = findPosition(begin, end);
