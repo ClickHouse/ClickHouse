@@ -42,6 +42,12 @@ void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns &
   */
 std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view encoded_value);
 
+/** The same, for the rows [`row_begin`, `row_end`) of the shared data of a `JSON` column, which is an
+  * `Array(Tuple(String, String))` column of paths and their binary encoded values.
+  * Returns a column of `row_end - row_begin` rows, or `nullptr` if no value in the range contains a negative zero.
+  */
+ColumnPtr canonicalizeNegativeZeroInSharedData(const IColumn & shared_data, size_t row_begin, size_t row_end);
+
 /** `IColumn::updateHashWithValue` agrees with `equals`, so it hashes `-0.` as `0.`. That is wrong where a hash
   * identifies a constant, e.g. the key of the cache of compiled expressions or of the query condition cache,
   * because the two zeros are different values: `1 / -0.` is `-inf`.

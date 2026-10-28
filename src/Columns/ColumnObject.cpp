@@ -1396,7 +1396,13 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
     {
         /// No path can ever be dynamic, so `shared_data` holds every non-typed path in a canonical
         /// layout and its bulk hash is already split-invariant (no per-value decode needed).
-        shared_data->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
+        /// But the values are hashed as their binary encoding, which tells `-0.` from `0.`, while the hash tables
+        /// treat them as equal keys (see `canonicalizeNegativeZero`). The hash has to agree with them, because it
+        /// partitions the keys, e.g. the buckets of `grace_hash` join, so a negative zero is canonicalized first.
+        if (ColumnPtr canonical_shared_data = canonicalizeNegativeZeroInSharedData(*shared_data, row_begin, row_end))
+            canonical_shared_data->computeHashInto(0, n, object_hash.data(), /*initial=*/false);
+        else
+            shared_data->computeHashInto(row_begin, row_end, object_hash.data(), /*initial=*/false);
     }
     else
     {

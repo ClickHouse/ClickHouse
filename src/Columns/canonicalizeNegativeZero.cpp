@@ -13,6 +13,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Core/TypeId.h>
@@ -24,6 +25,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <base/normalizeNegativeZero.h>
 #include <base/unaligned.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -108,21 +111,6 @@ ColumnPtr canonicalizeNegativeZeroInEncodedValues(const IColumn & column)
     return res;
 }
 
-/// The shared data of a `JSON` column is an `Array(Tuple(String, String))` column of the paths
-/// that are not stored as a separate typed or dynamic path, and their binary encoded values.
-ColumnPtr canonicalizeNegativeZeroInSharedData(const IColumn & column)
-{
-    const auto & column_array = assert_cast<const ColumnArray &>(column);
-    const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
-
-    ColumnPtr canonical_values = canonicalizeNegativeZeroInEncodedValues(column_tuple.getColumn(1));
-    if (!canonical_values)
-        return nullptr;
-
-    return ColumnArray::create(
-        ColumnTuple::create(Columns{column_tuple.getColumnPtr(0), canonical_values}), column_array.getOffsetsPtr());
-}
-
 /// `encoded_values_discriminator` is the local discriminator of the variant that stores
 /// binary encoded values instead of a typed column - the shared variant of a `Dynamic` column.
 ColumnPtr canonicalizeNegativeZeroInVariant(const ColumnVariant & column, std::optional<size_t> encoded_values_discriminator)
@@ -186,6 +174,74 @@ std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view en
     encodeDataType(type, write_buffer);
     serialization->serializeBinary(*canonical_column, 0, write_buffer, ColumnDynamic::getBinaryEncodedValueFormatSettings());
     return write_buffer.str();
+}
+
+ColumnPtr canonicalizeNegativeZeroInSharedData(const IColumn & shared_data, size_t row_begin, size_t row_end)
+{
+    const auto & column_array = assert_cast<const ColumnArray &>(shared_data);
+    const auto & offsets = column_array.getOffsets();
+    const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
+    const auto & values = assert_cast<const ColumnString &>(column_tuple.getColumn(1));
+
+    const size_t entries_begin = offsets[static_cast<ssize_t>(row_begin) - 1];
+    const size_t entries_end = offsets[static_cast<ssize_t>(row_end) - 1];
+
+    /// A value starts with its binary encoded type, and the encoding is prefix-free, so the values that start
+    /// with the same encoded type are of the same type. A range holds few distinct types, and most of them
+    /// cannot contain a floating point value at all, so a type is decoded once, not once per value.
+    struct TypePrefix
+    {
+        std::string_view prefix;
+        bool may_contain_negative_zero;
+    };
+    VectorWithMemoryTracking<TypePrefix> type_prefixes;
+
+    MutableColumnPtr canonical_values;
+
+    for (size_t i = entries_begin; i < entries_end; ++i)
+    {
+        const std::string_view value = values.getDataAt(i);
+
+        auto it = std::find_if(type_prefixes.begin(), type_prefixes.end(), [&](const TypePrefix & type_prefix)
+        {
+            return value.starts_with(type_prefix.prefix);
+        });
+        if (it == type_prefixes.end())
+        {
+            ReadBufferFromMemory read_buffer(value);
+            DataTypePtr type = decodeDataType(read_buffer);
+            type_prefixes.push_back({value.substr(0, read_buffer.count()), mayContainNegativeZero(*type)});
+            it = std::prev(type_prefixes.end());
+        }
+
+        std::optional<String> canonical_value;
+        if (it->may_contain_negative_zero)
+            canonical_value = canonicalizeNegativeZeroInEncodedValue(value);
+
+        if (canonical_value && !canonical_values)
+        {
+            /// The first value that changes: copy the values before it, which are already canonical.
+            canonical_values = ColumnString::create();
+            canonical_values->reserve(entries_end - entries_begin);
+            canonical_values->insertRangeFrom(values, entries_begin, i - entries_begin);
+        }
+
+        if (canonical_value)
+            canonical_values->insertData(canonical_value->data(), canonical_value->size());
+        else if (canonical_values)
+            canonical_values->insertData(value.data(), value.size());
+    }
+
+    if (!canonical_values)
+        return nullptr;
+
+    /// The paths and the offsets of the range, with the offsets starting from zero.
+    ColumnPtr range = column_array.cut(row_begin, row_end - row_begin);
+    const auto & range_array = assert_cast<const ColumnArray &>(*range);
+    const auto & range_tuple = assert_cast<const ColumnTuple &>(range_array.getData());
+
+    return ColumnArray::create(
+        ColumnTuple::create(Columns{range_tuple.getColumnPtr(0), std::move(canonical_values)}), range_array.getOffsetsPtr());
 }
 
 ColumnPtr canonicalizeNegativeZero(const IColumn & column)
@@ -264,7 +320,7 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
         auto typed_paths = canonicalize_paths(column_object->getTypedPaths());
         auto dynamic_paths = canonicalize_paths(column_object->getDynamicPaths());
 
-        ColumnPtr shared_data = canonicalizeNegativeZeroInSharedData(*column_object->getSharedDataPtr());
+        ColumnPtr shared_data = canonicalizeNegativeZeroInSharedData(*column_object->getSharedDataPtr(), 0, column_object->getSharedDataPtr()->size());
         if (shared_data)
             canonicalized = true;
         else
