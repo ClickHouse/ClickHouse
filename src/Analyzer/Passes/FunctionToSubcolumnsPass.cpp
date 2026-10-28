@@ -1455,6 +1455,10 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
+        /// A level that disables the optimization still imposes its read limits on nested reads.
+        if (node->as<QueryNode>())
+            query_nodes.push_back(node);
+
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
@@ -1515,7 +1519,6 @@ public:
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
                 can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::group_by_use_nulls];
-            query_nodes.push_back(node);
             /// Push a placeholder for this query level; needChildVisit will update it
             /// to true when we descend into WHERE or PREWHERE.
             in_where_prewhere_stack.push_back(false);
@@ -1532,12 +1535,14 @@ public:
 
     void leaveImpl(const QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>())
+            query_nodes.pop_back();
+
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
         if (node->as<QueryNode>())
         {
-            query_nodes.pop_back();
             in_where_prewhere_stack.pop_back();
             correlated_columns.leave();
         }
