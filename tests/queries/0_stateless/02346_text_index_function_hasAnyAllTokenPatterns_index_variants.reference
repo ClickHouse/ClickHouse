@@ -122,3 +122,24 @@ direct read	1	1	1	1
 0
 56
 56
+-- an index on JSONAllPaths(j) or mapKeys(m) next to an index on the element: the functions use the tokenizer of the element index
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	0
+JSON	0
+JSON	16
+JSON	16
+JSON	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	0
+Map	0
+Map	16
+Map	16
+Map	16
