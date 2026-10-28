@@ -3920,6 +3920,19 @@ static BlockIO executeQueryImpl(
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
+
+            /// A query can also end through `BlockIO::onCancelOrConnectionLoss` (for example, Arrow Flight
+            /// `CancelFlightInfo` or an expired poll descriptor) after it has already returned rows. Neither
+            /// callback above runs in that case, so record the cancellation in the audit trail here.
+            if (audit)
+            {
+                res.cancel_callbacks.push_back([elem, context, out_ast]() mutable
+                {
+                    elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
+                    elem.exception_code = ErrorCodes::QUERY_WAS_CANCELLED;
+                    auditLog(elem, context, out_ast);
+                });
+            }
         }
     }
     catch (...)
