@@ -160,6 +160,24 @@ def test_audit_log_newline_escaping(start_cluster):
             raise AssertionError("Forged AUDIT record appeared as a separate log line — newline escaping is broken")
 
 
+def test_audit_log_query_id_newline_escaping(start_cluster):
+    """The query ID is written into the record prefix. A query ID with `CR`/`LF` sent over the
+    native protocol must not split the record or forge a separate audit line."""
+    marker = f"audit_qid_{uuid.uuid4().hex}"
+    forged_query_id = (
+        f"{marker}\n2026.10.20 00:00:00.000000 [ 1 ] {{}} <Notice> AUDIT: "
+        "DDL, Drop, 0, forged_qid_user, 1.2.3.4, db.t, DROP TABLE t\r\n"
+    )
+    node_dml_misc.query("SELECT 2 FORMAT Null", query_id=forged_query_id)
+
+    assert_audit_log_contain_with_retry(node_dml_misc, marker)
+    all_lines = node_dml_misc.grep_in_log("forged_qid_user", from_host=True, filename="clickhouse-server.audit.log")
+    matching_lines = [line for line in all_lines.strip().split("\n") if "forged_qid_user" in line]
+    assert matching_lines, "The audit record of the query must contain its escaped query ID"
+    for line in matching_lines:
+        assert marker in line, f"A forged audit record appeared as a separate log line: {line}"
+
+
 def test_audit_log_login_failure_has_client_ip(start_cluster):
     """Failed login attempts (unknown user) must record the real client IP."""
     try:

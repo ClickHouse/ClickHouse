@@ -3,6 +3,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -124,7 +125,12 @@ void AuditLog::write(std::string message)
         return;
 
     const Poco::Message audit_message("AUDIT", message, Poco::Message::PRIO_NOTICE);
-    formatting_channel->logExtended(ExtendedLogMessage::getFrom(audit_message));
+    auto extended_message = ExtendedLogMessage::getFrom(audit_message);
+    /// The query ID comes from the client (for example via the native protocol) and is written
+    /// verbatim into the record prefix by the formatter. Escape it like the other free-form fields,
+    /// so that `CR`/`LF` in it cannot split the record or forge a separate audit line.
+    extended_message.query_id = escapeForAuditField(extended_message.query_id);
+    formatting_channel->logExtended(extended_message);
 }
 
 size_t AuditLog::getQueueSize() const
