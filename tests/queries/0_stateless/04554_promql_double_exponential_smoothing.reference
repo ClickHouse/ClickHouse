@@ -50,3 +50,6 @@ NOT_IMPLEMENTED
 -- An empty range vector gives an empty result before the factors are checked, as in Prometheus.
 -- A Float32 series gives the same Float64 result as a Float64 series: the result is not rounded to Float32.
 1	Array(Nullable(Float64))	1
+-- A table of version 10 stores one sample per row and gives the same results.
+[('instance','host1')]	30
+[('instance','host3')]	22.5

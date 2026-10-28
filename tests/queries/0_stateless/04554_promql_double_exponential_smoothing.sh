@@ -112,4 +112,13 @@ FROM
     )
 )"
 
+echo "-- A table of version 10 stores one sample per row and gives the same results."
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
+CREATE TABLE ts_v10 ENGINE = TimeSeries SETTINGS version = 10, recent_samples_ttl_seconds = 0;
+INSERT INTO ts_v10 (metric_name, tags, samples) VALUES
+    ('m', {'instance':'host1'}, [(toDateTime64(1699999880, 3, 'UTC'), 10), (toDateTime64(1699999940, 3, 'UTC'), 20), (toDateTime64(1700000000, 3, 'UTC'), 30)]),
+    ('m', {'instance':'host3'}, [(toDateTime64(1699999880, 3, 'UTC'), 10), (toDateTime64(1699999940, 3, 'UTC'), 20), (toDateTime64(1700000000, 3, 'UTC'), 15)]);
+SELECT tags, value FROM prometheusQuery(ts_v10, 'double_exponential_smoothing(m[3m], 0.5, 0.5)', 1700000000) ORDER BY ALL;
+DROP TABLE ts_v10;"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
