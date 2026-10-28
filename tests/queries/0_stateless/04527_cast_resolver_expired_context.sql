@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 
 SELECT '-- MATERIALIZED default evaluated on the insert pipeline';
 DROP TABLE IF EXISTS t_cast_expired_insert;
