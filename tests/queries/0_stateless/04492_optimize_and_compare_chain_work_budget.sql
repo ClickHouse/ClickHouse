@@ -4,7 +4,6 @@
 -- hashed; once exceeded the optimization backs off for the rest of the query. Backing off only
 -- forgoes the (redundant) derived predicates, so query results must never depend on the budget.
 
-SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
 
 DROP TABLE IF EXISTS t_compare_chain_budget;
