@@ -102,7 +102,7 @@ def _cmake_link_impl(ctx):
             args.add_all(files)
             ctx.actions.run(
                 executable = ar,
-                inputs = depset(files, transitive = [toolchain.all_files]),
+                inputs = depset(files, transitive = [toolchain.ar_files]),
                 arguments = [args],
                 outputs = [output],
                 mnemonic = "ClickHouseNativeArchive",
@@ -124,7 +124,7 @@ def _cmake_link_impl(ctx):
                     "".join(["ADDMOD " + f.path + "\n" for f in files]) + "SAVE\nEND\n",
                 )
                 ctx.actions.run_shell(
-                    inputs = depset([script, original] + files, transitive = [toolchain.all_files]),
+                    inputs = depset([script, original] + files, transitive = [toolchain.ar_files]),
                     arguments = [ar, script.path],
                     outputs = [output],
                     command = '"$1" -M < "$2"',

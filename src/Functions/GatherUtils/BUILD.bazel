@@ -40,10 +40,6 @@ ch_cc_library(
         "@clickhouse_boost//:_boost_context",
         "@clickhouse_llvm_project//:LLVMAggressiveInstCombine",
         "@clickhouse_llvm_project//:LLVMSupport",
-    ] + select({
-        "@platforms//cpu:x86_64": ["@clickhouse_isa_l//:_isal"],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "//contrib/lz4-cmake:_lz4",
         "@clickhouse_librdkafka//:_rdkafka",
         "@clickhouse_silk//:_silk_fibers",

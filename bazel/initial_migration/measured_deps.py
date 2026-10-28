@@ -95,6 +95,7 @@ DEPENDENCIES = {
     ], [], []),
     ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_librdkafka', '_rdkafka'): (['@clickhouse_cyrus_sasl//:_sasl2'], [], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     **{('contrib/libfuzzer-cmake', name): (['@clickhouse_llvm_project//:cxxabi'], [], [])
        for name in ('_fuzzer', '_fuzzer_no_main')},
@@ -158,6 +159,7 @@ DEPENDENCIES = {
     ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Columns/benchmarks', 'column_insert_many_from_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Common/ZooKeeper', 'headers'): (['//src/Parsers:headers'], [], []),
+    ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper'): (llvm_components('AArch64CodeGen', 'X86CodeGen'), [], []),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_no_log'): (ZOOKEEPER_LLVM_COMPONENTS, [], []),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_base'): (['@clickhouse_replxx//:_replxx'], [], []),
     ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc', '@clickhouse_boost//:_boost_context', '//contrib/lz4-cmake:_lz4'], [], []),
@@ -167,6 +169,7 @@ DEPENDENCIES = {
     ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (
         ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
     ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'): ([
+        '@clickhouse_isa_l//:_isal',
         '@clickhouse_icu//:_icudata',
         '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-anthropic',
         '@clickhouse_ai_sdk_cpp//:_ai-sdk-cpp-openai',
@@ -657,10 +660,14 @@ def apply(root):
                     edits.append((end, end, ', ' + json.dumps(UNWIND)))
                     continue
                 drop = omit | {canonical(v) for v in missing}
-                # The CMake program link owns the x86-only harmful archive. A private
-                # dependency supplied on both CPUs can also remove the last CPU difference.
-                if ((package, name, field) == ('programs', 'clickhouse__compile_0', 'deps')
-                        or inherited and all(isinstance(part, ast.List) or
+                # :clickhouse_common_zookeeper_base selects the LLVM backend, and
+                # libhdfs3 selects ISA-L. Those dependencies retain their CPU guards.
+                # The CMake program link owns the x86-only harmful archive.
+                if ((field == 'deps' and (package, name) in {
+                            ('programs', 'clickhouse__compile_0'),
+                            ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper'),
+                            ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'),
+                        }) or inherited and all(isinstance(part, ast.List) or
                             set(cpu_choices(part)) == {'@platforms//cpu:' + cpu for cpu in CPUS}
                             for part in list_parts(node))):
                     remaining = [[v for v in build.values(node, cpu) if canonical(v) not in drop] for cpu in CPUS]

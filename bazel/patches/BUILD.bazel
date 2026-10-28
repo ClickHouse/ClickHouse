@@ -28,6 +28,7 @@ exports_files([
     "rules_rs-cargo-cc-toolchain.patch",
     "rules_rust-build-script-linker.patch",
     "zstd-public-headers.patch",
+    "rules_cc-archiver-files.patch",
     "rules_cc-implementation-deps-local-includes.patch",
     "rules_cc-source-header-directories.patch",
 ])

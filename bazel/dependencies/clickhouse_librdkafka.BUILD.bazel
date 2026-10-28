@@ -152,7 +152,6 @@ ch_cc_library(
 cc_library(
     name = "_rdkafka",
     deps = [
-        "@clickhouse_cyrus_sasl//:_sasl2",
         "@clickhouse//base:common",
         ":_rdkafka__compile_0",
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport",
