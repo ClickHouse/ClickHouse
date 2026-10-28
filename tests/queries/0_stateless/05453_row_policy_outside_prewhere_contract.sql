@@ -9,6 +9,7 @@ SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 DROP TABLE IF EXISTS m_child_policy;
 DROP TABLE IF EXISTS m_own_policy;
 DROP TABLE IF EXISTS m_bare_policy;
+DROP TABLE IF EXISTS m_alias;
 DROP TABLE IF EXISTS t_memory;
 DROP TABLE IF EXISTS t_file;
 DROP TABLE IF EXISTS t_order_sensitive_policy;
@@ -20,6 +21,7 @@ DROP TABLE IF EXISTS t_numbers;
 DROP TABLE IF EXISTS t_join;
 DROP TABLE IF EXISTS j_join;
 DROP TABLE IF EXISTS t_np_mt;
+DROP TABLE IF EXISTS t_alias;
 
 CREATE TABLE t_memory (tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE t_file (tenant String DEFAULT 'a', payload String) ENGINE = File(Parquet);
@@ -32,6 +34,7 @@ CREATE TABLE t_numbers (x UInt64) ENGINE = Memory;
 CREATE TABLE t_join (id UInt64, tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE j_join (id UInt64) ENGINE = Memory;
 CREATE TABLE t_np_mt (k UInt64, flag UInt8, s String) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_alias (tenant String DEFAULT 'a', payload String, parsed UInt64 ALIAS toUInt64(payload)) ENGINE = Memory;
 INSERT INTO t_memory VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 INSERT INTO t_file VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 INSERT INTO t_order_sensitive_policy VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
@@ -43,9 +46,11 @@ INSERT INTO t_numbers SELECT number FROM numbers(10);
 INSERT INTO t_join VALUES (1, 'a', '5'), (2, 'a', '20'), (3, 'b', 'secret'), (4, 'a', '30');
 INSERT INTO j_join VALUES (1), (2), (3), (4);
 INSERT INTO t_np_mt VALUES (1, 1, '5'), (2, 1, '20'), (3, 0, 'x'), (4, 1, '30');
+INSERT INTO t_alias (tenant, payload) VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 CREATE TABLE m_child_policy AS t_memory ENGINE = Merge(currentDatabase(), '^t_memory$');
 CREATE TABLE m_own_policy AS t_no_policy ENGINE = Merge(currentDatabase(), '^t_no_policy$');
 CREATE TABLE m_bare_policy AS t_bare_policy ENGINE = Merge(currentDatabase(), '^t_bare_policy$');
+CREATE TABLE m_alias (tenant String, payload String, parsed UInt64) ENGINE = Merge(currentDatabase(), '^t_alias$');
 
 CREATE ROW POLICY p_05453_memory ON t_memory USING tenant = 'a' TO ALL;
 CREATE ROW POLICY p_05453_file ON t_file USING tenant = 'a' TO ALL;
@@ -55,6 +60,7 @@ CREATE ROW POLICY p_05453_stateful ON t_stateful_policy USING tenant = 'a' AND r
 CREATE ROW POLICY p_05453_bare ON t_bare_policy USING visible TO ALL;
 CREATE ROW POLICY p_05453_bare_chain ON t_bare_chain_policy USING visible AND toUInt64(payload) < 1000 TO ALL;
 CREATE ROW POLICY p_05453_join ON t_join USING tenant = 'a' TO ALL;
+CREATE ROW POLICY p_05453_alias ON t_alias USING tenant = 'a' TO ALL;
 
 SELECT '-- Memory';
 SELECT count() FROM t_memory WHERE toUInt64(payload) > 10;
@@ -116,6 +122,12 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT * FROM t_np
     SETTINGS query_plan_enable_optimizations = 1, query_plan_merge_filters = 1, move_all_conditions_to_prewhere = 1)
     WHERE explain ILIKE '%Prewhere filter column%toUInt64%';
 
+SELECT '-- an ALIAS column is computed after the policy';
+SELECT count() FROM t_alias WHERE parsed > 10 SETTINGS query_plan_enable_optimizations = 0;
+SELECT sum(parsed) FROM t_alias SETTINGS query_plan_enable_optimizations = 0;
+SELECT count() FROM m_alias WHERE parsed > 10 SETTINGS query_plan_enable_optimizations = 0;
+SELECT sum(parsed) FROM m_alias SETTINGS query_plan_enable_optimizations = 0;
+
 SELECT '-- without a policy the row is in scope';
 SELECT count() FROM t_no_policy WHERE toUInt64(payload) > 10; -- { serverError CANNOT_PARSE_TEXT }
 
@@ -127,9 +139,11 @@ DROP ROW POLICY p_05453_stateful ON t_stateful_policy;
 DROP ROW POLICY p_05453_bare ON t_bare_policy;
 DROP ROW POLICY p_05453_bare_chain ON t_bare_chain_policy;
 DROP ROW POLICY p_05453_join ON t_join;
+DROP ROW POLICY p_05453_alias ON t_alias;
 DROP TABLE m_child_policy;
 DROP TABLE m_own_policy;
 DROP TABLE m_bare_policy;
+DROP TABLE m_alias;
 DROP TABLE t_memory;
 DROP TABLE t_file;
 DROP TABLE t_order_sensitive_policy;
@@ -141,3 +155,4 @@ DROP TABLE t_numbers;
 DROP TABLE t_join;
 DROP TABLE j_join;
 DROP TABLE t_np_mt;
+DROP TABLE t_alias;

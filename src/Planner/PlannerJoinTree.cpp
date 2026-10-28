@@ -2131,6 +2131,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto & columns_names = table_expression_data.getColumnNames();
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
+                /// A row-level security filter the read cannot take, applied right after the read.
+                std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> row_policy_filter_after_read;
                 bool row_policy_filter_not_pushed = false;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
@@ -2260,7 +2262,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                     {
-                        where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_after_read.emplace(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                         row_policy_filter_not_pushed = true;
                         table_expression_query_info.row_level_filter_after_read = true;
 
@@ -3028,14 +3030,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
-                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
-                if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
-                {
-                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
-                    query_plan.addStep(std::move(alias_column_step));
-                }
-
-                for (auto && [filter_info, description] : where_filters)
+                auto add_filter_step = [&](FilterDAGInfo & filter_info, const DescriptionHolderPtr & description)
                 {
                     if (query_plan.isInitialized() &&
                         till_stage == QueryProcessingStage::FetchColumns)
@@ -3047,7 +3042,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         description->setStepDescription(*filter_step);
                         query_plan.addStep(std::move(filter_step));
                     }
+                };
+
+                /// Before the alias columns, so that they are not computed for the rows it rejects.
+                if (row_policy_filter_after_read)
+                    add_filter_step(row_policy_filter_after_read->first, row_policy_filter_after_read->second);
+
+                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
+                {
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+                    query_plan.addStep(std::move(alias_column_step));
                 }
+
+                for (auto && [filter_info, description] : where_filters)
+                    add_filter_step(filter_info, description);
 
                 if (query_context->hasQueryContext() && !select_query_options.is_internal)
                 {

@@ -315,6 +315,9 @@ private:
         /// rows that are not conform to row level policy
         void addFilterTransform(QueryPlan &, ContextPtr) const;
 
+        /// Does the policy read the column?
+        bool requiresColumn(const String & column_name) const;
+
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;

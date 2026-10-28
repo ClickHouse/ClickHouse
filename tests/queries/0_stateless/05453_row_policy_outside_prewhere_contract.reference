@@ -37,4 +37,9 @@
 2
 -- without a policy, a filter is still merged into one with a column atom
 1
+-- an ALIAS column is computed after the policy
+2
+55
+2
+55
 -- without a policy the row is in scope

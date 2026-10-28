@@ -2166,6 +2166,11 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextP
     addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
 }
 
+bool ReadFromMerge::RowPolicyData::requiresColumn(const String & column_name) const
+{
+    return std::ranges::contains(filter_actions->getRequiredColumns(), column_name);
+}
+
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     ContextPtr query_context) const
 {
@@ -2375,36 +2380,45 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    auto add_alias_step = [&](const AliasData & alias)
     {
-        for (const auto & alias : aliases)
-        {
-            ActionsDAG actions_dag(pipe_columns);
+        ActionsDAG actions_dag(pipe_columns);
 
-            QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
-            query_tree->setAlias(alias.name);
+        QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
+        query_tree->setAlias(alias.name);
 
-            QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
-            query_analysis_pass.run(query_tree, local_context);
+        QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
+        query_analysis_pass.run(query_tree, local_context);
 
-            /// On the query info cache path nothing registered this expression's sets.
-            collectSets(query_tree, *modified_query_info.planner_context);
+        /// On the query info cache path nothing registered this expression's sets.
+        collectSets(query_tree, *modified_query_info.planner_context);
 
-            ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
-            const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+        const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
 
-            if (nodes.size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
+        if (nodes.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
-            actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
-            auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
-            child.plan.addStep(std::move(expression_step));
-        }
-    }
+        actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
+        auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
+        child.plan.addStep(std::move(expression_step));
+    };
+
+    const bool applies_row_policy_here = row_policy_data_opt && !child.applies_row_policy;
+
+    /// Only the ALIAS columns the row policy reads are computed before it, so that the others are not computed for the rows it rejects.
+    for (const auto & alias : aliases)
+        if (applies_row_policy_here && row_policy_data_opt->requiresColumn(alias.name))
+            add_alias_step(alias);
 
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
-    if (row_policy_data_opt && !child.applies_row_policy)
+    if (applies_row_policy_here)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
+
+    for (const auto & alias : aliases)
+        if (!applies_row_policy_here || !row_policy_data_opt->requiresColumn(alias.name))
+            add_alias_step(alias);
 
     if (child.prewhere_after_row_policy)
     {
