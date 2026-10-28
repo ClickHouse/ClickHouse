@@ -107,9 +107,10 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
             return std::move(query_piece);
         }
 
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
-            /// dropMetricName() must not be called with StoreMethod::RAW_DATA.
+            /// dropMetricName() must not be called with StoreMethod::SAMPLES or StoreMethod::TIMESTAMP_AND_VALUE.
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot drop the metric name from the result of expression {} because of its store method {}",
                             getPromQLText(query_piece, context), query_piece.store_method);

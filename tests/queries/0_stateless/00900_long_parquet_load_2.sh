@@ -44,6 +44,11 @@ EXCLUDE=(
     04514_geo_pruning_iceberg_geostats.parquet
     04515_geo_pruning_iceberg_malformed_bbox.parquet
     04691_geo_page_pruning_null_bbox.parquet
+    # Files with the `GEOMETRY` and `GEOGRAPHY` logical types, tested separately.
+    05361_geospatial_crs_default.parquet
+    05361_geospatial_crs_geography.parquet
+    05361_geospatial_crs_srid.parquet
+    05361_geospatial_geography_points.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
@@ -63,6 +68,9 @@ EXCLUDE=(
     04065_optional_struct_nullable_leaf_under_list.parquet
     # Hand-crafted file with an inconsistent bloom filter size for the 04654 out-of-bounds test.
     04654_bloom_filter_bitset_out_of_bounds.parquet
+    # Fixtures for 05446 with long strings and no `size_statistics`; they blow up the output.
+    dictionary_short_strings_without_size_statistics.parquet
+    dictionary_strings_without_size_statistics.parquet
     # Hand-crafted DELTA_BYTE_ARRAY files for the 05035 malformed-input test. The first one is
     # malformed on purpose, so loading it here would print an exception.
     05035_delta_byte_array_zero_values.parquet

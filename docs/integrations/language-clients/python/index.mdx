@@ -32,7 +32,7 @@ The standard ClickHouse Connect clients use the HTTP interface. This supports HT
 
 | Component | Supported versions |
 |-----------|--------------------|
-| Python | 3.10 through 3.14. Free-threaded builds such as 3.14t are supported experimentally. |
+| Python | 3.10 through 3.15. Free-threaded builds such as 3.14t and 3.15t are supported experimentally. |
 | ClickHouse | Actively supported ClickHouse releases. CI tests the [LTS and stable release series listed here](https://github.com/ClickHouse/clickhouse-connect/blob/main/.github/clickhouse-versions.json). |
 | SQLAlchemy | 1.4.40 or later, below 3.0, for the synchronous dialect. 2.0.44 or later, below 3.0, for the async dialect. |
 | Pandas | 2.x and 3.x |
@@ -40,7 +40,7 @@ The standard ClickHouse Connect clients use the HTTP interface. This supports HT
 | aiohttp | 3.9 or later |
 | Platforms | Linux, macOS, and Windows on the wheel architectures published for each Python version |
 
-The package includes compiled wheels where available and falls back to a pure Python implementation when the Cython extensions cannot be built. PyArrow is supported on Python 3.10 through 3.14. Python 3.14 requires PyArrow 22 or later.
+The package includes compiled wheels where available and falls back to a pure Python implementation when the Cython extensions cannot be built. PyArrow is supported on Python 3.10 through 3.15. Python 3.14 requires PyArrow 22 or later, and Python 3.15 requires PyArrow 26 or later. `lz4` does not publish CPython 3.15 or free-threaded wheels yet, so installing on Python 3.15 or free-threaded Python builds `lz4` from source and requires a C compiler.
 
 ## Installation {#installation}
 

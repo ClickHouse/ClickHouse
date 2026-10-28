@@ -108,7 +108,8 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::VECTOR_GRID:
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
             /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
             throwUnexpectedStoreMethod(scalar_argument, context);
@@ -216,8 +217,10 @@ SQLQueryPiece applyFunctionPredictLinear(
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
-    const bool from_scalar = (range_argument.store_method != StoreMethod::VECTOR_GRID) && (range_argument.store_method != StoreMethod::RAW_DATA);
-    const bool can_fuse_drop_metric_name = (range_argument.store_method == StoreMethod::RAW_DATA)
+    const bool from_scalar = (range_argument.store_method == StoreMethod::CONST_SCALAR)
+        || (range_argument.store_method == StoreMethod::SINGLE_SCALAR) || (range_argument.store_method == StoreMethod::SCALAR_GRID);
+    const bool can_fuse_drop_metric_name = ((range_argument.store_method == StoreMethod::SAMPLES)
+            || (range_argument.store_method == StoreMethod::TIMESTAMP_AND_VALUE))
         && hasExactMetricNameMatcher(range_argument.node);
 
     SelectQueryBuilder builder;

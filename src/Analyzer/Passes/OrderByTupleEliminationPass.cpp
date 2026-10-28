@@ -2,6 +2,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Functions/FunctionFactory.h>
@@ -21,13 +22,17 @@ public:
         if (!query_node || !query_node->hasOrderBy())
             return;
 
+        const auto group_by_keys = getGroupByKeys(*query_node);
+
         QueryTreeNodes result_nodes;
 
         for (auto & sort_node : query_node->getOrderBy().getNodes())
         {
             auto & sort_node_typed = sort_node->as<SortNode &>();
             auto * function_expression = sort_node_typed.getExpression()->as<FunctionNode>();
-            if (sort_node_typed.withFill() || !function_expression || function_expression->getFunctionName() != "tuple")
+            /// Splitting a key would read its arguments, which do not exist after aggregation.
+            if (sort_node_typed.withFill() || !function_expression || function_expression->getFunctionName() != "tuple"
+                || isGroupByKeyAfterAggregation(sort_node_typed.getExpression(), group_by_keys))
             {
                 result_nodes.push_back(sort_node);
                 continue;

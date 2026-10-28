@@ -270,9 +270,11 @@ SQLQueryPiece applyFunctionOverRange(
 
     /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
-    const bool from_scalar = (argument.store_method != StoreMethod::VECTOR_GRID) && (argument.store_method != StoreMethod::RAW_DATA);
+    const bool from_scalar = (argument.store_method == StoreMethod::CONST_SCALAR)
+        || (argument.store_method == StoreMethod::SINGLE_SCALAR) || (argument.store_method == StoreMethod::SCALAR_GRID);
     const bool should_drop_metric_name = drop_metric_name.value_or(impl_info->drop_metric_name);
-    const bool can_fuse_drop_metric_name = (argument.store_method == StoreMethod::RAW_DATA)
+    const bool can_fuse_drop_metric_name = ((argument.store_method == StoreMethod::SAMPLES)
+            || (argument.store_method == StoreMethod::TIMESTAMP_AND_VALUE))
         && should_drop_metric_name
         && hasExactMetricNameMatcher(argument.node);
 
