@@ -38,6 +38,13 @@ INSERT INTO t_two_pass_uniform SELECT
     if(number % 4 = 0, toString(intDiv(intDiv(number, 4), 50) % 4), toString(intHash32(number + 1) % 1000)) AS s
 FROM numbers(1000000);
 
+-- 400 keys of exactly 1000 rows, one group each, the key in the partition key: the count pass fetches 200 of the tied
+-- keys, the restricted pass over them is not certified (1000 < 1001), and the count pass runs again before the final pass.
+DROP TABLE IF EXISTS t_two_pass_recount;
+CREATE TABLE t_two_pass_recount (k UInt32, s String) ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY tuple()
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_two_pass_recount SELECT number % 400 AS k, toString(k) AS s FROM numbers(400000);
+
 SELECT 'results with and without the optimization';
 SELECT k, s, count() FROM t_two_pass GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS log_comment = 'two_pass_q1_on';
 SELECT k, s, count() FROM t_two_pass GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS log_comment = 'two_pass_q1_off', query_plan_two_pass_count_top_k = 0;
@@ -61,6 +68,10 @@ SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k
 -- The final pass with an OFFSET.
 SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 5 OFFSET 5 SETTINGS log_comment = 'two_pass_q8_on';
 SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 5 OFFSET 5 SETTINGS query_plan_two_pass_count_top_k = 0;
+
+-- The count pass again, then the final pass.
+SELECT k, s, count() FROM t_two_pass_recount GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS log_comment = 'two_pass_q9_on';
+SELECT k, s, count() FROM t_two_pass_recount GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS query_plan_two_pass_count_top_k = 0;
 
 -- Aliases with the names of the nodes the passes add do not name nodes of the plan.
 SELECT k AS __two_pass_count_top_k_bound, s, count() AS __two_pass_count_top_k_in FROM t_two_pass GROUP BY __two_pass_count_top_k_bound, s
@@ -169,7 +180,7 @@ ORDER BY log_comment;
 
 SELECT log_comment, ProfileEvents['TwoPassCountTopKPasses'], ProfileEvents['TwoPassCountTopKFallbacks']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('two_pass_q2_on', 'two_pass_q5_on', 'two_pass_q6_on', 'two_pass_q8_on')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('two_pass_q2_on', 'two_pass_q5_on', 'two_pass_q6_on', 'two_pass_q8_on', 'two_pass_q9_on')
 ORDER BY log_comment;
 
 SELECT log_comment, ProfileEvents['TwoPassCountTopKPasses'], ProfileEvents['TwoPassCountTopKFallbacks'], read_rows >= 1000000
@@ -197,4 +208,5 @@ WHERE event_date >= yesterday() AND query_id = (
 DROP TABLE t_two_pass;
 DROP TABLE t_two_pass_flat;
 DROP TABLE t_two_pass_uniform;
+DROP TABLE t_two_pass_recount;
 DROP TABLE t_two_pass_unpruned;

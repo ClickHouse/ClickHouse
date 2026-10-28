@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/TopKThresholdTracker.h>
@@ -64,23 +65,6 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     return aggregating_step;
 }
 
-
-/// The input column an output of the DAG is a plain copy of, through aliases only (the analyzer renames
-/// `a` to `__table1.a` this way); nothing if the output is computed.
-static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, const String & output_name)
-{
-    const auto * node = dag.tryFindInOutputs(output_name);
-    if (!node)
-        return std::nullopt;
-
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.front();
-
-    if (node->type != ActionsDAG::ActionType::INPUT)
-        return std::nullopt;
-
-    return node->result_name;
-}
 
 /// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it.
 ///
@@ -143,13 +127,13 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
                 return nullptr;
             }
 
-            auto input_name = findPassedThroughInput(expression_step->getExpression(), key_name);
-            if (!input_name)
+            const auto * input = findForwardedInput(expression_step->getExpression(), key_name);
+            if (!input)
             {
                 LOG_TRACE(log, "No dynamic filter: the expression step does not pass the key {} through", key_name);
                 return nullptr;
             }
-            key_name = std::move(*input_name);
+            key_name = input->result_name;
             path_expressions.push_back(&expression_step->getExpression());
         }
         else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
@@ -162,13 +146,13 @@ static TopKThresholdTrackerPtr tryAttachDynamicFilter(
                 return nullptr;
             }
 
-            auto input_name = findPassedThroughInput(filter_step->getExpression(), key_name);
-            if (!input_name)
+            const auto * input = findForwardedInput(filter_step->getExpression(), key_name);
+            if (!input)
             {
                 LOG_TRACE(log, "No dynamic filter: the filter step does not pass the key {} through", key_name);
                 return nullptr;
             }
-            key_name = std::move(*input_name);
+            key_name = input->result_name;
             closest_filter_step = filter_step;
             path_expressions.push_back(&filter_step->getExpression());
 

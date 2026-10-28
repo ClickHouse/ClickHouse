@@ -561,10 +561,17 @@ public:
         {
             case Stage::Start:
             case Stage::Deciding:
+                if (!output.isNeeded())
+                    return Status::PortFull;
                 return Status::Ready;
 
             case Stage::Collecting:
             {
+                if (!output.isNeeded())
+                {
+                    current->setNotNeeded();
+                    return Status::PortFull;
+                }
                 if (pending_chunk)
                     return Status::Ready;
                 if (current->isFinished())
@@ -643,7 +650,6 @@ public:
         inputs.emplace_back(new_output->getHeader(), this);
         connect(*new_output, inputs.back());
         current = &inputs.back();
-        current->setNeeded();
         new_output = nullptr;
         /// The processors of a pass point to the steps of a plan that no longer exists.
         for (auto & processor : new_processors)
@@ -1173,15 +1179,8 @@ bool readerExpressionsAreRepeatable(const ReadFromMergeTree & read, const Ranges
             header.insert({column.type->createColumn(), column.type, column.name});
     auto context = Context::createCopy(read.getContext());
     enableAllExperimentalSettings(context);
-    try
-    {
-        auto dag = evaluateMissingDefaults(header, required, columns, context);
-        return !dag || (isRepeatable(*dag) && !dag->hasNonDeterministic() && !dag->hasStatefulFunctions());
-    }
-    catch (const Exception &)
-    {
-        return false;
-    }
+    auto dag = evaluateMissingDefaults(header, required, columns, context);
+    return !dag || (isRepeatable(*dag) && !dag->hasNonDeterministic() && !dag->hasStatefulFunctions());
 }
 
 bool hasReservedName(const ActionsDAG & dag)

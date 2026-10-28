@@ -95,6 +95,26 @@ results with and without the optimization
 262	heavy	800
 299	heavy	800
 336	heavy	800
+0	0	1000
+1	1	1000
+2	2	1000
+3	3	1000
+4	4	1000
+5	5	1000
+6	6	1000
+7	7	1000
+8	8	1000
+9	9	1000
+0	0	1000
+1	1	1000
+2	2	1000
+3	3	1000
+4	4	1000
+5	5	1000
+6	6	1000
+7	7	1000
+8	8	1000
+9	9	1000
 8	4	1066
 11	1	1061
 8	0	1059
@@ -247,10 +267,12 @@ two_pass_q5_on	1	0	1
 two_pass_q6_on	1	0	1
 two_pass_q7_on	1	0	1
 two_pass_q8_on	1	0	1
+two_pass_q9_on	1	0	1
 two_pass_q2_on	4	0
 two_pass_q5_on	5	0
 two_pass_q6_on	4	0
 two_pass_q8_on	5	0
+two_pass_q9_on	6	0
 two_pass_explain_pipeline	0	0	0
 two_pass_small_on	2	1	1
 two_pass_unique_on	1	1	1

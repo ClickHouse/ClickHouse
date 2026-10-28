@@ -1747,7 +1747,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_push_down_volume_reducing_functions", trueOrFalseSetting},
     {"query_plan_read_in_order_through_join", trueOrFalseSetting},
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
-    {"query_plan_two_pass_count_top_k", trueOrFalseSetting},
+    {"query_plan_two_pass_count_top_k", trueOrFalseSettingNoOracle},
     {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
@@ -2239,7 +2239,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "parallel_hash_join_threshold",
            "partial_merge_join_rows_in_right_blocks",
            "query_plan_max_limit_for_lazy_materialization",
-           "query_plan_two_pass_count_top_k_min_rows",
            "statistics_max_set_size_for_exact_selectivity_estimation"};
     /// Same generators, but kept out of the settings oracle: they cannot affect its `INSERT INTO FUNCTION file(...) SELECT`
     /// in CSV, TSV or Values (other statements, formats, logs), can only make it throw, or change its result (vector search).
@@ -2294,7 +2293,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "output_format_parquet_row_group_size",
            "output_format_pretty_max_rows",
            "parts_to_delay_insert",
-           "parts_to_throw_insert"};
+           "parts_to_throw_insert",
+           "query_plan_two_pass_count_top_k_min_rows"};
     /// NonZeroUInt64 block-size settings — must not receive 0
     DB::Strings nonzero_block_sizes = {"input_format_parquet_max_block_size", "max_block_size", "max_insert_block_size"};
     DB::Strings max_block_sizes = {"join_runtime_filter_blocks_to_skip_before_reenabling",
