@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Removes `size_statistics` (field 16 of `ColumnMetaData`) from the footer of a Parquet file, as in the files written by
 # older versions of PyArrow. The footer is re-encoded in the Thrift compact protocol, the rest of the file is kept as is.
-# Usage: parquet_strip_size_statistics.py <input> <output>
+# With `created_by`, also replaces `FileMetaData.created_by`, e.g. to make a file look written by an old version of DuckDB.
+# Usage: parquet_strip_size_statistics.py <input> <output> [created_by]
 
 import struct
 import sys
@@ -79,7 +80,8 @@ def read_list_header(buf, pos):
 
 
 def copy_struct(buf, pos, drop_path, out):
-    """Copies a struct from `buf` at `pos` to `out` without the fields in `drop_path`, returns the position after it."""
+    """Copies a struct from `buf` at `pos` to `out` without the fields in `drop_path`, returns the position after it.
+    A field of `drop_path` that maps to bytes is not dropped, but its binary value is replaced with them."""
     last_field_in = 0
     last_field_out = 0
     while True:
@@ -109,7 +111,10 @@ def copy_struct(buf, pos, drop_path, out):
         last_field_out = field_id
 
         nested_path = drop_path.get(field_id)
-        if nested_path and field_type == STRUCT:
+        if isinstance(nested_path, bytes) and field_type == BINARY:
+            pos = skip_value(buf, pos, field_type)
+            out += write_varint(len(nested_path)) + nested_path
+        elif nested_path and field_type == STRUCT:
             pos = copy_struct(buf, pos, nested_path, out)
         elif nested_path and field_type == LIST:
             start = pos
@@ -129,8 +134,12 @@ def main():
     assert data[-4:] == b"PAR1"
     footer_size = struct.unpack("<I", data[-8:-4])[0]
     footer_start = len(data) - 8 - footer_size
+    drop_path = dict(DROP_PATH)
+    if len(sys.argv) > 3:
+        # `FileMetaData.created_by`.
+        drop_path[6] = sys.argv[3].encode()
     footer = bytearray()
-    copy_struct(data[footer_start:-8], 0, DROP_PATH, footer)
+    copy_struct(data[footer_start:-8], 0, drop_path, footer)
     with open(sys.argv[2], "wb") as f:
         f.write(data[:footer_start] + bytes(footer) + struct.pack("<I", len(footer)) + b"PAR1")
 

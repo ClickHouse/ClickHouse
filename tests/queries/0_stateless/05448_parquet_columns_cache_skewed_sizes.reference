@@ -2,6 +2,10 @@
 [false]
 65536	33489679
 65536	33489679
+--- the same, written by an old version of DuckDB, without dictionary_page_offset: not cached
+[false]
+65536	33489679
+65536	33489679
 --- a wide cached chunk among narrow ones
 524288	16777216
 s	8	524288
@@ -35,6 +39,10 @@ s	8	524288
 [true]
 2147450880	10104791784030208000
 2147450880	10104791784030208000
+--- arrays of tuples of which all the requested elements are missing in the file: not cached
+[true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true]
+2147450880	14177275034280132608
+2147450880	14177275034280132608
 --- a variant read as JSON: not cached
 [true,true]
 65536	720896

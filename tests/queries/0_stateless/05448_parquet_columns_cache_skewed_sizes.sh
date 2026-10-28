@@ -9,7 +9,8 @@
 # not be underestimated when the values differ in size a lot, and estimating it must not read much. Each query below
 # succeeds with the cache as it does without it:
 # - a chunk to write to the cache, of dictionary-encoded strings without the length in the metadata, of which a long
-#   value of the dictionary is repeated in most rows, while the other values are short;
+#   value of the dictionary is repeated in most rows, while the other values are short, also without a declared
+#   offset of the dictionary page, as old versions of DuckDB write;
 # - a chunk served from the cache, wide, while the other chunks of the row group are narrow;
 # - a column to write to the cache that `PREWHERE` does not need, with a large dictionary page;
 # - a chunk to write to the cache that holds all the long strings, or all the non-null values, of the row group;
@@ -19,6 +20,7 @@
 #   take much less in the file than decoded;
 # - a chunk to write to the cache, of short strings converted to a much wider type;
 # - a chunk to write to the cache, with a wide column that is missing in the file and is filled with default values;
+# - a chunk to write to the cache, with arrays of tuples of which all the requested elements are missing in the file;
 # - a chunk to write to the cache, of a variant read as `JSON`, which takes much more memory than the binary columns of
 #   the variant in the file.
 
@@ -31,6 +33,7 @@ FILE_PATH="${USER_FILES_PATH}/${FILE}"
 ENTRIES="SELECT column, count(), sum(rows) FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}') GROUP BY column ORDER BY column"
 
 # Writes a `Parquet` file of dictionary-encoded strings without `size_statistics`, as older versions of PyArrow do.
+# The optional second argument replaces `created_by` in the metadata.
 function write_with_pyarrow()
 {
     python3 - "${FILE_PATH}.tmp" "$1" <<'EOF'
@@ -69,7 +72,7 @@ else:
     pq.write_table(pa.table({'id': ids, 's': values}), path, row_group_size=1000000, use_dictionary=['s'],
                    compression='NONE', dictionary_pagesize_limit=64 << 20)
 EOF
-    python3 "${CUR_DIR}/helpers/parquet_strip_size_statistics.py" "${FILE_PATH}.tmp" "${FILE_PATH}"
+    python3 "${CUR_DIR}/helpers/parquet_strip_size_statistics.py" "${FILE_PATH}.tmp" "${FILE_PATH}" ${2:+"$2"}
     rm -f "${FILE_PATH}.tmp"
     # Only a file that has not been modified for a few seconds is cached.
     touch -d "1 minute ago" "${FILE_PATH}"
@@ -88,6 +91,14 @@ function run_query()
 
 echo "--- dictionary-encoded strings without size statistics, mostly the longest value of the dictionary: not cached"
 write_with_pyarrow skewed_dictionary
+run_query "SELECT count(), sum(length(s)) FROM file('${FILE}', Parquet, 's String')
+    SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_high_watermark = '4Mi',
+    max_memory_usage = '40Mi'"
+
+echo "--- the same, written by an old version of DuckDB, without dictionary_page_offset: not cached"
+# For such files `dictionary_page_offset` is cleared, see `Reader::fixUpColumnChunk`, but the strings are still
+# dictionary-encoded.
+write_with_pyarrow skewed_dictionary DuckDB
 run_query "SELECT count(), sum(length(s)) FROM file('${FILE}', Parquet, 's String')
     SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_high_watermark = '4Mi',
     max_memory_usage = '40Mi'"
@@ -169,16 +180,29 @@ run_query "SELECT sum(id), sum(cityHash64(missing)) FROM file('${FILE}', Parquet
     SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_high_watermark = '4Mi',
     max_memory_usage = '12Mi'"
 
+echo "--- arrays of tuples of which all the requested elements are missing in the file: not cached"
+# The arrays are empty, but their offsets take 8 bytes per row: 16 MiB in 32 columns.
+ARRAYS=$(seq -s ', ' -f 'a%g' 0 31)
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('${FILE}', Parquet, 'id UInt64, $(seq -s ', ' -f 'a%g Array(Tuple(old UInt8))' 0 31)')
+    SELECT number$(printf ', []%.0s' $(seq 32)) FROM numbers(65536)
+    SETTINGS engine_file_truncate_on_insert = 1"
+touch -d "1 minute ago" "${FILE_PATH}"
+run_query "SELECT sum(id), sum(cityHash64(tuple(${ARRAYS})))
+    FROM file('${FILE}', Parquet, 'id UInt64, $(seq -s ', ' -f 'a%g Array(Tuple(missing UInt8))' 0 31)')
+    SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
+    input_format_parquet_memory_high_watermark = '4Mi', max_memory_usage = '12Mi'"
+
 echo "--- a variant read as JSON: not cached"
-# 65536 rows of an unshredded variant, recognized by its structure: objects of one field, of 1024 distinct names, with
+# 65536 rows of an unshredded variant, recognized by its structure: objects of one field, of 64 distinct names, with
 # a value of type `Int8`. Each name is a path of `JSON`, which takes a value in every row.
 $CLICKHOUSE_CLIENT -q "
     INSERT INTO FUNCTION file('${FILE}', Parquet, 'v Tuple(metadata String, value String)')
-    SELECT tuple(concat(unhex('01010005'), 'k', leftPad(toString(number % 1024), 4, '0')), unhex('02010000020C05')) FROM numbers(65536)
+    SELECT tuple(concat(unhex('01010005'), 'k', leftPad(toString(number % 64), 4, '0')), unhex('02010000020C05')) FROM numbers(65536)
     SETTINGS output_format_parquet_string_as_string = 0, engine_file_truncate_on_insert = 1"
 touch -d "1 minute ago" "${FILE_PATH}"
 run_query "SELECT count(), sum(length(toJSONString(v))) FROM file('${FILE}', Parquet, 'v JSON')
     SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
-    input_format_parquet_memory_high_watermark = '256Ki', max_memory_usage = '128Mi'"
+    input_format_parquet_memory_high_watermark = '256Ki', max_memory_usage = '24Mi'"
 
 rm -f "${FILE_PATH}" "${FILE_PATH}.tmp"
