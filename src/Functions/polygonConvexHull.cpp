@@ -2,6 +2,7 @@
 #include <Functions/geometryConverters.h>
 
 
+#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -14,6 +15,21 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// `boost::geometry::convex_hull` takes only the exterior rings of polygons into account,
+/// but it checks for emptiness with `boost::geometry::is_empty`, which also looks at the interior rings.
+/// For a polygon with an empty exterior ring and a non-empty interior ring it reads uninitialized points.
+/// Returns true if there are no points for the convex hull to be built from.
+template <typename Geometry>
+bool hasNoPointsForConvexHull(const Geometry & geometry)
+{
+    if constexpr (std::is_same_v<boost::geometry::tag_t<Geometry>, boost::geometry::polygon_tag>)
+        return geometry.outer().empty();
+    else if constexpr (std::is_same_v<boost::geometry::tag_t<Geometry>, boost::geometry::multi_polygon_tag>)
+        return std::ranges::all_of(geometry, [](const auto & polygon) { return polygon.outer().empty(); });
+    else
+        return boost::geometry::is_empty(geometry);
+}
 
 template <typename Point>
 class FunctionPolygonConvexHull final : public IFunction
@@ -68,7 +84,8 @@ public:
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     Polygon<Point> convex_hull{};
-                    boost::geometry::convex_hull(geometries[i], convex_hull);
+                    if (!hasNoPointsForConvexHull(geometries[i]))
+                        boost::geometry::convex_hull(geometries[i], convex_hull);
                     serializer.add(convex_hull);
                 }
             }
