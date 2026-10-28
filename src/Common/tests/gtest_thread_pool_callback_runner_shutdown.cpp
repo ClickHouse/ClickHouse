@@ -288,7 +288,7 @@ TEST(ThreadPoolCallbackRunner, CallbackDestructionPrecedesExceptionalCompletion)
                 else
                     future = unsafe(std::move(callback), {});
             }
-            EXPECT_THROW(future.get(), std::runtime_error);
+            EXPECT_THROW(static_cast<void>(future.get()), std::runtime_error);
             EXPECT_TRUE(destroyed.load());
             EXPECT_FALSE(ThreadStatus::QueryCancellationBlocker::isActive());
             pool.wait();
