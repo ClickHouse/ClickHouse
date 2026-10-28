@@ -1547,6 +1547,9 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, Strings{});
 
+    /// An `Alias` or a materialized view forwards the refresh only to a target that is already materialized, and the
+    /// insertion schema is taken from the target, so materialize the whole chain of targets first.
+    loadLazyTargetsOfAliasesAndViews(table);
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);

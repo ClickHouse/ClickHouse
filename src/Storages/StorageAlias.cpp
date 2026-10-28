@@ -502,9 +502,10 @@ void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_contex
 {
     /// A lazy-load target is not materialized here: the refresh is also asked for by `DESCRIBE`, which must not load
     /// it, and the stand-in forwards the refresh only to a table that is already materialized. The operations that use
-    /// the target - the analyzer resolving a `SELECT` through the alias, `ALTER ... UPDATE/DELETE` and `DELETE`, which
-    /// validate a mutation against the state refreshed here while `mutate` of the target executes it against the same
-    /// state without refreshing it - materialize the whole chain of targets first, see `loadLazyTargetsOfAliasesAndViews`.
+    /// the target - the analyzer resolving a `SELECT` through the alias, `INSERT`, schema inference of `Merge`,
+    /// `ALTER ... UPDATE/DELETE` and `DELETE`, which validate a mutation against the state refreshed here while `mutate`
+    /// of the target executes it against the same state without refreshing it - materialize the whole chain of targets
+    /// first, see `loadLazyTargetsOfAliasesAndViews`.
     getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
 }
 
