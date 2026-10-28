@@ -175,11 +175,14 @@ TTLTransform::TTLTransform(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
             old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
 
+    /// The algorithms run on the block after the expired columns are added to it (see `consume`), so
+    /// the aggregation is set up with the output header: it rebuilds the block from its own header and
+    /// would otherwise lose the expired columns.
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_, metadata_snapshot_));
+                getOutputPort().getHeader(), storage_, metadata_snapshot_));
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();

@@ -635,6 +635,62 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             add_ttl_expression_columns(recompression_ttl);
     }
 
+    /// A missing column recomputed from its `DEFAULT` that reads a missing array subcolumn of a `Nested`
+    /// structure with shared offsets (e.g. `b_length MATERIALIZED length(n.b)`) must be computed from the
+    /// value of that subcolumn reconciled with the shared offsets (see `IMergeTreeReader::evaluateMissingDefaults`).
+    /// The reconciliation only happens for a requested column, so read both columns in the same step:
+    /// the vertical algorithm reads every gathered column separately.
+    if ((*global_ctx->data_settings)[MergeTreeSetting::share_nested_offsets])
+    {
+        std::unordered_map<String, size_t> array_subcolumns_by_nested_name;
+        for (const auto & storage_column : global_ctx->storage_columns)
+        {
+            auto split = Nested::splitName(storage_column.name);
+            if (!split.second.empty() && isArray(storage_column.type))
+                ++array_subcolumns_by_nested_name[split.first];
+        }
+
+        auto has_shared_offsets = [&](const String & name)
+        {
+            auto column = global_ctx->storage_columns.tryGetByName(name);
+            if (!column || !isArray(column->type))
+                return false;
+            auto split = Nested::splitName(name);
+            if (split.second.empty())
+                return false;
+            auto nested_it = array_subcolumns_by_nested_name.find(split.first);
+            return nested_it != array_subcolumns_by_nested_name.end() && nested_it->second >= 2;
+        };
+
+        std::vector<NameSet> part_column_names;
+        part_column_names.reserve(global_ctx->future_part->parts.size());
+        for (const auto & part : global_ctx->future_part->parts)
+            part_column_names.emplace_back(part->getColumns().getNameSet());
+
+        auto missing_together_in_some_part = [&](const String & lhs, const String & rhs)
+        {
+            return std::ranges::any_of(part_column_names, [&](const NameSet & names) { return !names.contains(lhs) && !names.contains(rhs); });
+        };
+
+        const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
+        for (const auto & storage_column : global_ctx->storage_columns)
+        {
+            auto column_default = columns_desc.getDefault(storage_column.name);
+            if (!column_default || !column_default->expression)
+                continue;
+
+            for (const auto & dependency : collectDefaultStorageDependencies(column_default->expression, columns_desc, storage_columns))
+            {
+                if (dependency != storage_column.name && has_shared_offsets(dependency)
+                    && missing_together_in_some_part(storage_column.name, dependency))
+                {
+                    key_columns.insert(storage_column.name);
+                    key_columns.insert(dependency);
+                }
+            }
+        }
+    }
+
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
     {
         auto & [column_name, indexes] = *it;
@@ -1271,12 +1327,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     add_required_column(column.name);
                 for (const auto & column : ttl.where_expression_columns)
                     add_required_column(column.name);
-                add_required_columns(ttl.group_by_keys);
-                for (const auto & set_part : ttl.set_parts)
-                    if (set_part.expression)
-                        add_required_columns(set_part.expression->getRequiredColumns());
-                for (const auto & aggregate : ttl.aggregate_descriptions)
-                    add_required_columns(aggregate.argument_names);
             };
 
             const auto & metadata = *global_ctx->metadata_snapshot;
@@ -1288,6 +1338,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 add_ttl_columns(ttl);
             for (const auto & ttl : metadata.getRecompressionTTLs())
                 add_ttl_columns(ttl);
+            /// `TTL GROUP BY` aggregates every column of the merged block: the `SET` targets with their
+            /// aggregate functions and all the other columns with an implicit `any` (see
+            /// `TTLAggregationAlgorithm`). Its keys and aggregate arguments may be computed expressions,
+            /// and the `SET` expressions read aggregate results, neither of which names a storage column.
+            /// So all storage columns are inputs of that step.
+            if (metadata.hasAnyGroupByTTL())
+                columns_required_during_merge.insert(all_storage_columns.begin(), all_storage_columns.end());
             for (const auto & ttl : metadata.getGroupByTTLs())
                 add_ttl_columns(ttl);
             for (const auto & [column_name, ttl] : metadata.getColumnTTLs())

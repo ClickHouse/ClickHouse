@@ -29,6 +29,7 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Databases/enableAllExperimentalSettings.h>
 
 
@@ -438,20 +439,131 @@ void IMergeTreeReader::evaluateMissingDefaults(
         auto context_copy = createContextForDefaultExpressions();
         auto combined_columns = buildCombinedColumnsForDefaultExpressions();
 
-        auto dag = DB::evaluateMissingDefaults(
-            additional_columns,
-            full_requested_columns,
-            combined_columns,
-            context_copy);
-
-        if (dag)
+        auto evaluate_defaults = [&](Block & block)
         {
-            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
-            auto actions = std::make_shared<ExpressionActions>(
-                std::move(*dag),
-                ExpressionActionsSettings(context_copy->getSettingsRef()));
-            actions->execute(additional_columns);
+            auto dag = DB::evaluateMissingDefaults(
+                block,
+                full_requested_columns,
+                combined_columns,
+                context_copy);
+
+            if (dag)
+            {
+                dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+                auto actions = std::make_shared<ExpressionActions>(
+                    std::move(*dag),
+                    ExpressionActionsSettings(context_copy->getSettingsRef()));
+                actions->execute(block);
+            }
+        };
+
+        const bool need_reconcile = settings.reconcile_missing_defaults_with_shared_offsets && !shared_offsets_of_missing_defaults.empty();
+
+        /// The columns available before evaluating the defaults, to re-evaluate them from scratch below.
+        Block source_columns;
+        if (need_reconcile)
+            source_columns = additional_columns;
+
+        evaluate_defaults(additional_columns);
+
+        /// On reads that feed merges and mutations, a missing column recomputed from its default
+        /// expression must stay consistent with the array sizes the part already stores through the
+        /// shared offsets of its Nested structure (salvaged by the paired fillMissingColumns call);
+        /// otherwise the merge would write it next to sibling subcolumns with different array sizes
+        /// and corrupt the shared offsets of the new part. A filter may have been applied between the
+        /// two calls; the row counts then do not match and the offsets are not applicable.
+        ///
+        /// Other defaults (e.g. `MATERIALIZED length(n.b)`) may be computed from such a column, and
+        /// they must see the reconciled value, not the one the expression produced. So whenever the
+        /// reconciliation changes a column, it is fixed to the reconciled value and the defaults are
+        /// evaluated again, until nothing changes. Each round fixes at least one more column, so the
+        /// loop terminates.
+        if (need_reconcile)
+        {
+            /// Whether the default of @column_name transitively reads any column of @others except itself.
+            auto depends_on_any = [&](const String & column_name, const std::unordered_map<String, ColumnWithTypeAndName> & others)
+            {
+                NameSet visited{column_name};
+                std::vector<String> to_visit{column_name};
+                while (!to_visit.empty())
+                {
+                    auto current = std::move(to_visit.back());
+                    to_visit.pop_back();
+
+                    auto column_default = combined_columns.getDefault(current);
+                    if (!column_default || !column_default->expression)
+                        continue;
+
+                    auto expression = column_default->expression->clone();
+                    RequiredSourceColumnsVisitor::Data columns_context;
+                    RequiredSourceColumnsVisitor(columns_context).visit(expression);
+
+                    for (const auto & required_name : columns_context.requiredColumns())
+                    {
+                        for (const auto & [other_name, _] : others)
+                        {
+                            if (other_name != column_name
+                                && (required_name == other_name || required_name.starts_with(other_name + ".")))
+                                return true;
+                        }
+
+                        if (visited.emplace(required_name).second)
+                            to_visit.push_back(required_name);
+                    }
+                }
+                return false;
+            };
+
+            std::unordered_map<String, ColumnWithTypeAndName> reconciled_columns;
+            while (true)
+            {
+                std::unordered_map<String, ColumnWithTypeAndName> changed_columns;
+
+                it = original_requested_columns.begin();
+                for (size_t pos = 0; pos < num_columns; ++pos, ++it)
+                {
+                    if (!was_missing[pos] || it->isSubcolumn() || reconciled_columns.contains(it->name)
+                        || changed_columns.contains(it->name) || !additional_columns.has(it->name))
+                        continue;
+
+                    auto offsets_it = shared_offsets_of_missing_defaults.find(it->name);
+                    if (offsets_it == shared_offsets_of_missing_defaults.end() || offsets_it->second.empty())
+                        continue;
+
+                    auto column = additional_columns.getByName(it->name).column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+                    auto offsets = refreshSharedOffsetsFromSibling(
+                        it->name, offsets_it->second, additional_columns, materialized_columns, current_step_columns, column->size());
+                    if (offsets.empty() || offsets.front()->size() != column->size())
+                        continue;
+
+                    /// Returns the very same column if it already agrees with the offsets.
+                    auto reconciled = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets);
+                    if (reconciled.get() != column.get())
+                        changed_columns.emplace(it->name, ColumnWithTypeAndName{std::move(reconciled), it->type, it->name});
+                }
+
+                if (changed_columns.empty())
+                    break;
+
+                /// A changed column computed from another changed one is fixed only in a later round,
+                /// after it is recomputed from the reconciled value of its dependency.
+                size_t num_reconciled_columns = reconciled_columns.size();
+                for (const auto & [name, column] : changed_columns)
+                    if (!depends_on_any(name, changed_columns))
+                        reconciled_columns.emplace(name, column);
+
+                /// Column defaults cannot form a cycle, but make sure that the loop progresses anyway.
+                if (reconciled_columns.size() == num_reconciled_columns)
+                    reconciled_columns.insert(changed_columns.begin(), changed_columns.end());
+
+                additional_columns = source_columns;
+                for (const auto & [_, column] : reconciled_columns)
+                    additional_columns.insert(column);
+
+                evaluate_defaults(additional_columns);
+            }
         }
+
         /// Move columns from block.
         it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
@@ -459,25 +571,6 @@ void IMergeTreeReader::evaluateMissingDefaults(
             if (additional_columns.has(it->name))
             {
                 auto column = additional_columns.getByName(it->name).column;
-
-                /// On reads that feed merges and mutations, a missing column recomputed from its
-                /// default expression must stay consistent with the array sizes the part already
-                /// stores through the shared offsets of its Nested structure (salvaged by the
-                /// paired fillMissingColumns call); otherwise the merge would write it next to
-                /// sibling subcolumns with different array sizes and corrupt the shared offsets of
-                /// the new part. A filter may have been applied between the two calls; the row
-                /// counts then do not match and the offsets are not applicable.
-                if (settings.reconcile_missing_defaults_with_shared_offsets && was_missing[pos] && !it->isSubcolumn())
-                {
-                    auto offsets_it = shared_offsets_of_missing_defaults.find(it->name);
-                    if (offsets_it != shared_offsets_of_missing_defaults.end() && !offsets_it->second.empty())
-                    {
-                        auto offsets = refreshSharedOffsetsFromSibling(
-                            it->name, offsets_it->second, additional_columns, materialized_columns, current_step_columns, column->size());
-                        if (!offsets.empty() && offsets.front()->size() == column->size())
-                            column = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets);
-                    }
-                }
 
                 if (was_missing[pos] && columns_evaluated_from_defaults)
                     columns_evaluated_from_defaults->insert(it->name);
