@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
@@ -12,6 +14,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <algorithm>
 #include <unordered_set>
 #include <utility>
 
@@ -143,6 +146,11 @@ bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
         return !dagReadsUnspecifiedValueUnderNull(expression->getAcionsDAG());
     if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
         return !dagReadsUnspecifiedValueUnderNull(capture->getAcionsDAG());
+#if USE_EMBEDDED_COMPILER
+    /// A JIT-compiled expression is named after its dump, not after the functions compiled into it.
+    if (const auto * compiled = ActionsDAG::getCompiledFunctions(function))
+        return std::ranges::all_of(*compiled, [](const FunctionBasePtr & nested) { return valueUnderNullMapIsNotRead(*nested); });
+#endif
 
     if (function.getName() != "assumeNotNull")
         return true;

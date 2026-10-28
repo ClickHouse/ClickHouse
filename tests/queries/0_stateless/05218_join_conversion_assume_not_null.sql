@@ -40,6 +40,18 @@ WHERE assumeNotNull(nullIf(t_ann_right.val2, 0) + 42);
 SELECT count() FROM t_ann_left RIGHT JOIN t_ann_right ON t_ann_left.id = t_ann_right.id
 WHERE arrayExists(x -> assumeNotNull(nullIf(t_ann_left.val, 0) + x) != 0, [42]);
 
+-- JIT compiles `assumeNotNull` and its parent into one function, while `hypot` stays interpreted.
+SELECT count() FROM t_ann_left RIGHT JOIN t_ann_right ON t_ann_left.id = t_ann_right.id
+WHERE arrayExists(x -> assumeNotNull(hypot(nullIf(t_ann_left.val, 0), x)) != 0, [42])
+SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0;
+
+-- A compiled function over the same `Nullable` input but without `assumeNotNull` must still allow the conversion.
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM t_ann_left RIGHT JOIN t_ann_right ON t_ann_left.id = t_ann_right.id
+    WHERE arrayExists(x -> (hypot(nullIf(t_ann_left.val, 0), x) + x) = 12345, [42])
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0
+) WHERE explain ILIKE '%Type: inner%';
+
 -- Over a non-Nullable argument `assumeNotNull` is an identity, so the conversion must still happen.
 SELECT count() > 0 FROM (
     EXPLAIN SELECT count() FROM t_ann_left RIGHT JOIN t_ann_right ON t_ann_left.id = t_ann_right.id
