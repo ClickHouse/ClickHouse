@@ -479,15 +479,18 @@ bool columnExpressionsMayChangeWithoutTable(const StoragePtr & storage, const St
     };
 
     const auto & columns = metadata.getColumns();
-    NamesAndTypesList missing_defaults;
+    /// Expressions that a read can evaluate: every `ALIAS`, and the `DEFAULT` / `MATERIALIZED` columns
+    /// that are missing in some part.
+    NamesAndTypesList evaluated_expressions;
     for (const auto & column : columns)
     {
         if (!column.default_desc.expression)
             continue;
         if (column.default_desc.kind != ColumnDefaultKind::Alias && is_stored_in_every_part(column.name))
             continue;
-        if (column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Materialized)
-            missing_defaults.emplace_back(column.name, column.type);
+        if (column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Materialized
+            || column.default_desc.kind == ColumnDefaultKind::Alias)
+            evaluated_expressions.emplace_back(column.name, column.type);
         /// The expression is not part of the query, so a dictionary, the clock or another table it reads
         /// would not be seen by the query walk. Fail closed on such an expression: the hash of this table
         /// does not cover their changes.
@@ -501,20 +504,24 @@ bool columnExpressionsMayChangeWithoutTable(const StoragePtr & storage, const St
     }
 
     /// The text of an expression does not tell the determinism of some functions: the overload resolver of
-    /// `arrayReduce('groupArraySample(1)', ...)` is deterministic, the function it builds is not. An `ALIAS`
-    /// is expanded into the query and checked by the planner, but the reader resolves a missing `DEFAULT` /
-    /// `MATERIALIZED` column on its own (`evaluateMissingDefaults`), so resolve these defaults the same way.
-    if (!missing_defaults.empty())
+    /// `arrayReduce('groupArraySample(1)', ...)` is deterministic, the function it builds is not. The reader
+    /// resolves a missing `DEFAULT` / `MATERIALIZED` column on its own (`evaluateMissingDefaults`), so resolve
+    /// these defaults the same way. An `ALIAS` is expanded into the query and checked by the planner when the
+    /// table is read locally, but not when it is read behind a wrapper: the initiator of a `Distributed` query
+    /// analyzes only the schema of the `Distributed` table, where the column can be an ordinary one, while the
+    /// shard that expands the alias has no consistency capture to mark. This probe is what the shard reports
+    /// through `system.tables.modification_hash`, so resolve the aliases here as well.
+    if (!evaluated_expressions.empty())
     {
         Block header;
         for (const auto & column : columns.getAllPhysical())
-            if (!missing_defaults.contains(column.name))
+            if (!evaluated_expressions.contains(column.name))
                 header.insert(ColumnWithTypeAndName(column.type, column.name));
 
         QueryTreeNodePtr resolved_defaults;
         try
         {
-            resolved_defaults = resolveMissingDefaults(header, missing_defaults, columns, context);
+            resolved_defaults = resolveMissingDefaults(header, evaluated_expressions, columns, context);
         }
         catch (...)
         {
