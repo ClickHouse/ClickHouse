@@ -27,19 +27,15 @@ struct ConnectionParams;
 namespace DeltaLake
 {
 
-/// The effective client options of one kernel engine build, resolved on the query thread by
-/// IKernelHelper::resolveClientOptions (the worker which performs the build has no query
-/// context of its own). They are also the key under which an in-flight build may be shared:
-/// two queries share one only if the builder would be filled identically, so the values here
-/// are the effective ones — the storage's live settings overridden by the query — never a
-/// mere "the query changed this setting" bit.
+/// Effective S3 client options for one kernel engine build: the storage's live settings overridden
+/// by the query's, resolved on the query thread because the snapshot-load thread has no query context.
+/// Two queries share an in-flight build only when these options are equal.
 struct KernelClientOptions
 {
     std::optional<UInt64> s3_connect_timeout_ms;
     std::optional<UInt64> s3_request_timeout_ms;
 
     bool operator==(const KernelClientOptions &) const = default;
-    /// Ordered, so that the options can key the in-flight builds of a table.
     auto operator<=>(const KernelClientOptions &) const = default;
 };
 
@@ -66,19 +62,15 @@ public:
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
 
-    /// Same as createBuilder(), with client options captured on the query thread, and reporting
-    /// the fingerprint of the very credentials the builder was filled with (a helper's client
-    /// may be swapped at any time, so the two must come from one snapshot of it). The default
-    /// ignores the options; helpers whose client depends on query settings override it.
+    /// Same as createBuilder() with the given client options; also returns the fingerprint of the
+    /// credentials the builder was filled with.
     virtual ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions &, DB::UInt128 & credentials_fingerprint) const
     {
         credentials_fingerprint = getCredentialsFingerprint();
         return createBuilder();
     }
 
-    /// The effective client options a build started by the current query would use (see
-    /// KernelClientOptions). Must be called on the query thread. Empty for helpers whose
-    /// client does not depend on query settings.
+    /// Must be called on the query thread.
     virtual KernelClientOptions resolveClientOptions() const { return {}; }
 
     /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.

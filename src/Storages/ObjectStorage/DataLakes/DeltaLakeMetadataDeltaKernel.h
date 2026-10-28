@@ -123,18 +123,11 @@ private:
     mutable TableSnapshotCache snapshots TSA_GUARDED_BY(snapshots_mutex);
     mutable std::mutex snapshots_mutex;
     mutable std::optional<SnapshotVersion> latest_snapshot_version;
-    /// Single-flight for "latest" resolution: concurrent callers with the same effective client
-    /// options share one `TableSnapshot` (and therefore its in-flight kernel build) until its
-    /// version is published. The objects are keyed by the options, because a build is filled
-    /// with the options of the query which starts it: with a single slot, a query with other
-    /// options would evict the object another query is still loading, and the next query with
-    /// the evicted options would start a duplicate load instead of joining that one.
+    /// "Latest" resolutions in flight, keyed by client options because a build uses the options
+    /// of the query which starts it.
     struct LatestSnapshotInFlight
     {
         DeltaLake::TableSnapshotPtr snapshot;
-        /// Callers currently resolving the version through `snapshot`. The entry is removed when
-        /// the version is resolved or when the last of them is gone, so the map never outgrows
-        /// the set of options being resolved right now.
         size_t users = 0;
     };
     mutable std::map<DeltaLake::KernelClientOptions, LatestSnapshotInFlight> latest_snapshots_in_flight TSA_GUARDED_BY(snapshots_mutex);
@@ -155,7 +148,7 @@ private:
     DeltaLake::TableSnapshotPtr getTableSnapshot(
         std::optional<SnapshotVersion> version = std::nullopt) const;
 
-    std::string latestSnapshotVersionToStr() const TSA_REQUIRES(snapshots_mutex);
+    std::string latestSnapshotVersionToStr() const;
 
     struct LatestSnapshot
     {
@@ -163,9 +156,7 @@ private:
         SnapshotVersion version;
         bool created;
     };
-    /// Resolves the latest snapshot outside `snapshots_mutex` (the kernel build may block on
-    /// object storage and must stay killable), shared between concurrent callers with the same
-    /// client options, and publishes `latest_snapshot_version` monotonically.
+    /// Loads outside `snapshots_mutex` so the wait stays killable; never moves the latest version back.
     LatestSnapshot resolveLatestSnapshot() const;
 };
 

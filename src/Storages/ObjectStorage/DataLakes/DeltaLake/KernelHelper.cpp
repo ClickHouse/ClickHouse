@@ -161,10 +161,7 @@ public:
 
     KernelClientOptions resolveClientOptions() const override
     {
-        /// Effective values, so that they can serve as the sharing key of a build: the storage's
-        /// live settings (reapplied by `applyNewSettings`; the accessor is virtual, so wrappers
-        /// such as CachedObjectStorage forward it to the S3 storage inside), overridden by what
-        /// the current query changed. The constructor-time values remain as the last resort.
+        /// The storage's live settings, overridden by the ones the query changed.
         UInt64 connect = connect_timeout_ms;
         UInt64 request = request_timeout_ms;
         if (const auto live_settings = object_storage->tryGetS3StorageSettings())
@@ -203,9 +200,7 @@ public:
             setBuilderOption(builder, name, value);
         };
 
-        /// One snapshot of the live client for both the builder and the fingerprint: the client
-        /// may be swapped (applyNewSettings, a credentials refresh) between two reads, and the
-        /// fingerprint must describe the credentials the engine is actually built with.
+        /// One read of the live client, so the fingerprint matches the credentials the engine is built with.
         const auto client = object_storage->getS3StorageClient();
         const auto & credentials = client->getCredentials();
         credentials_fingerprint = fingerprintOf(credentials);
@@ -238,21 +233,8 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
-        /// The kernel talks to S3 through its own object_store client, which the server's S3
-        /// client settings do not reach. Give it the same per-request bounds as the server's
-        /// S3 client (`s3_connect_timeout_ms` / `s3_request_timeout_ms`), so that a request the
-        /// object store never answers fails instead of hanging.
-        /// A value of `0` means "no timeout" for the server's S3 client, but object_store cannot
-        /// be given an unbounded timeout through its string options (a literal `0` makes every
-        /// request time out immediately), so `0` intentionally leaves the option unset and
-        /// object_store's built-in defaults (30 s request / 5 s connect) stay in effect.
-        /// The server's S3 client re-resolves these from the current query on every update
-        /// (`applyNewSettings`), so a query-level `SETTINGS s3_request_timeout_ms = ...` must
-        /// reach the kernel client as well: the options captured on the query thread take
-        /// precedence over the values captured when this helper was created.
-        /// `options` carry the effective values resolved by `resolveClientOptions` on the query
-        /// thread (the storage's live settings overridden by the query); the constructor-time
-        /// values only remain as a fallback for options which were not resolved through it.
+        /// The kernel's object_store client does not see the server's S3 settings, so pass the timeouts.
+        /// `0` (no timeout) cannot be expressed there and keeps object_store's defaults (30 s / 5 s).
         const UInt64 effective_connect_timeout_ms = options.s3_connect_timeout_ms.value_or(connect_timeout_ms);
         const UInt64 effective_request_timeout_ms = options.s3_request_timeout_ms.value_or(request_timeout_ms);
 

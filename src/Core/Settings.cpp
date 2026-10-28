@@ -9003,7 +9003,7 @@ Maximum time to wait for delta-kernel to load a snapshot of a Delta Lake table (
 The load runs on a separate thread and the query waits for it, so the wait is interrupted by `KILL QUERY` and `max_execution_time`,
 and fails with `TIMEOUT_EXCEEDED` once this timeout is exceeded. Value 0 means no timeout.
 )", 0, \
-        {"26.10", 0, 600000, "New setting bounding how long a query waits for delta-kernel to load a Delta Lake table snapshot; the wait is also interrupted by `KILL QUERY` and `max_execution_time`."}) \
+        {"26.10", 600000, 600000, "New setting."}) \
     DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
 Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
 )", 0, \

@@ -41,18 +41,12 @@ public:
     /// Get snapshot version.
     size_t getVersion() const;
 
-    /// True when nothing is installed yet and the only load on this snapshot was given up on by
-    /// every waiter. The metadata layer then resolves the latest version through a fresh object
-    /// rather than reusing this one, so that one object never resolves two different versions.
+    /// Nothing is installed and every waiter gave up on the only load.
     bool isAbandonedWithoutWaiters() const;
 
-    /// True once a kernel snapshot state is installed (the object is usable as a cache entry).
     bool isInitialized() const;
 
-    /// Records the options the first load of this object must use: the metadata layer shares a
-    /// latest-version object only between queries with these options, and query-level S3
-    /// timeouts are forwarded into the build, so it must run with exactly the options it is
-    /// shared under.
+    /// The options the first load must use (the ones this object is shared under).
     void reserveClientOptions(const KernelClientOptions & client_options);
 
     std::optional<size_t> getTotalRows() const;
@@ -102,9 +96,7 @@ private:
 
     struct KernelSnapshotState : private boost::noncopyable
     {
-        /// `used_credentials_fingerprint` receives the fingerprint of the credentials the engine
-        /// is built with as soon as they are known — before the kernel calls which may throw —
-        /// so that a failed build can still be judged against the credentials it actually used.
+        /// `used_credentials_fingerprint` is set before the kernel calls, so it is known even if the build fails.
         KernelSnapshotState(
             const IKernelHelper & helper_,
             std::optional<size_t> snapshot_version_,
@@ -115,18 +107,15 @@ private:
         KernelSnapshot snapshot;
         KernelScan scan;
         size_t snapshot_version;
-        /// Fingerprint of the credentials embedded into `engine`, taken when it was built.
         DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
-    /// Set after a credentials refresh whose fingerprint may not have changed, so that the next
-    /// `initOrUpdateSnapshot` rebuilds the engine anyway (without ever leaving the state null).
+    /// Forces a rebuild after a credentials refresh even if the fingerprint did not change.
     mutable bool kernel_state_needs_rebuild = false;
 
-    /// One in-flight kernel snapshot build, shared between the worker thread that runs the
-    /// kernel call and every query waiting for its result. Waiters poll the future outside
-    /// `mutex`, each with its own cancellation checks.
+    /// A kernel snapshot build running on a worker thread. Waiters poll it outside `mutex`,
+    /// each with its own cancellation checks.
     struct InflightSnapshotLoad : private boost::noncopyable
     {
         enum class State
@@ -138,22 +127,13 @@ private:
 
         std::shared_future<std::shared_ptr<KernelSnapshotState>> future;
         std::atomic<State> state{State::Running};
-        /// Queries currently waiting for this load, registered under `TableSnapshot::mutex` at
-        /// adoption time. A load some waiter gave up on is still healthy work for the others;
-        /// only a load nobody waits for is considered dead.
+        /// Registered under `TableSnapshot::mutex`; a load is dead only when nobody waits for it.
         std::atomic<Int64> waiters{0};
-        /// Client options the build runs with; a query with different options does not share it.
         KernelClientOptions client_options;
-        /// Fingerprint of the credentials the worker built (or tried to build) the engine with.
-        /// Written by the worker before the future becomes ready, so readers which observed the
-        /// ready future see it; the stale-token retry compares against it, not against whatever
-        /// the helper's client is by the time some waiter handles the failure.
+        /// Written by the worker before the future is ready; the stale-token retry compares against it.
         DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
-    /// Client options this object is meant to load with, recorded by the metadata layer before
-    /// the object is published: they are the key the object is shared under, so its first load
-    /// runs with them (see `reserveClientOptions`).
     mutable std::optional<KernelClientOptions> reserved_client_options TSA_GUARDED_BY(mutex);
 
     struct SchemaInfo
@@ -185,14 +165,11 @@ private:
 
     size_t getVersionUnlocked() const TSA_REQUIRES(mutex);
 
-    /// Ensures `kernel_snapshot_state` is built and current. Acquires `mutex` itself and
-    /// releases it while waiting for the in-flight build, so it must be called WITHOUT the
-    /// lock held: every public entry point calls it first, then re-locks for its guarded reads.
+    /// Must be called without `mutex`: it takes the lock itself and releases it while waiting.
     void initOrUpdateSnapshot() const TSA_NO_THREAD_SAFETY_ANALYSIS;
     void initOrUpdateSchemaIfChanged() const TSA_REQUIRES(mutex);
 
-    /// Acquires `mutex` itself: a stale-credentials retry rebuilds the engine through
-    /// `initOrUpdateSnapshot` (killable, mutex released) instead of blocking under the lock.
+    /// Takes `mutex` itself, so that a stale-credentials rebuild is not done under the lock.
     SnapshotStats getSnapshotStats() const;
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
 
@@ -208,27 +185,19 @@ private:
 
     std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
 
-    /// Starts a snapshot build on a worker thread, reserving one of the bounded worker permits
-    /// before the launch, and returns the shared in-flight state for waiters. Never blocks on
-    /// the kernel. Static, so that the scan iterator can rebuild through the same path.
+    /// Starts a build on a worker thread within the bounded worker permits; never blocks on the kernel.
     static std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(
         KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const KernelClientOptions & client_options);
 
-    /// Waits for an in-flight build, re-checking the query status on every poll: `KILL QUERY`,
-    /// `max_execution_time` and `delta_lake_snapshot_load_timeout_ms` abort the wait for this
-    /// waiter only, while the build keeps running for the others. The kernel FFI is synchronous
-    /// and has no cancellation hook, so this polling wait is the only cancellation point of a
-    /// snapshot load (for example, one stuck on an object store which never answers).
+    /// The only cancellation point of a snapshot load: `KILL QUERY`, `max_execution_time` and
+    /// `delta_lake_snapshot_load_timeout_ms` abort this waiter only; the build keeps running.
     static void waitForSnapshotLoad(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper);
 
-    /// Marks a load as given up by every waiter (counted in DeltaLakeSnapshotLoadsStuck until
-    /// the worker returns). For a shared load this is called under `mutex`, together with the
-    /// waiter unregistration, so that `given_up` in initOrUpdateSnapshot never sees a half state.
+    /// For a shared load, called under `mutex` together with the waiter unregistration.
     static void markAbandoned(InflightSnapshotLoad & load, const IKernelHelper & kernel_helper, const LoggerPtr & log);
 
-    /// Convenience for a single waiter: start, wait (interruptibly) and take the result.
-    /// Every `KernelSnapshotState` construction must go through this or the two helpers
-    /// above, so that no code path blocks in the kernel without a cancellation point.
+    /// Every `KernelSnapshotState` is built through this or the helpers above, so no path blocks
+    /// in the kernel without a cancellation point.
     static std::shared_ptr<KernelSnapshotState> loadKernelSnapshotState(
         KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log);
 };

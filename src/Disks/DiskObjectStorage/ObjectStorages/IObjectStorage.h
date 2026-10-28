@@ -461,9 +461,6 @@ public:
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 
-    /// The live S3 settings of the storage (the ones applyNewSettings reapplies), or nullptr
-    /// when the storage is not backed by S3. For clients which build their own S3 client and
-    /// must follow the same settings as the storage's client (e.g. delta-kernel).
     virtual std::shared_ptr<const S3Settings> tryGetS3StorageSettings() const { return nullptr; }
 #endif
 
