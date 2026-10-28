@@ -1,11 +1,13 @@
 diff --git a/cc/private/rules_impl/cc_toolchain_info.bzl b/cc/private/rules_impl/cc_toolchain_info.bzl
 --- a/cc/private/rules_impl/cc_toolchain_info.bzl
 +++ b/cc/private/rules_impl/cc_toolchain_info.bzl
-@@ -103,2 +103,3 @@
+@@ -103,2 +103,4 @@
          all_files = all_files,
 +        ar_files = ar_files,
++        compiler_files = compiler_files,
          static_runtime_lib = _static_runtime_lib(static_runtime_lib_depset),
-@@ -179,2 +180,3 @@
+@@ -179,2 +181,4 @@
          "all_files": "Returns all toolchain files (so they can be passed to actions using this toolchain as inputs).",
 +        "ar_files": "Files needed to run the configured static archiver.",
++        "compiler_files": "Files needed to run the configured C/C++ compiler.",
          "disallowed_copts_infos": "Returns the list of disallowed_copts_info structs for disallowed copts enforcement.",

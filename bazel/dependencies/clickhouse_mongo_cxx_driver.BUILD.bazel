@@ -239,6 +239,7 @@ ch_cc_library(
         ["src/bsoncxx/include/**/*.hpp"],
         exclude = _BSONCXX_TEXTUAL_HEADERS + ["src/bsoncxx/include/bsoncxx/docs/**"],
     ) + _BSONCXX_SHARED_HEADERS,
+    implementation_deps = ["@clickhouse_mongo_c_driver//:_libbson"],
     includes = [
         "src/bsoncxx/include",
         "src/bsoncxx/include/bsoncxx/v_noabi",
@@ -252,7 +253,6 @@ ch_cc_library(
         "src/bsoncxx/include/bsoncxx/v_noabi",
     ]),
     textual_hdrs = _BSONCXX_TEXTUAL_HEADERS,
-    deps = ["@clickhouse_mongo_c_driver//:_libbson"],
 )
 
 ch_cc_library(

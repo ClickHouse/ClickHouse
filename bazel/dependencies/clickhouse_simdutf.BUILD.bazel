@@ -47,7 +47,7 @@ ch_cc_library(
     local_includes = [
         "src",
     ],
-    private_hdrs = [
+    private_textual_srcs = [
         "src/encoding_types.cpp",
         "src/error.cpp",
         "src/implementation.cpp",

@@ -96,6 +96,7 @@ DEPENDENCIES = {
     ('@clickhouse_grpc', 'grpc_plugin_support'): (['@clickhouse_google_protobuf//:_libprotoc'], [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_librdkafka', '_rdkafka'): (['@clickhouse_cyrus_sasl//:_sasl2'], [], []),
+    ('@clickhouse_mongo_cxx_driver', '_bsoncxx'): ([], ['@clickhouse_mongo_c_driver//:_libbson'], []),
     ('@clickhouse_zstd', '_zstd'): ([], [':_zstd__compile_1'], []),
     **{('contrib/libfuzzer-cmake', name): (['@clickhouse_llvm_project//:cxxabi'], [], [])
        for name in ('_fuzzer', '_fuzzer_no_main')},
@@ -197,9 +198,9 @@ DEPENDENCIES = {
         '//base/widechar_width', '@clickhouse_libdeflate//:_libdeflate', '@clickhouse_zmij//:_zmij',
         '@clickhouse_brotli//:_brotli', '@clickhouse_bzip2//:_bzip2', '@clickhouse_xz//:_liblzma',
         '@clickhouse_grpc//:address_sorting', '@clickhouse_mongo_c_driver//:_libbson',
+        '//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars',
     ], [
         '//bazel:arrow_flatbuffer_headers',
-        '//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars',
         '//contrib/librdkafka-cmake:rdhttp_poco_transport',
         '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_azure//:_azure_sdk',
         '@clickhouse_flatbuffers//:_flatbuffers',

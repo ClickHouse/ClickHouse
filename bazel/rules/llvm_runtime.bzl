@@ -70,7 +70,7 @@ def _llvm_runtime_objects_impl(ctx):
     triple = ctx.attr.arch + "-linux-gnu"
 
     # @llvm exposes each include tree as one action input in DefaultInfo.
-    toolchain_files = depset(ctx.files._c_headers, transitive = [toolchain.all_files])
+    toolchain_files = depset(ctx.files._c_headers, transitive = [toolchain.compiler_files or toolchain.all_files])
     header_inputs = depset(
         ctx.files.hdrs + private_headers + ctx.files.textual_srcs,
         transitive = [toolchain_files],
