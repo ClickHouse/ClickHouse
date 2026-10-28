@@ -314,7 +314,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
-    /// A row-level filter applied after the read precedes the moved conditions in the filter.
     const bool row_level_filter_after_read = source_step_with_filter->getQueryInfo().row_level_filter_after_read;
     if (row_level_filter_after_read && hasOrderSensitiveFunctions(&filter_root_node))
         return;

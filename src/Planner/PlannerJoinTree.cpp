@@ -2131,7 +2131,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto & columns_names = table_expression_data.getColumnNames();
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
-                /// A row-level security filter the read cannot take, applied right after the read.
                 std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> row_policy_filter_after_read;
                 bool row_policy_filter_not_pushed = false;
 

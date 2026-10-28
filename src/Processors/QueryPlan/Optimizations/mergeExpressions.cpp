@@ -108,8 +108,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     return 0;
 }
 
-/// Is the filter of the node over a row-level filter applied after the read (`FilterStep::isRowLevelFilterAfterRead`),
-/// or over a read whose row-level filter is applied after it (`SelectQueryInfo::row_level_filter_after_read`)?
 static bool isOverReadWithRowLevelFilterAfterIt(const QueryPlan::Node & node)
 {
     const auto * current = &node;
@@ -129,7 +127,6 @@ static bool isOverReadWithRowLevelFilterAfterIt(const QueryPlan::Node & node)
     return source && source->getQueryInfo().row_level_filter_after_read;
 }
 
-/// Can every result of the DAG besides its filter be computed on any row? See `canBeMovedToTheFrontOfAndChain`.
 static bool computesOnlyMovableResults(const ActionsDAG & dag, const ActionsDAG::Node & filter_node)
 {
     return std::ranges::all_of(dag.getOutputs(),
@@ -163,8 +160,7 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
 
-        /// The merged filter is not always split into its AND chain (`query_plan_merge_filters`), and never at a column atom, so over
-        /// a read whose row-level filter is applied after it, merge only what can be evaluated on the rows that filter rejects.
+        /// The merged filter is not always split back into its AND chain, so over a late row-level filter merge only what is safe on the rows it rejects.
         if (isOverReadWithRowLevelFilterAfterIt(*child_node))
         {
             const auto & upper_filter_node = parent_actions.findInOutputs(parent_filter->getFilterColumnName());

@@ -2011,7 +2011,6 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             is_smallest_column_requested = true;
         }
 
-        /// The child's row policy is applied after the read (see `convertAndFilterSourceStream`).
         if (row_policy_data_opt)
         {
             modified_query_info.row_level_filter_after_read = true;

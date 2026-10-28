@@ -140,7 +140,6 @@ NameSet getSortingKeyNamesSafeBeforeFinal(const StorageSnapshotPtr & storage_sna
     return names;
 }
 
-/// A row-level filter applied after the read precedes every condition moved to PREWHERE.
 bool canBeMovedBeforeRowLevelFilter(const RPNBuilderTreeNode & node)
 {
     const auto * dag_node = node.getDAGNode();

@@ -211,8 +211,7 @@ struct SelectQueryInfo
     FilterDAGInfoPtr row_level_filter;
     PrewhereInfoPtr prewhere_info;
 
-    /// A row level security filter the read could not take is applied after it, so the read
-    /// may evaluate only conditions that are safe to evaluate on the rows that filter excludes.
+    /// A row-level security filter the read could not take is applied after it: the read may evaluate only what is safe on the rows it rejects.
     bool row_level_filter_after_read = false;
 
     /// If query has aggregate functions
