@@ -19,6 +19,7 @@ SETTINGS table_disk = 1, disk = disk(
     type = 'object_storage',
     object_storage_type = 'local',
     metadata_type = 'plain_rewritable',
+    metadata_snapshot_write_delay_ms = 0, -- the reader sees the snapshot of the state right after every commit
     path = '${disk_path}');
 
 INSERT INTO writer VALUES (1), (2), (3);

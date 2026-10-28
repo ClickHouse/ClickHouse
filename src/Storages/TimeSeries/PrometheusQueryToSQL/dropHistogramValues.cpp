@@ -81,7 +81,7 @@ SQLQueryPiece dropHistogramSamples(SQLQueryPiece && query_piece, ConverterContex
     builder.from_table = context.subqueries.back().name;
 
     query_piece.select_query = builder.getSelectQuery();
-    query_piece.store_method = StoreMethod::RAW_DATA;
+    query_piece.store_method = StoreMethod::TIMESTAMP_AND_VALUE;
 
     return std::move(query_piece);
 }

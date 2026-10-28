@@ -8,6 +8,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/Prometheus/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
@@ -103,15 +104,19 @@ namespace
         TimestampType min_time = node_range.start_time - node_range.window + 1;
         TimestampType max_time = node_range.end_time;
 
-        auto make_table_function = [&](std::string_view function_name)
+        /// `return_columns` is the last argument of timeSeriesSelector(); timeSeriesHistogramSelector() has none.
+        auto make_table_function = [&](std::string_view function_name, std::string_view return_columns = {})
         {
-            return makeASTFunction(
+            auto function = makeASTFunction(
                 function_name,
                 make_intrusive<ASTLiteral>(context.time_series_storage_id.getDatabaseName()),
                 make_intrusive<ASTLiteral>(context.time_series_storage_id.getTableName()),
                 make_intrusive<ASTLiteral>(String{instant_selector_text}),
                 timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
                 timeSeriesTimestampToAST(max_time, context.result_timestamp_type));
+            if (!return_columns.empty())
+                function->arguments->children.push_back(make_intrusive<ASTLiteral>(String{return_columns}));
+            return function;
         };
 
         /// Prometheus range selectors omit the dedicated stale-NaN payload while preserving
@@ -132,21 +137,54 @@ namespace
 
         if (!context.storage_has_native_histograms)
         {
-            SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::RAW_DATA};
+            /// The argument `return_columns` of the table function chooses the returned columns. The store method follows the layout of
+            /// the samples table, so that the samples are returned as they are stored, without a conversion: the column `samples`
+            /// with the samples of one time bucket for a table storing buckets of samples, the columns `timestamp` and `value`
+            /// for a table of an earlier version storing one sample per row.
+            const bool table_has_bucketed_samples = (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
+            SQLQueryPiece res{node, ResultType::RANGE_VECTOR, table_has_bucketed_samples ? StoreMethod::SAMPLES : StoreMethod::TIMESTAMP_AND_VALUE};
 
+            /// SELECT timeSeriesIdToGroup(id) AS group, samples
+            /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'samples')
+            /// or
             /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
-            /// FROM timeSeriesSelector(<storage>, <selector>, <min_time>, <max_time>)
+            /// FROM timeSeriesSelector(<database>, <time_series_table>, <selector>, <min_time>, <max_time>, 'timestamp_and_value')
             SelectQueryBuilder builder;
 
             builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
-            /// The columns `timestamp` and `value` keep the types they have in the table, see the comment for StoreMethod::RAW_DATA.
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
-            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            /// The samples keep the types they have in the table (see StoreMethod).
+            if (table_has_bucketed_samples)
+            {
+                ASTPtr samples = make_intrusive<ASTIdentifier>(ColumnNames::Samples);
 
-            builder.from_table_function = make_table_function("timeSeriesSelector");
-            builder.where = make_float_filter();
+                /// arrayFilter(sample -> NOT <sample.2 is a stale marker>, samples) AS samples
+                if (filter_stale_markers)
+                {
+                    const String iterator_name = "sample";
+                    samples = makeASTFunction(
+                        "arrayFilter",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>(iterator_name)),
+                            makeASTFunction("not", isStaleMarker(makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{2}))))),
+                        std::move(samples));
+                    samples->setAlias(ColumnNames::Samples);
+                }
+
+                builder.select_list.push_back(std::move(samples));
+            }
+            else
+            {
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+                /// WHERE NOT <value is a stale marker>
+                builder.where = make_float_filter();
+            }
+
+            builder.from_table_function = make_table_function("timeSeriesSelector", table_has_bucketed_samples ? "samples" : "timestamp_and_value");
 
             res.select_query = builder.getSelectQuery();
             return res;
@@ -154,7 +192,7 @@ namespace
 
         SQLQueryPiece res{node, ResultType::RANGE_VECTOR, StoreMethod::HISTOGRAM_RAW_DATA};
 
-        /// A combined selector stream (StoreMethod::HISTOGRAM_RAW_DATA): the float arm UNION ALL the histogram arm.
+        /// A combined selector stream (StoreMethod::HISTOGRAM_RAW_DATA): the float arm UNION ALL the histogram arm, one sample per row.
         /// UNION ALL unifies columns by position, so every fabricated default column below is an explicit cast to the exact column type.
         ASTs float_arm_select_list;
         {
@@ -188,7 +226,7 @@ namespace
             histogram_arm_select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
 
             /// The histogram arm carries no float values: `value` is a dummy zero. The float arm keeps the type of the values
-            /// in the table (see the comment for StoreMethod::RAW_DATA), UNION ALL converts `Float32` to `Float64` if needed.
+            /// in the table (see StoreMethod), UNION ALL converts `Float32` to `Float64` if needed.
             histogram_arm_select_list.push_back(makeASTFunction(
                 "_CAST", make_intrusive<ASTLiteral>(UInt64{0}), make_intrusive<ASTLiteral>("Float64")));
             histogram_arm_select_list.back()->setAlias(ColumnNames::Value);
@@ -202,7 +240,7 @@ namespace
         }
 
         res.select_query = makeUnionAll(
-            makeSelectorArm(std::move(float_arm_select_list), make_table_function("timeSeriesSelector"), make_float_filter()),
+            makeSelectorArm(std::move(float_arm_select_list), make_table_function("timeSeriesSelector", "timestamp_and_value"), make_float_filter()),
             makeSelectorArm(
                 std::move(histogram_arm_select_list), make_table_function("timeSeriesHistogramSelector"), make_histogram_filter()));
         return res;
@@ -391,45 +429,113 @@ SQLQueryPiece fromSelectorSampleTimestamps(const PrometheusQueryTree::InstantSel
     auto range_selector = fromRangeSelector(
         instant_selector_text, instant_selector_node, /* filter_stale_markers = */ false, context);
 
-    if (range_selector.store_method == StoreMethod::RAW_DATA || range_selector.store_method == StoreMethod::HISTOGRAM_RAW_DATA)
+    /// Replaces the value of every sample with its timestamp. Stale markers are kept so that last_over_time() can still
+    /// select them and they are turned into absence below, exactly as for a plain instant selector.
+    /// The new query reads the query of the range selector as a subquery.
+    switch (range_selector.store_method)
     {
-        /// SELECT group, timestamp,
-        ///        if(<value is a stale marker>, CAST(value, 'Float64'), CAST(timestamp, 'Float64')) AS value
-        /// FROM <raw_data>
-        /// Stale markers are kept so that last_over_time() can still select them and they are turned into absence below,
-        /// exactly as for a plain instant selector.
-        SelectQueryBuilder builder;
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
-
-        ASTPtr is_stale = isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value));
-        ASTPtr stale_value
-            = makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Value), make_intrusive<ASTLiteral>("Float64"));
-
-        /// A histogram sample yields its timestamp too, as in Prometheus; a histogram stale marker becomes a float one.
-        if (range_selector.store_method == StoreMethod::HISTOGRAM_RAW_DATA)
+        case StoreMethod::SAMPLES:
         {
-            is_stale = makeASTFunction(
-                "or", std::move(is_stale), isStaleHistogramMarker(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Flags)));
-            stale_value = makeASTFunction("reinterpretAsFloat64", make_intrusive<ASTLiteral>(STALE_NAN_BITS));
+            /// SELECT group,
+            ///        arrayMap(sample -> (sample.1, if(<sample.2 is a stale marker>, CAST(sample.2, 'Float64'), CAST(sample.1, 'Float64'))), samples) AS samples
+            /// FROM <range_selector>
+            context.subqueries.emplace_back(context.subqueries.size(), std::move(range_selector.select_query), SQLSubqueryType::TABLE);
+
+            SelectQueryBuilder builder;
+            builder.from_table = context.subqueries.back().name;
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+            const String iterator_name = "sample";
+            auto sample_timestamp = [&] { return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{1})); };
+            auto sample_value = [&] { return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(iterator_name), make_intrusive<ASTLiteral>(UInt64{2})); };
+
+            ASTPtr new_value = makeASTFunction(
+                "if",
+                isStaleMarker(sample_value()),
+                makeASTFunction("CAST", sample_value(), make_intrusive<ASTLiteral>("Float64")),
+                makeASTFunction("CAST", sample_timestamp(), make_intrusive<ASTLiteral>("Float64")));
+
+            auto samples = makeASTFunction(
+                "arrayMap",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>(iterator_name)),
+                    makeASTFunction("tuple", sample_timestamp(), std::move(new_value))),
+                make_intrusive<ASTIdentifier>(ColumnNames::Samples));
+            samples->setAlias(ColumnNames::Samples);
+            builder.select_list.push_back(std::move(samples));
+
+            range_selector.select_query = builder.getSelectQuery();
+            break;
         }
 
-        ASTPtr value = makeASTFunction(
-            "if",
-            std::move(is_stale),
-            std::move(stale_value),
-            makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>("Float64")));
-        value->setAlias(ColumnNames::Value);
-        builder.select_list.push_back(std::move(value));
+        case StoreMethod::TIMESTAMP_AND_VALUE:
+        {
+            /// SELECT group, timestamp,
+            ///        if(<value is a stale marker>, CAST(value, 'Float64'), CAST(timestamp, 'Float64')) AS value
+            /// FROM <range_selector>
+            context.subqueries.emplace_back(context.subqueries.size(), std::move(range_selector.select_query), SQLSubqueryType::TABLE);
 
-        context.subqueries.emplace_back(
-            context.subqueries.size(),
-            std::move(range_selector.select_query),
-            SQLSubqueryType::TABLE);
-        builder.from_table = context.subqueries.back().name;
+            SelectQueryBuilder builder;
+            builder.from_table = context.subqueries.back().name;
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
 
-        range_selector.select_query = builder.getSelectQuery();
-        range_selector.store_method = StoreMethod::RAW_DATA;
+            ASTPtr value = makeASTFunction(
+                "if",
+                isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Value), make_intrusive<ASTLiteral>("Float64")),
+                makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>("Float64")));
+            value->setAlias(ColumnNames::Value);
+            builder.select_list.push_back(std::move(value));
+
+            range_selector.select_query = builder.getSelectQuery();
+            break;
+        }
+
+        case StoreMethod::HISTOGRAM_RAW_DATA:
+        {
+            /// As TIMESTAMP_AND_VALUE without the payloads: a histogram sample yields its timestamp too, as in Prometheus,
+            /// and a histogram stale marker becomes a float one.
+            context.subqueries.emplace_back(context.subqueries.size(), std::move(range_selector.select_query), SQLSubqueryType::TABLE);
+
+            SelectQueryBuilder builder;
+            builder.from_table = context.subqueries.back().name;
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
+
+            ASTPtr value = makeASTFunction(
+                "if",
+                makeASTFunction(
+                    "or",
+                    isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                    isStaleHistogramMarker(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Flags))),
+                makeASTFunction("reinterpretAsFloat64", make_intrusive<ASTLiteral>(STALE_NAN_BITS)),
+                makeASTFunction("CAST", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTLiteral>("Float64")));
+            value->setAlias(ColumnNames::Value);
+            builder.select_list.push_back(std::move(value));
+
+            range_selector.select_query = builder.getSelectQuery();
+            range_selector.store_method = StoreMethod::TIMESTAMP_AND_VALUE;
+            break;
+        }
+
+        case StoreMethod::EMPTY:
+        {
+            /// No samples, nothing to replace.
+            break;
+        }
+
+        case StoreMethod::CONST_SCALAR:
+        case StoreMethod::CONST_STRING:
+        case StoreMethod::SINGLE_SCALAR:
+        case StoreMethod::SCALAR_GRID:
+        case StoreMethod::VECTOR_GRID:
+        case StoreMethod::HISTOGRAM_GRID:
+        {
+            /// Can't get in here because fromRangeSelector() returns only EMPTY, SAMPLES, TIMESTAMP_AND_VALUE or HISTOGRAM_RAW_DATA.
+            throwUnexpectedStoreMethod(range_selector, context);
+        }
     }
 
     auto vector_grid = applyFunctionOverRange(
