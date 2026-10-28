@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -56,6 +57,11 @@ public:
 
         auto col_to = ColumnString::create();
 
+        /// Quantiles sketches accept `+inf` / `-inf`, so the values must be written
+        /// with a JSON-aware helper: non-finite values become quoted `"inf"` / `"-inf"`
+        /// (as in the `JSON` output formats by default) to keep the result valid JSON.
+        const FormatSettings format_settings;
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             std::string_view sketch_data = col_sketch->getDataAt(row);
@@ -99,7 +105,7 @@ public:
                     else
                         first = false;
 
-                    writeText(value, values_buf);
+                    writeJSONNumber(value, values_buf, format_settings);
                     writeText(weight, weights_buf);
                 }
 
