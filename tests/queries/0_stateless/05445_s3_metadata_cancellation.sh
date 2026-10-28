@@ -45,11 +45,13 @@ for table in checks attaches; do
     if [[ "$table" == checks ]]; then
         engine="ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/checks', 'r1')"
     fi
+    # Keep `serialization.json` in both the parent part and projection even when
+    # randomized type serialization settings allow `with_types` to become `basic`.
     query --query "
         CREATE TABLE ${database}.${table} (n UInt64, PROJECTION p (SELECT n ORDER BY n))
         ENGINE=${engine} ORDER BY n
         SETTINGS storage_policy='s3_no_cache', min_bytes_for_wide_part=0,
-                 serialization_info_version='with_types', prewarm_mark_cache=0, prewarm_primary_key_cache=0;
+                 ratio_of_defaults_for_sparse_serialization=0.5, prewarm_mark_cache=0, prewarm_primary_key_cache=0;
         SYSTEM STOP MERGES ${database}.${table};
         INSERT INTO ${database}.${table} SELECT number FROM numbers(4096);
     "
