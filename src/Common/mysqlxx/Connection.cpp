@@ -84,7 +84,8 @@ void Connection::connect(const char* db,
     unsigned rw_timeout,
     bool enable_local_infile,
     bool opt_reconnect,
-    bool enable_compression)
+    bool enable_compression,
+    bool force_tcp)
 {
     if (is_connected)
         disconnect();
@@ -115,6 +116,14 @@ void Connection::connect(const char* db,
     /// Enable classic MySQL protocol compression if requested.
     if (enable_compression && mysql_options(driver.get(), MYSQL_OPT_COMPRESS, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
+    /// Otherwise the client library connects to `localhost` through a Unix socket, its default one if `socket` is empty.
+    if (force_tcp)
+    {
+        unsigned protocol = MYSQL_PROTOCOL_TCP;
+        if (mysql_options(driver.get(), MYSQL_OPT_PROTOCOL, &protocol))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
 
     /// Specifies particular ssl key and certificate if it needs
     if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))

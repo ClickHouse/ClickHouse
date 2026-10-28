@@ -204,7 +204,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
                     StorageMySQL::getSSLParams(*named_collection),
-                    mysql_settings));
+                    mysql_settings,
+                    /* force_tcp = */ true));
         }
         else
         {
@@ -248,8 +249,13 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 }
             }
 
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(
-                mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(
+                config,
+                settings_config_prefix,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
+                MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
+                /* force_tcp = */ created_from_ddl));
         }
 
         if (dictionary_configuration->query.empty() && dictionary_configuration->table.empty())
@@ -359,7 +365,7 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 There is no explicit parameter `secure`. When establishing an SSL-connection security is mandatory.
 </Note>
 
-MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`. This is only accepted for a dictionary defined in a server configuration file: `remote_url_allow_hosts` checks only `host` and `port`, so a `CREATE DICTIONARY` query that sets `socket`, at the source or at one of its `<replica>` entries, is rejected with `BAD_ARGUMENTS`.
+MySQL can be connected to on a local host via sockets. To do this, set `host` and `socket`. This is only accepted for a dictionary defined in a server configuration file: `remote_url_allow_hosts` checks only `host` and `port`, so a `CREATE DICTIONARY` query that sets `socket`, at the source or at one of its `<replica>` entries, is rejected with `BAD_ARGUMENTS`, and such a dictionary always connects over TCP to `host`:`port`, also for `localhost`.
 
 Example of settings:
 

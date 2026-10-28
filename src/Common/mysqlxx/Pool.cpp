@@ -51,9 +51,10 @@ void Pool::Entry::decrementRefCount()
 
 Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name,
      unsigned default_connections_, unsigned max_connections_,
-     const char * parent_config_name_)
+     const char * parent_config_name_, bool force_tcp_)
     : default_connections(default_connections_)
     , max_connections(max_connections_)
+    , force_tcp(force_tcp_)
 {
     server = cfg.getString(config_name + ".host");
 
@@ -153,7 +154,8 @@ Pool::Pool(
      unsigned max_connections_,
      unsigned enable_local_infile_,
      bool opt_reconnect_,
-     bool enable_compression_)
+     bool enable_compression_,
+     bool force_tcp_)
     : default_connections(default_connections_)
     , max_connections(max_connections_)
     , db(db_)
@@ -169,6 +171,7 @@ Pool::Pool(
     , enable_local_infile(enable_local_infile_)
     , opt_reconnect(opt_reconnect_)
     , enable_compression(enable_compression_)
+    , force_tcp(force_tcp_)
 {
     LOG_DEBUG(log,
         "Created MySQL Pool with settings: connect_timeout={}, read_write_timeout={}, default_connections_number={}, max_connections_number={}",
@@ -327,7 +330,8 @@ void Pool::Entry::forceConnected() const
                 pool->rw_timeout,
                 pool->enable_local_infile,
                 pool->opt_reconnect,
-                pool->enable_compression);
+                pool->enable_compression,
+                pool->force_tcp);
         }
         catch (mysqlxx::ConnectionFailed &)
         {
@@ -404,7 +408,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             rw_timeout,
             enable_local_infile,
             opt_reconnect,
-            enable_compression);
+            enable_compression,
+            force_tcp);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

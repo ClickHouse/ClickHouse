@@ -25,14 +25,16 @@ DROP DICTIONARY d_socket_replica;
 
 -- Also next to a named collection: `socket` is rejected before the collection is looked up.
 CREATE DICTIONARY d_socket_named (id UInt64, v String) PRIMARY KEY id
-SOURCE(MYSQL(NAME nc_05452_absent SOCKET '/nonexistent/mysql.sock'))
+SOURCE(MYSQL(NAME nc_05229_absent SOCKET '/nonexistent/mysql.sock'))
 LAYOUT(FLAT()) LIFETIME(0);
 SYSTEM RELOAD DICTIONARY d_socket_named; -- { serverError BAD_ARGUMENTS }
 DROP DICTIONARY d_socket_named;
 
--- Without `socket` the source is accepted and reaches a connection attempt.
+-- Without `socket` the source is accepted, and `localhost` is reached over TCP at `host`:`port`,
+-- not through the client library's default Unix socket.
 CREATE DICTIONARY d_no_socket (id UInt64, v String) PRIMARY KEY id
-SOURCE(MYSQL(HOST '127.0.0.1' PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
+SOURCE(MYSQL(HOST 'localhost' PORT 1 USER 'u' PASSWORD 'p' DB 'd' TABLE 't'))
 LAYOUT(FLAT()) LIFETIME(0);
 SYSTEM RELOAD DICTIONARY d_no_socket; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SELECT last_exception LIKE '%Can''t connect to server on ''localhost''%' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'd_no_socket';
 DROP DICTIONARY d_no_socket;

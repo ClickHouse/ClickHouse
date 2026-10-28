@@ -104,7 +104,8 @@ public:
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
         bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
         bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT,
-        bool enable_compression = false);
+        bool enable_compression = false,
+        bool force_tcp = false);
 
     void connect(const std::string & config_name)
     {
