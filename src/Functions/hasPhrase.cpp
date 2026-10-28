@@ -241,19 +241,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
         ? SplitByNonAlphaTokenizer::getExternalName()
         : arguments[arg_tokenizer].column->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
-        ITokenizer::Type::SplitByNonAlpha,
-        ITokenizer::Type::SplitByString,
-        ITokenizer::Type::SplitByRegexp,
-        ITokenizer::Type::Array,
-        ITokenizer::Type::AsciiCJK,
-#if USE_ICU
-        ITokenizer::Type::Icu,
-#endif
-        ITokenizer::Type::Ngrams,
-    };
-
-    if (!supported_types.contains(tokenizer->getType()))
+    if (!doesTextSearchFunctionSupportTokenizer(name, tokenizer->getType()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' does not support the '{}' tokenizer.", name, tokenizer_name);
 
     auto phrase_tokens = initializePhraseTokens(arguments, *tokenizer, getName());

@@ -2228,6 +2228,8 @@ void normalizeColumnExpression(ASTPtr & ast)
     ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
 }
 
+}
+
 /// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
 /// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
 /// expression after the same rewrite, or `std::nullopt` if it does not change.
@@ -2245,8 +2247,6 @@ std::optional<String> getNormalizedIndexColumnName(const IndexDescription & inde
         return {};
 
     return name;
-}
-
 }
 
 MergeTreeIndexText::MergeTreeIndexText(
@@ -2330,7 +2330,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
 {
     return std::make_shared<MergeTreeIndexConditionText>(
         predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(),
-        preprocessor, postprocessor, params.enable_positions, getColumnsShadowingMapSubcolumns(), collectJSONIndexArgumentTypes(*index.expression));
+        preprocessor, postprocessor, params.enable_positions, getColumnsShadowingMapSubcolumns(*metadata_snapshot), collectJSONIndexArgumentTypes(*index.expression));
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -2440,6 +2440,21 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+}
+
+String getTextIndexTokenizerDescription(const IndexDescription & index, const String & function_name)
+{
+    if (index.type != TEXT_INDEX_NAME)
+        return {};
+
+    auto options = convertArgumentsToOptionsMap(index.arguments);
+    auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
+
+    if (!doesTextSearchFunctionSupportTokenizer(function_name, tokenizer->getType()))
+        return {};
+
+    return tokenizer->getDescription();
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
