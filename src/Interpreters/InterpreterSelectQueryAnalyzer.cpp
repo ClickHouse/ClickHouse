@@ -24,9 +24,10 @@
 
 #include <Storages/IStorage.h>
 
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -207,6 +208,10 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// The automatic mode decides with its own cost model, and the row estimate that
+    /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
+    /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
+    ctx->setIsAutomaticParallelReplicasProbe(true);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
@@ -417,9 +422,15 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
         || select_query_options.query_tree_already_optimized)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+        /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
+        DisableParallelReplicasPass{}.run(query_tree, context);
+    }
     else
+    {
         query_tree_pass_manager.run(query_tree);
+    }
 
     /// Resolves `_shard_num` of a `Distributed` table in a view body inlined into this query.
     if (select_query_options.query_tree_already_optimized)
@@ -493,7 +504,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           // one carrying the query's own `SETTINGS` clause, which is what the eligibility check reads.
           [tree = query_tree_->clone(),
            ctx = Context::createCopy(context_),
-           select_options = select_query_options_,
+           select_options = SelectQueryOptions(select_query_options_).positionalArgumentsAlreadyResolved(),
            single_node_tree = query_tree](const BuiltSetsByHashPtr & built_sets, const LoggerPtr & logger)
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, single_node_tree, built_sets, logger); })
 {

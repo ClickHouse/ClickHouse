@@ -217,6 +217,7 @@ struct SelectQueryInfo
     /// See `SelectQueryOptions::query_tree_already_optimized`, for a storage that plans `query` itself.
     bool query_tree_already_optimized = false;
     bool is_internal = false;
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
