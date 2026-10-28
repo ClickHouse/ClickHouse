@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Parquet
+-- Random settings limits: query_plan_merge_filters=(1, None)
 
 -- A row policy on a column outside the PREWHERE contract of the read (here a column with a DEFAULT) is applied after the
 -- read, so neither PREWHERE nor a condition moved to PREWHERE may run before it on the rows it hides.
