@@ -443,6 +443,23 @@ std::unique_ptr<ColumnVectorBatch> RowReader::createRowBatch() const
     return ORC::createRowBatch(*selected_type, options.enable_lazy_decoding);
 }
 
+bool Reader::hasBadBloomFilters() const
+{
+    /// Same as in the reference implementation. Only the C++ writer (id 1) of some old releases wrote bad bloom filters.
+    if (footer.writer.value_or(0) != 1)
+        return false;
+    /// `software_version` is written since 1.5.13, 1.6.11 and 1.7.0, and the C++ writer supports bloom filters since 1.6.0,
+    /// so the files of the C++ writer without `software_version` have bad bloom filters.
+    if (!footer.software_version)
+        return true;
+    /// Strip the suffix of snapshot versions, like 1.6.12-SNAPSHOT.
+    std::string_view version = *footer.software_version;
+    version = version.substr(0, version.find('-'));
+    static constexpr std::string_view bad_versions[] = {
+        "1.6.0", "1.6.1", "1.6.2", "1.6.3", "1.6.4", "1.6.5", "1.6.6", "1.6.7", "1.6.8", "1.6.9", "1.6.10", "1.6.11", "1.7.0"};
+    return std::find(std::begin(bad_versions), std::end(bad_versions), version) != std::end(bad_versions);
+}
+
 const DateLUTImpl & RowReader::getWriterTimezone(const Proto::StripeFooter & stripe_footer) const
 {
     if (stripe_footer.writer_timezone)
@@ -469,6 +486,7 @@ void RowReader::loadStripeIndex()
 {
     row_indexes.clear();
     bloom_filters.clear();
+    const bool use_bloom_filters = !reader.hasBadBloomFilters();
     const auto & stripe_footer = stripe_streams->getFooter();
     for (const auto & s : stripe_footer.streams)
     {
@@ -482,7 +500,7 @@ void RowReader::loadStripeIndex()
             auto data = stripe_streams->getStreamData(s.column, kind);
             row_indexes[s.column].parse(reader.decompress(data.value_or(std::string_view{}), "row index"));
         }
-        else if (kind == Proto::StreamKind::BLOOM_FILTER_UTF8)
+        else if (kind == Proto::StreamKind::BLOOM_FILTER_UTF8 && use_bloom_filters)
         {
             if (bloom_filters.contains(s.column))
                 continue;

@@ -72,6 +72,9 @@ public:
     const Proto::Footer & getFooter() const { return footer; }
     const Proto::PostScript & getPostScript() const { return postscript; }
     CompressionKind getCompression() const { return postscript.compression; }
+    /// Whether the bloom filters of the file were written by a version of the C++ writer
+    /// that hashed the integers incorrectly (ORC-1024), so they must not be used.
+    bool hasBadBloomFilters() const;
     UInt64 getCompressionBlockSize() const { return postscript.compression_block_size; }
 
     /// The statistics of the whole file, one per column.
