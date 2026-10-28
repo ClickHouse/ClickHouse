@@ -11,7 +11,7 @@ from . import (
 )
 
 cluster = ClickHouseCluster(__file__)
-server = cluster.add_instance("node")
+server = cluster.add_instance("node", main_configs=["configs/cpu_slot_preemption.xml"])
 
 
 def run_server(container_id, file_name, hostname, port, *args):
@@ -406,3 +406,25 @@ def test_describe_with_body_sends_one_request(started_cluster):
     result = server.query("DESC url('http://localhost:8002/', JSONEachRow, body('x'))")
     assert "v" in result
     assert get_request_count() == 1
+
+
+def test_subquery_body_reading_url_under_cpu_workload(started_cluster):
+    # The subquery of `body(...)` runs inside the request callback, while the enclosing query keeps its CPU
+    # slot. It must reuse that slot instead of acquiring one more. With `cpu_slot_preemption = false`, a
+    # slot is held by every executor of the thread: the outer query and the reader of the outer `url` take
+    # one each, and the reader of the inner `url` takes the third one. An extra slot for the body executor
+    # would wait forever for a fourth slot. The inner `url` returns the text of a query, which the outer
+    # `url` sends as the body to the HTTP interface of the server itself.
+    server.query("CREATE OR REPLACE RESOURCE body_cpu (WORKER THREAD, MASTER THREAD)")
+    server.query("CREATE OR REPLACE WORKLOAD body_wl SETTINGS max_concurrent_threads = 3")
+    try:
+        result = server.query(
+            "SELECT * FROM url('http://localhost:8123/', TSV, 'x UInt8', "
+            "body((SELECT * FROM url('http://localhost:8123/?query=SELECT+%27SELECT+42+FORMAT+TSV%27', TSVRaw, 's String')), TSVRaw)) "
+            "SETTINGS workload = 'body_wl', max_threads = 1",
+            timeout=120,
+        )
+        assert result == "42\n"
+    finally:
+        server.query("DROP WORKLOAD IF EXISTS body_wl")
+        server.query("DROP RESOURCE IF EXISTS body_cpu")

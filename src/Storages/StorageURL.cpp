@@ -288,6 +288,12 @@ std::function<void(WriteBuffer &)> IStorageURLBase::Body::makeCallback(const Con
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         pipeline.complete(std::move(out_format));
+        /// The callback runs synchronously in a thread of the enclosing query that already holds a CPU slot
+        /// and keeps it while waiting for the body to be written. Acquiring another slot here could deadlock
+        /// under a CPU workload limit (the body subquery may itself read from `url` and need one more slot),
+        /// so execute the body in the calling thread, reusing its allocation.
+        pipeline.setNumThreads(1);
+        pipeline.setConcurrencyControl(false);
         CompletedPipelineExecutor executor(pipeline);
         executor.execute();
     };
