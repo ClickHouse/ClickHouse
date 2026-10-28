@@ -352,7 +352,7 @@ void collectSubcolumnAccessesExposedToAggregation(const QueryTreeNodePtr & node,
 }
 
 /// In an aggregating query, an expression that is evaluated after the aggregation (the projection, `HAVING`,
-/// `ORDER BY`, window definitions, ...) must be a grouping key, a function of grouping keys, or an aggregate.
+/// `ORDER BY`, `LIMIT AFTER`/`LIMIT UNTIL`, window definitions, ...) must be a grouping key, a function of grouping keys, or an aggregate.
 /// `tup.a` is a function of the key `tup`, but the plain column `tup.a` that the rewrite would turn it into is
 /// not, so such a query would fail to plan (`Not found column tup.a in block`). Collect the `getSubcolumn`
 /// nodes of `query` that are in such a position and are neither a grouping key themselves nor an argument of
@@ -375,7 +375,8 @@ NodeSet collectSubcolumnAccessesExposedToAggregation(const QueryNode & query)
     }
 
     for (const auto & section : {query.getProjectionNode(), query.getHaving(), query.getWindowNode(), query.getQualify(),
-                                 query.getOrderByNode(), query.getInterpolate(), query.getLimitByNode()})
+                                 query.getOrderByNode(), query.getInterpolate(), query.getLimitByNode(),
+                                 query.getLimitAfter(), query.getLimitUntil()})
         collectSubcolumnAccessesExposedToAggregation(section, group_by_keys, exposed);
 
     /// With `group_by_use_nulls` and `ROLLUP`/`CUBE`/`GROUPING SETS` a reference to a grouping key after the
