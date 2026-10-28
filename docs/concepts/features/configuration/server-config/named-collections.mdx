@@ -490,13 +490,19 @@ SELECT * FROM remote(remote1, database = default, table = test);
 
 ### Example of using named collections with a dictionary with source ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
+<Note title="ClickHouse Cloud">
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+
+The same credential rule applies to named collections. Replace the example credentials with those of a source user that has `SELECT` on the source table.
+</Note>
+
 ```sql
 CREATE NAMED COLLECTION remote_dict AS
 host = 'localhost',
 port = 9000,
 database = 'default',
-user = 'default',
-password = '';
+user = 'dict_reader',
+password = 'dict_reader_password';
 
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a

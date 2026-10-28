@@ -938,6 +938,12 @@ INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.e
 
 With our memory tables populated, we can load our Regular Expression dictionaries. Note that we need to specify the key values as columns - these will be the attributes we can extract from the user agent.
 
+<Note title="ClickHouse Cloud">
+When creating a dictionary that reads from a ClickHouse table, include a dedicated user's username and password in the `SOURCE` clause. That user needs `SELECT` permission on the source table. See the [ClickHouse dictionary source example](/reference/statements/create/dictionary/sources/clickhouse).
+
+Add `USER 'dict_reader' PASSWORD 'dict_reader_password'` inside each `CLICKHOUSE` source below, using your source user’s actual credentials.
+</Note>
+
 ```sql
 CREATE DICTIONARY regexp_os_dict
 (
