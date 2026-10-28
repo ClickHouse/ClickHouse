@@ -3492,8 +3492,12 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// Drop the values no read row references: the step must not evaluate them.
         ColumnIndex indexes(std::move(subchunk.column));
         ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
-        subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
         subchunk.dictionary_values = nullptr;
+        /// If every dictionary value is used, `values` is the dictionary itself, which is still
+        /// shared with the column chunk (other row subgroups read it too), so it must not be
+        /// aliased as mutable: `IColumn::mutate` copies it. Otherwise `values` is a fresh result
+        /// of `filter`, exclusively owned here, and `IColumn::mutate` does not copy it.
+        subchunk.column = ColumnReplicated::create(IColumn::mutate(std::move(values)), indexes.detachIndexes());
         ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
