@@ -31,17 +31,18 @@ SELECT 'DEFAULT now64, ORDER BY LIMIT', tag FROM t_now_top_k WHERE keep = 1 ORDE
     SETTINGS use_query_condition_cache = 0, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1;
 
 -- ORDER BY ... LIMIT is still cached when every part stores the column with the non-deterministic default.
+-- Without parallel replicas: each replica has its own threshold, so the marks it skips depend on how the parts are split.
 CREATE TABLE t_now_top_k_stored (k UInt64, tag UInt8, keep UInt8, v DateTime64(3) DEFAULT now64(3) + toIntervalMillisecond(k)) ENGINE = MergeTree ORDER BY k
     SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
 SYSTEM STOP MERGES t_now_top_k_stored;
 INSERT INTO t_now_top_k_stored (k, tag, keep) SELECT number, 0, 1 FROM numbers(100000);
 INSERT INTO t_now_top_k_stored SELECT number, 1, 1, now64(3) + 5 FROM numbers(100000);
 SELECT tag FROM t_now_top_k_stored WHERE keep = 1 ORDER BY v LIMIT 1
-    SETTINGS use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1
-    FORMAT Null;
+    SETTINGS use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1,
+    enable_parallel_replicas = 0 FORMAT Null;
 SELECT tag FROM t_now_top_k_stored WHERE keep = 1 ORDER BY v LIMIT 1
     SETTINGS use_query_condition_cache_for_top_k = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1,
-    log_comment = '05459_top_k_hit' FORMAT Null;
+    enable_parallel_replicas = 0, log_comment = '05459_top_k_hit' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['SelectedMarks'] < ProfileEvents['SelectedMarksTotal']
