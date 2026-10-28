@@ -584,3 +584,54 @@ def test_hive_catalog_host_filter_rejects_nul(start_cluster):
         assert "Connection refused" not in error, error
     finally:
         node1.query("DROP DATABASE IF EXISTS test_hive_host_filter_nul")
+
+
+def test_host_filter_rejects_nul(start_cluster):
+    def query_redis(node, host):
+        return node.query_and_get_error(
+            f"SELECT * FROM redis('{host}:1', 'k', 'k String, v String')"
+        )
+
+    expected = "Unexpected NUL character in host"
+
+    # Control: the suffix rule in `config_with_hosts.xml` admits this host, which then fails at name
+    # resolution; the bare address is refused.
+    assert "UNACCEPTABLE_URL" not in query_redis(node1, "redis.allowed.example")
+    assert "UNACCEPTABLE_URL" in query_redis(node1, "127.0.0.1")
+
+    # The rule matches the whole string, but name resolution stops at the NUL and would connect to
+    # 127.0.0.1. The host must be refused before any connection attempt.
+    error = query_redis(node1, "127.0.0.1\\0x.allowed.example")
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+    assert "Connection refused" not in error, error
+
+    # The check is shared by every integration: without it, `remote` reads from 127.0.0.1.
+    error = node1.query_and_get_error(
+        "SELECT * FROM remote('127.0.0.1\\0x.allowed.example:9000', system.one)"
+    )
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+
+    # `remote` splits `[address]:port` at the first `:`, so here the NUL is in the port it checks. The
+    # rule that admits a tail refuses the plain address, yet without the check the forged one reads
+    # from 127.0.0.1.
+    assert "UNACCEPTABLE_URL" in node1.query_and_get_error(
+        "SELECT * FROM remote('[::ffff:127.0.0.1]:9000', system.one)"
+    )
+    error = node1.query_and_get_error(
+        "SELECT * FROM remote('[::ffff:127.0.0.1\\0x.allowed.example]:9000', system.one)"
+    )
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+
+    # A URL host is refused too: without it, an Azure backup sends its requests to 127.0.0.1.
+    error = node1.query_and_get_error(
+        "BACKUP TABLE system.one TO AzureBlobStorage("
+        "'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        "BlobEndpoint=http://127.0.0.1\\0x.allowed.example:1/devstoreaccount1;', 'cont', 'backup')"
+    )
+    assert "BAD_ARGUMENTS" in error and expected in error, error
+    assert "Connection refused" not in error, error
+
+    # A NUL is refused even without `remote_url_allow_hosts`.
+    error = query_redis(node4, "127.0.0.1\\0x.allowed.example")
+    assert "BAD_ARGUMENTS" in error and expected in error, error
