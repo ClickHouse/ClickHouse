@@ -6905,6 +6905,111 @@ def test_latest_snapshot_load_shared(started_cluster):
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
+def test_snapshot_load_failure_per_waiter(started_cluster):
+    """Queries which wait on one shared snapshot load that fails each get their own copy of its
+    exception: what one query adds to the message must not show up in the other's error."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_snapshot_load_failure_per_waiter")
+    delta_path = f"/{TABLE_NAME}"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = (
+        f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/'"
+    )
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+    target = f"{TABLE_NAME}_target"
+    instance.query(
+        f"CREATE TABLE {target} (x UInt64) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    instance.query(f"INSERT INTO {target} VALUES (0)")
+
+    # The failpoint pauses one snapshot load: the one started by the first query below.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
+
+    # A mutation runs its scalar subquery on the initiator in a visitor which adds "While processing
+    # <subquery>" to the exception, so each query annotates the error it gets with its own marker.
+    def update(marker):
+        return f"ALTER TABLE {target} UPDATE x = (SELECT {marker} FROM {TABLE_NAME}) WHERE 1"
+
+    first_marker = "count() + 1111"
+    second_marker = "count() + 2222"
+    settings = {"mutations_execute_subqueries_on_initiator": 1}
+    first_id = f"{TABLE_NAME}_first"
+    second_id = f"{TABLE_NAME}_second"
+    executor = ThreadPoolExecutor(max_workers=3)
+    try:
+        wait_future = executor.submit(
+            lambda: instance.query(
+                f"SYSTEM WAIT FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT} PAUSE",
+                timeout=60,
+            )
+        )
+        first_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                update(first_marker), settings=settings, query_id=first_id, timeout=120
+            )
+        )
+        # The build started by the first query is paused inside the kernel call.
+        wait_future.result(timeout=60)
+
+        second_future = executor.submit(
+            lambda: instance.query_and_get_error(
+                update(second_marker),
+                settings=settings,
+                query_id=second_id,
+                timeout=120,
+            )
+        )
+        second_is_waiting = False
+        for _ in range(300):
+            if second_future.done():
+                break
+            # Counted when the query starts waiting for a snapshot load.
+            if (
+                int(
+                    instance.query(
+                        f"SELECT sum(ProfileEvents['DeltaLakeSnapshotInitializations']) FROM system.processes WHERE query_id = '{second_id}'"
+                    )
+                )
+                >= 1
+            ):
+                second_is_waiting = True
+                break
+            time.sleep(0.1)
+        assert (
+            second_is_waiting and not second_future.done()
+        ), "The second query must wait for the paused build of the first one"
+
+        # The paused build fails once released: the table is gone when the kernel reads its log.
+        objects = list_s3_objects(minio_client, bucket, prefix=f"{TABLE_NAME}/")
+        errors = minio_client.remove_objects(
+            bucket, [DeleteObject(obj) for obj in objects]
+        )
+        assert len(list(errors)) == 0
+    finally:
+        release_paused_snapshot_load(instance)
+        executor.shutdown(wait=False)
+
+    first_error = first_future.result(timeout=60)
+    second_error = second_future.result(timeout=60)
+    assert (
+        "While processing" in first_error and first_marker in first_error
+    ), first_error
+    assert second_marker not in first_error, first_error
+    assert (
+        "While processing" in second_error and second_marker in second_error
+    ), second_error
+    assert first_marker not in second_error, second_error
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+    instance.query(f"DROP TABLE {target}")
+
+
 def test_snapshot_load_worker_that_never_runs(started_cluster):
     """A snapshot-load job which the thread pool drops without running it (setting up the pool
     thread can throw) must still answer its waiters and return its worker permit, so that later

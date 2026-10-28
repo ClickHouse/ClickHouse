@@ -926,6 +926,24 @@ bool TableSnapshot::tryRefreshAfterStaleTokenError(
     return true;
 }
 
+namespace
+{
+    /// A shared future rethrows one exception object to every waiter, and callers add to its message
+    /// as it propagates: each waiter gets a copy of its own.
+    template <typename T>
+    T getForThisWaiter(const std::shared_future<T> & future)
+    {
+        try
+        {
+            return future.get();
+        }
+        catch (...)
+        {
+            std::rethrow_exception(DB::copyMutableException(std::current_exception()));
+        }
+    }
+}
+
 void TableSnapshot::initOrUpdateSnapshot() const
 {
     std::unique_lock lock(mutex);
@@ -994,7 +1012,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
         std::shared_ptr<KernelSnapshotState> built;
         try
         {
-            built = load->future.get();
+            built = getForThisWaiter(load->future);
         }
         catch (const DB::Exception & e)
         {
