@@ -37,7 +37,8 @@ struct PaimonMetadataFilesCacheCell
 
     std::variant<
         std::vector<PaimonManifestFileMeta>, /// manifest list parsed result
-        PaimonManifest                       /// manifest parsed result
+        PaimonManifest,                      /// manifest parsed result
+        PaimonIndexManifest                  /// index manifest parsed result
     > cached_element;
     size_t memory_bytes;
 
@@ -52,6 +53,12 @@ struct PaimonMetadataFilesCacheCell
         , memory_bytes(
               3 * std::get<PaimonManifest>(cached_element).file_bytes_size
               + SIZE_IN_MEMORY_OVERHEAD)
+    {
+    }
+
+    explicit PaimonMetadataFilesCacheCell(PaimonIndexManifest && index_manifest)
+        : cached_element(std::move(index_manifest))
+        , memory_bytes(SIZE_IN_MEMORY_OVERHEAD)
     {
     }
 };
@@ -115,6 +122,22 @@ public:
             ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheHits);
         const auto & manifest = std::get<PaimonManifest>(result.first->cached_element);
         return ManifestConstPtr(result.first, &manifest);
+    }
+
+    template <typename LoadFunc>
+    PaimonIndexManifest getOrSetIndexManifest(const String & key, LoadFunc && load_fn)
+    {
+        auto load_wrapper = [&]()
+        {
+            auto index_manifest = load_fn();
+            return std::make_shared<PaimonMetadataFilesCacheCell>(std::move(index_manifest));
+        };
+        auto result = Base::getOrSet(key, load_wrapper);
+        if (result.second)
+            ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheHits);
+        return std::get<PaimonIndexManifest>(result.first->cached_element);
     }
 
 private:

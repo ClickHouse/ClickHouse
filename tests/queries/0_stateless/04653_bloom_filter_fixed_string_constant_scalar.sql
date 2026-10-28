@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: a `Dynamic` constant is sent to the replicas without its member type, https://github.com/ClickHouse/ClickHouse/issues/119745
 -- Checks that a `bloom_filter` index skips no matching row when a `String` or `FixedString` constant
 -- compares zero-padded, and that it stays usable and prunes where padding gives the one value that can match.
 

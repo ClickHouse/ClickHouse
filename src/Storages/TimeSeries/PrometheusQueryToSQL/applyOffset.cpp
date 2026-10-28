@@ -51,9 +51,10 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// Can't get in here because RAW_DATA is used only for range vectors, and they are returned above as is.
+                /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
                 throwUnexpectedStoreMethod(expression, context);
             }
         }
@@ -142,9 +143,10 @@ namespace
                 return std::move(expression);
             }
 
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
-                /// Can't get in here because RAW_DATA is used only for range vectors, and they are returned above as is.
+                /// Can't get in here because these store methods are used only for range vectors, and they are returned above as is.
                 throwUnexpectedStoreMethod(expression, context);
             }
         }

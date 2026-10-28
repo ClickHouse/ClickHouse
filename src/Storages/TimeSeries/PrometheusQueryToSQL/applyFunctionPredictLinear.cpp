@@ -110,7 +110,8 @@ PredictionOffset getPredictionOffset(SQLQueryPiece & scalar_argument, ConverterC
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::VECTOR_GRID:
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
             /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
             throwUnexpectedStoreMethod(scalar_argument, context);
@@ -221,14 +222,22 @@ SQLQueryPiece applyFunctionPredictLinear(
     const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
     const size_t result_grid_size = stepsInTimeSeriesRange(start_time, end_time, step);
 
-    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
-    /// range vector holds series, and a scalar grid if it was made from a scalar.
-    const bool has_group = (range_argument.store_method == StoreMethod::VECTOR_GRID) || (range_argument.store_method == StoreMethod::RAW_DATA);
+    /// A range vector made from a scalar has no `group` column. The result is still a vector grid with one series without
+    /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
+    const bool from_scalar = (range_argument.store_method == StoreMethod::CONST_SCALAR)
+        || (range_argument.store_method == StoreMethod::SINGLE_SCALAR) || (range_argument.store_method == StoreMethod::SCALAR_GRID);
 
     SelectQueryBuilder builder;
 
-    if (has_group)
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+    }
+    else
+    {
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    }
 
     ASTPtr regression = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesLinearRegressionToGrid", std::move(aggregate_function_arguments)),
@@ -269,7 +278,7 @@ SQLQueryPiece applyFunctionPredictLinear(
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
-    if (has_group)
+    if (!from_scalar)
         builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (range_argument.select_query)
@@ -280,7 +289,7 @@ SQLQueryPiece applyFunctionPredictLinear(
     }
 
     SQLQueryPiece res = range_argument;
-    res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
+    res.store_method = StoreMethod::VECTOR_GRID;
     res.scalar_value = {};
     res.node = function_node;
 
@@ -290,8 +299,10 @@ SQLQueryPiece applyFunctionPredictLinear(
     res.end_time = end_time;
     res.step = step;
 
-    /// `predict_linear` always drops the metric name (PromQL: function outputs have no `__name__`).
-    if (has_group)
+    /// `predict_linear` always drops the metric name (PromQL: function outputs have no `__name__`). A scalar has no metric name.
+    if (from_scalar)
+        res.metric_name_dropped = true;
+    else
         res = dropMetricName(std::move(res), context);
 
     return res;

@@ -42,7 +42,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT name FROM system.databases";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << " WHERE name "
@@ -66,7 +66,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << " WHERE cluster "
@@ -110,7 +110,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         if (query.changed)
             rewritten_query << " WHERE changed = 1";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << (query.changed ? " AND name " : " WHERE name ")
@@ -141,7 +141,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             FROM system.merges
             )";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << " WHERE table "
@@ -167,7 +167,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     WriteBufferFromOwnString rewritten_query;
 
-    if (query.full)
+    /// `system.dictionaries` has no `engine` column.
+    if (query.full && !query.dictionaries)
     {
         rewritten_query << "SELECT name, engine FROM system.";
     }
@@ -192,7 +193,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else
         rewritten_query << "database = " << DB::quote << database;
 
-    if (!query.like.empty())
+    if (query.has_like)
         rewritten_query
             << " AND name "
             << (query.not_like ? "NOT " : "")

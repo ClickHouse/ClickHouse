@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: enables the `framing_throw_before_totals_boundary` /
 # `framing_throw_before_extremes_boundary` fail points, which affect the whole server. Each fires on
 # the next framed totals/extremes boundary anywhere on the server, so a concurrent framing query

@@ -10,7 +10,7 @@ doc_type: '참고'
 
 MySQL 엔진을 사용하면 원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
 
-## 테이블 생성하기
+## 테이블 생성하기 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ SETTINGS
 
 나머지 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
-## TLS/SSL
+## TLS/SSL {#tls-ssl}
 
 MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-값 인수)로 전달됩니다.
 
@@ -82,13 +82,21 @@ MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-�
 </named_collections>
 ```
 
-## 테이블 이름 대신 쿼리 전달하기
+## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 
 테이블 이름 대신 `table` 인수에 MySQL로 그대로 전달되는 `SELECT` 쿼리를 사용할 수 있습니다. 테이블의 구조는 쿼리 결과를 바탕으로 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸 작성할 수 있습니다:
 
 ```sql
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+쿼리 전달은 버전 26.7부터 지원됩니다. ClickHouse는 쿼리를 MySQL로 전송하기 전에 `SELECT ... FROM (<query>)`로 감싸므로, 쿼리 끝에 세미콜론을 붙이면 안 됩니다.
+
+명명된 컬렉션(named collection)을 사용할 때는 `table` 대신 `query` 키로 쿼리를 전달하십시오. 이 키는 컬렉션 자체에 지정하거나 키-값 인수로 전달할 수 있습니다. `query`와 `table`은 함께 지정할 수 없습니다:
+
+```sql
+CREATE TABLE mysql_table ENGINE = MySQL(mysql_creds, database = 'test', query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 이는 조인, 집계 또는 기타 처리를 MySQL로 푸시 다운하는 데 유용합니다. 이러한 테이블은 읽기 전용이며, 여기에 `INSERT`하는 것은 허용되지 않습니다. 동일한 구문은 [`mysql`](/ko/reference/functions/table-functions/mysql) 테이블 함수에서도 지원됩니다.
@@ -105,7 +113,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## 사용 예시
+## 사용 예시 {#usage-example}
 
 MySQL에서 테이블 생성:
 
@@ -170,11 +178,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## 설정
+## 설정 {#mysql-settings}
 
 기본 설정은 연결조차 재사용하지 않아 효율이 그다지 높지 않습니다. 이러한 설정을 사용하면 서버가 초당 처리할 수 있는 쿼리 수를 늘릴 수 있습니다.
 
-### `connection_auto_close`
+### `connection_auto_close` {#connection-auto-close}
 
 쿼리 실행 후 연결을 자동으로 닫아, 연결 재사용을 비활성화할 수 있습니다.
 
@@ -185,7 +193,7 @@ SELECT * FROM mysql_table
 
 기본값: `1`.
 
-### `connection_max_tries`
+### `connection_max_tries` {#connection-max-tries}
 
 페일오버를 지원하는 풀의 재시도 횟수를 설정합니다.
 
@@ -196,7 +204,7 @@ SELECT * FROM mysql_table
 
 기본값: `3`.
 
-### `connection_pool_size`
+### `connection_pool_size` {#connection-pool-size}
 
 연결 풀의 크기입니다(모든 연결이 사용 중인 경우, 일부 연결이 해제될 때까지 쿼리는 대기합니다).
 
@@ -206,7 +214,7 @@ SELECT * FROM mysql_table
 
 기본값: `16`.
 
-### `connection_wait_timeout`
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 사용 가능한 연결이 생길 때까지 대기하는 시간 제한(초)입니다(이미 `connection_pool_size`개의 연결이 활성 상태인 경우). 0이면 대기하지 않습니다.
 
@@ -216,7 +224,7 @@ Possible values:
 
 기본값: `5`.
 
-### `connect_timeout`
+### `connect_timeout` {#connect-timeout}
 
 연결 시간 제한(초)입니다.
 
@@ -226,7 +234,7 @@ Possible values:
 
 기본값: `10`.
 
-### `read_write_timeout`
+### `read_write_timeout` {#read-write-timeout}
 
 읽기-쓰기 타임아웃(초)입니다.
 
@@ -236,7 +244,7 @@ Possible values:
 
 기본값: `300`.
 
-### `enable_compression`
+### `enable_compression` {#enable-compression}
 
 MySQL 프로토콜 연결에서 압축을 활성화합니다.
 
@@ -265,7 +273,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## 관련 항목
+## 관련 항목 {#see-also}
 
 * [MySQL 테이블 함수](/ko/reference/functions/table-functions/mysql)
 * [MySQL을 딕셔너리 소스로 사용하는 방법](/ko/reference/statements/create/dictionary/sources/mysql)

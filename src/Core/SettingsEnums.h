@@ -347,6 +347,7 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    logsql,
     trino,
 };
 
@@ -549,6 +550,7 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeObjectTypedSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)

@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -33,6 +34,7 @@
 #include <fmt/ranges.h>
 #include <optional>
 #include <string_view>
+#include <unordered_set>
 #include <variant>
 
 namespace DB
@@ -121,7 +123,15 @@ namespace QueryPlanFormat
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
     {
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        /// A sink, such as the send step at the root of a query fragment, has no output header: its output is the
+        /// data it sends, which is its input.
+        SharedHeader header;
+        if (step.hasOutputHeader())
+            header = step.getOutputHeader();
+        else if (step.getInputHeaders().size() == 1)
+            header = step.getInputHeaders().front();
+
+        if (!header || header->empty())
         {
             out << prefix << "Output: Empty\n";
             return;
@@ -129,7 +139,7 @@ namespace QueryPlanFormat
 
         out << prefix << "Output: ";
         bool first = true;
-        for (const auto & elem : *step.getOutputHeader())
+        for (const auto & elem : *header)
         {
             if (!first)
                 out << ", ";
@@ -203,7 +213,7 @@ namespace QueryPlanFormat
             /// placeholder but which was reached without the flag (e.g. an aliased column keeps its own
             /// name, so the flag is what catches it there).
             if (node->is_masked_secret)
-                return "[HIDDEN]";
+                return String(HIDDEN_SECRET);
             if (node->result_name.contains("[HIDDEN"))
                 return node->result_name;
 
@@ -322,7 +332,7 @@ namespace QueryPlanFormat
         /// column, not only a COLUMN node) must render as `[HIDDEN]` regardless of its node type,
         /// before we dispatch into formatting its value or its child expression.
         if (node->is_masked_secret)
-            return "[HIDDEN]";
+            return String(HIDDEN_SECRET);
 
         switch (node->type)
         {
@@ -575,7 +585,23 @@ namespace QueryPlanFormat
         }
     }
 
-    static String findSourceTableName(const QueryPlan::Node * node)
+    /// The fragments of a cut plan that are reached from a receive step while the names are built.
+    struct FragmentWalk
+    {
+        const FragmentInputs & inputs;
+        std::unordered_set<const QueryPlan *> visited;
+    };
+
+    /// The root of the fragment that sends to `node`, if `node` is a receive step of a cut plan.
+    static const QueryPlan::Node * findSendingFragmentRoot(const QueryPlan::Node * node, const FragmentInputs * fragment_inputs)
+    {
+        if (!fragment_inputs || !node->children.empty())
+            return nullptr;
+        auto it = fragment_inputs->find(node->step.get());
+        return it == fragment_inputs->end() ? nullptr : it->second->getRootNode();
+    }
+
+    static String findSourceTableName(const QueryPlan::Node * node, const FragmentInputs * fragment_inputs)
     {
         while (node)
         {
@@ -592,6 +618,8 @@ namespace QueryPlanFormat
                 return static_cast<const ReadFromTableStep *>(node->step.get())->getTable();
             if (node->children.size() == 1)
                 node = node->children[0];
+            else if (const auto * sending_root = findSendingFragmentRoot(node, fragment_inputs))
+                node = sending_root;
             else
                 break;
         }
@@ -605,12 +633,26 @@ namespace QueryPlanFormat
         PrettyColumnNameMap & pretty_names,
         PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
-        PerPlanColumnMaps & per_plan_columns)
+        PerPlanColumnMaps & per_plan_columns,
+        FragmentWalk * fragment_walk = nullptr)
     {
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
+            buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, fragment_walk);
 
-        for (auto * child_plan : node->step->getChildPlans())
+        /// Continue into the fragment that sends to a receive step, so that the fragments are walked in the order of the
+        /// plan before the cut, as plain `EXPLAIN` walks it, and in the same naming scope.
+        if (fragment_walk)
+        {
+            if (auto it = fragment_walk->inputs.find(node->step.get()); it != fragment_walk->inputs.end())
+            {
+                const auto * sending_plan = it->second;
+                if (fragment_walk->visited.insert(sending_plan).second && sending_plan->getRootNode())
+                    buildPrettyNamesForNode(
+                        sending_plan->getRootNode(), pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns, fragment_walk);
+            }
+        }
+
+        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ true))
         {
             if (child_plan && child_plan->getRootNode())
             {
@@ -620,7 +662,8 @@ namespace QueryPlanFormat
                 /// `materialize(materialize(...))`. Runtime-filter and subquery-set names are global ids,
                 /// so they stay shared across the whole tree.
                 auto & child_columns = per_plan_columns[child_plan];
-                buildPrettyNamesForNode(child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
+                buildPrettyNamesForNode(
+                    child_plan->getRootNode(), child_columns, runtime_filter_names, subquery_set_names, per_plan_columns, fragment_walk);
             }
         }
 
@@ -680,7 +723,7 @@ namespace QueryPlanFormat
             else
                 build_column = trimColumnIdentifier(filter_col);
 
-            String build_table = findSourceTableName(node);
+            String build_table = findSourceTableName(node, fragment_walk ? &fragment_walk->inputs : nullptr);
             runtime_filter_names.try_emplace(rf_step->getFilterName(),
                 RuntimeFilterInfo{std::move(pretty_name), std::move(build_column), std::move(build_table)});
         }
@@ -731,6 +774,22 @@ namespace QueryPlanFormat
         }
     }
 
+    static PrettyNamesPerPlan makePrettyNamesPerPlan(
+        PerPlanColumnMaps per_plan_columns,
+        const PrettyRuntimeFilterNameMap & runtime_filter_names,
+        const PrettySetNameMap & subquery_set_names)
+    {
+        PrettyNamesPerPlan result;
+        for (auto & [plan_ptr, columns] : per_plan_columns)
+        {
+            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
+            for (const auto & [hash, name] : subquery_set_names)
+                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
+        }
+        return result;
+    }
+
     PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan)
     {
         /// Runtime-filter and subquery-set names are global ids; keep them shared across the whole tree
@@ -745,15 +804,27 @@ namespace QueryPlanFormat
         if (root)
             buildPrettyNamesForNode(root, top_columns, runtime_filter_names, subquery_set_names, per_plan_columns);
 
-        PrettyNamesPerPlan result;
-        for (auto & [plan_ptr, columns] : per_plan_columns)
-        {
-            /// Subquery-set names are global; expose them in every plan's map so set references resolve.
-            for (const auto & [hash, name] : subquery_set_names)
-                columns[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-            result.names.emplace(plan_ptr, PrettyNames{std::move(columns), runtime_filter_names});
-        }
-        return result;
+        return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
+    }
+
+    PrettyNamesPerPlan buildPrettyNamesForFragments(const std::vector<const QueryPlan *> & fragment_plans, const FragmentInputs & fragment_inputs)
+    {
+        PrettyRuntimeFilterNameMap runtime_filter_names;
+        PrettySetNameMap subquery_set_names;
+        PerPlanColumnMaps per_plan_columns;
+        /// The fragments were one plan before the cut, so they share one column naming scope.
+        PrettyColumnNameMap fragment_columns;
+
+        FragmentWalk fragment_walk{.inputs = fragment_inputs, .visited = {}};
+        for (const auto * plan : fragment_plans)
+            if (fragment_walk.visited.insert(plan).second && plan->getRootNode())
+                buildPrettyNamesForNode(
+                    plan->getRootNode(), fragment_columns, runtime_filter_names, subquery_set_names, per_plan_columns, &fragment_walk);
+
+        for (const auto * plan : fragment_plans)
+            per_plan_columns[plan] = fragment_columns;
+
+        return makePrettyNamesPerPlan(std::move(per_plan_columns), runtime_filter_names, subquery_set_names);
     }
 
 }

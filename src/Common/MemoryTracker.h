@@ -133,6 +133,10 @@ private:
 
         std::atomic<DB::PageCache *> page_cache = nullptr;
 
+        /// The sizes of the allocations over the hard limit that are being refused: they are in `amount` until they are
+        /// reverted, so the peak of an allocation that exceeded the limit without a check does not count them.
+        std::atomic<Int64> refusing_amount = 0;
+
         bool log_peak_memory_usage_in_destructor = true;
     };
 #pragma clang diagnostic pop
@@ -146,6 +150,31 @@ private:
     void setOrRaiseProfilerLimit(Int64 value);
 
     bool isSizeOkForSampling(UInt64 size) const;
+
+    /// Takes `size` off this tracker alone (saturating at zero, negative gives back), as `free` does before
+    /// moving on to the parent. Returns what was actually removed. The total does not change.
+    Int64 adjustLocally(Int64 size);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    std::atomic_bool drift_expected = false;
+    /// A starting point, lowered as flagged sites get fixed.
+    static constexpr Int64 drift_warn_threshold = 1024 * 1024;
+    /// What a query root freed beyond what it held, which went straight to the server total (see `free`). For example,
+    /// thread A of a query allocates a 2 MiB block that stays in its untracked memory, below `max_untracked_memory`, and
+    /// thread B frees the block and flushes: the query holds less than 2 MiB, so the rest goes here. When A flushes later,
+    /// the query is charged for a block that is already freed, which shows as drift at the end of the query but is not.
+    std::atomic<Int64> freed_beyond_held = 0;
+#endif
+
+    /// `Process` trackers whose parent is this one; only a `User` tracker counts them.
+    std::atomic<Int64> children_count = 0;
+
+    void attachChild();
+    /// When the last child goes, nothing should be charged here any more, so whatever is left is settled.
+    void detachChild();
+
+    /// Whatever a query still holds when it ends is taken off its user, so the user ends at zero for that query.
+    void settleDriftOnQueryEnd();
 
     /// Helper fields for analyzing the global memory tracker. Both are touched only by the
     /// background memory worker (see `updateAllocated` and `updateUncorrected`), so they need
@@ -186,12 +215,32 @@ public:
         return rss.load(std::memory_order_relaxed);
     }
 
-    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
-    // MemoryTracker for background task may have a non-zero counter.
-    // This method is intended to fix the counter inside of background_memory_tracker.
-    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
-    // of total_memory_tracker.
-    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
+    /// Marks memory the query deliberately leaves to something that outlives it (e.g. an in-memory table), so
+    /// that `unexpectedDrift` does not report it. Marks every task tracker up the chain.
+    void setDriftExpected()
+    {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        for (auto * tracker = this; tracker; tracker = tracker->parent.load(std::memory_order_relaxed))
+        {
+            if (tracker->level == VariableContext::Process)
+                tracker->drift_expected.store(true, std::memory_order_relaxed);
+        }
+#endif
+    }
+
+    /// Debug builds only: what a query's tracker still holds (or is over-credited by) when that is large and
+    /// not marked expected, else 0. Points at the query that allocated something outliving it.
+    Int64 unexpectedDrift() const;
+
+    /// `size` bytes charged to this tracker now belong to the server, which goes on holding them (e.g. an
+    /// entry of a cache): take them off this tracker and its parents up to the global one, which keeps them.
+    /// Each takes at most what its child gave up, so a tracker that holds less does not go below zero.
+    /// The release has to be server-owned as well, under `MemoryTrackerBlockerInThread`.
+    void handOverToServer(Int64 size);
+
+    /// Moves this tracker under `new_parent` together with what it holds: the bytes leave the old ancestors that
+    /// are not ancestors of `new_parent` and are charged to the new ones, whose hard limits are checked first.
+    void reparent(MemoryTracker * new_parent);
 
     Int64 getPeak() const
     {
@@ -311,6 +360,11 @@ public:
         description_ptr.store(description, std::memory_order_relaxed);
     }
 
+    const char * getDescription() const
+    {
+        return description_ptr.load(std::memory_order_relaxed);
+    }
+
     OvercommitRatio getOvercommitRatio();
     OvercommitRatio getOvercommitRatio(Int64 limit);
 
@@ -346,6 +400,12 @@ public:
 
     /// Reset the accumulated data.
     void reset();
+
+    /// Not below what is currently held, which belongs to whoever is still charged here.
+    void resetPeak()
+    {
+        peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);
+    }
 
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
