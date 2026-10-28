@@ -244,3 +244,19 @@ ALTER TABLE t_alter_previous_commands_clear CLEAR COLUMN q, RENAME COLUMN IF EXI
 ALTER TABLE t_alter_previous_commands_clear CLEAR COLUMN q, ADD COLUMN s UInt32 AFTER q SETTINGS alter_sync = 2;
 SELECT * FROM t_alter_previous_commands_clear;
 DROP TABLE t_alter_previous_commands_clear;
+
+-- A column dropped and added again by the same ALTER is not stored in the part, so a later drop or clear of it does not
+-- remove the offsets that the remaining column of the Nested still uses.
+CREATE TABLE t_alter_previous_commands_nested (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_nested DROP COLUMN `n.a`, ADD COLUMN IF NOT EXISTS `n.a` Array(UInt32), DROP COLUMN IF EXISTS `n.a` SETTINGS alter_sync = 2;
+SELECT id, `n.b` FROM t_alter_previous_commands_nested;
+CHECK TABLE t_alter_previous_commands_nested SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_alter_previous_commands_nested;
+
+CREATE TABLE t_alter_previous_commands_nested (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_nested DROP COLUMN `n.a`, ADD COLUMN `n.a` Array(UInt32), CLEAR COLUMN `n.a` SETTINGS alter_sync = 2;
+SELECT id, `n.a`, `n.b` FROM t_alter_previous_commands_nested;
+CHECK TABLE t_alter_previous_commands_nested SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_alter_previous_commands_nested;

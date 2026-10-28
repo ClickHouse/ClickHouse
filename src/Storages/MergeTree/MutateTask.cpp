@@ -1014,6 +1014,7 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(*command);
             else
                 for_file_renames.push_back({.type = MutationCommand::Type::DROP_COLUMN, .column_name = name});
+            part_columns.remove(name);
         };
         const bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets];
 
@@ -1087,8 +1088,7 @@ static void splitAndModifyMutationCommands(
                 {
                     drop_stored_column(command.column_name, &command);
                 }
-                else if (command.type != MutationCommand::Type::RENAME_COLUMN
-                         || !dropped_in_batch.contains(get_stored_name(command.column_name)))
+                else
                 {
                     if (command.type == MutationCommand::Type::RENAME_COLUMN)
                     {
