@@ -28,6 +28,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
+#include <base/getThreadId.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
@@ -327,10 +328,14 @@ void LocalConnection::sendQuery(
     if (is_cancelled_callback)
     {
         query_context->setInteractiveCancelCallback(
-            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+            [this,
+             check_cancelled = is_cancelled_callback,
+             progress_callback = process_progress_callback,
+             client_thread_id = getThreadId()]() -> bool
         {
             /// Send accumulated progress to the client so the progress bar updates during analysis.
-            if (progress_callback)
+            /// Only from the client's thread: the client is not thread-safe, and this callback also runs on pipeline threads.
+            if (progress_callback && getThreadId() == client_thread_id)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
                 if (progress.read_rows || progress.read_bytes)
