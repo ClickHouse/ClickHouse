@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -10,6 +11,7 @@ namespace DB
 {
 
 class ActionsDAG;
+class ReadFromMergeTree;
 
 struct IDescriptionHolder
 {
@@ -96,6 +98,13 @@ enum class FilterResult
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
 
+/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
+/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
+[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
+
+/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
+
 struct NoOp
 {
 };
@@ -115,6 +124,10 @@ struct NoOp
 /// instrumented in one plan and matched in the other. It is narrower than "contributes nothing to the
 /// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
 bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
+
+/// Whether a MergeTree read allows a second, row-addressed read of the rows it selected, which lazy materialization
+/// needs. Shared by both lazy materialization paths, so that they agree on it.
+bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading);
 
 template <typename Func1, typename Func2 = NoOp>
 void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})

@@ -6,7 +6,9 @@ import shutil
 import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet
+from ci.jobs.scripts import clang_tidy_changed_files
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts import relocation_headroom
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -41,7 +43,7 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.ARM_DARWIN: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/darwin/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_AR:FILEPATH=/cctools/bin/aarch64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/aarch64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=/cctools/bin/aarch64-apple-darwin-ranlib -DLINKER_NAME=/cctools/bin/aarch64-apple-darwin-ld",
     BuildTypes.ARM_V80COMPAT: f"cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DNO_ARMV81_OR_HIGHER=1 -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_FREEBSD: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/freebsd/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
-    BuildTypes.AMD_ILLUMOS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=0 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=0 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/sunos/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
+    BuildTypes.AMD_ILLUMOS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DSPLIT_DEBUG_SYMBOLS=ON -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/sunos/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.PPC64LE: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-ppc64le.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_COMPAT: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DX86_ARCH_LEVEL=1",
     BuildTypes.AMD_MUSL: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64-musl.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
@@ -55,17 +57,36 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.ARM_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=1",  # TODO: fix build with -DSANITIZE_COVERAGE=1
 }
 
-# sccache-warmup builds (MasterCI only) reuse the cmake configuration of the
-# matching release build verbatim - the rest of their special handling (skip
-# the official-build flag, strip debug symbols like a PR build, compile without
-# linking, do not package) is keyed off PR_CACHE_WARMUP_BUILD_TYPES below.
-PR_CACHE_WARMUP_TO_RELEASE = {
-    BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP: BuildTypes.AMD_RELEASE,
-    BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP: BuildTypes.ARM_RELEASE,
+# The performance reference builds (MasterCI only) build master exactly like a
+# PR build of their release build type: the same cmake configuration, the PR
+# options of `flavor_cmake_options` and the same PGO/BOLT. They compile every
+# object, link only the server binary and are not packaged.
+PERFORMANCE_REFERENCE_TO_RELEASE = {
+    BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.AMD_RELEASE,
+    BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE: BuildTypes.ARM_RELEASE,
 }
-PR_CACHE_WARMUP_BUILD_TYPES = set(PR_CACHE_WARMUP_TO_RELEASE)
-for _warmup_type, _release_type in PR_CACHE_WARMUP_TO_RELEASE.items():
-    BUILD_TYPE_TO_CMAKE[_warmup_type] = BUILD_TYPE_TO_CMAKE[_release_type]
+for _reference_type, _release_type in PERFORMANCE_REFERENCE_TO_RELEASE.items():
+    BUILD_TYPE_TO_CMAKE[_reference_type] = BUILD_TYPE_TO_CMAKE[_release_type]
+
+
+def flavor_cmake_options(cmake_cmd, official, is_private):
+    """The cmake options in which an official build differs from a PR build of the same build type."""
+    if official:
+        return " -DCLICKHOUSE_OFFICIAL_BUILD=1"
+    # Without debug info the ThinLTO link is much faster. Private PR builds keep
+    # it to allow deploying to staging.
+    if not is_private and "ENABLE_THINLTO=1" in cmake_cmd:
+        return " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
+    return ""
+
+# The limited clang-tidy check (merge queue) uses the full tidy build's cmake
+# configuration verbatim - that is what makes the diagnostics it reports the same
+# ones the full check would report. It differs only in what happens in place of
+# the build: see the `ARM_TIDY_CHANGED_FILES` branch below and
+# ci/jobs/scripts/clang_tidy_changed_files.py.
+BUILD_TYPE_TO_CMAKE[BuildTypes.ARM_TIDY_CHANGED_FILES] = BUILD_TYPE_TO_CMAKE[
+    BuildTypes.ARM_TIDY
+]
 
 # Only the release builds are packaged: their packages are what gets published, and what
 # the `Install packages` and `Compatibility check` jobs install. The debug, sanitizer and
@@ -270,7 +291,7 @@ def main():
     ), f"--build_type option is invalid [{build_type}]"
     assert not args.build_examples or build_type in (
         BuildTypes.ARM_RELEASE,
-        BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+        BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE,
     ), "--build-examples is only supported for ARM release builds"
 
     shard = parse_shard(args.shard) if args.shard else None
@@ -284,44 +305,30 @@ def main():
         cmake_cmd += " -DENABLE_EXAMPLES=1"
     info = Info()
 
-    # Cache-warmup build (MasterCI): compile with the PR release build's cmake
-    # flags (no official-build flag, debug symbols stripped, no PGO/BOLT) so the
-    # object files it compiles share sccache keys with PR builds, while keeping
-    # the shared sccache read-write (master, pr_number == 0).
-    cache_warmup = build_type in PR_CACHE_WARMUP_BUILD_TYPES
+    # A performance reference build is a master build, so it writes to the shared
+    # sccache (pr_number == 0) and PR builds get cache hits from it.
+    reference_build = build_type in PERFORMANCE_REFERENCE_TO_RELEASE
     assert not (
-        cache_warmup and info.pr_number > 0
-    ), "sccache-warmup builds are only meant to run on master/release (pr_number == 0)"
+        reference_build and info.pr_number > 0
+    ), "performance reference builds are only meant to run on master/release (pr_number == 0)"
 
     setup_build_caches_env(info)
-
-    # The cache-warmup build must match PR compiler flags, so it skips the
-    # official-build flag (PR builds do not set it).
-    if info.pr_number == 0 and not cache_warmup:
-        cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
 
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
+    cmake_cmd += flavor_cmake_options(
+        cmake_cmd,
+        official=info.pr_number == 0 and not reference_build,
+        is_private=is_private,
+    )
 
-    # When building with LTO removing debug symbols makes linking much faster
-    # In PRs we disable them to save time and space, but keep them for official builds (master, pr_number = 0)
-    # We keep them in private to allow deploying to staging from PRs
-    # The cache-warmup build mirrors the PR build, so it disables them too.
-    if (
-        not is_private
-        and (info.pr_number != 0 or cache_warmup)
-        and "ENABLE_THINLTO=1" in cmake_cmd
-    ):
-        cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
-
-    # PGO/BOLT profile integration for release builds. The sccache-warmup builds
-    # are deliberately excluded: they exist only to populate the shared compiler
-    # cache, and PGO/BOLT belong to the real release builds.
+    # PGO/BOLT profile integration for release builds.
     pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
     bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
-    use_pgo = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
-    use_bolt = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+    release_type = PERFORMANCE_REFERENCE_TO_RELEASE.get(build_type, build_type)
+    use_pgo = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = release_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
 
     # PGO is best-effort: keep a PGO-free command ready so we can retry without
     # profile-guided optimization if cmake/build fails with a stale/incompatible
@@ -487,12 +494,31 @@ def main():
     # Activate FIPS-permissive config for OpenSSL
     os.environ["OPENSSL_CONF"] = "/etc/ssl/openssl.cnf"
 
+    # The limited clang-tidy check has no build of its own: instead of compiling
+    # the tree it generates only the sources the affected translation units are
+    # built against and runs clang-tidy on those translation units. Everything
+    # after this point - packaging, the unit tests, the profile upload - belongs
+    # to a real build, so the job is completed here. Its verdict depends on the
+    # change's set of files as well as on the checkout, and the cache digest
+    # captures only the latter: two changes can produce the same merged tree with
+    # different files to analyze and report, so the result is not cached.
+    if build_type == BuildTypes.ARM_TIDY_CHANGED_FILES:
+        if res and JobStages.BUILD in stages:
+            results.append(
+                clang_tidy_changed_files.run(
+                    changed_files=clang_tidy_changed_files.changed_files_from_ci(info),
+                    repo_dir=repo_path_normalized,
+                    build_dir=build_dir_normalized,
+                    temp_dir=temp_dir,
+                )
+            )
+        Result.create_from(results=results).complete_job(do_not_cache=True)
+        return
+
     files = []
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
-        elif build_type == BuildTypes.AMD_ILLUMOS:
-            targets = "clickhouse"
         elif build_type == BuildTypes.WASM64:
             # The multicall `clickhouse` binary builds and links for WebAssembly, and
             # `clickhouse local` executes queries under Node.js >= 24 - the smoke test
@@ -502,6 +528,8 @@ def main():
             # target keeps the whole tree - dbms, functions, programs and the `OS_WASM`
             # platform arms - building for this target.
             targets = "clickhouse"
+        elif reference_build:
+            targets = "clickhouse-self-extracting"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
@@ -514,17 +542,16 @@ def main():
         else:
             targets = "clickhouse-bundle"
 
-        if cache_warmup:
-            # Warm sccache by compiling every translation unit but skip linking
-            # the final binaries. sccache caches per-TU compilation; the
-            # ThinLTO/PGO link step produces nothing cacheable yet dominates a
-            # release build's wall time, so there is no reason to run it here.
-            # Build every object-file target ninja knows about; ninja pulls in
-            # the generated headers each object depends on. xargs batches the
-            # list to stay within the command-line length limit.
+        if reference_build:
+            # Warm sccache by compiling every object-file target ninja knows
+            # about; ninja pulls in the generated headers each object depends
+            # on. xargs batches the list to stay within the command-line length
+            # limit. Then link only the server binary, the reference of the PR
+            # performance comparison (ci/jobs/performance_tests.py).
             build_command = (
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
+                f" && command time -v ninja {targets}"
             )
         elif shard:
             build_command = lambda: build_tidy_shard(*shard)
@@ -537,6 +564,7 @@ def main():
                 name="Build ClickHouse",
                 command=build_command,
                 workdir=build_dir_normalized,
+                info_extractor=Result.cpp_build_info_extractor,
             )
         )
 
@@ -556,8 +584,9 @@ def main():
             if retry_cmake.is_ok():
                 retry_build = Result.from_commands_run(
                     name="Build ClickHouse (retry without PGO)",
-                    command=f"command time -v ninja {targets}",
+                    command=build_command,
                     workdir=build_dir_normalized,
+                    info_extractor=Result.cpp_build_info_extractor,
                 )
                 if retry_build.is_ok():
                     retry_build.set_info(
@@ -573,7 +602,7 @@ def main():
 
         run_shell_with_output("sccache stats", "sccache --show-stats")
         # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
-        if not cache_warmup and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
+        if not reference_build and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
             warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
@@ -639,6 +668,9 @@ def main():
                     status=Result.Status.OK,
                     info="BOLT post-processing failed (best-effort), using PGO-only binary",
                 )
+
+        if res and build_type == BuildTypes.AMD_MSAN:
+            results.append(relocation_headroom.check(build_dir, info))
 
         # The point of `Build (wasm64)` is a `clickhouse local` that runs, not one that
         # merely links: execute queries under Node.js, covering the advertised surface -
@@ -714,7 +746,13 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(results=results, files=files).complete_job()
+    # A failed relocation headroom check fails the job without dropping the jobs that use its artifacts.
+    headroom_only = any(r.name == relocation_headroom.NAME and not r.is_ok() for r in results) and all(
+        r.is_ok() for r in results if r.name != relocation_headroom.NAME
+    )
+    Result.create_from(results=results, files=files).complete_job(
+        do_not_block_pipeline_on_failure=headroom_only, do_not_cache=any(r.do_not_cache() for r in results)
+    )
 
 
 if __name__ == "__main__":

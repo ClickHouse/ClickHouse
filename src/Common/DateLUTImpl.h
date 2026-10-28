@@ -440,23 +440,6 @@ private:
         return lut[toLUTIndex(v)];
     }
 
-    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
-    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
-    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
-    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
-    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
-    template <typename DateOrTime, typename Divisor>
-    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
-    {
-        if (value >= 0) [[likely]]
-            return static_cast<DateOrTime>(value / divisor * divisor);
-
-        const Int64 v = static_cast<Int64>(value);
-        const Int64 d = static_cast<Int64>(divisor);
-        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
-        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
-    }
-
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
     /// undefined behavior). Interval rounding reconstructs the result as `date + offset`; for arguments far
     /// outside any valid date range this sum can step just past the type boundary even though both operands
@@ -513,6 +496,23 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    /// Round `value` down to a multiple of `divisor` (towards negative infinity).
+    /// Integer division truncates towards zero, so for negative values we shift the result one step down.
+    /// The computation goes through the remainder to avoid signed overflow when `value` is close to the
+    /// minimum of the type - the natural expression `value + 1 - divisor` overflows there. Such values are
+    /// far outside any valid date range, so on the boundary we saturate to the nearest representable multiple.
+    template <typename DateOrTime, typename Divisor>
+    static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
+    {
+        if (value >= 0) [[likely]]
+            return static_cast<DateOrTime>(value / divisor * divisor);
+
+        const Int64 v = static_cast<Int64>(value);
+        const Int64 d = static_cast<Int64>(divisor);
+        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
+        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
+    }
 
     /// Round a negative `value` down to a multiple of `divisor` (towards negative infinity), given the
     /// already computed `rounded_towards_zero` == `value / divisor * divisor` (truncating division).
@@ -2068,26 +2068,18 @@ public:
 
     TimeComponents toTimeComponents(Time t) const
     {
+        constexpr Time max_time = 1000 * 3600 - 1;
+
         TimeComponents res;
+        res.is_negative = t < 0;
 
-        bool is_negative = false;
-
-        if (unlikely(t < 0))
-        {
-            is_negative = true;
+        t = std::clamp(t, -max_time, max_time);
+        if (res.is_negative)
             t = -t;
-        }
 
-        // Cap at 3599999 seconds (999:59:59)
-        if (unlikely(t > 3599999))
-            t = 3599999;
-
-        res.second = t % 60;
-        res.minute = t / 60 % 60;
         res.hour = t / 3600;
-
-        res.is_negative = is_negative;
-
+        res.minute = t / 60 % 60;
+        res.second = t % 60;
         return res;
     }
 
@@ -2128,6 +2120,10 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     NO_SANITIZE_UNDEFINED Time addDays(DateTime t, Int64 delta) const
     {
+        /// The wall-clock round trip below maps an instant in a repeated hour to the hour's first occurrence.
+        if (delta == 0)
+            return t;
+
         /// A `DateTime` (`UInt32`) cannot denote a value outside the lookup table, so only the wide
         /// timestamp types take the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
@@ -2208,6 +2204,10 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     Time NO_SANITIZE_UNDEFINED addMonths(DateTime t, Int64 delta) const
     {
+        /// See addDays.
+        if (delta == 0)
+            return t;
+
         /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
@@ -2302,6 +2302,10 @@ public:
     requires std::is_same_v<DateTime, UInt32> || std::is_same_v<DateTime, Int64> || std::is_same_v<DateTime, time_t>
     Time addYears(DateTime t, Int64 delta) const
     {
+        /// See addDays.
+        if (delta == 0)
+            return t;
+
         /// DateTime (UInt32) cannot represent values outside of the lookup table, so only DateTime64 takes the escape path.
         if constexpr (!std::is_same_v<DateTime, UInt32>)
             if (unlikely(isOutOfLUTRange(static_cast<Time>(t))))
