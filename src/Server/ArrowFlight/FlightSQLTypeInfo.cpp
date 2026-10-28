@@ -1,19 +1,10 @@
 #include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 
-#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
-
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 
 #include <arrow/array/builder_binary.h>
-#include <arrow/flight/sql/column_metadata.h>
 
 #include <array>
-#include <string>
 
 
 namespace DB::ArrowFlight
@@ -46,8 +37,7 @@ constexpr int32_t SQL_SEARCHABLE_FULL = 3;
 /// omitted because Arrow exports their in-memory bytes as fixed-size binary.
 /// `DateTime` is omitted because Arrow exports it as `uint32`, even with an explicit time zone.
 /// `DateTime64` uses Arrow `timestamp`, but without an explicit time zone its schema can depend on
-/// `session_timezone`. Both families stay outside this catalog and use `CLICKHOUSE:TYPE_NAME`
-/// to preserve the declared type expression, including any explicit time zone.
+/// `session_timezone`. Both families stay outside this catalog.
 /// `String` retains its existing Arrow `Utf8` representation, which requires valid UTF-8 values.
 constexpr std::array<XdbcTypeInfoRow, 17> type_info_rows = {{
     {.type_name = "UUID",
@@ -161,109 +151,11 @@ constexpr std::array<XdbcTypeInfoRow, 17> type_info_rows = {{
      .datetime_subcode = SQL_CODE_DATE},
 }};
 
-DataTypePtr unwrapType(const DataTypePtr & type)
-{
-    auto result = type;
-    while (result->isNullable() || result->lowCardinality())
-    {
-        if (result->isNullable())
-            result = removeNullable(result);
-        else
-            result = removeLowCardinality(result);
-    }
-    return result;
-}
-
-bool usesRegisteredColumnSizeAsPrecision(std::string_view family_name, const XdbcTypeInfoRow & row)
-{
-    return row.numeric || family_name == "Bool" || family_name == "UUID" || family_name == "String" || family_name == "Date"
-        || family_name == "Date32";
-}
-
-std::string getTypeFamilyName(const DataTypePtr & type)
-{
-    if (const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
-    {
-        return getTypeFamilyName(unwrapType(simple_aggregate_function->getArgumentsDataTypes()[0]));
-    }
-
-    /// Custom types such as `Bool` and `IPv4` share an underlying family with another
-    /// ClickHouse type. Keep the custom identity so unsupported custom types do not
-    /// claim the XDBC row of their underlying representation.
-    if (type->hasCustomName())
-        return type->getName();
-    return type->getFamilyName();
-}
-
 }
 
 std::span<const XdbcTypeInfoRow> getXdbcTypeInfoRows()
 {
     return type_info_rows;
-}
-
-const XdbcTypeInfoRow * findXdbcTypeInfo(std::string_view type_name)
-{
-    const XdbcTypeInfoRow * result = nullptr;
-    for (const auto & row : type_info_rows)
-    {
-        if (row.type_name == type_name)
-        {
-            if (result)
-                return nullptr;
-            result = &row;
-        }
-    }
-    return result;
-}
-
-arrow::Result<std::shared_ptr<arrow::Schema>>
-addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWithTypeAndName & header)
-{
-    if (schema->num_fields() != static_cast<int>(header.size()))
-    {
-        return arrow::Status::Invalid(
-            "Cannot add Flight SQL type metadata: Arrow schema has ",
-            schema->num_fields(),
-            " fields, but ClickHouse header has ",
-            header.size(),
-            " columns");
-    }
-
-    arrow::FieldVector fields;
-    fields.reserve(header.size());
-
-    for (size_t i = 0; i < header.size(); ++i)
-    {
-        const auto & column = header[i];
-        const auto type = unwrapType(column.type);
-        const std::string family_name = getTypeFamilyName(type);
-        const auto * type_info = findXdbcTypeInfo(family_name);
-
-        auto metadata_builder = arrow::flight::sql::ColumnMetadata::Builder();
-        if (type_info)
-            metadata_builder.TypeName(std::string(family_name));
-
-        if (family_name == "Decimal")
-        {
-            metadata_builder.Precision(static_cast<int32_t>(getDecimalPrecision(*type)));
-            metadata_builder.Scale(static_cast<int32_t>(getDecimalScale(*type)));
-        }
-        else if (family_name == "FixedString")
-        {
-            metadata_builder.Precision(static_cast<int32_t>(assert_cast<const DataTypeFixedString &>(*type).getN()));
-        }
-        else if (type_info && usesRegisteredColumnSizeAsPrecision(family_name, *type_info))
-        {
-            metadata_builder.Precision(type_info->column_size);
-        }
-
-        auto metadata = metadata_builder.Build().metadata_map()->Copy();
-        metadata->Append("CLICKHOUSE:TYPE_NAME", column.type->getName());
-        fields.emplace_back(schema->field(static_cast<int>(i))->WithMergedMetadata(metadata));
-    }
-
-    return std::make_shared<arrow::Schema>(std::move(fields), schema->metadata());
 }
 
 }

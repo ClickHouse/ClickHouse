@@ -1,29 +1,29 @@
 #include <Server/ArrowFlight/FlightSQLTypeInfo.h>
 #include <Server/ArrowFlight/commandSelector.h>
 
+#include <Interpreters/Context.h>
+#include <Core/Block.h>
+#include <Core/Settings.h>
+#include <Common/config_version.h>
+#include <Common/quoteString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/Block.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
-#include <Common/config_version.h>
-#include <Common/quoteString.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 
+#include <arrow/ipc/writer.h>
 #include <arrow/array/builder_binary.h>
 #include <arrow/array/builder_nested.h>
 #include <arrow/array/builder_primitive.h>
 #include <arrow/array/builder_union.h>
 #include <arrow/flight/sql/protocol_internal.h>
 #include <arrow/flight/sql/server.h>
-#include <arrow/ipc/writer.h>
 
 #include <string_view>
 
@@ -247,7 +247,7 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
             else
                 ARROW_RETURN_NOT_OK(literal_suffix_builder.AppendNull());
 
-            // NULL when the type has no parameters; otherwise the list of parameter keywords.
+            /// `NULL` when the type has no parameters; otherwise the list of parameter keywords.
             if (row.create_params.empty())
             {
                 ARROW_RETURN_NOT_OK(create_params_builder.AppendNull());
@@ -291,8 +291,8 @@ commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInf
             else
                 ARROW_RETURN_NOT_OK(maximum_scale_builder.AppendNull());
 
-            // Datetime rows report the generic SQL_DATETIME in sql_data_type and
-            // the concise type in datetime_subcode; other rows repeat data_type.
+            /// Datetime rows report `SQL_DATETIME` in `sql_data_type` and the date subcode
+            /// in `datetime_subcode`; other rows repeat `data_type`.
             if (row.datetime_subcode >= 0)
             {
                 ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(XDBC_SQL_DATETIME));
@@ -710,7 +710,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
         ")"
         + where_expression;
 
-    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema, const ColumnsWithTypeAndName &)
+    auto schema_modifier = [](std::shared_ptr<arrow::Schema> table_schema)
     {
         const auto & table_schema_field = table_schema->field(4);
         return table_schema->SetField(4, std::make_shared<arrow::Field>(table_schema_field->name(), arrow::binary(), table_schema_field->nullable()));
@@ -741,11 +741,6 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
                 table_columns.emplace_back(nullptr, data_type, String(name));
             }
             auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(table_columns, "Arrow", nullptr, conversion_settings);
-            auto schema_with_metadata = addFlightSQLTypeMetadata(std::move(table_schema), table_columns);
-            if (!schema_with_metadata.ok())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Failed to add Flight SQL type metadata: {}", schema_with_metadata.status().ToString());
-            table_schema = std::move(schema_with_metadata).ValueUnsafe();
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());
@@ -773,7 +768,7 @@ static CommandSelectorResult commandStatementQuery(const arrow::flight::protocol
         return arrow::Status::NotImplemented("CommandStatementQuery: transaction_id is not supported");
     if (command.query().empty())
         return arrow::Status::Invalid("CommandStatementQuery: query must not be empty");
-    return SQLSet{command.query(), addFlightSQLTypeMetadata, {}};
+    return SQLSet{command.query(), {}, {}};
 }
 
 static CommandSelectorResult commandStatementUpdate(const arrow::flight::protocol::sql::CommandStatementUpdate & command)
@@ -908,7 +903,7 @@ static std::optional<CommandSelectorResult> commandSelectorImpl(const google::pr
             return arrow::Status::SerializationError("Deserialization of sql::CommandPreparedStatementQuery failed.");
         if (command.prepared_statement_handle().empty())
             return arrow::Status::Invalid("CommandPreparedStatementQuery: prepared_statement_handle must not be empty");
-        return SQLSet{command.prepared_statement_handle(), addFlightSQLTypeMetadata, {}};
+        return SQLSet{command.prepared_statement_handle(), {}, {}};
     }
     else if (any_msg.Is<arrow::flight::protocol::sql::CommandPreparedStatementUpdate>())
     {

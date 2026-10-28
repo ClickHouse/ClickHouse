@@ -427,18 +427,6 @@ Such a column is otherwise indistinguishable from a genuine `Utf8`/`Binary` one,
 
 The older boolean `output_format_arrow_unsupported_types_as_binary` still works and is equivalent to `throw` when `0` and `binary` when `1`. It is only consulted while `output_format_arrow_unsupported_types` is left at its default.
 
-Flight SQL statement and prepared-statement results include column metadata that preserves the ClickHouse type identity. The schemas embedded by `CommandGetTables` when `include_schema=true` contain the same metadata:
-
-- `ARROW:FLIGHT:SQL:TYPE_NAME` contains the stable ClickHouse type family registered by `CommandGetXdbcTypeInfo`, such as `Date32` or `Decimal`. Top-level `Nullable` and `LowCardinality` wrappers are omitted. Enums expose numeric codes and wide integers expose fixed-size binary values, so `Enum8`, `Enum16`, `Int128`, `UInt128`, `Int256`, and `UInt256` only use `CLICKHOUSE:TYPE_NAME`. `DateTime` and `DateTime64` are also excluded from the standard type catalog and do not set this key. `DateTime` is encoded as Arrow `uint32`, even with an explicit time zone. `DateTime64` uses Arrow `timestamp`; without an explicit time zone, its schema can depend on `session_timezone`.
-- `CLICKHOUSE:TYPE_NAME` contains the declared ClickHouse type expression, including wrappers, parameters, enum labels, and explicitly specified time zones. It does not necessarily include the effective time zone used by the session.
-- `ARROW:FLIGHT:SQL:PRECISION` and `ARROW:FLIGHT:SQL:SCALE` are included when they can be determined exactly from the ClickHouse type; `DateTime` and `DateTime64` omit both.
-
-`String` remains registered as `SQL_VARCHAR` and retains its original bytes in Arrow `Utf8` arrays. This representation supports valid UTF-8; arbitrary binary `String` values may be rejected by clients that validate UTF-8. The type metadata does not change this existing limitation.
-
-Adding metadata does not itself change the Arrow physical array type. For example, `Date` and `Date32` are both still encoded as Arrow `date32`, while their `ARROW:FLIGHT:SQL:TYPE_NAME` values distinguish them.
-
-For `SimpleAggregateFunction(..., Bool)`, Flight output changes from Arrow `uint8` to Arrow `bool` so that the schema and data consistently represent `Bool`. Clients that previously expected integer arrays for this type must accept boolean arrays.
-
 ## Compatibility {#compatibility}
 
 The Arrow Flight interface is compatible with any client or tool that supports the Arrow Flight or Arrow Flight SQL protocol, including:

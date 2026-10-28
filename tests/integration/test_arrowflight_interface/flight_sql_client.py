@@ -474,7 +474,7 @@ class FlightSQLClient:
         return self.client.get_flight_info(flight_descriptor(cmd), options)
 
     def get_xdbc_type_info(self, data_type: Optional[int] = None) -> flight.FlightInfo:
-        """Retrieve XDBC/ODBC type info via CommandGetXdbcTypeInfo."""
+        """Retrieve XDBC/ODBC type info via `CommandGetXdbcTypeInfo`."""
         cmd = CommandGetXdbcTypeInfo()
         if data_type is not None:
             cmd.data_type = data_type
@@ -482,7 +482,7 @@ class FlightSQLClient:
         return self.client.get_flight_info(flight_descriptor(cmd), options)
 
     def get_xdbc_type_info_schema(self, data_type: Optional[int] = None) -> flight.SchemaResult:
-        """Retrieve the CommandGetXdbcTypeInfo result schema."""
+        """Retrieve the `CommandGetXdbcTypeInfo` result schema."""
         cmd = CommandGetXdbcTypeInfo()
         if data_type is not None:
             cmd.data_type = data_type
@@ -494,18 +494,6 @@ class FlightSQLClient:
         cmd = CommandStatementQuery(query=query)
         options = self._flight_call_options()
         return self.client.get_schema(flight_descriptor(cmd), options)
-
-    def get_prepared_statement_schema(self, handle: bytes) -> flight.SchemaResult:
-        """Retrieve a prepared statement result schema via GetSchema."""
-        cmd = CommandPreparedStatementQuery(prepared_statement_handle=handle)
-        options = self._flight_call_options()
-        return self.client.get_schema(flight_descriptor(cmd), options)
-
-    def get_prepared_statement_flight_info(self, handle: bytes) -> flight.FlightInfo:
-        """Execute a prepared statement and return its FlightInfo."""
-        cmd = CommandPreparedStatementQuery(prepared_statement_handle=handle)
-        options = self._flight_call_options()
-        return self.client.get_flight_info(flight_descriptor(cmd), options)
 
     def prepare(self, query: str) -> "PreparedStatement":
         """Create a prepared statement via the CreatePreparedStatement action."""
