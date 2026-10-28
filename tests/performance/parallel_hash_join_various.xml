@@ -122,6 +122,13 @@
         FORMAT Null
     </query>
 
+    <!-- The same with dense keys. -->
+    <query tag='left_large_right_dense'>
+        SELECT sum(r.v) FROM (SELECT number AS k FROM numbers_mt(24000000)) AS l
+        LEFT JOIN (SELECT number AS k, number AS v FROM numbers_mt(12000000)) AS r ON l.k = r.k
+        FORMAT Null
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS phj_right_nullable</drop_query>
     <drop_query>DROP TABLE IF EXISTS phj_left</drop_query>
     <drop_query>DROP TABLE IF EXISTS phj_asof_left</drop_query>
