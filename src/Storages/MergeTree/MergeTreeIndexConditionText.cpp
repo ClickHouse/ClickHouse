@@ -9,6 +9,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Common/likePatternToRegexp.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -1239,6 +1240,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
+    /// The per-token pattern functions take the tokenizer of the index on their input, so they must find an index on `m['key']`
+    /// also after `optimize_functions_to_subcolumns` makes `m.key_<key>` of it. Otherwise that setting changes their result.
+    if (!has_index_column && isPerTokenPatternFunction(function_name))
+        has_index_column = hasIndexForMapElementSubcolumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
@@ -2013,6 +2018,21 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
+/// Whether the value has no tokens with any tokenizer: `forEachToken` finds none in an empty string.
+static bool hasNoTokensWithAnyTokenizer(const Field & value)
+{
+    if (value.isNull())
+        return true;
+
+    if (value.getType() == Field::Types::String)
+        return value.safeGet<String>().empty();
+
+    if (value.getType() == Field::Types::Array)
+        return std::ranges::all_of(value.safeGet<Array>(), [](const Field & element) { return hasNoTokensWithAnyTokenizer(element); });
+
+    return false;
+}
+
 /// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
 /// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
 /// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
@@ -2022,17 +2042,33 @@ static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
     ActionsDAG::IntermediateExecutionResult default_input;
     default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
 
+    /// The query plan may give the per-token pattern functions another tokenizer, which can find a token in the default value.
+    /// So their result is known only if their input has no tokens with any tokenizer.
+    ActionsDAG::NodeRawConstPtrs outputs = subdag.getOutputs();
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.children.size() == 2
+            && MergeTreeIndexConditionText::isPerTokenPatternFunction(node.function_base->getName()))
+            outputs.push_back(node.children.front());
+    }
+
     ColumnsWithTypeAndName result;
     try
     {
-        result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
+        result = ActionsDAG::evaluatePartialResult(default_input, outputs, /*input_rows_count=*/ 1);
     }
     catch (const Exception &)
     {
         return true;
     }
 
-    return !result.front().column || result.front().column->getBool(0);
+    if (!result.front().column || result.front().column->getBool(0))
+        return true;
+
+    return std::ranges::any_of(result.begin() + 1, result.end(), [](const ColumnWithTypeAndName & per_token_function_input)
+    {
+        return !per_token_function_input.column || !hasNoTokensWithAnyTokenizer((*per_token_function_input.column)[0]);
+    });
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
@@ -2328,6 +2364,27 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
     return header.has(fmt::format("mapValues({})", map_column_name));
+}
+
+bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & column_name) const
+{
+    auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns);
+    if (!parsed)
+        return false;
+
+    /// `serializeText` is the identity for a String key, which the index expression names as a quoted literal.
+    /// Same assumption as traverseMapElementKeyNode.
+    const auto & [map_column_name, serialized_key] = *parsed;
+    if (hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, quoteString(serialized_key))))
+        return true;
+
+    /// An integer key is named as a number literal, e.g. `arrayElement(m, 1)` for `m[1]`.
+    std::string_view digits = serialized_key;
+    if (digits.starts_with('-'))
+        digits.remove_prefix(1);
+    if (digits.empty() || !std::ranges::all_of(digits, [](char c) { return isNumericASCII(c); }))
+        return false;
+    return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, serialized_key));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const

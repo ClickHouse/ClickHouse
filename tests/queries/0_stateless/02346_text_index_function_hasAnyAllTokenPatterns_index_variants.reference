@@ -158,3 +158,67 @@ direct read	1	1	1	1
 0
 56
 56
+-- an index on JSONAllPaths(j) or mapKeys(m) next to an index on the element: the functions use the tokenizer of the element index
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	16
+JSON	0
+JSON	0
+JSON	16
+JSON	16
+JSON	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	0
+Map	0
+Map	16
+Map	16
+Map	16
+-- a missing map key or JSON path reads the default value, where the tokenizer of the element index can find a token
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	8
+FixedString	8
+FixedString	8
+FixedString	8
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	64
+JSON FixedString	8
+JSON FixedString	8
+JSON FixedString	8
+-- a map element read as the subcolumn m.key_k: the functions use the tokenizer of the index on the element
+Map	16
+Map	16
+Map	16
+Map	16
+Map	16
+Map	0
+Map	0
+Map	16
+Map	16
+Map	16
+Map	16
+FixedString	64
+FixedString	64
+FixedString	64
+FixedString	8
+FixedString	8
+FixedString	8
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+Int64 key	16
+Int64 key	16
+Int64 key	16

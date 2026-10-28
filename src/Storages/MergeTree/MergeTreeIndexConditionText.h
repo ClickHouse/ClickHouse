@@ -191,6 +191,10 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
+    /// Returns true if the column is the subcolumn `m.key_<key>`, which `optimize_functions_to_subcolumns`
+    /// makes of `m['key']`, and the index is built on `m['key']`.
+    bool hasIndexForMapElementSubcolumn(const String & column_name) const;
+
     /// Returns the constant key of `m['key']` (`arrayElement` or `m.key_<key>` subcolumn) on this
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
