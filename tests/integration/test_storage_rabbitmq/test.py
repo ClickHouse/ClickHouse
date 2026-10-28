@@ -11,6 +11,7 @@ from random import randrange
 
 import pika
 import pytest
+import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -4028,7 +4029,13 @@ def test_rabbitmq_reconnect_drops_stale_deliveries(rabbitmq_cluster, db, unique)
     while view_rows() < 5 * block_size:
         assert time.monotonic() < deadline, "consumption did not start"
         time.sleep(0.1)
-    rabbitmqctl("close_all_connections", "test")
+    # Through the management API: a new rabbitmqctl process occasionally never returns.
+    requests.delete(
+        f"http://{rabbitmq_cluster.rabbitmq_ip}:{rabbitmq_cluster.rabbitmq_management_port}/api/connections/username/root",
+        auth=("root", "clickhouse"),
+        headers={"X-Reason": "test"},
+        timeout=30,
+    ).raise_for_status()
     assert view_rows() < messages_num // 2, "the backlog was consumed before the connection dropped"
     instance.wait_for_log_line(f"\\({db}.rabbitmq\\): Connection restored")
 
