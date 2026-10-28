@@ -241,15 +241,54 @@ TEST(AzureBoundedRead, ExactResponseIsNotReopened)
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0}));
 }
 
-/// An unbounded read keeps its behaviour: the end of the response is the end of the file.
-TEST(AzureBoundedRead, UnboundedReadEndsWithTheResponse)
+/// A read without a right bound ends at the size of the blob advertised in `Content-Range`, not at
+/// the end of the first response: capped responses are reassembled as for a bounded read.
+TEST(AzureUnboundedRead, CappedResponsesAreReassembled)
 {
     auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 100, /* advertised_size */ 100, /* max_response_size */ 40);
     auto buffer = makeBuffer(endpoint, /* buffer_size */ 64, /* max_read_retries */ 4);
 
+    const size_t errors_before = requestErrors();
+
     std::string data;
     ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
-    ASSERT_EQ(data.size(), static_cast<size_t>(40));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsFrom(data, 0);
+    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 40, 80}));
+    ASSERT_EQ(requestErrors(), errors_before);
+}
+
+/// The blob ends at 40 bytes while its responses advertise 1000: the read fails instead of
+/// reporting the end of the file at 40.
+TEST(AzureUnboundedRead, TruncatedBlobIsAnError)
+{
+    auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 40, /* advertised_size */ 1000, /* max_response_size */ 40);
+    auto buffer = makeBuffer(endpoint, /* buffer_size */ 64, /* max_read_retries */ 3);
+
+    std::optional<int> error_code;
+    try
+    {
+        std::string data;
+        DB::readStringUntilEOF(data, *buffer);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+    ASSERT_EQ(error_code, std::optional<int>(DB::ErrorCodes::UNEXPECTED_END_OF_FILE));
+    ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0, 40, 40}));
+}
+
+/// A response that delivers the whole blob is not reopened.
+TEST(AzureUnboundedRead, ExactResponseIsNotReopened)
+{
+    auto endpoint = std::make_shared<BlobEndpoint>(/* served_size */ 100, /* advertised_size */ 100, /* max_response_size */ 100);
+    auto buffer = makeBuffer(endpoint, /* buffer_size */ 64, /* max_read_retries */ 4);
+
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsFrom(data, 0);
     ASSERT_EQ(endpoint->requested_offsets, (std::vector<size_t>{0}));
 }
 

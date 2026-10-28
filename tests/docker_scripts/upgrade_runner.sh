@@ -90,17 +90,24 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
+# These helper invocations of `clickhouse-local` only query `system.settings` and friends, so they
+# must not touch the persistent default data directory in the home: a table left there by another
+# invocation, or a concurrent instance holding the directory, would break them. The `--tmp` option
+# asks for a throwaway directory, but it exists only in the new binary - the previously released
+# binary defaults to a temporary directory anyway - so it is added only after the upgrade.
+local_tmp_option=""
+
 # NOTE: we need to run clickhouse-local under script to get settings without any adjustments, like clickhouse-local does in case of stdout is not a tty
 function save_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local $local_tmp_option --implicit-select 0 -q \"select * from system.settings into outfile '$out'\"" --log-out /dev/null
 }
 
 function save_mergetree_settings_clean()
 {
   local out=$1 && shift
-  script -q -c "clickhouse-local --implicit-select 0 -q \"select * from system.merge_tree_settings into outfile '$out'\"" --log-out /dev/null
+  script -q -c "clickhouse-local $local_tmp_option --implicit-select 0 -q \"select * from system.merge_tree_settings into outfile '$out'\"" --log-out /dev/null
 }
 
 # We save the (numeric) version of the old server to compare setting changes between the 2
@@ -109,13 +116,13 @@ function save_mergetree_settings_clean()
 function save_major_version()
 {
   local out=$1 && shift
-  clickhouse-local -q "SELECT a[1]::UInt64 * 100 + a[2]::UInt64 as v FROM (Select splitByChar('.', version()) as a) into outfile '$out'"
+  clickhouse-local $local_tmp_option -q "SELECT a[1]::UInt64 * 100 + a[2]::UInt64 as v FROM (Select splitByChar('.', version()) as a) into outfile '$out'"
 }
 
 save_settings_clean 'old_settings.native'
 save_mergetree_settings_clean 'old_merge_tree_settings.native'
 save_major_version 'old_version.native'
-old_major_version=$(clickhouse-local -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
+old_major_version=$(clickhouse-local $local_tmp_option -q "select a[1] || '.' || a[2] from (select splitByChar('.', version()) as a)")
 
 configure_opts=(
     # Let's enable S3 storage by default
@@ -452,6 +459,10 @@ echo "Drop the row policies that cannot be applied to a table they cover"
 : > /test_output/undropped_row_policy_errors.txt
 row_policy_check_failed=0
 row_policy_drop_failed=0
+# The errors of the server failing to analyze a query: an unknown column, table, database or function, a wrong type or
+# number of arguments or columns, or an invalid constant. A resource limit, a timeout, a lost connection or an error
+# that depends on the reader (access, settings) is none of them.
+analysis_errors='6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675'
 if timeout 1m clickhouse-client --query "
         SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
 then
@@ -460,26 +471,72 @@ then
         # `DESCRIBE` of `view()` only analyzes the query: apart from those in table function arguments, the subqueries
         # of the filter do not run, so the row policies of the tables they read cannot fail this check. Unqualified
         # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
+        # One line per covered table: the check of the filter on it and the same check without the filter.
+        # A parameterized view is not checked: it cannot be read without the values of its parameters.
         if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
-                SELECT format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3});', char(96),
+                WITH format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0}', char(96),
                     replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
-                    replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96)),
-                    p.select_filter)
+                    replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96))) AS table_check
+                SELECT base64Encode(table_check || ' WHERE ' || p.select_filter || ');'), base64Encode(table_check || ');')
                 FROM system.row_policies AS p
                 INNER JOIN system.tables AS t ON t.database = p.database AND (p.table = '' OR t.name = p.table)
-                WHERE p.id = {id:UUID}
-                FORMAT TSVRaw" > /tmp/row_policy_check.sql 2>> /test_output/unchecked_row_policy_errors.txt
+                WHERE p.id = {id:UUID} AND empty(t.parameterized_view_parameters)
+                FORMAT TSVRaw" > /tmp/row_policy_checks.tsv 2>> /test_output/unchecked_row_policy_errors.txt
         then
             row_policy_check_failed=1
             continue
         fi
+        while read -r row_policy_check _
+        do
+            base64 -d <<< "$row_policy_check"
+            echo
+        done < /tmp/row_policy_checks.tsv > /tmp/row_policy_check.sql
         timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
             && continue
-        # Only the server failing to analyze the filter shows that it cannot be applied: an unknown column, table,
-        # database or function, a wrong type or number of arguments or columns, or an invalid constant. A resource
-        # limit, a timeout, a lost connection or an error that depends on the reader (access, settings) does not.
-        if ! grep -qE '^Code: (6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675)\. DB::Exception: Received from ' \
-            /tmp/row_policy_check_errors.txt
+        # The run stops at the first table that fails. When that can be the table's own failure, check the tables one by
+        # one: a table that fails the same way without the filter, because it cannot be analyzed or its files are gone
+        # (107 for Iceberg, 742 for Delta Lake) like those of a data lake table its test deleted, tells nothing about
+        # the filter.
+        if grep -qE "^Code: ($analysis_errors|107|742)\. DB::Exception: Received from " /tmp/row_policy_check_errors.txt
+        then
+            row_policy_verdict=keep
+            row_policy_check_deadline=$((SECONDS + 300))
+            while read -r -u 3 row_policy_check table_check
+            do
+                if [ "$SECONDS" -ge "$row_policy_check_deadline" ]
+                then
+                    echo "The check of the row policy $row_policy_id did not finish in 5 minutes" > /tmp/row_policy_check_errors.txt
+                    row_policy_verdict=fail
+                    break
+                fi
+                base64 -d <<< "$row_policy_check" > /tmp/row_policy_check.sql
+                timeout 1m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
+                    && continue
+                base64 -d <<< "$table_check" > /tmp/table_check.sql
+                if timeout 1m clickhouse-client --queries-file /tmp/table_check.sql > /dev/null 2> /tmp/table_check_errors.txt
+                then
+                    row_policy_verdict=judge
+                    break
+                fi
+                table_check_error=$(grep -m1 -oE "^Code: ($analysis_errors|107|742)\. DB::Exception: Received from " /tmp/table_check_errors.txt ||:)
+                if [ -z "$table_check_error" ] || [ "$table_check_error" != "$(grep -m1 -oE '^Code: [0-9]+\. DB::Exception: Received from ' /tmp/row_policy_check_errors.txt ||:)" ]
+                then
+                    cat /tmp/table_check_errors.txt >> /tmp/row_policy_check_errors.txt
+                    row_policy_verdict=fail
+                    break
+                fi
+                cat /tmp/table_check_errors.txt >> /test_output/unreadable_row_policy_tables.txt
+            done 3< /tmp/row_policy_checks.tsv
+            [ "$row_policy_verdict" != keep ] || continue
+            if [ "$row_policy_verdict" = fail ]
+            then
+                cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
+                row_policy_check_failed=1
+                continue
+            fi
+        fi
+        # Only the server failing to analyze the filter shows that it cannot be applied.
+        if ! grep -qE "^Code: ($analysis_errors)\. DB::Exception: Received from " /tmp/row_policy_check_errors.txt
         then
             cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
             row_policy_check_failed=1
@@ -513,6 +570,7 @@ fi
 [ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
 [ -s /test_output/unchecked_row_policy_errors.txt ] || rm -f /test_output/unchecked_row_policy_errors.txt
 [ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
+[ -s /test_output/unreadable_row_policy_tables.txt ] || rm -f /test_output/unreadable_row_policy_tables.txt
 
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
@@ -527,6 +585,9 @@ fi
 
 # Install and start new server
 install_packages $PACKAGES_DIR
+
+# The new binary supports (and needs) a throwaway data directory for the pure helper queries.
+local_tmp_option="--tmp"
 configure "${configure_opts[@]}" --default-compression-codec "$default_compression_codec"
 upgraded_default_compression_codec=$(read_default_compression_codec)
 if [ "$upgraded_default_compression_codec" != "$default_compression_codec" ]; then
@@ -542,12 +603,12 @@ fi
 # rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
 # so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
 # still caught and must have a settings changes history entry.
-IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+IS_SANITIZED=$(clickhouse-local $local_tmp_option --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
   save_settings_clean 'new_settings.native'
   save_mergetree_settings_clean 'new_merge_tree_settings.native'
-  clickhouse-local -nmq "
+  clickhouse-local $local_tmp_option -nmq "
   CREATE TABLE old_settings AS file('old_settings.native');
   CREATE TABLE old_merge_tree_settings AS file('old_merge_tree_settings.native');
   CREATE TABLE old_version AS file('old_version.native');
@@ -600,7 +661,7 @@ then
   WHERE (name NOT IN (
       SELECT name
       FROM old_settings
-  )) AND (name NOT IN (
+  )) AND alias_for = '' AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (

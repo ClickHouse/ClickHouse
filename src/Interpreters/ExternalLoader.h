@@ -100,6 +100,10 @@ public:
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
 
+    /// Sets whether the objects which are not loaded lazily start loading on their own when they are added to the configuration.
+    /// When disabled, the objects are registered, but loaded only on explicit request.
+    void enableAutomaticLoading(bool enable);
+
     /// Sets whether the objects should be loaded asynchronously, each loading in a new thread (from the thread pool).
     void enableAsyncLoading(bool enable);
 

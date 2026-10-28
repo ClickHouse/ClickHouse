@@ -978,6 +978,12 @@ WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
     AND workflow_name = 'MasterCI'
+    AND new_sha IN (
+        SELECT new_sha FROM perf_test_times_v1
+        WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+                AND toDate('{day}') - INTERVAL 1 WEEK + INTERVAL 1 DAY
+            AND pr_number = 0
+            AND workflow_name = 'MasterCI')
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100
 FORMAT JSONEachRow"""
