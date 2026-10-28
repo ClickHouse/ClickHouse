@@ -22,7 +22,6 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
     parallel_replicas_index_analysis_only_on_coordinator=1, parallel_replicas_for_non_replicated_merge_tree=1,
     max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 -- For runs with the old analyzer
-SET enable_analyzer=1;
 SET max_threads=4;
 -- Don't let the min-bytes gate reject the reads before AutoPR looks at them, and keep every round of
 -- index analysis visible rather than served from the condition cache.
@@ -63,7 +62,7 @@ WITH refused AS
 (
     SELECT DISTINCT query_id
     FROM system.text_log
-    WHERE (event_date >= yesterday()) AND (logger_name = 'optimizeTree')
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (logger_name = 'AutoParallelReplicas')
       AND (message LIKE '%The plan builds a set, its root must be preserved%')
 )
 SELECT log_comment, query_id IN (SELECT query_id FROM refused) AS set_plan_left_alone
@@ -72,6 +71,7 @@ WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTE
   AND (current_database = currentDatabase()) AND startsWith(log_comment, '05218_autopr_set_root_global_in')
   AND (type = 'QueryFinish')
 ORDER BY log_comment
+SETTINGS max_rows_to_read = 0 -- system.text_log can be really big
 FORMAT TSVWithNames;
 
 DROP TABLE t_autopr_set_root_hits;

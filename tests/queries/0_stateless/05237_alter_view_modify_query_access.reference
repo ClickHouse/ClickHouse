@@ -1,0 +1,19 @@
+-- the body of a view that runs as another user can be rewritten only with SET DEFINER on that user
+reads secret     ACCESS_DENIED
+on cluster       ACCESS_DENIED
+reads only src   ACCESS_DENIED
+row policy       ACCESS_DENIED
+after the grant  accepted
+-- a SQL SECURITY NONE body runs unchecked, so rewriting it needs ALLOW SQL SECURITY NONE
+security none    ACCESS_DENIED
+after the grant  accepted
+-- a MODIFY SQL SECURITY in the same statement decides what the body runs as, so the old one
+-- must not be what gets authorized
+take over        accepted
+hand to other    ACCESS_DENIED
+-- a definer named <user>:definer is a real user unless <user> is ephemeral
+real, base grant ACCESS_DENIED
+real, own view   accepted
+cluster no view  UNKNOWN_TABLE on the initiator
+-- no data leaked: none of the denied bodies was stored
+rows, leaked     1	0

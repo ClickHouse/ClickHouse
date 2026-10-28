@@ -4,7 +4,7 @@ reason: 10 marks would be read instead of 2 from the base table
 With p_agg (aggregate projection, hypothetical):
 reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
 With p_where (normal projection, hypothetical):
-reason: EXPLAIN WHATIF does not estimate projections with a WHERE clause yet
+reason: the query WHERE does not imply the projection WHERE
 With p_nocol (normal projection, hypothetical):
 reason: Projection does not contain column v required by the query, so it could only filter the base table\'s parts, which EXPLAIN WHATIF does not estimate yet
 With p_skipidx (normal projection, hypothetical):
@@ -39,7 +39,7 @@ real: from the projection
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
-reason: the same 10 marks would be read, and the query has no ORDER BY to serve
+reason: the same 10 marks would be read, and the projection order serves no ORDER BY
 real: read from the base table
 --- empirical = 0 scans nothing, and reports no marks it does not have ---
 status: applicable
@@ -60,16 +60,16 @@ SYNTAX_ERROR
 status: applicable
 source: applicability_only
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 status: applicable
 source: applicability_only
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 --- the base read exceeding the limit does not produce a verdict either ---
 marks: 5
 rows: 500
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 --- estimating needs SELECT on the projection columns ---
 ACCESS_DENIED
 status: applicable

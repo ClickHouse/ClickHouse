@@ -5,7 +5,6 @@
 -- neither.  Results must match the non-distributed baseline.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
@@ -39,10 +38,10 @@ EXPLAIN PLAN
 SELECT count() FROM (SELECT oj_l.k AS jk FROM oj_l RIGHT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k;
 
 SELECT '-- results match the non-distributed baseline';
-SELECT count() FROM (SELECT oj_l.k AS jk FROM oj_l RIGHT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k;
-SELECT count() FROM (SELECT oj_r.k AS jk FROM oj_l LEFT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k;
-SELECT sum(cnt) FROM (SELECT oj_l.k AS lk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY lk);
-SELECT sum(cnt) FROM (SELECT oj_r.k AS rk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY rk);
+SELECT count() FROM (SELECT oj_l.k AS jk FROM oj_l RIGHT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM (SELECT oj_r.k AS jk FROM oj_l LEFT JOIN oj_r ON oj_l.k = oj_r.k) j JOIN oj_s ON j.jk = oj_s.k SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(cnt) FROM (SELECT oj_l.k AS lk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY lk) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(cnt) FROM (SELECT oj_r.k AS rk, count() AS cnt FROM oj_l FULL JOIN oj_r ON oj_l.k = oj_r.k GROUP BY rk) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE oj_l;
 DROP TABLE oj_r;

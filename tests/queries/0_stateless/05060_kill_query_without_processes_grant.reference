@@ -2,10 +2,10 @@
 rows: 1
 status: waiting
 victim: gone
--- 2. another user's id: no rows, no error, victim untouched
+-- 2. another user's id: no rows, no error, victim untouched, kill_throw_if_noop off
 rows: 0
 victim: 1
--- 3. an id nobody is running: no rows, no error
+-- 3. an id nobody is running: no rows, no error, kill_throw_if_noop off
 rows: 0
 -- 4. every condition other than the one matched shape behaves as before
 ACCESS_DENIED
@@ -20,7 +20,7 @@ victim: gone
 -- 7. KILL QUERY without the SELECT grant, aimed at another user's id
 needs SELECT ON system.processes
 victim: 1
--- 8. a recreated name is a different principal and reaches nothing
+-- 8. a recreated name is a different principal and reaches nothing, kill_throw_if_noop off
 rows: 0
 victim: 1
 -- 9. KILL QUERY without the SELECT grant, aimed at its holder's own id
@@ -42,7 +42,7 @@ victim: gone
 -- 13. a SELECT holder keeps the ordinary path, so its refusal is the ordinary one
 refused: attempts to kill query created by another user
 victim: 1
--- 14. a statement naming its own id skips itself instead of cancelling itself
+-- 14. a statement naming its own id skips itself instead of cancelling itself, kill_throw_if_noop off
 rows: 0
 -- 15. TEST names the match without cancelling it
 rows: 1
@@ -63,3 +63,8 @@ rows: 1
 names: the query still running
 status: finished
 victim: gone
+-- 19. kill_throw_if_noop on (the default) reports the reduced path no-op as an exception
+throws NOTHING_TO_KILL
+victim: 1
+throws NOTHING_TO_KILL
+throws NOTHING_TO_KILL

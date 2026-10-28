@@ -49,8 +49,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -2117,6 +2115,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "SIMILAR",
     "STREAM",
     "UNION",
     "USING",
@@ -2205,7 +2204,24 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            auto * func = lambda->as<ASTFunction>();
+            if (!func || func->name != "lambda")
+            {
+                /// ParserExpression also takes an operator after `lambda(...)`, as in `APPLY lambda(tuple(x), f(x)) > 1`.
+                func = nullptr;
+                pos = opos;
+                ASTPtr name;
+                auto after_name = pos;
+                if (ParserIdentifier().parse(after_name, name, expected) && getIdentifierName(name) == "lambda"
+                    && after_name->type == TokenType::OpeningRoundBracket && ParserFunction().parse(pos, lambda, expected))
+                    func = lambda->as<ASTFunction>();
+
+                /// Only the plain call: a lambda drops parameters, `RESPECT NULLS`/`IGNORE NULLS` and `OVER`.
+                if (func && (func->parameters || func->getNullsAction() != NullsAction::EMPTY || func->isWindowFunction()))
+                    func = nullptr;
+            }
+
+            if (func && func->name == "lambda")
             {
                 if (!isASTLambdaFunction(*func))
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
@@ -3119,14 +3135,11 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserColumnsTransformers::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementColumnsTransformers(StatementFactory & factory)
-{
-    factory.registerStatement("APPLY modifier",
+    documentation["APPLY modifier"] =
     {
         .description = R"DOCS_MD(
 > Allows you to invoke some function for each row returned by an outer table expression of a query.
@@ -3156,9 +3169,9 @@ SELECT <expr> APPLY(<func>) FROM [db.]table_name
 )",
         .parent = "SELECT",
         .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
-    });
+    };
 
-    factory.registerStatement("EXCEPT modifier",
+    documentation["EXCEPT modifier"] =
     {
         .description = R"DOCS_MD(
 > Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
@@ -3189,9 +3202,9 @@ SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_n
 )",
         .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
-    });
+    };
 
-    factory.registerStatement("REPLACE modifier",
+    documentation["REPLACE modifier"] =
     {
         .description = R"DOCS_MD(
 > Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
@@ -3225,7 +3238,9 @@ SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
 )",
         .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
-    });
+    };
+
+    return documentation;
 }
 
 }

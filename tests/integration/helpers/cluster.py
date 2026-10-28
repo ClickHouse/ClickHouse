@@ -23,7 +23,7 @@ import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
-from typing import Any, List, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import requests
 import urllib3
@@ -67,6 +67,8 @@ from .hdfs_api import HDFSApi
 from .config_cluster import (
     dremio_pass,
     dremio_user,
+    elasticsearch_pass,
+    elasticsearch_user,
     minio_access_key,
     minio_secret_key,
     mongo_pass,
@@ -245,6 +247,14 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
 # of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
 # compatibility checks for features that are affected by this experimental feature.
 CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
+
+# Since 26.10 `arrayCount` returns `UInt64` (`UInt32` before, see the
+# `array_count_legacy_uint32_result` compatibility setting). This pre-change
+# version is the baseline for compatibility checks of the `arrayCount` result
+# type (any released pre-`26.10` server works); unlike
+# `CLICKHOUSE_CI_MIN_TESTED_VERSION` it must not advance past the `26.10`
+# boundary, or the checks stop exercising the pre-change coordinator.
+CLICKHOUSE_CI_PRE_ARRAY_COUNT_UINT64_VERSION = "26.7"
 
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
@@ -601,6 +611,31 @@ def get_instances_dir(name):
     return instances_dir_name
 
 
+_CLEARED_PREV_LOGS_DIRS = set()
+
+
+def preserve_docker_log(instances_dir: str, retention_dir: str) -> Optional[str]:
+    """Moves `<instances_dir>/docker.log` to `<retention_dir>/docker.<N>.log`.
+
+    The retained copy is the only record of the previous incarnation's container output
+    and exit codes; `N` increments, so no earlier incarnation is ever overwritten.
+    """
+    src = p.join(instances_dir, "docker.log")
+    if not p.exists(src) or os.path.getsize(src) == 0:
+        return None
+
+    os.makedirs(retention_dir, exist_ok=True)
+    kept = sum(
+        1
+        for f in os.listdir(retention_dir)
+        if f.startswith("docker.") and f.endswith(".log")
+    )
+    dst = p.join(retention_dir, f"docker.{kept + 1}.log")
+    shutil.move(src, dst)
+    logging.debug(f"Preserved {src} as {dst}")
+    return dst
+
+
 def extract_test_name(base_path):
     """Extracts the name of the test based to a path to its test*.py file
     Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
@@ -750,6 +785,9 @@ class ClickHouseCluster:
         self.docker_net_lock = None
 
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
+        self.prev_logs_dir = p.join(
+            self.base_dir, self.instances_dir_name + "-prev-logs"
+        )
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
@@ -800,6 +838,7 @@ class ClickHouseCluster:
         self.base_postgres_cmd = []
         self.base_mongo_cmd = []
         self.base_redis_cmd = []
+        self.base_elasticsearch_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
         self.base_hdfs_cmd = []
@@ -833,6 +872,7 @@ class ClickHouseCluster:
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
+        self.with_elasticsearch = False
         self.with_cassandra = False
         self.with_ldap = False
         self.with_jdbc_bridge = False
@@ -975,6 +1015,10 @@ class ClickHouseCluster:
         self.redis_host = "redis1"
         self._redis_port = 0
 
+        # available when with_elasticsearch == True
+        self.elasticsearch_host = "elasticsearch1"
+        self._elasticsearch_port = 0
+
         # available when with_postgres == True
         self.postgres_host = "postgres1"
         self.postgres_ip = None
@@ -1094,6 +1138,13 @@ class ClickHouseCluster:
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        if self.prev_logs_dir not in _CLEARED_PREV_LOGS_DIRS:
+            # A leftover retention directory belongs to a previous process, so it is
+            # discarded here rather than filed as one of this session's incarnations.
+            _CLEARED_PREV_LOGS_DIRS.add(self.prev_logs_dir)
+            shutil.rmtree(self.prev_logs_dir, ignore_errors=True)
+        elif p.exists(self.instances_dir):
+            preserve_docker_log(self.instances_dir, self.prev_logs_dir)
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
@@ -1218,6 +1269,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def elasticsearch_port(self):
+        if self._elasticsearch_port:
+            return self._elasticsearch_port
+        self._elasticsearch_port = self.port_pool.get_port()
+        return self._elasticsearch_port
 
     @property
     def ldap_external_port(self):
@@ -1853,6 +1911,23 @@ class ClickHouseCluster:
         )
         return self.base_redis_cmd
 
+    def setup_elasticsearch_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_elasticsearch = True
+        env_variables["ELASTICSEARCH_HOST"] = self.elasticsearch_host
+        env_variables["ELASTICSEARCH_EXTERNAL_PORT"] = str(self.elasticsearch_port)
+        env_variables["ELASTICSEARCH_INTERNAL_PORT"] = "9200"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml")]
+        )
+        self.base_elasticsearch_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml"),
+        )
+        return self.base_elasticsearch_cmd
+
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
@@ -2249,6 +2324,7 @@ class ClickHouseCluster:
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
+        with_elasticsearch=False,
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
@@ -2395,6 +2471,7 @@ class ClickHouseCluster:
             or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
+            with_elasticsearch=with_elasticsearch,
             with_minio=with_minio,
             with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
@@ -2617,6 +2694,13 @@ class ClickHouseCluster:
         if with_redis and not self.with_redis:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_elasticsearch and not self.with_elasticsearch:
+            cmds.append(
+                self.setup_elasticsearch_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
@@ -3513,6 +3597,14 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
+    def wait_elasticsearch_to_start(self, timeout=180):
+        password = urllib.parse.quote_plus(elasticsearch_pass)
+        self.wait_for_url(
+            f"http://{elasticsearch_user}:{password}@localhost:{self.elasticsearch_port}"
+            "/_cluster/health?wait_for_status=yellow",
+            timeout=timeout,
+        )
+
     def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
         ip = self.get_instance_ip(host)
         minio_client = Minio(
@@ -3843,6 +3935,7 @@ class ClickHouseCluster:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
+            preserve_docker_log(self.instances_dir, self.prev_logs_dir)
             # Remove and recreate so that create_dir() gets a clean slate.
             # This happens when --dist=each causes module-scoped fixtures to be torn down
             # and re-set-up within the same pytest session (e.g. tests from different modules
@@ -3915,6 +4008,11 @@ class ClickHouseCluster:
                         "Got exception in docker compose up: %s", kwargs["exception"]
                     )
 
+            def compose_up(cmd, **kwargs):
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, cmd, **kwargs
+                )
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
                 logging.debug(
@@ -3925,9 +4023,7 @@ class ClickHouseCluster:
                         shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
-                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
-                )
+                compose_up(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
@@ -4032,9 +4128,7 @@ class ClickHouseCluster:
                                 ),
                             )
 
-                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
-                )
+                compose_up(self.base_zookeeper_cmd + common_opts, env=self.env)
                 self.up_called = True
 
                 self.wait_zookeeper_to_start()
@@ -4270,7 +4364,7 @@ class ClickHouseCluster:
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug("Setup Mongo")
-                run_and_check(self.base_mongo_cmd + common_opts)
+                compose_up(self.base_mongo_cmd + common_opts)
                 self.up_called = True
                 self.wait_mongo_to_start(30)
 
@@ -4285,6 +4379,12 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_redis_cmd + common_opts)
                 self.up_called = True
                 time.sleep(10)
+
+            if self.with_elasticsearch and self.base_elasticsearch_cmd:
+                logging.debug("Setup Elasticsearch")
+                subprocess_check_call(self.base_elasticsearch_cmd + common_opts)
+                self.up_called = True
+                self.wait_elasticsearch_to_start()
 
             if self.with_hive and self.base_hive_cmd:
                 logging.debug("Setup hive")
@@ -4315,7 +4415,7 @@ class ClickHouseCluster:
                     "Trying to create Minio instance by command %s",
                     " ".join(map(str, minio_start_cmd)),
                 )
-                run_and_check(minio_start_cmd)
+                compose_up(minio_start_cmd)
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
@@ -4448,9 +4548,7 @@ class ClickHouseCluster:
             )
             self.up_called = True
 
-            retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
-                run_and_check, clickhouse_start_cmd
-            )
+            compose_up(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
             if self.with_dolor:
@@ -4584,7 +4682,18 @@ class ClickHouseCluster:
                         "Kill command failed during shutdown. {}".format(repr(e))
                     )
                     logging.debug("Trying to kill forcefully")
-                    run_and_check(self.base_cmd + ["kill"])
+
+                    def logging_compose_kill(**kwargs):
+                        if "exception" in kwargs:
+                            logging.info(
+                                "Got exception in docker compose kill: %s", kwargs["exception"]
+                            )
+
+                    # `kill` fails on a container that exits after it is listed as running; a retry lists
+                    # only the containers that are still running.
+                    retry(log_function=logging_compose_kill, retries=3, delay=3, jitter=2)(
+                        run_and_check, self.base_cmd + ["kill"]
+                    )
 
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
@@ -5153,6 +5262,7 @@ class ClickHouseInstance:
         with_secrets,
         with_mongo,
         with_redis,
+        with_elasticsearch,
         with_minio,
         with_remote_database_disk,
         with_azurite,
@@ -5283,6 +5393,7 @@ class ClickHouseInstance:
         )
         self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
+        self.with_elasticsearch = with_elasticsearch
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
@@ -5371,6 +5482,8 @@ class ClickHouseInstance:
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
+        # The value of `seccomp` stripped from the main config for the old version, see `create_dir`.
+        self.seccomp_config_for_latest_version = None
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
@@ -5781,6 +5894,14 @@ class ClickHouseInstance:
 
         return error
 
+    def get_cache_size(self, cache_path) -> int:
+        exec_str = f"find {cache_path}  -mindepth 3 -maxdepth 3 -type f -print0 " + "| xargs --no-run-if-empty --null du -B 1 | cut -f 1 | awk 'BEGIN {s=0} {s+=$1} END {print s}'"
+        return int(self.exec_in_container(
+            (["bash", "-c", exec_str]),
+            privileged=True,
+            user="root",
+        ).rstrip())
+
     def append_hosts(self, name, ip):
         self.exec_in_container(
             (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)]),
@@ -6008,7 +6129,13 @@ class ClickHouseInstance:
                         raise
                     time.sleep(time_to_sleep)
 
-        raise Exception("Cannot start ClickHouse, see additional info in logs")
+        # Every attempt above fails the same way when docker removed the container's interface;
+        # say so, the CI job reports that as an infrastructure error.
+        lost_interface = self.describe_lost_network_interface()
+        raise Exception(
+            (f"{lost_interface} " if lost_interface else "")
+            + "Cannot start ClickHouse, see additional info in logs"
+        )
 
     def stop_clickhouse_client(self, signal="INT"):
         client_pid = self.get_process_pid("clickhouse client")
@@ -6344,6 +6471,11 @@ class ClickHouseInstance:
             ],
             user="root",
         )
+        if self.seccomp_config_for_latest_version is not None:
+            # The old version does not know `seccomp`, see `create_dir`.
+            latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
+            if p.exists(latest_version_seccomp_config_path):
+                os.remove(latest_version_seccomp_config_path)
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
@@ -6355,6 +6487,9 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+
+    def latest_version_seccomp_config_path(self):
+        return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
 
     def restart_with_latest_version(
         self,
@@ -6389,6 +6524,11 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+        if self.seccomp_config_for_latest_version is not None:
+            with open(self.latest_version_seccomp_config_path(), "w") as f:
+                f.write(
+                    f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
+                )
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
@@ -6688,6 +6828,28 @@ class ClickHouseInstance:
             p.join(self.base_config_dir, self.main_config_name),
             p.join(instance_config_dir, self.main_config_name),
         )
+        if self.with_installed_binary:
+            # The main config.xml comes from the current sources, and an older server version refuses
+            # to start on a top-level element it does not know yet, such as `seccomp`. Only the old
+            # version needs it removed: `restart_with_latest_version` puts it back into `config.d`.
+            main_config_path = p.join(instance_config_dir, self.main_config_name)
+            with open(main_config_path, "r") as f:
+                main_config = f.read()
+            if self.main_config_name.endswith(".xml"):
+                seccomp_pattern = r"\n[ \t]*<seccomp>([^<]*)</seccomp>"
+            elif self.main_config_name.endswith((".yaml", ".yml")):
+                # Only a top-level key, without indentation.
+                seccomp_pattern = r"\nseccomp:[ \t]*([^\s#]*)[^\n]*"
+            else:
+                raise Exception(
+                    f"with_installed_binary does not support the main config {self.main_config_name}"
+                )
+            seccomp_match = re.search(seccomp_pattern, main_config)
+            if seccomp_match:
+                self.seccomp_config_for_latest_version = seccomp_match.group(1).strip()
+            main_config = re.sub(seccomp_pattern, "", main_config)
+            with open(main_config_path, "w") as f:
+                f.write(main_config)
         shutil.copyfile(
             p.join(self.base_config_dir, self.users_config_name),
             p.join(instance_config_dir, self.users_config_name),
