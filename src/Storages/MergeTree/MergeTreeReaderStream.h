@@ -86,8 +86,8 @@ public:
     void setBlocksReadSink(CompressedBlockRanges * blocks_read_);
 
     /// Appends the range in the file, [begin, end), of the compressed blocks that hold the data at `position` in the granule
-    /// `mark`: from its mark to the mark of the next position in the file. If the next position starts inside a compressed
-    /// block, which then holds the end of this data too, up to the next mark at a later offset.
+    /// `mark`: from its mark to the next mark in the file. If that one starts inside a compressed block, which then holds
+    /// the end of this data too, up to the next mark at a later offset.
     /// A stream of one column has one position in a granule, a compact part one for each column or substream.
     void addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges);
 
@@ -138,6 +138,8 @@ protected:
 
 private:
     MarkRangesPtr request_map;
+    /// All the marks of the file, sorted, see `addRangeOfPosition`.
+    VectorWithMemoryTracking<MarkInCompressedFile> marks_in_file_order;
 };
 
 /// Class for reading a single column (or index) from file

@@ -8,7 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <algorithm>
-#include <ranges>
+#include <limits>
 #include <utility>
 #include <filesystem>
 
@@ -648,40 +648,28 @@ void MergeTreeReaderStream::addRangeOfPosition(size_t mark, size_t position, Com
         return;
 
     loadMarks();
-    const size_t num_positions = marks_getter->getNumColumns();
-    /// The granules are written one after another, and the positions of a granule in their order.
-    auto next = [&](size_t & current_mark, size_t & current_position)
+    /// The granules of a stripe are written column by column, so the data that follows in the file is found among all the marks.
+    if (marks_in_file_order.empty())
     {
-        if (++current_position == num_positions)
-        {
-            current_position = 0;
-            ++current_mark;
-        }
+        const size_t num_positions = marks_getter->getNumColumns();
+        marks_in_file_order.reserve(marks_count * num_positions);
+        for (size_t i = 0; i < marks_count; ++i)
+            for (size_t j = 0; j < num_positions; ++j)
+                marks_in_file_order.push_back(marks_getter->getMark(i, j));
+        std::sort(marks_in_file_order.begin(), marks_in_file_order.end());
+    }
+
+    auto next_mark_after = [&](const MarkInCompressedFile & after)
+    {
+        auto it = std::upper_bound(marks_in_file_order.begin(), marks_in_file_order.end(), after);
+        return it == marks_in_file_order.end() ? MarkInCompressedFile{file_size, 0} : *it;
     };
 
-    const size_t begin = marks_getter->getMark(mark, position).offset_in_compressed_file;
-    size_t end = file_size;
-    next(mark, position);
-    if (mark < marks_count)
-    {
-        const auto next_mark = marks_getter->getMark(mark, position);
-        end = next_mark.offset_in_compressed_file;
-        /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
-        /// it wrote nothing of its own, like the granules that share a `LowCardinality` dictionary: then the next mark is
-        /// the same, at the start of the block, as in `MergeTreeReaderStreamSingleColumn::getRightOffset`.
-        if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
-        {
-            /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
-            const auto positions = std::views::iota(mark * num_positions + position, marks_count * num_positions);
-            const auto it = std::ranges::partition_point(positions, [&](size_t i)
-            {
-                return marks_getter->getMark(i / num_positions, i % num_positions).offset_in_compressed_file
-                    <= next_mark.offset_in_compressed_file;
-            });
-            end = it == positions.end() ? file_size : marks_getter->getMark(*it / num_positions, *it % num_positions).offset_in_compressed_file;
-        }
-    }
-    ranges.emplace_back(begin, end);
+    const auto begin = marks_getter->getMark(mark, position);
+    auto end = next_mark_after(begin);
+    if (end.offset_in_decompressed_block != 0)
+        end = next_mark_after({end.offset_in_compressed_file, std::numeric_limits<size_t>::max()});
+    ranges.emplace_back(begin.offset_in_compressed_file, end.offset_in_compressed_file);
 }
 
 MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position)
