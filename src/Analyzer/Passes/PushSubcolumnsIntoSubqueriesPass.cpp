@@ -33,10 +33,13 @@
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST.h>
+#include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <algorithm>
 #include <boost/algorithm/string/predicate.hpp>
@@ -50,6 +53,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_push_subcolumns_into_subqueries;
+    extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ErrorCodes
@@ -1107,6 +1114,8 @@ bool isColumnUsedByIndexes(const StorageSnapshotPtr & storage_snapshot, const St
         });
 }
 
+bool functionCarrierReachesIndexedColumn(ColumnNode & column);
+
 QueryTreeNodePtr buildSubcolumnProjectionNode(
     const PushdownGroup & group,
     const QueryTreeNodePtr & inner_node,
@@ -1227,6 +1236,13 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
         /// only by the JSON column owning the path: a bare re-export of the `Dynamic` value by the
         /// deeper subquery has no expression for it at this boundary.
         if (!inner_column->getColumnType()->tryGetSubcolumnType(subcolumn_path))
+            return nullptr;
+
+        /// The `getSubcolumn` function built here replaces the function-form carrier (`length(s)`)
+        /// before the deeper subquery is processed, and the guard of a table column used by an index
+        /// or a projection is checked only there. The carrier must stay literal if it would reach such
+        /// a column through the deeper subqueries, so the guard is applied to the whole chain upfront.
+        if (via_function_carrier && functionCarrierReachesIndexedColumn(*inner_column))
             return nullptr;
 
         auto function_node = std::make_shared<FunctionNode>("getSubcolumn");
@@ -1502,6 +1518,54 @@ void collectLeafQueries(const IQueryTreeNode * source, std::vector<const QueryNo
         leaves.push_back(query_node);
 }
 
+/// Whether the column, when it is followed through the trivial exports of the deeper subqueries
+/// (in every branch of a union), reaches a table column that is used by an index or a projection
+/// (`isColumnUsedByIndexes`). A computed export ends the chain: a carrier over it cannot be pushed
+/// further. An export that cannot be found unambiguously is treated as reaching such a column.
+bool functionCarrierReachesIndexedColumn(ColumnNode & column)
+{
+    ColumnNode * current = &column;
+    if (current->hasExpression())
+    {
+        current = resolveTrivialAliasChain(current);
+        if (!current)
+            return false;
+    }
+
+    auto source = current->getColumnSourceOrNull();
+    if (!source)
+        return false;
+
+    if (const auto * table_node = source->as<TableNode>())
+        return isColumnUsedByIndexes(table_node->getStorageSnapshot(), current->getColumnName());
+    if (const auto * table_function_node = source->as<TableFunctionNode>())
+        return isColumnUsedByIndexes(table_function_node->getStorageSnapshot(), current->getColumnName());
+
+    if (!isQueryOrUnionNode(source))
+        return false;
+
+    auto column_index = findUnambiguousColumnIndex(getExportedColumns(source), current->getColumnName());
+    if (!column_index)
+        return true;
+
+    std::vector<const QueryNode *> leaves;
+    collectLeafQueries(source.get(), leaves);
+    for (const auto * leaf : leaves)
+    {
+        const auto & projection_nodes = leaf->getProjection().getNodes();
+        if (*column_index >= projection_nodes.size())
+            return true;
+
+        String subcolumn_path;
+        auto base_node = unwrapSubcolumnFunctions(projection_nodes[*column_index], subcolumn_path);
+        auto * base_column = base_node ? base_node->as<ColumnNode>() : nullptr;
+        if (base_column && functionCarrierReachesIndexedColumn(*base_column))
+            return true;
+    }
+
+    return false;
+}
+
 /// Map each exported column name of the target to the underlying column the corresponding
 /// projection expression of the leaf trivially resolves to. The same physical column can be
 /// exported under several names: `SELECT tup AS x, tup FROM t`, or a trivial ALIAS storage
@@ -1568,6 +1632,77 @@ bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * s
     return false;
 }
 
+/// Whether a filter that the planner attaches to the read of the table expression `source` (a row
+/// policy or `additional_table_filters`, see `PlannerJoinTree`) reads a column that strictly contains
+/// the column `name`. Such filters are not a part of the query tree. An identifier of the filter can
+/// be qualified (`t.tup`), so every suffix of its name is compared.
+bool hiddenFilterReadsContainingColumn(const IQueryTreeNode * source, const String & name, const ContextPtr & context)
+{
+    StoragePtr storage;
+    if (const auto * table_node = source->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = source->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+    if (!storage)
+        return false;
+
+    ASTs filters;
+    if (auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, context))
+        filters.push_back(row_policy_filter->expression);
+
+    const auto & settings = context->getSettingsRef();
+    const auto & additional_filters = settings[Setting::additional_table_filters].value;
+    if (!additional_filters.empty() && !storage->isSyntheticDataSource())
+    {
+        /// The same matching as in `parseAdditionalFilterAstIfNeeded`.
+        const auto & storage_id = storage->getStorageID();
+        for (const auto & additional_filter : additional_filters)
+        {
+            const auto & tuple = additional_filter.safeGet<Tuple>();
+            const auto & table = tuple.at(0).safeGet<String>();
+            const auto & filter = tuple.at(1).safeGet<String>();
+
+            if (table == source->getOriginalAlias()
+                || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+                || table == storage_id.getFullNameNotQuoted())
+            {
+                ParserExpression parser;
+                filters.push_back(parseQuery(
+                    parser,
+                    filter.data(),
+                    filter.data() + filter.size(),
+                    "additional filter",
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]));
+                break;
+            }
+        }
+    }
+
+    for (const auto & filter : filters)
+    {
+        if (!filter)
+            continue;
+
+        IdentifierNameSet identifiers;
+        filter->collectIdentifierNames(identifiers);
+        for (const auto & identifier : identifiers)
+        {
+            for (size_t start = 0; start != String::npos;)
+            {
+                std::string_view suffix = std::string_view(identifier).substr(start);
+                if (suffix != name && isSameOrAncestorColumn(String(suffix), name))
+                    return true;
+                size_t dot = identifier.find('.', start);
+                start = dot == String::npos ? String::npos : dot + 1;
+            }
+        }
+    }
+
+    return false;
+}
+
 /// Whether the leaf query reads a column that contains the column `name` of `source` in a clause or
 /// a projection slot that stays after the pushdown. Such a use keeps reading the containing column,
 /// and the pushdown would then read the subcolumn a second time instead of extracting it from the
@@ -1575,7 +1710,8 @@ bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * s
 /// of the exports in the parent queries; a computed projection slot (`cityHash64(tup) AS h`) is
 /// skipped only when its exported name (`exported_names` are the exported names of the target,
 /// positionally) is not referenced by the parent query (`references`) and projection pruning does
-/// not keep it anyway (`arrayJoin`, an aggregate without `GROUP BY`, `DISTINCT`).
+/// not keep it anyway (`arrayJoin`, an aggregate without `GROUP BY`, `DISTINCT`). The filters attached
+/// to the read of a table during planning count as well (`hiddenFilterReadsContainingColumn`).
 bool leafReadsContainingColumn(
     const QueryNode & leaf,
     const IQueryTreeNode * source,
@@ -1583,6 +1719,9 @@ bool leafReadsContainingColumn(
     const Names & exported_names,
     const std::unordered_map<String, size_t> & references)
 {
+    if (hiddenFilterReadsContainingColumn(source, name, leaf.getContext()))
+        return true;
+
     for (const auto * clause : {
              leaf.getJoinTreeNode().get(), leaf.getPrewhere().get(), leaf.getWhere().get(), leaf.getWithNode().get(),
              leaf.getGroupByNode().get(), leaf.getHaving().get(), leaf.getWindowNode().get(), leaf.getQualify().get(),

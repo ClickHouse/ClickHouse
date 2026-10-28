@@ -1,0 +1,14 @@
+additional filter reads the whole column
+0
+0
+1
+additional filter reads another subcolumn
+1
+primary key through two subquery layers
+1000
+aggregate projection through two subquery layers
+0	1000
+1	1000
+2	1000
+filtered projection through two subquery layers
+1000
