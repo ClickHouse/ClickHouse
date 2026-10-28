@@ -261,6 +261,21 @@ SELECT id, `n.a`, `n.b` FROM t_alter_previous_commands_nested;
 CHECK TABLE t_alter_previous_commands_nested SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_alter_previous_commands_nested;
 
+-- The same for a drop or clear of a column that an earlier command of the statement clears.
+CREATE TABLE t_alter_previous_commands_nested (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_nested CLEAR COLUMN `n.a`, DROP COLUMN `n.a` SETTINGS alter_sync = 2;
+SELECT id, `n.b` FROM t_alter_previous_commands_nested;
+CHECK TABLE t_alter_previous_commands_nested SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_alter_previous_commands_nested;
+
+CREATE TABLE t_alter_previous_commands_nested (id UInt64, n Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+INSERT INTO t_alter_previous_commands_nested VALUES (1, [11], [42]);
+ALTER TABLE t_alter_previous_commands_nested CLEAR COLUMN `n.a`, CLEAR COLUMN `n.a` SETTINGS alter_sync = 2;
+SELECT id, `n.a`, `n.b` FROM t_alter_previous_commands_nested;
+CHECK TABLE t_alter_previous_commands_nested SETTINGS check_query_single_value_result = 1;
+DROP TABLE t_alter_previous_commands_nested;
+
 -- The drop of a stored column does not remove the mark of default values that a later command renames to its name.
 CREATE TABLE t_alter_previous_commands_marker (id UInt64, q UInt32, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', ratio_of_defaults_for_sparse_serialization = 1.0, enable_block_number_column = 0, enable_block_offset_column = 0;
 INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);

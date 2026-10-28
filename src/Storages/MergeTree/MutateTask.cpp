@@ -1911,8 +1911,13 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
+    NameSet columns_with_removed_streams;
     auto remove_column_streams = [&](const String & column_name)
     {
+        /// `stream_counts` counts each stored column once, so a column removed by several commands releases its streams once.
+        if (!columns_with_removed_streams.insert(column_name).second)
+            return;
+
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
@@ -1928,7 +1933,6 @@ static NameToNameVector collectFilesForRenames(
         if (auto serialization = try_get_serialization_of_stored_column(column_name))
             serialization->enumerateStreams(callback);
     };
-    NameSet columns_renamed_to_not_stored;
 
     /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
     /// post-drop metadata, so a dropped index is absent here.
@@ -2022,8 +2026,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 if (!new_part_column_names.contains(command.rename_to))
                 {
-                    if (columns_renamed_to_not_stored.insert(command.column_name).second)
-                        remove_column_streams(command.column_name);
+                    remove_column_streams(command.column_name);
                     continue;
                 }
 
