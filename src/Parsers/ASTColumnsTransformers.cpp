@@ -187,9 +187,10 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
 {
     chassert(children.size() == 1);
 
+    /// The replacement expression is hashed by `IAST::updateTreeHash` as the only child, do not
+    /// fold it into the hash of this node itself.
     hash_state.update(name.size());
     hash_state.update(name);
-    children[0]->updateTreeHashImpl(hash_state, ignore_aliases);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
