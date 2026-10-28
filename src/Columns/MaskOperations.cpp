@@ -297,9 +297,12 @@ static bool hasInvalidColumnDefault(const IDataType & type)
 
 /// A valid value of the type to fill the unused rows. For `Nullable` it is not `NULL`, but a valid value
 /// of the nested type, because a `NULL` keeps the default value of the column in the nested column,
-/// and the conversion of `Nullable` converts the nested column entirely.
+/// and the conversion of `Nullable` converts the nested column entirely. Types without such a problem,
+/// e.g. `Nullable(Nothing)` of a literal `NULL` tuple element, keep the default value of the type.
 static Field getValidFillValue(const IDataType & type)
 {
+    if (!hasInvalidColumnDefault(type))
+        return type.getDefault();
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
         return getValidFillValue(*nullable_type->getNestedType());
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
