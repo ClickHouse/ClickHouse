@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <functional>
 
+#include <base/sleep.h>
+
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
@@ -279,6 +281,12 @@ std::shared_ptr<Aws::Http::HttpResponse> PocoHTTPClient::MakeRequest(
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
+}
+
+void PocoHTTPClient::RetryRequestSleep(std::chrono::milliseconds sleep_time)
+{
+    if (sleep_time.count() > 0)
+        sleepForMilliseconds(sleep_time.count());
 }
 
 namespace
