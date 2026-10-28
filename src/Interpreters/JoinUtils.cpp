@@ -726,11 +726,9 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
     }
 }
 
-template <Fn<size_t(size_t)> Sharder>
-static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
+PaddedPODArray<UInt32> computeJoinKeyHashes(const Strings & key_columns_names, const Block & block)
 {
     size_t num_rows = block.rows();
-    size_t num_cols = block.columns();
 
     PaddedPODArray<UInt32> hash(num_rows, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & key_name : key_columns_names)
@@ -738,8 +736,11 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
         ColumnPtr key_col = materializeColumn(block, key_name);
         key_col->computeHashInto(0, num_rows, hash.data(), false);
     }
-    auto selector = hashToSelector(hash, sharder);
+    return hash;
+}
 
+Blocks scatterBlockBySelector(const Block & block, size_t num_shards, const IColumn::Selector & selector)
+{
     Blocks result;
     result.reserve(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -747,7 +748,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
         result.emplace_back(block.cloneEmpty());
     }
 
-    for (size_t i = 0; i < num_cols; ++i)
+    for (size_t i = 0; i < block.columns(); ++i)
     {
         auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
         chassert(result.size() == dispatched_columns.size());
@@ -757,6 +758,13 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
         }
     }
     return result;
+}
+
+template <Fn<size_t(size_t)> Sharder>
+static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
+{
+    auto hashes = computeJoinKeyHashes(key_columns_names, block);
+    return scatterBlockBySelector(block, num_shards, hashToSelector(hashes, sharder));
 }
 
 static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Block & block, size_t num_shards)

@@ -4326,7 +4326,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  `grace_hash` is external from the first block: the right table is partitioned straight away, where `hash` and `parallel_hash` collect it in memory first and partition it only once it crosses the spill threshold. Pick it when you already know the right side will not fit in memory and want to skip the in-memory phase. The spill threshold itself is the same one every hash algorithm uses, [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), and one of the two has to be non-zero unless `legacy_join_size_limits_trigger_spilling` is on. Without a threshold `grace_hash` is passed over for the next algorithm in the list, and rejected if it is the only one.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the spill threshold, the number of buckets is increased along with the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join partitions the right table by join-key hash, starting with `grace_hash_join_initial_buckets` buckets. Rows from the first bucket enter an in-memory hash table while other buckets are saved to disk. A bucket that reaches the spill threshold splits into two child partitions using its next hash bit; other buckets keep their routing. The in-memory bucket is rebuilt immediately, spilling rows for its new sibling. A spilled bucket routes future rows to its children and redistributes its historical files when they are read.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -10463,10 +10463,10 @@ Wait for committed changes to become actually visible in the latest snapshot
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
+Initial number of grace hash join buckets. Rounded up to a power of two, bounded by `grace_hash_join_max_buckets`.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
+Maximum number of grace hash join leaf buckets. Splitting one bucket adds one leaf.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys

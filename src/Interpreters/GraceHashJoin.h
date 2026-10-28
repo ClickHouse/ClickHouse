@@ -19,33 +19,36 @@ class TableJoin;
 class HashJoin;
 
 /**
- * Efficient and highly parallel implementation of external memory JOIN based on HashJoin.
- * Supports most of the JOIN modes, except CROSS and ASOF.
+ * External-memory `JOIN` based on `HashJoin`, with parallel build and probe streams.
+ * Supports most `JOIN` modes, except `CROSS` and `ASOF`.
  *
  * The joining algorithm consists of three stages:
  *
- * 1) During the first stage we accumulate blocks of the right table via @addBlockToJoin.
+ * 1) During the first stage we accumulate blocks of the right table via `addBlockToJoin`.
  * Each input block is split into multiple buckets based on the hash of the row join keys.
- * The first bucket is added to the in-memory HashJoin, and the remaining buckets are written to disk for further processing.
- * When the size of HashJoin exceeds the limits, we double the number of buckets.
- * There can be multiple threads calling addBlockToJoin, just like @ConcurrentHashJoin.
+ * The first bucket is added to the in-memory `HashJoin`, and the remaining buckets are written to disk.
+ * A bucket that reaches the spill threshold splits locally using its next hash bit.
+ * The in-memory bucket is rebuilt immediately. A spilled bucket retains its old files and routes new rows to its children.
+ * A spilled bucket has no hash table yet, so its size is estimated from its logical bytes, scaled by the ratio of
+ * hash-table memory to logical bytes measured on the in-memory bucket.
+ * There can be multiple threads calling `addBlockToJoin`, just like `ConcurrentHashJoin`.
  *
- * 2) At the second stage we process left table blocks via @joinBlock.
+ * 2) At the second stage we process left table blocks via `joinBlock`.
  * Again, each input block is split into multiple buckets by hash.
- * The first bucket is joined in-memory via HashJoin::joinBlock, and the remaining buckets are written to the disk.
+ * The first bucket is joined in-memory via `HashJoin::joinBlock`, and the remaining buckets are written to disk.
  *
  * 3) When the last thread reading left table block finishes, the last stage begins.
- * Each @DelayedJoinedBlocksTransform calls repeatedly @getDelayedBlocks until there are no more unfinished buckets left.
- * Inside @getDelayedBlocks we select the next unprocessed bucket, load right table blocks from disk into in-memory HashJoin,
- * And then join them with left table blocks.
+ * `DelayedJoinedBlocksTransform` calls `getDelayedBlocks` until there are no unfinished buckets left.
+ * Historical files are redistributed through the partition tree as they are read.
+ * Right-side files inherited from ancestors are read before newer files, then the leaf is joined with its left-side blocks.
  *
- * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
- * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
+ * After joining the left table blocks, we emit unmatched right-side rows for `RIGHT` and `FULL JOIN`.
  */
 class GraceHashJoin final : public IJoin
 {
     class FileBucket;
     class DelayedBlocks;
+    class BucketRouting;
 
     using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
@@ -126,7 +129,7 @@ private:
     /// Create empty join for in-memory processing.
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
-    /// Add right table block to the @join. Calls @rehash on overflow.
+    /// Add a right-side block, splitting the active bucket on overflow.
     void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
@@ -141,15 +144,18 @@ private:
     /// Throws if a bucket creation fails
     void addBuckets(size_t bucket_count);
 
-    /// Increase number of buckets to match desired_size.
-    /// Called when HashJoin in-memory table for one bucket exceeds the limits.
-    ///
-    /// NB: after @rehashBuckets there may be rows that are written to the buckets that they do not belong to.
-    /// It is fine; these rows will be written to the corresponding buckets during the third stage.
-    Buckets rehashBuckets();
-
-    /// Perform some bookkeeping after all calls to @joinBlock.
-    void startReadingDelayedBlocks();
+    /// Caller holds `rehash_mutex` exclusively. Each split adds one leaf.
+    BucketPtr splitBucket(size_t bucket_index, bool spilled);
+    bool canSplitBucket(size_t bucket_index) const;
+    /// After the build (`build_finished`), the halves of each split are planned again until every leaf fits.
+    void splitSpilledBuckets(std::vector<size_t> candidates, bool build_finished);
+    /// `rows` and `logical_bytes` (`Block::bytes`) are the planned size of a leaf, including its inherited estimate.
+    /// The bytes are compared as the estimated hash-table size.
+    bool hasSpilledBucketOverflow(size_t rows, size_t logical_bytes) const;
+    /// Estimated memory of a hash table built from `logical_bytes`, see `build_amplification`.
+    size_t estimateBuildBytes(size_t logical_bytes) const;
+    /// Recalibrate `build_amplification` from the in-memory join before it splits. Caller holds `hash_join_mutex`.
+    void updateBuildAmplification(size_t build_bytes);
 
     /// `max_rows_in_join` / `max_bytes_in_join` as a hard cap on the whole right side. False means
     /// `join_overflow_mode = 'break'`; it throws for `'throw'`.
@@ -179,7 +185,10 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
 
     Buckets buckets;
+    std::shared_ptr<const BucketRouting> bucket_routing;
     mutable SharedMutex rehash_mutex;
+    /// During delayed loading, redistributed right rows precede a child's own input.
+    bool reading_delayed_buckets = false;
 
     FileBucket * current_bucket = nullptr;
     /// A bucket crossed the hard cap under `join_overflow_mode = 'break'`: emit it, then stop.
@@ -190,8 +199,17 @@ private:
 
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
+    /// `HashJoin::getTotalByteCount` of an empty unreserved join, measured once in the constructor.
+    size_t empty_build_bytes = 0;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+
+    /// `Block::bytes` of the right-side blocks inserted into `hash_join`. Guarded by `hash_join_mutex`.
+    size_t resident_logical_bytes = 0;
+    /// Hash-table memory above `empty_build_bytes` per logical byte, measured on the in-memory bucket when it splits
+    /// and used to estimate the tables of spilled buckets. 1 until a large enough table splits. Written under
+    /// `hash_join_mutex`, read without it.
+    std::atomic<double> build_amplification = 1.0;
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

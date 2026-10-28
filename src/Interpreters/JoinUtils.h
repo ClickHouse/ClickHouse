@@ -169,6 +169,10 @@ IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder 
     return selector;
 }
 
+/// Compute the weak join-key hashes consumed by `hashToSelector`.
+PaddedPODArray<UInt32> computeJoinKeyHashes(const Strings & key_columns_names, const Block & block);
+Blocks scatterBlockBySelector(const Block & block, size_t num_shards, const IColumn::Selector & selector);
+
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const BlocksList & blocks, size_t num_shards);
