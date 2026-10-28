@@ -25,11 +25,11 @@ echo '-- rows of the time ranges table'
 $CLIENT -q "SELECT count() FROM \`$time_ranges_table\`"
 
 echo '-- join of the time ranges table'
-$CLIENT --send_logs_level debug -q "SELECT 1 FROM timeSeriesSelector(ts, 'foo{env=\"prod\"}', 0, 1000) FORMAT Null" 2>&1 \
+$CLIENT --send_logs_level debug -q "SELECT 1 FROM timeSeriesSelector(ts, 'foo{env=\"prod\"}', 0, 1000, 'timestamp_and_value') FORMAT Null" 2>&1 \
     | grep -o -E '(ANY|ALL) LEFT JOIN \(SELECT id, 1 AS matched' | sort -u
 
 echo '-- selected samples'
-$CLIENT -q "SELECT timestamp, value FROM timeSeriesSelector(ts, 'foo{env=\"prod\"}', 0, 1000) ORDER BY timestamp"
-$CLIENT -q "SELECT count(), sum(value) FROM timeSeriesSelector(ts, 'foo', 0, 1000)"
+$CLIENT -q "SELECT timestamp, value FROM timeSeriesSelector(ts, 'foo{env=\"prod\"}', 0, 1000, 'timestamp_and_value') ORDER BY timestamp"
+$CLIENT -q "SELECT count(), sum(value) FROM timeSeriesSelector(ts, 'foo', 0, 1000, 'timestamp_and_value')"
 
 $CLIENT -q "DROP TABLE ts"
