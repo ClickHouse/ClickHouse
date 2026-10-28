@@ -52,7 +52,7 @@ CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 
 ## 工作负载层级结构 {#workloads}
 
-ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有资源都分布在统一的 WORKLOAD 层级结构中。对于特定资源，分配规则的某些细节可以调整，但层级结构本身保持一致。每个 WORKLOAD 都会为每种资源维护必要的调度节点。可以在任意工作负载内创建子工作负载，从而构建出整个层级结构。ClickHouse 不会对工作负载层级结构强制规定任何特定或预定义的结构。
+ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有资源都分布在统一的 WORKLOAD 层级结构中。对于特定资源，分配规则的某些细节可以调整，但层级结构本身保持一致。每个 WORKLOAD 都会为每种资源维护必要的调度节点。可以在任意工作负载内创建子工作负载，从而构建出整个层级结构。ClickHouse 不会对工作负载层级结构强制规定任何特定或预定义的结构。没有父级 (即没有 `IN` 子句) 的工作负载即为根工作负载，层级结构中可以包含任意数量的根工作负载——例如，一棵树通过 SQL 定义，另一棵则从配置中加载。所有根工作负载都是一个隐式匿名根 (在 `system.scheduler` 中显示为路径 `/`) 的子级，因此它们之间会像同一棵树中的同级工作负载一样，依据各自的 `weight`、`priority` 和 `precedence` 设置进行调度。
 
 下面是一个层级结构示例，它将所有资源分别分配给 &quot;user&quot; 和 &quot;system&quot; 工作负载，并分别保证 90% 和 10% 的资源份额。请注意，为工作负载定义的权重用于实现 最大最小公平原则，因此只能尽力提供下限保障 (而不是上限限制或配额) 。所有调度都是在每台主机上独立进行的，因此由 `max_*` 设置定义的限制都是按主机生效的。工作负载 &quot;user&quot; 会将其资源进一步细分给 &quot;development&quot; 和 &quot;production&quot; 工作负载，其中 &quot;production&quot; 获得的资源是 &quot;development&quot; 的 3 倍：
 
@@ -102,7 +102,7 @@ graph LR
   oth --> all
 ```
 
-无子级的叶子工作负载名称可在查询设置 `SETTINGS workload = 'name'` 中使用。详情请参阅 [Workload markup](#workload-markup)。
+无子级的叶子工作负载名称可在查询设置 `SETTINGS workload = 'name'` 中使用。详情请参阅 [工作负载标记](#workload-markup)。
 
 如需自定义工作负载，可以使用以下设置：
 
@@ -118,20 +118,21 @@ graph LR
 * `max_cpus` - 为此工作负载中的查询提供服务时可使用的 CPU 核心数量上限。
 * `max_cpu_share` - 与 `max_cpus` 相同，但会按可用 CPU 核心数进行归一化。
 * `max_burst_cpu_seconds` - 该工作负载在不因 `max_cpus` 而被限流的情况下可消耗的最大 CPU 秒数。
+* `scheduler` - (仅限时间共享) 此工作负载内各查询之间采用的调度算法：`fifo` (默认，先到先服务) 、`fair` (加权公平排队) 、`las` (最少获得服务优先) 或 `priority` (严格按查询的 `workload_priority` 设置排序) 。请参阅 [查询感知调度](#query_aware_scheduling)。
 * `max_memory` - 为此工作负载保留的总内存上限。
 
-通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，若某个工作负载设置了 `max_bytes_per_second = '10Mi'`，则对每个读取和写入资源都会分别施加 10 MB/s 的带宽限制。如果需要对读取和写入施加统一限制，请考虑让 READ 和 WRITE 访问使用同一资源。
+通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，设置了 `max_bytes_per_second = '10Mi'` 的工作负载，会对每个读取资源和写入资源分别应用 10 MB/s 的带宽限制。如果需要让读取和写入共用同一个限制，可以考虑对 READ 和 WRITE 访问使用同一个资源。
 
-无法为不同资源指定不同的工作负载层级结构。但可以为特定资源指定不同的工作负载设置值：
+无法为不同资源指定不同的工作负载层级结构，但可以为特定资源指定不同的工作负载设置值：
 
 ```sql
 CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
 ```
 
-另请注意，如果某个工作负载或资源被其他工作负载引用，则无法删除。要更新工作负载的定义，请使用 `CREATE OR REPLACE WORKLOAD` 查询。
+另请注意，如果某个工作负载或资源被其他工作负载引用，则无法将其删除。要更新工作负载的定义，请使用 `CREATE OR REPLACE WORKLOAD` 查询。
 
 <Note>
-  工作负载设置会转换为一组合适的调度节点。有关底层细节，请参阅调度节点[类型和选项](#hierarchy)的说明。
+  工作负载设置会被转换为一组相应的调度节点。如需了解更底层的细节，请参阅调度节点[类型和选项](#hierarchy)的说明。
 </Note>
 
 ## 工作负载标记 {#workload-markup}
@@ -203,6 +204,41 @@ CPU 调度目前尚不支持合并和变更。
 <Note>
   声明 CPU 资源后，[`concurrent_threads_soft_limit_num`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_num) 和 [`concurrent_threads_soft_limit_ratio_to_cores`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_soft_limit_ratio_to_cores) 设置将不再生效。此时，系统会改用工作负载设置 `max_concurrent_threads` 来限制分配给特定工作负载的 CPU 数量。若要实现之前的行为，请仅创建 WORKER THREAD 资源，将工作负载 `all` 的 `max_concurrent_threads` 设置为与 `concurrent_threads_soft_limit_num` 相同的值，并使用 `workload = "all"` 查询设置。此配置等同于将 [`concurrent_threads_scheduler`](/zh/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) 设置为 &quot;fair&#95;round&#95;robin&quot;。
 </Note>
+
+## 查询感知调度 {#query_aware_scheduling}
+
+`weight` 和 `priority` 工作负载设置用于在*各工作负载之间*调度资源。如需控制*单个工作负载内部*的各个查询如何共享时间共享资源，请为该工作负载选择 `scheduler`：
+
+```sql
+CREATE WORKLOAD all SETTINGS scheduler = 'fair'
+```
+
+* **`fifo`** (默认) — 先到先服务，保留原有行为。它不会导致饥饿，但不提供公平性，并且会忽略 `weight` 及相关的按查询设置。
+* **`fair`** — 加权公平排队：每个查询按其 `weight` (一个查询设置，默认值为 `1`) 的比例获得资源份额，且不会有查询被饿死。
+* **`las`** — 最少获得服务 (least-attained-service) ：迄今为止消耗该资源最少的查询优先获得服务 (按级别分桶，查询的消耗量每翻一倍就下降一个级别) 。在混合工作负载下，这能最大限度地降低短查询的延迟，但长时间运行的查询可能会因源源不断的短查询而被饿死——如果需要无饥饿保证，请优先使用 `fair`。
+* **`priority`** — 按查询的 `workload_priority` 设置 (`Int64` 类型，数值越小优先级越高) 进行严格优先级调度。查询按优先级顺序获得服务，同一优先级内按 FIFO 处理。默认值 `0` 为中性基线；负值会使查询优先级高于默认级别，正值则使其低于默认级别。与所有严格优先级方案一样，它可能导致低优先级查询饥饿。
+
+`scheduler` 仅适用于时间共享资源 (CPU 和 IO) ，并且可以通过 `FOR <resource>` 子句为每种资源单独设置。在现有工作负载上更改它会就地切换算法，不会中断其他资源。
+
+对于 CPU 资源，`scheduler` 及下述按查询设置仅在启用 CPU 插槽抢占 (`cpu_slot_preemption = 1`，默认值) 时才有意义。未启用抢占时，CPU 插槽计入的是固定的单插槽开销，而非实际 CPU 时间，因此这些设置将无法反映实际的 CPU 消耗。
+
+在 `fair` 调度器下，查询的有效权重可以**随运行逐步降低**，从而使较短或较新的查询获得更大的份额。这由以下按查询设置控制 (默认均为禁用) ：
+
+| 查询设置                          | 作用                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `weight`                      | 查询的基础公平调度权重 (默认值为 `1.0`) 。                                                           |
+| `weight_lowering_age_seconds` | 当查询的挂钟运行时长超过该值时，降低其权重。`0` 表示禁用。                                                      |
+| `weight_lowering_cpu_seconds` | 当查询累计获得的 CPU 秒数达到该值时，降低其权重 (CPU 资源) 。`0` 表示禁用。                                       |
+| `weight_lowering_io_bytes`    | 当查询累计获得的 IO 字节数达到该值时，降低其权重 (IO 资源) 。`0` 表示禁用。                                        |
+| `weight_lowering_factor`      | 超过阈值时权重所乘的系数 (例如 `0.25`) 。最先触发的阈值即应用完整的降权；各阈值不会叠加。`1.0` 表示禁用降权。取值会被限制在 `[0, 1]` 范围内。 |
+
+```sql
+-- Enable fair scheduling for the workload (once):
+CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = 'fair';
+
+-- Then, per query: keep full weight until it burns 10 CPU-seconds, after which it is de-prioritised.
+SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_lowering_factor = 0.1;
+```
 
 ## 线程与 CPU {#threads_vs_cpus}
 
@@ -405,10 +441,10 @@ graph TD
     -->nw_semp[\"semaphore"/]
     -->|100 concurrent requests| nw_fair("p0_fair")
     -->|75% bandwidth| nw_prod{{"production"}}
-    -->nw_prod_q["fifo"]
+    -->nw_prod_q["queue"]
     nw_fair
     -->|25% bandwidth| nw_dev{{"development"}}
-    -->nw_dev_q["fifo"]
+    -->nw_dev_q["queue"]
 
     mem_root(["memory"])
     -->mem_all{{"all"}}
@@ -427,7 +463,7 @@ graph TD
 * `bandwidth_limit` (constraint) - 如果当前带宽超过 `max_speed` (0 表示不受限制) ，或突发量超过 `max_burst` (默认为 `max_speed`) ，则会阻塞；必须只有一个子节点。
 * `fair` (policy) - 按照最大最小公平原则，从其某个子节点中选择下一个要处理的请求；子节点可指定 `weight` (默认为 1) 。
 * `priority` (policy) - 按照静态优先级，从其某个子节点中选择下一个要处理的请求 (值越小，优先级越高) ；子节点应指定 `priority` (默认为 0) 。
-* `fifo` (queue) - 层级结构中的叶节点，可容纳超出资源容量的请求。
+* `queue` - 层级结构中的叶节点，可容纳超出资源容量的请求。
 
 **空间共享节点类型：**
 
