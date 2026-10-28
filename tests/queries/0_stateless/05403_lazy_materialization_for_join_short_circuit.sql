@@ -4,7 +4,6 @@
 -- lazy reads in its plan, and the results are compared with the optimization disabled. That a function with side
 -- effects is computed where the plan computes it is tested in `gtest_lazy_frontier.cpp`, without running it.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 -- Pinned so that the joins keep the order they are written in.
