@@ -18,7 +18,7 @@ $CLIENT -q "
 DROP DATABASE IF EXISTS $db SYNC;
 CREATE DATABASE $db ENGINE = Atomic;
 
-CREATE TABLE $db.z_defining (a Int32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/z_defining', '1') ORDER BY tuple()
+CREATE TABLE $db.z_defining (a Int32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/z_defining', '1') ORDER BY tuple()
 SETTINGS disk = disk(name = '$disk', type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/$disk/');
 
 CREATE TABLE $db.a_policy (a Int32) ENGINE = MergeTree() ORDER BY tuple() SETTINGS storage_policy = '__$disk';
