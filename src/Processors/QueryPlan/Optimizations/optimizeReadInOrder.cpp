@@ -121,7 +121,8 @@ struct FindReadingStepContext
     bool read_in_order_through_join;
 
     /// Whether an ORDER BY in a distributed plan may read in order at all, i.e. whether the exchange
-    /// steps below may be descended. Off by default; see distributed_plan_read_in_order.
+    /// steps below may be descended. Off by default; see distributed_plan_read_in_order. Also off without
+    /// `distributed_plan_optimize_exchanges`: a pair that would collapse stays in the plan then.
     bool distributed_plan_read_in_order = false;
 
     /// Set while descending a keyless scatter whose pair was verified to collapse, so the gather half
@@ -1387,7 +1388,8 @@ InputOrderInfoPtr buildInputOrderInfo(
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
-        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order
+            && optimization_settings.distributed_plan_optimize_exchanges,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1519,7 +1521,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
-        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order
+            && optimization_settings.distributed_plan_optimize_exchanges,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1662,7 +1665,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
-        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order
+            && optimization_settings.distributed_plan_optimize_exchanges,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1767,7 +1771,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
-        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order
+            && optimization_settings.distributed_plan_optimize_exchanges,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
