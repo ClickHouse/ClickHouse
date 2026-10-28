@@ -2,11 +2,12 @@
 
 -- An empty right side through the order-preserving spill path: the spill threshold must not
 -- change the result of a valid join against an empty table. An empty build stays in memory by
--- design - `switchToExternalJoin` declines it (nothing to spill; a switch would only allocate
--- grace buckets or a disk writer), whether asked by the threshold net or by the
--- scheduler-driven `SpillingHashJoin::spill`. The external `MergeJoin` fallback therefore
--- always receives at least one non-empty right block, which a never-fed `SortedBlocksWriter`
--- could not finalize ("Can't initialize pipeline with empty pipe").
+-- design - every caller of `switchToExternalJoin` skips it (nothing to spill; a switch would
+-- only allocate grace buckets or a disk writer): the threshold net requires inserted rows and
+-- the scheduler-driven `SpillingHashJoin::spill` returns without switching. The external
+-- `MergeJoin` fallback therefore always receives at least one non-empty right block, which a
+-- never-fed `SortedBlocksWriter` could not finalize ("Can't initialize pipeline with empty
+-- pipe").
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
