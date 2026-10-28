@@ -818,7 +818,7 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
     backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
@@ -846,13 +846,6 @@ void BackupsWorker::writeBackupEntries(
             file_infos.size(),
             backup_entries.size());
     }
-
-    /// The names are not needed anymore: `buildFileInfosForBackupEntries` has copied each of them into the
-    /// corresponding `BackupFileInfo`, and the loop below addresses the entries by index. A backup of
-    /// millions of files holds gigabytes of path characters here, so release them before the write phase
-    /// rather than at the end of it. The vector keeps its slots - their indices match `file_infos`.
-    for (auto & [file_name, _] : backup_entries)
-        file_name = String{}; /// Assignment, not `clear`, which would keep the allocated buffer.
 
     std::atomic_bool failed = false;
 
