@@ -29,9 +29,10 @@ enum class VariantArgumentsOfNestedFunction : UInt8
     /// from the result for the arguments explicitly cast to `Nullable`: for example, -ArgMax would select the row
     /// with a NULL value, and -OrDefault and -Resample would return NULL instead of the default value for empty states.
     /// It is also used by combinators that pass the arguments to the nested function row by row or element by element,
-    /// so that the conversion is done once for the whole block (example: -SimpleState, -ForEach, -Map).
+    /// so that the conversion is done once for the whole block (example: -SimpleState, -ForEach, -Map, -Tuple).
     /// The combinator must pass the arguments to the nested function at the same positions (example: -ArgMax, -OrDefault),
-    /// or override `convertVariantArgumentsAround` (example: -ForEach).
+    /// or override `convertVariantArgumentsAround` (example: -ForEach), or `convertVariantArgumentsAroundMultipleNestedFunctions`
+    /// for combinators with `transformsMultipleNestedFunctions` (example: -Tuple).
     ConvertedAround,
 };
 
@@ -107,6 +108,17 @@ public:
             chassert(i < arguments.size() && arguments[i]->equals(*nested_arguments[i]));
             arguments[i] = converted_nested_arguments[i];
         }
+    }
+
+    /** Same as `convertVariantArgumentsAround`, but for combinators with `transformsMultipleNestedFunctions`.
+      *  `converted_nested_arguments_list` has the arguments of every nested function, as returned by
+      *  `transformArgumentsForMultipleNestedFunctions`, with the `Variant` arguments converted.
+      */
+    virtual void convertVariantArgumentsAroundMultipleNestedFunctions(
+        DataTypes & /*arguments*/, const VectorWithMemoryTracking<DataTypes> & /*converted_nested_arguments_list*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Aggregate function combinator '{}' does not convert the Variant arguments of multiple nested functions", getName());
     }
 
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),

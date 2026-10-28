@@ -8,6 +8,7 @@
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -708,6 +709,28 @@ public:
     bool transformsArgumentTypes() const override { return true; }
 
     bool transformsMultipleNestedFunctions() const override { return true; }
+
+    /// The elements of the tuples are passed to the nested functions row by row, so the tuples are converted around.
+    VariantArgumentsOfNestedFunction getVariantArgumentsOfNestedFunction() const override { return VariantArgumentsOfNestedFunction::ConvertedAround; }
+
+    void convertVariantArgumentsAroundMultipleNestedFunctions(
+        DataTypes & arguments, const VectorWithMemoryTracking<DataTypes> & converted_nested_arguments_list) const override
+    {
+        /// The i-th nested function receives the i-th element of every Tuple argument, see `transformArgumentsForMultipleNestedFunctions`.
+        for (size_t k = 0; k < arguments.size(); ++k)
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(arguments[k]));
+            DataTypes elements = tuple_type.getElements();
+            chassert(elements.size() == converted_nested_arguments_list.size());
+            for (size_t i = 0; i < elements.size(); ++i)
+                elements[i] = converted_nested_arguments_list[i][k];
+
+            DataTypePtr converted = tuple_type.hasExplicitNames()
+                ? std::make_shared<DataTypeTuple>(elements, tuple_type.getElementNames())
+                : std::make_shared<DataTypeTuple>(elements);
+            arguments[k] = arguments[k]->isNullable() ? makeNullable(converted) : converted;
+        }
+    }
 
     VectorWithMemoryTracking<DataTypes> transformArgumentsForMultipleNestedFunctions(const DataTypes & arguments) const override
     {

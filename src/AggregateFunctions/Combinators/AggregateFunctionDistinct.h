@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+#include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -229,39 +230,44 @@ public:
             { d.add(c, r) } -> std::same_as<bool>;
         };
 
-        if (if_argument_pos >= 0)
+        /// The rows with the values seen for the first time are collected and passed to the nested function together,
+        /// because adding them one by one is slow for some nested functions (example: the conversion of `Variant` arguments).
+        const UInt8 * flags = if_argument_pos >= 0 ? assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data() : nullptr;
+        auto new_rows = ColumnUInt64::create();
+        auto & new_rows_data = new_rows->getData();
+        for (size_t row = row_begin; row < row_end; ++row)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            if (flags && !flags[row])
+                continue;
+
+            bool added;
             if constexpr (is_single_numeric)
-            {
-                const IColumn & column = *columns[0];
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (flags[row] && data.add(column, row))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
+                added = data.add(*columns[0], row);
             else
-            {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (flags[row] && data.add(columns, arguments_num, row, arena))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
+                added = data.add(columns, arguments_num, row, arena);
+
+            if (added)
+                new_rows_data.push_back(row);
         }
-        else
+
+        if (new_rows_data.empty())
+            return;
+
+        /// All rows of the range are new, there is no need to copy them.
+        if (new_rows_data.size() == row_end - row_begin)
         {
-            if constexpr (is_single_numeric)
-            {
-                const IColumn & column = *columns[0];
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (data.add(column, row))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
-            else
-            {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (data.add(columns, arguments_num, row, arena))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
+            addToNested(row_begin, row_end, place, columns, arena);
+            return;
         }
+
+        Columns new_columns(arguments_num);
+        ColumnRawPtrs new_columns_raw(arguments_num);
+        for (size_t i = 0; i < arguments_num; ++i)
+        {
+            new_columns[i] = columns[i]->index(*new_rows, 0);
+            new_columns_raw[i] = new_columns[i].get();
+        }
+        addToNested(0, new_rows_data.size(), place, new_columns_raw.data(), arena);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

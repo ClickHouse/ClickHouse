@@ -566,13 +566,37 @@ DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
             types_without_nullable.push_back(type->onlyNull() ? type : removeNullable(type));
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
-        DataTypes nested_types = combinator->transformArgumentsForVariantConversion(types_without_nullable);
-        DataTypes converted_nested_types = getVariantArgumentsConversion(nested_name, action, nested_types, /* including_nested = */ true);
-        if (!converted_nested_types.empty())
+        if (combinator->transformsMultipleNestedFunctions())
         {
-            if (res.empty())
-                res = argument_types;
-            combinator->convertVariantArgumentsAround(res, nested_types, converted_nested_types);
+            /// Every nested function is probed independently (ex: one per element for -Tuple).
+            auto converted_nested_types_list = combinator->transformArgumentsForMultipleNestedFunctions(types_without_nullable);
+            bool converted = false;
+            for (auto & nested_types : converted_nested_types_list)
+            {
+                DataTypes converted_nested_types = getVariantArgumentsConversion(nested_name, action, nested_types, /* including_nested = */ true);
+                if (converted_nested_types.empty())
+                    continue;
+                nested_types = std::move(converted_nested_types);
+                converted = true;
+            }
+
+            if (converted)
+            {
+                if (res.empty())
+                    res = argument_types;
+                combinator->convertVariantArgumentsAroundMultipleNestedFunctions(res, converted_nested_types_list);
+            }
+        }
+        else
+        {
+            DataTypes nested_types = combinator->transformArgumentsForVariantConversion(types_without_nullable);
+            DataTypes converted_nested_types = getVariantArgumentsConversion(nested_name, action, nested_types, /* including_nested = */ true);
+            if (!converted_nested_types.empty())
+            {
+                if (res.empty())
+                    res = argument_types;
+                combinator->convertVariantArgumentsAround(res, nested_types, converted_nested_types);
+            }
         }
     }
 
