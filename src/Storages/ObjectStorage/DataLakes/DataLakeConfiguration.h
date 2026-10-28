@@ -410,6 +410,10 @@ public:
     {
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
+    ColumnMapperPtr getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    {
+        return getMetadata()->getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+    }
 
     void drop(ContextPtr local_context) override
     {
