@@ -514,18 +514,19 @@ TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
     };
 
     DistinctLowCardinalityFilter lc_filter;
-    size_t bytes_before_last_chunk = 0;
+    size_t retained_bytes = 0;
     for (size_t i = 0; i < num_chunks; ++i)
     {
-        if (i + 1 == num_chunks)
-            bytes_before_last_chunk = lc_filter.getTotalByteCount();
         const auto mask = lc_filter.buildMaskIfApplicable(*make_column(i), num_rows);
         ASSERT_TRUE(mask.has_value());
         ASSERT_EQ(mask->size(), num_rows);
         for (size_t row = 0; row < num_rows; ++row)
             ASSERT_EQ((*mask)[row], static_cast<UInt8>(row < 2)) << "chunk " << i << ", row " << row;
+
+        /// Only the states of the first five dictionaries are kept.
+        EXPECT_EQ(lc_filter.getTotalByteCount() > retained_bytes, i < 5) << "chunk " << i;
+        retained_bytes = lc_filter.getTotalByteCount();
     }
-    EXPECT_EQ(lc_filter.getTotalByteCount(), bytes_before_last_chunk);
     EXPECT_EQ(lc_filter.estimateGrowthMemory(*make_column(num_chunks)), 0);
 
     const Block header = {ColumnWithTypeAndName(type, "k")};
@@ -547,6 +548,30 @@ TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
         expected.insert("v" + std::to_string(i));
     EXPECT_EQ(emitted_count, expected.size());
     EXPECT_EQ(emitted, expected);
+}
+
+TEST(DistinctLowCardinalityFilter, KeepsRecurringNonSharedDictionaries)
+{
+    const auto type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    DistinctLowCardinalityFilter filter;
+    /// Two separately built dictionaries with equal content: the second one finds the state of the first.
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const auto mask = filter.buildMaskIfApplicable(*makeLowCardinalityColumnWithLargeDictionary(type, 3, 3), 3);
+        ASSERT_TRUE(mask.has_value());
+        EXPECT_EQ(mask->size(), i == 0 ? 3 : 0);
+    }
+
+    /// After a recurrence, more new dictionaries than the observation window still get a kept state.
+    for (size_t dictionary_size = 4; dictionary_size < 10; ++dictionary_size)
+    {
+        SCOPED_TRACE(dictionary_size);
+        const auto column = makeLowCardinalityColumnWithLargeDictionary(type, dictionary_size, 3);
+        EXPECT_GT(filter.estimateGrowthMemory(*column), 0);
+        const size_t bytes_before = filter.getTotalByteCount();
+        ASSERT_TRUE(filter.buildMaskIfApplicable(*column, 3).has_value());
+        EXPECT_GT(filter.getTotalByteCount(), bytes_before);
+    }
 }
 
 TEST(DistinctSetFilterSemantics, DisabledLowCardinalityStateDoesNotConsumeByteLimit)
