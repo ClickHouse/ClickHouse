@@ -2394,11 +2394,16 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     if (uri.empty() || urlWithGlobs(uri))
         return {};
 
-    Poco::URI request_uri(uri);
+    /// Build the request exactly as the reader does (`StorageURLSource::getFirstAvailableURIAndReadBuffer`):
+    /// with URL encoding enabled, `http://host/test%2Fa.tsv` would be probed as `/test/a.tsv` while the
+    /// read requests `/test%2Fa.tsv`, and the two paths can be different resources.
+    const bool enable_url_encoding = settings[Setting::enable_url_encoding];
+    Poco::URI request_uri(uri, enable_url_encoding);
     Poco::Net::HTTPBasicCredentials credentials;
     StorageURLSource::setCredentials(credentials, request_uri);
 
     ReadWriteBufferFromHTTP::HTTPFileInfo file_info;
+    String resolved_uri;
     try
     {
         auto buf = BuilderRWBufferFromHTTP(request_uri)
@@ -2408,10 +2413,13 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
                        .withHostFilter(&context->getRemoteHostFilter())
                        .withBufSize(settings[Setting::max_read_buffer_size])
                        .withRedirects(settings[Setting::max_http_get_redirects])
+                       .withEnableUrlEncoding(enable_url_encoding)
                        .withHeaders(headers)
                        .create(credentials);
 
         file_info = buf->getFileInfo();
+        /// `getFileInfo` follows redirects, and the validators below belong to the final resource.
+        resolved_uri = buf->getCurrentURI().toString();
     }
     catch (...)
     {
@@ -2438,6 +2446,10 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
     hash.update(getMetadataVersionForModificationHash());
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(uri);
+    /// A strong `ETag` identifies a representation of one resource only: different resources may share
+    /// it (RFC 9110, section 8.8.1). When `uri` redirects, switching the redirect target to another
+    /// resource with the same validators must still change the hash, so fold the final resource too.
+    hash.update(resolved_uri);
     hash.update(file_info.etag);
     /// Mix in size and modification time as well - they only strengthen the strong ETag.
     hash.update(file_info.file_size.value_or(0));
