@@ -52,3 +52,31 @@ SELECT _database = currentDatabase(), y FROM m ARRAY JOIN [1] AS one;
 DROP TABLE m;
 DROP TABLE dist;
 DROP TABLE child;
+
+-- An alias of a column that the analyzer folds to a constant reads no column of the child either.
+CREATE TABLE child (p UInt8, y UInt8 ALIAS isNullable(p), t String ALIAS toTypeName(p)) ENGINE = MergeTree ORDER BY p;
+INSERT INTO child (p) VALUES (7), (8);
+CREATE TABLE dist AS child ENGINE = Distributed(test_shard_localhost, currentDatabase(), child);
+CREATE TABLE m (y UInt8, t String) ENGINE = Merge(currentDatabase(), '^dist$');
+
+SELECT _table, y FROM m ARRAY JOIN [1] AS one;
+SELECT _table, t FROM m ARRAY JOIN [1] AS one;
+SELECT _table, t, n FROM m JOIN (SELECT 'UInt8' AS n) AS x ON m.t = x.n;
+
+DROP TABLE m;
+DROP TABLE dist;
+DROP TABLE child;
+
+-- The substitute is read from the child even when the `Merge` declares an `ALIAS` of the same name.
+CREATE TABLE child (p UInt8, y UInt8 ALIAS 1) ENGINE = MergeTree ORDER BY p;
+INSERT INTO child (p) VALUES (7), (8);
+CREATE TABLE dist AS child ENGINE = Distributed(test_shard_localhost, currentDatabase(), child);
+CREATE TABLE m (y UInt8, p UInt8 ALIAS 1) ENGINE = Merge(currentDatabase(), '^dist$');
+
+SELECT _table, y FROM m ARRAY JOIN [1] AS one;
+SELECT _table, y, n FROM m JOIN (SELECT 1 AS n) AS t ON m.y = t.n;
+SELECT _table, y, p FROM m ARRAY JOIN [1] AS one;
+
+DROP TABLE m;
+DROP TABLE dist;
+DROP TABLE child;

@@ -36,7 +36,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -204,6 +203,46 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
 
         if (parent->type->tryGetSubcolumnType(subcolumn_name))
             return true;
+    }
+
+    return false;
+}
+
+/// Whether reading the `ALIAS` columns `alias_column_names` of `storage` needs any of its columns, once
+/// the analyzer has expanded their expressions and folded the constant ones, as it does when the child
+/// query is built. Neither `y ALIAS 1`, nor `y ALIAS c + c` over `c ALIAS 1`, nor `y ALIAS isNullable(p)`,
+/// nor `y ALIAS arraySum(arrayMap(p -> p + 1, [1]))` reads a column.
+bool aliasColumnsReadTableColumn(
+    const StoragePtr & storage,
+    const TableLockHolder & storage_lock,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & alias_column_names,
+    const ContextPtr & context)
+{
+    auto table_node = std::make_shared<TableNode>(storage, storage_lock, storage_snapshot);
+
+    auto identifiers_list = std::make_shared<ListNode>();
+    identifiers_list->getNodes().reserve(alias_column_names.size());
+    for (const auto & column_name : alias_column_names)
+        identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
+
+    QueryTreeNodePtr resolved_identifiers = std::move(identifiers_list);
+    QueryAnalysisPass query_analysis_pass(table_node);
+    query_analysis_pass.run(resolved_identifiers, context);
+
+    /// A folded constant keeps no children, and a lambda argument has the lambda as its source.
+    std::vector<const IQueryTreeNode *> nodes_to_visit{resolved_identifiers.get()};
+    while (!nodes_to_visit.empty())
+    {
+        const auto * node = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        if (const auto * column = node->as<ColumnNode>(); column && !column->hasExpression() && column->getColumnSourceOrNull() == table_node)
+            return true;
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child.get());
     }
 
     return false;
@@ -1348,49 +1387,28 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 return getColumnToReadInsteadOfSubcolumn(column_name, child_columns, merge_columns);
             };
 
-            /// Whether reading the column from the child needs any column of the child. An `ALIAS`
-            /// column whose expression reads no column of the child (`y ALIAS 1`) does not: once it is
-            /// expanded, nothing is left to read, as for a column the child does not have at all.
-            const auto & child_columns_with_defaults = storage_metadata_snapshot->getColumns();
-            /// The result for every alias already visited is kept, so that an alias several others depend
-            /// on (`c ALIAS 1`, `y ALIAS c + c`) is decided once and not mistaken for a cycle.
-            std::unordered_map<String, bool> alias_reads_child_column;
-            NameSet aliases_being_visited;
-            std::function<bool(const String &)> reads_child_column = [&](const String & column_name)
+            /// Whether reading the requested columns from the child needs any column of the child. An
+            /// `ALIAS` column whose expression reads no column of the child does not: once it is expanded,
+            /// nothing is left to read, as for a column the child does not have at all. Whether it does is
+            /// decided by the analyzer, see `aliasColumnsReadTableColumn`.
+            bool reads_child_column = false;
+            Names requested_child_aliases;
+            for (const auto & column_name : real_column_names)
             {
                 auto name_in_child = resolve_column_in_child(column_name);
                 if (!name_in_child)
-                    return false;
+                    continue;
 
-                const auto column_default = child_columns_with_defaults.getDefault(*name_in_child);
+                const auto column_default = storage_metadata_snapshot->getColumns().getDefault(*name_in_child);
                 if (!column_default || column_default->kind != ColumnDefaultKind::Alias || !column_default->expression)
-                    return true;
-
-                if (auto it = alias_reads_child_column.find(*name_in_child); it != alias_reads_child_column.end())
-                    return it->second;
-
-                /// A cyclic alias is rejected elsewhere; do not decide it here.
-                if (!aliases_being_visited.insert(*name_in_child).second)
-                    return true;
-
-                /// Unlike `IdentifiersCollector`, this skips the arguments of lambdas, which are not columns.
-                RequiredSourceColumnsVisitor::Data required_columns_data;
-                RequiredSourceColumnsVisitor(required_columns_data).visit(column_default->expression);
-
-                bool result = false;
-                for (const auto & required_column : required_columns_data.requiredColumns())
                 {
-                    if (reads_child_column(required_column))
-                    {
-                        result = true;
-                        break;
-                    }
+                    reads_child_column = true;
+                    break;
                 }
-
-                aliases_being_visited.erase(*name_in_child);
-                alias_reads_child_column.emplace(*name_in_child, result);
-                return result;
-            };
+                requested_child_aliases.push_back(*name_in_child);
+            }
+            if (!reads_child_column && !requested_child_aliases.empty())
+                reads_child_column = aliasColumnsReadTableColumn(storage, std::get<2>(table), nested_storage_snapshot, requested_child_aliases, modified_context);
 
             /// Query-tree rewriting turns the Merge virtual columns into constants. Request a
             /// physical column before constructing a plan as well, otherwise a delegating child
@@ -1399,7 +1417,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// constant `ALIAS` columns: the substitute has to be known here to become part of the
             /// child's projection and of the snapshot the query tree is resolved against, e.g. of a
             /// joined read.
-            if (std::ranges::none_of(real_column_names, reads_child_column))
+            if (!reads_child_column)
             {
                 /// A child that reads its own rows at `FetchColumns` reports its own name as its `_table`
                 /// virtual column, which is the value the Merge puts there anyway, so that column is the
@@ -1932,7 +1950,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// A physical column of the child that the `Merge` does not declare can be requested only as the
         /// substitute read of a query over nothing but the `Merge` virtual columns. A substitute named like
         /// a `Merge` virtual column replaced by a constant below (`_database`, `_table`) is the child's
-        /// column as well: the `Merge` never requests those virtual columns from a child.
+        /// column as well: the `Merge` never requests those virtual columns from a child. So is a substitute
+        /// named like an `ALIAS` column of the `Merge`: resolving it against the `Merge` would expand that
+        /// alias and lose the read.
         NamesAndTypesList child_only_columns;
         if (is_smallest_column_requested)
         {
@@ -1943,7 +1963,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             {
                 const bool is_merge_name_column = (column_name == "_database" || column_name == "_table")
                     && merge_storage_snapshot->metadata->isVirtualColumn(column_name);
-                if (!is_merge_name_column && merge_storage_snapshot->tryGetColumn(merge_column_options, column_name))
+                const auto merge_column_default = merge_storage_snapshot->metadata->getColumns().getDefault(column_name);
+                const bool is_merge_alias_column = merge_column_default && merge_column_default->kind == ColumnDefaultKind::Alias;
+                if (!is_merge_name_column && !is_merge_alias_column && merge_storage_snapshot->tryGetColumn(merge_column_options, column_name))
                     continue;
                 if (auto child_column = storage_snapshot_->metadata->getColumns().tryGetPhysical(column_name))
                     child_only_columns.push_back(*child_column);
@@ -1951,14 +1973,27 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         }
 
         /// A `Distributed` child resolves the query tree against `initial_storage_snapshot`, the `Merge`
-        /// columns, so a child-only column has to be declared there as well.
+        /// columns, so a child-only column has to be declared there as well, in place of a `Merge` alias of
+        /// the same name.
         if (!child_only_columns.empty())
         {
             auto metadata_with_child_only_columns = std::make_shared<StorageInMemoryMetadata>(*merge_storage_snapshot->metadata);
             ColumnsDescription columns = metadata_with_child_only_columns->getColumns();
             for (const auto & child_column : child_only_columns)
+            {
                 if (!columns.has(child_column.name))
+                {
                     columns.add(ColumnDescription(child_column.name, child_column.type));
+                }
+                else if (columns.get(child_column.name).default_desc.kind == ColumnDefaultKind::Alias)
+                {
+                    columns.modify(child_column.name, [&](ColumnDescription & column)
+                    {
+                        column.type = child_column.type;
+                        column.default_desc = {};
+                    });
+                }
+            }
             metadata_with_child_only_columns->setColumns(std::move(columns));
             modified_query_info.initial_storage_snapshot
                 = std::make_shared<StorageSnapshot>(merge_storage_snapshot->storage, std::move(metadata_with_child_only_columns));
