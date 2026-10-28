@@ -22,6 +22,8 @@ namespace ProfileEvents
 {
 extern const Event RuntimeDataflowStatisticsInputBytes;
 extern const Event RuntimeDataflowStatisticsOutputBytes;
+extern const Event RuntimeDataflowStatisticsCPUNanoseconds;
+extern const Event RuntimeDataflowStatisticsDuplicatedCPUNanoseconds;
 extern const Event RuntimeDataflowStatisticsInputNanoseconds;
 extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 }
@@ -52,6 +54,8 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputBytes, stats.output_bytes);
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsCPUNanoseconds, stats.cpu_nanoseconds);
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsDuplicatedCPUNanoseconds, stats.duplicated_cpu_nanoseconds);
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
@@ -77,9 +81,14 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     };
 
     RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
+    /// The sampling above runs inside the jobs of the measured processors, so their CPU time includes it.
+    /// It is wall-clock time, close enough for work that does not wait on anything.
+    size_t sampling_nanoseconds = 0;
+    size_t duplicated_sampling_nanoseconds = 0;
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
+        sampling_nanoseconds += stats.elapsed_microseconds * 1000;
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
@@ -90,6 +99,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = duplicated_bytes_statistics[i];
+        duplicated_sampling_nanoseconds += stats.elapsed_microseconds * 1000;
         if (stats.compressed_bytes)
         {
             log_stats(stats, fmt::format("Duplicated{}", toString(static_cast<InputStatisticsType>(i))));
@@ -100,6 +110,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
+        sampling_nanoseconds += stats.elapsed_microseconds * 1000;
         if (stats.compressed_bytes)
         {
             log_stats(stats, toString(static_cast<OutputStatisticsType>(i)));
@@ -108,12 +119,25 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
         }
     }
 
+    /// Saturating: an output sample can be taken on a thread of the aggregation's own pool, whose CPU time is
+    /// not measured at all.
+    const auto measured_cpu_nanoseconds = cpu_nanoseconds.load(std::memory_order_relaxed);
+    const auto measured_duplicated_cpu_nanoseconds = duplicated_cpu_nanoseconds.load(std::memory_order_relaxed);
+    res.cpu_nanoseconds = measured_cpu_nanoseconds - std::min(measured_cpu_nanoseconds, sampling_nanoseconds);
+    res.duplicated_cpu_nanoseconds
+        = measured_duplicated_cpu_nanoseconds - std::min(measured_duplicated_cpu_nanoseconds, duplicated_sampling_nanoseconds);
+
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, duplicated bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, duplicated bytes={}, output bytes={}, cpu ns={} (sampling {}), "
+        "duplicated cpu ns={} (sampling {})",
         res.input_bytes,
         res.duplicated_bytes,
-        res.output_bytes);
+        res.output_bytes,
+        res.cpu_nanoseconds,
+        sampling_nanoseconds,
+        res.duplicated_cpu_nanoseconds,
+        duplicated_sampling_nanoseconds);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
     {

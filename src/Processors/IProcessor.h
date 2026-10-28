@@ -34,6 +34,9 @@ using Processors = std::list<ProcessorPtr>;
 
 class StepWallClock;
 
+struct RuntimeDataflowCPUTimeAccumulator;
+using RuntimeDataflowCPUTimeAccumulatorPtr = std::shared_ptr<const RuntimeDataflowCPUTimeAccumulator>;
+
 namespace Runtime::V1
 {
 class ExecutionThreadContext;
@@ -337,6 +340,9 @@ public:
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }
 
+    /// Set, from the step, on the processors whose CPU time automatic parallel replicas measures.
+    const RuntimeDataflowCPUTimeAccumulatorPtr & getRuntimeDataflowCPUTimeAccumulator() const { return dataflow_cpu_time; }
+
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getNumExecutedJobs() const { return num_executed_jobs; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
@@ -445,6 +451,8 @@ private:
     String plan_step_name;
     String plan_step_description;
 
+    /// Taken from the step rather than read off it at execution: the step need not outlive the plan.
+    RuntimeDataflowCPUTimeAccumulatorPtr dataflow_cpu_time;
 };
 
 

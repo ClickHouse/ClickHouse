@@ -24,6 +24,8 @@ using Processors = std::list<ProcessorPtr>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+struct RuntimeDataflowCPUTimeAccumulator;
+using RuntimeDataflowCPUTimeAccumulatorPtr = std::shared_ptr<const RuntimeDataflowCPUTimeAccumulator>;
 
 namespace JSONBuilder { class JSONMap; }
 
@@ -145,6 +147,10 @@ public:
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
 
+    /// Any step can be measured for CPU time: its processors take the accumulator in `IProcessor::setQueryPlanStep`.
+    void setRuntimeDataflowCPUTimeAccumulator(RuntimeDataflowCPUTimeAccumulatorPtr accumulator) { dataflow_cpu_time = std::move(accumulator); }
+    const RuntimeDataflowCPUTimeAccumulatorPtr & getRuntimeDataflowCPUTimeAccumulator() const { return dataflow_cpu_time; }
+
     /// Removing unused columns. Every list of positions below is a sorted list of positions in a header.
 
     /// Returns true if the step can take part in removing unused columns: it implements removeUnusedColumns,
@@ -248,6 +254,7 @@ protected:
     Processors processors;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
+    RuntimeDataflowCPUTimeAccumulatorPtr dataflow_cpu_time;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

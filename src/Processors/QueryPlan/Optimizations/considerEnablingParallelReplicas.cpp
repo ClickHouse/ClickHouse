@@ -583,6 +583,36 @@ std::vector<IQueryPlanStep *> collectReadSteps(QueryPlan::Node & root)
     return read_steps;
 }
 
+/// Gives every step of the subtree the accumulator its processors add their CPU time to. A step is split
+/// between the replicas when the read they coordinate is below it (or is it), and repeated by each replica
+/// otherwise. Returns whether `node` is split.
+static bool setRuntimeDataflowCPUTimeAccumulators(
+    QueryPlan::Node & node,
+    const std::shared_ptr<RuntimeDataflowStatisticsBlock> & block,
+    const IQueryPlanStep * coordinated_read,
+    const IQueryPlanStep * coordinated_lazy_read)
+{
+    bool split = node.step.get() == coordinated_read || (coordinated_lazy_read && node.step.get() == coordinated_lazy_read);
+    std::optional<size_t> split_child;
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        if (setRuntimeDataflowCPUTimeAccumulators(*node.children[i], block, coordinated_read, coordinated_lazy_read))
+        {
+            split = true;
+            split_child = i;
+        }
+    }
+
+    /// Each replica builds the whole right side of a join and probes it with its share of the left side.
+    std::optional<size_t> duplicated_group;
+    if (split_child == 0 && typeid_cast<const JoinStep *>(node.step.get()))
+        duplicated_group = static_cast<size_t>(JoinStep::JoinStage::Build);
+
+    node.step->setRuntimeDataflowCPUTimeAccumulator(
+        std::make_shared<RuntimeDataflowCPUTimeAccumulator>(block, /*duplicated=*/ !split, duplicated_group));
+    return split;
+}
+
 std::vector<ReadFromMergeTree *> collectReadingSteps(QueryPlan::Node & root)
 {
     Stack stack;
@@ -1284,9 +1314,19 @@ static bool decideAtBoundary(
                 || typeid_cast<const NegativeLimitStep *>(boundary_step)
                 || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
             const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
-            const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
-            const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
+            /// Both plans are priced in nanoseconds of CPU time: the measured CPU time of the subtree plus its
+            /// bytes converted at `automatic_parallel_replicas_io_throughput`. The replicas split the work over
+            /// the coordinated read, repeat in full the work over every other read, and ship their output.
+            const double nanoseconds_per_byte = 1e9 / static_cast<double>(optimization_settings.automatic_parallel_replicas_io_throughput);
+            const double split_cost = static_cast<double>(stats->cpu_nanoseconds) + static_cast<double>(stats->input_bytes) * nanoseconds_per_byte;
+            const double duplicated_cost
+                = static_cast<double>(stats->duplicated_cpu_nanoseconds) + static_cast<double>(stats->duplicated_bytes) * nanoseconds_per_byte;
+            const double output_cost = static_cast<double>(stats->output_bytes) * nanoseconds_per_byte;
+            const size_t local_threads = std::min<size_t>(max_threads, effective_max_reading_threads);
+            const size_t replicas_threads = std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads);
+            const double local_plan_cost_estimation = (split_cost + duplicated_cost) / static_cast<double>(local_threads);
+            const double replicas_plan_cost_estimation = split_cost / static_cast<double>(replicas_threads)
+                + duplicated_cost / static_cast<double>(local_threads) + output_cost / static_cast<double>(output_replicas_divisor);
             /// Winning on time is necessary but not sufficient. Only the coordinated read is split; every
             /// other read of the subtree runs on each replica in full, so the cluster does
             /// `num_replicas` times that work for no change in wall-clock time - the comparison above
@@ -1317,15 +1357,25 @@ static bool decideAtBoundary(
                 ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / num_replicas);
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
-                "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
-                stats->input_bytes,
-                std::min<size_t>(max_threads, effective_max_reading_threads),
-                stats->input_bytes,
-                std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
-                stats->output_bytes,
+                "The applied formula, in ns: ({} + {}) / {} ? ({} / {} + {} / {} + {} / {}) ≡ {} ? {}. "
+                "Split: {} ns CPU + {} bytes, duplicated: {} ns CPU + {} bytes, output: {} bytes, at {} bytes/s",
+                split_cost,
+                duplicated_cost,
+                local_threads,
+                split_cost,
+                replicas_threads,
+                duplicated_cost,
+                local_threads,
+                output_cost,
                 output_replicas_divisor,
                 local_plan_cost_estimation,
-                replicas_plan_cost_estimation);
+                replicas_plan_cost_estimation,
+                stats->cpu_nanoseconds,
+                stats->input_bytes,
+                stats->duplicated_cpu_nanoseconds,
+                stats->duplicated_bytes,
+                stats->output_bytes,
+                optimization_settings.automatic_parallel_replicas_io_throughput);
             if (rejected_by_duplicated_reads)
             {
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
@@ -1491,6 +1541,9 @@ static bool decideAtBoundary(
         /// what replicas read.
         if (reads->lazy_to_instrument)
             reads->lazy_to_instrument->setRuntimeDataflowStatisticsCacheUpdater(updater);
+
+        setRuntimeDataflowCPUTimeAccumulators(
+            *single_replica_plan_boundary, statistics_block, source_reading_step, reads->lazy_to_instrument);
 
         auto duplicated_reads_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true);
         for (auto * read_step : collectReadSteps(*single_replica_plan_boundary))

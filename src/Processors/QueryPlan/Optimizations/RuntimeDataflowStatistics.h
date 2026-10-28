@@ -43,6 +43,10 @@ struct RuntimeDataflowStatistics
     size_t duplicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
+    /// Thread CPU time the processors of the subtree spent on work the replicas split, and on work every
+    /// replica repeats in full - the same division as `input_bytes` and `duplicated_bytes`.
+    size_t cpu_nanoseconds = 0;
+    size_t duplicated_cpu_nanoseconds = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -52,6 +56,8 @@ inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs
         .duplicated_bytes = lhs.duplicated_bytes + rhs.duplicated_bytes,
         .output_bytes = lhs.output_bytes + rhs.output_bytes,
         .total_rows_to_read = lhs.total_rows_to_read + rhs.total_rows_to_read,
+        .cpu_nanoseconds = lhs.cpu_nanoseconds + rhs.cpu_nanoseconds,
+        .duplicated_cpu_nanoseconds = lhs.duplicated_cpu_nanoseconds + rhs.duplicated_cpu_nanoseconds,
     };
 }
 
@@ -171,7 +177,38 @@ struct RuntimeDataflowStatisticsBlock
     std::array<Statistics, MaxInputType> input_bytes_statistics;
     std::array<Statistics, MaxInputType> duplicated_bytes_statistics;
     std::array<Statistics, MaxOutputType> output_bytes_statistics;
+
+    std::atomic_size_t cpu_nanoseconds{0};
+    std::atomic_size_t duplicated_cpu_nanoseconds{0};
 };
+
+/// Where the processors of one step of the measured subtree add the thread CPU time their jobs take.
+/// Processors hold it, so the statistics are written only after the last of them is gone.
+struct RuntimeDataflowCPUTimeAccumulator
+{
+    RuntimeDataflowCPUTimeAccumulator(
+        std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_, std::optional<size_t> duplicated_group_ = {})
+        : block(std::move(block_))
+        , duplicated(duplicated_)
+        , duplicated_group(duplicated_group_)
+    {
+    }
+
+    void add(size_t nanoseconds, size_t processor_group) const
+    {
+        const bool is_duplicated = duplicated || (duplicated_group && *duplicated_group == processor_group);
+        (is_duplicated ? block->duplicated_cpu_nanoseconds : block->cpu_nanoseconds).fetch_add(nanoseconds, std::memory_order_relaxed);
+    }
+
+    const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
+    /// The whole step runs on every replica in full.
+    const bool duplicated;
+    /// The processors of this group of the step run on every replica in full while the rest of it is
+    /// split: the build side of a join whose probe side reads the coordinated table.
+    const std::optional<size_t> duplicated_group;
+};
+
+using RuntimeDataflowCPUTimeAccumulatorPtr = std::shared_ptr<const RuntimeDataflowCPUTimeAccumulator>;
 
 class RuntimeDataflowStatisticsCacheUpdater
 {

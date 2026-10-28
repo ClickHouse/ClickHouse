@@ -5,6 +5,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISpillable.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Common/Scheduler/CurrentCPULease.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -227,6 +228,13 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
         execution_time_watch.emplace();
 #endif
 
+    /// Thread CPU time rather than wall time: a source's job also waits for its reads, which the cost model
+    /// prices from the bytes read, and wall time depends on how loaded the server is.
+    const auto & dataflow_cpu_time = processor->getRuntimeDataflowCPUTimeAccumulator();
+    std::optional<Stopwatch> dataflow_cpu_time_watch;
+    if (dataflow_cpu_time)
+        dataflow_cpu_time_watch.emplace(CLOCK_THREAD_CPUTIME_ID);
+
     bool success = true;
     try
     {
@@ -252,6 +260,9 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
 
     if (clock)
         clock->onLeave();
+
+    if (dataflow_cpu_time)
+        dataflow_cpu_time->add(dataflow_cpu_time_watch->elapsedNanoseconds(), processor->getQueryPlanStepGroup());
 
     if (collect_work_intervals)
         work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, step);

@@ -51,6 +51,7 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
     query_plan_step = step;
     query_plan_step_group = group;
     query_plan_step_wall_clock_ptr = nullptr;
+    dataflow_cpu_time = step ? step->getRuntimeDataflowCPUTimeAccumulator() : nullptr;
     if (step)
     {
         plan_step_name = step->getName();
@@ -75,6 +76,7 @@ void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_
     plan_step_description = parent.plan_step_description;
     step_uniq_id = parent.step_uniq_id;
     query_plan_step_id = parent.query_plan_step_id;
+    dataflow_cpu_time = parent.dataflow_cpu_time;
 }
 
 IProcessor::Status IProcessor::prepare()

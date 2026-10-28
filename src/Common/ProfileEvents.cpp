@@ -1868,6 +1868,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas", ValueType::Number) \
     M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas would send to the initiator if the query was executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsCPUNanoseconds, "Collected statistics on the CPU time of the work parallel replicas would split between them if the query was executed with parallel replicas", ValueType::Nanoseconds) \
+    M(RuntimeDataflowStatisticsDuplicatedCPUNanoseconds, "Collected statistics on the CPU time of the work every replica would repeat in full if the query was executed with parallel replicas", ValueType::Nanoseconds) \
     M(RuntimeDataflowStatisticsInputNanoseconds, "Time spent during query execution collecting statistics on the number of bytes replicas would read, for automatic parallel replicas", ValueType::Nanoseconds) \
     M(RuntimeDataflowStatisticsOutputNanoseconds, "Time spent during query execution collecting statistics on the number of bytes replicas would send to the initiator, for automatic parallel replicas", ValueType::Nanoseconds) \
     \
