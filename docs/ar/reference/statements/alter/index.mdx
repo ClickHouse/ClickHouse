@@ -54,7 +54,30 @@ doc_type: 'reference'
 | [ALTER DATABASE ... MODIFY COMMENT](/ar/reference/statements/alter/database-comment) | يضيف تعليقات إلى قاعدة البيانات أو يعدّلها أو يزيلها، سواء أكانت مُعيَّنة مسبقًا أم لا.        |
 | [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection)            | يُعدِّل [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). |
 
-## عمليات التعديل
+## دمج عدة إجراءات في عبارة `ALTER` واحدة {#combining-actions}
+
+تقبل عبارة `ALTER TABLE` الواحدة عدة إجراءات مفصولة بفواصل، ما يتيح تنفيذ عمل كان سيُرسَل في العادة على هيئة سلسلة من العبارات ضمن عبارة واحدة فقط:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
+```
+
+لا يُشترط أن تكون الإجراءات من النوع نفسه، وهي تُطبَّق من اليسار إلى اليمين، ولذا يمكن للإجراء اللاحق أن يستخدم ما أضافه إجراء سابق:
+
+```sql
+-- a new column and an index over it
+ALTER TABLE visits ADD COLUMN duration UInt32, ADD INDEX idx_duration duration TYPE minmax GRANULARITY 4;
+
+-- a type change together with a new column
+ALTER TABLE visits MODIFY COLUMN browser LowCardinality(String), ADD COLUMN page_id UInt64;
+
+-- three actions in one statement
+ALTER TABLE visits DROP COLUMN page_id, MODIFY COLUMN duration UInt64, ADD COLUMN region_id UInt32;
+```
+
+عندما ينتظر العميل اكتمال `ALTER`، فإن الإعداد الذي يتحكم في هذا الانتظار يتحدد بحسب الإجراء لا بحسب العبارة: فالإجراء الذي يمر بمسار تنفيذ التعديل، مثل `MATERIALIZE INDEX`، يخضع للإعداد [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync)، في حين تخضع إجراءات البيانات الوصفية للإعداد [`alter_sync`](/ar/reference/settings/session-settings/alter#alter_sync)، ومن ثَمّ فإن الجمع بينهما في عبارة واحدة لا يجعلهما خاضعين لإعداد واحد. راجع [تزامن استعلامات ALTER](#synchronicity-of-alter-queries) لمعرفة الإجراءات التي يغطيها كل إعداد، و[الجمع بين عبارات `MATERIALIZE INDEX`](#combining-materialize-index-clauses) للاطلاع على القيد المفروض على مثل هذه العبارة المختلطة في قاعدة بيانات `Replicated`.
+
+## عمليات التعديل {#mutations}
 
 تُنفَّذ استعلامات `ALTER` التي تهدف إلى تعديل بيانات الجدول بآلية تُسمى &quot;عمليات التعديل&quot;، وأبرزها [ALTER TABLE ... DELETE](/ar/reference/statements/alter/delete) و[ALTER TABLE ... UPDATE](/ar/reference/statements/alter/update). وهي عمليات غير متزامنة تُنفَّذ في الخلفية، وتشبه عمليات الدمج في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/index)، إذ تُنتج إصدارات جديدة &quot;معدَّلة&quot; من الأجزاء.
 
@@ -67,13 +90,26 @@ doc_type: 'reference'
 
 لا تُحذف إدخالات عمليات التعديل المكتملة فورًا (ويُحدَّد عدد الإدخالات المحفوظة بواسطة المَعلمة `finished_mutations_to_keep` الخاصة بمحرك التخزين). وتُحذف إدخالات عمليات التعديل الأقدم.
 
-## تزامن استعلامات `ALTER`
+## تكلفة التنفيذ واكتماله {#execution-cost-and-completion}
 
-بالنسبة إلى الجداول غير المكررة، تُنفَّذ جميع استعلامات `ALTER` بشكل متزامن. أما بالنسبة إلى الجداول المكررة، فلا يضيف الاستعلام سوى تعليمات بالإجراءات المناسبة إلى `ZooKeeper`، بينما تُنفَّذ هذه الإجراءات نفسها في أقرب وقت ممكن. ومع ذلك، يمكن أن ينتظر الاستعلام حتى تكتمل هذه الإجراءات على جميع النسخ المتماثلة.
+عند التخطيط لتنفيذ `ALTER TABLE`، ميّز بين تغيير البيانات الوصفية والعمل المطلوب على أجزاء البيانات الموجودة. ويتوقف انتظار العميل لاكتمال العملية على نوعها: إذ يتحكم [`alter_sync`](/ar/reference/settings/session-settings/alter#alter_sync) في عمليات البيانات الوصفية وفي `MODIFY COLUMN`، بما في ذلك تحويلات الأنواع التي تعيد كتابة البيانات؛ بينما يتحكم [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync) في عمليات التعديل التي تجري في الخلفية مثل `UPDATE` و`DELETE` و`MATERIALIZE ...`. لا تعتمد على مُدد ثابتة مرجعًا تشغيليًا، فالتكلفة تتوقف على حجم البيانات الوصفية، وأجزاء البيانات والبايتات المتأثرة، وتكلفة التحويل، والحمل الحالي في الخلفية.
 
-بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync).
+| العملية                                                                          | العمل على البيانات الموجودة                                                      | سلوك الاكتمال الافتراضي                                                                      | العوامل الرئيسية المؤثرة في التكلفة                                   |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `ADD COLUMN`                                                                     | لا تُعاد الكتابة؛ إذ توفّر أجزاء البيانات القديمة القيمة الافتراضية وقت القراءة. | يخضع انتظار البيانات الوصفية لـ `alter_sync`.                                                | حجم البيانات الوصفية وتوافر النسخ المتماثلة.                          |
+| `RENAME COLUMN`                                                                  | لا تُعاد كتابة الصفوف، لكنها تمثّل حاجز ترتيب يلي عمليات التعديل السابقة.        | يخضع انتظار البيانات الوصفية لـ `alter_sync`.                                                | عمليات التعديل السابقة وتوافر النسخ المتماثلة.                        |
+| `DROP COLUMN`                                                                    | تحذف ملفات الأعمدة، ومن ثَمّ فهي ليست مجرد تغيير في البيانات الوصفية.            | يسري عليها ترتيب البيانات الوصفية وعمليات التعديل.                                           | عدد ملفات الأعمدة وحجمها.                                             |
+| `MODIFY COLUMN` لتغيير القيمة الافتراضية أو التعليق أو إلى نوع يحافظ على التمثيل | لا تُعاد الكتابة فورًا.                                                          | يخضع انتظار البيانات الوصفية لـ `alter_sync`.                                                | حجم البيانات الوصفية وتوافر النسخ المتماثلة.                          |
+| تغييرات الأنواع الأخرى عبر `MODIFY COLUMN`                                       | يعيد تعديل `READ_COLUMN` كتابة العمود المتأثر في أجزاء البيانات الموجودة.        | يخضع سلوك الانتظار لـ `alter_sync` (القيمة الافتراضية `1`، وفي Cloud القيمة الافتراضية `0`). | أجزاء البيانات والبايتات المتأثرة، وتكلفة التحويل، والحمل في الخلفية. |
+| `UPDATE` و`DELETE` و`MATERIALIZE ...`                                            | تعيد عمليات التعديل في الخلفية كتابة أجزاء البيانات المتأثرة.                    | غير متزامنة افتراضيًا، ويتحكم `mutations_sync` في الانتظار.                                  | أجزاء البيانات والبايتات المتأثرة، والحمل في الخلفية.                 |
 
-أما استعلامات `ALTER` الأخرى التي لا تعدّل سوى البيانات الوصفية، فيمكنك استخدام الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) لضبط الانتظار.
+## تزامن استعلامات `ALTER` {#synchronicity-of-alter-queries}
+
+افتراضيًا، تنتظر استعلامات `ALTER` على الجداول غير المكررة حتى يكتمل عملها. ومع `alter_sync = 0`، يمكن لاستعلام `ALTER` الذي يؤدي عملًا في الخلفية أن يعيد النتيجة قبل انتهاء ذلك العمل. أما بالنسبة إلى الجداول المكررة، فيضيف الاستعلام تعليمات بالإجراءات المناسبة إلى `ZooKeeper`، بينما تُنفَّذ هذه الإجراءات نفسها في أقرب وقت ممكن. ويمكن أن ينتظر الاستعلام حتى تكتمل هذه الإجراءات على جميع النسخ المتماثلة.
+
+بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل عبر مسار تنفيذ التعديلات (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync).
+
+أما استعلامات `ALTER` الأخرى، بما في ذلك عمليات إعادة الكتابة الناتجة عن `MODIFY COLUMN`، فيتحكم الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) في انتظارها.
 
 يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
@@ -81,17 +117,17 @@ doc_type: 'reference'
   بالنسبة إلى جميع استعلامات `ALTER`، إذا كانت قيمة `alter_sync = 2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`. مع `alter_sync = 3`، لا يتم انتظار النسخ المتماثلة غير النشطة، لذا لا يُطرح أي استثناء.
 </Note>
 
-### إسناد `ALTER` متزامن لجدول واحد
+### إسناد `ALTER` متزامن لجدول واحد {#concurrent-alter-assignment-on-one-table}
 
 في الجداول المكرّرة، قد يؤدي إرسال عدة عبارات `ALTER` منفصلة إلى الجدول نفسه على التوالي وبسرعة إلى الفشل بالخطأ `CANNOT_ASSIGN_ALTER` (الرمز 517). يحدث ذلك في المسار المنسوخ عندما لا تكون النسخة المتماثلة قد طبّقت بعض عمليات `ALTER` السابقة بعد (أي إن إصدار البيانات الوصفية لا يزال متأخرًا عن البيانات الوصفية المشتركة؛ وقد يذكر الخادم أن النسخة المتماثلة &quot;still not applied some of previous alters&quot; أو &quot;Probably too many alters executing concurrently&quot;). وقد تظل هذه الحالة قائمة حتى بعد إسناد عملية `ALTER` سابقة بالفعل. هذه حالة **عامة لعمليات `ALTER` المتزامنة للبيانات الوصفية / عمليات التعديل**، وليست مقتصرة على العبارات الخاصة بعمليات التعديل. ويمكن لعمليات تعديل البيانات الوصفية المتزامنة العادية (`ADD` / `DROP` / `MODIFY` وما شابهها) أن تؤدي إلى الرمز نفسه القابل لإعادة المحاولة (انظر، على سبيل المثال، مسار إعادة المحاولة الذي يغطيه `tests/queries/0_stateless/03518_alter_logical_race.sh`).
 
 الأساليب التي تتجنب حالة السباق:
 
-* ادمج عمليات البيانات الوصفية المستقلة في عبارة `ALTER` **واحدة** متعددة البنود، عندما تسمح القواعد بذلك (على سبيل المثال، عدة بنود `ADD INDEX`).
-* نفّذ عبارات `ALTER` تسلسليًا وأعِد المحاولة عند ظهور الرمز 517 إلى أن تُطبَّق عمليات `ALTER` السابقة على النسخة المتماثلة.
+* ادمج عمليات البيانات الوصفية المستقلة في عبارة `ALTER` **واحدة** متعددة العبارات، عندما تسمح القواعد بذلك (على سبيل المثال، عدة عبارات `ADD INDEX`)، كما هو موضح في [دمج الإجراءات في عبارة `ALTER` واحدة](#combining-actions).
+* نفّذ عبارات `ALTER` تسلسليًا وأعِد المحاولة عند ظهور الرمز 517 إلى أن تُطبَّق عمليات `ALTER` السابقة على النسخة المتماثلة.
 * بالنسبة إلى عمليات `ALTER` التي تُنتج عمليات التعديل، انتظر حتى تنتهي عملية التعديل السابقة باستخدام مؤشر موثق قابل للرصد، مثل [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync) أو `is_done` في [`system.mutations`](/ar/reference/system-tables/mutations)، قبل إرسال العملية التالية.
 
-### دمج بنود `MATERIALIZE INDEX`
+### دمج بنود `MATERIALIZE INDEX` {#combining-materialize-index-clauses}
 
 يمكن أن تظهر عدة بنود `MATERIALIZE INDEX` ضمن تعليمة `ALTER` واحدة. الحالة التي يغطيها الاختبار ضمن الشجرة هي تجميع عدة بنود `ADD INDEX` مع `MATERIALIZE INDEX` للفهارس الجديدة نفسها في تعليمة واحدة (راجع `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). يجمع هذا الشكل المدمج، `ADD INDEX` + `MATERIALIZE INDEX`، بين مقطع `AlterCommand` ومقطع `MutationCommand`، لذا **يرفضه `DatabaseReplicated`** بالخطأ `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). اعتبر المثال `02911` صالحًا لقواعد البيانات العادية (غير `DatabaseReplicated`)؛ أما في `DatabaseReplicated`، فاجعل تغييرات البيانات الوصفية وعمليات التعديل الخاصة بـ materialize في عبارات منفصلة.
 
@@ -99,7 +135,7 @@ doc_type: 'reference'
 
 إذا كنت بحاجة إلى تطبيق عمليات التعديل بالترتيب، فلا يزال بإمكانك إصدار `MATERIALIZE INDEX` واحدة في كل عبارة والانتظار باستخدام [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync).
 
-## محتوى ذي صلة
+## محتوى ذي صلة {#related-content}
 
 * مدونة: [التعامل مع التحديثات وعمليات الحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

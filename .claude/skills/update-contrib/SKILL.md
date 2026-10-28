@@ -43,7 +43,7 @@ upstream CMake files — that is expected, do not restore them and do not re-run
 need it either.
 
 Submodule URLs point to either upstream directly (unpatched) or a fork at `github.com/ClickHouse/<repo>` (when
-patches are needed; the repo name may differ from the contrib name, e.g. `contrib/cassandra` → `ClickHouse/cpp-driver`).
+patches are needed; the repo name may differ from the contrib name, e.g. `contrib/aws` → `ClickHouse/aws-sdk-cpp`).
 Fork branches are named `ClickHouse/<version>` — usually the bare upstream tag (`ClickHouse/v1.52.1`,
 `ClickHouse/2.17.1`), sometimes with the upstream's own prefix (`ClickHouse/openssl-3.5.8`,
 `ClickHouse/release-2.14.1`) — never `ClickHouse/master` or `ClickHouse/main`. A pin can also sit on a fork branch
@@ -134,7 +134,7 @@ git -C "contrib/$LIB" branch -r --contains HEAD | head -3                       
 git -C "contrib/$LIB" tag --contains HEAD | head -3
 
 UPSTREAM_URL=$(git config --file .gitmodules --get "submodule.contrib/$LIB.url")
-FORK_URL="https://github.com/ClickHouse/$(basename "$UPSTREAM_URL" .git)"        # guess; may differ (cassandra → cpp-driver)
+FORK_URL="https://github.com/ClickHouse/$(basename "$UPSTREAM_URL" .git)"        # guess; may differ (aws → aws-sdk-cpp)
 git -C "contrib/$LIB" fetch "$FORK_URL" '+refs/heads/ClickHouse/*:refs/remotes/ch-fork/ClickHouse/*' 2>/dev/null
 git -C "contrib/$LIB" branch -r --contains HEAD 'ch-fork/*'                       # non-empty: pin lives on a fork branch
 ```

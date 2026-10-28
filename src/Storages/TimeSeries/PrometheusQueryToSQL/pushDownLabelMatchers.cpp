@@ -158,6 +158,14 @@ namespace
         });
     }
 
+    /// The pass runs before the converter checks the arguments, so an aggregation may have none.
+    const Node * getAggregatedArgument(const AggregationOperatorNode & aggregation)
+    {
+        if (aggregation.children.empty() || isAggregationOperatorCountValues(aggregation.operator_name))
+            return nullptr;
+        return aggregation.children.back();
+    }
+
     /// Returns the matchers which every series of the node's result satisfies, except the ones on the metric name.
     MatcherList getCommonMatchers(const Node * node)
     {
@@ -171,9 +179,8 @@ namespace
         if (node->node_type == NodeType::AggregationOperator)
         {
             const auto & aggregation = static_cast<const AggregationOperatorNode &>(*node);
-            if (isAggregationOperatorCountValues(aggregation.operator_name))
-                return {};
-            return keepGroupingLabels(getCommonMatchers(aggregation.children.back()), aggregation);
+            const auto * argument = getAggregatedArgument(aggregation);
+            return argument ? keepGroupingLabels(getCommonMatchers(argument), aggregation) : MatcherList{};
         }
 
         if (isVectorMatching(node))
@@ -209,8 +216,8 @@ namespace
         if (node->node_type == NodeType::AggregationOperator)
         {
             const auto & aggregation = static_cast<const AggregationOperatorNode &>(*node);
-            if (!isAggregationOperatorCountValues(aggregation.operator_name))
-                addMatchers(aggregation.children.back(), keepGroupingLabels(matchers, aggregation));
+            if (const auto * argument = getAggregatedArgument(aggregation))
+                addMatchers(argument, keepGroupingLabels(matchers, aggregation));
             return;
         }
 

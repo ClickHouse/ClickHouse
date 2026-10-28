@@ -1329,7 +1329,9 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     {
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
-        header.has_positions = has_positions != 0;
+        if (has_positions > 1)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid has_positions flag {} in text index header", has_positions);
+        header.has_positions = has_positions == 1;
 
         if (header.has_positions)
         {
@@ -2304,7 +2306,7 @@ MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 
-    /// V2: positions file exists on disk.
+    /// V2: the part has the positions substream.
     if (indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", &storage))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
