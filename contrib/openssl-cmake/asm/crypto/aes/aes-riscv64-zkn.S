@@ -129,11 +129,6 @@ rv64i_zknd_decrypt:
 rv64i_zkne_set_encrypt_key:
     addi    sp,sp,-16
     sd      x8,0(sp)
-    bnez    x10,1f        # if (!userKey || !key) return -1;
-    bnez    x12,1f
-    li      a0,-1
-    ret
-1:
     # Determine number of rounds from key size in bits
     li      x6,128
     bne     x11,x6,1f
@@ -382,11 +377,6 @@ rv64i_zkne_set_encrypt_key:
 rv64i_zknd_set_decrypt_key:
     addi    sp,sp,-16
     sd      x8,0(sp)
-    bnez    x10,1f        # if (!userKey || !key) return -1;
-    bnez    x12,1f
-    li      a0,-1
-    ret
-1:
     # Determine number of rounds from key size in bits
     li      x6,128
     bne     x11,x6,1f

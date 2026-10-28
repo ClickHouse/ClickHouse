@@ -179,7 +179,7 @@ std::string X509Certificate::subjectName() const
 /// "admin\0.evil.com") would be silently truncated to "admin", letting a certificate impersonate a
 /// different subject during authentication. Preserving the exact bytes makes such a value compare
 /// unequal to any NUL-free configured subject, and also avoids silent truncation of long names.
-static std::string extractNameEntry(X509_NAME * name, uint nid)
+static std::string extractNameEntry(const X509_NAME * name, uint nid)
 {
     if (!name)
         return {};
@@ -236,16 +236,28 @@ std::string X509Certificate::publicKeyAlgorithm() const
     return std::string(buf);
 }
 
+/// `ASN1_STRING` is opaque since OpenSSL 4.0, and its data is not guaranteed to be NUL-terminated.
+static std::string asn1StringToString(const ASN1_STRING * str)
+{
+    if (!str)
+        return {};
+
+    const unsigned char * bytes = ASN1_STRING_get0_data(str);
+    const int length = ASN1_STRING_length(str);
+    if (!bytes || length < 0)
+        return {};
+
+    return std::string(reinterpret_cast<const char *>(bytes), static_cast<size_t>(length));
+}
+
 std::string X509Certificate::validFrom() const
 {
-    ASN1_TIME * valid_from = X509_get_notBefore(certificate);
-    return reinterpret_cast<char *>(valid_from->data);
+    return asn1StringToString(X509_get0_notBefore(certificate));
 }
 
 std::string X509Certificate::expiresOn() const
 {
-    ASN1_TIME * not_before = X509_get_notAfter(certificate);
-    return reinterpret_cast<char *>(not_before->data);
+    return asn1StringToString(X509_get0_notAfter(certificate));
 }
 
 static time_t asn1TimeToTimeT(const ASN1_TIME * time)
