@@ -1,13 +1,16 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-shared-merge-tree, no-shared-catalog
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas, no-shared-merge-tree, no-shared-catalog
 -- no-random-merge-tree-settings, no-shared-merge-tree, no-shared-catalog: the parts written before the ALTERs must stay unmerged and unmutated.
 
 -- A part written before ALTER ADD COLUMN lacks the column, and the reader computes it from its default in every pass.
 SET query_plan_two_pass_count_top_k = 1, query_plan_two_pass_count_top_k_min_rows = 0;
-SET enable_parallel_replicas = 0, use_query_condition_cache = 0, apply_mutations_on_fly = 0;
+SET enable_parallel_replicas = 0, use_query_condition_cache = 0, apply_mutations_on_fly = 0, optimize_aggregation_in_order = 0;
+-- Read, sort and speed limits disable the optimization: the test profile sets them all.
+SET max_rows_to_read = 0, max_bytes_to_read = 0, max_bytes_to_read_leaf = 0, max_rows_to_group_by = 0, max_rows_to_sort = 0,
+    max_bytes_to_sort = 0, max_execution_speed = 0, max_execution_speed_bytes = 0, max_estimated_execution_time = 0;
 
 DROP TABLE IF EXISTS t_two_pass_defaults;
 CREATE TABLE t_two_pass_defaults (k UInt64, s String, ts DateTime DEFAULT now(), m UInt64 MATERIALIZED rand() % 50)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_two_pass_defaults;
 
 -- Two parts, 10% of the rows in 20 hot keys with 5 strings each, 30% in 3000 warm keys, 60% scattered over 300000 keys.
@@ -79,7 +82,7 @@ SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT k, s, cou
 SELECT 'a pending ALTER MODIFY COLUMN from Nullable: the reader replaces NULL with the default, not applied for a random one';
 DROP TABLE IF EXISTS t_two_pass_modify;
 CREATE TABLE t_two_pass_modify (k UInt64, s String, n Nullable(UInt64), d Nullable(UInt64)) ENGINE = MergeTree ORDER BY k
-SETTINGS index_granularity = 128, index_granularity_bytes = 0;
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_two_pass_modify;
 INSERT INTO t_two_pass_modify SELECT intHash64(number) % 1000, toString(number % 7), if(number % 3 = 0, NULL, intHash64(number) % 1000),
     if(number % 3 = 0, NULL, intHash64(number) % 1000) FROM numbers(200000);
