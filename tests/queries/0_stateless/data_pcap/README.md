@@ -49,3 +49,6 @@ rewrite each other's files.
 - `fragments.pcap` — a first IPv4 fragment of a TCP segment and a first IPv6
   fragment of a UDP datagram (fragment offset 0, more fragments), so the
   transport header in them is decoded.
+- `dot11.pcap`, `radiotap.pcap` — an IEEE 802.11 data frame carrying an IPv4
+  UDP packet behind an LLC header with `SNAP` (`LINKTYPE_IEEE802_11`), and the
+  same frame behind a radiotap header (`LINKTYPE_IEEE802_11_RADIOTAP`).

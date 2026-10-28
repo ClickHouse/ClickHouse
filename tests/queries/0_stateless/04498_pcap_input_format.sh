@@ -154,7 +154,7 @@ for f in truncated_ip.pcap truncated_raw_ip.pcap truncated_null.pcap truncated_s
 done
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap truncated_dot3.pcap options.pcap truncated_ip_options.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap truncated_headers.pcap truncated_ip.pcap truncated_raw_ip.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap truncated_null.pcap truncated_sll.pcap ppi.pcap sll2.pcap dot3.pcap truncated_dot3.pcap options.pcap truncated_ip_options.pcap dot11.pcap radiotap.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -254,6 +254,14 @@ $CLICKHOUSE_LOCAL -q "
 SELECT number, link_type, protocols, eth_src, eth_dst, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port
 FROM file('$DATA_DIR/dot3.pcap', PCAP)
 ORDER BY number FORMAT TSV"
+
+echo "--- IEEE 802.11 frames, with and without a radiotap header: IP behind SNAP ---"
+for f in dot11.pcap radiotap.pcap; do
+    $CLICKHOUSE_LOCAL -q "
+    SELECT '$f', number, link_type, protocols, eth_src, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, payload_length, payload
+    FROM file('$DATA_DIR/$f', PCAP)
+    ORDER BY number FORMAT TSV"
+done
 
 echo "--- end-of-options padding: the headers are dissected, the payload starts after the padding ---"
 $CLICKHOUSE_LOCAL -q "

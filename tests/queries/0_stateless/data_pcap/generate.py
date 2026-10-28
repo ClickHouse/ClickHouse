@@ -307,3 +307,22 @@ first_fragments = [
     ),
 ]
 write_pcap(out_dir / "fragments.pcap", [(packet, len(packet)) for packet in first_fragments])
+
+# IEEE 802.11 data frames (`LINKTYPE_IEEE802_11`, 105) carrying an IPv4 UDP
+# packet behind an LLC header with `SNAP`: frame control (data, From DS),
+# duration, three addresses and the sequence control. The same frame behind a
+# radiotap header (`LINKTYPE_IEEE802_11_RADIOTAP`, 127: version, padding, header
+# length and the bitmask of the present fields, little-endian) with the Flags
+# field (no FCS) only.
+dot11 = (
+    bytes.fromhex("0802")
+    + struct.pack("<H", 0)
+    + bytes.fromhex("001122334455" "66778899aabb" "ccddeeff0011")
+    + struct.pack("<H", 0x10)
+    + bytes.fromhex("aaaa03000000")
+    + struct.pack(">H", 0x0800)
+    + ipv4(17, udp_ping)
+)
+write_pcap(out_dir / "dot11.pcap", [(dot11, len(dot11))], linktype=105)
+radiotap = struct.pack("<BBHI", 0, 0, 9, 0x2) + bytes([0]) + dot11
+write_pcap(out_dir / "radiotap.pcap", [(radiotap, len(radiotap))], linktype=127)

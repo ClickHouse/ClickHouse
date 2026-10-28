@@ -140,6 +140,8 @@ dot3.pcap	0	0	0
 truncated_dot3.pcap	0	0	0
 options.pcap	0	0	0
 truncated_ip_options.pcap	0	0	0
+dot11.pcap	0	0	0
+radiotap.pcap	0	0	0
 --- padded short frame: payload excludes the Ethernet padding ---
 60	4	ping	0	42
 --- tunnels: IP columns describe the outer header ---
@@ -194,6 +196,9 @@ ppi.pcap	2	26	84	PPI	['PPI','ETHERNET_II','RAW']	\N		4		26
 1	IEEE802_3	['IEEE802_3','SNAP','IP','UDP']	00:11:22:33:44:aa	01:80:c2:00:00:00	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
 2	IEEE802_3	['IEEE802_3','LLC','STP']	00:11:22:33:44:aa	01:80:c2:00:00:00	LLC	\N	\N	\N		\N	\N
 3	ETHERNET_II	['ETHERNET_II','IP','UDP']	66:77:88:99:aa:bb	00:11:22:33:44:55	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
+--- IEEE 802.11 frames, with and without a radiotap header: IP behind SNAP ---
+dot11.pcap	1	DOT11_DATA	['DOT11_DATA','SNAP','IP','UDP','RAW']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+radiotap.pcap	1	RADIOTAP	['RADIOTAP','DOT11_DATA','SNAP','IP','UDP','RAW']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
 --- end-of-options padding: the headers are dissected, the payload starts after the padding ---
 1	['ETHERNET_II','IP','UDP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
 2	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	4	ping
