@@ -10,7 +10,6 @@
 --
 -- `obfuscate` is an effectively infinite, repeating source, so every read of it needs an explicit `LIMIT`.
 
-SET allow_experimental_analyzer = 1;
 SET obfuscate_seed = 'stable';
 
 -- The source produced exactly the 10 rows the `LIMIT` asked for, and the filter kept the result row.
