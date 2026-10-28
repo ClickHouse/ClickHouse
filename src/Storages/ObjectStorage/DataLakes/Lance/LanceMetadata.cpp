@@ -30,6 +30,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/isValidUTF8.h>
 #include <Common/ProfileEvents.h>
 #if USE_AWS_S3
 #include <IO/S3/Client.h>
@@ -439,10 +440,11 @@ std::optional<String> fieldToLanceLiteral(
     const WhichDataType which(column.type);
     if (which.isString() && column.is_arrow_utf8)
     {
-        /// The predicate crosses the Rust boundary as a NUL-terminated C string, which would cut
-        /// a literal containing a zero byte, so such a literal is not pushed down.
+        /// The predicate crosses the Rust boundary as a NUL-terminated UTF-8 C string, which would cut
+        /// a literal containing a zero byte and rejects invalid UTF-8, so such a literal is not pushed down.
+        /// A `String` constant can contain arbitrary bytes even though the column holds Arrow UTF-8.
         const auto & value = field.safeGet<String>();
-        if (value.contains('\0'))
+        if (value.contains('\0') || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
             return std::nullopt;
         return quoteLanceStringLiteral(value);
     }
