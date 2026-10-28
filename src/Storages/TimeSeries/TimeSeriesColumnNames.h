@@ -10,6 +10,15 @@ struct TimeSeriesColumnNames
 {
     /// The "samples" table contains time series:
     static constexpr const char * ID = "id";
+
+    /// A row of the "samples" table of a table of version MIN_WITH_BUCKETED_SAMPLES or later contains the samples of one time series
+    /// within one time bucket as a sorted array of tuples (timestamp, value) in the column `samples` (the same name as the outer column,
+    /// see below); `bucket` is the start of the bucket. The tables of earlier versions store one sample per row
+    /// in the columns `timestamp` and `value`.
+    static constexpr const char * Bucket = "bucket";
+
+    /// The columns `timestamp` and `value` of the "samples" table of a table of an earlier version,
+    /// also the columns returned by `prometheusQuery` and `prometheusQueryRange` for a scalar or an instant vector.
     static constexpr const char * Timestamp = "timestamp";
     static constexpr const char * Value = "value";
 
@@ -25,8 +34,8 @@ struct TimeSeriesColumnNames
     /// and without the metric name, so reading must be able to handle both cases.)
     static constexpr const char * Tags = "tags";
 
-    /// The "time ranges" table contains the time range of each time series
-    /// (tables of earlier versions kept these columns in the "tags" table):
+    /// The "time ranges" table contains the time range of each time series (tables of earlier versions kept these columns
+    /// in the "tags" table). The "samples" table of a table with buckets of samples contains the time range of each row.
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
@@ -62,7 +71,8 @@ struct TimeSeriesColumnNames
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
 
-    /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`.
+    /// The outer column with (timestamp, value) pairs of a time series, also returned by `prometheusQuery` and `prometheusQueryRange`,
+    /// and the column of `timeSeriesSelector` with the sorted samples of a time series.
     /// It's named `time_series` in tables of versions before 3, see `getOuterSamples`.
     static constexpr const char * Samples = "samples";
     static constexpr const char * TimeSeries = "time_series";
