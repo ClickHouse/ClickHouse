@@ -1,0 +1,13 @@
+<clickhouse>
+    <remote_servers>
+        <!-- One shard on a server older than PromQL over Distributed tables. -->
+        <older_shard_dist>
+            <shard>
+                <replica>
+                    <host>old_node</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </older_shard_dist>
+    </remote_servers>
+</clickhouse>
