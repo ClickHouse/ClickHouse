@@ -7,7 +7,9 @@ SET use_query_condition_cache = 0;
 SET optimize_or_like_chain = 1;
 
 DROP TABLE IF EXISTS t_chain_keys;
-CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
+-- `add_minmax_index_for_numeric_columns = 0`: the reference shows the granules selected by the primary key only, and
+-- implicit min-max indices on `a` and `b` would add their own lines to `EXPLAIN indexes = 1`.
+CREATE TABLE t_chain_keys (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 128, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0;
 INSERT INTO t_chain_keys SELECT intDiv(number, 100), number % 997 FROM numbers(100000);
 OPTIMIZE TABLE t_chain_keys FINAL;
 
