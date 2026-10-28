@@ -13,6 +13,9 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
 -- Keep `effective_max_reading_threads` from capping, so the comparison is decided by the network term.
 SET merge_tree_min_bytes_per_task_for_remote_reading=65536;
+-- The reasoning below is in bytes. Price them far above the CPU time the cost model also counts, which
+-- depends on the build, so that the byte estimates decide.
+SET automatic_parallel_replicas_read_throughput=65536, automatic_parallel_replicas_network_throughput=65536;
 
 -- `value` is incompressible so the input and output byte estimators agree; the check rests on their ratio.
 INSERT INTO t SELECT number, rand64() FROM numbers(1e6) SETTINGS max_insert_threads = 1;

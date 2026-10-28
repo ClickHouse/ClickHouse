@@ -19,6 +19,9 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- To not let other heuristics interfere with the logic we test
 SET merge_tree_min_bytes_per_task_for_remote_reading=0;
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
+-- The reasoning below is in bytes. Price them far above the CPU time the cost model also counts, which
+-- depends on the build, so that the byte estimates decide.
+SET automatic_parallel_replicas_read_throughput=65536, automatic_parallel_replicas_network_throughput=65536;
 
 -- Many unique keys so output_bytes ≈ input_bytes after GROUP BY.
 -- With num_replicas=3: replicas_cost = input/12 + output/3 ≈ input*5/12 > input/4 = local_cost → PR not enabled.

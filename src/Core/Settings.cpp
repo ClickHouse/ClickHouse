@@ -9770,14 +9770,25 @@ keeps running on one node, however the time comparison turns out.
 Set to 1 to accept any amount of duplicated reading, which restores the behaviour of only comparing times.
 )", 0, \
         {"26.10", 1.0, 0.5, "Automatic parallel replicas now declines a query that would repeat more than half of its reading on every replica. Previously there was no limit, which is what 1 still asks for."}) \
-    DECLARE(NonZeroUInt64, automatic_parallel_replicas_io_throughput, 256_MiB, R"(
-The rate, in bytes per second of one thread, at which automatic parallel replicas converts bytes into CPU time.
+    DECLARE(NonZeroUInt64, automatic_parallel_replicas_read_throughput, 3_GiB, R"(
+The rate, in compressed bytes per second of one reading thread, at which automatic parallel replicas prices
+waiting for storage.
 
-The cost model prices both plans in CPU time: the CPU time the processors of the replicas' share of the work
-spent in an earlier execution, plus the bytes that share reads and the bytes the replicas send to the
-initiator, each converted at this rate.
+The cost model prices both plans in CPU time, measured in an earlier execution. That already includes
+decompressing and deserializing what is read, so this rate covers only the wait for the data itself. The
+default is calibrated on object storage behind a warm filesystem cache - by the time the statistics exist, an
+earlier execution has read the data. Lower it for storage that is cold or slow.
 )", 0, \
-        {"26.11", 256_MiB, 256_MiB, "New setting"}) \
+        {"26.11", 3_GiB, 3_GiB, "New setting"}) \
+    DECLARE(NonZeroUInt64, automatic_parallel_replicas_network_throughput, 180_MiB, R"(
+The rate, in compressed bytes per second of one replica's stream, at which automatic parallel replicas prices
+what the replicas send to the initiator.
+
+It covers serializing and compressing the data on the replica, transferring it, and decompressing and
+deserializing it on the initiator. The default is calibrated for a 25 Gbit/s link, where the CPU work at the two
+ends costs about 15 times as much as the transfer.
+)", 0, \
+        {"26.11", 180_MiB, 180_MiB, "New setting"}) \
     DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
 Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
 The total number of bytes to read is estimated based on the collected statistics.

@@ -1314,14 +1314,19 @@ static bool decideAtBoundary(
                 || typeid_cast<const NegativeLimitStep *>(boundary_step)
                 || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
             const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
-            /// Both plans are priced in nanoseconds of CPU time: the measured CPU time of the subtree plus its
-            /// bytes converted at `automatic_parallel_replicas_io_throughput`. The replicas split the work over
-            /// the coordinated read, repeat in full the work over every other read, and ship their output.
-            const double nanoseconds_per_byte = 1e9 / static_cast<double>(optimization_settings.automatic_parallel_replicas_io_throughput);
-            const double split_cost = static_cast<double>(stats->cpu_nanoseconds) + static_cast<double>(stats->input_bytes) * nanoseconds_per_byte;
-            const double duplicated_cost
-                = static_cast<double>(stats->duplicated_cpu_nanoseconds) + static_cast<double>(stats->duplicated_bytes) * nanoseconds_per_byte;
-            const double output_cost = static_cast<double>(stats->output_bytes) * nanoseconds_per_byte;
+            /// Both plans are priced in nanoseconds of CPU time: the CPU time the subtree took in an earlier
+            /// execution, plus the wait for what it reads and the cost of shipping what it outputs, converted at
+            /// `automatic_parallel_replicas_read_throughput` and `automatic_parallel_replicas_network_throughput`.
+            /// The replicas split the work over the coordinated read, repeat in full the work over every other
+            /// read, and ship their output.
+            const double read_nanoseconds_per_byte = 1e9 / static_cast<double>(optimization_settings.automatic_parallel_replicas_read_throughput);
+            const double network_nanoseconds_per_byte
+                = 1e9 / static_cast<double>(optimization_settings.automatic_parallel_replicas_network_throughput);
+            const double split_cost
+                = static_cast<double>(stats->cpu_nanoseconds) + static_cast<double>(stats->input_bytes) * read_nanoseconds_per_byte;
+            const double duplicated_cost = static_cast<double>(stats->duplicated_cpu_nanoseconds)
+                + static_cast<double>(stats->duplicated_bytes) * read_nanoseconds_per_byte;
+            const double output_cost = static_cast<double>(stats->output_bytes) * network_nanoseconds_per_byte;
             const size_t local_threads = std::min<size_t>(max_threads, effective_max_reading_threads);
             const size_t replicas_threads = std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads);
             const double local_plan_cost_estimation = (split_cost + duplicated_cost) / static_cast<double>(local_threads);
@@ -1358,7 +1363,8 @@ static bool decideAtBoundary(
             LOG_TRACE(
                 getLogger("AutoParallelReplicas"),
                 "The applied formula, in ns: ({} + {}) / {} ? ({} / {} + {} / {} + {} / {}) ≡ {} ? {}. "
-                "Split: {} ns CPU + {} bytes, duplicated: {} ns CPU + {} bytes, output: {} bytes, at {} bytes/s",
+                "Split: {} ns CPU + {} bytes, duplicated: {} ns CPU + {} bytes, output: {} bytes; read at {} bytes/s, "
+                "network at {} bytes/s",
                 split_cost,
                 duplicated_cost,
                 local_threads,
@@ -1375,7 +1381,8 @@ static bool decideAtBoundary(
                 stats->duplicated_cpu_nanoseconds,
                 stats->duplicated_bytes,
                 stats->output_bytes,
-                optimization_settings.automatic_parallel_replicas_io_throughput);
+                optimization_settings.automatic_parallel_replicas_read_throughput,
+                optimization_settings.automatic_parallel_replicas_network_throughput);
             if (rejected_by_duplicated_reads)
             {
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
