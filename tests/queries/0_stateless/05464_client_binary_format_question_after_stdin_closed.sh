@@ -6,13 +6,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The client asks whether to output a binary format into the terminal. If reading the answer fails because the
 # terminal on stdin is closed, the next blocks of the result must not ask again: the input cannot be read anymore.
+# The answer is the default one, so the result is not printed.
 
 python3 - "$CLICKHOUSE_CLIENT" <<'PYEOF'
-import os, select, subprocess, sys, time
+import os, select, shlex, subprocess, sys, time
 
 CLIENT = sys.argv[1]
 QUESTION = b'Do you want to output it anyway?'
-QUERY = 'SELECT number FROM numbers(100) SETTINGS max_block_size = 10 FORMAT RowBinary'
+QUERY = "SELECT concat('result', 'payload') FROM numbers(100) SETTINGS max_block_size = 10 FORMAT RowBinary"
+PAYLOAD = b'resultpayload'
 
 def read_output(fd, output, until, timeout):
     deadline = time.monotonic() + timeout
@@ -37,7 +39,7 @@ def run_client():
     # while the client can still write to stdout.
     in_master, in_slave = os.openpty()
     out_master, out_slave = os.openpty()
-    client = subprocess.Popen(['sh', '-c', CLIENT + " --query '" + QUERY + "'"],
+    client = subprocess.Popen(['sh', '-c', CLIENT + ' --query ' + shlex.quote(QUERY)],
                               stdin=in_slave, stdout=out_slave, stderr=out_slave, start_new_session=True)
     os.close(in_slave)
     os.close(out_slave)
@@ -55,5 +57,6 @@ for _ in range(10):
     if code != 0:
         break
 print(output.count(QUESTION))
+print(output.count(PAYLOAD))
 print(code)
 PYEOF
