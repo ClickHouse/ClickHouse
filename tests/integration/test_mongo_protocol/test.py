@@ -3187,6 +3187,14 @@ def test_a_projected_json_field_does_not_capture_the_stored_document(started_clu
     pipeline = [{"$match": {"a": 1}}, {"$project": {"_id": 0, "json": {"$literal": {"a": 99}}}}]
     assert list(collection.aggregate(pipeline)) == [{"json": {"a": 99}}]
 
+    # A projection of a stored field named `json` does not capture the filter either, also when it
+    # is the rewrite of the projection that names the result after the field.
+    collection.insert_one({"a": 2, "json": {"a": 99}})
+    assert list(collection.find({"a": 99}, {"_id": 0, "json": 1})) == []
+    assert list(collection.aggregate([{"$match": {"a": 99}}, {"$project": {"_id": 0, "json": "$json"}}])) == []
+    assert list(collection.find({"a": 99}, {"_id": 0, "json.a": 1})) == []
+    assert list(collection.find({"a": 2}, {"_id": 0, "json.a": 1})) == [{"json": {"a": 99}}]
+
     collection.drop()
 
 
@@ -3497,6 +3505,12 @@ def test_document_collection_reads(started_cluster):
 
     # A stage after an exclusion of `_id` reads documents that no longer have it.
     assert list(collection.aggregate([{"$project": {"_id": 0}}, {"$match": {"k": 2}}])) == [{"id": 3, "a": 2, "k": 2}]
+    # An inclusion after an exclusion of `_id` does not ask for the object id again.
+    assert list(collection.aggregate([{"$project": {"_id": 0}}, {"$project": {"id": 1}}, {"$sort": {"id": 1}}])) == [
+        {"id": 1},
+        {"id": 2},
+        {"id": 3},
+    ]
 
     # `distinct` leaves out a document that has no value for the field.
     assert collection.distinct("a") == [1, 2]

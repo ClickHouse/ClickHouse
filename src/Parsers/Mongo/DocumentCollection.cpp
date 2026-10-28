@@ -355,8 +355,17 @@ ASTPtr rewriteElementWiseCondition(const ASTFunction & function, const String & 
   * `input_table` is the alias of the table the select reads, which the object id and the paths of
   * the document are qualified with when it is not empty, so that they name the columns of the input
   * even where the select list has an alias `_id` or `json` of its own - see `rewriteSelect`.
+  *
+  * `input_keeps_object_id` is false when a stage below has excluded the object id already, so that
+  * the implicit `_id` of an inclusion projection - a matcher that selects nothing from rows without
+  * it - is kept as the matcher rather than turned into the column the input no longer has.
   */
-void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_name_as_alias = false, const String & input_table = {})
+void rewriteField(
+    ASTPtr & node,
+    std::unordered_set<String> bound,
+    bool keep_name_as_alias = false,
+    const String & input_table = {},
+    bool input_keeps_object_id = true)
 {
     /// The object id of the input: a column of the table rather than a path of the document.
     auto make_object_id = [&](const String & alias) -> ASTPtr
@@ -395,7 +404,8 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
 
         if (*field == OBJECT_ID_COLUMN)
         {
-            node = make_object_id({});
+            if (input_keeps_object_id)
+                node = make_object_id({});
             return;
         }
 
@@ -440,7 +450,7 @@ void rewriteField(ASTPtr & node, std::unordered_set<String> bound, bool keep_nam
     }
 
     for (auto & child : node->children)
-        rewriteField(child, bound, /* keep_name_as_alias = */ false, input_table);
+        rewriteField(child, bound, /* keep_name_as_alias = */ false, input_table, input_keeps_object_id);
 }
 
 /** Gives the table a select reads an alias, unless it has one already, and returns that alias. The
@@ -524,15 +534,42 @@ void rewriteSelect(ASTSelectQuery & select)
       * rather than of the stored document. So the columns of the input are qualified with the table
       * they are read from when the select binds either name.
       */
-    const String input_table = aliases.contains(String(OBJECT_ID_COLUMN)) || aliases.contains(String(DOCUMENT_COLUMN))
-        ? aliasInputTable(select)
-        : String{};
+    /** The rewrite of the select list names a field it projects as it is - `{json: 1}`, `{json: "$json"}`
+      * - after the field, so those names are bound as well, even though they have no alias yet. A
+      * dotted name - `{"json.a": 1}` - is the nested field it names, and can capture the path of the
+      * same name too.
+      */
+    std::unordered_set<String> bound_names = aliases;
+    if (select_expressions)
+    {
+        for (const auto & child : select_expressions->children)
+        {
+            if (auto field = fieldOfSubtreeMatcher(*child))
+                bound_names.insert(*field);
+            else if (const auto * identifier = child->as<ASTIdentifier>(); identifier && identifier->tryGetAlias().empty())
+                bound_names.insert(identifier->name());
+        }
+    }
+
+    auto binds_column = [&](std::string_view column)
+    {
+        for (const auto & name : bound_names)
+        {
+            if (name == column || (name.size() > column.size() && name.starts_with(column) && name[column.size()] == '.'))
+                return true;
+        }
+        return false;
+    };
+
+    const String input_table = binds_column(OBJECT_ID_COLUMN) || binds_column(DOCUMENT_COLUMN) ? aliasInputTable(select) : String{};
+
+    const bool input_keeps_object_id = inputKeepsObjectId(select);
 
     /// A field of the select list becomes a path that keeps the name of the field as its alias.
     if (const auto select_list = select.select())
     {
         for (auto & child : select_list->children)
-            rewriteField(child, input_scope, /* keep_name_as_alias = */ true, input_table);
+            rewriteField(child, input_scope, /* keep_name_as_alias = */ true, input_table, input_keeps_object_id);
     }
 
     /// A clause whose whole expression may be a field of its own is taken by reference, so that the
