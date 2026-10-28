@@ -2288,13 +2288,13 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto res = make_intrusive<ASTColumnsApplyTransformer>();
         if (lambda)
         {
-            res->lambda = lambda;
+            res->set(res->lambda, lambda);
             res->lambda_arg = lambda_arg;
         }
         else
         {
             res->func_name = getIdentifierName(func_name);
-            res->parameters = expr_list_args;
+            res->set(res->parameters, expr_list_args);
         }
         res->column_name_prefix = column_name_prefix;
         node = std::move(res);

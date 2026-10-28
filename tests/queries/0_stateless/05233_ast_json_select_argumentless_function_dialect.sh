@@ -62,9 +62,8 @@ send "$(bare_payload "EXPLAIN AST optimize = 1 SELECT 1 WHERE 1 IN (2)" "$ARGS_1
 send "$(payload "EXPLAIN AST optimize = 1 SELECT a FROM (SELECT 1 AS a) ARRAY JOIN [a + 7] AS j" "$ARGS_A_7")"
 send "$(payload "EXPLAIN AST optimize = 1 SELECT a FROM (SELECT 1 AS a) ORDER BY a WITH FILL FROM 1 TO 2 INTERPOLATE (a AS a + 8)" "$ARGS_A_8")"
 
-# `ASTColumnsApplyTransformer` keeps both of its AST members out of `IAST::children`, so the recursive
-# walk over the SELECT cannot reach them and each needs the screen at its own slot. `parameters` is
-# parsed with `ParserExpressionList` and holds arbitrary expressions, not only literals.
+# Both AST members of `ASTColumnsApplyTransformer` are children of it, and each slot also carries its own
+# screen. `parameters` is parsed with `ParserExpressionList` and holds arbitrary expressions, not only literals.
 send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(x -> x + 3) FROM (SELECT 1 AS a)" "$ARGS_X_3")"
 send "$(payload "EXPLAIN AST optimize = 1 SELECT * APPLY(quantile(1 IN (6))) FROM (SELECT 1 AS a)" "$ARGS_1_6")"
 
