@@ -1012,6 +1012,35 @@ TEST(LocalObjectStorage, StartupRemovesAbandonedStagingFiles)
     EXPECT_EQ(listDirectory(directory).size(), 5u);
 }
 
+/// A disk attached with `read_only` keeps a writable object storage, see `ReadOnlyDiskWrapper`. Its startup must not
+/// remove the abandoned staging files: the reader may have no permission to, or the directory may be mounted read-only.
+TEST(LocalObjectStorage, StartupOfReadOnlyDiskKeepsAbandonedStagingFiles)
+{
+    ScopedTempDir tmp("ch_gtest_local_object_storage_read_only_disk_staging");
+    const auto & root = tmp.path;
+
+    const auto directory = root / "__meta" / "directory";
+    writeObject(makeLocalObjectStorage(root.string()), directory / "prefix.path", "previous", DB::WriteSettings{});
+
+    {
+        std::ofstream abandoned(directory / ".tmp_prefix.path_abcdefgh");
+        abandoned << "partial";
+    }
+    fs::permissions(directory / ".tmp_prefix.path_abcdefgh", fs::perms::sticky_bit, fs::perm_options::add);
+
+    DB::LocalObjectStorageSettings settings(/*disk_name_=*/"test_local", /*key_prefix_=*/root.string(), /*read_only_=*/false);
+    settings.read_only_disk = true;
+    auto storage = std::make_shared<DB::LocalObjectStorage>(std::move(settings));
+    storage->startup();
+
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{".tmp_prefix.path_abcdefgh", "prefix.path"}))
+        << "the startup of a read-only disk must not remove anything";
+
+    /// The writer of the directory removes the file on its own startup.
+    makeLocalObjectStorage(root.string())->startup();
+    EXPECT_EQ(listDirectory(directory), (std::vector<std::string>{"prefix.path"}));
+}
+
 /// A writer creates its staging file before it locks and marks it. A startup that runs in between must leave the file
 /// alone: if it took the lock of the unmarked file, the writer would fail to take its own lock and abort the write.
 TEST(LocalObjectStorage, StartupDoesNotDisturbStagingFileBeforeItIsLocked)

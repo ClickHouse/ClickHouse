@@ -1137,8 +1137,10 @@ void LocalObjectStorage::startup()
 
 void LocalObjectStorage::removeAbandonedStagingFiles() const
 {
+    /// A reader must not modify the directory: it may have no permission to remove files, or the directory may be
+    /// mounted read-only. The writer of the directory removes the abandoned files on its own startup.
     /// Without a key prefix, the objects are not confined to a directory that could be scanned.
-    if (settings.read_only || settings.key_prefix.empty())
+    if (settings.read_only || settings.read_only_disk || settings.key_prefix.empty())
         return;
 
     RelativePathsWithMetadata files;

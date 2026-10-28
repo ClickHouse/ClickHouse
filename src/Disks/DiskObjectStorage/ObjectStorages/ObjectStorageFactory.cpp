@@ -350,6 +350,8 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
 
         bool read_only = config.getBool(config_prefix + ".readonly", false);
         LocalObjectStorageSettings settings(name, object_key_prefix, read_only);
+        /// Unlike `readonly`, `read_only` wraps the disk with `ReadOnlyDiskWrapper`, see `registerDiskObjectStorage`.
+        settings.read_only_disk = config.getBool(config_prefix + ".read_only", false);
 
         return std::make_shared<LocalObjectStorage>(settings);
     };
