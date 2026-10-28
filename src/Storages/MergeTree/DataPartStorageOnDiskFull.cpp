@@ -210,7 +210,7 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     executeWriteOperation([&](auto & disk)
     {
         disk.createHardLink(
-            pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
+            pathToGenericString(pathFromString(source_on_disk->getRelativePath()) / pathFromString(from)),
             pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(to)));
     });
 }
@@ -227,7 +227,7 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
     /// Copying files between different disks is
     /// not supported in disk transactions.
     source_on_disk->getDisk()->copyFile(
-        pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
+        pathToGenericString(pathFromString(source_on_disk->getRelativePath()) / pathFromString(from)),
         *volume->getDisk(),
         pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(to)),
         getReadSettings());
