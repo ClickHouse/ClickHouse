@@ -1,3 +1,4 @@
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -12,4 +13,5 @@ cc_library(
     includes = [
         "include",
     ],
+    source_header_directories = source_header_directories(["include"]),
 )

@@ -81,6 +81,13 @@ ch_cc_library(
     source_header_directories = source_header_directories([
         "generated/src/aws-cpp-sdk-glue/include",
         "generated/src/aws-cpp-sdk-s3/include",
+        "src/aws-cpp-sdk-core/include/aws/core/auth",
+        "src/aws-cpp-sdk-core/include/aws/core/client",
+        "src/aws-cpp-sdk-core/include/aws/core/config",
+        "src/aws-cpp-sdk-core/include/aws/core/endpoint",
+        "src/aws-cpp-sdk-core/include/aws/core/utils",
+        "src/aws-cpp-sdk-core/include/smithy/client",
+        "src/aws-cpp-sdk-core/include/smithy/identity",
     ]),
     deps = [
         "@clickhouse_aws_c_common//:aws_c_common",

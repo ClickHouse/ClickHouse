@@ -1,5 +1,7 @@
 """Generate C and C++ headers from Cargo crates with the pinned Rust toolchain."""
 
+load(":cargo_sources.bzl", "cargo_source_inputs")
+
 def _rust_cbindgen_impl(ctx):
     rust = ctx.toolchains["@rules_rust//rust:toolchain_type"]
     outputs = []
@@ -20,8 +22,8 @@ def _rust_cbindgen_impl(ctx):
         executable = ctx.attr._generator[DefaultInfo].files_to_run,
         arguments = [args],
         inputs = depset(
-            ctx.files.srcs + [ctx.file.manifest, ctx.file.config, ctx.file.cargo_config],
-            transitive = [rust.all_files, ctx.attr.vendor[DefaultInfo].files],
+            [ctx.file.manifest, ctx.file.config, ctx.file.cargo_config],
+            transitive = [rust.all_files, cargo_source_inputs(ctx.attr.vendor)] + [cargo_source_inputs(src) for src in ctx.attr.srcs],
         ),
         tools = [ctx.attr.cbindgen_tool[DefaultInfo].files_to_run],
         outputs = outputs,

@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -20,6 +21,7 @@ ch_cc_library(
         "BOOST_TIMER_ENABLE_DEPRECATED=1",
     ] + CXX_RUNTIME_DEFINES,
     local_includes = ["include/cppkafka"],
+    source_header_directories = source_header_directories(["include/cppkafka/utils"]),
     deps = [
         "@clickhouse//contrib/librdkafka-cmake:rdhttp_poco_transport",
         "@clickhouse_boost//:boost_headers_no_openssl",

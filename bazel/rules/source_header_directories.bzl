@@ -1,4 +1,4 @@
-"""Stage complete public header directories from pinned external repositories."""
+"""Stage complete public or textual header directories from pinned external repositories."""
 
 load("@llvm//:directory.bzl", "headers_directory")
 

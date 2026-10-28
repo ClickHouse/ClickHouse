@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -49,6 +50,7 @@ ch_cc_library(
     includes = [
         "src",
     ],
+    source_header_directories = source_header_directories(["src/s2/util/gtl"]),
     deps = [
         "@clickhouse_abseil_cpp//:absl_flags_internal",
         "@clickhouse_abseil_cpp//:absl_status",

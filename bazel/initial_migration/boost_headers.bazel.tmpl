@@ -207,77 +207,63 @@ _NON_LINUX_HEADERS = glob(
     "boost/config/platform/vxworks.hpp",
 ]
 
+_BOOST_PUBLIC_HEADERS = glob(
+    [
+        "boost/**/*.h",
+        "boost/**/*.hpp",
+        "boost/**/*.ipp",
+    ],
+    exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _BOOST_IMPLEMENTATIONS + _BOOST_SOURCE_ENTRIES + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + [
+        "boost/compute.hpp",
+        "boost/compute/**",
+        # preprocess_encoding.cpp uses these Boost.Wave templates to generate preprocessed.hpp.
+        "boost/function_types/detail/pp_tags/master.hpp",
+        "boost/function_types/detail/pp_variate_loop/master.hpp",
+        # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
+        "boost/python.hpp",
+        "boost/python/**",
+        "boost/parameter/python*",
+        "boost/mpi.hpp",
+        "boost/mpi/**",
+        "boost/graph/accounting.hpp",
+        "boost/graph/distributed/**",
+        "boost/graph/parallel/**",
+        "boost/graph/use_mpi.hpp",
+        "boost/property_map/parallel/**",
+        "boost/gil/extension/io/jpeg*",
+        "boost/gil/extension/io/jpeg/**",
+        "boost/gil/extension/io/png*",
+        "boost/gil/extension/io/png/**",
+        "boost/gil/extension/io/tiff*",
+        "boost/gil/extension/io/tiff/**",
+        "boost/gil/extension/io/raw*",
+        "boost/gil/extension/io/raw/**",
+        "boost/numeric/odeint/external/**",
+        "boost/numeric/ublas/opencl.hpp",
+        "boost/numeric/ublas/opencl/**",
+        # Boost.Parser includes this Win32 implementation only under _MSC_VER.
+        "boost/parser/detail/vs_output_stream.hpp",
+        # Boost.URL rejects this discontinued single-translation-unit entry point.
+        "boost/url/src.hpp",
+        "boost/program_options/detail/config_file.hpp",
+        "boost/pfr.hpp",
+        "boost/pfr/**",
+    ],
+)
+
+_BOOST_TEXTUAL_HEADERS = glob(["boost/**/*.inc"]) + _BOOST_MACRO_FRAGMENTS + _BOOST_SOURCE_ENTRIES
+
 cc_library(
     name = "boost_headers_no_openssl",
     srcs = _BOOST_IMPLEMENTATIONS,
-    hdrs = glob(
-        [
-            "boost/**/*.h",
-            "boost/**/*.hpp",
-            "boost/**/*.ipp",
-        ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _BOOST_IMPLEMENTATIONS + _BOOST_SOURCE_ENTRIES + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + [
-            "boost/compute.hpp",
-            "boost/compute/**",
-            # preprocess_encoding.cpp uses these Boost.Wave templates to generate preprocessed.hpp.
-            "boost/function_types/detail/pp_tags/master.hpp",
-            "boost/function_types/detail/pp_variate_loop/master.hpp",
-            # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
-            "boost/python.hpp",
-            "boost/python/**",
-            "boost/parameter/python*",
-            "boost/mpi.hpp",
-            "boost/mpi/**",
-            "boost/graph/accounting.hpp",
-            "boost/graph/distributed/**",
-            "boost/graph/parallel/**",
-            "boost/graph/use_mpi.hpp",
-            "boost/property_map/parallel/**",
-            "boost/gil/extension/io/jpeg*",
-            "boost/gil/extension/io/jpeg/**",
-            "boost/gil/extension/io/png*",
-            "boost/gil/extension/io/png/**",
-            "boost/gil/extension/io/tiff*",
-            "boost/gil/extension/io/tiff/**",
-            "boost/gil/extension/io/raw*",
-            "boost/gil/extension/io/raw/**",
-            "boost/numeric/odeint/external/**",
-            "boost/numeric/ublas/opencl.hpp",
-            "boost/numeric/ublas/opencl/**",
-            # Boost.Parser includes this Win32 implementation only under _MSC_VER.
-            "boost/parser/detail/vs_output_stream.hpp",
-            # Boost.URL rejects this discontinued single-translation-unit entry point.
-            "boost/url/src.hpp",
-            "boost/program_options/detail/config_file.hpp",
-            "boost/pfr.hpp",
-            "boost/pfr/**",
-        ],
-    ) + select({
+    hdrs = _BOOST_PUBLIC_HEADERS + select({
         "@platforms//os:linux": [],
         "@platforms//os:windows": _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + ["boost/parser/detail/vs_output_stream.hpp"],
         "//conditions:default": _WINAPI_HEADERS + _NON_LINUX_HEADERS,
     }),
     features = ["external_include_paths"],
-    source_header_directories = source_header_directories([
-        "boost/atomic",
-        "boost/fusion/container",
-        "boost/fusion/include",
-        "boost/fusion/view",
-        "boost/geometry",
-        "boost/hana/fwd",
-        "boost/math",
-        "boost/metaparse",
-        "boost/phoenix",
-        "boost/predef",
-        "boost/proto",
-        "boost/range",
-        "boost/spirit/include",
-        "boost/test",
-        "boost/type_traits",
-        "boost/units",
-        "boost/vmd",
-    ]),
-    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_MACRO_FRAGMENTS + _BOOST_SOURCE_ENTRIES,
+    source_header_directories = boost_source_header_directories(_BOOST_PUBLIC_HEADERS, _BOOST_TEXTUAL_HEADERS),
+    textual_hdrs = _BOOST_TEXTUAL_HEADERS,
     deps = [
         ":boost_asio_options",
         ":boost_config",
@@ -289,6 +275,7 @@ cc_library(
     srcs = _OPENSSL_IMPLEMENTATIONS,
     hdrs = _OPENSSL_HEADERS,
     includes = ["boost"],
+    source_header_directories = source_header_directories(["boost/mysql/detail"]),
     textual_hdrs = _OPENSSL_SEPARATE_COMPILATION,
     deps = [
         ":boost_asio_options",

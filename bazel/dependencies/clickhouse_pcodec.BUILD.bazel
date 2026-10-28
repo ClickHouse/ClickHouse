@@ -1,13 +1,12 @@
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_repository_sources")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
 ])
 
-filegroup(
+cargo_repository_sources(
     name = "cmake_cargo_sources",
-    srcs = glob(
-        ["**"],
-        exclude = ["**/BUILD.bazel"],
-    ),
+    exclude_top_level = ["target"],
 )

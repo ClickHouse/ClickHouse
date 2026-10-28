@@ -1,13 +1,10 @@
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_repository_sources")
 load("@clickhouse//bazel/rules:codegen_actions.bzl", "rust_vendor_licenses")
 
 package(default_visibility = ["//visibility:public"])
 
-filegroup(
+cargo_repository_sources(
     name = "sources",
-    srcs = glob(
-        ["**"],
-        exclude = ["**/BUILD.bazel"],
-    ),
 )
 
 rust_vendor_licenses(

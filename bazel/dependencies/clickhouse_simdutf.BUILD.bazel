@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -58,4 +59,5 @@ ch_cc_library(
         ]),
         "@platforms//cpu:aarch64": glob(["src/arm64/*.cpp"]),
     }),
+    source_header_directories = source_header_directories(["include"]),
 )

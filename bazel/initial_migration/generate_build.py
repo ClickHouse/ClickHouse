@@ -21,7 +21,7 @@ from initial_migration.cmake_metadata import read_metadata, write_metadata
 from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from initial_migration.reference_readers import bazel_compile_groups, read_file_api
 from initial_migration.configuration import read_configurations
-from initial_migration import llvm_targets
+from initial_migration import llvm_targets, source_header_directories
 from initial_migration.arrow_inputs import foreign_arrow_dependencies
 from initial_migration.external_headers import HeaderLibraries
 from initial_migration.package_codegen import PACKAGES as PACKAGE_CODEGEN_DIRECTORIES
@@ -157,6 +157,7 @@ def declare_boost_header_libraries(build):
             raise ValueError(f"Duplicate Boost header library {name}")
         build.names.add(name)
     build.loads.setdefault("@rules_cc//cc:cc_library.bzl", set()).add("cc_library")
+    build.loads.setdefault("@clickhouse//bazel/rules:boost_source_header_directories.bzl", set()).add("boost_source_header_directories")
     build.loads.setdefault("@clickhouse//bazel/rules:source_header_directories.bzl", set()).add("source_header_directories")
     build.rules.append(contents)
 
@@ -1540,6 +1541,7 @@ def main():
                  ROOT / 'bazel/dependencies/clickhouse_rocksdb.BUILD.bazel',
                  ROOT / 'bazel/dependencies/clickhouse_vectorscan.BUILD.bazel'}
     maintained = {path: path.read_bytes() for path in read_only}
+    reviewed_directories = source_header_directories.read(ROOT / 'bazel/dependencies', read_only)
     from initial_migration.compact_build import Source
     arrow_targets = {kw.value.value for _, rule in Source(maintained[arrow].decode()).rules()
                     for kw in rule.keywords if kw.arg == 'name' and isinstance(kw.value, ast.Constant)}
@@ -1931,6 +1933,7 @@ def main():
     prune_native_exports(ROOT, write=True)
     llvm_targets.fold_component_libraries(ROOT)
     llvm_targets.fold_component_interface(ROOT)
+    source_header_directories.restore(reviewed_directories)
     format_build_files(read_only=read_only)
     for path, original in maintained.items():
         if path.read_bytes() != original:

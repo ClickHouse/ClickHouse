@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,4 +23,5 @@ ch_cc_library(
         "SIMSIMD_TARGET_SVE2=0",
         "SIMSIMD_TARGET_SVE=0",
     ] + CXX_RUNTIME_DEFINES,
+    source_header_directories = source_header_directories(["include/simsimd"]),
 )

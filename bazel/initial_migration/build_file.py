@@ -1015,6 +1015,8 @@ class BuildFile:
             attrs['includes'] = attrs.get('includes', []) + [NATIVE_PUBLIC_INCLUDES[self.owner, name]]
         if kind in {'cc_library', 'cc_binary', 'cc_test', 'cc_import'}:
             self.loads.setdefault('@rules_cc//cc:' + kind + '.bzl', set()).add(kind)
+        elif kind == 'cargo_repository_sources':
+            self.loads.setdefault('@clickhouse//bazel/rules:cargo_sources.bzl', set()).add(kind)
         elif kind == 'rust_vendor_licenses':
             self.loads.setdefault('@clickhouse//bazel/rules:codegen_actions.bzl', set()).add(kind)
         elif kind == 'nasm_objects':
@@ -1596,17 +1598,16 @@ def dependency_inputs(builds, owners):
             builds[owner] = BuildFile(owner, owners)
         return builds[owner]
 
-    for owner, name in [('contrib/delta-kernel-rs', 'cbindgen_sources'),
-                        ('contrib/rust_vendor', 'sources')]:
-        build(owner).rule('filegroup', name, {
-            'srcs': Glob(['**'], ('**/BUILD', '**/BUILD.bazel')),
-        })
+    build('contrib/delta-kernel-rs').rule('cargo_repository_sources', 'cbindgen_sources', {
+        'split_directories': ['derive-macros', 'ffi', 'kernel'],
+    })
+    build('contrib/rust_vendor').rule('cargo_repository_sources', 'sources', {})
     build('contrib/rust_vendor').rule('rust_vendor_licenses', 'licenses', {
         'filenames': rust_license_filenames(ROOT),
     })
     for owner in ('contrib/pcodec', 'contrib/wasmtime', 'contrib/chdig'):
-        build(owner).rule('filegroup', 'cmake_cargo_sources', {
-            'srcs': Glob(['**'], ('**/BUILD', '**/BUILD.bazel', 'target/**')),
+        build(owner).rule('cargo_repository_sources', 'cmake_cargo_sources', {
+            'exclude_top_level': ['target'],
         })
     build('contrib/sql-console').rule('filegroup', 'dist_standalone', {
         'srcs': Glob(['dist-standalone/**']),

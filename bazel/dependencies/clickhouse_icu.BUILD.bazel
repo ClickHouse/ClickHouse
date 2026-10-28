@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -70,6 +71,7 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
     ],
+    source_header_directories = source_header_directories(["icu4c/source/i18n/unicode"]),
     deps = [":_icuuc"],
 )
 
@@ -96,4 +98,5 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "_REENTRANT",
     ],
+    source_header_directories = source_header_directories(["icu4c/source/common/unicode"]),
 )

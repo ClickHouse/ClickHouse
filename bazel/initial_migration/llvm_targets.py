@@ -338,6 +338,7 @@ def declare_from_references(root, references):
     })
     # Headers include libc++'s extensionless standard headers and libc sources
     # textually included by ClickHouse's mem_functions.cpp.
+    build.rule('cargo_repository_sources', 'runtime_libcxx_headers', {'root': 'libcxx/include'})
     build.rule('filegroup', 'runtime_source_inputs', {
         'srcs': Glob([
             'libcxx/include/**', 'libcxx/src/**',

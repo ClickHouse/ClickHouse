@@ -8,6 +8,7 @@ load("//bazel/link_runtime:defs.bzl", "link_runtime_root")
 load("//bazel/rules:native_compile_options.bzl", "without_opt_flags")
 load("//bazel/rules:rust_archives.bzl", "RUST_ARCHIVES")
 load("//bazel/rules:rust_cxx_flags.bzl", "RUST_CXX")
+load(":cargo_sources.bzl", "cargo_source_inputs")
 
 def _cmake_cargo_impl(ctx):
     rust = ctx.toolchains["@rules_rust//rust:toolchain_type"]
@@ -83,7 +84,7 @@ def _cmake_cargo_impl(ctx):
             fail("Cargo repositories must come from fetched source repositories: " + str(target.label))
         args.add_all(["--mount", source_root, destination])
         args.add_all(target[DefaultInfo].files, before_each = "--source")
-        source_depsets.append(target[DefaultInfo].files)
+        source_depsets.append(cargo_source_inputs(target))
     for required in ["contrib/rust_vendor"]:
         if required not in destinations:
             fail("cmake_cargo requires declared sources mounted at " + required)
@@ -121,7 +122,7 @@ def _cmake_cargo_impl(ctx):
             "contrib/llvm-project",
         ])
         args.add_all(native_headers, before_each = "--source")
-        source_depsets.append(native_headers)
+        source_depsets.append(cargo_source_inputs(ctx.attr._native_headers))
     if ctx.attr.openssl_headers:
         args.add("--openssl-headers", ctx.file.openssl_headers.path)
         additional_inputs.append(ctx.file.openssl_headers)

@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -246,6 +247,11 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
     ],
+    source_header_directories = source_header_directories([
+        "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/builder",
+        "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/types",
+        "src/bsoncxx/include/bsoncxx/v_noabi/bsoncxx/vector",
+    ]),
     textual_hdrs = _BSONCXX_TEXTUAL_HEADERS,
     deps = ["@clickhouse_mongo_c_driver//:_libbson"],
 )
@@ -286,6 +292,15 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
     ],
+    source_header_directories = source_header_directories([
+        "src/mongocxx/include/mongocxx/v1/events",
+        "src/mongocxx/include/mongocxx/v1/gridfs",
+        "src/mongocxx/include/mongocxx/v_noabi/mongocxx/events",
+        "src/mongocxx/include/mongocxx/v_noabi/mongocxx/exception",
+        "src/mongocxx/include/mongocxx/v_noabi/mongocxx/model",
+        "src/mongocxx/include/mongocxx/v_noabi/mongocxx/options",
+        "src/mongocxx/include/mongocxx/v_noabi/mongocxx/result",
+    ]),
     textual_hdrs = _MONGOCXX_TEXTUAL_HEADERS,
     deps = [":_bsoncxx"],
 )

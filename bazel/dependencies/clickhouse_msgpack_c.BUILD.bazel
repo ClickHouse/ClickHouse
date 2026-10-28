@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -51,6 +52,22 @@ cc_library(
         ],
     ),
     includes = ["include"],
+    source_header_directories = source_header_directories([
+        "include/msgpack/adaptor/cpp11",
+        "include/msgpack/predef",
+        "include/msgpack/preprocessor/arithmetic",
+        "include/msgpack/preprocessor/array",
+        "include/msgpack/preprocessor/control",
+        "include/msgpack/preprocessor/detail",
+        "include/msgpack/preprocessor/facilities",
+        "include/msgpack/preprocessor/list",
+        "include/msgpack/preprocessor/logical",
+        "include/msgpack/preprocessor/repetition",
+        "include/msgpack/preprocessor/seq",
+        "include/msgpack/preprocessor/tuple",
+        "include/msgpack/v1/adaptor/cpp11",
+        "include/msgpack/v1/adaptor/detail",
+    ]),
     textual_hdrs = _PREPROCESSOR_TEXTUAL_HDRS,
 )
 

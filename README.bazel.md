@@ -50,13 +50,20 @@ appear as `download outputs` in the profile even when the `.o` stays remote.
 To get a local copy of the executable, add `--remote_download_outputs=toplevel`
 to the build of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
-ClickHouse stages complete public header directories from Boost and the AWS
-Glue and S3 SDKs with hermetic-llvm’s `headers_directory`. Bazel can reuse each
-directory’s Merkle digest across compiles. The libraries still declare individual
-headers for DWYU and module maps; `--strict_system_includes` also stages them
-individually.
+ClickHouse uses hermetic-llvm’s `headers_directory` for complete public header
+directories in Boost, AWS, ICU, and other dependencies. Boost also groups
+directories containing its published textual headers. Bazel can reuse a
+directory’s Merkle digest across compiles. DWYU and module maps still see the
+individual public, private, and textual header declarations. Rules that enumerate
+`CcInfo.compilation_context.headers` see the staged directories. Use
+`--strict_system_includes` when such a rule needs the individual files.
 
-These x86-64 timing profiles predate the Boost and AWS directory change.
+Cargo stages complete directories from its pinned Rust repositories, including
+Wasmtime and pcodec. Its command line still names each original source file.
+cbindgen stages the vendored crates and Delta Kernel by directory, while keeping
+files it names separately, such as Delta Kernel's `ffi/Cargo.toml`, as individual inputs.
+
+These x86-64 timing profiles predate the source directory changes.
 They used a local Bazel client with `--jobs=2000`
 and a warm repository cache. Each run set a fresh target `--action_env` cache
 buster, kept the host action environment unchanged, and executed the final

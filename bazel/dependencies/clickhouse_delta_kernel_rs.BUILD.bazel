@@ -1,3 +1,5 @@
+load("@clickhouse//bazel/rules:cargo_sources.bzl", "cargo_repository_sources")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
@@ -6,10 +8,11 @@ exports_files([
     "ffi/cbindgen.toml",
 ])
 
-filegroup(
+cargo_repository_sources(
     name = "cbindgen_sources",
-    srcs = glob(
-        ["**"],
-        exclude = ["**/BUILD.bazel"],
-    ),
+    split_directories = [
+        "derive-macros",
+        "ffi",
+        "kernel",
+    ],
 )
