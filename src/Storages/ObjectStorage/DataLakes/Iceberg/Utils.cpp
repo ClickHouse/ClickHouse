@@ -189,7 +189,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
 /// True for `v<N>.metadata.json`, the only scheme whose file name is itself the compare-and-set:
 /// aiming at an N that exists collides, so existence means N is committed and a higher N carries a
 /// superset of the state. A uuid in the name removes both properties.
-bool isVersionNumberedCommitScheme(const String & file_name)
+static bool isVersionNumberedCommitScheme(const String & file_name)
 {
     if (!file_name.starts_with('v'))
         return false;
@@ -197,6 +197,16 @@ bool isVersionNumberedCommitScheme(const String & file_name)
     if (end_pos == String::npos || end_pos <= 1 || file_name[end_pos] != '.')
         return false;
     return std::all_of(file_name.begin() + 1, file_name.begin() + end_pos, isdigit);
+}
+
+bool isUuidNamedMetadataFile(const String & file_name)
+{
+    const auto dash_pos = file_name.find('-');
+    const auto dot_pos = file_name.find('.');
+    if (dash_pos == String::npos || dot_pos == String::npos || dot_pos < dash_pos)
+        return false;
+    const String name_uuid = file_name.substr(dash_pos + 1, dot_pos - dash_pos - 1);
+    return name_uuid.size() == 36 && Poco::UUID{}.tryParse(name_uuid);
 }
 
 /// The file name a configured pointer addresses, resolved the way the reader resolves it: a bare

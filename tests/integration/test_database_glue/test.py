@@ -2300,7 +2300,8 @@ def test_table_without_uuid_with_compaction_enabled(started_cluster):
     """
     A format-version 1 table whose metadata has no `table-uuid` is kept by a database with
     `allow_experimental_iceberg_compaction` while Glue points at the same metadata file, and is read as the new table
-    after a drop and recreate under the same name and location.
+    after a drop and recreate under the same name and location. So is a table registered with a metadata file name
+    that has no uuid, also when its metadata has a `table-uuid`.
     """
     node = started_cluster.instances["node1"]
     test_ref = f"test_table_without_uuid_{uuid.uuid4().hex}"
@@ -2319,13 +2320,14 @@ def test_table_without_uuid_with_compaction_enabled(started_cluster):
         region_name="us-east-1",
     )
 
-    def create_table_without_uuid(field, values, metadata_file_name):
+    def create_registered_table(field, values, metadata_file_name, keep_uuid=False):
         table = catalog.create_table(identifier, schema=Schema(field), location=location, properties={"format-version": "1"})
         table.append(values)
         metadata = json.loads(
             s3.get_object(Bucket="warehouse-glue", Key=table.metadata_location.removeprefix("s3://warehouse-glue/"))["Body"].read()
         )
-        del metadata["table-uuid"]
+        if not keep_uuid:
+            del metadata["table-uuid"]
         key = f"{test_ref}/metadata/{metadata_file_name}"
         s3.put_object(Bucket="warehouse-glue", Key=key, Body=json.dumps(metadata))
         catalog.drop_table(identifier)
@@ -2334,7 +2336,7 @@ def test_table_without_uuid_with_compaction_enabled(started_cluster):
     double_table = (NestedField(1, "a", DoubleType(), required=False), pa.table({"a": pa.array([1.5, 2.5], type=pa.float64())}))
     string_table = (NestedField(1, "b", StringType(), required=False), pa.table({"b": pa.array(["x", "y"], type=pa.string())}))
 
-    create_table_without_uuid(*double_table, f"00002-{uuid.uuid4()}.metadata.json")
+    create_registered_table(*double_table, f"00002-{uuid.uuid4()}.metadata.json")
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_database(
         started_cluster, node, compaction_db, additional_settings={"allow_experimental_iceberg_compaction": 1}
@@ -2350,15 +2352,23 @@ def test_table_without_uuid_with_compaction_enabled(started_cluster):
 
     # Same name and location, another schema under the same schema-id.
     catalog.drop_table(identifier)
-    create_table_without_uuid(*string_table, f"00002-{uuid.uuid4()}.metadata.json")
+    create_registered_table(*string_table, f"00002-{uuid.uuid4()}.metadata.json")
     check("x\ny\n")
 
-    # Also when the new table's metadata file has the same version-only name as the old one's.
-    catalog.drop_table(identifier)
-    create_table_without_uuid(*double_table, "v1.metadata.json")
-    check("1.5\n2.5\n")
-    catalog.drop_table(identifier)
-    create_table_without_uuid(*string_table, "v1.metadata.json")
-    check("x\ny\n")
+    # Also when the new table's metadata file has the same name as the old one's and the name has no uuid: a
+    # version-only name, or one registered by hand, also with a `table-uuid` in the metadata.
+    for metadata_file_name, keep_uuid in [
+        ("v1.metadata.json", False),
+        ("00001-manual.metadata.json", False),
+        ("00001-manual.metadata.json", True),
+    ]:
+        catalog.drop_table(identifier)
+        create_registered_table(*double_table, metadata_file_name, keep_uuid)
+        check("1.5\n2.5\n")
+        if keep_uuid:
+            assert opened_storages(node, f"{compaction_db}.`{identifier}`") == "0\n"
+        catalog.drop_table(identifier)
+        create_registered_table(*string_table, metadata_file_name, keep_uuid)
+        check("x\ny\n")
 
     node.query(f"DROP DATABASE {compaction_db}")
