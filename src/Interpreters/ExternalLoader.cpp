@@ -435,6 +435,8 @@ public:
     /// Sets new configurations for all the objects.
     void setConfiguration(const ObjectConfigsPtr & new_configs)
     {
+        /// Objects removed from the configuration are destroyed after `mutex` is unlocked.
+        std::vector<LoadablePtr> removed_objects;
         std::lock_guard lock{mutex};
         if (configs == new_configs)
             return;
@@ -511,6 +513,7 @@ public:
                 const auto & info = it->second;
                 if (info.loaded() || info.isLoading())
                     LOG_TRACE(log, "Unloading '{}' because its configuration has been removed or detached", name);
+                removed_objects.push_back(std::move(it->second.object));
                 infos.erase(it);
             }
         }
@@ -684,16 +687,21 @@ public:
 
     bool unload(const String & name)
     {
+        LoadablePtr object; /// Destroyed after `mutex` is unlocked.
         std::lock_guard lock{mutex};
         Info * info = getInfo(name);
+        if (info)
+            object = info->object;
         return unload(info);
     }
 
     void unloadAll()
     {
+        std::vector<LoadablePtr> objects; /// Destroyed after `mutex` is unlocked.
         std::lock_guard lock{mutex};
         for (auto & [_, info] : infos)
         {
+            objects.push_back(info.object);
             unload(&info);
         }
     }
@@ -1133,9 +1141,17 @@ private:
             {
                 LoadingGuardForAsyncLoad lock(async, mutex);
                 saveResultOfLoadingSingleObject(name, loading_id, info->object, new_object, new_exception, info->error_count, lock);
-                finishLoadingSingleObject(name, loading_id, lock);
             }
             event.notify_all();
+
+            /// Destroy the previous version or a discarded result before this thread is reported as finished,
+            /// because startLoading() joins finished threads with `mutex` locked.
+            info.reset();
+            previous_version_as_base_for_loading.reset();
+            new_object.reset();
+
+            LoadingGuardForAsyncLoad lock(async, mutex);
+            finishLoadingSingleObject(name, loading_id, lock);
         }
         catch (...)
         {
