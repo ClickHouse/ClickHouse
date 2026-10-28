@@ -41,6 +41,7 @@
 #include <Processors/Transforms/RadixUniqExactTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/Transforms/TwoPassCountTopKTransform.h>
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -223,6 +224,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             processors.emplace(processor);
             continue;
         }
+
+        /// It returns either the rows of its input, counted below, or the rows of a pass, which it counts. The walk goes on.
+        if (!limit_being_counted && isTwoPassCountTopKTransform(*processor))
+            processors.emplace(processor);
 
         if (typeid_cast<LimitRangeTransform *>(processor))
         {

@@ -3,6 +3,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsNumber.h>
+#include <Access/EnabledQuota.h>
+#include <Access/QuotaUsage.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Settings.h>
 #include <Databases/enableAllExperimentalSettings.h>
@@ -19,6 +21,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -26,10 +29,13 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/TwoPassCountTopKTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -54,12 +60,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_bytes_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsUInt64 max_bytes_to_read_leaf;
-    extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsBool rows_before_aggregation;
     extern const SettingsDouble limit;
     extern const SettingsDouble offset;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -93,6 +96,8 @@ constexpr size_t max_sampled_values = 20'000'000;
 /// Without granule skipping by the key, a restricted pass covers the most frequent values holding up to this share of the rows.
 constexpr UInt64 unpruned_rows_divisor = 10;
 
+/// Every node the passes add carries this prefix, and a query whose own names contain it is not optimized.
+constexpr std::string_view reserved_name_prefix = "__two_pass_count_top_k";
 constexpr auto in_column_name = "__two_pass_count_top_k_in";
 constexpr auto set_column_name = "__two_pass_count_top_k_set";
 
@@ -314,13 +319,29 @@ ActionsDAG makeInFilter(const TwoPassTemplate & templ, const FutureSetPtr & set)
     return dag;
 }
 
-PrewhereInfoPtr addToPrewhere(const PrewhereInfoPtr & existing, ActionsDAG in_filter, const ContextPtr & context)
+/// `ActionsDAG::mergeNodes` and the reader resolve nodes by name: the merged IN filter must be the new `in` over the key column
+/// input and the set, and neither it nor the conjunction may share a name with another node or a column of the read.
+/// Returns nullptr otherwise.
+PrewhereInfoPtr addToPrewhere(const PrewhereInfoPtr & existing, ActionsDAG in_filter, const TwoPassTemplate & templ, const Block & read_header)
 {
     auto result = std::make_shared<PrewhereInfo>();
     result->need_filter = true;
     result->remove_prewhere_column = true;
+
+    auto is_new_in = [&](const ActionsDAG & dag, const ActionsDAG::Node * node)
+    {
+        return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "in"
+            && node->children.size() == 2 && node->children[0]->type == ActionsDAG::ActionType::INPUT
+            && node->children[0]->result_name == templ.key_column && node->children[0]->result_type->equals(*templ.key_type)
+            && node->children[1]->type == ActionsDAG::ActionType::COLUMN && node->children[1]->result_name == set_column_name
+            && !hasResultNameClash(dag, node) && !hasResultNameClash(dag, node->children[0]) && !hasResultNameClash(dag, node->children[1]);
+    };
+
     if (!existing)
     {
+        const auto * in_node = &in_filter.findInOutputs(in_column_name);
+        if (!is_new_in(in_filter, in_node) || read_header.has(in_column_name))
+            return nullptr;
         result->prewhere_actions = std::move(in_filter);
         result->prewhere_column_name = in_column_name;
         return result;
@@ -334,10 +355,12 @@ PrewhereInfoPtr addToPrewhere(const PrewhereInfoPtr & existing, ActionsDAG in_fi
     for (const auto * node : new_outputs)
         if (node->result_name == in_column_name)
             in_node = node;
-    if (!in_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The IN filter of the two-pass top-K is missing after merging into PREWHERE");
+    if (!in_node || !is_new_in(combined, in_node))
+        return nullptr;
 
-    const auto * and_node = &combined.addFunction(FunctionFactory::instance().get("and", context), {existing_filter, in_node}, {});
+    const auto * and_node = &combined.addFunction(FunctionFactory::instance().get("and", templ.context), {existing_filter, in_node}, {});
+    if (hasResultNameClash(combined, and_node) || read_header.has(and_node->result_name))
+        return nullptr;
     auto & outputs = combined.getOutputs();
     for (const auto * node : new_outputs)
         if (node != in_node && std::ranges::find(outputs, node) == outputs.end())
@@ -378,6 +401,7 @@ QueryPlan makePilotPlan(const TwoPassTemplate & templ, bool groups)
     keepEveryNthMark(*sampled, sample_period);
     updateTotals(*sampled);
     read->setAnalyzedResult(std::move(sampled));
+    read->adoptFiltersFrom(*templ.read);
     read->disableQueryConditionCache();
 
     QueryPlan plan;
@@ -408,8 +432,10 @@ QueryPlan makePilotPlan(const TwoPassTemplate & templ, bool groups)
 
 QueryPlan makeCountsPlan(const TwoPassTemplate & templ, std::optional<size_t> top_values, UInt64 min_count)
 {
+    auto read = cloneTyped(*templ.read);
+    read->adoptFiltersFrom(*templ.read);
     QueryPlan plan;
-    addReadAndFilters(plan, templ, cloneTyped(*templ.read));
+    addReadAndFilters(plan, templ, std::move(read));
     project(plan, {templ.key_name});
     removeUnusedColumns(*plan.getRootNode(), RemoveUnusedColumnsMode::Global);
     auto params = countParams(templ, {templ.key_name});
@@ -472,8 +498,12 @@ QueryPlan makeRestrictedPlan(const TwoPassTemplate & templ, const std::vector<UI
 
     auto read = cloneTyped(*templ.read);
     read->disableQueryConditionCache();
-    read->updatePrewhereInfo(addToPrewhere(read->getPrewhereInfo(), makeInFilter(templ, set), templ.context));
+    auto prewhere = addToPrewhere(read->getPrewhereInfo(), makeInFilter(templ, set), templ, *read->getOutputHeader());
+    if (!prewhere)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The IN filter of the two-pass top-K does not merge into PREWHERE");
+    read->updatePrewhereInfo(prewhere);
     read->setAnalyzedResult(std::move(ranges));
+    read->adoptFiltersFrom(*templ.read);
 
     QueryPlan plan;
     addReadAndFilters(plan, templ, std::move(read));
@@ -501,6 +531,8 @@ public:
     }
 
     String getName() const override { return "TwoPassCountTopKTransform"; }
+
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit.swap(counter); }
 
     Status prepare() override
     {
@@ -551,6 +583,8 @@ public:
             {
                 if (current->isFinished())
                 {
+                    if (pass == Pass::Final && current != &inputs.front() && final_rows_before_limit)
+                        rows_before_limit->add(final_rows_before_limit->get());
                     output.finish();
                     closeInputs();
                     return Status::Finished;
@@ -611,6 +645,9 @@ public:
         current = &inputs.back();
         current->setNeeded();
         new_output = nullptr;
+        /// The processors of a pass point to the steps of a plan that no longer exists.
+        for (auto & processor : new_processors)
+            processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
         return PipelineUpdate{.to_add = std::move(new_processors), .to_remove = {}};
     }
 
@@ -635,6 +672,10 @@ private:
 
     TwoPassTemplatePtr templ;
     LoggerPtr log;
+    RowsBeforeStepCounterPtr rows_before_limit;
+    /// Rows before the LIMIT of the restricted and the final pass.
+    RowsBeforeStepCounterPtr restricted_rows_before_limit;
+    RowsBeforeStepCounterPtr final_rows_before_limit;
 
     Stage stage = Stage::Start;
     Pass pass = Pass::KeyPilot;
@@ -686,6 +727,14 @@ private:
         new_output = pipe.getOutputPort(0);
         new_processors = Pipe::detachProcessors(std::move(pipe));
         resources.push_back(std::move(pass_resources));
+        if (rows_before_limit && (next == Pass::Restricted || next == Pass::Final))
+        {
+            auto counter = std::make_shared<RowsBeforeStepCounter>();
+            for (const auto & processor : new_processors)
+                if (typeid_cast<PartialSortingTransform *>(processor.get()))
+                    processor->setRowsBeforeLimitCounter(counter);
+            (next == Pass::Restricted ? restricted_rows_before_limit : final_rows_before_limit) = std::move(counter);
+        }
         if (current && current != &inputs.front())
             to_close = current;
         pass = next;
@@ -705,6 +754,8 @@ private:
 
     void emitRestricted()
     {
+        if (restricted_rows_before_limit)
+            rows_before_limit->add(restricted_rows_before_limit->get());
         close_original = true;
         UInt64 to_skip = templ->offset;
         UInt64 to_take = templ->limit;
@@ -1004,7 +1055,7 @@ public:
 
     void describeActions(FormatSettings & settings) const override
     {
-        String prefix(settings.offset, settings.indent_char);
+        const String & prefix = settings.detail_prefix;
         settings.out << prefix << "Bounding key: " << templ->key_name << '\n';
         settings.out << prefix << "Limit: " << templ->limit << '\n';
         settings.out << prefix << "Offset: " << templ->offset << '\n';
@@ -1052,7 +1103,7 @@ std::optional<String> passedThrough(const ActionsDAG & dag, const String & name)
 /// Every pass evaluates the expressions again over other granules and blocks: they must give the same values.
 bool isRepeatable(const ActionsDAG & dag)
 {
-    if (dag.hasNonDeterministicOrStatefulFunctions() || dag.hasArrayJoin())
+    if (isSensitiveToEvaluationCount(dag) || dag.hasArrayJoin())
         return false;
     for (const auto & node : dag.getNodes())
     {
@@ -1145,6 +1196,35 @@ bool readerExpressionsAreRepeatable(const ReadFromMergeTree & read, const Ranges
     }
 }
 
+bool hasReservedName(const ActionsDAG & dag)
+{
+    return std::ranges::any_of(dag.getNodes(), [](const auto & node) { return node.result_name.contains(reserved_name_prefix); });
+}
+
+/// The passes read more rows, and possibly more bytes, than the original plan: a limit or a throttle on the read volume, of
+/// any level of the query, or a quota on it would act on a different amount than without the optimization.
+bool hasReadVolumeLimits(const ReadFromMergeTree & read, const ContextPtr & context)
+{
+    if (const auto & storage_limits = read.getQueryInfo().storage_limits)
+    {
+        for (const auto & limits : *storage_limits)
+        {
+            const auto & local = limits.local_limits;
+            const auto & speed = local.speed_limits;
+            if (local.size_limits.hasLimits() || limits.leaf_limits.hasLimits() || local.timeout_overflow_mode == OverflowMode::BREAK
+                || speed.min_execution_rps || speed.max_execution_rps || speed.min_execution_bps || speed.max_execution_bps
+                || speed.max_estimated_execution_time.totalMicroseconds() != 0)
+                return true;
+        }
+    }
+    if (const auto quota = context->getQuota())
+        for (const auto & usage : quota->getAllUsage())
+            for (const auto & interval : usage.intervals)
+                if (interval.max[static_cast<size_t>(QuotaType::READ_ROWS)] || interval.max[static_cast<size_t>(QuotaType::READ_BYTES)])
+                    return true;
+    return false;
+}
+
 bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * limit = typeid_cast<LimitStep *>(node.step.get());
@@ -1196,10 +1276,10 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
     const auto & context = read->getContext();
     const auto & settings = context->getSettingsRef();
 
-    if (settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
-        || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf]
-        || settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK || settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK
-        || settings[Setting::limit] != 0 || settings[Setting::offset] != 0 || context->canUseParallelReplicasOnInitiator())
+    if (settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_sort] || settings[Setting::max_bytes_to_sort]
+        || settings[Setting::rows_before_aggregation]
+        || settings[Setting::limit] != 0 || settings[Setting::offset] != 0 || context->canUseParallelReplicasOnInitiator()
+        || hasReadVolumeLimits(*read, context))
         return false;
     if (settings[Setting::force_primary_key] || settings[Setting::force_index_by_date] || !settings[Setting::force_data_skipping_indexes].value.empty())
         return false;
@@ -1207,6 +1287,11 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
     if (read->isQueryWithFinal() || read->isQueryWithSampling() || read->readsInOrder() || !read->getIndexReadTasks().empty()
         || read->isVectorColumnReplaced() || read->isSelectedForTopKFilterOptimization() || read->isParallelReplicasLocalPlanForInitiator()
         || read->isParallelReplicasLocalPlanForFollower() || read->getParallelReadingExtension())
+        return false;
+    /// A STREAM read selects its parts while reading, a masking policy hides the values the primary index holds, and the delete
+    /// bitmap of a UNIQUE KEY is outside the parts the passes share.
+    if (read->getQueryInfo().isStream() || read->getMergeTreeData().hasEnabledMaskingPolicies(context)
+        || read->getStorageMetadata()->hasUniqueKey())
         return false;
 
     String count_name = description.front().column_name;
@@ -1246,6 +1331,14 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
         return false;
     const auto & row_level_filter = read->getRowLevelFilter();
     if (row_level_filter && (!isRepeatable(row_level_filter->actions) || !readsNarrowColumns(row_level_filter->actions, row_level_filter->column_name)))
+        return false;
+
+    auto is_reserved = [](const String & name) { return name.contains(reserved_name_prefix); };
+    if (std::ranges::any_of(read->getOutputHeader()->getNames(), is_reserved) || std::ranges::any_of(params.keys, is_reserved)
+        || std::ranges::any_of(params.aggregates, [&](const auto & aggregate) { return is_reserved(aggregate.column_name); })
+        || (prewhere && hasReservedName(prewhere->prewhere_actions)) || (row_level_filter && hasReservedName(row_level_filter->actions))
+        || std::ranges::any_of(pre_nodes, [](const auto * pre) { return hasReservedName(expressionOf(*pre->step)); })
+        || std::ranges::any_of(post_nodes, [](const auto * post) { return hasReservedName(expressionOf(*post->step)); }))
         return false;
 
     const auto & aggregation_input = aggregating->getInputHeaders().front();
@@ -1308,6 +1401,7 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
 
     auto templ = std::make_shared<TwoPassTemplate>();
     templ->read = cloneTyped(*read);
+    templ->read->adoptFiltersFrom(*read);
     for (auto it = pre_nodes.rbegin(); it != pre_nodes.rend(); ++it)
         templ->pre_steps.push_back((*it)->step->clone());
     templ->aggregating = cloneTyped(*aggregating);
@@ -1326,6 +1420,9 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
     templ->count_position = output_header->getPositionByName(description.front().column_name);
     templ->min_rows = min_rows;
     templ->context = context;
+
+    if (!addToPrewhere(prewhere, makeInFilter(*templ, makeSet(*templ, {})), *templ, *read->getOutputHeader()))
+        return false;
 
     auto & original = nodes.emplace_back(QueryPlan::Node{.step = std::move(node.step), .children = std::move(node.children)});
     node.step = std::make_unique<TwoPassCountTopKStep>(original.step->getOutputHeader(), std::move(templ));
@@ -1368,6 +1465,11 @@ void optimizeTwoPassCountTopK(QueryPlan::Node & root, QueryPlan::Nodes & nodes, 
     }
 }
 
+}
+
+bool isTwoPassCountTopKTransform(const IProcessor & processor)
+{
+    return typeid_cast<const QueryPlanOptimizations::TwoPassCountTopKTransform *>(&processor) != nullptr;
 }
 
 }

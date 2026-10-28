@@ -150,6 +150,14 @@ bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
     return false;
 }
 
+bool hasResultNameClash(const ActionsDAG & dag, const ActionsDAG::Node * node)
+{
+    for (const auto & other : dag.getNodes())
+        if (&other != node && other.result_name == node->result_name)
+            return true;
+    return false;
+}
+
 FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
