@@ -327,9 +327,14 @@ bool traverseDAGFilter(
             const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
             const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
-            const auto * value_const = typeid_cast<const ColumnConst *>(right->column.get());
-            const auto * value_tuple_column = value_const ? typeid_cast<const ColumnTuple *>(&value_const->getDataColumn()) : nullptr;
-            const auto * value_full_tuple_type = typeid_cast<const DataTypeTuple *>(right->result_type.get());
+            const IColumn * value_column = right->column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
+                value_column = &column_const->getDataColumn();
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(value_column))
+                value_column = &column_nullable->getNestedColumn();
+            const auto * value_tuple_column = typeid_cast<const ColumnTuple *>(value_column);
+            const DataTypePtr value_unwrapped_type = removeNullable(right->result_type);
+            const auto * value_full_tuple_type = typeid_cast<const DataTypeTuple *>(value_unwrapped_type.get());
             const bool per_element = value_tuple_column && value_full_tuple_type && value_tuple_column->tupleSize() == tuple_value.size()
                 && value_full_tuple_type->getElements().size() == tuple_value.size();
 

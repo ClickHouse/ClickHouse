@@ -17,4 +17,6 @@ a = 19.99 AND b = 1	[1]
 (a, b) = (19.99, 1)	[1]
 (a, b) IN (SELECT 19.99, 1)	[1]
 ReadType: GetKeys
+(a, b) = (SELECT (19.99, 1))	[1]
+ReadType: GetKeys
 KeeperMap	[1]
