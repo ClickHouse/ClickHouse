@@ -529,6 +529,19 @@ TEST(DistinctLowCardinalityFilter, DoesNotKeepUnrepeatedNonSharedDictionaries)
     }
     EXPECT_EQ(lc_filter.estimateGrowthMemory(*make_column(num_chunks)), 0);
 
+    /// A shared dictionary is still identified by content: its second chunk reuses the state of the first.
+    const auto source = makeLowCardinalityColumnWithLargeDictionary(type, 3, 3);
+    const auto & source_lc = assert_cast<const ColumnLowCardinality &>(*source);
+    const auto shared_column = ColumnLowCardinality::create(source_lc.getDictionaryPtr(), source_lc.getIndexesPtr(), /*is_shared=*/true);
+    EXPECT_GT(lc_filter.estimateGrowthMemory(*shared_column), 0);
+    const auto first_shared_mask = lc_filter.buildMaskIfApplicable(*shared_column, 3);
+    ASSERT_TRUE(first_shared_mask.has_value());
+    EXPECT_EQ(first_shared_mask->size(), 3);
+    EXPECT_GT(lc_filter.getTotalByteCount(), retained_bytes);
+    const auto second_shared_mask = lc_filter.buildMaskIfApplicable(*shared_column, 3);
+    ASSERT_TRUE(second_shared_mask.has_value());
+    EXPECT_EQ(second_shared_mask->size(), 0);
+
     const Block header = {ColumnWithTypeAndName(type, "k")};
     DistinctSetFilter filter(header, {}, SizeLimits{});
     std::set<String> emitted;
