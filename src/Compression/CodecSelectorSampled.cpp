@@ -1,8 +1,9 @@
+#include <algorithm>
+#include <limits>
 #include <Compression/CodecSelectorSampled.h>
 #include <base/defines.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
-#include <Common/assert_cast.h>
 
 namespace ProfileEvents
 {
@@ -16,58 +17,99 @@ extern const Event AdaptiveCodecBytesWritten;
 namespace DB::AdaptiveCodec
 {
 
-CodecSelectorSampled::CodecSelectorSampled(UInt64 selection_period_)
-    : selection_period(selection_period_)
+CodecSelectorSampled::CodecSelectorSampled(Codecs candidates_, UInt64 selection_period_)
+    : candidates(std::move(candidates_))
+    , selection_period(selection_period_)
 {
+    chassert(!candidates.empty() && candidates.size() <= MAX_CANDIDATES);
+    to_try.reserve(candidates.size());
 }
 
-CompressionStatePtr CodecSelectorSampled::createState() const { return std::make_unique<State>(); }
-
-Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome & outcome) const
+void CodecSelectorSampled::beginBlock(UInt32 source_size_)
 {
-    chassert(state != nullptr);
-    auto & stream = assert_cast<State &>(*state);
+    ran.reset();
+    best.reset();
+    best_size = ICompressionCodec::getHeaderSize() + source_size_;
+    runner_up_size = std::numeric_limits<UInt32>::max();
+    default_size = 0;
+    source_size = source_size_;
 
-    /// Fresh block.
-    if (outcome.ran.none())
+    const UInt64 block = block_index++;
+    /// intHash64(block / selection_period) s.t. we get same hash for each block in the window.
+    in_sample = block % selection_period == intHash64(block / selection_period) % selection_period;
+}
+
+std::span<const CompressionCodecPtr> CodecSelectorSampled::codecsToTry()
+{
+    /// Nothing ran on the block yet.
+    if (ran.none())
     {
-        const UInt64 block = stream.block_index++;
-        /// intHash64(block / selection_period) s.t. we get same hash for each block in the window.
-        stream.in_sample = block % selection_period == intHash64(block / selection_period) % selection_period;
         /// No winner → either this is stream's first block or last block did full pricing and chose NONE.
-        if (!stream.winner || stream.in_sample)
+        if (!winner || in_sample)
         {
             /// A stream with a single candidate is not adaptive.
-            if (outcome.all.count() > 1)
+            if (candidates.size() > 1)
                 ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksPriced);
-            return outcome.all;
+            return candidates;
         }
-        return Candidates{}.set(*stream.winner);
+        return std::span(candidates).subspan(*winner, 1);
     }
 
-    if (outcome.ran == outcome.all)
+    /// Every candidate ran.
+    if (ran.count() == candidates.size())
     {
-        stream.winner = outcome.best;
-        stream.runner_up_size = outcome.runner_up_size;
-        stream.source_size = outcome.source_size;
+        winner = best;
+        winner_runner_up_size = runner_up_size;
+        winner_source_size = source_size;
 
-        if (stream.in_sample && outcome.all.count() > 1)
+        if (in_sample && candidates.size() > 1)
         {
-            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesDefault, outcome.default_size);
-            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesWritten, outcome.best_size);
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesDefault, default_size);
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesWritten, best_size);
         }
         return {};
     }
 
     /// The winner alone ran, but it writes more per source byte than the runner-up did when priced. Thus, try the rest.
-    if (static_cast<UInt64>(outcome.best_size) * stream.source_size > static_cast<UInt64>(stream.runner_up_size) * outcome.source_size)
+    if (static_cast<UInt64>(best_size) * winner_source_size > static_cast<UInt64>(winner_runner_up_size) * source_size)
     {
         ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksRepriced);
-        return outcome.all & ~outcome.ran;
+        to_try.clear();
+        for (size_t i = 0; i < candidates.size(); ++i)
+            if (!ran[i])
+                to_try.push_back(candidates[i]);
+        return to_try;
     }
 
     ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksReused);
     return {};
 }
+
+void CodecSelectorSampled::record(const CompressionCodecPtr & codec, UInt32 size)
+{
+    const auto it = std::ranges::find(candidates, codec);
+    chassert(it != candidates.end());
+    const size_t position = static_cast<size_t>(it - candidates.begin());
+
+    /// A codec that ran already runs again only as its chain's base, same size, ranked once.
+    if (ran[position])
+        return;
+    ran.set(position);
+
+    if (position == 0)
+        default_size = size;
+
+    /// The smallest size wins. Among equals the raw block wins, then the earlier candidate.
+    if (size < best_size || (size == best_size && best && position < *best))
+    {
+        runner_up_size = best_size;
+        best_size = size;
+        best = position;
+    }
+    else
+        runner_up_size = std::min(runner_up_size, size);
+}
+
+CompressionCodecPtr CodecSelectorSampled::codecToUse() const { return best ? candidates[*best] : nullptr; }
 
 }

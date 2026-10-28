@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Compression/ICompressionCodec.h>
-
 #include <Compression/ICodecSelector.h>
+#include <Compression/ICompressionCodec.h>
 #include <DataTypes/IDataType_fwd.h>
 
 namespace DB
@@ -17,7 +16,7 @@ namespace AdaptiveCodec
 struct Entry
 {
     CompressionCodecPtr codec;
-    std::shared_ptr<const CompressionCodecMultiple> chain = nullptr;
+    std::shared_ptr<CompressionCodecMultiple> chain = nullptr;
 };
 
 using Pool = VectorWithMemoryTracking<Entry>;
@@ -35,21 +34,20 @@ Pool poolForType(const DataTypePtr & type, const CompressionCodecPtr & deploymen
 class CompressionCodecAdaptive final : public ICompressionCodec
 {
 public:
-    CompressionCodecAdaptive(
-        const DataTypePtr & type,
-        const CompressionCodecPtr & deployment_default,
-        std::unique_ptr<const AdaptiveCodec::ICodecSelector> selector_);
+    CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default, UInt64 selection_period_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
 
-    /// Compresses the block with the candidates the selector picks. After a run the selector sees the sizes and may pick more candidates.
+    /// Compresses the block with the candidates the stream's selector picks. After a run the selector sees the size and may pick more.
     UInt32 compress(const char * source, UInt32 source_size, char * dest, CompressionState * state) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
     String getDescription() const override { return "Resolve CODEC(Default) to the best per-block codec from a type-appropriate pool."; }
+
+    /// The stream's selector. It remembers the winner between blocks.
     CompressionStatePtr createCompressionState() const override;
 
 protected:
@@ -62,7 +60,7 @@ protected:
 
 private:
     AdaptiveCodec::Pool pool;
-    std::unique_ptr<const AdaptiveCodec::ICodecSelector> selector;
+    UInt64 selection_period;
 };
 
 }
