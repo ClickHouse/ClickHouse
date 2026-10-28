@@ -54,9 +54,10 @@ Subsequent executions of the same query, also with parameter `use_query_conditio
 
 ### Parquet files {#parquet-files}
 
-The query condition cache also works for Parquet files read through the `File`, `S3`, `AzureBlobStorage`, `URL` and data lake table engines (not through table functions, as the cache entries belong to a table).
+The query condition cache also works for Parquet files read through the `File`, `S3`, `AzureBlobStorage`, `URL` and data lake table engines, and through the table functions over local files and object storage such as `file`, `s3` or `icebergS3` (but not `url`).
 For such files, the cache remembers row groups instead of granules.
-The entries of a file are tied to its version, so that a modified file is read anew: the ETag for object storage, and the modification time and the size for local files and for `URL`.
+The entries of a file are tied to its version, so that a modified file is read anew: the ETag for object storage, the modification time, inode and size for local files, and the modification time and the size for `URL`. Data files of data lakes are never rewritten, so their location alone identifies them.
+A local file is only cached a few seconds after its last modification, as file system timestamps are too coarse to tell apart two writes in quick succession.
 As a web server reports the modification time (`Last-Modified`) with a precision of one second only, a file read through `URL` uses the cache only if it was modified more than a minute ago by the clock of the web server (the `Date` of its response), and the server reports its modification time, its size, and the date.
 
 ### Conditions involving the current time {#time-conditions}
@@ -69,7 +70,7 @@ If the constant is already aligned to the grid, for example in `WHERE time >= to
 For an unaligned constant as in `WHERE time >= now() - INTERVAL 10 DAY`, cache entries written during one grid cell serve the queries of the next one: yesterday's queries prime the cache for today's.
 This reuse works for lower bounds on the time only. An upper bound like `WHERE time < now()`, alone or in a sliding window bounded by the current time on both sides, like `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, is reused only if its constants are aligned to the grid (e.g. `WHERE time < today()` or `WHERE time >= today() - 10 AND time < today()`): with unaligned constants, the condition of a later query is not contained in the condition of an earlier one, so the cache entries of the earlier query cannot be applied soundly, whatever the grid.
 
-The derivation can be disabled with the setting [`use_query_condition_cache_for_time_conditions`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
+The derivation is experimental and is enabled with the setting [`use_query_condition_cache_for_time_conditions`](/reference/settings/session-settings/use-query) (default: disabled), which only takes effect if `use_query_condition_cache` is also enabled.
 It applies to `MergeTree` tables; reads from files and object storage (`file`, `s3`, and similar) still use the query condition cache only for deterministic conditions.
 Queries of the form `ORDER BY ... LIMIT N` which use dynamic filtering (`use_top_k_dynamic_filtering`) reuse the entries written by other queries with the same condition.
 When the dynamic filter is added to `PREWHERE`, or the condition stays in `WHERE`, such queries do not write entries for conditions involving the current time themselves: the rows they skip depend on the top `N` rows matching the condition, which differ between two conditions mapped onto the same grid point.
