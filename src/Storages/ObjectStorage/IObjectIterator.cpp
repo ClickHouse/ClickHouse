@@ -80,12 +80,17 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             std::vector<std::string> keys({key});
 
             /// Must be the formatter the `_path` column is produced with: this filter is
-            /// evaluated against that column's values.
-            const auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
+            /// evaluated against that column's values. An object can override the values of
+            /// `_path` and `_file` (e.g. a task of a `Lance` dataset reports the dataset path).
+            const auto path = object->getPathForVirtualColumns().value_or(
+                formatObjectPath(*configuration, key, /*include_connection_info=*/false));
+            const auto file_name = object->getFileNameForVirtualColumns();
+            const std::vector<std::string> file_names{file_name.value_or("")};
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
-                virtual_columns, hive_partition_columns, getContext());
+                virtual_columns, hive_partition_columns, getContext(),
+                /*format_settings=*/ std::nullopt, file_name ? &file_names : nullptr);
 
             if (keys.empty())
             {

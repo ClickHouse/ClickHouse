@@ -223,8 +223,13 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     /// Iceberg reads the row lineage columns from the data file.
+    auto format_filter = info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration());
+    /// A reader may apply the limit as a hard cap when it evaluates the whole filter it gets. The format filter
+    /// has no conjuncts on the columns added after the format (virtual and Hive partition columns), so if any
+    /// conjunct was removed, the rows the reader stops at could all be filtered out later.
+    const std::optional<size_t> reader_limit = format_filter == filter_actions_dag ? limit : std::nullopt;
     auto format_filter_info = make_format_filter_info(
-        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()),
+        std::move(format_filter),
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context));
     format_filter_info->current_schema_column_mapper
         = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
@@ -259,7 +264,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_filter_info,
             need_only_count,
             lazy_row_index_registry,
-            limit,
+            reader_limit,
             top_k_query_condition_cache_key);
 
         pipes.emplace_back(std::move(source));
