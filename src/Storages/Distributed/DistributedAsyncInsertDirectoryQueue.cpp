@@ -23,6 +23,7 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ActionBlocker.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -73,6 +74,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_pause_before_mark_as_sent[];
 }
 
 
@@ -462,8 +468,9 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
         insert_settings.applyChanges(settings_changes);
 
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-        auto results = pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-        auto result = pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
+        auto connection_pool = getPool();
+        auto results = connection_pool->getManyCheckedForInsert(timeouts, insert_settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+        auto result = connection_pool->getValidTryResult(results, insert_settings[Setting::distributed_insert_skip_read_only_replicas]);
         auto connection = std::move(result.entry);
 
         LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
@@ -502,6 +509,8 @@ void DistributedAsyncInsertDirectoryQueue::processFile(std::string & file_path, 
 
         throw;
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_pause_before_mark_as_sent);
 
     auto dir_sync_guard = getDirectorySyncGuard(relative_path);
     markAsSend(file_path);
@@ -776,6 +785,23 @@ void DistributedAsyncInsertDirectoryQueue::updatePath(const std::string & new_re
     current_batch_file_path = path + "current_batch.txt";
 
     task_handle->activateAndSchedule();
+}
+
+ConnectionPoolWithFailoverPtr DistributedAsyncInsertDirectoryQueue::getPool() const
+{
+    std::lock_guard lock(pool_mutex);
+    return pool;
+}
+
+void DistributedAsyncInsertDirectoryQueue::updatePool(ConnectionPoolWithFailoverPtr new_pool)
+{
+    {
+        std::lock_guard lock(pool_mutex);
+        pool = std::move(new_pool);
+    }
+    /// A recreated queue used to start sending right away; wake the task so files queued
+    /// toward the old destination do not wait out an error backoff against it.
+    task_handle->schedule();
 }
 
 }
