@@ -168,23 +168,13 @@ FORMAT Null;
 SELECT count() > 0 FROM system.query_condition_cache;
 
 SELECT '-- a filter widened after index analysis must not populate the cache';
--- Push-down merges the self-join's always-false `ON` conjunct into the very filter the read's
--- `filter_actions_dag` was built from, so the granule that filter empties still holds the 194 rows that
--- `v > 5` matches. The plan assertion pins that merge on the build side, which is the side that carries
--- the key: the probe side also gets `__applyFilter`, and a filter holding it is rejected as
--- non-deterministic before any of this matters. `query_plan_convert_outer_join_to_inner_join` is pinned
--- because the push-down happens only once the `RIGHT JOIN` has become an `INNER` one: with it off the
--- filter is never widened, and the arm would pass without exercising anything.
+-- On older versions (e.g. 26.9) push-down merges the self-join's always-false `ON` conjunct into the very
+-- filter the read's `filter_actions_dag` was built from, so the granule that filter empties still holds the
+-- 194 rows that `v > 5` matches. Newer versions keep that conjunct above the join, so the arm may not reach a
+-- widened filter, but the counts are correct either way. Another way to widen the filter, through the
+-- push-down forced by join runtime filters, is tested in `05453_query_condition_cache_filter_merged_after_collection`.
 CREATE TABLE tab_widened (v Int64) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 8192;
 INSERT INTO tab_widened SELECT number FROM numbers(200);
-SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0
-    SELECT count() FROM tab_widened LOCAL RIGHT JOIN tab_widened AS a
-        ON and(equals(v, a.v), not(equals(v, a.v))) WHERE v > 5
-    SETTINGS enable_join_runtime_filters = 1, enable_join_runtime_filters_index_analysis = 1,
-             join_runtime_filter_min_probe_rows = 0, query_plan_convert_outer_join_to_inner_join = 1,
-             query_plan_max_step_description_length = 1000)
-WHERE trimLeft(explain) ILIKE 'Filter column: and(greater(%v, 5\_%), not(equals(%'
-  AND explain NOT ILIKE '%\_\_applyFilter%';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM tab_widened WHERE v > 5;
 -- Returns 0 legitimately, and must keep doing so: the fix withholds a cache entry, it does not change

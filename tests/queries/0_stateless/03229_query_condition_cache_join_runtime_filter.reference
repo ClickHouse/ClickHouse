@@ -33,7 +33,6 @@
 1
 1
 -- a filter widened after index analysis must not populate the cache
-1
 194
 0
 194
