@@ -941,11 +941,6 @@ void TableSnapshot::initOrUpdateSnapshot() const
         && current_credentials_fingerprint == kernel_state_credentials_fingerprint)
         return;
 
-    /// Pin rebuilds to the already-resolved version so cached latest snapshots don't drift.
-    const std::optional<size_t> version_to_build = kernel_snapshot_state
-        ? std::optional<size_t>(kernel_snapshot_state->snapshot_version)
-        : snapshot_version_to_read;
-
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(
@@ -956,6 +951,16 @@ void TableSnapshot::initOrUpdateSnapshot() const
 
     for (size_t attempt = 0;; ++attempt)
     {
+        /// A sibling may have installed a state while this waiter handled a failed build.
+        if (attempt > 0 && kernel_snapshot_state && !kernel_state_needs_rebuild
+            && helper->getCredentialsFingerprint() == kernel_state_credentials_fingerprint)
+            break;
+
+        /// Pin rebuilds to the installed version, so an object never changes its version.
+        const std::optional<size_t> version_to_build = kernel_snapshot_state
+            ? std::optional<size_t>(kernel_snapshot_state->snapshot_version)
+            : snapshot_version_to_read;
+
         /// Queries share one in-flight build. A load nobody waits for any more may be stuck for
         /// good, so it is restarted, but only for a pinned version (the result is the same version);
         /// a latest-version object is replaced by the metadata layer instead.
@@ -1126,9 +1131,15 @@ void TableSnapshot::waitForSnapshotLoad(InflightSnapshotLoad & load, const IKern
     Stopwatch watch;
     while (load.future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
     {
-        /// Throws if the query was killed or `max_execution_time` is exceeded.
-        if (process_list_element)
-            process_list_element->checkTimeLimit();
+        /// Throws if the query was killed or `max_execution_time` is exceeded. Under
+        /// `timeout_overflow_mode = 'break'` it returns false instead, but there is no partial
+        /// snapshot to return, so throw in that case too.
+        if (process_list_element && !process_list_element->checkTimeLimit())
+            throw DB::Exception(
+                DB::ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout exceeded while loading the snapshot of the Delta Lake table at {}: "
+                "max_execution_time is exceeded",
+                kernel_helper.getTableLocation());
 
         if (timeout_ms && watch.elapsedMilliseconds() >= timeout_ms)
             throw DB::Exception(

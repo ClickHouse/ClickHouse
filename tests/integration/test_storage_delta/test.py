@@ -6706,6 +6706,14 @@ def test_kill_query_during_snapshot_load(started_cluster):
             "delta_lake_snapshot_load_timeout_ms",
         ),
         ({"max_execution_time": 1}, "TIMEOUT_EXCEEDED"),
+        (
+            {
+                "max_execution_time": 1,
+                "timeout_overflow_mode": "break",
+                "delta_lake_snapshot_load_timeout_ms": 0,
+            },
+            "max_execution_time is exceeded",
+        ),
     ],
 )
 def test_snapshot_load_timeout(started_cluster, settings, expected_error):
