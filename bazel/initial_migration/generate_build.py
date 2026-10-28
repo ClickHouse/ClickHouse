@@ -1107,10 +1107,9 @@ class Graph:
     def embedded_source(self, source, additional_inputs, flags):
         """Keep quoted #embed lookups inside Bazel's generated output tree.
 
-        Clang resolves these paths relative to the source's real path, which
-        escapes a symlink sandbox for checkout files. Copy the source and its
-        source-relative assets together, preserving their bytes and layout.
-        Root-relative assets also need this layout when fetched externally.
+        The pinned Clang searches the directory name of the current FileEntryRef.
+        Keep source-relative assets beside the generated source and make root-relative
+        assets available under --embed-dir.
         """
         path = ROOT / source
         if not path.is_file():
@@ -1310,7 +1309,7 @@ class Graph:
                 sources[i] = self.embedded_source(source, inputs, flags)
                 if i in selected:
                     if sources[i] == source or not inputs or cg['language'] != 'CXX':
-                        raise ValueError(f'{name}: missing C++ #embed copy or assets for {source}')
+                        raise ValueError(f'{name}: missing generated C++ #embed source or assets for {source}')
                     embedded_inputs[source_label(sources[i])] = inputs
                     additional_inputs.extend(inputs)
             public_arrow, private_arrow = arrow_deps or ((), ())

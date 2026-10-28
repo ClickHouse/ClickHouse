@@ -392,7 +392,7 @@ def target_label(name, owners):
     return ('@' + REPOSITORIES[owner]['name'] + '//:' if owner else '//:') + name
 
 
-# These CMake archive members read copied files through source-relative #embed.
+# These CMake archive members read assets through source-relative #embed.
 EMBEDDED_SOURCES = {
     'clickhouse_common_io': ('src/Common/FrequencyHolder.cpp',),
     'dbms': (

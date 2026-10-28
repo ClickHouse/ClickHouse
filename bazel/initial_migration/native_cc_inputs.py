@@ -92,7 +92,7 @@ class Sources:
         self.known_generated_sources()
 
     def known_generated_sources(self):
-        """Account for source copies, rendered arrays and checked-in configs."""
+        """Account for symlinked sources, rendered arrays and checked-in configs."""
         from initial_migration.scan_include_adjacency import includes
         codegen = self.root / 'bazel/rules/codegen_rules.bzl'
         tree = ast.parse(codegen.read_text())
@@ -110,7 +110,7 @@ class Sources:
                 for out in ast.literal_eval(attrs['outs']):
                     self.directives['@clickhouse//bazel:' + out] = []
             elif kind.value == 'embedded_sources':
-                # _embedded_sources_impl in codegen_actions.bzl uses cp.
+                # _embedded_sources_impl symlinks each output to its source.
                 for src, out in zip(ast.literal_eval(attrs['srcs']),
                                     ast.literal_eval(attrs['outs']), strict=True):
                     original = label(src, '@clickhouse')

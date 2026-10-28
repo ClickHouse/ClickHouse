@@ -121,7 +121,7 @@ def cmake_prefix_maps(arches):
         setting = str(Label("@clickhouse//bazel:use_cmake_metadata_" + arch))
         generated_settings[setting] = _GENERATED_PREFIX_MAPS[arch]
 
-        # #embed copies retain source-tree names even inside bazel/gen. Keep
+        # #embed inputs retain source-tree names even inside bazel/gen. Keep
         # this more specific map after the general generated-directory map.
         embedded_settings[cpu] = _EMBEDDED_PREFIX_MAPS
     return select(source_settings) + select(generated_settings) + select(embedded_settings)

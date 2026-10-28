@@ -1,4 +1,4 @@
-"""Declared license rendering and copies of source files read by Clang #embed."""
+"""Render license metadata and declare files for Clang #embed."""
 
 def rust_vendor_licenses(name, filenames):
     """Select the first license filename used by process_rust_crate for each crate."""
@@ -76,13 +76,7 @@ def _embedded_sources_impl(ctx):
     if len(ctx.files.srcs) != len(ctx.outputs.outs):
         fail("Each #embed output must have exactly one source file in srcs")
     for source, output in zip(ctx.files.srcs, ctx.outputs.outs):
-        ctx.actions.run_shell(
-            inputs = [source],
-            outputs = [output],
-            command = 'cp "$1" "$2"',
-            arguments = [source.path, output.path],
-            mnemonic = "ClickHouseEmbeddedSource",
-        )
+        ctx.actions.symlink(output = output, target_file = source)
     return [DefaultInfo(files = depset(ctx.outputs.outs))]
 
 _embedded_sources = rule(

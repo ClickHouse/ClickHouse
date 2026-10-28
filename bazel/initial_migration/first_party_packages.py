@@ -952,7 +952,7 @@ class Migration:
             return None
         name = physical(m['pkg'], m['name'])
         if name.startswith('bazel/gen/'):
-            # Copies for #embed preserve first-party source filenames.
+            # Generated #embed inputs preserve first-party source filenames.
             m = re.match(r'bazel/gen/(?:x86_64|aarch64)/embedded/(.*)', name)
             return m[1] if m else None
         return name if name in self.file_set else None

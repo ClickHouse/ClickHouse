@@ -285,10 +285,10 @@ start that interpreter directly, without requiring a host Python installation.
 Bytecode caching is disabled for these tools so startup does not write into
 their input trees.
 
-Clang resolves quoted `#embed` paths from the source file's real path.
-The affected sources and assets are therefore copied together, byte for
-byte, into Bazel's generated output tree. Their relative layout is preserved
-so that dependency files refer to declared build outputs.
+The pinned Clang resolves quoted `#embed` filenames relative to the directory
+name of the current `FileEntryRef`. Bazel symlinks the sources and assets under
+`bazel/gen/embedded` with their original relative layout. Clang can then name
+the declared resource in its dependency file.
 
 The parity configuration maps reference build paths to the corresponding
 Bazel configuration and generated-file paths, and records executable label

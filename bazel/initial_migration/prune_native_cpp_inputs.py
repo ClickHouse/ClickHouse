@@ -196,7 +196,7 @@ def same_expression(node, text):
 
 
 def native_source_copies(root, files):
-    """Map tracked C/C++ inputs only when _embedded_sources copies each byte."""
+    """Map tracked C/C++ inputs only when _embedded_sources symlinks each output to its source."""
     tree = ast.parse((root / 'bazel/rules/codegen_actions.bzl').read_text())
     bodies = [stmt for stmt in tree.body if isinstance(stmt, ast.FunctionDef)
               and stmt.name == '_embedded_sources_impl']
@@ -209,17 +209,8 @@ def native_source_copies(root, files):
                 'for source, output in []:\n    pass').body[0].target)):
         return {}
     stmt = loops[0].body[0]
-    if (not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call)
-            or not same_expression(stmt.value.func, 'ctx.actions.run_shell')):
-        return {}
-    options = attrs(stmt.value)
-    exact = {
-        'command': repr('cp "$1" "$2"'),
-        'inputs': '[source]',
-        'outputs': '[output]',
-        'arguments': '[source.path, output.path]',
-    }
-    if any(not same_expression(options.get(name), value) for name, value in exact.items()):
+    if (not isinstance(stmt, ast.Expr)
+            or not same_expression(stmt.value, 'ctx.actions.symlink(output=output, target_file=source)')):
         return {}
     copies = {}
     tree = ast.parse((root / 'bazel/rules/codegen_rules.bzl').read_text())
@@ -242,7 +233,7 @@ def native_source_copies(root, files):
             if source not in files or PurePosixPath(source).suffix not in CODE:
                 continue
             if output is None or output in files or output in copies:
-                raise ValueError('Source copy overlaps existing file: ' + str(output))
+                raise ValueError('Generated source overlaps existing file: ' + str(output))
             copies[output] = source
     return copies
 
