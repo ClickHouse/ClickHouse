@@ -241,7 +241,13 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     /// cancelled while it waits. The number trades the time a slot is held for the number of tasks retained; a smaller
     /// portion would retain more of them, and the whole point here is to retain few.
     static constexpr size_t entries_per_task = 128;
-    const size_t num_tasks = (backup_entries.size() + entries_per_task - 1) / entries_per_task;
+
+    /// Enough tasks to fill the pool even when there are fewer entries than that many per thread, or the scan of a
+    /// backup of few but large files - where building an info reads the whole file to checksum it - would run on fewer
+    /// threads than it could, and on a single one for a backup of 128 entries or fewer.
+    const size_t num_tasks = std::max(
+        (backup_entries.size() + entries_per_task - 1) / entries_per_task,
+        std::min(backup_entries.size(), thread_pool.getMaxThreads()));
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
     try
