@@ -11,6 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterHypotheticalObjectQuery.h>
@@ -35,7 +36,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/StatisticsCache.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
@@ -48,6 +48,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace FailPoints
 {
@@ -97,6 +102,9 @@ struct ProjectionPartData
     bool variable_width = false;
     /// for a sample of a projection that drops rows: the rows that the projection keeps of each granule read
     std::vector<UInt32> granule_rows;
+    /// for a sample of an aggregate projection: the number of granules read that have each group, and the first of them
+    std::vector<UInt32> group_granules;
+    std::vector<UInt32> group_first_granule;
 };
 
 /// per-row version of `getBlockSizeForGranularity`
@@ -347,6 +355,27 @@ bool buildProjectionPart(
             add(std::move(projected));
     };
 
+    /// the granules read that have each group, by the hash of its key
+    struct GroupGranules
+    {
+        UInt32 first = 0;
+        UInt32 last = 0;
+        UInt32 count = 0;
+    };
+    std::unordered_map<UInt128, GroupGranules, UInt128Hash> granules_of_group;
+    std::vector<size_t> granule_ends;
+    if (sampled && aggregate)
+        for (const auto & range : ranges)
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+                granule_ends.push_back((granule_ends.empty() ? 0 : granule_ends.back()) + part->index_granularity->getMarkRows(mark));
+    auto key_hash = [](const IColumn & key, size_t row)
+    {
+        SipHash hash;
+        key.updateHashWithValue(row, hash);
+        return hash.get128();
+    };
+    UInt32 granule = 0;
+
     Block block;
     while (executor.pull(block))
     {
@@ -370,6 +399,22 @@ bool buildProjectionPart(
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
 
+        if (!granule_ends.empty())
+        {
+            const auto key = block.getByName(proj_key.column_names.front()).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+            for (size_t row = 0; row < key->size(); ++row)
+            {
+                while (out.read_rows + row >= granule_ends[granule])
+                    ++granule;
+                const auto [it, inserted] = granules_of_group.try_emplace(key_hash(*key, row), GroupGranules{granule, granule, 1});
+                if (!inserted && it->second.last != granule)
+                {
+                    it->second.last = granule;
+                    ++it->second.count;
+                }
+            }
+        }
+
         out.read_rows += block.rows();
         batch_rows += block.rows();
         batch.push_back(std::move(block));
@@ -378,7 +423,23 @@ bool buildProjectionPart(
     }
     flush();
     if (!groups.empty())
-        add(mergeGroups(groups));
+    {
+        Block merged = mergeGroups(groups);
+        if (!granule_ends.empty())
+        {
+            const auto key = merged.getByName(proj_key.column_names.front()).column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+            for (size_t row = 0; row < key->size(); ++row)
+            {
+                const auto it = granules_of_group.find(key_hash(*key, row));
+                if (it == granules_of_group.end())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "A group of the projection sample of part {} has no granule read", part->name);
+                out.group_granules.push_back(it->second.count);
+                out.group_first_granule.push_back(it->second.first);
+            }
+        }
+        add(std::move(merged));
+    }
 
     if (key_columns.empty() || key_columns[0]->empty())
         return true;
@@ -390,17 +451,65 @@ bool buildProjectionPart(
     return true;
 }
 
+/// the groups the sample did not see go to the groups seen in one granule read, by the Chao1 estimate in a window of
+/// neighbouring sample groups: few groups seen twice near a group seen once mean many unseen groups of the same size
+std::vector<UInt64> firstPartRowsOfGroups(const ProjectionPartData & sample, size_t rows)
+{
+    std::vector<size_t> seen_once(sample.rows + 1);
+    std::vector<size_t> seen_twice(sample.rows + 1);
+    for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
+    {
+        const UInt32 granules = sample.group_granules[sample.order[sample_row]];
+        seen_once[sample_row + 1] = seen_once[sample_row] + (granules == 1);
+        seen_twice[sample_row + 1] = seen_twice[sample_row] + (granules == 2);
+    }
+    const auto half_window = static_cast<size_t>(std::sqrt(static_cast<double>(sample.rows)) / 2);
+    std::vector<double> unseen_share(sample.rows);
+    double total_share = 0;
+    for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
+    {
+        if (sample.group_granules[sample.order[sample_row]] != 1)
+            continue;
+        const size_t begin = sample_row > half_window ? sample_row - half_window : 0;
+        const size_t end = std::min(sample.rows, sample_row + half_window + 1);
+        const auto once = static_cast<double>(seen_once[end] - seen_once[begin]);
+        const auto twice = static_cast<double>(seen_twice[end] - seen_twice[begin]);
+        unseen_share[sample_row] = (once - 1) / (2 * (twice + 1));
+        total_share += unseen_share[sample_row];
+    }
+    /// no window has two groups seen once, so the unseen groups go to all groups evenly
+    if (total_share == 0)
+    {
+        std::ranges::fill(unseen_share, 1.0);
+        total_share = static_cast<double>(sample.rows);
+    }
+    std::vector<UInt64> first_part_row(sample.rows + 1);
+    const auto unseen = static_cast<double>(rows - sample.rows);
+    double share_before = 0;
+    for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
+    {
+        first_part_row[sample_row] = sample_row + static_cast<size_t>(std::ceil(unseen * share_before / total_share));
+        share_before += unseen_share[sample_row];
+    }
+    first_part_row.back() = rows;
+    return first_part_row;
+}
+
 /// the whole part seen through its sample, in projection order: part row `r` falls on sample row `r * sample rows / part rows`
 struct PartFromSample
 {
     const ProjectionPartData & sample;
     size_t rows;
+    /// for a sample of an aggregate projection: the first part row that each sample row stands for
+    std::vector<UInt64> first_part_row;
     /// bytes of the part rows before the first one each sample row stands for
     std::vector<UInt64> bytes_before_sample_row;
 
     PartFromSample(const ProjectionPartData & sample_, size_t rows_)
         : sample(sample_), rows(rows_), bytes_before_sample_row(sample.rows + 1)
     {
+        if (!sample.group_granules.empty())
+            first_part_row = firstPartRowsOfGroups(sample, rows);
         for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
         {
             const size_t part_rows_covered = firstPartRow(sample_row + 1) - firstPartRow(sample_row);
@@ -408,9 +517,16 @@ struct PartFromSample
         }
     }
 
-    size_t sampleRow(size_t part_row) const { return static_cast<size_t>(UInt128(part_row) * sample.rows / rows); }
+    size_t sampleRow(size_t part_row) const
+    {
+        if (!first_part_row.empty())
+            return std::ranges::upper_bound(first_part_row, part_row) - first_part_row.begin() - 1;
+        return static_cast<size_t>(UInt128(part_row) * sample.rows / rows);
+    }
     size_t firstPartRow(size_t sample_row) const
     {
+        if (!first_part_row.empty())
+            return first_part_row[sample_row];
         return static_cast<size_t>((UInt128(sample_row) * rows + sample.rows - 1) / sample.rows);
     }
     /// the first sample row whose part rows start at or after `part_row`
@@ -607,8 +723,13 @@ struct ScanPlan
     std::vector<MarkRanges> ranges;
     /// the marks of a full scan
     UInt64 marks_to_scan = 0;
-    /// for a sampled aggregate projection: the groups of each part, from the statistics of its GROUP BY key
-    std::vector<UInt64> part_groups;
+    /// for a sampled aggregate projection: the groups of each part, from the statistics of its `GROUP BY` key
+    struct PartGroups
+    {
+        UInt64 groups = 0;
+        double relative_error = 0;
+    };
+    std::vector<PartGroups> part_groups;
 };
 
 /// plans the scan, or returns false with the reason if a query limit forbids it
@@ -674,6 +795,8 @@ struct SampledPart
     DataPartPtr parent;
     /// the projection part in its likeliest layout
     MergeTreeDataPartPtr synthetic;
+    /// for an aggregate projection: the relative standard error of the groups of the part
+    double groups_error = 0;
 };
 
 /// scenario 0 has every part in its likeliest layout, scenarios 1 to 3 have every part in one layout each
@@ -722,9 +845,10 @@ bool buildScenarios(
         const bool adaptive = data.canUseAdaptiveGranularity() && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
 
         const MarkRanges & ranges = plan.ranges[part_idx];
+        const bool sampled = ranges.getNumberOfMarks() < part->index_granularity->getMarksCountWithoutFinal();
         ProjectionPartData part_data;
         if (!buildProjectionPart(
-                part_data, projection, part, ranges, plan.sample_step > 1, read_step, read_limits, adaptive, total_rows_read,
+                part_data, projection, part, ranges, sampled, read_step, read_limits, adaptive, total_rows_read,
                 total_bytes_read, context))
         {
             result.empirical_unsupported_reason
@@ -770,9 +894,9 @@ bool buildScenarios(
         /// a sample stands for the whole part, and the filter of the projection keeps the same share of its rows
         /// a sample of an aggregate projection has at least the groups it saw
         size_t part_rows = part_data.rows;
-        if (!plan.part_groups.empty())
-            part_rows = std::max<size_t>(plan.part_groups[part_idx], part_data.rows);
-        else if (plan.sample_step > 1)
+        if (sampled && !plan.part_groups.empty())
+            part_rows = std::max<size_t>(plan.part_groups[part_idx].groups, part_data.rows);
+        else if (sampled)
             part_rows = static_cast<size_t>(UInt128(part->rows_count) * part_data.rows / part_data.read_rows);
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
@@ -784,8 +908,10 @@ bool buildScenarios(
             out.scenarios[1 + layout]->parts[part->name] = layout_part;
             out.layouts_differ |= layout_part != parts[primary];
         }
-        if (part_rows > part_data.rows)
-            out.samples.push_back({part->name, std::move(part_data), part_rows, ranges, part, parts[primary]});
+        /// a sample that saw every group of the part, by exact statistics, knows the part
+        const double groups_error = plan.part_groups.empty() ? 0 : plan.part_groups[part_idx].relative_error;
+        if (sampled && (part_rows > part_data.rows || groups_error > 0))
+            out.samples.push_back({part->name, std::move(part_data), part_rows, ranges, part, parts[primary], groups_error});
     }
 
     return true;
@@ -795,7 +921,6 @@ bool buildScenarios(
 void widenForSamples(
     const std::vector<SampledPart> & samples,
     const HypotheticalProjection::Outcome & outcome,
-    bool groups,
     UInt64 & marks_low,
     UInt64 & marks_high)
 {
@@ -813,18 +938,36 @@ void widenForSamples(
         const MarkRanges pruned = pruned_it == outcome.ranges.end() ? MarkRanges{} : pruned_it->second;
         layout_marks += granularity.getMarksCount();
 
-        /// a sample group stands for the part groups over the sample groups, and the share of selected sample groups is binomial
-        if (groups)
+        /// the estimate knows a range end only up to the part groups between neighbouring sample groups
+        /// if the key follows the parent order, that gap is a granule read
+        if (!sample.group_granules.empty())
         {
-            size_t selected = 0;
+            size_t same_granule_neighbours = 0;
+            for (size_t pos = 1; pos < sample.rows; ++pos)
+                same_granule_neighbours
+                    += sample.group_first_granule[sample.order[pos]] == sample.group_first_granule[sample.order[pos - 1]];
+            const double follows_parent
+                = static_cast<double>(same_granule_neighbours) / static_cast<double>(std::max<size_t>(1, sample.rows - 1));
+            const double marks = static_cast<double>(granularity.getMarksCount());
+            const double marks_per_granule_read = marks / static_cast<double>(sampled.ranges_read.getNumberOfMarks());
+            const double marks_per_sample_row = marks / static_cast<double>(sample.rows);
+            range_end_spread += 2.0 * static_cast<double>(std::max<size_t>(1, pruned.size()))
+                * (1.0 + follows_parent * marks_per_granule_read + (1.0 - follows_parent) * marks_per_sample_row);
+
+            /// the selected share is binomial over the effective number of weighted sample groups, and the statistics add their error
+            size_t selected_rows = 0;
             for (const auto & range : pruned)
-                selected += whole_part.firstSampleRowFrom(granularity.getMarkStartingRow(range.end))
-                    - whole_part.firstSampleRowFrom(granularity.getMarkStartingRow(range.begin));
-            const double share = static_cast<double>(selected) / static_cast<double>(sample.rows);
-            const double marks_per_sample_row = static_cast<double>(granularity.getMarksCount()) / static_cast<double>(sample.rows);
-            range_end_spread += 2.0 * static_cast<double>(std::max<size_t>(1, pruned.size())) * (1.0 + marks_per_sample_row);
-            range_end_spread += 2.0 * std::sqrt(share * (1.0 - share) / static_cast<double>(sample.rows))
-                * static_cast<double>(granularity.getMarksCount());
+                selected_rows += granularity.getMarkStartingRow(range.end) - granularity.getMarkStartingRow(range.begin);
+            double sum_of_squared_weights = 0;
+            for (size_t sample_row = 0; sample_row < sample.rows; ++sample_row)
+            {
+                const auto weight = static_cast<double>(whole_part.firstPartRow(sample_row + 1) - whole_part.firstPartRow(sample_row));
+                sum_of_squared_weights += weight * weight;
+            }
+            const auto part_rows = static_cast<double>(sampled.part_rows);
+            const double share = static_cast<double>(selected_rows) / part_rows;
+            const double effective_groups = part_rows * part_rows / sum_of_squared_weights;
+            range_end_spread += 2.0 * (std::sqrt(share * (1.0 - share) / effective_groups) + share * sampled.groups_error) * marks;
             continue;
         }
 
@@ -954,9 +1097,12 @@ void setVerdict(
     }
 }
 
-/// the groups of each part from the `uniq` statistics of the one GROUP BY key column, false if a part does not have them
+/// the groups of each part from the `uniq` statistics of the one `GROUP BY` key column, false if a part does not have them
 bool groupsFromStatistics(
-    std::vector<UInt64> & part_groups, const ProjectionDescription & projection, const RangesInDataParts & parts, const ContextPtr & context)
+    std::vector<ScanPlan::PartGroups> & part_groups,
+    const ProjectionDescription & projection,
+    const RangesInDataParts & parts,
+    const ContextPtr & context)
 {
     const auto & keys = projection.metadata->getSortingKey().column_names;
     if (keys.size() != 1 || projection.where_clause_ast)
@@ -975,7 +1121,9 @@ bool groupsFromStatistics(
         const auto it = statistics.find(keys.front());
         if (it == statistics.end() || !it->second->hasCardinality())
             return false;
-        part_groups.push_back(it->second->estimateCardinality());
+        /// a sketch can count more groups than the part has rows
+        part_groups.push_back(
+            {std::min<UInt64>(it->second->estimateCardinality(), part.data_part->rows_count), it->second->cardinalityRelativeError()});
     }
     return true;
 }
@@ -996,13 +1144,14 @@ bool tryEstimateProjection(
     ScanPlan plan;
     if (!planScan(result, plan, baseline_parts, filters_on_offsets, projection_scan_budget_rows, context->getSettingsRef()))
         return false;
-    /// the groups of a sample do not scale to the groups of the part, the `uniq` statistics of the GROUP BY key give them
+    /// the groups of a sample do not scale to the groups of the part, the `uniq` statistics of the `GROUP BY` key give them
     if (projection.type == ProjectionDescription::Type::Aggregate && plan.sample_step > 1
         && !groupsFromStatistics(plan.part_groups, projection, baseline_parts, context))
     {
         result.empirical_unsupported_reason = "A sample cannot show the number of groups of a part, and EXPLAIN WHATIF takes them from statistics "
-                                              "only for one GROUP BY key column with `uniq` statistics in every part, a projection without WHERE "
-                                              "and parts without lightweight deletes (see projection_scan_budget_rows)";
+                                              "only for one `GROUP BY` key column with `uniq` or `uniq_v2` statistics in every part, "
+                                              "a projection without `WHERE` and parts without lightweight deletes "
+                                              "(see projection_scan_budget_rows)";
         return false;
     }
 
@@ -1059,7 +1208,7 @@ bool tryEstimateProjection(
     const UInt64 base_table_marks = *outcome.marks > projection_marks ? *outcome.marks - projection_marks : 0;
     marks_low += base_table_marks;
     marks_high += base_table_marks;
-    widenForSamples(built.samples, outcome, !plan.part_groups.empty(), marks_low, marks_high);
+    widenForSamples(built.samples, outcome, marks_low, marks_high);
 
     result.estimated_marks = outcome.marks;
     result.estimated_rows = outcome.rows;

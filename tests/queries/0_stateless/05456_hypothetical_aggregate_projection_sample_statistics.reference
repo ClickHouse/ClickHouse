@@ -3,9 +3,9 @@ marks: 600
 rows: 60000
 With p (aggregate projection, hypothetical):
 status: applicable
-marks: 4
-rows: 400
-marks_span: 1 to 7
+marks: 3
+rows: 300
+marks_span: 0 to 6
 verdict: chosen
 empirical_status: ok
 sampled_marks: 60 / 600
@@ -15,13 +15,36 @@ marks: 600
 rows: 60000
 With p (aggregate projection, hypothetical):
 status: applicable
-marks: 31
-rows: 3100
-marks_span: 26 to 36
+marks: 30
+rows: 3000
+marks_span: 24 to 36
 verdict: chosen
 empirical_status: ok
 sampled_marks: 60 / 600
 real: 31 marks, 3100 rows
 -- no statistics
 empirical_status: unsupported
-empirical_reason: A sample cannot show the number of groups of a part, and EXPLAIN WHATIF takes them from statistics only for one GROUP BY key column with `uniq` statistics in every part, a projection without WHERE and parts without lightweight deletes (see projection_scan_budget_rows)
+empirical_reason: A sample cannot show the number of groups of a part, and EXPLAIN WHATIF takes them from statistics only for one `GROUP BY` key column with `uniq` or `uniq_v2` statistics in every part, a projection without `WHERE` and parts without lightweight deletes (see projection_scan_budget_rows)
+-- large and small groups
+marks: 600
+marks: 3
+marks_span: 0 to 16
+sampled_marks: 60 / 600
+real: 3 marks
+-- key follows the parent order
+marks: 600
+marks: 19
+marks_span: 0 to 65
+sampled_marks: 30 / 600
+real: 5 marks
+-- sketch counts fewer groups
+marks: 600
+marks: 590
+marks_span: 568 to 612
+sampled_marks: 60 / 600
+-- sketch counts more groups than rows
+marks: 600
+marks: 600
+marks_span: 577 to 623
+sampled_marks: 60 / 600
+real: 600 marks

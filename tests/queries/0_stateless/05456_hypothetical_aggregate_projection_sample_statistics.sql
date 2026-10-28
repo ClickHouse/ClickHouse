@@ -46,8 +46,58 @@ SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
 FROM (EXPLAIN WHATIF projection_scan_budget_rows = 6000 SELECT k, sum(v) FROM n_est WHERE k < 300 GROUP BY k)
 WHERE match(line, '^(empirical_status|empirical_reason):');
 
+-- half of the rows are in 300 groups of 100 rows and half are groups of one row: the sample sees each large group
+-- and a tenth of the small ones, so the small groups take the groups the sample did not see
+CREATE TABLE s_est AS t_est;
+CREATE TABLE s_real AS t_real;
+INSERT INTO s_est SELECT number, if(number % 2 = 0, cityHash64(number) % 300, 300 + number), number FROM numbers(60000);
+INSERT INTO s_real SELECT * FROM s_est;
+CREATE HYPOTHETICAL PROJECTION p ON s_est (SELECT k, sum(v) GROUP BY k);
+SELECT '-- large and small groups';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 6000 SELECT k, sum(v) FROM s_est WHERE k < 300 GROUP BY k)
+WHERE match(line, '^(marks:|marks_span|sampled_marks)');
+SELECT 'real: ' || toString(marks) || ' marks' FROM (EXPLAIN ESTIMATE SELECT k, sum(v) FROM s_real WHERE k < 300 GROUP BY k);
+
+-- a key that follows the parent order: the sample knows a range end only up to the groups of a granule read
+CREATE TABLE f_est AS t_est;
+CREATE TABLE f_real AS t_real;
+INSERT INTO f_est SELECT number, number, number FROM numbers(60000);
+INSERT INTO f_real SELECT * FROM f_est;
+CREATE HYPOTHETICAL PROJECTION p ON f_est (SELECT k, sum(v) GROUP BY k);
+SELECT '-- key follows the parent order';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 1 SELECT k, sum(v) FROM f_est WHERE k < 500 GROUP BY k)
+WHERE match(line, '^(marks:|marks_span|sampled_marks)');
+SELECT 'real: ' || toString(marks) || ' marks' FROM (EXPLAIN ESTIMATE SELECT k, sum(v) FROM f_real WHERE k < 500 GROUP BY k);
+
+-- 60000 groups of one row each: the `uniq_v2` sketch counts 58906 for the first table and 60942 for the second
+CREATE TABLE u_est (a UInt64, k UInt64 STATISTICS(uniq_v2), v UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '';
+CREATE TABLE o_est AS u_est;
+INSERT INTO u_est SELECT number, cityHash64(number, 4), number FROM numbers(60000);
+INSERT INTO o_est SELECT number, cityHash64(number, 3), number FROM numbers(60000);
+CREATE HYPOTHETICAL PROJECTION p ON u_est (SELECT k, sum(v) GROUP BY k);
+CREATE HYPOTHETICAL PROJECTION p ON o_est (SELECT k, sum(v) GROUP BY k);
+SELECT '-- sketch counts fewer groups';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 6000 SELECT k, sum(v) FROM u_est GROUP BY k)
+WHERE match(line, '^(marks:|marks_span|sampled_marks)');
+SELECT '-- sketch counts more groups than rows';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF projection_scan_budget_rows = 6000 SELECT k, sum(v) FROM o_est GROUP BY k)
+WHERE match(line, '^(marks:|marks_span|sampled_marks)');
+SELECT 'real: 600 marks';
+
 DROP TABLE t_est;
 DROP TABLE t_real;
 DROP TABLE h_est;
 DROP TABLE h_real;
 DROP TABLE n_est;
+DROP TABLE s_est;
+DROP TABLE s_real;
+DROP TABLE f_est;
+DROP TABLE f_real;
+DROP TABLE u_est;
+DROP TABLE o_est;
