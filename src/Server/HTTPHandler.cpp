@@ -23,6 +23,8 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Access/Common/AccessFlags.h>
+#include <Storages/IStorage.h>
 #include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
@@ -93,6 +95,10 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_temporary_data_on_disk_size_for_query;
+    extern const SettingsUInt64 max_temporary_data_on_disk_size_for_user;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
     extern const SettingsBool send_progress_in_http_headers;
@@ -988,7 +994,37 @@ void HTTPHandler::processQuery(
         {
             if (is_upload_into_table)
             {
-                auto staged = std::make_unique<TemporaryDataBuffer>(server.context()->getTempDataOnDisk());
+                /// The body is received before the query is started, so the access and the limits of the temporary data,
+                /// which are applied to a query when it starts, are checked here: a user who cannot insert into the
+                /// table cannot fill the temporary disk, and a staged body is not larger than any of the limits.
+                if (!path_info.table.empty())
+                {
+                    StorageID table_id(path_info.database.empty() ? context->getCurrentDatabase() : path_info.database, path_info.table);
+                    auto table = DatabaseCatalog::instance().getTable(table_id, context);
+                    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                    context->checkAccess(
+                        AccessType::INSERT, table_id.database_name, table_id.table_name,
+                        metadata_snapshot->getSampleBlockInsertable().getNames());
+                }
+
+                const auto & query_settings = context->getSettingsRef();
+                size_t max_staged_size = 0;
+                for (size_t limit : {query_settings[Setting::max_temporary_data_on_disk_size_for_query].value,
+                                     query_settings[Setting::max_temporary_data_on_disk_size_for_user].value})
+                {
+                    if (limit && (!max_staged_size || limit < max_staged_size))
+                        max_staged_size = limit;
+                }
+                auto staging_scope = std::make_shared<TemporaryDataOnDiskScope>(
+                    server.context()->getTempDataOnDisk(),
+                    TemporaryDataOnDiskSettings{
+                        .max_size_on_disk = max_staged_size,
+                        .compression_codec = query_settings[Setting::temporary_files_codec],
+                        .buffer_size = query_settings[Setting::temporary_files_buffer_size],
+                        .metrics = {},
+                    });
+
+                auto staged = std::make_unique<TemporaryDataBuffer>(std::move(staging_scope));
                 copyData(*request_body, *staged);
                 staged->finishWriting();
                 request_body = std::make_unique<ReadBufferFromStagedTemporaryData>(std::move(staged));
@@ -1197,6 +1233,15 @@ void HTTPHandler::processQuery(
             if (insert_format.empty())
                 insert_format = "TabSeparated";
             final_query = fmt::format("INSERT INTO {} FORMAT {}\n", qualified_table, backQuoteIfNeed(insert_format));
+
+            /// A body that is not covered by the AWS signature (e.g. uploaded by a presigned URL) is accepted only as data:
+            /// the `Values` format can evaluate the expressions in it (with subqueries, dictionaries, etc.) with the
+            /// privileges of the signer, so only the literals are allowed, whatever the effective input format is.
+            if (is_aws_signature_v4 && !isAWSSignatureV4PayloadSigned(aws_payload_hash))
+            {
+                context->setSetting("input_format_values_interpret_expressions", false);
+                context->setSetting("input_format_values_deduce_templates_of_expressions", false);
+            }
         }
         /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
         else if (raw_query.empty() && !request_has_body)

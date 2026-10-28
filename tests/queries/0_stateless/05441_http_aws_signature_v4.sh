@@ -12,10 +12,11 @@ USER_NAME="u_sigv4_${CLICKHOUSE_DATABASE}"
 HASHED_USER_NAME="u_sigv4_hashed_${CLICKHOUSE_DATABASE}"
 MIXED_GRANTS_USER_NAME="u_sigv4_mixed_grants_${CLICKHOUSE_DATABASE}"
 MIXED_EXPIRED_USER_NAME="u_sigv4_mixed_expired_${CLICKHOUSE_DATABASE}"
+READER_USER_NAME="u_sigv4_reader_${CLICKHOUSE_DATABASE}"
 PROFILE_NAME="p_sigv4_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "
-    DROP USER IF EXISTS ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
+    DROP USER IF EXISTS ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME}, ${READER_USER_NAME};
     DROP SETTINGS PROFILE IF EXISTS ${PROFILE_NAME};
     CREATE USER ${USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret';
     CREATE USER ${HASHED_USER_NAME} IDENTIFIED WITH sha256_password BY 'secret';
@@ -25,14 +26,19 @@ ${CLICKHOUSE_CLIENT} --query "
         sha256_password BY 'secret' GRANTS (SELECT ON ${CLICKHOUSE_DATABASE}.nonexistent);
     CREATE USER ${MIXED_EXPIRED_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret',
         sha256_password BY 'secret' VALID UNTIL '2020-01-01 00:00:00 UTC';
+    CREATE USER ${READER_USER_NAME} IDENTIFIED WITH plaintext_password BY 'secret';
     CREATE SETTINGS PROFILE ${PROFILE_NAME} SETTINGS limit = 1;
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t (x UInt32, s String) ENGINE = MergeTree ORDER BY x;
     INSERT INTO ${CLICKHOUSE_DATABASE}.t VALUES (1, 'Hello'), (2, 'World');
     GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t TO ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t TO ${READER_USER_NAME};
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.private (s String) ENGINE = MergeTree ORDER BY s;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.private VALUES ('private');
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.private TO ${USER_NAME};
 "
 
 python3 - "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_HTTP}" "${CLICKHOUSE_DATABASE}" "${USER_NAME}" "${HASHED_USER_NAME}" \
-    "${MIXED_GRANTS_USER_NAME}" "${MIXED_EXPIRED_USER_NAME}" "${PROFILE_NAME}" <<'EOF'
+    "${MIXED_GRANTS_USER_NAME}" "${MIXED_EXPIRED_USER_NAME}" "${PROFILE_NAME}" "${READER_USER_NAME}" <<'EOF'
 import datetime
 import hashlib
 import hmac
@@ -42,7 +48,7 @@ import sys
 import urllib.parse
 
 host, port, database, user, hashed_user = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
-mixed_grants_user, mixed_expired_user, profile = sys.argv[6], sys.argv[7], sys.argv[8]
+mixed_grants_user, mixed_expired_user, profile, reader_user = sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9]
 host_header = f"{host}:{port}"
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
@@ -222,10 +228,24 @@ show("PUT of many blocks with wrong payload hash", signed_request("PUT", csv_pat
      body=b"".join(b"%d,\"wrong\"\n" % i for i in range(100, 110)), payload_hash=EMPTY_SHA256,
      params=[("max_insert_block_size", "1"), ("min_insert_block_size_rows", "1"), ("min_insert_block_size_bytes", "0")]))
 show("PUT with signed streaming payload", signed_request("PUT", csv_path, body=b"8,\"x\"\n", payload_hash="STREAMING-AWS4-HMAC-SHA256-PAYLOAD"))
+# The body of a presigned upload is not covered by the signature, so it is accepted only as data:
+# the expressions of the `Values` format, which are evaluated with the privileges of the signer, are not.
+values_path = f"/{database}/t.Values"
+show("PUT presigned Values", send("PUT", values_path, presigned_params("PUT", values_path), body=b"(9, 'literal')"))
+show("PUT presigned Values with a subquery", send("PUT", values_path, presigned_params("PUT", values_path),
+     body=f"(10, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+show("PUT presigned Values with a function", send("PUT", values_path, presigned_params("PUT", values_path), body=b"(11, lower('F'))"))
+show("PUT presigned with input_format=Values", send("PUT", csv_path, presigned_params("PUT", csv_path, [("input_format", "Values")]),
+     body=f"(12, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+show("PUT signed Values with a subquery", signed_request("PUT", values_path, body=f"(13, (SELECT s FROM {database}.private LIMIT 1))".encode()))
+# A signed body is staged before the query starts: the access and the limits of temporary data are checked before that.
+show("PUT without the INSERT grant", signed_request("PUT", csv_path, body=b"14,\"no grant\"\n", access_key=reader_user))
+show("PUT over the temporary data limit", signed_request("PUT", csv_path, body=b"".join(b"%d,\"large\"\n" % i for i in range(1000, 2000)),
+     params=[("max_temporary_data_on_disk_size_for_query", "100")]))
 show("GET after PUT", signed_request("GET", table_path, params=[("order", "x")]))
 EOF
 
 ${CLICKHOUSE_CLIENT} --query "
-    DROP USER ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME};
+    DROP USER ${USER_NAME}, ${HASHED_USER_NAME}, ${MIXED_GRANTS_USER_NAME}, ${MIXED_EXPIRED_USER_NAME}, ${READER_USER_NAME};
     DROP SETTINGS PROFILE ${PROFILE_NAME};
 "
