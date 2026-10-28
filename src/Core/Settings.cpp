@@ -10721,7 +10721,7 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
     DECLARE(Bool, allow_experimental_lookup_index, false, R"(
 Allows using `LOOKUP INDEX` for `MergeTree` tables.
 )", EXPERIMENTAL, \
-        {"26.10", false, false, "New setting to gate the experimental `LOOKUP INDEX` clause on `MergeTree`-family tables."}) \
+        {"26.11", false, false, "New setting to gate the experimental `LOOKUP INDEX` clause on `MergeTree`-family tables."}) \
     DECLARE(Bool, time_series_prefer_recent_samples_table, true, R"(
 Read from the recent samples table of a [TimeSeries](/reference/engines/table-engines/integrations/time-series) table instead of the main samples table when the whole requested time range fits in the TTL window of the recent samples table (see the `recent_samples_ttl_seconds` setting of the TimeSeries table engine).
 )", PRIVATE_PREVIEW, \
