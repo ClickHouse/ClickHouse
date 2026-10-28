@@ -122,7 +122,9 @@ CREATE TABLE t_filter_const_subquery_settings_projection
     x UInt64, y UInt64, v UInt64,
     PROJECTION p (SELECT x, y, sum(v) GROUP BY x, y)
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple()
+-- A filtered sparse column takes 16 bytes per row (value and offset), which would break the size check below.
+SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
 INSERT INTO t_filter_const_subquery_settings_projection SELECT number % 10, number % 100, 1 FROM numbers(100000);
 
 SELECT 'aggregate projection, inner disabled, outer enabled';
