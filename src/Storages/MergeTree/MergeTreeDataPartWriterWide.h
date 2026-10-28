@@ -94,15 +94,12 @@ private:
         const NameAndTypePair & name_and_type,
         WrittenOffsetSubstreams & offset_substreams);
 
-    void addStreams(
-        const NameAndTypePair & name_and_type,
-        const ASTPtr & effective_codec_desc) override;
+    void addStreams(const NameAndTypePair & name_and_type) override;
 
     /// Create one stream for a resolved substream path. Split out of addStreams so that
     /// late per-key Map streams can be opened mid-part when a key first appears in a later block.
     void addStreamForPath(
         const NameAndTypePair & name_and_type,
-        const ASTPtr & effective_codec_desc,
         const ISerialization::SubstreamPath & substream_path);
 
     /// For a `with_key_columns` Map: discover keys of `column` not yet registered in `state`,
@@ -165,7 +162,14 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
+    /// Gives every column an empty serialize call with granule_is_complete set, for a granule
+    /// that adjustLastMarkIfNeedAndFlushToDisk completed without a call carrying its rows.
+    void completeGranuleWithoutRows();
+
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    /// Settings with the getters and callbacks bound to the streams of the column.
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettingsForColumn(
+        const NameAndTypePair & name_and_type, const WrittenOffsetSubstreams & offset_substreams) const;
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;

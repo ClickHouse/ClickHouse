@@ -77,6 +77,11 @@ extern const DataLakeStorageSettingsString paimon_replica_name;
 
 namespace
 {
+PaimonSnapshotIdentity getSnapshotIdentity(const PaimonTableState & state)
+{
+    return {state.commit_time_millis, state.base_manifest_list_path, state.delta_manifest_list_path};
+}
+
 /// Build a cache-key prefix that uniquely identifies a Paimon table instance.
 ///
 /// Paimon's own table UUID defaults to the table name, so it cannot
@@ -160,9 +165,9 @@ DataLakeMetadataPtr PaimonMetadata::create(
         partition_default_name = it->second;
 
     /// Check if incremental read is enabled
-    const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
-    bool incremental_read_enabled = data_lake_settings[DataLakeStorageSetting::paimon_incremental_read].value;
-    Int64 metadata_refresh_interval_sec = data_lake_settings[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
+    const auto data_lake_settings = configuration_ptr->getDataLakeSettings();
+    bool incremental_read_enabled = (*data_lake_settings)[DataLakeStorageSetting::paimon_incremental_read].value;
+    Int64 metadata_refresh_interval_sec = (*data_lake_settings)[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
 
     /// The settings framework accesses field values through a pointer-to-member
     /// dereference (impl.get()->*t). MSan cannot track initialization across this
@@ -179,8 +184,8 @@ DataLakeMetadataPtr PaimonMetadata::create(
         if (!local_context->hasZooKeeper())
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Incremental read requires Keeper but ZooKeeper is not configured");
 
-        String keeper_path = data_lake_settings[DataLakeStorageSetting::paimon_keeper_path].value;
-        String replica_name = data_lake_settings[DataLakeStorageSetting::paimon_replica_name].value;
+        String keeper_path = (*data_lake_settings)[DataLakeStorageSetting::paimon_keeper_path].value;
+        String replica_name = (*data_lake_settings)[DataLakeStorageSetting::paimon_replica_name].value;
         if (keeper_path.empty() || replica_name.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -341,7 +346,8 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
         snapshot.total_record_count,
         snapshot.delta_record_count,
         snapshot.changelog_record_count,
-        snapshot.watermark);
+        snapshot.watermark,
+        snapshot.index_manifest);
 }
 
 void PaimonMetadata::validateTableIdentity() const
@@ -538,6 +544,25 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
         table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name));
 }
 
+PaimonIndexManifest PaimonMetadata::getIndexManifest(const String & index_manifest_path) const
+{
+    if (persistent_components.isMetadataCacheActive())
+    {
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, index_manifest_path + ":index");
+        auto log_ptr = log;
+        auto client = table_client;
+        auto load_index_manifest = [log_ptr, client, index_manifest_path]()
+        {
+            LOG_TRACE(log_ptr, "Loading index manifest (cache miss): {}", index_manifest_path);
+            return client->getIndexManifest(index_manifest_path, /*disable_filesystem_cache=*/true);
+        };
+        return persistent_components.metadata_cache->getOrSetIndexManifest(cache_key, load_index_manifest);
+    }
+
+    LOG_TRACE(log, "Loading index manifest (no cache): {}", index_manifest_path);
+    return table_client->getIndexManifest(index_manifest_path);
+}
+
 ObjectIterator PaimonMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
@@ -650,9 +675,10 @@ ObjectIterator PaimonMetadata::iterate(
         const PaimonCommittedSnapshot committed_snapshot = stream_state->readCommittedSnapshot(*processing_lock);
 
         std::optional<Int64> last_consumed_snapshot_id;
+        std::optional<PaimonSnapshotIdentity> last_consumed_identity;
         const UInt64 max_consume_snapshots = query_context->getSettingsRef()[Setting::max_consume_snapshots];
         data_files = collectIncrementalDataFiles(
-            state, partition_pruner, max_consume_snapshots, committed_snapshot.snapshot_id, last_consumed_snapshot_id);
+            state, partition_pruner, max_consume_snapshots, committed_snapshot, last_consumed_snapshot_id, last_consumed_identity);
 
         if (last_consumed_snapshot_id)
         {
@@ -663,7 +689,8 @@ ObjectIterator PaimonMetadata::iterate(
             FailPointInjection::pauseFailPoint(
                 FailPoints::paimon_incremental_read_pause_before_watermark_commit);
 
-            stream_state->setCommittedSnapshot(*processing_lock, committed_snapshot, *last_consumed_snapshot_id);
+            stream_state->setCommittedSnapshot(
+                *processing_lock, committed_snapshot, *last_consumed_snapshot_id, last_consumed_identity);
             /// Test-only pause inside the at-most-once window: the watermark is
             /// committed, the collected batch has not been delivered yet. A crash
             /// here loses the batch; the failpoint lets tests pin that semantics
@@ -730,6 +757,35 @@ void PaimonMetadata::runBackgroundRefresh()
     refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
+void PaimonMetadata::checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor) const
+{
+    if (!state.index_manifest || !getIndexManifest(*state.index_manifest).has_deletion_vectors)
+        return;
+
+    String recovery;
+    if (incremental_cursor && persistent_components.hasStreamState())
+        recovery = fmt::format(
+            "This incremental read, with its cursor at snapshot {}, cannot move past snapshot {} even after a full compaction: every "
+            "snapshot up to that compaction lists the same deletion vectors. It resumes once Paimon expires those snapshots, "
+            "or once they are abandoned by moving the cursor to the snapshot of the full compaction, which drops every "
+            "snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
+            "'<snapshot id of the full compaction>'\"",
+            *incremental_cursor,
+            state.snapshot_id,
+            persistent_components.stream_state->getKeeperPath());
+    else
+        recovery = "A full compaction of the table in Paimon (compact_strategy 'full') applies the deletion vectors, "
+                   "and the snapshots created after it can be read";
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Reading Paimon snapshot {} of '{}' is not supported: its index manifest lists deletion vectors, and deletion "
+        "vectors are not applied, so the result would contain rows removed by later deletes and updates. {}.",
+        state.snapshot_id,
+        persistent_components.table_path,
+        recovery);
+}
+
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
 {
     /// Get snapshot by ID
@@ -757,7 +813,8 @@ PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) cons
         snapshot.total_record_count,
         snapshot.delta_record_count,
         snapshot.changelog_record_count,
-        snapshot.watermark);
+        snapshot.watermark,
+        snapshot.index_manifest);
 }
 
 std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
@@ -765,10 +822,12 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
     Int64 to_snapshot_id,
     UInt64 max_snapshots_to_load,
     bool skip_compact,
-    std::optional<Int64> & last_scanned_snapshot_id) const
+    std::optional<Int64> & last_scanned_snapshot_id,
+    PaimonTableStatePtr & last_scanned_state) const
 {
     std::vector<PaimonTableStatePtr> snapshots;
     last_scanned_snapshot_id.reset();
+    last_scanned_state.reset();
 
     if (to_snapshot_id <= from_snapshot_id)
         return snapshots;
@@ -845,6 +904,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
             if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
                 last_scanned_snapshot_id = prefix_end;
+                last_scanned_state.reset();
                 /// The loop's ++ lands on the first surviving id.
                 snapshot_id = *prefix_end;
                 continue;
@@ -867,6 +927,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
             if (auto prefix_end = expired_prefix_end(snapshot_id))
             {
                 last_scanned_snapshot_id = prefix_end;
+                last_scanned_state.reset();
                 /// The loop's ++ lands on the first surviving id.
                 snapshot_id = *prefix_end;
                 continue;
@@ -889,9 +950,12 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         /// Track the highest snapshot_id actually resolved, whether it is used or skipped
         /// as compact. The caller uses this to advance the watermark past gaps.
         last_scanned_snapshot_id = snapshot_id;
+        last_scanned_state = state;
 
         if (skip_compact && state->isCompact())
         {
+            /// The watermark moves past a skipped compaction, which can add deletion vectors.
+            checkNoDeletionVectors(*state, from_snapshot_id);
             LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
             continue;
         }
@@ -906,11 +970,14 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
     const PaimonTableStatePtr & state,
     const std::optional<PartitionPruner> & partition_pruner,
     UInt64 max_consume_snapshots,
-    std::optional<Int64> committed_snapshot_id,
-    std::optional<Int64> & last_consumed_snapshot_id) const
+    const PaimonCommittedSnapshot & committed,
+    std::optional<Int64> & last_consumed_snapshot_id,
+    std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const
 {
     Strings data_files;
     last_consumed_snapshot_id.reset();
+    last_consumed_identity.reset();
+    const std::optional<Int64> & committed_snapshot_id = committed.snapshot_id;
 
     if (!committed_snapshot_id.has_value())
     {
@@ -920,9 +987,13 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
                  state->snapshot_id);
         data_files = collectDataFilesFromManifests({state}, ManifestKind::Both, partition_pruner, true, true);
         last_consumed_snapshot_id = state->snapshot_id;
+        last_consumed_identity = getSnapshotIdentity(*state);
     }
     else if (*committed_snapshot_id == state->snapshot_id)
     {
+        if (committed.snapshot_identity)
+            checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
+
         /// Already processed this snapshot, no new data
         LOG_DEBUG(log, "Snapshot {} already processed (committed={}), no new data",
                   state->snapshot_id, *committed_snapshot_id);
@@ -942,6 +1013,9 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
 
         if (latest_snapshot_info && *committed_snapshot_id <= latest_snapshot_info->first)
         {
+            if (committed.snapshot_identity)
+                checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
+
             /// Everything up to the watermark has been consumed by another reader. Do not
             /// consume up to the fresh head either: this query's schema was resolved from
             /// the pinned state, and Paimon schemas can change across snapshots. The next
@@ -991,9 +1065,14 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         /// We need to read all delta manifests from snapshots between committed+1 and current.
         /// Skip Compact snapshots: their delta manifests contain compaction output (not new data).
         std::optional<Int64> last_scanned_snapshot_id;
+        PaimonTableStatePtr last_scanned_state;
         auto snapshots = getSnapshotsBetween(
             *committed_snapshot_id, state->snapshot_id, max_consume_snapshots,
-            /*skip_compact=*/true, last_scanned_snapshot_id);
+            /*skip_compact=*/true, last_scanned_snapshot_id, last_scanned_state);
+
+        /// After the scan, so that a rewind landing before or during it is seen here.
+        if (committed.snapshot_identity)
+            checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
 
         if (snapshots.empty())
         {
@@ -1001,15 +1080,54 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
             /// Still advance the watermark so we don't re-scan them next time.
             if (last_scanned_snapshot_id)
                 last_consumed_snapshot_id = last_scanned_snapshot_id;
+            if (last_scanned_state)
+                last_consumed_identity = getSnapshotIdentity(*last_scanned_state);
             return {};
         }
 
-        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, true);
+        data_files = collectDataFilesFromManifests(
+            snapshots, ManifestKind::Delta, partition_pruner, true, true, committed_snapshot_id);
         /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
         last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
+        const auto & last_consumed_state = last_scanned_snapshot_id ? last_scanned_state : snapshots.back();
+        if (last_consumed_state)
+            last_consumed_identity = getSnapshotIdentity(*last_consumed_state);
     }
 
     return data_files;
+}
+
+void PaimonMetadata::checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const
+{
+    PaimonTableStatePtr cursor_state;
+    try
+    {
+        cursor_state = loadStateForSnapshot(snapshot_id);
+    }
+    catch (...)
+    {
+        /// Expired by Paimon: nothing at or below the cursor is left to compare with.
+        if (const auto earliest_snapshot_id = table_client->getEarliestSnapshotId();
+            earliest_snapshot_id && snapshot_id < *earliest_snapshot_id)
+            return;
+        throw;
+    }
+
+    const auto current = getSnapshotIdentity(*cursor_state);
+    if (current == consumed)
+        return;
+
+    const auto & keeper_path = persistent_components.stream_state->getKeeperPath();
+    throw Exception(
+        ErrorCodes::INVALID_STATE,
+        "Paimon incremental read cursor at '{}' consumed snapshot {} committed at timeMillis {}, but snapshot {} of '{}' "
+        "is a different snapshot (committed at timeMillis {}). The warehouse was rolled back, restored or recreated "
+        "and the writer reused snapshot ids the cursor had already consumed, so the snapshots now carrying them were "
+        "never delivered. No data was read and the cursor was not modified. To read every snapshot written since the "
+        "rewind, set the cursor to the snapshot the warehouse was rewound to: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
+        "'<that snapshot id>'\". Setting it to {} instead skips the snapshots at the reused ids.",
+        keeper_path, snapshot_id, consumed.time_millis, snapshot_id, persistent_components.table_path,
+        current.time_millis, keeper_path, snapshot_id);
 }
 
 Strings PaimonMetadata::collectDataFilesFromManifests(
@@ -1017,8 +1135,13 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
     ManifestKind kind,
     const std::optional<PartitionPruner> & partition_pruner,
     bool deduplicate,
-    bool track_deletes) const
+    bool track_deletes,
+    std::optional<Int64> incremental_cursor) const
 {
+    for (const auto & snapshot_state : snapshots)
+        if (snapshot_state)
+            checkNoDeletionVectors(*snapshot_state, incremental_cursor);
+
     Strings data_files;
     std::unordered_set<String> seen_files;
     std::unordered_set<String> delete_files;

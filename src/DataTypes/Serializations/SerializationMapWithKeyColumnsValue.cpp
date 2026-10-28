@@ -25,11 +25,12 @@ struct DeserializeBinaryBulkStateMapWithKeyColumnsValue : public ISerialization:
     bool key_in_manifest = false;
     UInt8 stream_name_version = MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(
+        ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumnsValue>(*this);
-        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone() : nullptr;
-        new_state->value_state = value_state ? value_state->clone() : nullptr;
+        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone(context) : nullptr;
+        new_state->value_state = value_state ? value_state->clone(context) : nullptr;
         return new_state;
     }
 };

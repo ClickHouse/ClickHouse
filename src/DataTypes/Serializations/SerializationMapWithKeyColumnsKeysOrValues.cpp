@@ -28,12 +28,13 @@ struct DeserializeBinaryBulkStateMapWithKeyColumnsKeysOrValues : public ISeriali
     /// keys read does not advance that state's value streams.
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> exists_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(
+        ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumnsKeysOrValues>(*this);
-        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone() : nullptr;
+        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone(context) : nullptr;
         for (auto & exists_state : new_state->exists_states)
-            exists_state = exists_state ? exists_state->clone() : nullptr;
+            exists_state = exists_state ? exists_state->clone(context) : nullptr;
         return new_state;
     }
 };

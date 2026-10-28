@@ -13,6 +13,7 @@
 #include <IO/NullWriteBuffer.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 
@@ -103,9 +104,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     }
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -120,7 +120,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
+        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
@@ -191,8 +191,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         String stream_name = emptyMapKeyColumnsPlaceholderStreamName(name_and_type.name);
         if (!compressed_streams.contains(stream_name))
         {
-            CompressionCodecPtr compression_codec
-                = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+            CompressionCodecPtr compression_codec = default_codec;
             UInt64 codec_id = compression_codec->getHash();
             auto it = streams_by_codec.find(codec_id);
             if (it == streams_by_codec.end())
@@ -290,6 +289,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
     serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
+    serialize_settings.object_typed_shared_data_serialization_version = settings.object_typed_shared_data_serialization_version;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -297,6 +297,8 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::PREFIX;
     serialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     serialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+    /// One complete granule per call.
+    serialize_settings.granule_is_complete = true;
 
     return serialize_settings;
 }
@@ -392,6 +394,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
+        CurrentThread::checkIfNotCancelled();
+
         /// Tricky part, because we share compressed streams between different columns substreams.
         /// Compressed streams write data to the single file, but with different compression codecs.
         /// So we flush each stream (using next()) before using new one, because otherwise we will override

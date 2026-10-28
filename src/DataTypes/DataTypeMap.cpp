@@ -327,11 +327,15 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
         else
         {
             const auto & map_serialization = assert_cast<const SerializationMap &>(*serialization);
+            const bool read_whole_map
+                = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
+                && anyFieldSatisfies(key, isFloatZeroField);
             exists_serialization = SerializationMapKeyExists::create(
-                map_serialization.getNestedSerialization(),
+                read_whole_map ? serialization : map_serialization.getNestedSerialization(),
                 map_serialization.getMapSerializationVersion(),
                 key_column->getPtr(),
-                nested);
+                read_whole_map ? getPtr() : nested,
+                read_whole_map);
         }
         auto res = std::make_unique<SubcolumnInfo>();
         res->data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
@@ -361,12 +365,19 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(s
 
     /// `basic` / `with_buckets`: read only the bucket that contains the requested key.
     const auto & map_serialization = assert_cast<const SerializationMap &>(*serialization);
+
+    /// The bucket of a key is the hash of its bits. The two zeros are equal, but their bits differ,
+    /// so the other zero may be in another bucket. A key with a float zero at any depth, e.g. in a `Tuple`
+    /// or in a path of a `JSON`, reads the whole Map.
+    bool read_whole_map = map_serialization.getMapSerializationVersion() == MergeTreeMapSerializationVersion::WITH_BUCKETS
+        && anyFieldSatisfies((*key_column)[0], isFloatZeroField);
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
-        map_serialization.getNestedSerialization(),
+        read_whole_map ? serialization : map_serialization.getNestedSerialization(),
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
-        nested);
+        read_whole_map ? getPtr() : nested,
+        read_whole_map);
     auto res = std::make_unique<SubcolumnInfo>();
     res->data = SubstreamData(key_value_serialization).withType(value_type);
 

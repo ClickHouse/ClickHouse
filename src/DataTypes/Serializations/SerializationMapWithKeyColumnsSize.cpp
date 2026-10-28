@@ -25,12 +25,13 @@ struct DeserializeBinaryBulkStateMapWithKeyColumnsSize : public ISerialization::
     /// streams (that would corrupt sibling `m['k']` reads that share the cached map state).
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> exists_states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(
+        ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumnsSize>(*this);
-        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone() : nullptr;
+        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone(context) : nullptr;
         for (auto & s : new_state->exists_states)
-            s = s ? s->clone() : nullptr;
+            s = s ? s->clone(context) : nullptr;
         return new_state;
     }
 };

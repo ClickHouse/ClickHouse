@@ -1,0 +1,9 @@
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+    </logger>
+    <text_log>
+        <level>trace</level>
+    </text_log>
+</clickhouse>

@@ -174,13 +174,13 @@ public:
         std::vector<DeserializeBinaryBulkStatePtr> value_states;
         std::vector<DeserializeBinaryBulkStatePtr> exists_states;
 
-        DeserializeBinaryBulkStatePtr clone() const override
+        DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext & context) const override
         {
             auto new_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumns>(*this);
             for (auto & value_state : new_state->value_states)
-                value_state = value_state ? value_state->clone() : nullptr;
+                value_state = value_state ? value_state->clone(context) : nullptr;
             for (auto & exists_state : new_state->exists_states)
-                exists_state = exists_state ? exists_state->clone() : nullptr;
+                exists_state = exists_state ? exists_state->clone(context) : nullptr;
             return new_state;
         }
     };

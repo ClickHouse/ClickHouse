@@ -172,6 +172,7 @@ private:
         MergeTreeIndices indices,
         bool merge_is_needed,
         bool try_adaptive_codec,
+        ContextPtr context,
         bool use_selected_codec = false);
 
     MergeTreeData & data;

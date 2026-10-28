@@ -26,11 +26,12 @@ struct DeserializeBinaryBulkStateMapKeyPresence : public ISerialization::Deseria
     MapKeyPresenceKind presence_kind = MapKeyPresenceKind::Tracked;
     UInt8 stream_name_version = MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(
+        ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeyPresence>(*this);
-        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone() : nullptr;
-        new_state->exists_state = exists_state ? exists_state->clone() : nullptr;
+        new_state->with_key_columns_state = with_key_columns_state ? with_key_columns_state->clone(context) : nullptr;
+        new_state->exists_state = exists_state ? exists_state->clone(context) : nullptr;
         return new_state;
     }
 };

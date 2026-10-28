@@ -62,10 +62,10 @@ public:
     {
         DeserializeBinaryBulkStatePtr map_state;
 
-        DeserializeBinaryBulkStatePtr clone() const override
+        DeserializeBinaryBulkStatePtr cloneImpl(DeserializeBinaryBulkStateCloneContext & context) const override
         {
             auto new_state = std::make_shared<DeserializeState>(*this);
-            new_state->map_state = map_state ? map_state->clone() : nullptr;
+            new_state->map_state = map_state ? map_state->clone(context) : nullptr;
             return new_state;
         }
     };
