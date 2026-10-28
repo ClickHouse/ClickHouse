@@ -5340,22 +5340,39 @@ bool MutateTask::prepare()
     /// format change, an interpreter affecting all columns). `new_columns` already carries the pending
     /// renames, so a renamed column is validated under the name it is written with. A failure leaves
     /// the mutation failed and retried, the same as the re-validation of the target above.
-    if (rewrites_all_columns
-        && std::ranges::any_of(ctx->commands_for_part, [](const auto & command) { return command.type == MutationCommand::Type::RECOMPRESS_COLUMN; }))
+    ///
+    /// Both checks also take the indices and projections the interpreter actually builds: the commands it
+    /// receives are not only the ones of the task (e.g. the whole-part rewrite converts a column whose type
+    /// is changed by a pending `MODIFY COLUMN`, and the interpreter rebuilds the indices and projections that
+    /// depend on it from the values as they were before the recompression), so the guard above, which
+    /// sees only the task commands, could skip an absent dependent that is built here.
+    if (std::ranges::any_of(ctx->commands_for_part, [](const auto & command) { return command.type == MutationCommand::Type::RECOMPRESS_COLUMN; }))
     {
-        for (const auto & column : new_columns)
+        if (rewrites_all_columns)
         {
-            try
+            for (const auto & column : new_columns)
             {
-                ctx->data->checkLossyRecompressionIsPossible(
-                    column.name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions, &ctx->commands_for_part);
+                try
+                {
+                    ctx->data->checkLossyRecompressionIsPossible(
+                        column.name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions, &ctx->commands_for_part,
+                        &ctx->materialized_indices, &ctx->materialized_projections);
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("RECOMPRESS COLUMN rewrites part {} as a whole and re-serializes every stored column, "
+                        "including `{}`, with its current codec", ctx->source_part->name, column.name);
+                    throw;
+                }
             }
-            catch (Exception & e)
-            {
-                e.addMessage("RECOMPRESS COLUMN rewrites part {} as a whole and re-serializes every stored column, "
-                    "including `{}`, with its current codec", ctx->source_part->name, column.name);
-                throw;
-            }
+        }
+        else
+        {
+            for (const auto & command : ctx->commands_for_part)
+                if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+                    ctx->data->checkLossyRecompressionIsPossible(
+                        command.column_name, ctx->metadata_snapshot, ctx->source_part.get(), alter_conversions, &ctx->commands_for_part,
+                        &ctx->materialized_indices, &ctx->materialized_projections);
         }
     }
 

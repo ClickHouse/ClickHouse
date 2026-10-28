@@ -7381,7 +7381,9 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     const StorageMetadataPtr & metadata_snapshot,
     const IMergeTreeDataPart * source_part,
     const AlterConversionsPtr & alter_conversions,
-    const MutationCommands * task_commands) const
+    const MutationCommands * task_commands,
+    const NameSet * indices_built_by_interpreter,
+    const NameSet * projections_built_by_interpreter) const
 {
     const auto & columns = metadata_snapshot->getColumns();
 
@@ -7651,6 +7653,14 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
         auto columns_assigned_by_task = task_commands->getAllUpdatedColumns();
         columns_updated_by_task.insert(columns_assigned_by_task.begin(), columns_assigned_by_task.end());
     }
+
+    /// The interpreter can build more dependents than the commands name: e.g. a whole-part rewrite
+    /// converts a column whose type is changed by a pending `MODIFY COLUMN` and rebuilds the indices
+    /// and projections that depend on it.
+    if (indices_built_by_interpreter)
+        indices_built_by_task.insert(indices_built_by_interpreter->begin(), indices_built_by_interpreter->end());
+    if (projections_built_by_interpreter)
+        projections_built_by_task.insert(projections_built_by_interpreter->begin(), projections_built_by_interpreter->end());
 
     /// An `UPDATE` rebuilds the dependents of the columns it changes.
     auto reads_column_updated_by_task = [&](const Names & required_columns)
