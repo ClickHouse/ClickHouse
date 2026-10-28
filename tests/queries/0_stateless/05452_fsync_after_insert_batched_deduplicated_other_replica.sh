@@ -16,11 +16,11 @@ ZK_PATH="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fsync_dedup_othe
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_fsync_dedup_other_replica_1 (k UInt64, s String)
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', 'r1') ORDER BY k
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fsync_dedup_other_replica', 'r1') ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 1, fsync_after_insert_each_part = 0,
         sleep_before_commit_local_part_in_replicated_table_ms = 5000;
     CREATE TABLE t_fsync_dedup_other_replica_2 (k UInt64, s String)
-    ENGINE = ReplicatedMergeTree('$ZK_PATH', 'r2') ORDER BY k
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fsync_dedup_other_replica', 'r2') ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 1, fsync_after_insert_each_part = 0;
     SYSTEM STOP FETCHES t_fsync_dedup_other_replica_2;"
 
