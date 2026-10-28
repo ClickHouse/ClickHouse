@@ -10,6 +10,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
@@ -32,6 +33,12 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char disk_fail_access_check[];
 }
 
 IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -245,6 +252,11 @@ void IDisk::startup(bool skip_access_check)
 
 void IDisk::checkAccess()
 {
+    fiu_do_on(FailPoints::disk_fail_access_check,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of the access check of disk {}", name);
+    });
+
     checkAccessImpl(fmt::format("clickhouse_access_check_{}", toString(UUIDHelpers::generateV4())));
 }
 

@@ -1,7 +1,5 @@
 -- Tags: no-fasttest, no-parallel, no-replicated-database
--- no-parallel -- uses a server-wide failpoint that would fail a metadata commit of a concurrently running test.
--- All tables are dropped with `SYNC`: the data of a table dropped asynchronously is removed in the background,
--- and that removal could consume the one-shot failpoint instead of the access check of the wrapper below.
+-- no-parallel -- uses a server-wide failpoint that would fail the access check of a disk of a concurrently running test.
 
 -- A `cache` disk over a `borrow_from_cache` disk shares its object storage. If the startup of such a
 -- wrapper fails (here: its access check), its shutdown must not release the objects of the tables
@@ -32,7 +30,7 @@ SETTINGS disk = disk(
 
 INSERT INTO borrowed VALUES (1, 'a'), (2, 'b'), (3, 'c');
 
-SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
+SYSTEM ENABLE FAILPOINT disk_fail_access_check;
 CREATE TABLE wrapped (k UInt64)
 ENGINE = MergeTree() ORDER BY k
 SETTINGS disk = disk(
@@ -43,7 +41,7 @@ SETTINGS disk = disk(
     max_size = '100Mi',
     load_metadata_asynchronously = 0
 ); -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
+SYSTEM DISABLE FAILPOINT disk_fail_access_check;
 
 SELECT 'after the failed wrapper';
 SELECT * FROM borrowed ORDER BY k;

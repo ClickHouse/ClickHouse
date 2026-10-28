@@ -298,6 +298,7 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(disk_fail_access_check) \
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
