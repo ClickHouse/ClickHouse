@@ -859,6 +859,16 @@ void registerHiddenPreWriteChecks(
     if (!storage || depth > max_insert_forwarding_depth)
         return;
 
+    /// The checks run before the nested INSERTs check the access rights, and their failure tells the number
+    /// and the sizes of the parts of the table. So every insertion boundary on the way is authorized with the
+    /// context the write arrives with, before the dependent views of the storage are followed or the walk
+    /// switches to the `SQL SECURITY` context of a view: nothing is registered behind a storage the context
+    /// may not insert into (into any of its columns - the same failure is observable then by a direct INSERT).
+    /// The nested INSERT into such a storage fails with `ACCESS_DENIED` before writing anything. The nested
+    /// storage of a proxy is not an insertion boundary of its own: the proxy has been authorized already.
+    if (follow_dependent_views && !canInsertIntoAnyColumn(*storage, context))
+        return;
+
     if (follow_dependent_views)
         registerHiddenDependentViewsPreWriteChecks(storage, context, gates, origin, depth, result);
 
@@ -911,13 +921,6 @@ void registerHiddenPreWriteChecks(
 
     if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
     {
-        /// The check runs before the nested INSERT checks the access rights of `context` to the table, and its
-        /// failure tells the number and the sizes of the parts of the table. So it is registered only if the
-        /// context may insert into the table (into any of its columns - the same failure is observable then by
-        /// a direct INSERT). Otherwise the nested INSERT fails with `ACCESS_DENIED` before writing anything.
-        if (!canInsertIntoAnyColumn(*storage, context))
-            return;
-
         auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
         /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
         auto gate = gates->get(storage->getStorageID());
