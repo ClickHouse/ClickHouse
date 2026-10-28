@@ -80,6 +80,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsBool force_read_through_cache_for_merges;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
@@ -1393,13 +1394,23 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     /// (getCacheName), so the promotion is applied per part below; with default settings
     /// prefetch_buffer_size == max_read_buffer_size, so the promoted size equals the plain one and nothing
     /// changes.
+    ///
+    /// The promotion is skipped when the reader only reads from the cache if the data already exists there
+    /// (read_if_exists_otherwise_bypass). MergeTreeSequentialSource does not take that flag from the context:
+    /// it overwrites it with !force_read_through_cache_for_merges of the storage the part belongs to, so the
+    /// estimate derives it the same way.
     const UInt64 remote_read_buffer_size = read_settings.remote_fs_settings.buffer_size;
-    const bool cache_promotes_read_buffer = read_settings.enable_filesystem_cache
-        && read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
-        && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass;
-    const UInt64 cached_remote_read_buffer_size = cache_promotes_read_buffer
-        ? std::max<UInt64>(remote_read_buffer_size, read_settings.remote_fs_settings.large_buffer_size)
-        : remote_read_buffer_size;
+    const bool cache_may_promote_read_buffer = read_settings.enable_filesystem_cache
+        && read_settings.filesystem_cache_settings.prefer_bigger_buffer_size;
+    const UInt64 promoted_remote_read_buffer_size
+        = std::max<UInt64>(remote_read_buffer_size, read_settings.remote_fs_settings.large_buffer_size);
+    auto merge_read_buffer_size_on_cached_disk = [&](const MergeTreeSettings & storage_settings)
+    {
+        const bool read_if_exists_otherwise_bypass = !storage_settings[MergeTreeSetting::force_read_through_cache_for_merges];
+        return cache_may_promote_read_buffer && !read_if_exists_otherwise_bypass
+            ? promoted_remote_read_buffer_size
+            : remote_read_buffer_size;
+    };
 
     /// The size a single reader of this part costs: local parts read through the local buffer, remote parts
     /// through the remote one, promoted when the part's disk is cache-backed (see above).
@@ -1407,7 +1418,9 @@ static UInt64 estimateNeededMemoryForMergeImpl(
     {
         if (!part->isStoredOnRemoteDisk())
             return local_read_buffer_size;
-        return part->getDataPartStorage().getCacheName() ? cached_remote_read_buffer_size : remote_read_buffer_size;
+        if (!part->getDataPartStorage().getCacheName())
+            return remote_read_buffer_size;
+        return merge_read_buffer_size_on_cached_disk(*part->storage.getSettings());
     };
 
     /// Per-stream write buffer size on multipart object storage (S3 / Azure). A stream's upload buffers
@@ -3173,9 +3186,10 @@ static UInt64 estimateNeededMemoryForMergeImpl(
                 /// The temporary parts are read back from the destination disk, whose cache state is not
                 /// resolvable here (only whether it is remote), so price a remote read-back at the
                 /// cache-promoted buffer size - the same size the readers get on a cache-backed disk, and
-                /// identical to the plain one under default settings.
+                /// identical to the plain one under default settings. The read-back readers belong to the
+                /// table, whose settings `settings` are here.
                 const UInt64 projection_read_buffer_size
-                    = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
+                    = output_on_remote_disk ? merge_read_buffer_size_on_cached_disk(settings) : local_read_buffer_size;
                 /// A Compact projection part is written by the compact writer (see compact_eager_buffers above),
                 /// with the projection's own table-level block size and the codecs of the projection columns.
                 const UInt64 projection_compact_block_size = resolve_compact_block_size(projection_settings);
