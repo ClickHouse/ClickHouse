@@ -455,18 +455,37 @@ private:
         return static_cast<Int64>(result);
     }
 
-    /// Reads `count` bit-packed values of `bit_width` bits, starting and ending at a byte boundary.
-    void readInts(Int64 * out, size_t count, UInt32 bit_width)
+    template <size_t num_bytes>
+    static void decodeBigEndian(const UInt8 * in, Int64 * out, size_t count)
     {
-        if (bit_width % 8 == 0)
+        for (size_t i = 0; i < count; ++i, in += num_bytes)
         {
-            size_t num_bytes = bit_width / 8;
-            for (size_t i = 0; i < count; ++i)
-                out[i] = readLongBE(num_bytes);
-            return;
+            UInt64 value = 0;
+            for (size_t j = 0; j < num_bytes; ++j)
+                value = (value << 8) | in[j];
+            out[i] = static_cast<Int64>(value);
         }
+    }
 
-        /// The only bit widths that are not a multiple of 8 are at most 30.
+    static void decodeBigEndian(const UInt8 * in, Int64 * out, size_t count, size_t num_bytes)
+    {
+        switch (num_bytes)
+        {
+            case 1: decodeBigEndian<1>(in, out, count); return;
+            case 2: decodeBigEndian<2>(in, out, count); return;
+            case 3: decodeBigEndian<3>(in, out, count); return;
+            case 4: decodeBigEndian<4>(in, out, count); return;
+            case 5: decodeBigEndian<5>(in, out, count); return;
+            case 6: decodeBigEndian<6>(in, out, count); return;
+            case 7: decodeBigEndian<7>(in, out, count); return;
+            default: decodeBigEndian<8>(in, out, count); return;
+        }
+    }
+
+    /// The only bit widths that are not a multiple of 8 are at most 30.
+    template <typename ReadByte>
+    static void decodeBitPacked(Int64 * out, size_t count, UInt32 bit_width, ReadByte && read_byte)
+    {
         UInt64 buffer = 0;
         UInt32 bits_in_buffer = 0;
         const UInt64 mask = (1ULL << bit_width) - 1;
@@ -474,11 +493,49 @@ private:
         {
             while (bits_in_buffer < bit_width)
             {
-                buffer = (buffer << 8) | stream->readByte();
+                buffer = (buffer << 8) | read_byte();
                 bits_in_buffer += 8;
             }
             bits_in_buffer -= bit_width;
             out[i] = static_cast<Int64>((buffer >> bits_in_buffer) & mask);
+        }
+    }
+
+    /// Reads `count` bit-packed values of `bit_width` bits, starting and ending at a byte boundary.
+    void readInts(Int64 * out, size_t count, UInt32 bit_width)
+    {
+        if (bit_width % 8 == 0)
+        {
+            const size_t num_bytes = bit_width / 8;
+            while (count)
+            {
+                /// Decode the values that are entirely in the current chunk directly from it.
+                size_t in_chunk = std::min(count, static_cast<size_t>(stream->end - stream->pos) / num_bytes);
+                if (in_chunk == 0)
+                {
+                    *out = readLongBE(num_bytes);
+                    ++out;
+                    --count;
+                    continue;
+                }
+                decodeBigEndian(reinterpret_cast<const UInt8 *>(stream->pos), out, in_chunk, num_bytes);
+                stream->pos += in_chunk * num_bytes;
+                out += in_chunk;
+                count -= in_chunk;
+            }
+            return;
+        }
+
+        const size_t total_bytes = (count * bit_width + 7) / 8;
+        if (static_cast<size_t>(stream->end - stream->pos) >= total_bytes)
+        {
+            const UInt8 * in = reinterpret_cast<const UInt8 *>(stream->pos);
+            decodeBitPacked(out, count, bit_width, [&] { return *in++; });
+            stream->pos += total_bytes;
+        }
+        else
+        {
+            decodeBitPacked(out, count, bit_width, [&] { return stream->readByte(); });
         }
     }
 
