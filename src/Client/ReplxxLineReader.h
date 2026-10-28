@@ -13,6 +13,11 @@ namespace DB
 class ReplxxLineReader : public LineReader
 {
 public:
+    /// The highlighter callback of replxx, which also reports whether the last token of the
+    /// query is a delimiter: it sets `last_is_delimiter` to true or false, or leaves it intact
+    /// when this cannot be determined (e.g. the query ends with whitespace).
+    using Highlighter = std::function<void(const String & query, std::vector<replxx::Replxx::Color> & colors, int cursor_position, bool & last_is_delimiter)>;
+
     struct Options
     {
         Suggest & suggest;
@@ -35,7 +40,7 @@ public:
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
-        replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+        Highlighter highlighter;
         /// Called on <ENTER> in single-line mode with the current edit buffer.
         /// If it returns true, the query is considered incomplete and a newline
         /// is inserted into the same buffer instead of committing the query.
@@ -54,10 +59,6 @@ public:
 
     void enableBracketedPaste() override;
     void disableBracketedPaste() override;
-
-    /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
-    /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
-    static void setLastIsDelimiter(bool flag);
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
@@ -91,8 +92,14 @@ private:
     bool hintChosen();
 
     replxx::Replxx rx;
-    replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+    Highlighter highlighter;
     std::function<bool(const String &)> query_needs_continuation;
+
+    /// If highlight is on, the highlighter reports whether the last token is a delimiter.
+    /// This is used to determine the behavior of <ENTER> key when multiline is enabled.
+    /// It is a member rather than a global, because several readers can work concurrently
+    /// in one process (client sessions embedded into the server).
+    bool last_is_delimiter = false;
 
     /// Suggestion dictionary; used both for Tab completion and as-you-type hints, and updated
     /// with identifiers from committed queries to prioritize recently-used words.

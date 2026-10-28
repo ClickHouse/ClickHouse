@@ -309,6 +309,7 @@ struct SipHash128Impl
 
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2); }
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
+    static UInt128 applyPadded(const char * data, const size_t size) { return sipHash128Padded(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
     static constexpr bool return_bigint_instead_of_fixedstring = false;
@@ -813,7 +814,7 @@ struct ImplXXH3_128
     static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
@@ -913,7 +914,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// The implementation is picked once, from what the CPU supports. Everything except execution comes from
 /// the default implementation, which this class derives from.
@@ -958,7 +959,7 @@ private:
     std::unique_ptr<IFunction> impl;
 };
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 template <typename Impl, bool Keyed, typename KeyType, typename KeyColumnsType>
 class FunctionAnyHash : public IFunction
@@ -1210,7 +1211,7 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                const ToType hash = apply(key,
+                const ToType hash = applyPadded(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset);
 
@@ -1233,7 +1234,7 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                const ToType hash = apply(key, reinterpret_cast<const char *>(&data[i * n]), n);
+                const ToType hash = applyPadded(key, reinterpret_cast<const char *>(&data[i * n]), n);
                 if constexpr (first)
                     vec_to[i] = hash;
                 else
@@ -1680,6 +1681,15 @@ public:
             return Impl::apply(begin, size);
     }
 
+    /// For data that is followed by at least 7 readable bytes, such as a value of a padded column.
+    static ToType applyPadded(const KeyType & key, const char * begin, size_t size)
+    {
+        if constexpr (!Keyed && requires { Impl::applyPadded(begin, size); })
+            return Impl::applyPadded(begin, size);
+        else
+            return apply(key, begin, size);
+    }
+
     static ToType combineHashes(const KeyType & key, ToType h1, ToType h2)
     {
         if constexpr (Keyed)
@@ -1689,7 +1699,7 @@ public:
     }
 };
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 struct ImplWyHash64;
 

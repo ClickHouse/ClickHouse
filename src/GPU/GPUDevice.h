@@ -26,12 +26,12 @@ inline void clearDeviceError()
     cudaGetLastError();
 }
 
-void synchronizeStream(rmm::cuda_stream_view stream);
+void synchronizeStream(cuda::stream_ref stream);
 
 /// Runs `body`, which queues work on `stream`. If it throws, waits for what it queued before the exception goes on, as
 /// that work may still read or write memory that the unwinding frees, and that the pools give to other queries.
 template <typename Body>
-void waitOnFailure(rmm::cuda_stream_view stream, Body && body)
+void waitOnFailure(cuda::stream_ref stream, Body && body)
 {
     try
     {
@@ -39,7 +39,7 @@ void waitOnFailure(rmm::cuda_stream_view stream, Body && body)
     }
     catch (...)
     {
-        cudaStreamSynchronize(stream.value());
+        cudaStreamSynchronize(stream.get());
         clearDeviceError();
         throw;
     }
