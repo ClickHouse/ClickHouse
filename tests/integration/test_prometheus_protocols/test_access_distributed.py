@@ -72,7 +72,7 @@ SHARD_LOCAL_LEAK = [
 TABLE_FUNCTIONS = [
     f"prometheusQuery(ts_dist, 'm', {EVALUATION_TIME})",
     f"prometheusQueryRange(ts_dist, 'm', 0, {EVALUATION_TIME}, 10)",
-    f"timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})",
+    f"timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME}, 'samples')",
 ]
 
 # The same two functions over the wrapper the probe rejects.
@@ -241,7 +241,7 @@ def test_a_stored_selector_table_needs_the_select_grant_on_its_source():
     """A table created AS timeSeriesSelector is configured once, so the reader's own SELECT on the
     source table is checked when it is read."""
     node.query(
-        f"CREATE TABLE stored_selector AS timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})"
+        f"CREATE TABLE stored_selector AS timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME}, 'samples')"
     )
     node.query("CREATE USER stored_selector_reader IDENTIFIED WITH no_password")
     node.query("GRANT SELECT ON default.stored_selector TO stored_selector_reader")
@@ -263,7 +263,7 @@ def test_a_stored_selector_table_keeps_the_source_row_policy_and_filters():
     """A table created AS timeSeriesSelector reads the inner tables directly, so a row policy or an
     additional_table_filters entry on its source is refused when it is read, as a direct call is."""
     node.query(
-        f"CREATE TABLE stored_policy_selector AS timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME})"
+        f"CREATE TABLE stored_policy_selector AS timeSeriesSelector(shard_0.ts_local, 'm', 0, {EVALUATION_TIME}, 'samples')"
     )
     try:
         # It reads before the restriction, so the refusals below are not vacuous.
@@ -481,7 +481,7 @@ def test_table_functions_need_the_select_grant(table_function, statement):
 
 
 def test_selector_access_denied_precedes_the_engine_error():
-    sql = f"SELECT count() FROM timeSeriesSelector(ts_dist, 'm', 0, {EVALUATION_TIME})"
+    sql = f"SELECT count() FROM timeSeriesSelector(ts_dist, 'm', 0, {EVALUATION_TIME}, 'samples')"
     # A caller that may read the wrapper learns that the selector wants a TimeSeries table...
     engine_error = node.query_and_get_error(sql)
     assert "is not TimeSeries" in engine_error, engine_error

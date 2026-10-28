@@ -325,7 +325,7 @@ def test_remote_write_over_distributed():
     # metric is counted: other tests write into the same shard tables, in whatever order they run.
     def samples_on(shard_db):
         return (
-            f"(SELECT count() FROM timeSeriesData({shard_db}.ts_local) WHERE id IN "
+            f"(SELECT sum(length(samples)) FROM timeSeriesData({shard_db}.ts_local) WHERE id IN "
             f"(SELECT id FROM timeSeriesTags({shard_db}.ts_local) WHERE metric_name = 'dist_metric'))"
         )
 
@@ -501,8 +501,8 @@ def test_remote_write_refuses_another_time_series_type_swapped_after_the_check()
     assert count_on_the_shards("prom_dist", "coarse_swapped_metric") == 1
     assert (
         node.query(
-            "SELECT count() FROM timeSeriesData(shard_0.ts_local) "
-            f"WHERE toUnixTimestamp64Milli(timestamp) = {SUB_SECOND_MS}"
+            "SELECT sum(arrayCount(s -> toUnixTimestamp64Milli(s.1) = "
+            f"{SUB_SECOND_MS}, samples)) FROM timeSeriesData(shard_0.ts_local)"
         ).strip()
         == "1"
     )
@@ -557,7 +557,7 @@ def test_the_probe_asks_the_cluster_user_no_more_than_the_shards_do():
             )
         # The premise: as the cluster user the real shard read and the real shard INSERT both run...
         node.query(
-            f"SELECT count() FROM timeSeriesSelector(shard_0.ts_restricted, 'premise_metric', 0, {START_TIME})",
+            f"SELECT count() FROM timeSeriesSelector(shard_0.ts_restricted, 'premise_metric', 0, {START_TIME}, 'samples')",
             user=CLUSTER_SHARD_USER,
         )
         node.query(

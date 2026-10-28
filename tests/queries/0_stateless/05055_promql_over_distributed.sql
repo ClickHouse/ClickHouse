@@ -183,7 +183,7 @@ SELECT count() FROM timeSeriesData(currentDatabase(), 'ts_dist'); -- { serverErr
 SELECT count() FROM timeSeriesSamples(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
 SELECT count() FROM timeSeriesTags(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
 SELECT count() FROM timeSeriesMetrics(currentDatabase(), 'ts_dist'); -- { serverError UNEXPECTED_TABLE_ENGINE }
-SELECT count() FROM timeSeriesSelector(currentDatabase(), 'ts_dist', 'm', 0, 0); -- { serverError UNEXPECTED_TABLE_ENGINE }
+SELECT count() FROM timeSeriesSelector(currentDatabase(), 'ts_dist', 'm', 0, 0, 'samples'); -- { serverError UNEXPECTED_TABLE_ENGINE }
 
 DROP TABLE ts_nested;
 DROP TABLE ts_remote_tf;
