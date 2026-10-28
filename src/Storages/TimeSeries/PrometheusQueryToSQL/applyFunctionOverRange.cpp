@@ -487,10 +487,22 @@ SQLQueryPiece applyFunctionOverRange(
             break;
         }
 
-        case StoreMethod::RAW_DATA:
+        case StoreMethod::SAMPLES:
+        {
+            /// SELECT group, <aggregate_function>(samples) AS values
+            /// FROM <samples_data> GROUP BY group
+            has_group = true;
+
+            values = make_intrusive<ASTIdentifier>(ColumnNames::Samples);
+            res.store_method = StoreMethod::VECTOR_GRID;
+
+            break;
+        }
+
+        case StoreMethod::TIMESTAMP_AND_VALUE:
         {
             /// SELECT group, <aggregate_function>(timestamp, value) AS values
-            /// FROM <raw_data> GROUP BY group
+            /// FROM <samples_data> GROUP BY group
             has_group = true;
 
             timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
@@ -755,7 +767,8 @@ SQLQueryPiece applyFunctionOverRange(
 
     chassert(values);
 
-    if (!timestamps)
+    /// The `samples` column of StoreMethod::SAMPLES is the single argument of the aggregate function.
+    if (!timestamps && (argument.store_method != StoreMethod::SAMPLES))
     {
         /// timeSeriesRange(<start_time>, <end_time>, <step>)
         timestamps = makeASTFunction(
@@ -783,7 +796,8 @@ SQLQueryPiece applyFunctionOverRange(
 
     String ch_function_name{impl_info->ch_function_name};
     ASTs aggregate_arguments;
-    aggregate_arguments.push_back(std::move(timestamps));
+    if (timestamps)
+        aggregate_arguments.push_back(std::move(timestamps));
     aggregate_arguments.push_back(std::move(values));
     if (float_if_condition)
     {

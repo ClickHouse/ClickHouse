@@ -54,7 +54,6 @@ CREATE VIEW v_av_top AS SELECT a FROM v_av_body;
 CREATE VIEW v_plain_over_plain AS SELECT a FROM v_av_leaf;
 
 SET automatic_parallel_replicas_mode = 0;
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1;
 
 -- parallel_replicas_local_plan is deliberately left to the runner's randomization: every
