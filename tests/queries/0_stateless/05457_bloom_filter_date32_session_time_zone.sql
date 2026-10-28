@@ -34,6 +34,7 @@ SELECT count() FROM t_bf_date32_tz WHERE indexOf(arr, toDate32('2024-01-02')) = 
 SELECT count() FROM t_bf_date32_tz WHERE dt = toDate32('2024-01-02');
 SELECT count() FROM t_bf_date32_tz WHERE has([toDate32('2024-01-02')], dt);
 SELECT count() FROM t_bf_date32_tz WHERE mapContainsKey(mk, toDate32('2024-01-02'));
+SELECT count() FROM t_bf_date32_tz WHERE mapContainsValue(mv, toDate32('2024-01-02'));
 SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDate32('2024-01-02');
 SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDate('2024-01-05');
 -- A missing key yields `1970-01-01 00:00:00`, which equals this constant.
