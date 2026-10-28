@@ -19,8 +19,6 @@ INSERT INTO pfsmj_sotf_left SELECT * FROM numbers(1000000);
 -- Only a subset matches, so the on-the-fly set actually filters the left side.
 INSERT INTO pfsmj_sotf_right SELECT number * 2 FROM numbers(250000);
 
-SET enable_analyzer = 1;
-
 -- The plan must contain BOTH the on-the-fly set/filter transforms and the two scatters: neither
 -- optimization may silently disable the other, otherwise the execution checks below prove nothing.
 SELECT 'analyzer set_and_scatter_combined',

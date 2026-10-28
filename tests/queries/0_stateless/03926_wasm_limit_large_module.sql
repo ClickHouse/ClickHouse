@@ -1,7 +1,5 @@
 -- Tags: no-fasttest, no-parallel, no-msan
 
-SET enable_analyzer = 1;
-
 DROP FUNCTION IF EXISTS access_data;
 DELETE FROM system.webassembly_modules WHERE name = 'large_module';
 
