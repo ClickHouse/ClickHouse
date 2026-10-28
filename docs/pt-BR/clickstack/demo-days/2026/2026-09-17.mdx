@@ -1,0 +1,35 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-17
+title: 'Demo Days - 2026-09-17'
+sidebarTitle: '2026-09-17'
+description: 'Demo Days do ClickStack de 2026-09-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Cores dos nós do mapa de serviços por taxa absoluta de erros {#colouring-service-map-nodes-by-absolute-error-rate}
+
+*Demonstração de [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/d8QHorCCgqY" title="Reprodutor de vídeos do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Recebemos relatos de que era difícil identificar quais serviços realmente apresentavam erros no mapa de serviços. Todos os nós tinham algum tom de vermelho, inclusive os serviços sem erros. As cores também variavam conforme o gráfico exibido. Assim, o serviço com a maior taxa de erros sempre aparecia no vermelho mais escuro, mesmo que essa taxa fosse de apenas 0,3%.
+
+A taxa de erros agora é representada por quatro faixas fixas:
+
+* **0%:** cinza frio
+* **Acima de 0% e abaixo de 1%:** vermelho-claro
+* **De 1% a menos de 5%:** vermelho médio
+* **5% ou mais:** vermelho-escuro
+
+Um serviço sem tráfego aparece como um círculo vazio. Um serviço com tráfego, mas sem erros, aparece em cinza. Se o nó estiver vermelho, há erros.
+
+O cinza faz diferença aqui. Em um nó de 32 px, o rosa-claro e um rosa um pouco mais escuro parecem quase iguais. O cinza frio é muito mais fácil de distinguir, e os três tons de vermelho já fazem parte da paleta existente.
+
+A legenda agora mostra faixas distintas, com `≥5%` no topo. Esse limiar também é usado para a cor de alarme da dica de ferramenta, mantendo as duas indicações consistentes. A latência e a vazão continuam usando escalas relativas, já que o limiar mais útil depende da carga de trabalho.
+
+Há uma desvantagem: 6% e 60% agora aparecem na mesma cor. A dica de ferramenta ainda mostra a porcentagem exata. Um gráfico de rosca proporcional poderia mostrar mais detalhes, mas exigiria uma mudança maior. Também não temos, no momento, os dados necessários para separar sucessos, respostas `4xx`, respostas `5xx` e requisições limitadas; a fonte de dados expõe os estados `Ok`, `Error` e `Unset` do OpenTelemetry.
+
+Por enquanto, os limiares são fixos. Permitir ajustes por fonte de dados seria uma melhoria útil: um serviço com SLO de `99.9%` e uma tarefa de processamento em lote têm critérios diferentes para definir uma taxa de erros aceitável.
+
+**PRs relacionados:** [#3125](https://github.com/hyperdxio/hyperdx/pull/3125) Colorir os nós do mapa de serviços com base em limiares absolutos da taxa de erros

@@ -16,6 +16,7 @@
     "ja/reference/settings/server-settings/settings/background-schedule",
     "ja/reference/settings/server-settings/settings/backup",
     "ja/reference/settings/server-settings/settings/backups",
+    "ja/reference/settings/server-settings/settings/columns-cache",
     "ja/reference/settings/server-settings/settings/compiled-expression",
     "ja/reference/settings/server-settings/settings/concurrent-threads",
     "ja/reference/settings/server-settings/settings/cpu-slot",

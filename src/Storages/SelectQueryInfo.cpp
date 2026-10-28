@@ -1,4 +1,5 @@
 #include <Interpreters/Set.h>
+#include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
@@ -25,6 +26,34 @@ bool SelectQueryInfo::isFinal() const
 bool SelectQueryInfo::isStream() const
 {
     return table_expression_modifiers && table_expression_modifiers->hasStream();
+}
+
+/// With a query tree, every table expression carries its own modifiers, while the query AST holds
+/// only the `SAMPLE` of the left-most table. A table expression without modifiers is not sampled.
+std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleSizeRatio() const
+{
+    if (table_expression_modifiers)
+        return table_expression_modifiers->getSampleSizeRatio();
+
+    if (query_tree)
+        return {};
+
+    if (auto sample_size = query->as<ASTSelectQuery &>().sampleSize())
+        return sample_size->as<ASTSampleRatio &>().ratio;
+    return {};
+}
+
+std::optional<TableExpressionModifiers::Rational> SelectQueryInfo::getSampleOffsetRatio() const
+{
+    if (table_expression_modifiers)
+        return table_expression_modifiers->getSampleOffsetRatio();
+
+    if (query_tree)
+        return {};
+
+    if (auto sample_offset = query->as<ASTSelectQuery &>().sampleOffset())
+        return sample_offset->as<ASTSampleRatio &>().ratio;
+    return {};
 }
 
 std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const

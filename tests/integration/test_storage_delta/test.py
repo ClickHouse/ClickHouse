@@ -80,6 +80,7 @@ def get_spark(log_dir=None):
         )
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
+        .config("spark.databricks.delta.writeChecksumFile.enabled", "false")
         .master("local")
     )
 

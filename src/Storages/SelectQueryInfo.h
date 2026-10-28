@@ -215,6 +215,7 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
@@ -230,6 +231,10 @@ struct SelectQueryInfo
 
     /// Whether the table expression has the STREAM modifier.
     bool isStream() const;
+
+    /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
+    std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
