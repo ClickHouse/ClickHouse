@@ -492,7 +492,8 @@ private:
         std::vector<MergeTreeMutationStatus> & statuses,
         const CommittingBlocks & committing_blocks,
         bool committing_blocks_loaded,
-        const std::unordered_set<String> & mutations_in_committing_blocks) const;
+        const std::unordered_set<String> & mutations_in_committing_blocks,
+        const std::unordered_set<String> & proven_without_older_inserts) const;
 
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;

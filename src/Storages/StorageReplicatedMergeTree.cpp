@@ -274,6 +274,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char rmt_mutations_status_pause_before_pulling_log[];
+    extern const char rmt_mutations_status_pause_after_queue_snapshot[];
     extern const char check_table_inject_retryable_zk_error[];
     extern const char check_table_inject_shutdown_abort[];
 }
@@ -8967,17 +8968,15 @@ void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(
     std::vector<MergeTreeMutationStatus> & statuses,
     const CommittingBlocks & committing_blocks,
     bool committing_blocks_loaded,
-    const std::unordered_set<String> & mutations_in_committing_blocks) const
+    const std::unordered_set<String> & mutations_in_committing_blocks,
+    const std::unordered_set<String> & proven_without_older_inserts) const
 {
     std::vector<MergeTreeMutationStatus *> to_check;
+    for (auto & status : statuses)
     {
-        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        for (auto & status : statuses)
-        {
-            if (status.is_done || !status.progress || mutations_without_older_inserts.contains(status.id))
-                continue;
-            to_check.push_back(&status);
-        }
+        if (status.is_done || !status.progress || proven_without_older_inserts.contains(status.id))
+            continue;
+        to_check.push_back(&status);
     }
     if (to_check.empty())
         return;
@@ -9015,10 +9014,13 @@ void StorageReplicatedMergeTree::resetProgressWhileOlderInsertsCommit(
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
     UInt64 reader_generation = 0;
+    /// Only a check made before the queue snapshot below covers every part this snapshot lists.
+    std::unordered_set<String> proven_without_older_inserts;
     {
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
         reader_generation = mutation_initial_bytes_next_reader++;
         mutation_initial_bytes_readers.insert(reader_generation);
+        proven_without_older_inserts = mutations_without_older_inserts;
     }
     SCOPE_EXIT({
         std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
@@ -9033,6 +9035,8 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     auto statuses = queue.getMutationsStatus();
     if (statuses.empty())
         return statuses;
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutations_status_pause_after_queue_snapshot);
 
     /// The queue lists a mutation once per command, in adjacent rows that differ only in the command.
     /// Only the first row of each mutation is checked and sized below; the other rows copy it at the end.
@@ -9054,17 +9058,14 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     /// block before they were created, so before the read.
     PartitionIdsHint partition_ids;
     std::unordered_set<String> mutations_in_committing_blocks;
+    for (size_t i = 0; i < statuses.size(); ++i)
     {
-        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
-        for (size_t i = 0; i < statuses.size(); ++i)
-        {
-            const auto & status = statuses[i];
-            if (repeats_previous_mutation(statuses, i) || status.is_done || mutations_without_older_inserts.contains(status.id))
-                continue;
-            mutations_in_committing_blocks.insert(status.id);
-            for (const auto & [partition_id, _] : status.block_numbers)
-                partition_ids.insert(partition_id);
-        }
+        const auto & status = statuses[i];
+        if (repeats_previous_mutation(statuses, i) || status.is_done || proven_without_older_inserts.contains(status.id))
+            continue;
+        mutations_in_committing_blocks.insert(status.id);
+        for (const auto & [partition_id, _] : status.block_numbers)
+            partition_ids.insert(partition_id);
     }
 
     CommittingBlocks committing_blocks;
@@ -9195,7 +9196,8 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 
     /// An older INSERT that has not published its part yet is work of unknown size, even with known parts left.
     /// Only the first row of each mutation has `progress` set here, so each mutation is checked once.
-    resetProgressWhileOlderInsertsCommit(statuses, committing_blocks, committing_blocks_loaded, mutations_in_committing_blocks);
+    resetProgressWhileOlderInsertsCommit(
+        statuses, committing_blocks, committing_blocks_loaded, mutations_in_committing_blocks, proven_without_older_inserts);
 
     for (size_t i = 0; i < statuses.size(); ++i)
     {
