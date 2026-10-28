@@ -496,10 +496,11 @@ def test_nocache_bypasses_query_cache():
 
 
 # `partial_response=false` makes an unreachable shard an error even for a user with `skip_unavailable_shards = 1`.
+# The TimeSeries tables use version 9, the last one that can have an external (here Distributed) data table.
 def test_partial_response_false_requires_all_shards():
     node.query("CREATE TABLE shard_data (id UUID, timestamp DateTime64(3), value Float64) ENGINE=MergeTree ORDER BY (id, timestamp)")
     node.query("CREATE TABLE dist_data AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data, 0)")
-    node.query("CREATE TABLE prometheus_dist ENGINE=TimeSeries DATA dist_data")
+    node.query("CREATE TABLE prometheus_dist ENGINE=TimeSeries SETTINGS version = 9 DATA dist_data")
     node.query("INSERT INTO prometheus_dist (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
     node.query("CREATE USER skip_shards_user IDENTIFIED WITH no_password SETTINGS skip_unavailable_shards = 1")
     node.query("GRANT SELECT ON default.*, CREATE TEMPORARY TABLE ON *.* TO skip_shards_user")
@@ -523,7 +524,7 @@ def test_partial_response_false_requires_all_shards():
     # It also wins over the Distributed table's own `skip_unavailable_shards = 1` for a user with the default `skip_unavailable_shards = 0`.
     node.query("CREATE TABLE shard_data_skip AS shard_data")
     node.query("CREATE TABLE dist_data_skip AS shard_data ENGINE=Distributed(unavailable_shard, default, shard_data_skip, 0) SETTINGS skip_unavailable_shards = 1")
-    node.query("CREATE TABLE prometheus_dist_skip ENGINE=TimeSeries DATA dist_data_skip")
+    node.query("CREATE TABLE prometheus_dist_skip ENGINE=TimeSeries SETTINGS version = 9 DATA dist_data_skip")
     node.query("INSERT INTO prometheus_dist_skip (metric_name, tags, samples) VALUES ('dist_metric', {}, [(toDateTime64(1000, 3), 7)])")
     params = {"table": "prometheus_dist_skip"}
     data = execute_query_via_http_api(node.ip_address, 9093, path, "dist_metric", timestamp=1010, params=params)
