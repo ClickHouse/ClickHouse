@@ -119,6 +119,7 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <pcg_random.hpp>
+#include <Poco/String.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -750,7 +751,10 @@ Field QueryFuzzer::fuzzField(Field field)
                 break;
             case 9: {
                 /// SQL/regex metacharacters — stresses match(), extract(), LIKE, escaping
-                static const Strings vals = {"'", "\\'", "\\", "\"", ";--", "%", "_", "/**/", ".*", "[a-z]", "^$", "(?i)"};
+                static const Strings vals
+                    = {"'", "\\'", "\\", "\"", ";--", "%", "_", "/**/", ".*", "[a-z]", "^$", "(?i)",
+                       /// `SIMILAR TO` patterns
+                       "(a|b)*", "%[^0-9]+_", "_{2,3}", "[[:alpha:]]%", "%(|x)?", "a{,", "[]%"};
                 str = vals[fuzz_rand() % vals.size()];
                 break;
             }
@@ -1499,8 +1503,8 @@ String QueryFuzzer::nextFuzzedTableName(const String & full_name)
 
 /// Fuzz a table storage definition (ENGINE and SETTINGS clauses).
 /// Used both for the storage of a plain CREATE TABLE and for the
-/// inner table storage of a materialized view.
-void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
+/// inner table storage of a materialized view. `columns_list` may be null.
+void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_list)
 {
     if (!storage.engine)
         return;
@@ -1522,11 +1526,15 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         }
     }
 
+    /// At most one engine swap per call, so the swaps below don't overwrite each other
+    bool engine_swapped = false;
+
     /// Swap between MergeTree variants that need no mandatory extra columns. The Collapsing ones do,
-    /// so `swapEngineToCollapsing` handles them; GraphiteMergeTree additionally wants a server-config
+    /// so they are handled below; GraphiteMergeTree additionally wants a server-config
     /// rollup section and four specifically named columns, which a corpus table essentially never has.
     if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
     {
+        engine_swapped = true;
         static const Strings safe_mergetree_engines = {
             "MergeTree",
             "AggregatingMergeTree",
@@ -1540,12 +1548,274 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
             arguments->children.clear();
     }
 
-    /// Swap among the argument-free small engines (no key clauses either, so any member is
-    /// valid for any other). Set additionally exercises the read-rejection paths.
-    static const std::unordered_set<String> small_engines = {"Log", "Memory", "Null", "Set", "StripeLog", "TinyLog"};
-    if (fuzz_rand() % 20 == 0 && small_engines.contains(engine_name))
+    /// Swap a MergeTree-family engine for `CollapsingMergeTree(sign)` or
+    /// `VersionedCollapsingMergeTree(sign, version)`.
+    if (!engine_swapped && columns_list && columns_list->columns && endsWith(engine_name, "MergeTree")
+        && fuzz_rand() % 30 == 0)
     {
-        engine_name = pickRandomly(fuzz_rand, small_engines);
+        Strings sign_candidates;
+        Strings version_candidates;
+        for (const auto & column_ast : columns_list->columns->children)
+        {
+            const auto * column = column_ast->as<ASTColumnDeclaration>();
+            if (!column)
+                continue;
+            const auto column_type = column->getType();
+            if (!column_type)
+                continue;
+            /// tryGet, not get: by now the column types have been through `fuzzColumnDeclarationList`.
+            const auto type = DataTypeFactory::instance().tryGet(column_type);
+            if (!type)
+                continue;
+            /// `MergeTreeData` requires the sign to be plain `Int8` - `Nullable(Int8)` and `UInt8` are both
+            /// rejected - so match the type exactly the way it does.
+            if (typeid_cast<const DataTypeInt8 *>(type.get()))
+                sign_candidates.push_back(column->name);
+            if (type->canBeUsedAsVersion())
+                version_candidates.push_back(column->name);
+        }
+
+        if (!sign_candidates.empty())
+        {
+            engine_swapped = true;
+            const String sign_column = pickRandomly(fuzz_rand, sign_candidates);
+            /// `Int8` can serve as a version too, so the chosen sign column is usually a version candidate
+            /// as well - but naming it twice is rejected outright ("The version and sign column cannot be
+            /// the same"), which would turn every such CREATE into a guaranteed no-op.
+            std::erase(version_candidates, sign_column);
+
+            auto arguments = make_intrusive<ASTExpressionList>();
+            arguments->children.push_back(make_intrusive<ASTIdentifier>(sign_column));
+            if (!version_candidates.empty() && fuzz_rand() % 2 == 0)
+            {
+                engine_name = "VersionedCollapsingMergeTree";
+                arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, version_candidates)));
+            }
+            else
+            {
+                engine_name = "CollapsingMergeTree";
+            }
+
+            auto * engine = storage.engine;
+            if (engine->arguments)
+                engine->replace(engine->arguments, std::move(arguments));
+            else
+                engine->set(engine->arguments, std::move(arguments));
+        }
+    }
+
+    /// Swap a MergeTree-family engine for its `Replicated` variant, keeping the engine's own arguments.
+    /// The Keeper path gets a random suffix, so unlike the corpus paths stripped above, fuzzed copies of
+    /// a table do not collide. The default path is no option: its `{uuid}` is rejected outside ON CLUSTER.
+    if (!engine_swapped && endsWith(engine_name, "MergeTree") && !startsWith(engine_name, "Shared")
+        && !startsWith(engine_name, "Replicated") && fuzz_rand() % 30 == 0)
+    {
+        engine_swapped = true;
+        engine_name = "Replicated" + engine_name;
+        auto * engine = storage.engine;
+        if (!engine->arguments)
+            engine->set(engine->arguments, make_intrusive<ASTExpressionList>());
+        auto & args = engine->arguments->children;
+        args.insert(
+            args.begin(),
+            {make_intrusive<ASTLiteral>("/clickhouse/tables/fuzz_" + std::to_string(fuzz_rand()) + "/{shard}"),
+             make_intrusive<ASTLiteral>(String("{replica}"))});
+    }
+
+    /// Swap the engine for a simple special-purpose one: `Memory`, `Log` family, `Null`, `Set`, `File`,
+    /// `S3`, `AzureBlobStorage`, `Join`, `KeeperMap` or `EmbeddedRocksDB`. These take no MergeTree
+    /// clauses, so drop them all.
+    if (!engine_swapped && fuzz_rand() % 30 == 0)
+    {
+        /// Key candidates for `Join` / `KeeperMap` / `EmbeddedRocksDB`. Column TTL and `AUTO_INCREMENT`
+        /// are MergeTree-only, so a table with either is left alone.
+        bool swappable = true;
+        Strings key_candidates;
+        if (columns_list && columns_list->columns)
+        {
+            for (const auto & column_ast : columns_list->columns->children)
+            {
+                const auto * column = column_ast->as<ASTColumnDeclaration>();
+                if (!column)
+                    continue;
+                if (column->getTTL() || column->default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+                {
+                    swappable = false;
+                    break;
+                }
+                if (column->getType() && column->default_specifier != ColumnDefaultSpecifier::Alias
+                    && column->default_specifier != ColumnDefaultSpecifier::Ephemeral)
+                    key_candidates.push_back(column->name);
+            }
+        }
+
+        if (swappable)
+        {
+            static const Strings keyless_engines
+                = {"Memory", "Log", "TinyLog", "StripeLog", "Null", "Set", "File", "S3", "AzureBlobStorage"};
+            static const Strings keyed_engines = {"Join", "KeeperMap", "EmbeddedRocksDB"};
+            const String new_engine = !key_candidates.empty() && fuzz_rand() % 2 == 0 ? pickRandomly(fuzz_rand, keyed_engines)
+                                                                                      : pickRandomly(fuzz_rand, keyless_engines);
+
+            storage.reset(storage.partition_by);
+            storage.reset(storage.primary_key);
+            storage.reset(storage.order_by);
+            storage.reset(storage.sample_by);
+            storage.reset(storage.ttl_table);
+            storage.reset(storage.unique_key);
+            storage.reset(storage.settings);
+            if (columns_list)
+            {
+                columns_list->reset(columns_list->indices);
+                columns_list->reset(columns_list->projections);
+            }
+
+            auto arguments = make_intrusive<ASTExpressionList>();
+            ASTPtr primary_key;
+            SettingsChanges changes;
+            static const Strings compression_methods = {"none", "gzip", "zstd", "lz4", "bz2", "xz", "brotli", "snappy"};
+            const String format = insertFormats()[fuzz_rand() % insertFormats().size()];
+            /// A pool of object names shared between tables, so tables sometimes read each other's data
+            auto object_name = [&](const String & prefix)
+            { return prefix + std::to_string(fuzz_rand() % 1000) + "." + Poco::toLower(format); };
+
+            if (new_engine == "File")
+            {
+                /// File(format) keeps the file in the table directory; File(format, path[, compression])
+                /// puts it under `user_files`
+                arguments->children.push_back(make_intrusive<ASTLiteral>(format));
+                if (fuzz_rand() % 3 == 0)
+                {
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(object_name("fuzz_file_engine_")));
+                    if (fuzz_rand() % 2 == 0)
+                        arguments->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, compression_methods)));
+                }
+            }
+            else if (new_engine == "S3")
+            {
+                /// The CI MinIO through the `s3_conn` named collection
+                arguments->children.push_back(make_intrusive<ASTIdentifier>("s3_conn"));
+                arguments->children.push_back(makeASTFunction(
+                    "equals", make_intrusive<ASTIdentifier>("filename"), make_intrusive<ASTLiteral>(object_name("fuzz_s3_engine_"))));
+                arguments->children.push_back(
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format)));
+                if (fuzz_rand() % 2 == 0)
+                    arguments->children.push_back(makeASTFunction(
+                        "equals",
+                        make_intrusive<ASTIdentifier>("compression_method"),
+                        make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, compression_methods))));
+            }
+            else if (new_engine == "AzureBlobStorage")
+            {
+                /// The CI Azurite, with its well-known development account
+                arguments->children.push_back(make_intrusive<ASTLiteral>(
+                    "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+                    "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+                    "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"));
+                arguments->children.push_back(make_intrusive<ASTLiteral>("clickhouse-tests"));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(object_name("fuzz_azure_engine_")));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(format));
+                if (fuzz_rand() % 2 == 0)
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, compression_methods)));
+            }
+            else if (new_engine == "Join")
+            {
+                /// Only the strictness/kind pairs `StorageJoin` accepts
+                static const std::vector<std::pair<String, String>> join_types
+                    = {{"ANY", "LEFT"},
+                       {"ANY", "INNER"},
+                       {"ANY", "RIGHT"},
+                       {"ALL", "LEFT"},
+                       {"ALL", "INNER"},
+                       {"ALL", "RIGHT"},
+                       {"ALL", "FULL"},
+                       {"SEMI", "LEFT"},
+                       {"SEMI", "RIGHT"},
+                       {"ANTI", "LEFT"},
+                       {"ANTI", "RIGHT"}};
+                /// Not `pickRandomly`, which returns only `first` of a pair element
+                const auto & [strictness, kind] = join_types[fuzz_rand() % join_types.size()];
+                arguments->children.push_back(make_intrusive<ASTIdentifier>(strictness));
+                arguments->children.push_back(make_intrusive<ASTIdentifier>(kind));
+                std::shuffle(key_candidates.begin(), key_candidates.end(), fuzz_rand);
+                const size_t nkeys = std::min<size_t>(key_candidates.size(), (fuzz_rand() % 2) + 1);
+                for (size_t i = 0; i < nkeys; i++)
+                    arguments->children.push_back(make_intrusive<ASTIdentifier>(key_candidates[i]));
+                if (fuzz_rand() % 3 == 0)
+                    changes.emplace_back("join_use_nulls", UInt64(fuzz_rand() % 2));
+                if (fuzz_rand() % 3 == 0)
+                    changes.emplace_back("join_any_take_last_row", UInt64(fuzz_rand() % 2));
+                if (fuzz_rand() % 3 == 0)
+                    changes.emplace_back("persistent", UInt64(fuzz_rand() % 2));
+                /// Tiny limits, so inserts hit the overflow mode
+                if (fuzz_rand() % 4 == 0)
+                {
+                    changes.emplace_back(fuzz_rand() % 2 == 0 ? "max_rows_in_join" : "max_bytes_in_join", UInt64(fuzz_rand() % 1000));
+                    changes.emplace_back("join_overflow_mode", fuzz_rand() % 2 == 0 ? "throw" : "break");
+                }
+            }
+            else if (new_engine == "KeeperMap")
+            {
+                /// A small pool of root paths, so tables sometimes share one
+                arguments->children.push_back(make_intrusive<ASTLiteral>("/fuzz_keeper_map_" + std::to_string(fuzz_rand() % 1000)));
+                if (fuzz_rand() % 3 == 0)
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 100)));
+                primary_key = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, key_candidates));
+            }
+            else if (new_engine == "EmbeddedRocksDB")
+            {
+                if (fuzz_rand() % 3 == 0)
+                    arguments->children.push_back(make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2 == 0 ? 0 : fuzz_rand() % 3600)));
+                if (key_candidates.size() > 1 && fuzz_rand() % 4 == 0)
+                {
+                    std::shuffle(key_candidates.begin(), key_candidates.end(), fuzz_rand);
+                    primary_key = makeASTFunction(
+                        "tuple", make_intrusive<ASTIdentifier>(key_candidates[0]), make_intrusive<ASTIdentifier>(key_candidates[1]));
+                }
+                else
+                {
+                    primary_key = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, key_candidates));
+                }
+                if (fuzz_rand() % 3 == 0)
+                    changes.emplace_back("optimize_for_bulk_insert", UInt64(fuzz_rand() % 2));
+            }
+            else if (new_engine == "Set" && fuzz_rand() % 3 == 0)
+            {
+                changes.emplace_back("persistent", UInt64(fuzz_rand() % 2));
+            }
+            else if (new_engine == "Memory")
+            {
+                if (fuzz_rand() % 3 == 0)
+                    changes.emplace_back("compress", UInt64(fuzz_rand() % 2));
+                /// FIFO eviction. 0 means unlimited, and `min_*` must not exceed `max_*`
+                for (const String unit : {"rows", "bytes"})
+                {
+                    if (fuzz_rand() % 4 != 0)
+                        continue;
+                    const UInt64 max_to_keep = (fuzz_rand() % 10000) + 1;
+                    changes.emplace_back("max_" + unit + "_to_keep", max_to_keep);
+                    if (fuzz_rand() % 2 == 0)
+                        changes.emplace_back("min_" + unit + "_to_keep", UInt64(fuzz_rand() % (max_to_keep + 1)));
+                }
+            }
+
+            auto * engine = storage.engine;
+            engine_name = new_engine;
+            if (engine->arguments)
+                engine->replace(engine->arguments, std::move(arguments));
+            else
+                engine->set(engine->arguments, std::move(arguments));
+            if (primary_key)
+                storage.set(storage.primary_key, primary_key);
+            if (!changes.empty())
+            {
+                auto settings = make_intrusive<ASTSetQuery>();
+                settings->is_standalone = false;
+                settings->changes = std::move(changes);
+                storage.set(storage.settings, settings);
+            }
+            storage.normalizeChildrenOrder();
+        }
     }
 
     /// Fuzz the Distributed / Remote / RemoteSecure engines, which share the shape
@@ -1820,71 +2090,6 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy, bool allow_
     }
 }
 
-/// Swap a MergeTree-family engine for `CollapsingMergeTree(sign)` or
-/// `VersionedCollapsingMergeTree(sign, version)`. Both name columns of a specific type, so this
-/// lives here rather than in `fuzzTableStorage`, which never sees the column list.
-void QueryFuzzer::swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list)
-{
-    if (!storage.engine || !columns_list)
-        return;
-
-    auto & engine_name = storage.engine->name;
-    /// Plain MergeTree-family engines only: `Replicated` is already stripped by `fuzzTableStorage`,
-    /// and `Shared` is left alone - both are Keeper-backed and out of scope here.
-    if (!endsWith(engine_name, "MergeTree") || startsWith(engine_name, "Shared") || fuzz_rand() % 30 != 0)
-        return;
-
-    auto & columns = columns_list->children;
-    Strings sign_candidates;
-    Strings version_candidates;
-    for (const auto & column_ast : columns)
-    {
-        const auto * column = column_ast->as<ASTColumnDeclaration>();
-        if (!column)
-            continue;
-        const auto column_type = column->getType();
-        if (!column_type)
-            continue;
-        /// tryGet, not get: by now the column types have been through `fuzzColumnDeclarationList`.
-        const auto type = DataTypeFactory::instance().tryGet(column_type);
-        if (!type)
-            continue;
-        /// `MergeTreeData` requires the sign to be plain `Int8` - `Nullable(Int8)` and `UInt8` are both
-        /// rejected - so match the type exactly the way it does.
-        if (typeid_cast<const DataTypeInt8 *>(type.get()))
-            sign_candidates.push_back(column->name);
-        if (type->canBeUsedAsVersion())
-            version_candidates.push_back(column->name);
-    }
-
-    if (sign_candidates.empty())
-        return;
-
-    const String sign_column = pickRandomly(fuzz_rand, sign_candidates);
-    /// `Int8` can serve as a version too, so the chosen sign column is usually a version candidate
-    /// as well - but naming it twice is rejected outright ("The version and sign column cannot be
-    /// the same"), which would turn every such CREATE into a guaranteed no-op.
-    std::erase(version_candidates, sign_column);
-
-    auto arguments = make_intrusive<ASTExpressionList>();
-    arguments->children.push_back(make_intrusive<ASTIdentifier>(sign_column));
-    if (!version_candidates.empty() && fuzz_rand() % 2 == 0)
-    {
-        engine_name = "VersionedCollapsingMergeTree";
-        arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, version_candidates)));
-    }
-    else
-    {
-        engine_name = "CollapsingMergeTree";
-    }
-
-    auto * engine = storage.engine;
-    if (engine->arguments)
-        engine->replace(engine->arguments, std::move(arguments));
-    else
-        engine->set(engine->arguments, std::move(arguments));
-}
-
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -1895,10 +2100,12 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 
     if (create.storage && create.storage->engine && create.database && !create.table)
     {
-        /// For database engine fuzzing, only swap between parameter-free engines.
-        /// Avoid touching Replicated (needs ZooKeeper), Lazy (needs arg), or external
-        /// engines (MySQL/PostgreSQL need connection params).
+        /// Swap among the parameter-free engines, or to a proxy (`Cluster`, `Remote`, `Overlay`) or a
+        /// file-backed (`Filesystem`, `S3`, `URL`) engine, or to `Replicated` (Keeper is in the fuzzer job).
+        /// MySQL/PostgreSQL need external servers, so they are left out.
         static const std::unordered_set<String> safe_database_engines = {"Atomic", "Memory", "Dictionary"};
+        static const std::unordered_set<String> proxy_database_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
+        static const std::unordered_set<String> storage_database_engines = {"Filesystem", "S3", "URL"};
         auto & engine_name = create.storage->engine->name;
         if (safe_database_engines.contains(engine_name) && fuzz_rand() % 10 == 0)
         {
@@ -1906,11 +2113,41 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             if (auto & arguments = create.storage->engine->arguments)
                 arguments->children.clear();
         }
+        else if (fuzz_rand() % (proxy_database_engines.contains(engine_name) ? 5 : 30) == 0)
+        {
+            fuzzProxyDatabaseEngine(*create.storage);
+        }
+        else if (fuzz_rand() % (storage_database_engines.contains(engine_name) ? 5 : 30) == 0)
+        {
+            fuzzStorageDatabaseEngine(*create.storage);
+        }
+        else if (fuzz_rand() % (engine_name == "Replicated" ? 5 : 30) == 0)
+        {
+            /// `Replicated(zookeeper_path[, shard_name[, replica_name]])`, missing arguments take the server
+            /// defaults. The path is always given: its default uses `{uuid}`, which a plain CREATE rejects.
+            /// A pool of paths, so databases sometimes share one; colliding replicas are rejected.
+            auto arguments = make_intrusive<ASTExpressionList>();
+            const size_t nargs = (fuzz_rand() % 3) + 1;
+            arguments->children.push_back(make_intrusive<ASTLiteral>("/clickhouse/databases/fuzz_" + std::to_string(fuzz_rand() % 1000)));
+            if (nargs > 1)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "{shard}" : "s1")));
+            if (nargs > 2)
+                arguments->children.push_back(
+                    make_intrusive<ASTLiteral>(fuzz_rand() % 2 == 0 ? String("{replica}") : "r" + std::to_string(fuzz_rand() % 3)));
+
+            auto * engine = create.storage->engine;
+            engine_name = "Replicated";
+            if (engine->arguments)
+                engine->replace(engine->arguments, std::move(arguments));
+            else
+                engine->set(engine->arguments, std::move(arguments));
+            /// Settings of the previous engine do not apply to `Replicated`
+            create.storage->reset(create.storage->settings);
+        }
     }
     else if (create.storage)
     {
-        fuzzTableStorage(*create.storage);
-        swapEngineToCollapsing(*create.storage, create.columns_list ? create.columns_list->columns : nullptr);
+        fuzzTableStorage(*create.storage, create.columns_list);
     }
 
     /// Fuzz the view targets: MV `TO`, window-view `INNER`, and TimeSeries `SAMPLES`/`TAGS`/`METRICS`.
@@ -1930,15 +2167,11 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             create.targets->removeTarget(kind);
         }
 
-        /// Iterate kinds rather than `getInnerEngines`, which yields no kind: the Collapsing swap
-        /// needs each inner engine paired with that target's own column list to find a sign column.
+        /// Iterate kinds rather than `getInnerEngines`, which yields no kind: the engine swaps need
+        /// each inner engine paired with that target's own column list.
         for (auto kind : create.targets->getKinds())
             if (auto * inner_storage = create.targets->getInnerEngine(kind))
-            {
-                fuzzTableStorage(*inner_storage);
-                auto * inner_cols = create.targets->getInnerColumns(kind);
-                swapEngineToCollapsing(*inner_storage, inner_cols ? inner_cols->columns : nullptr);
-            }
+                fuzzTableStorage(*inner_storage, create.targets->getInnerColumns(kind));
 
         for (auto kind : create.targets->getKinds())
             if (auto * inner_cols = create.targets->getInnerColumns(kind))
@@ -3577,6 +3810,115 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
         args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributedClusterNames())));
 }
 
+/// Turn a database into one whose tables are files: `Filesystem([path])` over `user_files`, or
+/// `S3(...)` / `URL(...)` over the CI S3 emulator, where the `File` / `S3` table swaps write.
+void QueryFuzzer::fuzzStorageDatabaseEngine(ASTStorage & storage)
+{
+    static const std::vector<String> storage_engines = {"Filesystem", "S3", "URL"};
+    static const String bucket_url = "http://localhost:11111/test/";
+
+    const String engine_name = pickRandomly(fuzz_rand, storage_engines);
+    auto arguments = make_intrusive<ASTExpressionList>();
+    if (engine_name == "Filesystem")
+    {
+        /// The path must exist inside `user_files`, so only its root
+        if (fuzz_rand() % 2 == 0)
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(".")));
+    }
+    else if (engine_name == "S3")
+    {
+        switch (fuzz_rand() % 4)
+        {
+            case 0:
+                /// `s3_conn` has a `structure` key, which `S3` databases reject
+                arguments->children.push_back(make_intrusive<ASTIdentifier>("s3_conn_db"));
+                break;
+            case 1:
+                arguments->children.push_back(make_intrusive<ASTLiteral>(bucket_url));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("NOSIGN")));
+                break;
+            case 2:
+                arguments->children.push_back(make_intrusive<ASTLiteral>(bucket_url));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("test")));
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("testtest")));
+                break;
+            default:
+                arguments->children.push_back(make_intrusive<ASTLiteral>(bucket_url));
+                break;
+        }
+    }
+    else if (fuzz_rand() % 3 != 0)
+    {
+        arguments->children.push_back(make_intrusive<ASTLiteral>(bucket_url));
+    }
+
+    auto * engine = storage.engine;
+    engine->name = engine_name;
+    if (engine->arguments)
+        engine->replace(engine->arguments, std::move(arguments));
+    else
+        engine->set(engine->arguments, std::move(arguments));
+    /// The engines take no settings
+    storage.reset(storage.settings);
+}
+
+/// Turn a database into a proxy of another one, or re-pick the arguments of an existing proxy:
+/// `Cluster('cluster_name', 'database')` or `Remote[Secure]('addresses_expr', 'database'[, 'user'[, 'password']])`.
+void QueryFuzzer::fuzzProxyDatabaseEngine(ASTStorage & storage)
+{
+    static const std::vector<String> proxy_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
+    static const std::vector<String> proxied_databases = {"default", "system", "information_schema", "nonexistent"};
+
+    const String engine_name = pickRandomly(fuzz_rand, proxy_engines);
+    auto arguments = make_intrusive<ASTExpressionList>();
+    if (engine_name == "Overlay")
+    {
+        /// Overlay(db1[, db2, ...]), each source a name, an identifier or `currentDatabase()`. `Overlay()` does not parse
+        const size_t nsources = (fuzz_rand() % 3) + 1;
+        for (size_t i = 0; i < nsources; i++)
+        {
+            const size_t nopt = fuzz_rand() % 3;
+            if (nopt == 0)
+                arguments->children.push_back(makeASTFunction("currentDatabase"));
+            else if (nopt == 1)
+                arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, proxied_databases)));
+            else
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
+        }
+    }
+    else
+    {
+        if (engine_name == "Cluster")
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributedClusterNames()))));
+        else
+            arguments->children.push_back(make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(engine_name == "RemoteSecure")));
+        if (fuzz_rand() % 2 == 0)
+            arguments->children.push_back(makeASTFunction("currentDatabase"));
+        else
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
+        /// Optional user and password, which only Remote/RemoteSecure accept: Cluster's signature is
+        /// exactly Cluster(cluster_name, database), so appending them would make the statement invalid.
+        if (engine_name != "Cluster")
+        {
+            const size_t credentials = fuzz_rand() % 3;
+            if (credentials > 0)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("default")));
+            if (credentials > 1)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("")));
+        }
+    }
+
+    auto * engine = storage.engine;
+    engine->name = engine_name;
+    if (engine->arguments)
+        engine->replace(engine->arguments, std::move(arguments));
+    else
+        engine->set(engine->arguments, std::move(arguments));
+    /// The engines take no settings
+    if (storage.settings && fuzz_rand() % 10 != 0)
+        storage.reset(storage.settings);
+}
+
 /// Interesting regexps for merge() argument fuzzing. merge() matches them with
 /// `OptimizedRegularExpression`, so they cover all four of its `match` paths.
 static const std::vector<String> & mergeDatabases()
@@ -4835,6 +5177,11 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
 
 void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
 {
+    /// Toggle `LATERAL` with any join type. The element drops it afterwards if it would not parse.
+    if (fuzz_rand() % 30 == 0)
+    {
+        table_join->lateral = !table_join->lateral;
+    }
     /// Toggle NATURAL JOIN: derives the join condition from common column names automatically.
     /// When switching to natural, clear any explicit ON / USING clause — they are incompatible.
     if (fuzz_rand() % 50 == 0)
@@ -5101,8 +5448,20 @@ static const std::unordered_set<String> & higherOrderArrayFuncs()
         "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
         "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
         "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
+        /// (lambda, array...) bit-packing variants (PR #123478)
+        "arrayPackBitsToUInt64", "arrayPackBitsToString",
     };
     return higher_order_array_funcs;
+}
+
+/// arrayPackBits/Groups variants with a positional integer (FixedString length / group bit-width)
+/// between the lambda and the arrays: shape (lambda, int, array...) (PR #123478).
+static const std::unordered_set<String> & arrayPackBitsWidthFuncs()
+{
+    static const std::unordered_set<String> array_pack_bits_width_funcs = {
+        "arrayPackBitsToFixedString", "arrayPackBitGroupsToUInt64", "arrayPackBitGroupsToString",
+    };
+    return array_pack_bits_width_funcs;
 }
 
 /// Higher-order map functions (same idea, for Map-typed arguments).
@@ -5131,7 +5490,10 @@ static const std::unordered_set<String> & lambdaAcceptingFuncs()
     {
         std::unordered_set<String> res = higherOrderArrayFuncs();
         res.insert(higherOrderMapFuncs().begin(), higherOrderMapFuncs().end());
+        res.insert(arrayPackBitsWidthFuncs().begin(), arrayPackBitsWidthFuncs().end());
         res.insert({
+            /// (lambda, int, int, array...): unique shape, lambda-eligible but no swap group (PR #123478)
+            "arrayPackBitGroupsToFixedString",
             "arraySum",
             "arrayAvg",
             "arrayMin",
@@ -5151,11 +5513,19 @@ static const std::unordered_set<String> & lambdaAcceptingFuncs()
     return lambda_accepting_funcs;
 }
 
+/// String pattern matching operators. All but `match` take an optional `ESCAPE 'c'` 3rd argument
+static const std::unordered_set<String> & patternMatchFunctions()
+{
+    static const std::unordered_set<String> pattern_match_functions
+        = {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"};
+    return pattern_match_functions;
+}
+
 static const std::vector<std::unordered_set<String>> & swapFuncs()
 {
     static const std::vector<std::unordered_set<String>> swapFuncs
         = { /// String pattern matching operators
-            {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"},
+            patternMatchFunctions(),
             /// Set membership operators (renames an existing node, so only the infix-safe spellings)
             std::unordered_set<String>(inInfixVariants().begin(), inInfixVariants().end()),
             /// Their IgnoreSet variants; only the lambda injection below reaches these, never the rename
@@ -5411,7 +5781,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
              "hasAllToken",
              "hasAllTokens"},
             /// Map containment checks
-            {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
+            {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike", "mapContainsKeyValue"},
             /// Prefix/suffix predicates (string, string → UInt8)
             {"startsWith",
              "startsWithUTF8",
@@ -5444,7 +5814,16 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
             /// Array construction from a length and a value (n, value -> Array)
             {"arrayWithConstant", "range"},
             /// Array scalar reductions (array → scalar)
-            {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayFlattenedLength", "arrayAutocorrelation"},
+            {"arrayMin",
+             "arrayMinIndex",
+             "arrayMax",
+             "arrayMaxIndex",
+             "arraySum",
+             "arrayProduct",
+             "arrayAvg",
+             "arrayUniq",
+             "arrayFlattenedLength",
+             "arrayAutocorrelation"},
             /// Array transform functions (array → array, no lambda)
             {"arrayReverse",
              "arrayShuffle",
@@ -5452,6 +5831,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
              "arrayEnumerateDense",
              "arrayExcept",
              "arrayRemove",
+             "arrayRemoveAt",
              "arrayResize",
              "emptyArrayToSingle",
              "arrayDistinct",
@@ -5566,12 +5946,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
             /// Float classification (arity mismatch intentional: ifNotFinite takes (x, alternative))
             {"isNaN", "isInfinite", "isFinite", "ifNotFinite"},
             /// Map accessors (map → array)
-            {"mapKeys", "mapValues"},
+            {"mapKeys", "mapValues", "mapEntries"},
             /// Numeric map arithmetic (map, map → map, element-wise). `mapUpdate` and `mapConcat` take
             /// the same two-map shape but merge instead of adding.
             {"mapAdd", "mapSubtract", "mapUpdate", "mapConcat"},
-            /// Map filtering by pattern (map, pattern → map)
-            {"mapExtractKeyLike", "mapExtractValueLike"},
+            /// Map filtering by pattern or key (map, pattern/key → map)
+            {"mapExtractKeyLike", "mapExtractValueLike", "mapRemove"},
             /// Two-array map builders (key array, value array[, extra] → map)
             {"mapFromArrays", "mapPopulateSeries"},
             /// Key-value text parsers (String → Map)
@@ -5808,6 +6188,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
             {"if", "multiIf", "caseWithExpression"},
             /// Array higher-order functions ([lambda,] array → array or scalar)
             higherOrderArrayFuncs(),
+            /// arrayPackBits/Groups with a positional width arg (lambda, int, array...) — PR #123478
+            arrayPackBitsWidthFuncs(),
             /// Window ranking functions (no arguments, window clause required)
             {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
             /// Window lag/lead functions (expr[, offset[, default]])
@@ -5834,9 +6216,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
             {"naiveBayesClassifier",
              "naiveBayesClassifierWithProb",
              "naiveBayesClassifierWithAllProbs",
-             "detectCharset",
              "detectLanguage",
-             "detectLanguageUnknown",
              "detectLanguageMixed"},
             /// Word-level NLP (language/extension + word)
             {"stem", "lemmatize", "synonyms"},
@@ -6086,6 +6466,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs()
              "normalizeQueryKeepNames",
              "obfuscateQuery",
              "parseQueryToJSON"},
+            /// Literal-insensitive hashes of a query string (query → UInt64)
+            {"normalizedQueryHash", "normalizedQueryHashKeepNames", "normalizedQueryHashUnordered"},
             /// Iceberg partition transforms over a date/time (date → integer)
             {"icebergDay", "icebergHour", "icebergMonth", "icebergYear"},
             /// Iceberg partition transforms taking a width (value, n → bucket/truncated value)
@@ -6749,6 +7131,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (text_search_functions.contains(fn->name) && fn->arguments->children.size() > 2)
                 fn->arguments->children.resize(2);
+        }
+
+        /// Add, replace or drop the `ESCAPE 'c'` argument of the `LIKE` / `SIMILAR TO` family
+        if (fn->arguments && fn->name != "match" && patternMatchFunctions().contains(fn->name) && fuzz_rand() % 20 == 0)
+        {
+            /// "!" goes last: the style check rejects an exclamation mark followed by `",`.
+            static const Strings escapes = {"#", "\\", "%", "_", "|", "[", "'", "$", "a", "", "ab", "!"};
+            auto & args = fn->arguments->children;
+
+            if (args.size() == 3 && fuzz_rand() % 3 == 0)
+            {
+                args.resize(2);
+            }
+            else if (args.size() == 2 || args.size() == 3)
+            {
+                args.resize(2);
+                args.push_back(make_intrusive<ASTLiteral>(escapes[fuzz_rand() % escapes.size()]));
+            }
         }
 
         /// ClickHouse HOFs accept a bare function name instead of a lambda, e.g. arrayMap(toUInt64, arr).

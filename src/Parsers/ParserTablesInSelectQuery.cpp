@@ -1586,6 +1586,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
+## Row Order and Paging {#row-order-and-paging}
+
+`ARRAY JOIN` keeps the order of the rows that it receives. For each row, it produces the elements in their order in the array. If a query has more than one `ARRAY JOIN` clause, the first clause is the outer loop:
+
+```sql
+SELECT x, y
+FROM (SELECT ['a', 'b'] AS xs, [1, 2] AS ys)
+ARRAY JOIN xs AS x
+ARRAY JOIN ys AS y;
+```
+
+```response
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+If one `ARRAY JOIN` clause has more than one array, for example `ARRAY JOIN xs AS x, ys AS y`, the elements at the same position go to the same row. In this example, the result is the two rows `('a', 1)` and `('b', 2)`.
+
+Without `ORDER BY`, the order of the rows that `ARRAY JOIN` receives is not guaranteed. For example, a query can read a table in parallel streams. To get a stable order, add `ORDER BY` with the columns that identify the source row and the position of the element. You must do this to read the result in pages with `LIMIT` and `OFFSET`:
+
+```sql
+SELECT id, num, x
+FROM t
+ARRAY JOIN xs AS x, arrayEnumerate(xs) AS num
+ORDER BY id, num
+LIMIT 10 OFFSET 20;
+```
+
+If `ORDER BY` starts with the columns of the sorting key of a `MergeTree` table, the query reads the table in the order of the key. In the example, this is true when the table has `ORDER BY id`. The query then stops when it has the rows for `LIMIT`, and it does not expand the arrays of the other rows. For more information, see [Optimization of Data Reading](/reference/statements/select/order-by#optimization-of-data-reading) and the setting [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order). If `ORDER BY` starts with an element of the array, for example `ORDER BY num, id`, the query expands and sorts all the rows.
+
+The [arrayJoin](/reference/functions/regular-functions/array-join) function also produces the elements of each array in their order in the array. But if a query has more than one `arrayJoin` call, the first call is not always the outer loop. For more information, see [Row order](/reference/functions/regular-functions/array-join#row-order).
+
 ## Implementation Details {#implementation-details}
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](/reference/statements/select/where)/[PREWHERE](/reference/statements/select/prewhere) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.

@@ -17,6 +17,10 @@
 #include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
+#include <Access/AccessControl.h>
+#include <Access/SettingsProfile.h>
+#include <Access/SettingsProfilesInfo.h>
+
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -163,6 +167,7 @@ namespace Setting
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+    extern const SettingsUInt64 min_bytes_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
@@ -202,6 +207,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -268,7 +274,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
         const auto & scope_context = scope_query ? scope_query->getContext() : scope_union->getContext();
         return scope_context->canUseParallelReplicasOnInitiator()
-            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
+            && !scope_context->isAutomaticParallelReplicasProbe();
     });
 
     auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)
@@ -500,14 +507,15 @@ struct LimitRangeConditions
 
 /// Builds the boundary conditions of a `LIMIT` range as one DAG over the columns of `header`, so a
 /// subexpression shared by `AFTER` and `UNTIL` is computed once; the DAG keeps only the inputs the
-/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the column
-/// named after the interpolated alias (see `addWithFillStepIfNeeded`), while the projection expression the
+/// conditions read. With `INTERPOLATE`, `FillingStep` writes the interpolated values only into the target's
+/// column (see `addWithFillStepIfNeeded`), while the projection expression the
 /// alias was computed from keeps default values on the filled rows. A boundary that refers to such an alias
 /// is therefore redirected to the alias column, as `Project names` does for the query result.
 LimitRangeConditions buildLimitRangeConditions(
     const SharedHeader & header,
     const QueryNode & query_node,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const NameToNameMap & interpolate_target_column_names)
 {
     ActionsDAG actions;
     for (const auto & column : header->getColumnsWithTypeAndName())
@@ -553,7 +561,8 @@ LimitRangeConditions buildLimitRangeConditions(
         for (const auto & interpolate_node : query_node.getInterpolate()->as<ListNode &>().getNodes())
         {
             const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            const auto & alias_column = interpolated_columns.findInOutputs(interpolate_node_typed.getExpressionName());
+            const auto & alias_column = interpolated_columns.findInOutputs(
+                interpolate_target_column_names.at(interpolate_node_typed.getExpressionName()));
             auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
             interpolated_columns.addOrReplaceInOutputs(interpolated_columns.addAlias(alias_column, expression_name));
         }
@@ -773,6 +782,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::group_by_two_level_threshold_bytes],
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
             settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        settings[Setting::min_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
@@ -1529,6 +1539,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         else
         {
             ActionsDAG rename_dag;
+            const auto & target_column_names = sort_analysis_result.interpolate_target_column_names;
+
+            /// `FillingTransform` rejects an ORDER BY column as an INTERPOLATE output by name, which a renamed target column no longer has.
+            for (const auto & description : query_analysis_result.sort_description)
+                for (const auto & name : {description.alias, description.column_name})
+                    if (auto it = target_column_names.find(name); !name.empty() && it != target_column_names.end() && it->second != name)
+                        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output", name);
 
             /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
             std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
@@ -1536,6 +1554,18 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+                const auto & column_name = target_column_names.at(interpolate_node_typed.getExpressionName());
+
+                /// The expression reads the previous value of its target through a column named by the target name.
+                QueryTreeNodePtr interpolate_expression_node = interpolate_node_typed.getInterpolateExpression();
+                if (column_name != interpolate_node_typed.getExpressionName())
+                {
+                    interpolate_expression_node = interpolate_expression_node->clone();
+                    auto target_column_node = std::make_shared<ColumnNode>(
+                        NameAndTypePair(column_name, interpolate_node_typed.getExpression()->getResultType()),
+                        std::static_pointer_cast<ITableExpressionNode>(interpolate_node));
+                    replaceColumns(interpolate_expression_node, interpolate_node, {{interpolate_node_typed.getExpressionName(), target_column_node}});
+                }
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
@@ -1546,14 +1576,14 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
                 auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
-                    interpolate_node_typed.getInterpolateExpression());
+                    interpolate_expression_node);
                 interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, interpolate_node_typed.getExpressionName());
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, column_name);
             }
 
             for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
@@ -1666,6 +1696,7 @@ void addLimitRangeStep(
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
     const QueryNode & query_node,
+    const NameToNameMap & interpolate_target_column_names,
     UsefulSets & useful_sets)
 {
     if (query_node.isLimitWithTies())
@@ -1686,7 +1717,7 @@ void addLimitRangeStep(
     if (query_node.hasLimit())
         limit_length = query_analysis_result.limit_length;
 
-    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context);
+    auto conditions = buildLimitRangeConditions(query_plan.getCurrentHeader(), query_node, planner_context, interpolate_target_column_names);
     appendSetsFromActionsDAG(conditions.actions, useful_sets);
 
     const auto & query_context = planner_context->getQueryContext();
@@ -2496,29 +2527,50 @@ static bool isQueryKindEligibleForSubqueryCache(const ContextPtr & query_context
 }
 
 /// Returns the explicit `use_query_cache` opt-in / opt-out carried by a node's own query-level
-/// `SETTINGS` clause, or `std::nullopt` when the clause does not mention the setting. `QueryNode`
-/// and `UnionNode` store the clause the same way, so a plain subquery and a `UNION` subquery are
-/// handled alike.
+/// `SETTINGS` clause, or `std::nullopt` when the clause does not set the setting, neither literally
+/// nor through a `profile` it applies. `QueryNode` and `UnionNode` store the clause the same way,
+/// so a plain subquery and a `UNION` subquery are handled alike.
 ///
 /// The clause is only inspected for the *presence* of the setting; the value is then read from the
 /// node's own context, which already has the whole clause applied in order (and clamped against the
 /// constraints). `ParserSetQuery` keeps every occurrence, so `SETTINGS use_query_cache = 1,
-/// use_query_cache = 0` - or an assignment followed by `= DEFAULT` - has a last-wins effective value,
-/// which the first entry of `settings_changes` does not report. Returning that first entry would make
-/// this path disagree with every other consumer of the setting, e.g. taking the cache path (and
-/// possibly raising `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
-static std::optional<bool> explicitUseQueryCacheSetting(
-    const SettingsChanges & settings_changes, const std::vector<String> & default_settings, const ContextPtr & node_context)
+/// use_query_cache = 0` - or an assignment followed by `= DEFAULT`, or a literal followed by a
+/// profile that sets it the other way - has a last-wins effective value, which the first entry of
+/// `settings_changes` does not report. Returning that first entry would make this path disagree with
+/// every other consumer of the setting, e.g. taking the cache path (and possibly raising
+/// `QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS`) for a query that opted out.
+///
+/// A profile stays in the clause as written (`profile = 'p'`), so that every shard of a distributed
+/// query applies its own profile under its own constraints; it is resolved here instead. A profile
+/// that sets `use_query_cache` is this clause's opt-in / opt-out exactly like the literal, while a
+/// profile that does not mention it contributes nothing, so an outer `use_query_cache` still does
+/// not propagate into the subquery (#119019).
+template <typename Node>
+static std::optional<bool> explicitUseQueryCacheSetting(const Node & node)
 {
-    bool mentioned_in_clause
-        = std::any_of(
-              settings_changes.begin(),
-              settings_changes.end(),
-              [](const auto & change) { return change.name == "use_query_cache"; })
-        || std::any_of(
-              default_settings.begin(),
-              default_settings.end(),
-              [](const auto & setting_name) { return setting_name == "use_query_cache"; });
+    const ContextPtr & node_context = node.getContext();
+    const SettingsChanges & settings_changes = node.getSettingsChanges();
+
+    bool mentioned_in_clause = settings_changes.tryGet("use_query_cache") != nullptr
+        || std::ranges::contains(node.getDefaultSettings(), "use_query_cache");
+
+    if (!mentioned_in_clause)
+    {
+        /// The profile lookup needs the mutable `AccessControl`, which only the global context exposes.
+        AccessControl & access_control = node_context->getGlobalContext()->getAccessControl();
+        for (const SettingChange & change : settings_changes)
+        {
+            if (change.name != "profile")
+                continue;
+            /// The profile resolved when the clause was applied to the node's context; one dropped since is not consulted.
+            auto profile_id = access_control.find<SettingsProfile>(change.value.safeGet<String>());
+            if (profile_id && access_control.getSettingsProfileInfo(*profile_id)->settings.tryGet("use_query_cache"))
+            {
+                mentioned_in_clause = true;
+                break;
+            }
+        }
+    }
 
     if (!mentioned_in_clause)
         return {};
@@ -2541,8 +2593,7 @@ static bool shouldUseQueryCacheForSubquery(
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
     if (is_subquery)
     {
-        if (auto explicit_setting = explicitUseQueryCacheSetting(
-                query_node.getSettingsChanges(), query_node.getDefaultSettings(), query_node.getContext()))
+        if (auto explicit_setting = explicitUseQueryCacheSetting(query_node))
             return *explicit_setting;
     }
 
@@ -2693,8 +2744,7 @@ void Planner::buildPlanForUnionNode()
     bool can_use_query_result_cache = query_context->getCanUseQueryResultCache();
     std::optional<bool> explicit_use_query_cache;
     if (select_query_options.is_subquery)
-        explicit_use_query_cache = explicitUseQueryCacheSetting(
-            union_node.getSettingsChanges(), union_node.getDefaultSettings(), union_node.getContext());
+        explicit_use_query_cache = explicitUseQueryCacheSetting(union_node);
 
     bool should_cache = select_query_options.is_subquery && query_result_cache != nullptr
         && isQueryKindEligibleForSubqueryCache(query_context)
@@ -3446,7 +3496,13 @@ void Planner::buildPlanForQueryNode()
                     "Before LIMIT range (AFTER/UNTIL)",
                     useful_sets);
 
-            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
+            addLimitRangeStep(
+                query_plan,
+                query_analysis_result,
+                planner_context,
+                query_node,
+                expression_analysis_result.hasSort() ? expression_analysis_result.getSort().interpolate_target_column_names : NameToNameMap{},
+                useful_sets);
         }
         else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
@@ -3510,7 +3566,9 @@ void Planner::buildPlanForQueryNode()
 
 SelectQueryInfo Planner::buildSelectQueryInfo() const
 {
-    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
+    auto select_query_info = ::DB::buildSelectQueryInfo(query_tree, planner_context);
+    select_query_info.is_secondary_query_root = select_query_options.is_secondary_query_root;
+    return select_query_info;
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)

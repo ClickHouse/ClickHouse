@@ -76,6 +76,9 @@ private:
         if (etag_validated_on_read && !captured->etag.empty())
             return;
 
+        if (captured->is_from_table_records)
+            return;
+
         /// A mutable file is only admitted to the lazy plan when the reread is pinned to the
         /// captured ETag (see `ReadFromObjectStorageStep::canUseLazyMaterialization`). Reaching
         /// this point means the storage returned no ETag for the object, so the GET cannot be

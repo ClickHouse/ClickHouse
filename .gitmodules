@@ -113,9 +113,6 @@
 [submodule "contrib/AMQP-CPP"]
 	path = contrib/AMQP-CPP
 	url = https://github.com/ClickHouse/AMQP-CPP
-[submodule "contrib/cassandra"]
-	path = contrib/cassandra
-	url = https://github.com/ClickHouse/cpp-driver
 [submodule "contrib/libuv"]
 	path = contrib/libuv
 	url = https://github.com/ClickHouse/libuv
@@ -188,9 +185,6 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse/sysroot
-[submodule "contrib/nlp-data"]
-	path = contrib/nlp-data
-	url = https://github.com/ClickHouse/nlp-data
 [submodule "contrib/hive-metastore"]
 	path = contrib/hive-metastore
 	url = https://github.com/ClickHouse/hive-metastore

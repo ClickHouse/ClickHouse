@@ -1110,7 +1110,7 @@ The report gives the marks and rows it would read, a `read_ratio` against the ba
 
 When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
 
-Aggregate projections, projections with a `WHERE` clause, their own skip indexes, a commit-order or virtual-column key or a stored `_block_number`, and projections that do not cover every column the query reads are reported as `not_applicable`. `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored, and `force_optimize_projection` does not fail the statement.
+WHATIF reports aggregate projections and projections with their own skip indexes as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 

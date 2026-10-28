@@ -34,13 +34,23 @@ The decode tasks pause once the queue is full and the query is not consuming, so
 
 Must be greater than zero.
 
+## iceberg_list_only_v_prefixed_metadata_files {#iceberg_list_only_v_prefixed_metadata_files}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to list only the `metadata\/v` key prefix when looking for the latest metadata file of an Iceberg table read by path."}]}]}/>
+
+Find the latest metadata file of an Iceberg table read by path on S3 or Azure by listing only the key prefix `metadata/v`, so that the manifests stored in the same `metadata` directory are not listed. If it holds `.metadata.json` files, only they are candidates; otherwise the whole directory is listed. Does not apply with `iceberg_use_version_hint`, `iceberg_metadata_file_path`, `iceberg_metadata_table_uuid` or `iceberg_recent_metadata_file_by_last_updated_ms_field`, nor to the tables of a data lake catalog database.
+
+Enable it only for tables whose metadata files are all named `v<N>...` (as ClickHouse and Hadoop catalogs name them): in a directory that also holds `<N>-<uuid>.metadata.json` files, those files are never candidates, so the commits of their writer are not seen.
+
 ## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
-<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4"},{"label": "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4"},{"label": "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row. At the time the setting was named `iceberg_delete_manifest_decode_concurrency`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "26.11"},{"label": "16"},{"label": "Raise the default number of Iceberg manifest files decoded concurrently from 4 to 16 to overlap more object storage round-trips on tables with many manifests."}]}]}/>
 
 Maximum number of Iceberg manifest files decoded concurrently while reading a table.
 

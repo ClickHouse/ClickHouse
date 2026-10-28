@@ -261,6 +261,20 @@ bytes) with some gap to avoid filesystem errors.
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
     Minimal number of rows to use full type of storage for data part instead of packed
     )", 0) \
+    DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 0, R"(
+    Maximum amount of memory taken by the buffered data of a packed data part while it is written
+    by an insert, a merge or a mutation. A packed part keeps the data of all its files in memory until
+    the part is finalized. Once the buffered data exceeds this limit, the data of the largest files is
+    moved to temporary files in the server temporary storage (`tmp_path`, `tmp_policy` or
+    `temporary_data_in_cache`) and read back on finalization. The temporary files are accounted by
+    `max_temporary_data_on_disk_size_for_query` and `max_temporary_data_on_disk_size_for_user`.
+    The last block (up to 64 KiB) of each file that is still being written cannot be moved, so a part
+    with many files written at once, such as a wide part with many columns, can take more memory.
+    The data of a part is moved to one temporary file, whose write buffers (about 2 MiB with the default
+    `temporary_files_buffer_size`) stay in memory until the part is finalized.
+    The limit applies separately to the part and to each of its projections. 0 means unlimited.
+    )", 0, \
+        {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -2666,9 +2680,10 @@ Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/reference/fu
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL, \
         {"25.1", false, false, "Cloud sync"}) \
-    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
+    DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 16, R"(
 How many partition discoveries should be packed into batch
 )", 0, \
+        {"26.11", 1, 16, "Increase the default", CompatibilitySetting::Ignore}, \
         {"25.8", 1, 1, "New setting"}) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.

@@ -16,7 +16,6 @@ INSERT INTO r_autopr_unpaired_sets SELECT toString(number * 2) FROM numbers(1000
 -- One part, so that the plan the decision is matched against does not depend on how the insert was split.
 OPTIMIZE TABLE t_autopr_unpaired_sets FINAL;
 
-SET enable_analyzer = 1;
 -- With one reading thread the cost model sees replicas as a win on a table of this size, which is what
 -- makes the optimization actually rewrite the query rather than decline.
 SET max_threads = 1;

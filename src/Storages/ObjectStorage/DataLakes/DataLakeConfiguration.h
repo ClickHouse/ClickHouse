@@ -106,7 +106,42 @@ public:
 #endif
     }
 
-    const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
+    DataLakeStorageSettingsPtr getDataLakeSettings() const override
+    {
+        std::lock_guard lock(settings_mutex);
+        return settings;
+    }
+
+    void setDataLakeSettings(ContextPtr local_context, DataLakeStorageSettingsPtr new_settings) override
+    {
+        DataLakeStorageSettingsPtr previous_settings;
+        {
+            std::lock_guard lock(settings_mutex);
+            previous_settings = std::exchange(settings, std::move(new_settings));
+        }
+
+        auto metadata = tryGetMetadata();
+        if (!metadata)
+            return;
+
+        std::shared_ptr<IDataLakeMetadata> fresh;
+        try
+        {
+            fresh = metadata->cloneWithNewSettings(this->shared_from_this(), local_context);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(settings_mutex);
+            settings = std::move(previous_settings);
+            throw;
+        }
+
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            displaced = std::exchange(current_metadata, std::move(fresh));
+        }
+    }
 
     void setExplicitMetadataFilePath(const String & path) override
     {
@@ -268,9 +303,9 @@ public:
         return DataLakeMetadata::supportsTotalRows(context, storage_type);
     }
 
-    std::optional<size_t> totalRows(ContextPtr local_context) override
+    std::optional<size_t> totalRows(ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & state) override
     {
-        return getMetadata()->totalRows(local_context);
+        return getMetadata()->totalRows(local_context, state);
     }
 
     bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
@@ -407,9 +442,10 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
     {
 #if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
-            || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
-            || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
+        const auto current_settings = getDataLakeSettings();
+        if ((*current_settings)[DataLakeStorageSetting::storage_catalog_type].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_catalog_url].changed
+            || (*current_settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
         auto datalake_database = tryGetDataLakeDatabase(table_id, context);
@@ -481,6 +517,12 @@ public:
         return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
     }
 
+    std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override
+    {
+        return getMetadata()->estimateRead(storage_metadata_snapshot, filter, context);
+    }
+
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new
     /// files. This makes the lazy-materialization reread race-free regardless of the backend.
     bool dataFilesAreImmutable() const override
@@ -489,7 +531,8 @@ public:
     }
 
 private:
-    const DataLakeStorageSettingsPtr settings;
+    mutable std::mutex settings_mutex;
+    DataLakeStorageSettingsPtr settings TSA_GUARDED_BY(settings_mutex);
     ObjectStoragePtr ready_object_storage;
     mutable std::mutex metadata_mutex;
     /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent

@@ -73,6 +73,7 @@ check t_prr_encrypted "disk(
     disk = disk(
         type = cache,
         max_size = '16Mi',
+        max_file_segment_size = '4Mi',
         path = '05315_cache_${CLICKHOUSE_DATABASE}/',
         disk = $(plain_rewritable_disk "$encrypted_inner_disk")),
     key = '1234567812345678')" "$encrypted_inner_disk"

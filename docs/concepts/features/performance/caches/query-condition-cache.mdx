@@ -52,6 +52,14 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+### Parquet files {#parquet-files}
+
+The query condition cache also works for Parquet files read through the `File`, `S3`, `AzureBlobStorage`, `URL` and data lake table engines, and through the table functions over local files and object storage such as `file`, `s3` or `icebergS3` (but not `url`).
+For such files, the cache remembers row groups instead of granules.
+The entries of a file are tied to its version, so that a modified file is read anew: the ETag for object storage, the modification time, inode and size for local files, and the modification time and the size for `URL`. Data files of data lakes are never rewritten, so their location alone identifies them.
+A local file is only cached a few seconds after its last modification, as file system timestamps are too coarse to tell apart two writes in quick succession.
+As a web server reports the modification time (`Last-Modified`) with a precision of one second only, a file read through `URL` uses the cache only if it was modified more than a minute ago by the clock of the web server (the `Date` of its response), and the server reports its modification time, its size, and the date.
+
 ### Conditions involving the current time {#time-conditions}
 
 A condition like `WHERE time >= now() - INTERVAL 10 DAY` is non-deterministic: the folded value of `now()` changes with every query, so such conditions cannot be cached directly.
@@ -73,6 +81,7 @@ If the dynamic filter cannot be added to `PREWHERE` (for example, for some types
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.
 TopK reads can skip granules based on a threshold that changes while the query runs, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read: only a query with the same plan over the same parts reuses them.
 This also applies to TopK reads of Parquet files through the `File` table engine: there, the cache remembers the row groups which held no row of the result, and the entries are partitioned by the TopK plan parameters, the filter condition (if any), and the set of files read together with their versions, so that a modification of any of the files leads to a fresh entry.
+The same holds for TopK reads of data lake tables with Parquet data files (e.g. `Iceberg`, `DeltaLake`, `Paimon`): their entries are partitioned by the TopK plan parameters, the filter condition (if any), and the snapshot of the table, so that each new snapshot leads to a fresh entry.
 Unlike other reads, such a TopK read uses the cache even without a filter condition, e.g. `SELECT * FROM hits ORDER BY EventTime LIMIT 10`.
 Such reads can be kept out of the cache entirely with the setting [`use_query_condition_cache_for_top_k`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
 

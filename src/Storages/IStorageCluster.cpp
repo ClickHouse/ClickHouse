@@ -1,6 +1,8 @@
 #include <Storages/IStorageCluster.h>
 
 #include <Common/Exception.h>
+#include <Client/ConnectionPoolWithFailover.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
@@ -170,6 +172,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
 
+    const auto table_read_on_replicas = storage->getTableReadOnReplicas();
+
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         if (pipes.size() >= max_replicas_to_use)
@@ -177,20 +181,43 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
         /// We're taking all replicas as shards,
         /// so each shard will have only one address to connect to.
-        auto try_results = shard_info.pool->getMany(
-            timeouts,
-            current_settings,
-            PoolMode::GET_ONE,
-            {},
-            /*skip_unavailable_endpoints=*/true);
+        IConnectionPool::Entry connection;
+        if (table_read_on_replicas)
+        {
+            /// A replica without the table is not used, and neither is an older one, which would read all of its files.
+            auto try_results = shard_info.pool->getManyChecked(
+                timeouts,
+                current_settings,
+                PoolMode::GET_ONE,
+                *table_read_on_replicas,
+                /*async_callback=*/ {},
+                /*skip_unavailable_endpoints=*/ true);
 
-        if (try_results.empty())
-            continue;
+            if (try_results.empty()
+                || try_results.front().entry->getWorkerClusterFunctionProtocolVersion() < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_TABLE_READS)
+                continue;
+
+            connection = std::move(try_results.front().entry);
+        }
+        else
+        {
+            auto try_results = shard_info.pool->getMany(
+                timeouts,
+                current_settings,
+                PoolMode::GET_ONE,
+                {},
+                /*skip_unavailable_endpoints=*/true);
+
+            if (try_results.empty())
+                continue;
+
+            connection = std::move(try_results.front());
+        }
 
         IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{try_results.front()},
+            std::vector<IConnectionPool::Entry>{std::move(connection)},
             query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
@@ -214,6 +241,13 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
         pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
         pipes.emplace_back(std::move(pipe));
     }
+
+    if (pipes.empty() && table_read_on_replicas)
+        throw Exception(
+            ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+            "Cannot read table {} with parallel replicas: no replica of cluster {} is available, has the table and supports reading it",
+            table_read_on_replicas->getFullName(),
+            storage->getClusterName());
 
     if (pipes.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot connect to any replica for query execution");
@@ -254,6 +288,8 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
+    /// The workers are leaves of a distributed read, like the shards of the `Distributed` fan-out.
+    new_context->increaseDistributedDepth();
     return new_context;
 }
 
