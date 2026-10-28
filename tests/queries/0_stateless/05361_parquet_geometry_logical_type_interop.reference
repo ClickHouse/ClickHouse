@@ -11,8 +11,8 @@ geometry	Polygon
 id	Nullable(Int64)					
 geometry	Point					
 --- crs_default, crs_geography: the same polygon, as GEOMETRY and as GEOGRAPHY
-221	(-111,45)	-28	1
-221	(-111,45)	-28
+221	(-111,45)	28	1
+221	(-111,45)	28
 --- crs_srid: the CRS is not interpreted
 221	-1176249.406
 --- geography_points

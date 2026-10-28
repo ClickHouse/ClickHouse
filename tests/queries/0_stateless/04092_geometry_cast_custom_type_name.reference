@@ -2,8 +2,8 @@ LineString (no area) = 0
 0
 LineString::Geometry (no area) = 0
 0
-Ring (closed polygon) = -16
--16
+Ring (closed polygon) = 16
+16
 LineString from table column = 0
 0
 MultiLineString (no area) = 0
@@ -16,8 +16,8 @@ Polygon from table column = 25
 25
 Geometry from LineString = 0
 0
-Geometry from Ring = -16
--16
+Geometry from Ring = 16
+16
 Geometry from Polygon = 25
 25
 Geometry from MultiLineString = 0

@@ -7,7 +7,7 @@ SELECT areaCartesian(CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.)], 'LineString'
 SELECT 'LineString::Geometry (no area) = 0';
 SELECT areaCartesian(CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.)], 'LineString')::Geometry);
 
-SELECT 'Ring (closed polygon) = -16';
+SELECT 'Ring (closed polygon) = 16';
 SELECT areaCartesian(CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.)], 'Ring'));
 
 SELECT 'LineString from table column = 0';
@@ -41,7 +41,7 @@ DROP TABLE t_geometry_cast_custom_type_name_poly;
 SELECT 'Geometry from LineString = 0';
 SELECT areaCartesian(CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.)], 'LineString')::Geometry);
 
-SELECT 'Geometry from Ring = -16';
+SELECT 'Geometry from Ring = 16';
 SELECT areaCartesian(CAST([(0., 0.), (4., 0.), (4., 4.), (0., 4.)], 'Ring')::Geometry);
 
 SELECT 'Geometry from Polygon = 25';

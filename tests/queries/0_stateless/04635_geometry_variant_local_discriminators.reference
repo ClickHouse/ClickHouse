@@ -18,8 +18,8 @@ FROM
 );
 Point	0	0
 MultiPoint	0	0
-Polygon	-16	16
-Ring	-16	16
+Polygon	16	16
+Ring	16	16
 -- `flipCoordinates` over such a column must map local to global as well: it picks the alternative
 -- type per arm to decide how to flip it, so reading local discriminators as global picks the wrong
 -- type and misflips the rows (or throws).

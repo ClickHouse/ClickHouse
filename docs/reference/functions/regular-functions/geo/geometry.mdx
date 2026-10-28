@@ -42,7 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 
 ## areaCartesian {#areacartesian}
 
-Calculates the area of the given Geometry object in the Cartesian coordinate system.
+Calculates the area of the given Geometry object in the Cartesian coordinate system. Polygon holes are excluded, regardless of ring orientation.
 
 **Syntax**
 
@@ -66,7 +66,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─areaCartesian(geom)─┐
-│ -1                  │
+│ 1                   │
 └─────────────────────┘
 ```
 
@@ -102,7 +102,7 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ## areaSpherical {#areaspherical}
 
-Calculates the area of a Geometry object on the surface of a sphere.
+Calculates the area of a Geometry object on the surface of a sphere. Polygon holes are excluded, regardless of ring orientation.
 
 **Syntax**
 
@@ -126,6 +126,6 @@ SELECT areaSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─areaSpherical(geom)────┐
-│ -0.0003046096848622019 │
+│ 0.0003046096848622019  │
 └────────────────────────┘
 ```
