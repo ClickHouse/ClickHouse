@@ -40,6 +40,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -53,6 +54,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -194,7 +196,7 @@ size_t applyStreamsMultiplier(size_t requested_num_streams, Float64 num_streams_
 
 /// `ColumnsDescription` registers no subcolumns for an ALIAS column, so a name like `arr.size0`
 /// never resolves through the subcolumn index even though the alias expression can produce it.
-bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
+std::optional<std::pair<String, String>> tryGetSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
 {
     for (auto [parent_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
     {
@@ -203,10 +205,15 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
             continue;
 
         if (parent->type->tryGetSubcolumnType(subcolumn_name))
-            return true;
+            return std::pair{String(parent_name), String(subcolumn_name)};
     }
 
-    return false;
+    return {};
+}
+
+bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const String & name)
+{
+    return tryGetSubcolumnOfAliasColumn(storage_columns, name).has_value();
 }
 
 }
@@ -2083,6 +2090,45 @@ String makeUniqueRowPolicyFilterColumnName(const ActionsDAG & dag, const NamesAn
     return name;
 }
 
+/// Identifiers in subqueries and those rooted at a lambda argument are not this table's columns.
+void replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(ASTPtr & ast, const ColumnsDescription & columns, const NameSet & lambda_arguments)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (columns.has(identifier->name()) || lambda_arguments.contains(identifier->name()))
+            return;
+
+        for (auto [prefix, _] : Nested::getAllColumnAndSubcolumnPairs(identifier->name()))
+            if (lambda_arguments.contains(String(prefix)))
+                return;
+
+        if (auto subcolumn = tryGetSubcolumnOfAliasColumn(columns, identifier->name()))
+        {
+            auto function = makeASTFunction(
+                "getSubcolumn", make_intrusive<ASTIdentifier>(subcolumn->first), make_intrusive<ASTLiteral>(subcolumn->second));
+            if (auto alias = identifier->tryGetAlias(); !alias.empty())
+                function->setAlias(alias);
+            ast = std::move(function);
+        }
+        return;
+    }
+
+    if (ast->as<ASTSubquery>())
+        return;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        for (auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(*function))
+            body_lambda_arguments.insert(std::move(name));
+        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(function->arguments->children[1], columns, body_lambda_arguments);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(child, columns, lambda_arguments);
+}
+
 }
 
 ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
@@ -2104,7 +2150,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    /// A read cannot produce `ALIAS` columns: expand them, unless the expansion reads a virtual column.
+    /// A read cannot produce `ALIAS` columns or their subcolumns: expand them, unless the expansion reads a virtual column.
     TreeRewriterResultPtr syntax_result;
     if (!storage_columns.getAliases().empty())
     {
@@ -2114,6 +2160,7 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
                 columns_with_virtuals.add(ColumnDescription(virtual_column.name, virtual_column.type));
 
         ASTPtr expanded_expr = expr->clone();
+        replaceSubcolumnsOfAliasColumnsWithGetSubcolumn(expanded_expr, storage_columns, {});
         replaceAliasColumnsInQuery(expanded_expr, columns_with_virtuals, {}, local_context);
 
         syntax_result = TreeRewriter(local_context, /* no_throw = */ true).analyze(expanded_expr, needed_columns);

@@ -11,13 +11,15 @@ DROP ROW POLICY IF EXISTS p_05453_final ON t_final;
 DROP ROW POLICY IF EXISTS p_05453_final_ver ON t_final_ver;
 DROP ROW POLICY IF EXISTS p_05453_in ON t_in;
 DROP ROW POLICY IF EXISTS p_05453_alias ON t_alias;
+DROP ROW POLICY IF EXISTS p_05453_alias_sub ON t_alias_sub;
+DROP ROW POLICY IF EXISTS p_05453_alias_lambda ON t_alias_lambda;
 DROP ROW POLICY IF EXISTS p_05453_alias_virtual ON t_alias_virtual;
 DROP ROW POLICY IF EXISTS p_05453_both_child ON t_both;
 DROP ROW POLICY IF EXISTS p_05453_both_merge ON m_both;
 DROP ROW POLICY IF EXISTS p_05453_nested ON m_nested_inner;
 DROP ROW POLICY IF EXISTS p_05453_nested_both_child ON t_nested_both;
 DROP ROW POLICY IF EXISTS p_05453_nested_both_merge ON m_nested_both_inner;
-DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_memory_default, t_memory_default, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_alias_virtual, t_alias_virtual, m_both, t_both,
+DROP TABLE IF EXISTS m_mt, t_mt, m_memory, t_memory, m_memory_default, t_memory_default, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_alias_sub, t_alias_sub, m_alias_lambda, t_alias_lambda, m_alias_virtual, t_alias_virtual, m_both, t_both,
     m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;
 
 CREATE TABLE t_mt (tenant String, payload String) ENGINE = MergeTree ORDER BY tuple();
@@ -75,6 +77,18 @@ CREATE TABLE m_alias (tenant String, payload String) ENGINE = Merge(currentDatab
 CREATE ROW POLICY p_05453_alias ON t_alias USING t2 = 'a' TO ALL;
 SELECT 'alias prewhere', count() FROM m_alias PREWHERE toUInt64(payload) > 10;
 
+CREATE TABLE t_alias_sub (tenant String, payload String, a Tuple(t String) ALIAS tuple(tenant)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_alias_sub (tenant, payload) VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+CREATE TABLE m_alias_sub (tenant String, payload String) ENGINE = Merge(currentDatabase(), '^t_alias_sub$');
+CREATE ROW POLICY p_05453_alias_sub ON t_alias_sub USING a.t = 'a' AND arrayExists(x -> x = a.t, ['a']) TO ALL;
+SELECT 'alias subcolumn prewhere', count() FROM m_alias_sub PREWHERE toUInt64(payload) > 10;
+
+CREATE TABLE t_alias_lambda (tenant String, payload String, a Tuple(t String) ALIAS tuple(tenant)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_alias_lambda (tenant, payload) VALUES ('a', '5'), ('b', 'secret');
+CREATE TABLE m_alias_lambda (tenant String, payload String) ENGINE = Merge(currentDatabase(), '^t_alias_lambda$');
+CREATE ROW POLICY p_05453_alias_lambda ON t_alias_lambda USING arrayExists(`a.t` -> `a.t` = 'b', ['a']) TO ALL;
+SELECT 'alias lambda argument rows', count() FROM m_alias_lambda;
+
 CREATE TABLE t_alias_virtual (tenant String, payload String, tv String ALIAS concat(_table, ':', tenant)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_alias_virtual (tenant, payload) VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
 CREATE TABLE m_alias_virtual (tenant String, payload String) ENGINE = Merge(currentDatabase(), '^t_alias_virtual$');
@@ -114,11 +128,13 @@ DROP ROW POLICY p_05453_final ON t_final;
 DROP ROW POLICY p_05453_final_ver ON t_final_ver;
 DROP ROW POLICY p_05453_in ON t_in;
 DROP ROW POLICY p_05453_alias ON t_alias;
+DROP ROW POLICY p_05453_alias_sub ON t_alias_sub;
+DROP ROW POLICY p_05453_alias_lambda ON t_alias_lambda;
 DROP ROW POLICY p_05453_alias_virtual ON t_alias_virtual;
 DROP ROW POLICY p_05453_both_child ON t_both;
 DROP ROW POLICY p_05453_both_merge ON m_both;
 DROP ROW POLICY p_05453_nested ON m_nested_inner;
 DROP ROW POLICY p_05453_nested_both_child ON t_nested_both;
 DROP ROW POLICY p_05453_nested_both_merge ON m_nested_both_inner;
-DROP TABLE m_mt, t_mt, m_memory, t_memory, m_memory_default, t_memory_default, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_alias_virtual, t_alias_virtual, m_both, t_both,
+DROP TABLE m_mt, t_mt, m_memory, t_memory, m_memory_default, t_memory_default, m_final, t_final, t_final_ver, m_final_ver, m_in, t_in, t_in_dst, m_alias, t_alias, m_alias_sub, t_alias_sub, m_alias_lambda, t_alias_lambda, m_alias_virtual, t_alias_virtual, m_both, t_both,
     m_nested_outer, m_nested_inner, t_nested, m_nested_both_outer, m_nested_both_inner, t_nested_both;

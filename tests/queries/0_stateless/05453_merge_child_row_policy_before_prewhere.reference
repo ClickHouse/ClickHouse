@@ -14,6 +14,8 @@ final order, policy after final	0
 final order, policy before final	1
 in prewhere	2
 alias prewhere	2
+alias subcolumn prewhere	2
+alias lambda argument rows	0
 alias over virtual rows	20
 alias over virtual rows	30
 alias over virtual rows	5
