@@ -26,6 +26,7 @@ exports_files([
     "protobuf-generated-cc-deps.patch",
     "rules_rs-local-workspaces.patch",
     "rules_rs-cargo-cc-toolchain.patch",
+    "rules_rs-build-script-package-files.patch",
     "rules_rust-build-script-linker.patch",
     "zstd-public-headers.patch",
     "rules_cc-toolchain-action-files.patch",

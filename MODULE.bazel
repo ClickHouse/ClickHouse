@@ -98,6 +98,7 @@ single_version_override(
     patches = [
         "//bazel/patches:rules_rs-local-workspaces.patch",
         "//bazel/patches:rules_rs-cargo-cc-toolchain.patch",
+        "//bazel/patches:rules_rs-build-script-package-files.patch",
     ],
 )
 
@@ -147,21 +148,26 @@ use_repo(rules_rust, "rules_rust")
 
 crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
 
-# These pinned build scripts use Rust configuration or rustc alone.
+# These pinned build scripts use Rust configuration, rustc, and Cargo.toml.
 [
     crate.annotation(
+        build_script_package_files = ["Cargo.toml"],
         build_script_use_cc_toolchain = "off",
         crate = crate_name,
         version = version,
     )
-    for crate_name, version in [
-        ("serde", "1.0.228"),
-        ("serde", "1.0.229"),
-        ("serde_core", "1.0.228"),
-        ("serde_core", "1.0.229"),
-        ("serde_json", "1.0.150"),
-        ("serde_json", "1.0.151"),
-    ]
+    for crate_name, versions in {
+        "getrandom": ("0.3.4", "0.4.2", "0.4.3"),
+        "icu_normalizer_data": ("2.2.0", "2.3.0"),
+        "icu_properties_data": ("2.2.0", "2.3.0"),
+        "libm": ("0.2.16",),
+        "parking_lot_core": ("0.9.12",),
+        "serde": ("1.0.228", "1.0.229"),
+        "serde_core": ("1.0.228", "1.0.229"),
+        "serde_json": ("1.0.150", "1.0.151"),
+        "zerocopy": ("0.8.48", "0.8.59"),
+    }.items()
+    for version in versions
 ]
 
 crate.from_cargo(
