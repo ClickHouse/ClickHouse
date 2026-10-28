@@ -231,6 +231,7 @@ def _impl(target, ctx):
                     }))
                     files.append(manifest)
                     toolchain = find_cc_toolchain(ctx)
+                    compiler_files = getattr(toolchain, "compiler_files", None) or toolchain.all_files
                     for index, unit in enumerate(units):
                         # PIC and non-PIC commands for the same source are separate evidence.
                         name = "{}.proto_dwyu_{}".format(target.label.name, index)
@@ -251,7 +252,7 @@ def _impl(target, ctx):
                             unit.original[0],
                             unit.original[1:],
                             depset([manifest], transitive = [unit.inputs]),
-                            toolchain.all_files,
+                            compiler_files,
                             manifest,
                             args,
                             environment = unit.environment,

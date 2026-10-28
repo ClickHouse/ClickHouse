@@ -109,7 +109,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +430,435 @@
+@@ -386,12 +430,439 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -320,12 +320,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    system_paths = depset(transitive = system + external)
 +    defines = depset(transitive = [c.defines for c in impl_contexts] + [target_cc.defines, target_cc.local_defines])
 +    private_files = getattr(ctx.rule.files, "srcs", [])
-+    inputs = depset(
-+        direct = (files + [header_manifest] +
-+                  getattr(ctx.rule.files, "additional_compiler_inputs", []) +
-+                  getattr(ctx.rule.files, "private_textual_srcs", [])),
-+        transitive = [target_cc.headers, cc_toolchain.all_files] + [c.headers for c in impl_contexts],
-+    )
++    compiler_files = getattr(cc_toolchain, "compiler_files", None) or cc_toolchain.all_files
++    inputs_by_action = {}
 +    name = name or (target.label.name if capture == None else "consumer_collect." + target.label.name)
 +    virtual = {}
 +    search_dirs = []
@@ -413,6 +409,14 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        args.add_all(["-E" if opt == "-c" else opt for opt in command])
 +        args.add("-dI")
 +
++        toolchain_files = cc_toolchain.all_files if is_assembly else compiler_files
++        if action_name not in inputs_by_action:
++            inputs_by_action[action_name] = depset(
++                direct = (files + [header_manifest] +
++                          getattr(ctx.rule.files, "additional_compiler_inputs", []) +
++                          getattr(ctx.rule.files, "private_textual_srcs", [])),
++                transitive = [target_cc.headers, toolchain_files] + [c.headers for c in impl_contexts],
++            )
 +        compiler = cc_common.get_tool_for_action(feature_configuration = feature_configuration, action_name = action_name)
 +        public_output, private_output = _process_compiler_command(
 +            ctx,
@@ -422,8 +426,8 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +            attr_prefix,
 +            compiler,
 +            command,
-+            inputs,
-+            cc_toolchain.all_files,
++            inputs_by_action[action_name],
++            toolchain_files,
 +            header_manifest,
 +            args,
 +            capture = capture if capture_sources == None or file.short_path in capture_sources else None,
@@ -547,7 +551,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,9 +907,217 @@
+@@ -440,9 +911,217 @@
  
          preprocessor_results.append(pp_output)
  
@@ -768,7 +772,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      """
      Implementation for the "Depend on What You Use" (DWYU) aspect.
  
-@@ -458,9 +1133,47 @@
+@@ -458,9 +1137,47 @@
      # Check whether DWYU should run on this target
      #
  
@@ -817,7 +821,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Skip targets which the user explicitly excluded from the analysis.
      # In contrast to the other skipping mechanisms we still propagate the reports of the dependencies.
-@@ -510,17 +1223,37 @@
+@@ -510,17 +1227,37 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -861,7 +865,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # TODO Investigate if we can prevent running this multiple times for the same dep if multiple
      #      target_under_inspection have the same dependency
-@@ -529,26 +1262,43 @@
+@@ -529,26 +1266,43 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -909,7 +913,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,18 +1310,30 @@
+@@ -560,18 +1314,30 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -944,7 +948,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -582,5 +1344,335 @@
+@@ -582,5 +1348,335 @@
          arguments = [args],
      )
  

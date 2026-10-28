@@ -20,7 +20,7 @@ SOURCE_SHA256 = {
     "bazel/rules/dwyu.bzl": "d9bcd9782eb753ca8287bbb7698216bfd56251fc0c35adebb05edaf3d9b1637f",
     "bazel/rules/dwyu_tool.bzl": "9fbe5b5759ed86eb74c46f2bf753dd922cbf767fadb6fc52b9ca7e09ce38260f",
     "bazel/rules/BUILD.bazel": "5419adcf5cedb4752e8a4303bb5b413115b96c3bdd234b2cf11302d3ea457b81",
-    "bazel/patches/dwyu-compiler-preprocessing.patch": "9929fb4505eb4757639b61b9cdc4eb4cc2fe9549225f4e702ca8df9a92efde17",
+    "bazel/patches/dwyu-compiler-preprocessing.patch": "c261fda34b0c8878d1c7fbebe029dc8b418e54cd465947342db5f928dd6bdfb2",
     "bazel/patches/rules_cc-implementation-deps-local-includes.patch": "1e8f54793cf1989dc11017982e75bd18f22bd09fc89d077c7749edcc146b6714",
     "bazel/llvm.MODULE.bazel": "114194bea5e409a65d75577d7ee81dee6ebed7a00246c0e1d893a17dc43a5fa3",
     "bazel/patches/glibc-2.28-aarch64-hwcap2-madvise.patch": "33b4986b047c9268b4e9807f573d83f0959e95d9585c932597d923dbc4e25b28",
