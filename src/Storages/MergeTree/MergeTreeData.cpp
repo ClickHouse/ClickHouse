@@ -10925,7 +10925,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         catch (...)
         {
             error = std::current_exception();
-            retryable = isRetryableException(std::current_exception());
+            if (CurrentThread::isQueryCancellationException(error))
+                throw;
+            retryable = isRetryableException(error);
         }
 
         if (!error)
