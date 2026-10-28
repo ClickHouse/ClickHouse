@@ -32,4 +32,7 @@ echo '-- selected samples'
 $CLIENT -q "SELECT timestamp, value FROM timeSeriesSelector(ts, 'foo{env=\"prod\"}', 0, 1000, 'timestamp_and_value') ORDER BY timestamp"
 $CLIENT -q "SELECT count(), sum(value) FROM timeSeriesSelector(ts, 'foo', 0, 1000, 'timestamp_and_value')"
 
+echo '-- the legacy ANY join setting does not break the join'
+$CLIENT -q "SELECT count(), sum(value) FROM timeSeriesSelector(ts, 'foo', 0, 1000, 'timestamp_and_value') SETTINGS any_join_distinct_right_table_keys = 1"
+
 $CLIENT -q "DROP TABLE ts"

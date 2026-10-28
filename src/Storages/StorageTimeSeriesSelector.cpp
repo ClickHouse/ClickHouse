@@ -1173,6 +1173,8 @@ void StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(Context & context
     /// and reading out of order would sort both tables before the first row of the result.
     context.setSetting("join_algorithm", String{"full_sorting_merge"});
     context.setSetting("optimize_read_in_order", true);
+    /// The legacy setting turns `LEFT ANY JOIN` into `RIGHT_ANY`, which the merge join cannot run.
+    context.setSetting("any_join_distinct_right_table_keys", false);
 }
 
 
