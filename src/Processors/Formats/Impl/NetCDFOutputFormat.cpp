@@ -14,6 +14,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
 #include <Common/intExp.h>
 #include <Common/transformEndianness.h>
@@ -107,6 +108,16 @@ void checkNameIsNFC(const String & name)
 UInt64 alignUpTo4(UInt64 size)
 {
     return (size + 3) / 4 * 4;
+}
+
+/// The whole result is buffered and serialized in `finalizeImpl`, where the executor no longer
+/// looks at the cancellation of the query, so the loops over the rows check it themselves.
+constexpr size_t ROWS_BETWEEN_CANCELLATION_CHECKS = 65536;
+
+void checkIfNotCancelledAtRow(size_t row)
+{
+    if (row % ROWS_BETWEEN_CANCELLATION_CHECKS == 0)
+        CurrentThread::checkIfNotCancelled();
 }
 
 template <typename T>
@@ -215,6 +226,8 @@ String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map,
 
     for (size_t i = 0; i < size; ++i)
     {
+        checkIfNotCancelledAtRow(i);
+
         if (null_map && null_map[i])
             continue;
 
@@ -328,6 +341,8 @@ void writeVectorColumn(WriteBuffer & out, const IColumn & column, const UInt8 * 
 
     for (size_t i = 0; i < data.size(); ++i)
     {
+        checkIfNotCancelledAtRow(i);
+
         if (null_map && null_map[i])
             out.write(fill_value.data(), fill_value.size());
         else
@@ -341,6 +356,8 @@ void writeDateTime64Column(WriteBuffer & out, const IColumn & column, const UInt
 
     for (size_t i = 0; i < data.size(); ++i)
     {
+        checkIfNotCancelledAtRow(i);
+
         if (null_map && null_map[i])
             out.write(fill_value.data(), fill_value.size());
         else
@@ -424,6 +441,8 @@ void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * 
 
     for (size_t i = 0; i < column.size(); ++i)
     {
+        checkIfNotCancelledAtRow(i);
+
         /// A NULL is written as the `_FillValue` of the variable, which is a string that the data
         /// of the column does not contain. The column under a `ColumnNullable` is allowed to hold
         /// arbitrary garbage in the rows that are NULL, so it must not be looked at.
@@ -566,6 +585,8 @@ void NetCDFOutputFormat::finalizeImpl()
             std::bitset<256> taken_bytes;
             for (size_t i = 0; i < variable.data->size(); ++i)
             {
+                checkIfNotCancelledAtRow(i);
+
                 if (null_map && null_map[i])
                 {
                     has_nulls = true;
@@ -642,6 +663,8 @@ void NetCDFOutputFormat::finalizeImpl()
                     : nullptr;
                 for (size_t i = 0; i < data.size(); ++i)
                 {
+                    checkIfNotCancelledAtRow(i);
+
                     if (null_map && null_map[i])
                         continue;
 
