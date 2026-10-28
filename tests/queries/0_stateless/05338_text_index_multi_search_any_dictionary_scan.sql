@@ -49,7 +49,7 @@ SELECT 'multiSearchAnyUTF8, no index', groupArray(id) FROM tab WHERE multiSearch
 SELECT 'multiSearchAnyCaseInsensitive', groupArray(id) FROM tab WHERE multiSearchAnyCaseInsensitive(msg, ['OUTOFMEMORY']) SETTINGS log_comment = 'ss_msa_ci';
 SELECT 'multiSearchAnyCaseInsensitive, no index', groupArray(id) FROM tab WHERE multiSearchAnyCaseInsensitive(msg, ['OUTOFMEMORY']) SETTINGS use_skip_indexes = 0;
 
--- Some characters fold to an ASCII letter, such as U+212A to 'k': a needle with such a letter is not searched in the dictionary.
+-- U+212A matches only itself, not 'k', so a needle with 'k' is searched in the dictionary too.
 SELECT 'multiSearchAnyCaseInsensitiveUTF8', groupArray(id) FROM tab WHERE multiSearchAnyCaseInsensitiveUTF8(msg, ['STANBUL']) SETTINGS log_comment = 'ss_msa_ci_utf8';
 SELECT 'multiSearchAnyCaseInsensitiveUTF8, no index', groupArray(id) FROM tab WHERE multiSearchAnyCaseInsensitiveUTF8(msg, ['STANBUL']) SETTINGS use_skip_indexes = 0;
 

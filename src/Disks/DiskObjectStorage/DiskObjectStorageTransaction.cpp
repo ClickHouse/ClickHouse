@@ -4,7 +4,9 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteSettings.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
 #endif
@@ -49,7 +51,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
-    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) const
@@ -425,38 +426,60 @@ void DiskObjectStorageTransaction::submitBlobForRemoval(const std::string & remo
 }
 
 /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-/// TODO: This function is incorrect for multiple object storages, we need to remove it and use everywhere regular writeFile
+/// TODO: Remove it and use regular writeFile everywhere.
 void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
-    if (cluster->getConfiguration().size() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "writeFileUsingBlobWritingFunction not supported for replicated setup");
+    const Location local_location = cluster->getLocalLocation();
+    const auto local_object_storage = object_storages->takePointingTo(local_location);
 
     StoredObject object(metadata_transaction->generateObjectKeyForPath(path).serialize(), path);
-    written_blobs[cluster->getLocalLocation()].push_back(object);
+    written_blobs[local_location].push_back(object);
 
     /// See DiskObjectStorage::getBlobPath().
     Strings blob_path;
     blob_path.reserve(2);
     blob_path.emplace_back(object.remote_path);
-    String objects_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
+    String objects_namespace = local_object_storage->getObjectsNamespace();
     if (!objects_namespace.empty())
         blob_path.emplace_back(objects_namespace);
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
     object.bytes_size = std::move(write_blob_function)(blob_path, WriteMode::Rewrite, /*object_attributes=*/std::nullopt);
 
-    addOperation([object, mode](MetadataTransactionPtr tx)
+    LocationSet written_locations{local_location};
+    for (const auto & location : cluster->getEnabledLocations())
+        if (written_locations.insert(location).second)
+            written_blobs[location].push_back(object);
+
+    {
+        const ReadSettings read_settings = getReadSettings();
+        const WriteSettings write_settings = getWriteSettings();
+        ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_WRITE_BLOB);
+        for (const auto & location : written_locations)
+        {
+            if (location == local_location)
+                continue;
+
+            runner.enqueueAndKeepTrack([&, location]
+            {
+                local_object_storage->copyObjectToAnotherObjectStorage(object, object, read_settings, write_settings, *object_storages->takePointingTo(location));
+            });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    addOperation([object, mode, missing_locations = cluster->findComplement(std::move(written_locations))](MetadataTransactionPtr tx)
     {
         if (mode == WriteMode::Rewrite)
         {
             LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Writing blob for path {}, key {}, size {}", object.local_path, object.remote_path, object.bytes_size);
-            tx->recordBlobsReplication(object, /*missing_locations=*/{});
+            tx->recordBlobsReplication(object, missing_locations);
             tx->createMetadataFile(object.local_path, {object});
         }
         else
         {
-            tx->recordBlobsReplication(object, /*missing_locations=*/{});
+            tx->recordBlobsReplication(object, missing_locations);
             tx->addBlobToMetadata(object.local_path, object);
         }
     });

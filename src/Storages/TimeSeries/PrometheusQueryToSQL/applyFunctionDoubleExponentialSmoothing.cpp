@@ -96,7 +96,8 @@ namespace
             case StoreMethod::EMPTY:
             case StoreMethod::CONST_STRING:
             case StoreMethod::VECTOR_GRID:
-            case StoreMethod::RAW_DATA:
+            case StoreMethod::SAMPLES:
+            case StoreMethod::TIMESTAMP_AND_VALUE:
             {
                 /// Can't get in here: an empty factor is handled by the caller, the others are incompatible with a scalar.
                 throwUnexpectedStoreMethod(scalar_argument, context);
