@@ -116,9 +116,10 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${D
 # own UUIDs -- the Keeper CREATE carries explicit `<KIND> INNER UUID` clauses and recovery replays it
 # as an ATTACH, so the inner UUIDs are preserved too. The row count is the discriminator: the drop
 # and re-create leaves the inner tables empty, so a regression that made the eager inner drop a
-# silent no-op would leave these rows in place.
+# silent no-op would leave these rows in place. The rows get distinct buckets: the aggregating engine of the samples
+# table merges the rows of the same series and bucket already on insertion.
 SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.samples.%'")
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (timestamp, value) SELECT now64(3), number FROM numbers(50)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (samples, bucket) SELECT [(toDateTime64(number * 3600, 3), toFloat64(number))], toDateTime64(number * 3600, 3) FROM numbers(50)"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
 
 diverge_from_keeper ts
