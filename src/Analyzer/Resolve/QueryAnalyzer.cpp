@@ -4411,6 +4411,9 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     lambdas_in_resolve_process.insert(lambda_with_hash);
+    /// The registration is removed also on exception: a failed speculative resolution
+    /// (see `expandMatchersInsideProjectionExpression`) may resolve the same lambda again later.
+    SCOPE_EXIT({ lambdas_in_resolve_process.erase(lambda_with_hash); });
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -4449,11 +4452,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     }
 
     /// Lambda body expression is resolved as standard query expression node.
-    auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-
-    lambdas_in_resolve_process.erase(lambda_with_hash);
-
-    return result_projection_names;
+    return resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 }
 
 /** Resolve expression node.
@@ -8366,18 +8365,81 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         if (!group_by_may_refer_to_any_projection_item && query_node_typed.hasGroupBy()
             && scope.context->getSettingsRef()[Setting::enable_positional_arguments])
         {
+            /** A matcher produces only the columns of the table expressions of this query, or, if it is qualified,
+              * the elements of a compound expression. So, without ARRAY JOIN, a name that is not a column of any table
+              * expression is not produced by an unqualified matcher, and by a qualified one whose qualifier names
+              * a table expression of this query and can refer neither to a column nor to an alias.
+              * A matcher inside a lambda can be qualified by a lambda argument, so it is not checked.
+              */
+            std::unordered_set<std::string> source_column_names;
+            const bool has_array_join = std::ranges::any_of(
+                buildTableExpressionsStack(query_node_typed.getJoinTreeNode()),
+                [](const QueryTreeNodePtr & table_expression) { return table_expression->as<ArrayJoinNode>() != nullptr; });
+            for (const auto & [_, table_expression_data] : scope.table_expression_node_to_data)
+            {
+                for (const auto & column : table_expression_data.column_names_and_types)
+                    source_column_names.insert(column.name);
+            }
+
+            auto matcher_may_produce_column = [&](const MatcherNode & matcher_node, bool is_inside_lambda, const std::string & column_name)
+            {
+                if (has_array_join || source_column_names.contains(column_name))
+                    return true;
+
+                if (matcher_node.isUnqualified())
+                    return false;
+
+                if (is_inside_lambda)
+                    return true;
+
+                const auto & qualifier = matcher_node.getQualifiedIdentifier();
+                if (scope.aliases.alias_name_to_expression_node.contains(qualifier.front())
+                    || scope.aliases.alias_name_to_lambda_node.contains(qualifier.front()))
+                    return true;
+
+                bool qualifier_names_table_expression = false;
+                for (const auto & [_, table_expression_data] : scope.table_expression_node_to_data)
+                {
+                    if (table_expression_data.canBindIdentifier(IdentifierView(qualifier)))
+                        return true;
+
+                    if (table_expression_data.table_expression_name == qualifier.getFullName()
+                        || table_expression_data.table_name == qualifier.getFullName())
+                        qualifier_names_table_expression = true;
+                }
+
+                return !qualifier_names_table_expression;
+            };
+
             std::unordered_set<std::string> replaced_column_names;
-            std::vector<const IQueryTreeNode *> nodes_to_process{query_node_typed.getProjectionNode().get()};
+            /// The unqualified matcher arguments of `count` and similar functions are removed by `resolveFunction`.
+            std::unordered_set<const IQueryTreeNode *> dropped_matchers;
+            /// The nodes with the flag whether they are inside a lambda.
+            std::vector<std::pair<const IQueryTreeNode *, bool>> nodes_to_process{{query_node_typed.getProjectionNode().get(), false}};
             while (!nodes_to_process.empty())
             {
-                const auto * node = nodes_to_process.back();
+                const auto [node, is_inside_lambda] = nodes_to_process.back();
                 nodes_to_process.pop_back();
+
+                if (const auto * function_node = node->as<FunctionNode>())
+                {
+                    if (functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName()) && !isLambdaCall(*function_node, scope))
+                    {
+                        for (const auto & argument : function_node->getArguments().getNodes())
+                        {
+                            const auto * argument_matcher = argument->as<MatcherNode>();
+                            if (argument_matcher && argument_matcher->isUnqualified())
+                                dropped_matchers.insert(argument.get());
+                        }
+                    }
+                }
 
                 /** Only the replacements that may apply to a column produced by the matcher: as in `resolveMatcher`,
                   * a column has to match the matcher itself, a `REPLACE` after an `APPLY` is ignored, and a column
                   * removed by a preceding `EXCEPT` is not replaced, as `c` in `* EXCEPT (c) REPLACE (1 AS c)`.
                   */
-                if (const auto * matcher_node = node->as<MatcherNode>())
+                const auto * matcher_node = node->as<MatcherNode>();
+                if (matcher_node && !dropped_matchers.contains(node))
                 {
                     std::vector<const ExceptColumnTransformerNode *> preceding_except_transformers;
                     for (const auto & transformer : matcher_node->getColumnTransformers().getNodes())
@@ -8394,6 +8456,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                             for (const auto & replaced_column_name : replace_transformer->getReplacementsNames())
                             {
                                 if (matcher_node->isMatchingColumn(replaced_column_name)
+                                    && matcher_may_produce_column(*matcher_node, is_inside_lambda, replaced_column_name)
                                     && std::ranges::none_of(preceding_except_transformers, [&](const auto * except)
                                         { return except->isColumnMatching(replaced_column_name); }))
                                     replaced_column_names.insert(replaced_column_name);
@@ -8406,7 +8469,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 for (const auto & child : node->getChildren())
                 {
                     if (child && !child->as<QueryNode>() && !child->as<UnionNode>())
-                        nodes_to_process.push_back(child.get());
+                        nodes_to_process.emplace_back(child.get(), is_inside_lambda || node->as<LambdaNode>());
                 }
             }
 
