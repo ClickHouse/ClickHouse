@@ -87,6 +87,13 @@ public:
     /// Returns all the directories added for the given storage by addReplicatedNamedCollectionsDir.
     virtual Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const = 0;
 
+    /// Whether the initiating host of the RESTORE ON CLUSTER query requires the right restoring
+    /// named collections needs (`CREATE NAMED COLLECTION`) of the initiating user before
+    /// dispatching the query. An internal restore must not restore the collections when the
+    /// initiator predates that check, because the dispatched query may be executed with full
+    /// access (see `restoreNamedCollections`).
+    virtual bool doesInitiatorCheckNamedCollectionsRestoreRights() const = 0;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     virtual bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) = 0;

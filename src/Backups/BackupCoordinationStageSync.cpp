@@ -48,13 +48,14 @@ namespace
 
         /// Now we create the 'finish' node both if the work is done or if the error handling is done.
 
-        /// Since this version the initiating host of a BACKUP ON CLUSTER query takes the
-        /// authorization decision for exporting named collections before dispatching the query
-        /// (see `backupNamedCollections`), so the hosts executing the dispatched query - possibly
-        /// with full access - may trust the dispatched elements to carry that decision. A host
-        /// receiving a dispatched query from an initiator older than this must not export the
-        /// collections.
-        kVersionWithNamedCollectionsExportDecision = 3,
+        /// Since this version the initiating host takes the named collections access decisions
+        /// before dispatching the query: a BACKUP ON CLUSTER initiator authorizes exporting the
+        /// collections against the initiating user (see `backupNamedCollections`), and a RESTORE
+        /// ON CLUSTER initiator requires the right restoring them needs (`CREATE NAMED COLLECTION`,
+        /// see `RestorerFromBackup::getRequiredAccess`). The hosts executing the dispatched query -
+        /// possibly with full access - may trust it only then: a host receiving a query dispatched
+        /// by an older initiator must neither export nor restore the collections.
+        kVersionWithNamedCollectionsAccessDecisions = 3,
 
         kCurrentVersion = 3,
     };
@@ -1230,9 +1231,9 @@ int BackupCoordinationStageSync::getInitiatorVersion() const
 }
 
 
-bool BackupCoordinationStageSync::doesInitiatorTakeNamedCollectionsExportDecision() const
+bool BackupCoordinationStageSync::doesInitiatorTakeNamedCollectionsAccessDecisions() const
 {
-    return getInitiatorVersion() >= kVersionWithNamedCollectionsExportDecision;
+    return getInitiatorVersion() >= kVersionWithNamedCollectionsAccessDecisions;
 }
 
 

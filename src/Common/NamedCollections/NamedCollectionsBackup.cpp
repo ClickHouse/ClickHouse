@@ -279,6 +279,24 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
     if (entry_files.empty())
         return false; /// Nothing to restore (in particular, a backup taken before named collections were backed up).
 
+    /// An internal restore executes a query dispatched by the initiating host of a `RESTORE ON
+    /// CLUSTER`, possibly with full access (the default `distributed_ddl_use_initial_user_and_roles
+    /// = false`), so the right restoring the collections requires (`CREATE NAMED COLLECTION`, see
+    /// `RestorerFromBackup::getRequiredAccess`) must be required of the initiating user by the
+    /// initiating host before the query is dispatched (see `BackupsWorker::doRestore`, which runs
+    /// the access checks against the initiating user for every selected host). An initiator
+    /// predating the restore of named collections requires nothing for them, so the entries must
+    /// not be restored: fail close. Its coordination version shows whether the initiator ran the
+    /// check.
+    if (restorer.getRestoreSettings().internal
+        && !restorer.getRestoreCoordination()->doesInitiatorCheckNamedCollectionsRestoreRights())
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore the named collections from backup {}: the initiating host of this ON CLUSTER query is "
+            "too old to check the rights restoring them requires against the initiating user. Upgrade the "
+            "initiating host or run the restore on an upgraded host",
+            backup->getNameForLogging());
+
     if (backup_is_encrypted && !storage_properties.is_encrypted)
         throw Exception(
             ErrorCodes::CANNOT_RESTORE_TABLE,

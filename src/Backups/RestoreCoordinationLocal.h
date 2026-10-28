@@ -56,6 +56,10 @@ public:
     void addReplicatedNamedCollectionsDir(const String & replication_id, const String & dir_path) override;
     Strings getReplicatedNamedCollectionsDirs(const String & replication_id) const override;
 
+    /// A restore without ON CLUSTER has no initiating host: the query itself checks the right
+    /// against its own user (see `RestorerFromBackup::getRequiredAccess`).
+    bool doesInitiatorCheckNamedCollectionsRestoreRights() const override { return true; }
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;

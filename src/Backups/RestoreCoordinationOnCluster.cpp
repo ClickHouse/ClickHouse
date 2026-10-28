@@ -393,6 +393,11 @@ Strings RestoreCoordinationOnCluster::getReplicatedNamedCollectionsDirs(const St
     return dirs;
 }
 
+bool RestoreCoordinationOnCluster::doesInitiatorCheckNamedCollectionsRestoreRights() const
+{
+    return stage_sync.doesInitiatorTakeNamedCollectionsAccessDecisions();
+}
+
 bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id)
 {
     bool lock_acquired = false;

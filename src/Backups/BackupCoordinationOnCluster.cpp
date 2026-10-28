@@ -805,7 +805,7 @@ Strings BackupCoordinationOnCluster::getReplicatedNamedCollectionsDirs(const Str
 
 bool BackupCoordinationOnCluster::doesInitiatorTakeNamedCollectionsExportDecision() const
 {
-    return stage_sync.doesInitiatorTakeNamedCollectionsExportDecision();
+    return stage_sync.doesInitiatorTakeNamedCollectionsAccessDecisions();
 }
 
 void BackupCoordinationOnCluster::prepareReplicatedNamedCollections() const

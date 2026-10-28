@@ -63,10 +63,11 @@ public:
     Strings getUnfinishedHosts() const;
     Strings getUnfinishedOtherHosts() const;
 
-    /// Whether the initiating host takes the authorization decision for exporting named collections
-    /// before dispatching the query, which its coordination version shows (see
-    /// `backupNamedCollections`).
-    bool doesInitiatorTakeNamedCollectionsExportDecision() const;
+    /// Whether the initiating host takes the named collections access decisions before dispatching
+    /// the query, which its coordination version shows: authorizing the export for BACKUP (see
+    /// `backupNamedCollections`) and requiring the restore right for RESTORE (see
+    /// `restoreNamedCollections`).
+    bool doesInitiatorTakeNamedCollectionsAccessDecisions() const;
 
     /// Returns a printable name of a specific host. For empty host the function returns "initiator".
     static String getHostDesc(const String & host);
