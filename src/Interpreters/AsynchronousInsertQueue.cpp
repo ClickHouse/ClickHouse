@@ -1406,11 +1406,24 @@ try
         const String & exception,
         size_t num_rows,
         size_t num_bytes,
-        bool is_flush_error = false) mutable
+        bool is_flush_error = false,
+        int exception_code = 0) mutable
     {
         /// Track per-entry stats for reporting back to clients on success.
         if (exception.empty())
             per_entry_progress_results[entry.get()] = ResultProgress{num_rows, num_bytes};
+
+        /// An entry that failed parsing or conversion is isolated from the rest of the batch: the flush
+        /// itself can still succeed (possibly with zero rows) and be audited as successful. Its queued
+        /// `INSERT` was already audited as successful as well, so record the failure of the entry here.
+        if (exception_code && key.audit_flush)
+        {
+            QueryLogElement entry_elem = query_log_elem;
+            entry_elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
+            entry_elem.exception_code = exception_code;
+            entry_elem.exception = exception;
+            auditLog(entry_elem, insert_context, key.query);
+        }
 
         if (!async_insert_log)
             return;
@@ -1672,6 +1685,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     size_t total_rows = 0;
     InsertData::EntryPtr current_entry;
     String current_exception;
+    int current_exception_code = 0;
 
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
@@ -1686,6 +1700,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         current_exception = e.displayText();
+        current_exception_code = e.code();
         LOG_ERROR(logger, "Failed parsing for insert query id {}. {}",
             current_entry->query_id, current_exception);
 
@@ -1727,8 +1742,9 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         /// it is ok if total_rows is 0 here or async_dedup_token is empty
         deduplication_info->setUserToken(entry->async_dedup_token, num_rows);
 
-        add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
+        add_to_async_insert_log(entry, current_exception, num_rows, num_bytes, /*is_flush_error=*/ false, current_exception_code);
         current_exception.clear();
+        current_exception_code = 0;
         entry->resetChunk();
     }
 
@@ -1777,7 +1793,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
             /// `flush_time`, via the `is_flush_error` path in `add_to_async_insert_log`.
             const auto exception_msg = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
             LOG_ERROR(logger, "Failed conversion for insert query id {}. {}", entry->query_id, exception_msg);
-            add_to_async_insert_log(entry, exception_msg, /*num_rows=*/ 0, block->bytes(), /*is_flush_error=*/ true);
+            add_to_async_insert_log(entry, exception_msg, /*num_rows=*/ 0, block->bytes(), /*is_flush_error=*/ true, getCurrentExceptionCode());
             entry->finish(std::current_exception());
             entry->resetChunk();
             continue;

@@ -980,6 +980,78 @@ def test_audit_log_fire_and_forget_async_insert_flush_failure_before_start(start
     node_dml_misc.query("DROP TABLE IF EXISTS audit_async_dropped_user_table")
 
 
+def _async_flush_records(node, table, failed):
+    log_content = node.grep_in_log(table, from_host=True, filename="clickhouse-server.audit.log")
+    records = []
+    for line in log_content.strip().split("\n"):
+        if "AUDIT: " not in line:
+            continue
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        if fields[1] == "AsyncInsertFlush" and (fields[2] != "0") == failed:
+            records.append(fields)
+    return records, log_content
+
+
+def _queue_async_insert(node, table, data):
+    # The busy timeout keeps the data queued until the explicit flush, so the entries form one batch.
+    node.http_query(
+        f"INSERT INTO default.{table} FORMAT CSV",
+        data=data,
+        params={
+            "async_insert": 1,
+            "wait_for_async_insert": 0,
+            "async_insert_use_adaptive_busy_timeout": 0,
+            "async_insert_busy_timeout_max_ms": 600000,
+        },
+    )
+
+
+def test_audit_log_fire_and_forget_async_insert_parsing_error(start_cluster):
+    """An entry that fails parsing at flush is isolated from the batch, so the flush itself succeeds
+    with zero rows. The failure of the entry must still be audited."""
+    table = "audit_async_parsing_error_table"
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
+    node_dml_misc.query(f"CREATE TABLE {table} (a UInt32) ENGINE = Memory")
+
+    _queue_async_insert(node_dml_misc, table, "not_a_number\n")
+    node_dml_misc.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+
+    for _ in range(60):
+        failed, log_content = _async_flush_records(node_dml_misc, table, failed=True)
+        if failed:
+            break
+        time.sleep(0.5)
+    assert len(failed) == 1, f"the entry that failed parsing must be audited once: {log_content}"
+    assert failed[0][0] == "DML", log_content
+    assert node_dml_misc.query(f"SELECT count() FROM {table}") == "0\n"
+
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
+
+
+def test_audit_log_fire_and_forget_async_insert_mixed_batch(start_cluster):
+    """In a batch with a valid and an invalid entry, the valid rows are written and the flush succeeds,
+    but the failure of the invalid entry must still be audited."""
+    table = "audit_async_mixed_batch_table"
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
+    node_dml_misc.query(f"CREATE TABLE {table} (a UInt32) ENGINE = Memory")
+
+    _queue_async_insert(node_dml_misc, table, "1\n")
+    _queue_async_insert(node_dml_misc, table, "not_a_number\n")
+    node_dml_misc.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+
+    for _ in range(60):
+        failed, log_content = _async_flush_records(node_dml_misc, table, failed=True)
+        succeeded, _ = _async_flush_records(node_dml_misc, table, failed=False)
+        if failed and succeeded:
+            break
+        time.sleep(0.5)
+    assert len(failed) == 1, f"the invalid entry of the batch must be audited once: {log_content}"
+    assert succeeded, f"the flush of the batch must be audited: {log_content}"
+    assert node_dml_misc.query(f"SELECT count() FROM {table}") == "1\n"
+
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {table}")
+
+
 def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
     """`EXECUTE AS <user> <statement>` runs the wrapped statement through
     `executeQuery(..., internal = true)`, which by itself would leave it out of the audit log. The
