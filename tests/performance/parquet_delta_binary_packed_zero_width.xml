@@ -1,0 +1,44 @@
+<!--
+    Full reads of zero-bit-width `DELTA_BINARY_PACKED` miniblocks: constants and arithmetic progressions
+    for both integer widths. Nonzero-residual controls are in `parquet_delta_binary_packed.xml`.
+    Generated with pyarrow 26.0.0 / numpy 2.4.6:
+
+        import numpy as np, pyarrow as pa, pyarrow.parquet as pq
+        n = 1 << 23
+        i = np.arange(n, dtype=np.int64)
+        arrays = {'constant32': np.full(n, -17, dtype=np.int32),
+                  'constant64': np.full(n, 1000000000000, dtype=np.int64),
+                  'linear32': (12345 - 11 * i).astype(np.int32),
+                  'linear64': 1000000000000 + 3 * i}
+        schema = pa.schema([pa.field(k, pa.from_numpy_dtype(v.dtype), nullable=False) for k, v in arrays.items()])
+        pq.write_table(pa.table(arrays, schema=schema),
+                       'tests/performance/user_files/parquet_delta_binary_packed_zero_width.parquet',
+                       use_dictionary=False, compression='zstd', column_encoding='DELTA_BINARY_PACKED',
+                       data_page_version='2.0', row_group_size=1 << 20,
+                       max_rows_per_page=1 << 20, data_page_size=1 << 30)
+-->
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_parsing_threads>1</max_parsing_threads>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>column</name>
+            <values>
+                <value>constant32</value>
+                <value>constant64</value>
+                <value>linear32</value>
+                <value>linear64</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <query>
+        SELECT sum({column}) FROM
+        (
+            SELECT {column} FROM loop(file('parquet_delta_binary_packed_zero_width.parquet'))
+            LIMIT 83886080
+        )
+        FORMAT Null
+    </query>
+</test>

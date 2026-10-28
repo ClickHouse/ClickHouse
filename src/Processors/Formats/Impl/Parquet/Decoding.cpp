@@ -897,6 +897,19 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             miniblock_values_remaining -= n;
 
             int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
+            if (bits_per_delta == 0)
+            {
+                /// No residuals: generate the arithmetic progression without unpacking zeros.
+                /// Keep calling `func` in order, as string-length decoding uses a stateful callback.
+                const UInt64 value = current_value;
+                const UInt64 delta_base = min_delta;
+                for (size_t i = 0; i < n; ++i)
+                    out_values[i] = func(T(value + UInt64(i + 1) * delta_base));
+                out_values += n;
+                current_value = value + UInt64(n) * delta_base;
+                continue;
+            }
+
             int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 
