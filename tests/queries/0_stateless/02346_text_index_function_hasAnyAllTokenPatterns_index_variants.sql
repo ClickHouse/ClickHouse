@@ -307,3 +307,57 @@ SELECT 'Map', count() FROM tab WHERE hasAllTokenLike(m['k'], ['env:prod-%']) SET
 DROP TABLE tab;
 
 SET optimize_functions_to_subcolumns = DEFAULT;
+
+-- The value index is found by name.
+SET optimize_functions_to_subcolumns = 0;
+
+SELECT '-- a missing map key or JSON path reads the default value, where the tokenizer of the element index can find a token';
+
+-- A missing FixedString(8) value is eight NUL bytes: no token with splitByNonAlpha, one token with array.
+-- The index on mapKeys(m) or JSONAllPaths(j) must not skip the granule without the key or the path, whose rows match.
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, FixedString(8)),
+    INDEX idx_keys(mapKeys(m)) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_k(m['k']) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, if(number < 8, map(), map('k', toFixedString('abc', 8))) FROM numbers(64);
+
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenLike(m['k'], '_%');
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenLike(m['k'], '_%') SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAnyTokenLike(m['k'], '_%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']);
+SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']) SETTINGS use_skip_indexes = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%']) SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'FixedString', count() FROM tab WHERE hasAllTokenLike(m['k'], ['\0%'], 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    j JSON,
+    INDEX idx_paths(JSONAllPaths(j)) TYPE text(tokenizer = array) GRANULARITY 1,
+    INDEX idx_k(j.k::FixedString(8)) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, if(number < 8, '{"x": "abc"}', '{"k": "abc"}') FROM numbers(64);
+
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAnyTokenLike(j.k::FixedString(8), '_%');
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAnyTokenLike(j.k::FixedString(8), '_%') SETTINGS use_skip_indexes = 0;
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAnyTokenLike(j.k::FixedString(8), '_%') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAllTokenLike(j.k::FixedString(8), ['\0%']);
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAllTokenLike(j.k::FixedString(8), ['\0%']) SETTINGS use_skip_indexes = 0;
+SELECT 'JSON FixedString', count() FROM tab WHERE hasAllTokenLike(j.k::FixedString(8), ['\0%'], 'array') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SET optimize_functions_to_subcolumns = DEFAULT;
