@@ -241,24 +241,36 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     /// after it in case of an exception
     TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
 
-    for (size_t i = 0; i != backup_entries.size(); ++i)
+    try
     {
-        task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log,
-                          current_component = Coordination::getCurrentComponent()]
+        for (size_t i = 0; i != backup_entries.size(); ++i)
         {
-            auto component_guard = Coordination::setCurrentComponent(current_component);
+            task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log,
+                              current_component = Coordination::getCurrentComponent()]
+            {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
 
-            const auto & name = backup_entries[i].first;
-            const auto & entry = backup_entries[i].second;
+                const auto & name = backup_entries[i].first;
+                const auto & entry = backup_entries[i].second;
 
-            if (process_list_element)
-                process_list_element->checkTimeLimit();
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
-            infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
-        });
+                infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+            });
+        }
+
+        task_tracker.waitAll();
     }
-
-    task_tracker.waitAll();
+    catch (...)
+    {
+        /// The tasks have to be waited for outside of `~TaskTracker`, which asserts that none are left in it before
+        /// it waits itself: a backup that fails or is cancelled leaves them there, and the assertion would abort a
+        /// debug or sanitizer build while it unwinds, instead of the failure reaching the error handling of the
+        /// backup. `copyS3File` and `copyAzureBlobStorageFile` drain it the same way.
+        task_tracker.safeWaitAll();
+        throw;
+    }
 
     return infos;
 }
