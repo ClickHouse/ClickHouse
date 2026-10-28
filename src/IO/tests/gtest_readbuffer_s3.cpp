@@ -920,7 +920,7 @@ TEST_F(ReadBufferFromS3Test, CappedResponsesEndingOnAFillBoundaryAreReassembled)
 
 TEST_F(ReadBufferFromS3Test, ResponsesThatStopBeforeTheRightBoundAreAnError)
 {
-    /// With a buffer of 64 the end of the response is seen with its last fill, with 20 only by the next read.
+    /// With a buffer of 64 the response ends inside a fill, with 20 on a fill boundary.
     for (const size_t buffer_size : {64, 20})
     {
         const auto client = std::make_shared<ClientFake>();
