@@ -12,7 +12,9 @@ SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_tuple_default;
 
-CREATE TABLE ts_tuple_default ENGINE = TimeSeries
+-- Pin the version before bucketed samples: later versions keep samples in the `AggregatingMergeTree` columns
+-- `samples`, `bucket`, `min_time`, `max_time` and reject the `timestamp` and `value` columns and plain extra columns.
+CREATE TABLE ts_tuple_default ENGINE = TimeSeries SETTINGS version = 10
 SAMPLES INNER COLUMNS
 (
     timestamp DateTime64(3),

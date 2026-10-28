@@ -16,7 +16,9 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/05
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (id UInt64, x Tuple(a UInt8, s String DEFAULT 'Hello')) ENGINE = MergeTree ORDER BY id;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts ENGINE = TimeSeries
+-- Pin the version before bucketed samples: later versions keep samples in the `AggregatingMergeTree` columns
+-- `samples`, `bucket`, `min_time`, `max_time` and reject the `timestamp` and `value` columns and plain extra columns.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ts ENGINE = TimeSeries SETTINGS version = 10
 SAMPLES INNER COLUMNS
 (
     timestamp DateTime64(3),
