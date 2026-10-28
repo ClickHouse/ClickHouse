@@ -1322,6 +1322,7 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
 
 Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     auto state = getKernelSnapshotState();
     return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
@@ -1345,6 +1346,7 @@ const DB::NameToNameMap & TableSnapshot::getPhysicalNamesMap() const
 
 const std::unordered_set<String> & TableSnapshot::getTimestampNtzPaths() const
 {
+    initOrUpdateSnapshot();
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->timestamp_ntz_paths;
