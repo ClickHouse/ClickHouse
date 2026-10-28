@@ -225,7 +225,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
-        /// It returns either the rows of its input, counted below, or the rows of a pass, which it counts. The walk goes on.
+        /// It counts the rows of the pass it returns; the rows of its input are counted below it.
         if (!limit_being_counted && isTwoPassCountTopKTransform(*processor))
             processors.emplace(processor);
 

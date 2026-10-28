@@ -516,10 +516,9 @@ QueryPlan makeRestrictedPlan(const TwoPassTemplate & templ, const std::vector<UI
     return plan;
 }
 
-/// Pilots over every 64th granule (key counts: reject a near-unique key or dominant values; group counts: lower bound B),
-/// a count pass, then the query restricted to the most frequent values (exact if the n-th count is at least the count
-/// of every other value), else over the values with at least max(B, n-th count) rows. Each pass is added to the running
-/// pipeline; input 0 is the original plan, used when the pilots reject.
+/// Pilots over every 64th granule (key counts: reject a near-unique key or dominant values; group counts: lower bound B), a count
+/// pass, the query over the most frequent values (exact if the n-th count is at least every other value's count), else over the
+/// values with at least max(B, n-th count) rows. Passes join the running pipeline; input 0 is the original plan, the fallback.
 class TwoPassCountTopKTransform final : public IProcessor
 {
 public:
@@ -945,7 +944,6 @@ private:
         num_values = std::min(minValues(templ->top()), counted.size());
         if (!templ->key_prunes_granules)
         {
-            /// Every pass reads all granules, so a larger set costs little and avoids a second pass over the other columns.
             const UInt64 max_rows = templ->read->getAnalyzedResult()->selected_rows / unpruned_rows_divisor;
             UInt64 rows = 0;
             for (size_t i = 0; i < num_values; ++i)
@@ -1128,10 +1126,8 @@ bool readsNarrowColumns(const ActionsDAG & dag, const String & filter_column)
     return true;
 }
 
-/// A part written before ALTER ADD COLUMN lacks the column: the reader computes it from its DEFAULT or MATERIALIZED expression with
-/// a DAG it builds again for every block of every pass (IMergeTreeReader::evaluateMissingDefaults), so even now() can change.
-/// Build that DAG the same way for the columns some selected part lacks, and require it to be deterministic. The reader also applies
-/// pending mutations on the fly.
+/// The reader applies pending mutations on the fly, and computes a column a part lacks from its DEFAULT or MATERIALIZED expression
+/// with a DAG built again for every block (IMergeTreeReader::evaluateMissingDefaults): build it the same way, require determinism.
 bool readerExpressionsAreRepeatable(const ReadFromMergeTree & read, const RangesInDataParts & parts)
 {
     if (const auto & mutations = read.getMutationsSnapshot(); mutations && mutations->hasDataMutations())
