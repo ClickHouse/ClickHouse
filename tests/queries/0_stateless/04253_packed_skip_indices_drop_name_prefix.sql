@@ -37,7 +37,7 @@ FROM (
     SELECT extractGroups(explain, 'Granules: (\\d+)/(\\d+)') AS g
     FROM (EXPLAIN indexes = 1 SELECT * FROM t_drop_prefix_a WHERE w = 250)
     WHERE match(explain, 'Granules: \\d+/\\d+') AND explain NOT LIKE '%PrimaryKey%'
-) SETTINGS allow_experimental_analyzer = 1;
+);
 CHECK TABLE t_drop_prefix_a SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_drop_prefix_a;
 
@@ -69,6 +69,6 @@ FROM (
     SELECT extractGroups(explain, 'Granules: (\\d+)/(\\d+)') AS g
     FROM (EXPLAIN indexes = 1 SELECT * FROM t_drop_prefix_ab WHERE v = 250)
     WHERE match(explain, 'Granules: \\d+/\\d+') AND explain NOT LIKE '%PrimaryKey%'
-) SETTINGS allow_experimental_analyzer = 1;
+);
 CHECK TABLE t_drop_prefix_ab SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_drop_prefix_ab;

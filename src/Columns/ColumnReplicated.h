@@ -206,7 +206,7 @@ public:
 private:
     struct InsertionCache;
 
-    InsertionCache & getInsertionCache(const ColumnReplicated & src);
+    InsertionCache & getInsertionCache();
     /// Returns the row of `nested_column` holding row `src_row` of the nested column of `src`,
     /// copying the value on the first request.
     size_t getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row);

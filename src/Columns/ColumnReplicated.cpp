@@ -27,27 +27,22 @@ struct ColumnReplicated::InsertionCache
     /// when copies of a row meet in the same destination, so smaller values are copied instead.
     static constexpr size_t MIN_VALUE_SIZE_TO_DEDUPLICATE = 1024;
 
-    /// The sources of one destination are parts of the same column, so the first one decides.
-    explicit InsertionCache(const IColumn & src_nested)
+    /// Returns the destination row for row `src_row` of the nested column of `src`. A new row is mapped
+    /// to `new_row` and sets `inserted`: the caller must copy the value there.
+    UInt64 findOrAdd(const ColumnReplicated & src, UInt64 src_row, UInt64 new_row, bool & inserted)
     {
-        const size_t src_rows = src_nested.size();
-        if (src_rows && src_nested.byteSize() / src_rows >= MIN_VALUE_SIZE_TO_DEDUPLICATE)
-            rows.emplace();
-    }
-
-    /// Returns the destination row for (`source_id`, `src_row`). A new pair is mapped to `new_row`
-    /// and sets `inserted`: the caller must copy the value there.
-    UInt64 findOrAdd(UInt64 source_id, UInt64 src_row, UInt64 new_row, bool & inserted)
-    {
-        const UInt128 key = (static_cast<UInt128>(source_id) << 64) | src_row;
+        const UInt128 key = (static_cast<UInt128>(src.id) << 64) | src_row;
         if (has_last_key && key == last_key)
         {
             inserted = false;
             return last_row;
         }
 
-        if (rows)
+        if (deduplicates(src))
         {
+            if (!rows)
+                rows.emplace();
+
             Rows::LookupResult it = nullptr;
             rows->emplace(key, it, inserted);
             if (inserted)
@@ -65,13 +60,41 @@ struct ColumnReplicated::InsertionCache
         return last_row;
     }
 
+    /// Whether rows of `src` go through `rows`. The sources of one destination can hold values of very
+    /// different sizes, so this is decided for each source.
+    bool deduplicates(const ColumnReplicated & src)
+    {
+        if (has_last_source && src.id == last_source_id)
+            return last_source_deduplicates;
+
+        HashMap<UInt64, bool>::LookupResult it = nullptr;
+        bool inserted = false;
+        source_deduplicates.emplace(src.id, it, inserted);
+        if (inserted)
+        {
+            const size_t src_rows = src.nested_column->size();
+            it->getMapped() = src_rows && src.nested_column->byteSize() / src_rows >= MIN_VALUE_SIZE_TO_DEDUPLICATE;
+        }
+
+        has_last_source = true;
+        last_source_id = src.id;
+        last_source_deduplicates = it->getMapped();
+        return last_source_deduplicates;
+    }
+
     /// (source column id, row of its nested column) -> row of the destination nested column holding its copy.
-    /// Without it only consecutive inserts of the same source row are deduplicated.
+    /// Created for the first source with large values; other sources only deduplicate consecutive inserts of a row.
     std::optional<Rows> rows;
     /// The last looked up key, so runs of the same source row skip the hash table.
     bool has_last_key = false;
     UInt128 last_key = 0;
     UInt64 last_row = 0;
+
+    /// Source column id -> whether its rows go through `rows`.
+    HashMap<UInt64, bool> source_deduplicates;
+    bool has_last_source = false;
+    UInt64 last_source_id = 0;
+    bool last_source_deduplicates = false;
 };
 
 ColumnReplicated::ColumnReplicated(MutableColumnPtr && nested_column_)
@@ -104,10 +127,10 @@ ColumnReplicated::ColumnReplicated(const ColumnReplicated & other)
 
 ColumnReplicated::~ColumnReplicated() = default;
 
-ColumnReplicated::InsertionCache & ColumnReplicated::getInsertionCache(const ColumnReplicated & src)
+ColumnReplicated::InsertionCache & ColumnReplicated::getInsertionCache()
 {
     if (!insertion_cache)
-        insertion_cache = std::make_unique<InsertionCache>(*src.nested_column);
+        insertion_cache = std::make_unique<InsertionCache>();
     return *insertion_cache;
 }
 
@@ -118,9 +141,9 @@ void ColumnReplicated::dropInsertionCache()
 
 size_t ColumnReplicated::getOrInsertSourceRow(const ColumnReplicated & src, size_t src_row)
 {
-    auto & cache = getInsertionCache(src);
+    auto & cache = getInsertionCache();
     bool inserted = false;
-    size_t row = cache.findOrAdd(src.id, src_row, nested_column->size(), inserted);
+    size_t row = cache.findOrAdd(src, src_row, nested_column->size(), inserted);
     if (inserted)
     {
         try
