@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -227,75 +228,37 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
-    std::atomic_bool failed = false;
+    /// A task per entry, so that an entry whose checksum is calculated by reading the whole file never holds up the
+    /// others, and a bound on how many tasks exist at once, so that a backup of millions of entries does not keep a
+    /// task for each of them: `TaskTracker::add` admits a task only while fewer than this many are in flight, collects
+    /// the finished ones as it goes and rethrows the first failure, which stops the loop below. Twice the threads of
+    /// the pool, so that a thread which has just finished a task finds the next one already scheduled.
+    const size_t max_tasks_inflight = 2 * std::max<size_t>(1, thread_pool.getMaxThreads());
 
-    /// The runner keeps every task until the end, and a backup can have millions of entries, so the entries are claimed
-    /// one by one from a shared index instead of getting a task each. One by one, because building an info may read the
-    /// whole file to calculate its checksum, so a task that happens to claim expensive entries must not keep the others
-    /// idle.
-    std::atomic<size_t> next_entry = 0;
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
-    /// A task returns after this many entries instead of claiming until none remain, so that it releases its slot of the
-    /// thread pool, which is shared by every backup of the server and has no queue beyond its threads: the scan of a
-    /// large backup would otherwise hold every slot, and another backup could neither start its own scan nor be
-    /// cancelled while it waits. The number trades the time a slot is held for the number of tasks retained; a smaller
-    /// portion would retain more of them, and the whole point here is to retain few.
-    static constexpr size_t entries_per_task = 128;
+    /// Passing references here is fine. All the objects are created **before** the tracker so they will be destroyed
+    /// after it in case of an exception
+    TaskTracker task_tracker(threadPoolCallbackRunnerUnsafe<void>(thread_pool, ThreadName::BACKUP_WORKER), max_tasks_inflight, limited_log);
 
-    /// Enough tasks to fill the pool even when there are fewer entries than that many per thread, or the scan of a
-    /// backup of few but large files - where building an info reads the whole file to checksum it - would run on fewer
-    /// threads than it could, and on a single one for a backup of 128 entries or fewer.
-    const size_t num_tasks = std::max(
-        (backup_entries.size() + entries_per_task - 1) / entries_per_task,
-        std::min(backup_entries.size(), thread_pool.getMaxThreads()));
-
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
-    try
+    for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        for (size_t task = 0; task != num_tasks; ++task)
+        task_tracker.add([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log,
+                          current_component = Coordination::getCurrentComponent()]
         {
-            if (failed)
-                break;
+            auto component_guard = Coordination::setCurrentComponent(current_component);
 
-            /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
-            /// of an exception
-            runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &next_entry, log, &failed, current_component = Coordination::getCurrentComponent()]()
-            {
-                auto component_guard = Coordination::setCurrentComponent(current_component);
-                for (size_t processed = 0; (processed != entries_per_task) && !failed; ++processed)
-                {
-                    const size_t i = next_entry.fetch_add(1);
-                    if (i >= backup_entries.size())
-                        return;
+            const auto & name = backup_entries[i].first;
+            const auto & entry = backup_entries[i].second;
 
-                    try
-                    {
-                        const auto & name = backup_entries[i].first;
-                        const auto & entry = backup_entries[i].second;
+            if (process_list_element)
+                process_list_element->checkTimeLimit();
 
-                        if (process_list_element)
-                            process_list_element->checkTimeLimit();
-
-                        infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
-                    }
-                    catch (...)
-                    {
-                        failed = true;
-                        throw;
-                    }
-                }
-            });
-        }
-    }
-    catch (...)
-    {
-        /// A task that could not be scheduled leaves the running ones scanning files for a backup that has already
-        /// failed, and the runner waits for them before the error is reported.
-        failed = true;
-        throw;
+            infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+        });
     }
 
-    runner.waitForAllToFinishAndRethrowFirstError();
+    task_tracker.waitAll();
 
     return infos;
 }
