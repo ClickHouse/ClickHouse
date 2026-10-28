@@ -1057,6 +1057,9 @@ if (ENABLE_TESTS)
     # attach all dbms gtest sources
     grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
     clickhouse_add_executable(unit_tests_dbms ${dbms_gtest_sources})
+    # Keeps the mode of the previous non-debug builds, so the smoke test can compare it with the build's mode.
+    set_property(SOURCE Common/tests/gtest_libcxx_hardening_fast.cpp
+        PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST")
     add_dependencies (unit_tests_dbms clickhouse-microbenchmarks-objects)
 
     # gtest framework has substandard code
