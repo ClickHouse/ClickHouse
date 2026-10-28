@@ -35,6 +35,52 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
 }
 
+/// Adds the physical columns which the `DEFAULT` expressions of `requested_columns` depend on (transitively),
+/// because `AddingDefaultsTransform` evaluates them for the missing values.
+static void addColumnsRequiredForDefaults(
+    Strings & columns_to_read,
+    const NamesAndTypesList & requested_columns,
+    const ColumnsDescription & columns,
+    const PrepareReadingFromFormatHiveParams & hive_parameters)
+{
+    const auto & column_defaults = columns.getDefaults();
+    if (column_defaults.empty())
+        return;
+
+    NameSet names_to_read(columns_to_read.begin(), columns_to_read.end());
+    NameSet visited;
+    std::vector<String> names_to_visit;
+    for (const auto & column : requested_columns)
+        names_to_visit.push_back(column.getNameInStorage());
+
+    while (!names_to_visit.empty())
+    {
+        const String name = std::move(names_to_visit.back());
+        names_to_visit.pop_back();
+
+        if (!visited.insert(name).second)
+            continue;
+
+        auto it = column_defaults.find(name);
+        if (it == column_defaults.end())
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+
+        for (const auto & required_name : columns_context.requiredColumns())
+        {
+            if (columns.hasPhysical(required_name)
+                && !hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(required_name)
+                && names_to_read.insert(required_name).second)
+                columns_to_read.push_back(required_name);
+
+            names_to_visit.push_back(required_name);
+        }
+    }
+}
+
 ReadFromFormatInfo prepareReadingFromFormat(
     const Strings & requested_columns,
     const StorageSnapshotPtr & storage_snapshot,
@@ -113,6 +159,9 @@ ReadFromFormatInfo prepareReadingFromFormat(
                     candidates.push_back(column);
             columns_to_read.push_back(ExpressionActions::getSmallestColumn(candidates.empty() ? columns_in_data_file : candidates).name);
         }
+
+        /// `ExtractColumnsTransform` drops them after `AddingDefaultsTransform`.
+        addColumnsRequiredForDefaults(columns_to_read, info.requested_columns, storage_snapshot->metadata->getColumns(), hive_parameters);
 
         info.columns_description = storage_snapshot->getDescriptionForColumns(columns_to_read);
     }

@@ -16,6 +16,23 @@ INSERT INTO t SETTINGS input_format_null_as_default = 1 FORMAT JSONColumnsWithMe
 -- Omitting the "b" column entirely gives a*2 as well.
 INSERT INTO t SETTINGS input_format_null_as_default = 1 FORMAT JSONColumns {"a":[9]}
 
+-- Only the null rows take the DEFAULT, 100 stays.
+INSERT INTO t SETTINGS input_format_null_as_default = 1 FORMAT JSONColumns {"a":[10,11,12],"b":[null,100,null]}
+
+-- With input_format_defaults_for_omitted_fields = 0 a null stays 0, as in JSONEachRow.
+INSERT INTO t SETTINGS input_format_null_as_default = 1, input_format_defaults_for_omitted_fields = 0 FORMAT JSONColumns {"a":[13],"b":[null]}
+
+-- An empty string with input_format_json_empty_as_default = 1 takes the DEFAULT too.
+INSERT INTO t SETTINGS input_format_json_empty_as_default = 1 FORMAT JSONColumns {"a":[14],"b":[""]}
+
 SELECT a, b FROM t ORDER BY a;
 
 DROP TABLE t;
+
+-- Reading only "b" also reads "a" for its DEFAULT.
+INSERT INTO FUNCTION file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b Nullable(UInt32)')
+    SELECT * FROM values('a UInt32, b Nullable(UInt32)', (6, NULL), (7, 3)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a*2');
+SELECT b FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a*2, c UInt32 DEFAULT b + 1');
+SELECT c FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a*2, c UInt32 DEFAULT b + 1');

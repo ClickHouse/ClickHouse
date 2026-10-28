@@ -2542,6 +2542,33 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
         throw;
     }
 }
+
+/// Replaces the not inserted columns in a default expression with their defaults, as the server does.
+void substituteNotInsertedColumns(ASTPtr & ast, const NameSet & inserted_columns, const ColumnsDescription & columns)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const String & name = identifier->name();
+        if (inserted_columns.contains(name) || !columns.has(name))
+            return;
+
+        const auto & column = columns.get(name);
+        ASTPtr default_value;
+        if (column.default_desc.expression)
+        {
+            default_value = column.default_desc.expression->clone();
+            substituteNotInsertedColumns(default_value, inserted_columns, columns);
+        }
+        else
+            default_value = make_intrusive<ASTLiteral>(column.type->getDefault());
+
+        ast = makeASTFunction("_CAST", std::move(default_value), make_intrusive<ASTLiteral>(column.type->getName()));
+        return;
+    }
+
+    for (auto & child : ast->children)
+        substituteNotInsertedColumns(child, inserted_columns, columns);
+}
 }
 
 
@@ -2720,10 +2747,20 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         if (parsed_insert_query->columns)
         {
             auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            NameSet inserted_columns;
+            for (const auto & col_name : columns->children)
+                inserted_columns.insert(col_name->getColumnName());
+
             ColumnsDescription reordered_description{};
             for (const auto & col_name : columns->children)
             {
                 auto col = columns_for_storage_file.get(col_name->getColumnName());
+                /// The storage has only the inserted columns.
+                if (col.default_desc.expression)
+                {
+                    col.default_desc.expression = col.default_desc.expression->clone();
+                    substituteNotInsertedColumns(col.default_desc.expression, inserted_columns, columns_description_for_query);
+                }
                 reordered_description.add(std::move(col));
             }
 
