@@ -92,6 +92,18 @@ SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT d, s, cou
 SELECT countIf(d = 7) > 60000 FROM t_two_pass_modify;
 DROP TABLE t_two_pass_modify;
 
+SELECT 'a pending DROP COLUMN, then ADD COLUMN of the same name and type: the part keeps the dropped one, not applied';
+DROP TABLE IF EXISTS t_two_pass_drop;
+CREATE TABLE t_two_pass_drop (k UInt64, s String, c UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_two_pass_drop;
+INSERT INTO t_two_pass_drop SELECT intHash64(number) % 1000, toString(number % 7), intHash64(number) % 1000 FROM numbers(200000);
+SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT c, s, count() FROM t_two_pass_drop GROUP BY c, s ORDER BY count() DESC LIMIT 10);
+ALTER TABLE t_two_pass_drop DROP COLUMN c SETTINGS alter_sync = 0, mutations_sync = 0;
+ALTER TABLE t_two_pass_drop ADD COLUMN c UInt64 DEFAULT rand() % 1000;
+SELECT countIf(explain LIKE '%TwoPassCountTopK%') FROM (EXPLAIN SELECT c, s, count() FROM t_two_pass_drop GROUP BY c, s ORDER BY count() DESC LIMIT 10);
+DROP TABLE t_two_pass_drop;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['TwoPassCountTopKPasses'] >= 3, ProfileEvents['TwoPassCountTopKFallbacks']
 FROM system.query_log

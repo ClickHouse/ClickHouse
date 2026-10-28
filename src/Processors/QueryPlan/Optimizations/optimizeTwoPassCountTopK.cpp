@@ -1130,7 +1130,9 @@ bool readsNarrowColumns(const ActionsDAG & dag, const String & filter_column)
 /// with a DAG built again for every block (IMergeTreeReader::evaluateMissingDefaults): build it the same way, require determinism.
 bool readerExpressionsAreRepeatable(const ReadFromMergeTree & read, const RangesInDataParts & parts)
 {
-    if (const auto & mutations = read.getMutationsSnapshot(); mutations && mutations->hasDataMutations())
+    /// A pending DROP or RENAME COLUMN makes the reader compute a column the part stores under the same name and type.
+    const auto & mutations = read.getMutationsSnapshot();
+    if (mutations && (mutations->hasDataMutations() || mutations->hasMetadataMutations()))
         return false;
     const auto & metadata = read.getStorageMetadata();
     auto columns = metadata->getColumns();

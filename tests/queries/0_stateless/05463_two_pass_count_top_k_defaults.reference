@@ -47,4 +47,7 @@ a pending ALTER MODIFY COLUMN from Nullable: the reader replaces NULL with the d
 0
 1
 1
+a pending DROP COLUMN, then ADD COLUMN of the same name and type: the part keeps the dropped one, not applied
+1
+0
 two_pass_defaults_on	1	0
