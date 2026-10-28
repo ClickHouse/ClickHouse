@@ -116,12 +116,12 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [2c23871da](https://github.com/dzbarsky/clickhouse/commit/2c23871dae7e606a32940da2b4776b5bb2154521), both `-c opt` builds produced the same stripped ClickHouse SHA-256 and byte count as native CMake.
+At [babb29e66](https://github.com/dzbarsky/clickhouse/commit/babb29e66c3ca06418eef4e8c73f1529334ae1ab), both `-c opt` builds produced the same stripped ClickHouse SHA-256 and byte count as native CMake.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/7022f4fb-01c8-40d7-a760-f2f3bebd2e34) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/e193e0d9-45bf-4ab7-87f1-e6edfc984380) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/3a2f27fe-5d5d-419d-88fa-8d51bba2719a) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/fc14ef41-68d4-4178-a7f0-f3814f3c4e71) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
 The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks for the previous comparison.
 
@@ -176,6 +176,17 @@ Before invoking Bazel, the script verifies that the uncompressed file matches
 907,067,440 bytes with SHA-256 `cd204de2504bbe77c5e2b0babce701943133374e77490f36ad8b679d18b56646`.
 A Linux ARM64 executor checks the compiler, strips both executables, and runs
 `cmp`. The coordinator downloads only the comparison result, `status.json`.
+
+## Ordinary ClickHouse builds
+
+Both builds used `--//bazel:cmake_metadata=false` at [babb29e66](https://github.com/dzbarsky/clickhouse/commit/babb29e66c3ca06418eef4e8c73f1529334ae1ab). Each native executor ran SQL and PRQL queries with the resulting `//:clickhouse` executable.
+
+| Build | Raw executable SHA-256 | Bytes |
+| --- | --- | ---: |
+| [x86-64 `-c fastbuild`](https://app.buildbuddy.io/invocation/9594b53e-d090-4a1e-8a2c-7a62f3a0169b) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2175634528 |
+| [ARM64 `-c opt`](https://app.buildbuddy.io/invocation/b78c9672-5b35-4189-91ab-adca9678194d) | `68ffac97099dbd03449efcb2a90043047dca0914657bd7a2dfe8fb19feb3f954` | 911410032 |
+
+The x86-64 fastbuild matches the earlier x86-64 fastbuild when compared by SHA-256 and byte count. The earlier executable had SHA-256 `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` and 2175634528 bytes. [Earlier fastbuild](https://app.buildbuddy.io/invocation/b5f2d5ff-b97e-423b-bec7-b32127aee8cf)
 
 ## Rebuild a native CMake reference
 
