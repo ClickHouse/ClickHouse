@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/AggregateFunctionGeoMonotoneRing.h>
+#include <AggregateFunctions/AggregateFunctionGeoRectangle.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
 #include <boost/container/devector.hpp>
@@ -13,8 +14,9 @@ namespace DB
 using GeoMonotoneDeque = boost::container::devector<CartesianPoint, AllocatorWithMemoryTracking<CartesianPoint>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using GeoBidirectionalMonotoneRing = GeoMonotoneRingImpl<GeoMonotoneDeque>;
 
-/// Valid monotone rings whose closed x projections are strictly separated. An insertion may
-/// join only the end slabs of at most two neighbours. No unaffected ring is read or copied.
+/// Valid monotone rings whose closed x projections are separated by more than `margin`
+/// (see `geoSeparationMargin`). An insertion may join only the end slabs of at most two
+/// neighbours. No unaffected ring is read or copied.
 struct GeoMonotoneComponents
 {
     using Value = std::pair<const Float64, GeoBidirectionalMonotoneRing>;
@@ -22,6 +24,10 @@ struct GeoMonotoneComponents
 
     Rings rings;
     size_t total_points = 0;
+    /// Must be derived from a bound on the absolute value of every coordinate of every ring.
+    Float64 margin;
+
+    explicit GeoMonotoneComponents(Float64 margin_) : margin(margin_) {}
 
     template <typename Chain>
     static GeoBidirectionalMonotoneRing copyRing(const GeoMonotoneRingImpl<Chain> & source)
@@ -38,8 +44,8 @@ struct GeoMonotoneComponents
         const auto left_x = incoming.lower.front().template get<0>();
         const auto right_x = incoming.lower.back().template get<0>();
         auto next = rings.lower_bound(left_x);
-        if ((next != rings.end() && next->first <= right_x)
-            || (next != rings.begin() && std::prev(next)->second.lower.back().template get<0>() >= left_x))
+        if ((next != rings.end() && !geoSeparatedBy(right_x, next->first, margin))
+            || (next != rings.begin() && !geoSeparatedBy(std::prev(next)->second.lower.back().template get<0>(), left_x, margin)))
             return false;
         rings.emplace_hint(next, left_x, copyRing(incoming));
         total_points += incoming.points();
@@ -51,16 +57,18 @@ struct GeoMonotoneComponents
     {
         const auto left_x = incoming.lower.front().template get<0>();
         const auto right_x = incoming.lower.back().template get<0>();
+        /// Rings closer than `margin` count as neighbours: they must either be joined through a
+        /// local certificate, or the caller falls back to the general overlay.
         auto first = rings.lower_bound(left_x);
         if (first != rings.begin())
         {
             auto previous = std::prev(first);
-            if (previous->second.lower.back().template get<0>() >= left_x)
+            if (!geoSeparatedBy(previous->second.lower.back().template get<0>(), left_x, margin))
                 first = previous;
         }
         auto end = first;
         size_t neighbours = 0;
-        while (end != rings.end() && end->first <= right_x)
+        while (end != rings.end() && !geoSeparatedBy(right_x, end->first, margin))
         {
             if (++neighbours > 2)
                 return false;

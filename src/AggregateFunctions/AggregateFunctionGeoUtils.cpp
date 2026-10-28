@@ -606,15 +606,28 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                 using Box = boost::geometry::model::box<CartesianPoint>;
                 const auto first_box = boost::geometry::return_envelope<Box>(first);
                 const auto second_box = boost::geometry::return_envelope<Box>(second);
+                const auto magnitude = std::max(
+                    {std::abs(first_box.min_corner().template get<0>()), std::abs(first_box.min_corner().template get<1>()),
+                     std::abs(first_box.max_corner().template get<0>()), std::abs(first_box.max_corner().template get<1>()),
+                     std::abs(second_box.min_corner().template get<0>()), std::abs(second_box.min_corner().template get<1>()),
+                     std::abs(second_box.max_corner().template get<0>()), std::abs(second_box.max_corner().template get<1>())});
+                /// The envelopes bound every coordinate of both operands.
+                const auto margin = geoSeparationMargin(magnitude);
                 auto separated = [&]<size_t Dimension>()
                 {
-                    return boost::geometry::get<boost::geometry::max_corner, Dimension>(first_box)
-                            < boost::geometry::get<boost::geometry::min_corner, Dimension>(second_box)
-                        || boost::geometry::get<boost::geometry::max_corner, Dimension>(second_box)
-                            < boost::geometry::get<boost::geometry::min_corner, Dimension>(first_box);
+                    return geoSeparatedBy(
+                               boost::geometry::get<boost::geometry::max_corner, Dimension>(first_box),
+                               boost::geometry::get<boost::geometry::min_corner, Dimension>(second_box),
+                               margin)
+                        || geoSeparatedBy(
+                               boost::geometry::get<boost::geometry::max_corner, Dimension>(second_box),
+                               boost::geometry::get<boost::geometry::min_corner, Dimension>(first_box),
+                               margin);
                 };
-                /// Strict separation excludes boundary contacts as well as interior intersections.
-                /// The caller still normalizes and validates the complete result and its point budget.
+                /// Separation by more than the margin excludes boundary contacts and interior
+                /// intersections, also under the tolerances of the geometry validator; nearly
+                /// adjacent boundaries use the general overlay. The caller still normalizes and
+                /// validates the complete result and its point budget.
                 bool disjoint = separated.template operator()<0>() || separated.template operator()<1>();
                 if (!disjoint && first.size() + second.size() >= 64)
                 {
@@ -640,7 +653,10 @@ void unionPolygonalGeometries(const CartesianMultiPolygon & left, const Cartesia
                         for (const auto & polygon : larger)
                         {
                             const auto box = boost::geometry::return_envelope<Box>(polygon);
-                            if (index.qbegin(boost::geometry::index::intersects(box)) != index.qend())
+                            const Box widened{
+                                {box.min_corner().template get<0>() - margin, box.min_corner().template get<1>() - margin},
+                                {box.max_corner().template get<0>() + margin, box.max_corner().template get<1>() + margin}};
+                            if (index.qbegin(boost::geometry::index::intersects(widened)) != index.qend())
                             {
                                 disjoint = false;
                                 break;

@@ -152,11 +152,12 @@ struct GroupPolygonIntersectData
                 return true;
             }
             /// Avoid copying an old ring just to discover an unsupported internal overlap.
+            const auto margin = geoSeparationMargin(bounds.magnitude());
             if (!(incoming.canAppend(hole)
-                    || incoming.lower.back().template get<0>() < hole.lower.front().get<0>()
-                    || hole.lower.back().get<0>() < incoming.lower.front().template get<0>()))
+                    || geoSeparatedBy(incoming.lower.back().template get<0>(), hole.lower.front().get<0>(), margin)
+                    || geoSeparatedBy(hole.lower.back().get<0>(), incoming.lower.front().template get<0>(), margin)))
                 return false;
-            auto promoted = std::make_unique<GeoMonotoneComponents>();
+            auto promoted = std::make_unique<GeoMonotoneComponents>(margin);
             promoted->insertDisjoint(hole);
             if (!promoted->insert(incoming))
                 return false;
@@ -204,7 +205,7 @@ struct GroupPolygonIntersectData
         state->exterior = polygon.outer();
         state->bounds = *bounds;
         if (polygon.inners().size() > 1)
-            state->components = std::make_unique<GeoMonotoneComponents>();
+            state->components = std::make_unique<GeoMonotoneComponents>(geoSeparationMargin(bounds->magnitude()));
         for (const auto & ring : polygon.inners())
         {
             auto parsed = GeoMonotoneRing::fromRing(ring);
@@ -325,9 +326,10 @@ struct GroupPolygonIntersectData
     }
 
     /// For a common exterior, intersection adds the incoming holes to the existing holes.
-    /// Strictly disjoint bounding boxes prove that no old/new hole boundaries interact.
-    /// Each operand has already passed full validation, so this preserves topology and a
-    /// nonempty result without revisiting the entire growing boundary. No input is deferred.
+    /// Bounding boxes separated by more than `geoSeparationMargin` prove that no old/new hole
+    /// boundaries interact, also under the tolerances of the geometry validator. Each operand
+    /// has already passed full validation, so this preserves topology and a nonempty result
+    /// without revisiting the entire growing boundary. No input is deferred.
     bool appendDisjointHoles(const CartesianMultiPolygon & incoming, const char * function_name)
     {
         if (chunks.size() != 1 || chunks[0].size() != 1 || incoming.size() != 1)
@@ -337,13 +339,17 @@ struct GroupPolygonIntersectData
         const auto & next = incoming[0];
         if (!equalExteriorCycles(current.outer(), next.outer()))
             return false;
+        Float64 magnitude = 0;
         for (const auto & point : current.outer())
         {
             /// R-tree splitting uses box areas. Keep those products within `Float64`;
             /// geometries outside this range use the existing wide overlay path.
             if (std::abs(point.get<0>()) > 0x1p128 || std::abs(point.get<1>()) > 0x1p128)
                 return false;
+            magnitude = std::max({magnitude, std::abs(point.get<0>()), std::abs(point.get<1>())});
         }
+        /// Every hole lies inside the common exterior, so its magnitude bounds all hole coordinates.
+        const auto margin = geoSeparationMargin(magnitude);
 
         if (next.inners().empty())
             return true;
@@ -361,7 +367,10 @@ struct GroupPolygonIntersectData
         for (const auto & ring : next.inners())
         {
             auto box = boost::geometry::return_envelope<Box>(ring);
-            if (hole_index->qbegin(boost::geometry::index::intersects(box)) != hole_index->qend())
+            const Box widened{
+                {box.min_corner().get<0>() - margin, box.min_corner().get<1>() - margin},
+                {box.max_corner().get<0>() + margin, box.max_corner().get<1>() + margin}};
+            if (hole_index->qbegin(boost::geometry::index::intersects(widened)) != hole_index->qend())
                 return false;
             boxes.push_back(box);
             added_points += ring.size();
