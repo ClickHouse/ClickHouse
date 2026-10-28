@@ -6,7 +6,6 @@
 -- posting-rank space positions are addressed in), and curated rows cover repeated tokens
 -- (frequency exceptions) and 3-term phrases.
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
@@ -103,7 +102,8 @@ CREATE TABLE tab_m_idx (
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS allow_experimental_text_index_phrase_search = 1;
+-- The codec keeps the phrase on the index path, whose blocks are counted at the end.
+SETTINGS allow_experimental_text_index_phrase_search = 1, text_index_posting_list_codec = 'pfor';
 
 -- Stop background merges so the separate INSERTs stay as separate parts until the explicit OPTIMIZE.
 SYSTEM STOP MERGES tab_m_idx;

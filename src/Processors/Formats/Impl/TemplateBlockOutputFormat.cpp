@@ -198,6 +198,54 @@ void TemplateBlockOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
+namespace
+{
+
+ParsedTemplateFormatString getResultsetFormat(const FormatSettings & settings)
+{
+    auto idx_resultset_by_name = [](const String & partName)
+    {
+        return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
+    };
+    ParsedTemplateFormatString resultset_format;
+    if (settings.template_settings.resultset_format.empty())
+    {
+        /// Default format string: "${data}"
+        if (settings.template_settings.resultset_format_template.empty())
+        {
+            resultset_format.delimiters.resize(2);
+            resultset_format.escaping_rules.emplace_back(ParsedTemplateFormatString::EscapingRule::None);
+            resultset_format.format_idx_to_column_idx.emplace_back(0);
+            resultset_format.column_names.emplace_back("data");
+        }
+        else
+        {
+            resultset_format.parse(settings.template_settings.resultset_format_template, idx_resultset_by_name);
+        }
+    }
+    else
+    {
+        /// Read format string from file
+        resultset_format = ParsedTemplateFormatString(
+            FormatSchemaInfo(
+                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                /*format_schema=*/settings.template_settings.resultset_format,
+                /*format_schema_message_name=*/"",
+                /*format=*/"Template",
+                /*require_message=*/false,
+                /*is_server=*/settings.schema.is_server,
+                /*format_schema_path=*/settings.schema.format_schema_path),
+            idx_resultset_by_name);
+        if (!settings.template_settings.resultset_format_template.empty())
+        {
+            throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_resultset or format_template_resultset_format, but not both");
+        }
+    }
+    return resultset_format;
+}
+
+}
+
 void registerOutputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
@@ -207,45 +255,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
             const FormatSettings & settings,
             FormatFilterInfoPtr /*format_filter_info*/)
     {
-        ParsedTemplateFormatString resultset_format;
-        auto idx_resultset_by_name = [&](const String & partName)
-        {
-            return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
-        };
-        if (settings.template_settings.resultset_format.empty())
-        {
-            /// Default format string: "${data}"
-            if (settings.template_settings.resultset_format_template.empty())
-            {
-                resultset_format.delimiters.resize(2);
-                resultset_format.escaping_rules.emplace_back(ParsedTemplateFormatString::EscapingRule::None);
-                resultset_format.format_idx_to_column_idx.emplace_back(0);
-                resultset_format.column_names.emplace_back("data");
-            }
-            else
-            {
-                resultset_format = ParsedTemplateFormatString();
-                resultset_format.parse(settings.template_settings.resultset_format_template, idx_resultset_by_name);
-            }
-        }
-        else
-        {
-            /// Read format string from file
-            resultset_format = ParsedTemplateFormatString(
-                FormatSchemaInfo(
-                    /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
-                    /*format_schema=*/settings.template_settings.resultset_format,
-                    /*format_schema_message_name=*/"",
-                    /*format=*/"Template",
-                    /*require_message=*/false,
-                    /*is_server=*/settings.schema.is_server,
-                    /*format_schema_path=*/settings.schema.format_schema_path),
-                idx_resultset_by_name);
-            if (!settings.template_settings.resultset_format_template.empty())
-            {
-                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_resultset or format_template_resultset_format, but not both");
-            }
-        }
+        ParsedTemplateFormatString resultset_format = getResultsetFormat(settings);
 
         ParsedTemplateFormatString row_format;
         auto idx_row_by_name = [&](const String & colName)
@@ -279,19 +289,11 @@ void registerOutputFormatTemplate(FormatFactory & factory)
 
     factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)
     {
-        if (settings.template_settings.resultset_format.empty())
-            return true;
-        auto resultset_format = ParsedTemplateFormatString(
-            FormatSchemaInfo(
-                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
-                /*format_schema=*/settings.template_settings.resultset_format,
-                /*format_schema_message_name=*/"",
-                /*format=*/"Template",
-                /*require_message=*/false,
-                /*is_server=*/settings.schema.is_server,
-                /*format_schema_path=*/settings.schema.format_schema_path),
-            [&](const String & partName) { return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName)); });
-        return resultset_format.delimiters.empty() || resultset_format.delimiters.back().empty();
+        if (!settings.template_settings.row_between_delimiter.empty())
+            return false;
+        ParsedTemplateFormatString resultset_format = getResultsetFormat(settings);
+        /// Only ${data} with nothing after it: the text before it is not written again when appending.
+        return resultset_format.columnsCount() == 1 && resultset_format.delimiters.back().empty();
     });
 }
 }
