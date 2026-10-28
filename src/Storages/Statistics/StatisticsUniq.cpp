@@ -8,6 +8,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -112,6 +114,15 @@ UInt64 StatisticsUniq::estimateCardinality() const
     auto column = collector->getResultType()->createColumn();
     collector->insertResultInto(data, *column, nullptr);
     return column->getUInt(0);
+}
+
+Float64 StatisticsUniq::cardinalityRelativeError() const
+{
+    /// `UniquesHashSet` keeps every hash until it has UNIQUES_HASH_MAX_SIZE of them, then it keeps at least half of that
+    constexpr UInt64 max_hashes = 1ULL << 16;
+    if (estimateCardinality() < max_hashes / 2)
+        return 0;
+    return 1.0 / std::sqrt(max_hashes / 2.0);
 }
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)

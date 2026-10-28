@@ -320,6 +320,11 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
 }
 
+Float64 IStatistics::cardinalityRelativeError() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
+}
+
 std::optional<Float64> IStatistics::estimateEqual(const Field & /*val*/) const
 {
     return std::nullopt;
@@ -451,6 +456,13 @@ UInt64 ColumnStatistics::estimateCardinality() const
     }
     /// if we don't have uniq statistics, we use a mock one, assuming there are 90% different unique values.
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
+}
+
+Float64 ColumnStatistics::cardinalityRelativeError() const
+{
+    if (const IStatistics * uniq_stats = findUniqStats(stats))
+        return uniq_stats->cardinalityRelativeError();
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column statistics have no uniq sketch to estimate the cardinality");
 }
 
 bool ColumnStatistics::hasNullCount() const

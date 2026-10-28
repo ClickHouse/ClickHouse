@@ -88,6 +88,8 @@ public:
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;
+    /// The relative standard error of `estimateCardinality`, 0 when it is exact.
+    virtual Float64 cardinalityRelativeError() const;
 
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
@@ -167,6 +169,8 @@ public:
     /// a measurement.
     bool hasCardinality() const;
     UInt64 estimateCardinality() const;
+    /// Requires `hasCardinality`.
+    Float64 cardinalityRelativeError() const;
     UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.

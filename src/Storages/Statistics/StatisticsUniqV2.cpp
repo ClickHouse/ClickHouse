@@ -8,6 +8,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -124,6 +126,14 @@ UInt64 StatisticsUniqV2::estimateCardinality() const
     cached_cardinality_plus_one = cardinality + 1;
 
     return cardinality;
+}
+
+Float64 StatisticsUniqV2::cardinalityRelativeError() const
+{
+    /// `uniqCombined64` counts exactly up to 2^(K-5) values, then it is HyperLogLog
+    if (estimateCardinality() < (1ULL << (UNIQ_COMBINED_PRECISION - 5)) / 2)
+        return 0;
+    return 1.04 / std::sqrt(static_cast<Float64>(1ULL << UNIQ_COMBINED_PRECISION));
 }
 
 bool uniqV2StatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
