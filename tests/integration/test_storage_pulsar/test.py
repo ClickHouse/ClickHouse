@@ -874,6 +874,53 @@ def test_max_rows_per_message_zero_rejected(pulsar_cluster):
     )
     assert "BAD_ARGUMENTS" in error
 
+    # For `Avro`, the query setting `output_format_avro_rows_in_file` overrides the validated
+    # table setting when the sink is created, so the effective limit is checked on `INSERT` too.
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_writer (key UInt64, value UInt64)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = 'zero_rows_avro_topic',
+                 pulsar_group_name = 'zero_rows_avro_group',
+                 pulsar_format = 'Avro'
+        """
+    )
+    error = instance.query_and_get_error(
+        "INSERT INTO test.pulsar_writer SETTINGS output_format_avro_rows_in_file = 0 VALUES (1, 1)"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
+def test_column_expressions_rejected(pulsar_cluster):
+    # `PulsarSource` does not evaluate column expressions, so a `DEFAULT` would be silently
+    # replaced by the type default for a field missing from a message.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for column in ["value UInt64 DEFAULT 42", "value UInt64 MATERIALIZED key + 1", "value UInt64 EPHEMERAL"]:
+        error = instance.query_and_get_error(
+            f"""
+            CREATE TABLE test.pulsar_reader (key UInt64, {column})
+            ENGINE = Pulsar
+            SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                     pulsar_topic_list = 'column_expressions_topic',
+                     pulsar_group_name = 'column_expressions_group',
+                     pulsar_format = 'JSONEachRow'
+            """
+        )
+        assert "BAD_ARGUMENTS" in error
+
+    # `ALIAS` columns are computed on read and remain supported.
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_reader (key UInt64, value UInt64, doubled UInt64 ALIAS value * 2)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_topic_list = 'column_expressions_topic',
+                 pulsar_group_name = 'column_expressions_group',
+                 pulsar_format = 'JSONEachRow'
+        """
+    )
+
 
 def test_remote_host_filter_applies_to_service_url(pulsar_cluster):
     # The engine dials the brokers of `pulsar_service_url`, so the address must pass the

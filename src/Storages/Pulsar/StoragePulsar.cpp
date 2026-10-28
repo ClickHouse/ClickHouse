@@ -466,12 +466,21 @@ StoragePulsar::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
     const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
 
-    auto producer = std::make_unique<PulsarProducer>(createProducer(), topics[0], shutdown_called, header);
-
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
+
+    /// `MessageQueueSink` advances the row only inside the per-message loop, so a zero limit
+    /// would make an `INSERT` into a row-based format spin without ever consuming a row.
+    /// The table setting is validated at `CREATE`, but the query setting above can override it.
+    if (max_rows < 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The maximum number of rows per Pulsar message must be at least 1 (check `output_format_avro_rows_in_file`)");
+
+    auto producer = std::make_unique<PulsarProducer>(createProducer(), topics[0], shutdown_called, header);
+
     return std::make_shared<MessageQueueSink>(
         std::make_shared<const Block>(header), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
@@ -901,6 +910,25 @@ void registerStoragePulsar(StorageFactory & factory)
             args.getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_service_url].value, macros_info),
             args.getContext());
 
+        /// `PulsarSource` parses messages without evaluating column expressions, so a `DEFAULT`
+        /// expression would silently be replaced by the type default for a missing field.
+        /// Allow only ordinary columns without an expression and `ALIAS` columns, like `Kafka` does.
+        if (is_fresh_definition)
+        {
+            for (const auto & column : args.columns)
+            {
+                const auto & default_desc = column.default_desc;
+                const bool supported = default_desc.kind == ColumnDefaultKind::Alias
+                    || (default_desc.kind == ColumnDefaultKind::Default && !default_desc.expression);
+                if (!supported)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The `Pulsar` table engine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns, "
+                        "but column `{}` has one",
+                        column.name);
+            }
+        }
+
         if (!(*pulsar_settings)[PulsarSetting::pulsar_group_name].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_group_name` setting");
 
@@ -1005,8 +1033,8 @@ The engine is experimental. To create a table with it, the setting `enable_pulsa
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
     ...
 ) ENGINE = Pulsar SETTINGS
     pulsar_service_url = 'pulsar://host:port',
