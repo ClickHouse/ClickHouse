@@ -77,11 +77,13 @@ namespace DB::FailPoints
 {
     extern const char delta_kernel_force_stale_token_error[];
     extern const char delta_kernel_snapshot_load_pause[];
+    extern const char delta_kernel_snapshot_load_worker_dropped[];
 }
 
 namespace CurrentMetrics
 {
     extern const Metric DeltaLakeSnapshotLoadsStuck;
+    extern const Metric DeltaLakeSnapshotLoadWorkers;
 }
 
 namespace DeltaLake
@@ -1033,6 +1035,48 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     /// The kernel FFI has no cancellation hook, so a stuck call could not be killed (#117280).
     /// It runs on a worker thread which never touches `this` and may outlive every waiter.
 
+    /// Owns the worker permit and answers the waiters. It lives in the scheduled job, so it is also
+    /// destroyed when the pool drops the job without running it (setting up the pool thread can
+    /// throw): the permit is returned and the waiters get an error either way.
+    struct Job : private boost::noncopyable
+    {
+        std::shared_ptr<InflightSnapshotLoad> load = std::make_shared<InflightSnapshotLoad>();
+        std::promise<std::shared_ptr<KernelSnapshotState>> result;
+        std::string table_location;
+        bool answered = false;
+        bool holds_permit = false;
+
+        ~Job()
+        {
+            if (!answered)
+            {
+                try
+                {
+                    result.set_exception(std::make_exception_ptr(DB::Exception(
+                        DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
+                        "The worker thread loading the snapshot of the Delta Lake table at {} did not start",
+                        table_location)));
+                }
+                catch (...)
+                {
+                    /// The broken promise still answers the waiters.
+                    DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
+            if (!holds_permit)
+                return;
+            /// If every waiter already gave up, undoing the stuck-load accounting is ours to do.
+            if (load->state.exchange(InflightSnapshotLoad::State::Finished) == InflightSnapshotLoad::State::Abandoned)
+                CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
+            CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadWorkers);
+            snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
+        }
+    };
+    auto job = std::make_shared<Job>();
+    job->table_location = kernel_helper->getTableLocation();
+    auto load = job->load;
+    load->future = job->result.get_future().share();
+
     /// Reserve a permit before launching, so the bound holds under concurrency.
     const Int64 max_workers = maxSnapshotLoadWorkers();
     if (max_workers == 0)
@@ -1052,22 +1096,9 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
             kernel_helper->getTableLocation(), max_workers,
             CurrentMetrics::get(CurrentMetrics::DeltaLakeSnapshotLoadsStuck));
     }
-    /// Released here unless handed over to the worker.
-    bool permit_transferred = false;
-    SCOPE_EXIT({
-        if (!permit_transferred)
-            snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
-    });
-
-    auto load = std::make_shared<InflightSnapshotLoad>();
-    auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
-        [kernel_helper, version_to_build, load]
-        {
-            /// Simulates a kernel call which never returns (used by tests).
-            DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
-            return std::make_shared<KernelSnapshotState>(*kernel_helper, version_to_build, load->credentials_fingerprint);
-        });
-    load->future = task->get_future().share();
+    /// From here on the job returns the permit when it is destroyed, whether it ran or not.
+    job->holds_permit = true;
+    CurrentMetrics::add(CurrentMetrics::DeltaLakeSnapshotLoadWorkers);
 
     /// The build is shared, so it gets its own thread group: the starting query's context keeps the
     /// kernel's log lines attributed to it, but its memory limits do not apply to other waiters.
@@ -1085,18 +1116,27 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
         thread_group = DB::CurrentThread::getGroup();
 
     ThreadFromGlobalPool thread(
-        [task, load, thread_group]
+        [job, kernel_helper, version_to_build, thread_group]
         {
+            /// Simulates the pool dropping the job before it runs (used by tests).
+            fiu_do_on(DB::FailPoints::delta_kernel_snapshot_load_worker_dropped, { return; });
+
             DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
-            (*task)();
-            /// If every waiter already gave up, undoing the stuck-load accounting is ours to do.
-            if (load->state.exchange(InflightSnapshotLoad::State::Finished) == InflightSnapshotLoad::State::Abandoned)
-                CurrentMetrics::sub(CurrentMetrics::DeltaLakeSnapshotLoadsStuck);
-            snapshot_load_worker_permits.fetch_sub(1, std::memory_order_relaxed);
+            try
+            {
+                /// Simulates a kernel call which never returns (used by tests).
+                DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
+                job->result.set_value(std::make_shared<KernelSnapshotState>(
+                    *kernel_helper, version_to_build, job->load->credentials_fingerprint));
+            }
+            catch (...)
+            {
+                job->result.set_exception(std::current_exception());
+            }
+            job->answered = true;
         });
-    /// Waiters wait on the future; the captured state keeps the worker's data alive.
+    /// Waiters wait on the future; the job keeps the worker's data alive.
     thread.detach();
-    permit_transferred = true;
     return load;
 }
 

@@ -6644,6 +6644,14 @@ def get_stuck_snapshot_loads(instance):
     )
 
 
+def get_snapshot_load_workers(instance):
+    return int(
+        instance.query(
+            "SELECT value FROM system.metrics WHERE metric = 'DeltaLakeSnapshotLoadWorkers'"
+        )
+    )
+
+
 def test_kill_query_during_snapshot_load(started_cluster):
     """A snapshot load stuck inside delta-kernel must not make the query unkillable:
     KILL QUERY has to abort the waiting query although the kernel call has not returned yet."""
@@ -6894,6 +6902,41 @@ def test_latest_snapshot_load_shared(started_cluster):
 
     # The second query completes from the build which the first one started.
     assert second_future.result(timeout=60).strip() == "10"
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
+def test_snapshot_load_worker_that_never_runs(started_cluster):
+    """A snapshot-load job which the thread pool drops without running it (setting up the pool
+    thread can throw) must still answer its waiters and return its worker permit, so that later
+    loads are not refused."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_snapshot_load_worker_that_never_runs")
+    delta_path = f"/{TABLE_NAME}"
+    failpoint = "delta_kernel_snapshot_load_worker_dropped"
+
+    write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+    engine_args = f"s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{started_cluster.minio_bucket}/'"
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE = DeltaLake({engine_args})")
+
+    # The query resolves the latest version through a load of its own, whose job is dropped.
+    instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        error = instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+    assert "CANNOT_SCHEDULE_TASK" in error and "did not start" in error, error
+
+    # The dropped job returned its permit.
+    for _ in range(300):
+        if get_snapshot_load_workers(instance) == 0:
+            break
+        time.sleep(0.1)
+    assert get_snapshot_load_workers(instance) == 0
+    assert get_stuck_snapshot_loads(instance) == 0
+
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME}").strip() == "10"
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 

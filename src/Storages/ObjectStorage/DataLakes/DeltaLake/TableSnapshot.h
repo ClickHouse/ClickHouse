@@ -122,7 +122,7 @@ private:
         enum class State
         {
             Running,
-            Finished,   /// Set by the worker when the kernel call returned.
+            Finished,   /// Set when the worker's job ends, also when it never ran.
             Abandoned,  /// Set by the first waiter that gave up (KILL QUERY or a timeout).
         };
 
