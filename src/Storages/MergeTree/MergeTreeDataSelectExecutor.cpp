@@ -923,17 +923,40 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
+    /// Whether the part can match the filter by its estimates.
+    auto part_can_match = [&](const RangesInDataPart & part, const Estimates & estimates)
+    {
+        try
+        {
+            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            {
+                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                return false;
+            }
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                part.data_part->name), LogsLevel::debug);
+        }
+        return true;
+    };
+
     /// Statistics that are already in memory cost nothing, so the parts with them are always pruned.
     /// Only the parts whose statistics would be loaded count for the size of the read.
-    std::vector<Estimates> parts_estimates(parts.size());
+    /// The parts with estimates in memory are pruned right away, and only the decision is kept: the estimates
+    /// of a part may contain every column with statistics, and holding them for all parts at once would take
+    /// memory proportional to the number of parts, unlike the bounded window of `loadStatisticsOfPartsInParallel`.
     std::vector<char> estimates_in_memory(parts.size());
+    std::vector<char> can_match_in_memory(parts.size());
     RangesInDataParts parts_to_load_statistics;
     for (size_t i = 0; i < parts.size(); ++i)
     {
         if (auto estimates = parts[i].data_part->tryGetEstimatesFromMemory(required_columns))
         {
-            parts_estimates[i] = std::move(*estimates);
             estimates_in_memory[i] = true;
+            can_match_in_memory[i] = part_can_match(parts[i], *estimates);
         }
         else
             parts_to_load_statistics.push_back(parts[i]);
@@ -955,6 +978,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
 
+    std::vector<Estimates> parts_estimates(parts.size());
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts.size(),
         settings[Setting::max_threads],
@@ -967,28 +991,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         [&](size_t part_index)
         {
             const auto & part = parts[part_index];
-            if (!load_statistics && !estimates_in_memory[part_index])
+            bool can_match = true;
+            if (estimates_in_memory[part_index])
             {
-                res_parts.push_back(part);
-                return;
+                can_match = can_match_in_memory[part_index];
+            }
+            else if (load_statistics)
+            {
+                const Estimates estimates = std::move(parts_estimates[part_index]);
+                can_match = part_can_match(part, estimates);
             }
 
-            const Estimates estimates = std::move(parts_estimates[part_index]);
-            try
-            {
-                if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
-                {
-                    LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-                    return;
-                }
-            }
-            catch (const Exception &)
-            {
-                tryLogCurrentException(log, fmt::format(
-                    "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-                    part.data_part->name), LogsLevel::debug);
-            }
-            res_parts.push_back(part);
+            if (can_match)
+                res_parts.push_back(part);
         });
 
     if (res_parts.size() < total_parts_before)
