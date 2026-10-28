@@ -447,6 +447,8 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
     const LoggerPtr & logger,
     QueryResultDetails & result_details)
 {
+    // Stopwatch test_watch{CLOCK_MONOTONIC};
+    // test_watch.restart();
     VectorQueryPlanCacheRestoreResult result;
     VectorQueryParameters parameterizer;
 
@@ -497,6 +499,8 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                         cached_ast_literal_positions);
                     if (ast_parameters_restored)
                     {
+                        // LOG_ERROR(logger, "reuse ast:{}us", test_watch.elapsedMicroseconds());
+                        // test_watch.restart();
                         LOG_DEBUG(logger, "Restore AST from vector_query_plan_cache({})", result.new_query);
                         InterpreterSetQuery::applySettingsFromQuery(result.ast, context);
                         result.query_access_info_cache = reader.getQueryAccessInfo();
@@ -545,6 +549,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                                 }
                                 else
                                 {
+                                    // LOG_ERROR(logger, "reuse query plan:{}us", test_watch.elapsedMicroseconds());
                                     LOG_DEBUG(logger, "Restore QueryPlan from query_plan_cache({})", result.new_query);
                                 }
                             }
@@ -553,6 +558,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                         }
                         else
                         {
+                            // LOG_ERROR(logger, "reuse query result:{}us", test_watch.elapsedMicroseconds());
                             LOG_DEBUG(logger, "use QueryResult from query_plan_cache({})", result.new_query);
                         }
                     }
@@ -1657,6 +1663,8 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
     CacheProbeOutput & output,
     QueryResultDetails & result_details)
 {
+    // Stopwatch test_watch{CLOCK_MONOTONIC};
+    // test_watch.restart();
     const Settings & settings = context->getSettingsRef();
     auto logger = getLogger("executeQuery");
     QueryResultCachePtr query_result_cache = context->getQueryResultCache();
@@ -1686,6 +1694,8 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
             auto quota = context->getQuota();
             res.pipeline.setLimitsAndQuota(limits, quota);
         }
+        // LOG_ERROR(logger, "buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
+        // test_watch.restart();
         if (output.can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
         {
             QueryResultCacheOnDiskPtr query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(*output.settings_copy);
@@ -1815,6 +1825,7 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
     res.exception_callbacks.push_back(std::move(exception_callback));
 
     output.cached_plan.reset();
+    // LOG_ERROR(logger, "after buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
     return std::move(res);
 }
 static std::optional<BlockIO> tryExecuteFromCache(
@@ -2926,6 +2937,8 @@ static BlockIO executeQueryImpl(
     /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
     /// * Logging query duration (system.query_log)
     Stopwatch start_watch{CLOCK_MONOTONIC};
+    // Stopwatch test_watch{CLOCK_MONOTONIC};
+    // test_watch.restart();
     const auto & client_info = context->getClientInfo();
 
     if (client_info.initial_query_start_time == 0)
@@ -3409,7 +3422,8 @@ static BlockIO executeQueryImpl(
             throw;
         }
     }
-
+    // LOG_ERROR(logger, "build ast:{}us", test_watch.elapsedMicroseconds());
+    // test_watch.restart();
     /// Make the normalized query hash available to interpreters created below. In particular,
     /// ordinary INSERT queries use it for the written_bytes quota pre-check and CountingTransform.
     context->setNormalizedQueryHash(normalized_query_hash);
@@ -3892,6 +3906,8 @@ static BlockIO executeQueryImpl(
 
             if (!query_result_cache_entry_exists)
             {
+                // LOG_ERROR(logger, "check query_plan:{}us", test_watch.elapsedMicroseconds());
+                // test_watch.restart();
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
                 {
@@ -3922,6 +3938,8 @@ static BlockIO executeQueryImpl(
                     has_cached_plan = cache_result.cached_plan != nullptr;
                     if (has_cached_plan)
                     {
+                        // LOG_ERROR(logger, "reuse query plan:{}us", test_watch.elapsedMicroseconds());
+                        // test_watch.restart();
                         auto optimization_settings = QueryPlanOptimizationSettings(context);
                         auto build_pipeline_settings = BuildQueryPipelineSettings(context);
                         auto query_cached_builder = cache_result.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
@@ -3933,6 +3951,8 @@ static BlockIO executeQueryImpl(
                             quota = context->getQuota();
                             res.pipeline.setLimitsAndQuota(limits, quota);
                         }
+                        // LOG_ERROR(logger, "buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
+                        // test_watch.restart();
                     }
                 }
                 if (!has_cached_plan)
@@ -4024,7 +4044,9 @@ static BlockIO executeQueryImpl(
                             span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
                         }
 
+                        // LOG_ERROR(logger, "prepare query plan:{}us", test_watch.elapsedMicroseconds());
                         res = interpreter->execute();
+                        // test_watch.restart();
                         if (is_select && enable_vector_query_plan_cache && !VectorQueryPlanCache::containsSubquery(out_ast))
                         {
                             vector_query_plan_cache_writer = interpreter->getVectorQueryPlanCacheWriter();
@@ -4080,6 +4102,11 @@ static BlockIO executeQueryImpl(
                         result_details.query_cache_entry_expires_at = expires_at;
                 }
             }
+            // else
+            // {
+            //     LOG_ERROR(logger, "reuse query result:{}us", test_watch.elapsedMicroseconds());
+            //     test_watch.restart();
+            // }
         }
 
         if (process_list_entry)
@@ -4264,6 +4291,7 @@ static BlockIO executeQueryImpl(
 
         throw;
     }
+    // LOG_ERROR(logger, "after buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
     return res;
 }
 

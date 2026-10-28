@@ -362,10 +362,13 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
     BlockIO res;
-
+    auto logger = getLogger("InterpreterSelectWithUnionQuery");
+    // Stopwatch test_watch{CLOCK_MONOTONIC};
+    // test_watch.restart();
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
-
+    // LOG_ERROR(logger, "build query plan:{}us", static_cast<double>(test_watch.elapsedNanoseconds()) / 1e3);
+    // test_watch.restart();
     const auto & settings = context->getSettingsRef();
     const bool can_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
     if (can_vector_query_plan_cache && !is_internal && is_select
@@ -389,6 +392,8 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                 {
                    vector_query_string = query_result.normalized_sql.empty() ? query_ptr->formatForLogging() : query_result.normalized_sql;
                 }
+                // LOG_ERROR(logger, "normalizedAST:{}us", test_watch.elapsedMicroseconds());
+                // test_watch.restart();
             }
             else
             {
@@ -427,7 +432,9 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     if (!query_result.ast_literal_position_list.empty() && query_result.ast_literal_position_list.size() == params_size)
                     {
                         vector_query_plan_cache_writer.setAst(query_ptr);
-                        LOG_DEBUG(getLogger("InterpreterSelectWithUnionQuery"), "setAst");
+                        LOG_DEBUG(logger, "setAst");
+                        // LOG_ERROR(logger, "setAst:{}us", test_watch.elapsedMicroseconds());
+                        // test_watch.restart();
                     }
                 }
                 vector_query_plan_cache_writer.setAstLiteralPositions(query_result.ast_literal_position_list);
@@ -439,8 +446,10 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     vector_query_plan_cache_writer.setQueryAccessInfo(context->serializeQueryAccessInfo());
                     vector_query_plan_cache_writer.setPlanConstantBindings(std::move(plan_constant_bindings));
                     vector_query_plan_cache_writer.setPlan(query_plan);
-                    LOG_DEBUG(getLogger("InterpreterSelectWithUnionQuery"), "setPlan");
+                    LOG_DEBUG(logger, "setPlan");
                     setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));
+                    // LOG_ERROR(logger, "setPlan:{}us", test_watch.elapsedMicroseconds());
+                    // test_watch.restart();
                 }
             }
         }
@@ -450,6 +459,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     setQuota(res.pipeline);
+    // LOG_ERROR(logger, "buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
     return res;
 }
 

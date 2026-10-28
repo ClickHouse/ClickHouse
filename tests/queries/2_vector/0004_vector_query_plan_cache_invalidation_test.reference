@@ -1,0 +1,47 @@
+I01 entries after first query	2
+I01 entries after ALTER	0
+I01 hits, misses, result cache hits	0	4	0
+I01 entries at end	2
+10	0
+9	1.7321
+11	1.7321
+8	3.4641
+12	3.4641
+I05 entries after first query	1
+I05 entries after DROP	0
+I05 entries after CREATE and INSERT	0
+0	0
+I05 hits, misses, result cache hits	0	2	0
+I05 entries at end	1
+I07 entries after first query	1
+I07 entries after TRUNCATE	0
+I07 rows after TRUNCATE and INSERT	20	200	219
+I07 hits, misses, result cache hits	0	2	0
+I07 entries at end	1
+I08 entries after first query	1
+I08 entries after RENAME	0
+I08 entries after RENAME back	0
+I08 hits, misses, result cache hits	0	2	0
+I08 entries at end	1
+40	0
+39	1.7321
+41	1.7321
+38	3.4641
+42	3.4641
+I09 entries after first query	1
+I09 entries after INSERT	0
+40	0
+1000	0
+39	1.7321
+41	1.7321
+38	3.4641
+I09 hits, misses, result cache hits	0	2	0
+I09 entries at end	1
+I10 entries after first query	1
+I10 entries after unrelated DDL	1
+I10 hits, misses, result cache hits	1	1	0
+I10 entries at end	1
+I14 entries after first query	1
+I14 entries after DDL in another database	1
+I14 hits, misses, result cache hits	1	1	0
+I14 entries at end	1

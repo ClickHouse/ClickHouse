@@ -607,8 +607,13 @@ void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
 
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
+    auto logger = getLogger("InterpreterSelectQueryAnalyzer");
+    // Stopwatch test_watch{CLOCK_MONOTONIC};
+    // test_watch.restart();
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
+    // LOG_ERROR(logger, "build query plan:{}us", static_cast<double>(test_watch.elapsedNanoseconds()) / 1e3);
+    // test_watch.restart();
     const auto & settings = context->getSettingsRef();
     const bool can_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
 
@@ -633,6 +638,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
                 {
                    vector_query_string = query_result.normalized_sql.empty() ? query->formatForLogging() : query_result.normalized_sql;
                 }
+                // LOG_ERROR(logger, "normalizedAST:{}us", test_watch.elapsedMicroseconds());
+                // test_watch.restart();
             }
             else
             {
@@ -670,7 +677,9 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
                     if (!query_result.ast_literal_position_list.empty() && query_result.ast_literal_position_list.size() == params_size)
                     {
                         vector_query_plan_cache_writer.setAst(query);
-                        LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"), "setAst");
+                        LOG_DEBUG(logger, "setAst");
+                        // LOG_ERROR(logger, "setAst:{}us", test_watch.elapsedMicroseconds());
+                        // test_watch.restart();
                     }
                 }
                 vector_query_plan_cache_writer.setAstLiteralPositions(query_result.ast_literal_position_list);
@@ -681,8 +690,10 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
                     vector_query_plan_cache_writer.setQueryAccessInfo(context->serializeQueryAccessInfo());
                     vector_query_plan_cache_writer.setPlanConstantBindings(std::move(plan_constant_bindings));
                     vector_query_plan_cache_writer.setPlan(query_plan);
-                    LOG_DEBUG(getLogger("InterpreterSelectQueryAnalyzer"), "setPlan");
+                    LOG_DEBUG(logger, "setPlan");
                     setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));
+                    // LOG_ERROR(logger, "setPlan:{}us", test_watch.elapsedMicroseconds());
+                    // test_watch.restart();
                 }
             }
         }
@@ -704,7 +715,9 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     query_plan.optimize(optimization_settings);
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
+    auto pipeline = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false);
+    // LOG_ERROR(logger, "buildQueryPipeline:{}us", test_watch.elapsedMicroseconds());
+    return std::move(*pipeline);
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
