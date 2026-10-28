@@ -857,7 +857,10 @@ def test_no_key_found_disk(cluster, broken_s3):
             assert size == 0
         assert "code: NoSuchKey" in str(exc_info.value)
 
-    error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
+    # The columns cache would serve the data read above without reading the removed objects.
+    error = node.query_and_get_error(
+        "SELECT * FROM no_key_found_disk SETTINGS use_columns_cache = 0"
+    ).strip()
 
     assert (
         "The specified key does not exist. This error happened for S3 disk"

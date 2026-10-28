@@ -42,6 +42,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=["configs/conf.xml"],
+            user_configs=["configs/no_columns_cache.xml"],
             with_minio=True,
             mem_limit="20g",
             cpu_limit=7,
@@ -53,6 +54,7 @@ def started_cluster():
             cluster.add_instance(
                 "node_smol",
                 main_configs=["configs/conf.xml", "configs/smol.xml"],
+                user_configs=["configs/no_columns_cache.xml"],
                 with_minio=True,
                 mem_limit="20g",
                 cpu_limit=7,
