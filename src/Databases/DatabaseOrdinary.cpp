@@ -73,6 +73,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsString default_replica_name;
     extern const ServerSettingsString default_replica_path;
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -296,6 +297,10 @@ String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_nam
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
+    /// The conversion rewrites the metadata file, so `load_tables_readonly` leaves the flag for a later start.
+    if (getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+
     auto db_disk = getDisk();
 
     fs::path path(getMetadataPath());
@@ -542,7 +547,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         LOG_WARNING(log, "Metadata file {} refers to the same table (UUID {}) as {}, which is a leftover of an interrupted rename"
             " of a temporary table of `CREATE OR REPLACE`. Removing it.",
             full_path, create_query->uuid, *duplicate_of_path);
-        if (!db_disk->isReadOnly())
+        if (!db_disk->isReadOnly() && !getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
             db_disk->removeFile(full_path);
     }
 
@@ -753,6 +758,9 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
+    if (getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
+        return;
+
     /// With `lazy_load_tables` the catalog holds a stand-in whose `startup` did nothing, so a cast would not see
     /// the real engine and the whole restore would be skipped - the table would stay replicated with no metadata
     /// in ZooKeeper, i.e. read-only, and the flag would never be removed, so no restart could ever heal it.

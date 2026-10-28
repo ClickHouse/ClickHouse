@@ -20,6 +20,7 @@
 #include <Storages/StorageMaterializedView.h>
 
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/escapeForFileName.h>
@@ -43,6 +44,11 @@ namespace Setting
     extern const SettingsBool allow_deprecated_database_ordinary;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool load_tables_readonly;
 }
 
 namespace ErrorCodes
@@ -216,7 +222,9 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     /// on difference of data parts while initializing tables.
     /// This file is immediately deleted i.e. "one-shot".
     auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
-    bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
+    /// `load_tables_readonly` neither applies nor removes this flag, and keeps the temporary files and restore databases.
+    const bool load_readonly = context->getServerSettings()[ServerSetting::load_tables_readonly];
+    bool has_force_restore_data_flag = !load_readonly && fs::exists(force_restore_data_flag_file);
     if (has_force_restore_data_flag)
     {
         try
@@ -263,7 +271,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         }
 
         /// Temporary fails may be left from previous server runs.
-        if (sub_path.extension() == ".tmp")
+        if (sub_path.extension() == ".tmp" && !load_readonly)
         {
             LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
             try
@@ -303,6 +311,10 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     for (const auto & [name, metadata_file] : orphan_directories_and_symlinks)
     {
+        /// Loading a database without its metadata file writes one.
+        if (load_readonly && !databases.contains(name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot load database {} with `load_tables_readonly`: it has no metadata file {}",
+                backQuoteIfNeed(name), metadata_file.string());
         loadDatabase(context, name, metadata_file, has_force_restore_data_flag);
         loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
         if (name.starts_with(InterpreterSystemQuery::RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX))
@@ -336,7 +348,8 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     waitLoad(TablesLoaderForegroundPoolId, load_tasks); // First prioritize, schedule and wait all the load table tasks
     LOG_INFO(log, "Start synchronous startup of databases");
     waitLoad(TablesLoaderForegroundPoolId, startup_tasks); // Only then prioritize, schedule and wait all the startup tasks
-    dropRestoringDatabasesForTableDropping(context, restoring_database_for_table_dropping_names);
+    if (!load_readonly)
+        dropRestoringDatabasesForTableDropping(context, restoring_database_for_table_dropping_names);
     return {};
 }
 
@@ -349,7 +362,8 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     auto metadata_file = DatabaseCatalog::getMetadataFilePath(database_name);
     auto metadata_tmp_file = DatabaseCatalog::getMetadataTmpFilePath(database_name);
-    default_db_disk->removeFileIfExists(metadata_tmp_file);
+    if (!context->getServerSettings()[ServerSetting::load_tables_readonly])
+        default_db_disk->removeFileIfExists(metadata_tmp_file);
 
     LOG_TEST(
         getLogger("loadSystemDatabase"),

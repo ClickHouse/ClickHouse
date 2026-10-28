@@ -1469,6 +1469,8 @@ Writes to external storage through engines such as `S3`, `DataLake`, `MySQL`, `P
     DECLARE(Bool, load_tables_readonly, false, R"(
 Loads the tables without starting the background work that changes their data or sends it to other servers. Every `MergeTree` table runs with `table_readonly = 1`, whatever its definition states, so a non-replicated one runs no merge, mutation, TTL, move or cleanup. A non-replicated one also changes no file while it loads: it keeps temporary mutation files, does not open its deduplication log, and refuses to load with a mutation of a transaction that is not resolved yet. Its settings cannot be changed by `ALTER`. A `ReplicatedMergeTree` table still attaches to ZooKeeper or Keeper, if one is configured. A `Distributed` table does not start sending the blocks of asynchronous `INSERT` queries that wait in its directories, also not when it is shut down, and does not prepare those directories either.
 
+Loading changes no other file either: an `EmbeddedRocksDB` table opens its data read-only, a `Log`, `TinyLog` or `StripeLog` table keeps the files of an interrupted `INSERT` as they are, the `force_restore_data` flag is neither applied nor removed, and the `convert_to_replicated` flags, the temporary and duplicate metadata files and the databases that a restore left stay in place. A database with an object that was not dropped completely, or without its metadata file, is refused.
+
 The stored definitions of the tables are not changed. `clickhouse-local --dump-schema` sets it, together with `disable_insertion_and_mutation`, and refuses a configuration with ZooKeeper or Keeper, to read a data path without changing it.
 )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(

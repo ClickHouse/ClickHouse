@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <thread>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
@@ -59,6 +60,11 @@ namespace ErrorCodes
 namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsString disk;
+}
+
+namespace ServerSetting
+{
+extern const ServerSettingsBool load_tables_readonly;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -561,7 +567,8 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
 {
     auto db_disk = getDisk();
 
-    if (mode < LoadingStrictnessLevel::FORCE_RESTORE)
+    /// `load_tables_readonly` keeps the symlinks, which only serve introspection.
+    if (mode < LoadingStrictnessLevel::FORCE_RESTORE || getContext()->getServerSettings()[ServerSetting::load_tables_readonly])
         return;
 
     if (!db_disk->isSymlinkSupported())
