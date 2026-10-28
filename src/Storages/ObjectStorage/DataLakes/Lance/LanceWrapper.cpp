@@ -405,6 +405,7 @@ NamesAndTypesList DatasetHandle::tableSchema(
         "Lance",
         format_settings,
         /* skip_columns_with_unsupported_types */ false,
+        /* allow_arrow_null_type */ false,
         /* allow_inferring_nullable_columns */ true,
         /* case_insensitive_matching */ false,
         /* allow_geoparquet_parser */ false,
