@@ -165,7 +165,8 @@ bool isCompleteKeyLookup(const DataTypePtr & key_type, const DataTypePtr & value
     if (isString(key) && isFixedString(value))
         return false;
 
-    return !is_element || value->equals(*key) || isString(value) || isNumber(value) || isNothing(value);
+    return !is_element || value->equals(*key) || isString(value) || isNumber(value) || isNothing(value)
+        || (isDateOrDate32(value) && isDateOrDate32(key));
 }
 
 /// Single-column version of traverseDAGFilter (legacy)
@@ -391,7 +392,7 @@ bool traverseDAGFilter(
 
             // Convert each tuple element to the correct type, with the type of the element it comes
             // from: without it a date-family literal is reinterpreted in the key's unit space.
-            const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
+            const auto value_type = getConstantValueType(right->column.get(), right->result_type);
             const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             const IColumn * value_column = right->column.get();

@@ -52,6 +52,9 @@ INSERT INTO t_kv_pair VALUES ('x', 'V0', 0), ('x', 'V0\0', 1), ('x', 'V0X', 2);
 
 SELECT count() FROM t_kv_pair WHERE a = 'x' AND b = toFixedString('V0', 3);
 SELECT count() FROM t_kv_pair WHERE (a, b) = (SELECT ('x', toFixedString('V0', 3)));
+SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', toFixedString('V0', 3)) AS Dynamic);
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', 'V0') AS Dynamic)) WHERE explain ILIKE '%ReadType%';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair WHERE (a, b) = CAST(('x', 'V0') AS Variant(Tuple(String, String), UInt64))) WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_pair;
 
@@ -93,6 +96,15 @@ SELECT count() FROM t_kv_array WHERE key = '[\'V0\']';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array WHERE key = '[\'V0\']') WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_array;
+
+DROP TABLE IF EXISTS t_kv_array_date;
+CREATE TABLE t_kv_array_date (key Array(Date), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
+INSERT INTO t_kv_array_date VALUES (['2020-01-01'], 0), (['2020-01-02'], 1);
+
+SELECT count() FROM t_kv_array_date WHERE key = [toDate32('2020-01-01')];
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array_date WHERE key = [toDate32('2020-01-01')]) WHERE explain ILIKE '%ReadType%';
+
+DROP TABLE t_kv_array_date;
 
 DROP TABLE IF EXISTS t_kv_map;
 CREATE TABLE t_kv_map (key Map(String, DateTime('UTC')), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
