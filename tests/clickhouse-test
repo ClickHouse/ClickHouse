@@ -8713,22 +8713,36 @@ if __name__ == "__main__":
         )
         args.encrypted_storage = False
 
+    def print_runner_query_rejection(e):
+        # A query of the runner itself, such as one collecting the build flags
+        # right after the startup probe, or creating the database, was answered
+        # with an error. The server rejected it, it was not unreachable and it
+        # is not hung: print the same marker as the startup probe and the
+        # processlist query, so that the stress test does not file the hung
+        # check as a deadlock. The `HTTPError` can be wrapped into other
+        # exceptions on the way up (e.g. `RuntimeError`, then `StopTesting`, by
+        # the database setup), so look for it through the exception chain.
+        if not args.hung_check:
+            return
+        seen = set()
+        while e is not None and id(e) not in seen:
+            if isinstance(e, HTTPError):
+                print(
+                    "Server rejects queries. A query of the test runner was rejected: "
+                    + " ".join(str(e).split())
+                )
+                sys.stdout.flush()
+                return
+            seen.add(id(e))
+            e = e.__cause__ or e.__context__
+
     try:
         main(args)
     except HTTPError as e:
-        # A query of the runner itself, such as one collecting the build flags
-        # right after the startup probe, was answered with an error. The server
-        # rejected it, it was not unreachable and it is not hung: print the same
-        # marker as the startup probe and the processlist query, so that the
-        # stress test does not file the hung check as a deadlock.
-        if args.hung_check:
-            print(
-                "Server rejects queries. A query of the test runner was rejected: "
-                + " ".join(str(e).split())
-            )
-            sys.stdout.flush()
+        print_runner_query_rejection(e)
         raise
     except StopTesting as e:
+        print_runner_query_rejection(e)
         print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(e.exit_code)
