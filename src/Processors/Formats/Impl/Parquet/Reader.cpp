@@ -3094,8 +3094,12 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 return;
             if (kind == TypeIndex::Array)
             {
+                /// Without a primitive column inside, the arrays are empty, but their offsets are created, one per
+                /// value of the parent, see `formOutputColumn`. Otherwise the offsets are counted with the primitive columns.
+                if (info.primitive_start == info.primitive_end)
+                    chunk_bytes += 8. * max_values;
                 /// The elements of the arrays of a chunk: at most the values of any primitive column inside, all of
-                /// which may be in one chunk. None if no primitive column is inside, see `formOutputColumn`.
+                /// which may be in one chunk. None if no primitive column is inside.
                 double nested_values = 0;
                 for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
                     nested_values = std::max(nested_values, static_cast<double>(std::max<Int64>(0, row_group.columns.at(i).meta->meta_data.num_values)));
@@ -3379,6 +3383,17 @@ static bool stringsMayExpandOnDecoding(const parq::ColumnMetaData & meta)
     return std::find(meta.encodings.begin(), meta.encodings.end(), parq::Encoding::DELTA_BYTE_ARRAY) != meta.encodings.end();
 }
 
+/// Whether a column chunk may be dictionary-encoded. Some writers do not declare `dictionary_page_offset` even if there
+/// is a dictionary page (see `fixUpColumnChunk`), so the encodings of the data pages are checked as well.
+static bool mayBeDictionaryEncoded(const parq::ColumnMetaData & meta)
+{
+    return meta.__isset.dictionary_page_offset
+        || std::any_of(meta.encodings.begin(), meta.encodings.end(), [](parq::Encoding::type encoding)
+            {
+                return encoding == parq::Encoding::PLAIN_DICTIONARY || encoding == parq::Encoding::RLE_DICTIONARY;
+            });
+}
+
 double Reader::estimateMaxColumnMemoryBytesOfChunk(
     const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
 {
@@ -3407,7 +3422,7 @@ double Reader::estimateMaxColumnMemoryBytesOfChunk(
             string_bytes = static_cast<double>(std::max<Int64>(0, meta.size_statistics.unencoded_byte_array_data_bytes));
         /// Strings encoded with `DELTA_BYTE_ARRAY` are bounded neither by the dictionary nor by the uncompressed size.
         const bool may_expand = stringsMayExpandOnDecoding(meta);
-        if (meta.__isset.dictionary_page_offset && !may_expand)
+        if (mayBeDictionaryEncoded(meta) && !may_expand)
         {
             /// No string is longer than the longest value of the dictionary, except the strings of the data pages that
             /// the writer did not encode with the dictionary (e.g. it has grown too large): they take at most the
@@ -3446,7 +3461,7 @@ bool Reader::decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveCol
     const auto & meta = column.meta->meta_data;
     return !column_info.output_type->haveMaximumSizeOfValue()
         && !(meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
-        && (stringsMayExpandOnDecoding(meta) || (meta.__isset.dictionary_page_offset && !column.dictionary.isInitialized()));
+        && (stringsMayExpandOnDecoding(meta) || (mayBeDictionaryEncoded(meta) && !column.dictionary.isInitialized()));
 }
 
 size_t Reader::memoryEstimateLimit() const
