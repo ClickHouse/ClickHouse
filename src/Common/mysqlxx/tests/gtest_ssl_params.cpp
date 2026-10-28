@@ -57,6 +57,33 @@ TEST(MySQLResolvedSSLPaths, PathsPassThrough)
     EXPECT_EQ(resolved.getKey(), "/etc/ssl/private/client.key");
 }
 
+/// The passphrase is not a file form of the key: it must not change which path is handed to the
+/// client library, and it must not be treated as a second source of the same credential.
+TEST(MySQLResolvedSSLPaths, PassphraseDoesNotReplaceTheKey)
+{
+    mysqlxx::SSLParams params;
+    params.key_path = "/etc/ssl/private/client.key";
+    params.key_passphrase = "testpass-a";
+
+    mysqlxx::ResolvedSSLPaths resolved(params);
+    EXPECT_EQ(resolved.getKey(), "/etc/ssl/private/client.key");
+}
+
+/// An empty passphrase is the unencrypted-key case: it must not be treated as a second key source.
+TEST(MySQLResolvedSSLPaths, EmptyPassphraseLeavesTheKeyUnchanged)
+{
+    mysqlxx::SSLParams params;
+    params.key_pem = "not a key";
+    params.key_passphrase = "";
+
+    mysqlxx::ResolvedSSLPaths resolved(params);
+    ASSERT_NE(resolved.getKey(), "");
+
+    std::ifstream file(resolved.getKey());
+    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(contents, params.key_pem);
+}
+
 TEST(MySQLResolvedSSLPaths, ContentsAreMaterialized)
 {
     mysqlxx::SSLParams params;
