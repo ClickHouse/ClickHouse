@@ -169,14 +169,19 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, Join
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
+    /// The row-count condition keeps an EMPTY build in memory (nothing to spill, the switch only
+    /// allocates). It is also what makes the non-empty invariant of `switchToExternalJoin` hold
+    /// under concurrency: the byte count can run ahead of the row count (a block is accounted
+    /// before its rows reach the hash table), so bytes alone can cross the threshold while the
+    /// maps are still empty. Skipping is benign - the next insert re-checks.
     if (concurrent_join)
     {
-        if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (concurrent_join->getTotalRowCount() > 0 && concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
             switchToExternalJoin(context);
     }
     else
     {
-        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (hash_join->getTotalRowCount() > 0 && hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
             switchToExternalJoin(context);
     }
 
@@ -238,6 +243,14 @@ size_t SpillingHashJoin::spill(size_t at_least_bytes)
 
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
+        /// An empty build has nothing to spill, and the switch would only allocate (grace
+        /// buckets or a disk writer). Stay COLLECTING, so a later spill with data still works.
+        /// The check races with concurrent inserts benignly: the row count only grows, so a
+        /// skipped spill is caught by the next one.
+        const size_t total_rows = concurrent_join ? concurrent_join->getTotalRowCount() : hash_join->getTotalRowCount();
+        if (total_rows == 0)
+            return 0;
+
         size_t before = getTotalByteCount();
         switchToExternalJoin(JoinBuildContext::serial(), /*spill_immediately=*/true);
         size_t after = getTotalByteCount();
@@ -316,6 +329,11 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
             if (state.load(std::memory_order_relaxed) != State::COLLECTING)
                 return;
 
+            /// The callers never switch an empty build (nothing to spill, the switch only
+            /// allocates): the threshold checks imply inserted rows and `spill` skips it. The
+            /// count cannot drop back to zero, so the observation holds under this lock.
+            chassert(concurrent_join->getTotalRowCount() > 0);
+
             ProfileEvents::increment(switch_event);
             log_switch(concurrent_join, "ConcurrentHashJoin");
 
@@ -342,6 +360,9 @@ void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill
     /// Re-check: another thread may have already switched.
     if (state.load(std::memory_order_relaxed) != State::COLLECTING)
         return;
+
+    /// See above: the callers never switch an empty build.
+    chassert(hash_join->getTotalRowCount() > 0);
 
     log_switch(hash_join, "HashJoin");
     ProfileEvents::increment(switch_event);
@@ -372,8 +393,11 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// fires only on subsequent calls. If the very last block pushed total bytes past
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
+        /// An EMPTY build stays in memory whatever its allocation overhead reports: there is
+        /// nothing to spill, and `switchToExternalJoin` declines it anyway.
         const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join)
+        const size_t total_rows = concurrent_join ? concurrent_join->getTotalRowCount() : hash_join->getTotalRowCount();
+        if (total_bytes >= max_bytes_before_external_join && total_rows > 0)
         {
             switchToExternalJoin(JoinBuildContext::serial());
         }

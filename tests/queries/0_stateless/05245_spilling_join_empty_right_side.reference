@@ -1,0 +1,12 @@
+-- The ordered plan engages over the empty right side
+['ReadType: InOrder']
+-- LEFT ALL: every left row with defaults, in the left order
+100	100	1
+-- LEFT ANY: the same
+100	100	1
+-- INNER: no rows
+0
+-- Concurrent build over the empty right side
+100	100	1
+-- Identical to the non-spill-capable hash join
+1
