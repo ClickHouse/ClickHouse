@@ -188,9 +188,11 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}/05339.parquet"
 
+# Without parallel replicas, which would read the object storage tables on the replicas: the counters checked below
+# are those of the initial query.
 SETTINGS="use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 10000, max_threads = 1,
     max_parsing_threads = 1, max_block_size = 65409, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
-    input_format_parquet_filter_push_down = 1, input_format_parquet_preserve_order = 0"
+    input_format_parquet_filter_push_down = 1, input_format_parquet_preserve_order = 0, enable_parallel_replicas = 0"
 qcc_settings="${SETTINGS}, use_top_k_dynamic_filtering_for_variable_length_types = 0"
 
 reads=""
@@ -210,7 +212,7 @@ reads+="SELECT s FROM t_05339 ORDER BY s DESC LIMIT 3
 # Nor does a read of a data lake table, which uses the cache without a filter condition with the per-row filter.
 for opt_in in 0 1; do
     reads+="SELECT s FROM t_05339_iceberg ORDER BY s DESC LIMIT 3
-        SETTINGS ${SETTINGS}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, enable_parallel_replicas = 0,
+        SETTINGS ${SETTINGS}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1,
             use_top_k_dynamic_filtering_for_variable_length_types = ${opt_in}, log_comment = 'iceberg_${opt_in}' FORMAT Null; "
 done
 reads+="SELECT s FROM t_05339_s3_glob ORDER BY s DESC LIMIT 3 SETTINGS ${SETTINGS}, use_query_condition_cache = 0,
