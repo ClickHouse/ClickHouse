@@ -710,7 +710,7 @@ private:
         for (auto & node : nodes)
         {
             has_selector |= (node->node_type == PrometheusQueryTree::NodeType::InstantSelector);
-            replaceParameterWithConstant(*node, constants, query.getTimeScale());
+            replaceParametersWithConstants(*node, constants, query.getTimeScale());
             if (node->node_type != PrometheusQueryTree::NodeType::Function)
                 continue;
             auto & function = typeid_cast<PrometheusQueryTree::Function &>(*node);
@@ -760,34 +760,48 @@ private:
         PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
     }
 
-    /// The SQL conversion needs a constant phi or level, but Prometheus only checks that it is a scalar.
-    /// So a non-literal parameter is checked on its own and replaced with a constant.
-    static void replaceParameterWithConstant(
+    /// Prometheus checks the values of parameters and label names only when it evaluates a query, the SQL conversion checks them.
+    /// So such an argument is replaced with a constant of the same type, after a non-literal one is checked on its own.
+    static void replaceParametersWithConstants(
         PrometheusQueryTree::Node & node, std::vector<std::unique_ptr<PrometheusQueryTree::Node>> & constants, UInt32 time_scale)
     {
-        bool has_parameter = false;
+        bool has_scalar_parameter = false;
+        size_t first_label_name = node.children.size();
         if (node.node_type == PrometheusQueryTree::NodeType::Function)
         {
             const auto & function_name = typeid_cast<const PrometheusQueryTree::Function &>(node).function_name;
-            has_parameter = (function_name == "histogram_quantile") || (function_name == "quantile_over_time");
+            has_scalar_parameter = (function_name == "histogram_quantile") || (function_name == "quantile_over_time");
+            if ((function_name == "label_replace") || (function_name == "label_join"))
+                first_label_name = 1;
         }
-        else if (node.node_type == PrometheusQueryTree::NodeType::AggregationOperator)
+        else if ((node.node_type == PrometheusQueryTree::NodeType::AggregationOperator) && (node.children.size() == 2))
         {
             /// The parameter of `quantile`, `topk`, `bottomk`, `limitk` and `count_values` is the first of two arguments.
-            has_parameter = (node.children.size() == 2);
+            if (typeid_cast<const PrometheusQueryTree::AggregationOperator &>(node).operator_name == "count_values")
+                first_label_name = 0;
+            else
+                has_scalar_parameter = true;
         }
 
-        if (!has_parameter || node.children.empty())
-            return;
+        if (has_scalar_parameter && !node.children.empty() && (node.children[0]->result_type == PrometheusQueryResultType::SCALAR))
+        {
+            auto & parameter = node.children[0];
+            if (parameter->node_type != PrometheusQueryTree::NodeType::Scalar)
+                checkConversionToSQL(*parameter, time_scale);
+            auto constant = std::make_unique<PrometheusQueryTree::Scalar>();
+            constant->parent = &node;
+            parameter = constants.emplace_back(std::move(constant)).get();
+        }
 
-        auto & parameter = node.children[0];
-        if ((parameter->result_type != PrometheusQueryResultType::SCALAR) || (parameter->node_type == PrometheusQueryTree::NodeType::Scalar))
-            return;
-
-        checkConversionToSQL(*parameter, time_scale);
-        auto constant = std::make_unique<PrometheusQueryTree::Scalar>();
-        constant->parent = &node;
-        parameter = constants.emplace_back(std::move(constant)).get();
+        for (size_t i = first_label_name; i < node.children.size(); ++i)
+        {
+            if (node.children[i]->node_type != PrometheusQueryTree::NodeType::StringLiteral)
+                continue;
+            auto constant = std::make_unique<PrometheusQueryTree::StringLiteral>();
+            constant->string = "x";
+            constant->parent = &node;
+            node.children[i] = constants.emplace_back(std::move(constant)).get();
+        }
     }
 
     /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
