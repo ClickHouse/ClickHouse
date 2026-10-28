@@ -1,6 +1,7 @@
 -- Tags: no-parallel
 -- no-parallel: the checks of the reads served from the uncompressed and the columns caches need the entries to stay there,
--- and the caches are shared with the other tests, which evict them.
+-- and the caches are shared with the other tests, which evict them. The caches are cleared for the same reason: the entries
+-- left by the previous runs evict those of this one.
 
 -- `apply_string_filters_during_scan` reads the values that do not match a substring condition of PREWHERE
 -- as empty strings. The input-bytes estimate is based on the in-memory size of the read columns, so it
@@ -38,6 +39,7 @@ DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_small_blocks;
 DROP TABLE IF EXISTS t_compact_cached_column;
 DROP TABLE IF EXISTS t_compact_cached_short_rows;
+DROP TABLE IF EXISTS t_compact_cached_empty_stream;
 DROP TABLE IF EXISTS t_compact_cached_shared_blocks;
 DROP TABLE IF EXISTS t_compact_cached_sparse_null_map;
 DROP TABLE IF EXISTS t_compact_cached_subcolumn_prefix;
@@ -109,11 +111,13 @@ SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_
 
 -- The blocks taken decompressed from the uncompressed cache are read all the same: the second query reads
 -- nothing from disk, and its estimate is the same as the one of the first query.
+SYSTEM CLEAR UNCOMPRESSED CACHE;
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_1';
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_uncompressed_cache=1, log_comment='cache_2';
 
 -- The rows served from the columns cache are not read from the part, so the estimate is taken from a sample of
 -- the columns then, and the second query reads nothing from disk.
+SYSTEM CLEAR COLUMNS CACHE;
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
     columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0, log_comment='columns_cache_1';
 SELECT count() FROM t_compact WHERE s LIKE '%needle%' SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=1,
@@ -171,6 +175,16 @@ SELECT sum(s.null) FROM t_compact_cached_sparse_null_map SETTINGS use_columns_ca
 SELECT sum(s.null) FROM t_compact_cached_sparse_null_map
 SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_sparse_null_map_1';
 SELECT sum(s.null) FROM t_compact_cached_sparse_null_map SETTINGS use_columns_cache=0, log_comment='cached_sparse_null_map_0';
+
+-- The mark of an empty stream coincides with the mark of the stream after it, which is not counted for the empty one.
+CREATE TABLE t_compact_cached_empty_stream(id UInt64, a Array(UInt64) CODEC(Delta, LZ4), payload String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18, compress_per_column_in_compact_parts=1;
+INSERT INTO t_compact_cached_empty_stream SELECT number, [], repeat(hex(cityHash64(number)), 64) FROM numbers(8192);
+SELECT sum(arraySum(a)) FROM t_compact_cached_empty_stream SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1,
+    enable_writes_to_columns_cache=1, columns_cache_max_bytes_to_write_to_cache=0, columns_cache_max_estimated_bytes_to_write_to_cache=0 FORMAT Null;
+SELECT sum(arraySum(a)) FROM t_compact_cached_empty_stream
+SETTINGS use_columns_cache=1, enable_reads_from_columns_cache=1, enable_writes_to_columns_cache=0, log_comment='cached_empty_stream_1' FORMAT Null;
+SELECT sum(arraySum(a)) FROM t_compact_cached_empty_stream SETTINGS use_columns_cache=0, log_comment='cached_empty_stream_0' FORMAT Null;
 
 -- A subcolumn served from the cache is counted with all the substreams it is read from, also its prefix (the keys of
 -- the dictionary of `LowCardinality`), which is written before the data of the column. The block that the prefix shares
@@ -262,6 +276,7 @@ DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_small_blocks;
 DROP TABLE t_compact_cached_column;
 DROP TABLE t_compact_cached_short_rows;
+DROP TABLE t_compact_cached_empty_stream;
 DROP TABLE t_compact_cached_shared_blocks;
 DROP TABLE t_compact_cached_sparse_null_map;
 DROP TABLE t_compact_cached_subcolumn_prefix;
