@@ -1639,6 +1639,7 @@ bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
                 && function_base->isDeterministicInScopeOfQuery()
                 && !function_base->isStateful()
                 && !function_base->isServerConstant()
+                && !function_base->hasObservableSideEffects()
                 && !functionIsDictGet(function_base->getName())
                 && !functionIsJoinGet(function_base->getName());
         });
