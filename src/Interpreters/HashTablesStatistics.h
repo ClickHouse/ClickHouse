@@ -62,9 +62,10 @@ struct AggregationEntry
 
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
-    /// Whether the adaptive aggregator measured the query's staged stream as repeat-dominated and
-    /// thawed: freezing cannot pay for such a query, so later runs do not engage it at all. Runs
-    /// without an adaptive measurement carry the stored verdict over (see `updateStatistics`).
+    /// Whether the staged streams of most of the threads of a run of the query kept repeating the missed keys (see
+    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for such a query, so later runs do not engage the
+    /// adaptive aggregation at all. Runs without a verdict of their own carry the stored one over (see
+    /// `updateStatistics`).
     bool adaptive_staging_repeat_dominated = false;
 };
 
@@ -91,6 +92,35 @@ struct HashJoinMatchEntry
     std::string dump() const { return fmt::format("matches={}", matches); }
 
     size_t matches; // number of hash-table matches for a specific hash join.
+};
+
+/// The statistics of the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`).
+struct RadixUniqExactEntry
+{
+    bool shouldBeUpdated(const RadixUniqExactEntry & new_entry) const
+    {
+        auto differs = [](size_t lhs, size_t rhs) { return lhs < rhs / 2 || rhs < lhs / 2; };
+        return differs(num_streams, new_entry.num_streams) || differs(num_distinct, new_entry.num_distinct)
+            || differs(stream_distinct, new_entry.stream_distinct) || differs(stream_keys, new_entry.stream_keys);
+    }
+
+    std::string dump() const
+    {
+        return fmt::format(
+            "num_distinct={}, stream_distinct={}, stream_keys={}, num_streams={}",
+            num_distinct,
+            stream_distinct,
+            stream_keys,
+            num_streams);
+    }
+
+    /// The result.
+    size_t num_distinct = 0;
+    /// The median over the streams of the number of distinct keys of a stream (estimated for some of them).
+    size_t stream_distinct = 0;
+    /// The median over the streams of the number of keys of a stream, without NULLs and consecutive duplicates.
+    size_t stream_keys = 0;
+    size_t num_streams = 0;
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.

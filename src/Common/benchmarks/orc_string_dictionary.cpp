@@ -1,5 +1,6 @@
 #include <base/defines.h>
 
+#include <algorithm>
 #include <random>
 #include <unordered_map>
 

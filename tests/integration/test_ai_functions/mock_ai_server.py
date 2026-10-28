@@ -9,11 +9,18 @@ Endpoints:
       `Authorization` header is omitted when the named collection has no `api_key`).
       Header names are lower-cased for case-insensitive lookup.
   GET  /concurrency                  — returns JSON `{"requests": N, "max_concurrency": M}` describing
-      the requests the slow endpoint below has served since the last `/reset-concurrency`, where
-      `max_concurrency` is the highest number that were ever being served at the same moment.
+      the requests the slow endpoints below have served since the last `/reset-concurrency`, where
+      `max_concurrency` is the highest number that were ever being served at the same moment. Used
+      to assert that `ai_function_max_concurrent_requests_per_thread` controls how many requests are in flight.
   GET  /reset-concurrency            — zeroes the counters above
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
-      before answering.
+      before answering, so overlapping requests are observable in `/concurrency`.
+  POST /v1/embeddings_slow           — like `/v1/embeddings`, but slow in the same way.
+  POST /v1/chat/hang                 — like `/v1/chat/slow`, but sleeps HANG_RESPONSE_SECONDS, so a
+      request is still in flight when the server shuts down.
+  POST /v1/chat/jitter               — like `/v1/chat/completions` without a schema (echoes the user
+      message), but sleeps a random 0 to JITTER_MAX_SECONDS first, so concurrent requests complete out
+      of order.
   GET  /set-flaky?count=N            — arm the flaky endpoints below to fail their next N requests
       with a simulated transient network error (used to exercise retries). `count=0` disarms.
   POST /v1/chat/flaky                — like `/v1/chat/completions`, but drops the connection without
@@ -59,6 +66,7 @@ Endpoints:
       the opposite of the `max_tokens` case.
   POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
       successful structured-output (forced tool call) response that must NOT be rejected.
+  POST /v1/rate_limited              — always returns HTTP 429, a provider rate limit.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
       the url table function (and so the AI functions) retries.
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
@@ -68,6 +76,7 @@ Endpoints:
 
 import http.server
 import json
+import random
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -85,10 +94,17 @@ LAST_REQUEST = {"path": None, "body": None, "headers": {}}
 # Set via `GET /set-flaky?count=N`. Used to exercise the network-error retry path.
 FLAKY = {"fails_remaining": 0}
 
-# How long the slow endpoint takes to answer.
+# How long the slow endpoints take to answer. Long enough that concurrent requests overlap
+# observably, short enough not to slow the test down.
 SLOW_RESPONSE_SECONDS = 0.5
 
-# Requests the slow endpoint has served, and the high-water mark of how many it was serving
+# How long `/v1/chat/hang` takes to answer.
+HANG_RESPONSE_SECONDS = 5
+
+# Upper bound of the random delay of `/v1/chat/jitter`.
+JITTER_MAX_SECONDS = 0.3
+
+# Requests the slow endpoints have served, and the high-water mark of how many they were serving
 # simultaneously, since the last `/reset-concurrency`. Guarded by `_LOCK`.
 CONCURRENCY = {"requests": 0, "in_flight": 0, "max_concurrency": 0}
 
@@ -308,6 +324,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_slowly(lambda: make_success_response(extract_user_message(body)))
             return
 
+        if parsed.path == "/v1/embeddings_slow":
+            self._serve_slowly(lambda: make_embeddings_response(body))
+            return
+
+        if parsed.path == "/v1/chat/hang":
+            self._serve_slowly(lambda: make_success_response(extract_user_message(body)), HANG_RESPONSE_SECONDS)
+            return
+
+        if parsed.path == "/v1/chat/jitter":
+            time.sleep(random.uniform(0, JITTER_MAX_SECONDS))
+            self._send_json(200, make_success_response(extract_user_message(body)))
+            return
+
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
             with _LOCK:
                 should_fail = FLAKY["fails_remaining"] > 0
@@ -447,6 +476,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, make_anthropic_tool_use_response(body))
             return
 
+        if parsed.path == "/v1/rate_limited":
+            self._send_json(429, make_error_response("rate limit exceeded", error_type="rate_limit_error"))
+            return
+
         if parsed.path == "/v1/error":
             self._send_json(500, make_error_response("permanent failure"))
             return
@@ -493,8 +526,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def _serve_slowly(self, make_response):
-        """Sleep, then answer, counting the request as in flight for the duration of the sleep."""
+    def _serve_slowly(self, make_response, seconds=SLOW_RESPONSE_SECONDS):
+        """Sleep, then answer, counting the request as in flight for the duration of the sleep.
+        The window closes before the response is written, so a handler that has already answered
+        can never overlap in `max_concurrency` with the request that answer unblocks."""
         with _LOCK:
             CONCURRENCY["requests"] += 1
             CONCURRENCY["in_flight"] += 1
@@ -502,7 +537,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 CONCURRENCY["max_concurrency"], CONCURRENCY["in_flight"]
             )
         try:
-            time.sleep(SLOW_RESPONSE_SECONDS)
+            time.sleep(seconds)
             response = make_response()
         finally:
             with _LOCK:
