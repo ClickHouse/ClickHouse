@@ -43,11 +43,18 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $table ADD INDEX idx (x + y) TYPE set(
 ${CLICKHOUSE_CLIENT} --enable_sz3_codec 1 --query "ALTER TABLE $table MODIFY COLUMN x CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01))"
 ${CLICKHOUSE_CLIENT} --alter_sync 0 --mutations_sync 0 --query "ALTER TABLE $table MODIFY COLUMN y UInt64"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES $table"
-wait_for_mutations $table
 
 # The recompression is rejected because of the index, and the type conversion waits behind it.
+for _ in {1..600}
+do
+    failed=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM system.mutations
+        WHERE database = currentDatabase() AND table = '$table' AND NOT is_done AND latest_fail_reason != ''")
+    if [[ "$failed" != "0" ]]; then break; fi
+    sleep 0.3
+done
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT 'rejected', count(), countIf(latest_fail_reason LIKE '%SUPPORT_IS_DISABLED%index \`idx\`%') FROM system.mutations
+    SELECT 'rejected', count(), countIf(latest_fail_reason LIKE '%index \`idx\` depends on this column%' AND latest_fail_reason LIKE '%SUPPORT_IS_DISABLED%') FROM system.mutations
     WHERE database = currentDatabase() AND table = '$table' AND NOT is_done AND command LIKE '%RECOMPRESS COLUMN%'"
 
 # Dropping the index unblocks the queue.
