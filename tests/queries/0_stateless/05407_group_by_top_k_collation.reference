@@ -317,6 +317,16 @@ a1	190
 a2	190
 a3	192
 a4	190
+k20000	1
+k20001	1
+k20002	1
+k20003	1
+k20004	1
+k20000	1
+k20001	1
+k20002	1
+k20003	1
+k20004	1
 forced heap
 l20000	1	2
 l20001	0	2
@@ -355,4 +365,5 @@ forced heap engaged
 05407_forced_repeats	1	0
 adaptive with a started heap
 05407_run_adaptive	1	1	1	1
+05407_run_adaptive_new_best	1	0	0	1
 05407_run_adaptive_new_keys	1	0	0	1

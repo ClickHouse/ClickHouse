@@ -69,6 +69,7 @@ struct TopKAggregationHeapBase
     bool is_prefix_mode = false;            /// ranks only a key prefix, which identifies many groups: skip-only, the caller must not erase
     bool frozen = false;                    /// abandoned at runtime; aggregation proceeds as if the optimization were off
     bool start_allowed = false;             /// a heap with a `COLLATE` key starts only after `Aggregator::executeOnBlock` allows it
+    bool adaptive_fallback = false;         /// when the heap gives up, its stream returns to the adaptive aggregator
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
     TopKAggregationHeapBase() = default;
@@ -95,7 +96,7 @@ struct TopKAggregationHeapBase
 
     bool shouldFreeze() const;
 
-    /// Called before a block with all `GROUP BY` key columns: whether a heap with a `COLLATE` key should freeze because
+    /// Called after a block with all `GROUP BY` key columns: whether a heap with a `COLLATE` key should freeze because
     /// it stopped keeping new keys out of the hash table.
     bool collatedSkipsRepeat(const ColumnRawPtrs & key_columns, size_t row_begin, size_t row_end)
     {

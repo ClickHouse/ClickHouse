@@ -1281,8 +1281,7 @@ void Aggregator::executeImpl(
         /// Before the freeze check, which must judge the heap against the latest shared boundary.
         method.top_k_heap.exchangeSharedBoundary();
 
-        if (method.top_k_heap.shouldFreeze()
-            || (!all_keys_are_const && method.top_k_heap.collatedSkipsRepeat(key_columns, row_begin, row_end)))
+        if (method.top_k_heap.shouldFreeze())
         {
             method.top_k_heap.freeze();
             ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
@@ -1342,6 +1341,12 @@ void Aggregator::executeImpl(
         dispatch.template operator()<true>();
         /// Publish this block's tightenings now: this may be the thread's last block.
         method.top_k_heap.exchangeSharedBoundary();
+        /// After the block, so that its rows meet the boundary they tightened.
+        if (!all_keys_are_const && method.top_k_heap.collatedSkipsRepeat(key_columns, row_begin, row_end))
+        {
+            method.top_k_heap.freeze();
+            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+        }
     }
     else
         dispatch.template operator()<false>();
@@ -2620,6 +2625,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             >= collated_top_k_min_new_key_share * static_cast<double>(row_end - row_begin))
         {
             heap.start_allowed = true;
+            heap.adaptive_fallback = learning;
             if (learning)
                 adaptive->standDownForTopK();
         }

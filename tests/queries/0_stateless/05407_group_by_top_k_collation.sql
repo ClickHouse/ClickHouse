@@ -353,6 +353,28 @@ GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
 SETTINGS max_threads = 2, max_block_size = 1024, group_by_two_level_threshold = 1000,
     group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
     enable_group_by_top_k_optimization = 1, log_comment = '05407_run_adaptive_new_keys';
+-- The new best keys case in two streams: the heaps evict on every new key and keep running, since a stream they handed
+-- back would aggregate every key on the adaptive aggregator.
+SELECT s, count() FROM (
+    SELECT if(number < 33792, concat('m', toString(number)), concat('l', leftPad(toString(99999 - number), 5, '0'))) AS s
+    FROM numbers(80000)
+    UNION ALL
+    SELECT if(number < 33792, concat('p', toString(number)), concat('k', leftPad(toString(99999 - number), 5, '0'))) AS s
+    FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 65536, group_by_two_level_threshold = 100000,
+    group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 0;
+SELECT s, count() FROM (
+    SELECT if(number < 33792, concat('m', toString(number)), concat('l', leftPad(toString(99999 - number), 5, '0'))) AS s
+    FROM numbers(80000)
+    UNION ALL
+    SELECT if(number < 33792, concat('p', toString(number)), concat('k', leftPad(toString(99999 - number), 5, '0'))) AS s
+    FROM numbers(80000))
+GROUP BY s ORDER BY s ASC COLLATE 'en' LIMIT 5
+SETTINGS max_threads = 2, max_block_size = 1024, group_by_two_level_threshold = 1000,
+    group_by_two_level_threshold_bytes = 50000000, group_by_top_k_optimization_observation_rows = 1,
+    enable_group_by_top_k_optimization = 1, log_comment = '05407_run_adaptive_new_best';
 
 -- Every key comes twice, so the start check would fail; with `observation_rows = 0` the heap runs from the first block
 -- and keeps each stream off the adaptive aggregator. Keys descend, so the prefix heap evicts on every new key.
@@ -415,7 +437,7 @@ SELECT log_comment, sum(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEve
     sum(ProfileEvents['AggregationConvertedToTwoLevel']) > 0 AS two_level
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday()
-    AND log_comment IN ('05407_run_adaptive', '05407_run_adaptive_new_keys')
+    AND log_comment IN ('05407_run_adaptive', '05407_run_adaptive_new_best', '05407_run_adaptive_new_keys')
 GROUP BY log_comment
 ORDER BY log_comment;
 

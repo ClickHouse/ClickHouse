@@ -47,10 +47,13 @@ size_t TopKAggregationHeapBase::initBase(
     return next_trim_size + 1;
 }
 
+/// A trim compares the kept keys under the locale, so a heap with a `COLLATE` key trims less often.
+static constexpr size_t collated_min_trim_slack = 256;
+
 void TopKAggregationHeapBase::setK(size_t query_k)
 {
     k = query_k;
-    trim_slack = std::max<size_t>(1, k / 2);
+    trim_slack = std::max<size_t>(has_collators ? collated_min_trim_slack : 1, k / 2);
     next_trim_size = k + trim_slack;
     tie_overflow_limit = k + max_tie_rows;
 }
@@ -91,7 +94,6 @@ void TopKAggregationHeapBase::init(
 {
     const size_t n = source_columns.size();
     is_composite = true;
-    setK(query_k);
 
     directions.assign(n, 1);
     for (size_t i = 0; i < dirs.size() && i < n; ++i)
@@ -105,6 +107,7 @@ void TopKAggregationHeapBase::init(
     for (size_t i = 0; i < cols.size() && i < n; ++i)
         collators[i] = cols[i];
     has_collators = std::ranges::any_of(collators, [](const auto & collator) { return collator != nullptr; });
+    setK(query_k);
 
     MutableColumns sub_columns;
     sub_columns.reserve(n);
@@ -131,9 +134,11 @@ bool TopKAggregationHeapBase::shouldFreeze() const
     /// A heap with a `COLLATE` key tracks only the keys inserted after its late start, so it may never fill.
     const UInt64 window_observed = observed_rows - window_start_observed_rows;
     const UInt64 window_skipped = skipped_rows - window_start_skipped_rows;
+    /// Without an adaptive aggregator to return to, a collated heap's evictions cost more than the inserts they save.
+    const bool evictions_pay = !has_collators || adaptive_fallback;
     if (profitability_window && window_observed >= profitability_window
-        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1 && evicted_keys < k
-        && (heap_indices.size() >= k || has_collators))
+        && static_cast<Float64>(window_skipped) / static_cast<Float64>(window_observed) < 0.1
+        && (evicted_keys < k || !evictions_pay) && (heap_indices.size() >= k || has_collators))
         return true;
 
     return tie_overflow;
@@ -148,6 +153,8 @@ static constexpr UInt64 collated_sample_window = 256;
 static constexpr double collated_min_new_key_share = 0.5;
 static constexpr double collated_repeat_rows_per_skipped_key = 0.5;
 static constexpr size_t collated_sample_max_keys = 32768;
+/// Past this many keys, the adaptive aggregator's merge and sort of them cost more than the comparisons it would save.
+static constexpr size_t collated_adaptive_sample_max_keys = 4096;
 static constexpr size_t collated_recent_key_slots = 4096;
 static constexpr size_t collated_block_slices_after_sample = 8;
 
@@ -197,7 +204,8 @@ bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_colu
     }
     sample_recent_repeats += recent_repeats_in_block * weight;
 
-    if (!skip_sample_done && skipped_key_sample->size() >= collated_sample_max_keys)
+    const size_t sample_max_keys = adaptive_fallback ? collated_adaptive_sample_max_keys : collated_sample_max_keys;
+    if (!skip_sample_done && skipped_key_sample->size() >= sample_max_keys)
     {
         skip_sample_done = true;
         skipped_key_sample.reset();
@@ -223,7 +231,7 @@ bool TopKAggregationHeapBase::sampleCollatedSkips(const ColumnRawPtrs & key_colu
     sample_new_keys = 0;
     sample_window_rows = 0;
     sample_recent_repeats = 0;
-    const size_t sampled_keys = skip_sample_done ? collated_sample_max_keys : skipped_key_sample->size();
+    const size_t sampled_keys = skip_sample_done ? sample_max_keys : skipped_key_sample->size();
     return repeats
         && static_cast<double>(repeat_rows)
         >= collated_repeat_rows_per_skipped_key * static_cast<double>(sampled_keys << collated_sample_bits);
