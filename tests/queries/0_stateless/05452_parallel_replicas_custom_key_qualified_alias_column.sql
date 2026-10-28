@@ -22,6 +22,7 @@ INSERT INTO custom_key_qualified_alias SELECT number FROM numbers(10);
 -- so the randomized reading from parallel replicas of the test runner must not interfere.
 SET automatic_parallel_replicas_mode = 0;
 SET cluster_for_parallel_replicas = '';
+SET parallel_replicas_for_non_replicated_merge_tree = 0;
 SET allow_experimental_parallel_reading_from_replicas = 1;
 SET max_parallel_replicas = 2;
 SET parallel_replicas_count = 2;
@@ -47,5 +48,23 @@ SETTINGS parallel_replicas_custom_key = 'custom_key_qualified_alias.b', parallel
 SELECT count() FROM custom_key_qualified_alias
 SETTINGS parallel_replicas_custom_key = 'arraySum(arrayMap(z -> z.a, arrs))', parallel_replicas_mode = 'custom_key_sampling';
 
+-- The same when an `ALIAS` column is literally named like the field of the lambda argument.
+DROP TABLE IF EXISTS custom_key_dotted_alias;
+CREATE TABLE custom_key_dotted_alias
+(
+    x UInt64,
+    arrs Array(Tuple(a UInt64)) MATERIALIZED [tuple(x)],
+    `z.a` ALIAS x IN custom_key_qualified_alias_set
+)
+ENGINE = MergeTree ORDER BY x;
+INSERT INTO custom_key_dotted_alias SELECT number FROM numbers(10);
+
+SELECT count() FROM custom_key_dotted_alias
+SETTINGS parallel_replicas_custom_key = 'arraySum(arrayMap(z -> z.a, arrs))', parallel_replicas_mode = 'custom_key_sampling';
+
+SELECT count() FROM custom_key_dotted_alias
+SETTINGS parallel_replicas_custom_key = '`z.a`', parallel_replicas_mode = 'custom_key_sampling'; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE custom_key_dotted_alias;
 DROP TABLE custom_key_qualified_alias;
 DROP TABLE custom_key_qualified_alias_set;
