@@ -40,6 +40,16 @@ dependencies = ["delta_kernel_ffi"]
             fail("Delta Kernel Cargo.lock must pin a single delta_kernel_ffi version")
         delta_lock += delta_root
     ctx.file("bazel/rust/delta-kernel-rs/Cargo.lock", delta_lock, executable = False)
+    roots = ctx.execute([
+        Label("@python_3_11_host//:python"),
+        "-I",
+        "-B",
+        Label("//bazel/rules:cargo_registry_roots.py"),
+        ctx.path(ctx.attr.delta_lock),
+    ])
+    if roots.return_code:
+        fail(roots.stderr)
+    ctx.file("delta_vendor.bzl", "DELTA_VENDOR_ROOTS = " + roots.stdout, executable = False)
     ctx.file("BUILD.bazel", "")
     ctx.file("rust/workspace/BUILD.bazel", 'exports_files(["Cargo.toml", "Cargo.lock"])\n')
     ctx.file("bazel/rust/BUILD.bazel", 'exports_files(glob(["*/Cargo.toml", "*/Cargo.lock"]))\n')

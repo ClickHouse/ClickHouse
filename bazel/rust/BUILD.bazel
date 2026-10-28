@@ -99,7 +99,7 @@ rust_cbindgen(
         "c": "delta_kernel_ffi.h",
     },
     manifest = "@clickhouse_delta_kernel_rs//:ffi/Cargo.toml",
-    vendor = "@clickhouse_rust_vendor//:sources",
+    vendor = "@clickhouse_rust_vendor//:delta_cbindgen_vendor",
 )
 
 rust_static_library(

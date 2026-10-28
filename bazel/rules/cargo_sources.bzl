@@ -21,6 +21,17 @@ _cargo_sources = rule(
     },
 )
 
+def cargo_registry_inputs(name, roots, fallback):
+    """Declare locked vendor directories and the repository's non-crate entries."""
+    manifests = {path.partition("/")[0]: True for path in native.glob(["*/Cargo.toml"], allow_empty = True)}
+    checksums = {path.partition("/")[0]: True for path in native.glob(["*/.cargo-checksum.json"], allow_empty = True)}
+    if manifests != checksums or any([root not in manifests for root in roots]) or native.subpackages(include = ["**"], allow_empty = True):
+        # Preserve Cargo's resolution and diagnostics for nonstandard local vendor layouts.
+        native.alias(name = name, actual = fallback)
+        return
+    entries = native.glob(["*"], exclude = ["BUILD", "BUILD.bazel"], exclude_directories = 0)
+    native.filegroup(name = name, srcs = roots + [entry for entry in entries if entry not in manifests])
+
 def cargo_repository_sources(name, root = "", exclude_top_level = [], split_directories = [], **kwargs):
     """Publish individual filenames for Cargo's response file and directories for action inputs."""
     pattern = root + "/**" if root else "**"

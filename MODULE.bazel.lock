@@ -467,7 +467,7 @@
   "moduleExtensions": {
     "//bazel/rules:repositories.bzl%contrib": {
       "general": {
-        "bzlTransitiveDigest": "TH4p/Sd7SbJB7DgPHi34nxfDQYoataIpmaDvrNRrGeQ=",
+        "bzlTransitiveDigest": "dQqJTiyzRZTQHdxNnPNJVJf77Zq/QJy3FFynijVbTdQ=",
         "usagesDigest": "6S+kXqXczKx7BpC0Cgovu9SKSai+Y21UUXnbzjcA2Zs=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools",

@@ -1601,8 +1601,12 @@ def dependency_inputs(builds, owners):
     build('contrib/delta-kernel-rs').rule('cargo_repository_sources', 'cbindgen_sources', {
         'split_directories': ['derive-macros', 'ffi', 'kernel'],
     })
-    build('contrib/rust_vendor').rule('cargo_repository_sources', 'sources', {})
-    build('contrib/rust_vendor').rule('rust_vendor_licenses', 'licenses', {
+    vendor = build('contrib/rust_vendor')
+    vendor.rule('cargo_repository_sources', 'sources', {})
+    vendor.loads['@clickhouse//bazel/rules:cargo_sources.bzl'].add('cargo_registry_inputs')
+    vendor.loads['@clickhouse_cargo_sources//:delta_vendor.bzl'] = {'DELTA_VENDOR_ROOTS'}
+    vendor.rules.append('cargo_registry_inputs(name = "delta_cbindgen_vendor", fallback = ":sources", roots = DELTA_VENDOR_ROOTS)\n')
+    vendor.rule('rust_vendor_licenses', 'licenses', {
         'filenames': rust_license_filenames(ROOT),
     })
     for owner in ('contrib/pcodec', 'contrib/wasmtime', 'contrib/chdig'):
