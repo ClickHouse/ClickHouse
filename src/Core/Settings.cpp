@@ -7867,6 +7867,16 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.5", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."}) \
+    DECLARE(Bool, query_plan_top_k_through_array_join, false, R"(
+Toggles a query-plan-level optimization which moves `ORDER BY ... LIMIT n` below an `ARRAY JOIN` when the sort key does not read a joined column. For an inner `ARRAY JOIN`, the optimization also adds a filter below the moved sort. This filter removes the rows whose arrays are all empty, because these rows give no output.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.11", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."}) \
     DECLARE(Bool, query_plan_aggregation_bucket_top_k, true, R"(
 Toggles a query-plan-level optimization which, when a final aggregation feeds `ORDER BY` over the aggregation's outputs with `LIMIT n` and the plan proves the per-bucket selection exact, keeps only each two-level bucket's best n groups during the aggregation's final merge or conversion. The result is exact: a group outside its own bucket's best n has at least n groups ahead of it globally, so it cannot be in the global top n.
 
@@ -11130,11 +11140,20 @@ Default number of buckets for distributed shuffle-hash-join.
 Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL, \
         {"25.5", 8, 8, "New experimental setting."}) \
-    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
-Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 0, R"(
+Number of tasks for parallel reading in distributed query. Tasks are spread across workers.
+
+`0` chooses the number automatically: one task per `distributed_plan_min_rows_per_reader` rows selected by the read, at least one, and at most the number of workers.
+
 Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL, \
+        {"26.11", 8, 0, "Choose the number of read tasks from the rows to read and the number of workers by default."}, \
         {"25.5", 8, 8, "New experimental setting."}) \
+    DECLARE(NonZeroUInt64, distributed_plan_min_rows_per_reader, 1000000, R"(
+Minimum number of rows for each read task when `distributed_plan_default_reader_bucket_count` is `0`.
+Used by the rule-based distributed planner.
+)", EXPERIMENTAL, \
+        {"26.11", 1000000, 1000000, "New experimental setting."}) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
