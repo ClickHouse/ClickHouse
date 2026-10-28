@@ -15,7 +15,10 @@ run_lance_local_test()
     trap 'rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE:?}"' EXIT
 
     local sql_file="${source_dir}/sql/${test_name}.sql"
-    sed "s|tests/queries/0_stateless/data_lance|${fixture_dir}|g" "${sql_file}" \
+    # A fixed UUID would collide when the same test runs concurrently (e.g. in the flaky check).
+    local random_uuid
+    random_uuid=$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")
+    sed -e "s|tests/queries/0_stateless/data_lance|${fixture_dir}|g" -e "s|__RANDOM_UUID__|${random_uuid}|g" "${sql_file}" \
         | ${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --multiquery
 
     case "${test_name}" in
