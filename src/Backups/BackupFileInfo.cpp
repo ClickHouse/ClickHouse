@@ -110,10 +110,12 @@ BackupFileInfo buildFileInfoForBackupEntry(
     const ReadSettings & read_settings,
     LoggerPtr log)
 {
-    auto adjusted_path = removeLeadingSlash(file_name);
-
     BackupFileInfo info;
-    info.file_name = adjusted_path;
+    info.file_name = removeLeadingSlash(file_name);
+
+    /// The adjusted path is needed throughout this function - reference the copy stored in `info` instead
+    /// of keeping a second one alive for the whole call.
+    const String & adjusted_path = info.file_name;
 
     /// If it's a "reference" just set the target to a concrete file
     if (backup_entry->isReference())
