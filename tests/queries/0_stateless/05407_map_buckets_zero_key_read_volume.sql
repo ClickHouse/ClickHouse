@@ -1,3 +1,6 @@
+-- Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(0, 0)
+-- `PartsSplitter` fault injection also reads the sorting key, which changes the compressed bytes of only the query it fires on.
+
 -- A key of a bucketed `Map` reads only its bucket, but a key with a float zero reads all buckets,
 -- because the other zero can be in another bucket. Compare the compressed bytes the two lookups read.
 
