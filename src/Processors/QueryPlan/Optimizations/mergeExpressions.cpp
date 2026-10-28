@@ -172,6 +172,10 @@ size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, co
     if (filter_node.type != ActionsDAG::ActionType::COLUMN || !ConstantFilterDescription(*filter_node.column).always_true)
         return 0;
 
+    /// The expression step would expand the extremes by the `arrayJoin`, which the filter does not do.
+    if (filter->skipsExtremes() && dag.hasArrayJoin())
+        return 0;
+
     dag.removeUnusedResult(filter_column_name);
     dag.removeUnusedActions(false, false);
     auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));

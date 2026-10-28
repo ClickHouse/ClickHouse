@@ -650,15 +650,31 @@ void FilterStep::addLoweredArrayJoins(QueryPipelineBuilder & pipeline, const Bui
 
         bool is_left = ArrayJoinStep::unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
 
-        auto before = std::make_shared<ExpressionActions>(std::move(extracted->before), settings.getActionsSettings());
-        auto before_header = std::make_shared<const Block>(before->getActionsDAG().updateHeader(pipeline.getHeader()));
-        pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        auto add_expression = [&](ActionsDAG dag)
         {
-            if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
-                return std::make_shared<ExpressionTransform>(
-                    header, makeActionsWithoutPredicate(before->getActionsDAG(), {}, false, *before_header, settings.getActionsSettings()));
-            return std::make_shared<ExpressionTransform>(header, before_header, before);
-        });
+            auto expression = std::make_shared<ExpressionActions>(std::move(dag), settings.getActionsSettings());
+            auto expression_header = std::make_shared<const Block>(expression->getActionsDAG().updateHeader(pipeline.getHeader()));
+            pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (skip_extremes && stream_type == QueryPipelineBuilder::StreamType::Extremes)
+                    return std::make_shared<ExpressionTransform>(
+                        header, makeActionsWithoutPredicate(expression->getActionsDAG(), {}, false, *expression_header, settings.getActionsSettings()));
+                return std::make_shared<ExpressionTransform>(header, expression_header, expression);
+            });
+        };
+
+        add_expression(std::move(extracted->before));
+
+        /// The actions that do not depend on the join are evaluated before it, as `liftUpArrayJoin` would do.
+        if (array_join_lowering->lift_up_array_join)
+        {
+            auto lifted = extracted->after.splitActionsBeforeArrayJoin({extracted->array_join_column_name});
+            if (!lifted.first.trivial())
+            {
+                add_expression(std::move(lifted.first));
+                extracted->after = std::move(lifted.second);
+            }
+        }
 
         Names array_join_columns{extracted->array_join_column_name};
         auto array_join_action = std::make_shared<ArrayJoinAction>(

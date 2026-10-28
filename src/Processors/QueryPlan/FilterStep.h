@@ -61,6 +61,7 @@ public:
         bool enable_lazy_columns_replication = false;
         bool nondeterministic_before_expansion = false;
         bool filter_push_down = false;
+        bool lift_up_array_join = false;
     };
     void setArrayJoinLowering(ArrayJoinLowering lowering) { array_join_lowering = lowering; }
     const std::optional<ArrayJoinLowering> & getArrayJoinLowering() const { return array_join_lowering; }

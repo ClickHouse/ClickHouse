@@ -39,7 +39,8 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
             .max_block_size = settings.max_block_size,
             .enable_lazy_columns_replication = settings.enable_lazy_columns_replication,
             .nondeterministic_before_expansion = settings.legacy_array_join_function_nondeterministic_evaluation,
-            .filter_push_down = settings.filter_push_down});
+            .filter_push_down = settings.filter_push_down,
+            .lift_up_array_join = settings.lift_up_array_join});
         return 0;
     }
 

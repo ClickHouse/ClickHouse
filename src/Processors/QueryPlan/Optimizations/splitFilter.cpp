@@ -68,6 +68,11 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     if (split.second.trivial())
         return 0;
 
+    /// An `arrayJoin` the predicate no longer reads (e.g. folded away by `OR 1`) would expand the extremes
+    /// in the expression step, so it stays in the filter that skips them.
+    if (filter_step->skipsExtremes() && split.second.hasArrayJoin())
+        return 0;
+
     /// The filter node may have been renamed by the split to avoid clashing with an input of the same name.
     std::string split_filter_name = split.split_nodes_mapping.at(filter_dag_node)->result_name;
 
