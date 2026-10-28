@@ -727,8 +727,7 @@ bool TableSnapshot::isAbandonedWithoutWaiters() const
 
 bool TableSnapshot::isInitialized() const
 {
-    std::lock_guard lock(mutex);
-    return kernel_snapshot_state != nullptr;
+    return has_kernel_snapshot_state.load();
 }
 
 size_t TableSnapshot::getVersionUnlocked() const
@@ -1005,6 +1004,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
         if (!is_current_load && kernel_snapshot_state)
             break;  /// Already installed by the registered load (or a sibling waiter): keep it.
         kernel_snapshot_state = built;
+        has_kernel_snapshot_state.store(true);
         kernel_state_credentials_fingerprint = built->credentials_fingerprint;
         kernel_state_needs_rebuild = false;
         break;

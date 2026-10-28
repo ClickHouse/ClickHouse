@@ -45,6 +45,7 @@ public:
     /// Nothing is installed and every waiter gave up on the only load.
     bool isAbandonedWithoutWaiters() const;
 
+    /// Does not take `mutex`, which a statistics scan may hold for long, so it is safe under other locks.
     bool isInitialized() const;
 
     std::optional<size_t> getTotalRows() const;
@@ -108,6 +109,8 @@ private:
         DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    /// Set once `kernel_snapshot_state` is installed; a state is never removed.
+    mutable std::atomic<bool> has_kernel_snapshot_state{false};
     mutable DB::UInt128 kernel_state_credentials_fingerprint{};
     /// Forces a rebuild after a credentials refresh even if the fingerprint did not change.
     mutable bool kernel_state_needs_rebuild = false;
