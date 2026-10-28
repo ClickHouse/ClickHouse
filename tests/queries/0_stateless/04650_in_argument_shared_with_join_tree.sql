@@ -85,7 +85,7 @@ SELECT 'rewrite_in_to_join';
 SELECT t1.dummy FROM system.one AS t1
 INNER JOIN (SELECT * FROM system.one) AS t2 ON t1.dummy = t2.dummy
 WHERE t1.dummy IN t2
-SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1;
+SETTINGS rewrite_in_to_join = 1, allow_correlated_subqueries = 1;
 
 -- Shapes below are CONTROLS: each already produced its expected value before the fix, so they pin
 -- that the fix did not widen behaviour.

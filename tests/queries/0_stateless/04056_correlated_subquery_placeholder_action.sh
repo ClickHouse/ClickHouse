@@ -19,8 +19,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "
-    SET enable_analyzer = 1;
-    SET allow_experimental_correlated_subqueries = 1;
+    SET allow_correlated_subqueries = 1;
 
     DROP TABLE IF EXISTS t1;
     DROP TABLE IF EXISTS t2;
@@ -40,8 +39,7 @@ $CLICKHOUSE_CLIENT -q "
 # Both are acceptable; any other outcome (including the pre-fix error or some new
 # unexpected exception) must fail the test.
 OUTPUT=$($CLICKHOUSE_CLIENT -q "
-    SET enable_analyzer = 1;
-    SET allow_experimental_correlated_subqueries = 1;
+    SET allow_correlated_subqueries = 1;
     SELECT a, (SELECT x FROM t2 WHERE t2.y = t1.a * 100 ORDER BY x) as s FROM t1 ORDER BY a;
 " 2>&1)
 RC=$?
@@ -67,8 +65,7 @@ fi
 # matches any `t1.b`) or fail with a clear `NOT_IMPLEMENTED` decorrelation error.
 # Any other outcome must fail the test.
 OUTPUT=$($CLICKHOUSE_CLIENT -q "
-    SET enable_analyzer = 1;
-    SET allow_experimental_correlated_subqueries = 1;
+    SET allow_correlated_subqueries = 1;
     SELECT a FROM t1 WHERE a IN (SELECT x FROM t2 WHERE t2.y = t1.b);
 " 2>&1)
 RC=$?

@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 -- no-parallel: enables a server-global failpoint (replicated_merge_tree_insert_quorum_fail_0)
 -- no-shared-merge-tree: the quorum INSERT path and the failpoint are specific to ReplicatedMergeTree
 -- no-replicated-database: creates two explicit replicas (r1, r2) sharing one ZooKeeper path
@@ -35,8 +35,10 @@ SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_quorum_fail_0;
 -- The compact part is finalized (the writer releases its data/marks streams), then the forced fault
 -- makes the quorum step throw, and the sink destructor cancels the finished part. Before the fix this
 -- segfaulted in MergeTreeDataPartWriterCompact::cancel.
+-- `max_insert_threads = 1` keeps a single insert stream: with more, another stream of this `INSERT` can fail
+-- first with `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE` on the quorum node of the part written by the first one.
 INSERT INTO t_compact_cancel_r1 SELECT number, toString(number) FROM numbers(100)
-SETTINGS insert_quorum = 2, insert_quorum_parallel = 0, insert_keeper_max_retries = 0, insert_keeper_fault_injection_probability = 0; -- { serverError UNKNOWN_STATUS_OF_INSERT }
+SETTINGS insert_quorum = 2, insert_quorum_parallel = 0, insert_keeper_max_retries = 0, insert_keeper_fault_injection_probability = 0, max_insert_threads = 1; -- { serverError UNKNOWN_STATUS_OF_INSERT }
 
 SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_quorum_fail_0;
 

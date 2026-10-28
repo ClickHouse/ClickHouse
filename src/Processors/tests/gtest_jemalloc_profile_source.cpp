@@ -216,4 +216,14 @@ TEST(JemallocProfileSource, CollapsedMalformedHeaderRawPassthrough)
     std::filesystem::remove(input);
 }
 
+/// jemalloc writes a bare `@` line for a sample whose stack it could not unwind.
+TEST(JemallocProfileSource, CollapsedEmptyStack)
+{
+    auto input = writeToTempFile("heap\n@\n  t*: 1: 128 [0: 0]\n  t5: 1: 128 [0: 0]\n", "gtest_jemalloc_profile_empty_stack.heap");
+
+    EXPECT_EQ(runCollapsedProfile(input, /* collapsed_use_count= */ false), "[unknown] 128\n");
+
+    std::filesystem::remove(input);
+}
+
 #endif

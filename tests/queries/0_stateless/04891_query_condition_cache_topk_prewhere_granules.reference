@@ -1,0 +1,87 @@
+--- QCC starts empty
+0
+--- ASC LIMIT 5: ground truth (QCC off)
+0
+1
+2
+3
+4
+--- ASC LIMIT 5: the first run records PREWHERE-filtered granules
+0
+1
+2
+3
+4
+1
+--- ASC LIMIT 5: the second run consults them, must match ground truth
+0
+1
+2
+3
+4
+--- Different WHERE must not reuse the PREWHERE granule decisions: prime w = 0
+0
+1
+2
+3
+4
+--- Different WHERE must not reuse the PREWHERE granule decisions
+8192
+8193
+8194
+8195
+8196
+--- Non-deterministic WHERE must not write PREWHERE TopK cache entries
+0
+--- Mixed PREWHERE and WHERE: first run records granule decisions
+0
+1
+2
+3
+4
+--- Mixed PREWHERE and WHERE: second run must reuse them
+0
+1
+2
+3
+4
+--- Row policy must not reuse unrestricted PREWHERE granule decisions: prime
+0
+1
+2
+3
+4
+--- Row policy must not reuse unrestricted PREWHERE granule decisions
+8192
+8193
+8194
+8195
+8196
+--- Row policy must not poison WHERE cache entries
+8192
+8193
+8194
+8195
+8196
+--- Unrestricted user must not reuse row-policy WHERE cache entries
+0
+1
+2
+3
+4
+--- DESC LIMIT 5: must not reuse the granule decisions of the ASC plan
+99999
+99998
+99997
+99996
+99995
+---
+99999
+99998
+99997
+99996
+99995
+--- The second run reads fewer marks
+1	1
+--- The mixed PREWHERE and WHERE run hits the query condition cache
+1
