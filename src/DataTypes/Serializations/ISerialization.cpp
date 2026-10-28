@@ -345,14 +345,20 @@ void appendNameForSubstreamPath(
         else if (it->type == Substream::MapKeysInfo)
             append(".keys_info");
         else if (it->type == Substream::MapKey)
-            append(".key_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream));
+        {
+            if (escape_for_file_name && it->map_key_stream_name_version >= 2)
+                append(".key_" + toString(it->name_of_substream.size()) + "_" + escapeForFileName(it->name_of_substream));
+            else
+                append(".key_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream));
+        }
         else if (it->type == Substream::MapKeyExists)
         {
-            /// One independent presence stream per key. Both the value stream
-            /// (`.key_<name>`) and this one escape the key text, so no key name
-            /// (including one literally named `presence` or `key`) can collide
-            /// with a structural stream such as the per-key templates.
-            append(".exists_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream));
+            /// Version 2 includes the serialized key length, preserving the
+            /// boundary between the key and nested value substreams.
+            if (escape_for_file_name && it->map_key_stream_name_version >= 2)
+                append(".exists_" + toString(it->name_of_substream.size()) + "_" + escapeForFileName(it->name_of_substream));
+            else
+                append(".exists_" + (escape_for_file_name ? escapeForFileName(it->name_of_substream) : it->name_of_substream));
         }
         else if (it->type == Substream::MapKeyValueTemplate)
             append(".key_template");

@@ -22,7 +22,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
-    extern const MergeTreeSettingsUInt64 map_max_key_columns;
+    extern const MergeTreeSettingsUInt64 max_map_key_columns_keys;
 }
 
 namespace ErrorCodes
@@ -534,7 +534,7 @@ void MergeTreeDataPartWriterCompact::writeBufferedMapKeyColumnsPart()
             block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
     }
 
-    const UInt64 max_keys = (*storage_settings)[MergeTreeSetting::map_max_key_columns];
+    const UInt64 max_keys = (*storage_settings)[MergeTreeSetting::max_map_key_columns_keys];
     for (const auto & name : map_key_columns)
     {
         const auto * per_key = typeid_cast<const SerializationMapWithKeyColumns *>(getSerialization(name).get());
@@ -548,7 +548,7 @@ void MergeTreeDataPartWriterCompact::writeBufferedMapKeyColumnsPart()
         if (max_keys && keys.size() > max_keys)
             throw Exception(
                 ErrorCodes::LIMIT_EXCEEDED,
-                "Number of distinct keys in Map column {} is {}, exceeds map_max_key_columns ({})",
+                "Number of distinct keys in Map column {} is {}, exceeds max_map_key_columns_keys ({})",
                 backQuoteIfNeed(name),
                 keys.size(),
                 max_keys);

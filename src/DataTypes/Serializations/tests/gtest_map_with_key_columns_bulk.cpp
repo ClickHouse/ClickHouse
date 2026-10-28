@@ -219,12 +219,12 @@ TEST(MapWithKeyColumnsBulk, RoundTrip)
     const auto & streams = serialized.streams;
 
     EXPECT_FALSE(streams.contains("m.keys_info"));
-    EXPECT_TRUE(streams.contains("m.key_a"));
-    EXPECT_TRUE(streams.contains("m.key_b"));
-    EXPECT_TRUE(streams.contains("m.key_c"));
-    EXPECT_TRUE(streams.contains("m.exists_a"));
-    EXPECT_TRUE(streams.contains("m.exists_b"));
-    EXPECT_TRUE(streams.contains("m.exists_c"));
+    EXPECT_TRUE(streams.contains("m.key_1_a"));
+    EXPECT_TRUE(streams.contains("m.key_1_b"));
+    EXPECT_TRUE(streams.contains("m.key_1_c"));
+    EXPECT_TRUE(streams.contains("m.exists_1_a"));
+    EXPECT_TRUE(streams.contains("m.exists_1_b"));
+    EXPECT_TRUE(streams.contains("m.exists_1_c"));
     EXPECT_FALSE(streams.contains("m.key_presence"));
 
     auto result = deserializeWithKeyColumns(type, streams, serialized.manifest, column->size());
@@ -288,12 +288,12 @@ TEST(MapWithKeyColumnsBulk, SingleKeyEnumeratesOnlyTargetStreams)
 
     const auto full = enumerateFileNames(serialization, parent);
     EXPECT_FALSE(full.contains("m.keys_info"));
-    EXPECT_TRUE(full.contains("m.key_a"));
-    EXPECT_TRUE(full.contains("m.key_b"));
-    EXPECT_TRUE(full.contains("m.key_c"));
-    EXPECT_TRUE(full.contains("m.exists_a"));
-    EXPECT_TRUE(full.contains("m.exists_b"));
-    EXPECT_TRUE(full.contains("m.exists_c"));
+    EXPECT_TRUE(full.contains("m.key_1_a"));
+    EXPECT_TRUE(full.contains("m.key_1_b"));
+    EXPECT_TRUE(full.contains("m.key_1_c"));
+    EXPECT_TRUE(full.contains("m.exists_1_a"));
+    EXPECT_TRUE(full.contains("m.exists_1_b"));
+    EXPECT_TRUE(full.contains("m.exists_1_c"));
     EXPECT_FALSE(full.contains("m.key_presence"));
     EXPECT_FALSE(full.contains("m.key_template"));
     EXPECT_FALSE(full.contains("m.exists_template"));
@@ -303,10 +303,10 @@ TEST(MapWithKeyColumnsBulk, SingleKeyEnumeratesOnlyTargetStreams)
     auto key_a = ISerialization::SubstreamData(key_a_ser).withType(key_a_type);
     const auto key_a_files = enumerateFileNames(key_a.serialization, key_a);
     EXPECT_FALSE(key_a_files.contains("m.keys_info"));
-    EXPECT_TRUE(key_a_files.contains("m.key_a"));
-    EXPECT_FALSE(key_a_files.contains("m.key_b"));
-    EXPECT_FALSE(key_a_files.contains("m.key_c"));
-    EXPECT_FALSE(key_a_files.contains("m.exists_a"));
+    EXPECT_TRUE(key_a_files.contains("m.key_1_a"));
+    EXPECT_FALSE(key_a_files.contains("m.key_1_b"));
+    EXPECT_FALSE(key_a_files.contains("m.key_1_c"));
+    EXPECT_FALSE(key_a_files.contains("m.exists_1_a"));
     EXPECT_FALSE(key_a_files.contains("m.key_presence"));
 
     auto exists_a_ser = type->getSubcolumnSerialization("exists_a", serialization);
@@ -314,11 +314,11 @@ TEST(MapWithKeyColumnsBulk, SingleKeyEnumeratesOnlyTargetStreams)
     auto exists_a = ISerialization::SubstreamData(exists_a_ser).withType(exists_a_type);
     const auto exists_a_files = enumerateFileNames(exists_a.serialization, exists_a);
     EXPECT_FALSE(exists_a_files.contains("m.keys_info"));
-    EXPECT_TRUE(exists_a_files.contains("m.exists_a"));
+    EXPECT_TRUE(exists_a_files.contains("m.exists_1_a"));
     EXPECT_FALSE(exists_a_files.contains("m.key_presence"));
-    EXPECT_FALSE(exists_a_files.contains("m.key_a"));
-    EXPECT_FALSE(exists_a_files.contains("m.key_b"));
-    EXPECT_FALSE(exists_a_files.contains("m.key_c"));
+    EXPECT_FALSE(exists_a_files.contains("m.key_1_a"));
+    EXPECT_FALSE(exists_a_files.contains("m.key_1_b"));
+    EXPECT_FALSE(exists_a_files.contains("m.key_1_c"));
 }
 
 TEST(MapWithKeyColumnsBulk, SingleKeyDeserializeDoesNotReadOtherKeys)
@@ -334,19 +334,19 @@ TEST(MapWithKeyColumnsBulk, SingleKeyDeserializeDoesNotReadOtherKeys)
     EXPECT_EQ((*key_a.column)[1], Field(UInt64(3)));
     EXPECT_EQ((*key_a.column)[2], Field(UInt64(0)));
     EXPECT_EQ((*key_a.column)[3], Field(UInt64(0)));
-    EXPECT_TRUE(containsStream(key_a.data_streams, "m.key_a"));
-    EXPECT_FALSE(containsStream(key_a.data_streams, "m.key_b"));
-    EXPECT_FALSE(containsStream(key_a.data_streams, "m.key_c"));
-    EXPECT_FALSE(containsStream(key_a.data_streams, "m.exists_a"));
+    EXPECT_TRUE(containsStream(key_a.data_streams, "m.key_1_a"));
+    EXPECT_FALSE(containsStream(key_a.data_streams, "m.key_1_b"));
+    EXPECT_FALSE(containsStream(key_a.data_streams, "m.key_1_c"));
+    EXPECT_FALSE(containsStream(key_a.data_streams, "m.exists_1_a"));
     EXPECT_FALSE(containsStream(key_a.data_streams, "m.key_presence"));
 
     auto missing = deserializeSubcolumn(type, streams, serialized.manifest, "key_missing", column->size());
     ASSERT_EQ(missing.column->size(), column->size());
     EXPECT_EQ((*missing.column)[0], Field(UInt64(0)));
-    EXPECT_FALSE(containsStream(missing.data_streams, "m.key_a"));
-    EXPECT_FALSE(containsStream(missing.data_streams, "m.key_b"));
-    EXPECT_FALSE(containsStream(missing.data_streams, "m.key_c"));
-    EXPECT_FALSE(containsStream(missing.data_streams, "m.exists_a"));
+    EXPECT_FALSE(containsStream(missing.data_streams, "m.key_1_a"));
+    EXPECT_FALSE(containsStream(missing.data_streams, "m.key_1_b"));
+    EXPECT_FALSE(containsStream(missing.data_streams, "m.key_1_c"));
+    EXPECT_FALSE(containsStream(missing.data_streams, "m.exists_1_a"));
     EXPECT_FALSE(containsStream(missing.data_streams, "m.key_presence"));
 
     auto exists_a = deserializeSubcolumn(type, streams, serialized.manifest, "exists_a", column->size());
@@ -357,11 +357,11 @@ TEST(MapWithKeyColumnsBulk, SingleKeyDeserializeDoesNotReadOtherKeys)
     EXPECT_EQ(exists_data[1], 1);
     EXPECT_EQ(exists_data[2], 0);
     EXPECT_EQ(exists_data[3], 1);
-    EXPECT_TRUE(containsStream(exists_a.data_streams, "m.exists_a"));
+    EXPECT_TRUE(containsStream(exists_a.data_streams, "m.exists_1_a"));
     EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_presence"));
-    EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_a"));
-    EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_b"));
-    EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_c"));
+    EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_1_a"));
+    EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_1_b"));
+    EXPECT_FALSE(containsStream(exists_a.data_streams, "m.key_1_c"));
 }
 
 TEST(MapWithKeyColumnsBulk, TemplateStreams)
@@ -399,7 +399,7 @@ TEST(MapWithKeyColumnsBulk, TemplateStreams)
     EXPECT_FALSE(streams["m.key_template"].empty());
     EXPECT_FALSE(streams["m.exists_template"].empty());
     EXPECT_FALSE(streams.contains("m.key_presence"));
-    EXPECT_FALSE(streams.contains("m.exists_a"));
+    EXPECT_FALSE(streams.contains("m.exists_1_a"));
 
     auto data = ISerialization::SubstreamData(serialization).withType(type);
     const auto template_files = [&]()

@@ -1,6 +1,8 @@
 -- `exists_` on an already-materialized Map, and the `with_key_columns` presence stream,
 -- must agree with `m[k]` for `NaN` keys and for a repeated key.
 
+SET allow_experimental_map_key_columns = 1;
+
 SELECT 'in_memory';
 SELECT m.exists_nan, m.exists_1 FROM (SELECT map(toFloat64('nan'), 1) AS m);
 SELECT m.exists_nan, m.exists_1 FROM (SELECT map(toFloat64(1), 1) AS m);

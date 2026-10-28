@@ -689,6 +689,9 @@ public:
 
     /// Read `<column>.key_columns.txt` for every `with_key_columns` Map column. Requires columns and checksums.
     void loadMapKeyColumnsManifests();
+    /// Resolve the effective Map serialization from the recorded sidecar layout and reject
+    /// layouts that the target table cannot produce.
+    void applyMapKeyColumnsLayoutFromChecksums();
     bool areChecksumsLoaded() const { return !checksums.empty(); }
 
     /// Whether this part's column and secondary index sizes are already computed.

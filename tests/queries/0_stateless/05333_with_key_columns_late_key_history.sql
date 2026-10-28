@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 -- Tag no-random-merge-tree-settings: the randomized `map_serialization_version` replaces `with_key_columns`
 
 -- A key that first appears after some granules of the part were written gets the rows written

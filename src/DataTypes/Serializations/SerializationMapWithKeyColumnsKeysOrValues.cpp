@@ -78,8 +78,8 @@ void SerializationMapWithKeyColumnsKeysOrValues::enumerateStreams(
 
         if (!is_keys)
         {
-            settings.path.push_back(Substream::MapKey);
-            settings.path.back().name_of_substream = key_name;
+            settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+                Substream::MapKey, key_name, manifest.stream_name_version));
             auto value_data = SubstreamData(key_columns.getValueSerialization()).withType(key_columns.getValueType());
             key_columns.getValueSerialization()->enumerateStreams(settings, callback, value_data);
             settings.path.pop_back();
@@ -87,8 +87,8 @@ void SerializationMapWithKeyColumnsKeysOrValues::enumerateStreams(
 
         if (entry.presence_kind == MapKeyPresenceKind::Tracked)
         {
-            settings.path.push_back(Substream::MapKeyExists);
-            settings.path.back().name_of_substream = key_name;
+            settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+                Substream::MapKeyExists, key_name, manifest.stream_name_version));
             auto exists_data = SubstreamData(key_columns.getExistsSerialization()).withType(std::make_shared<DataTypeUInt8>());
             key_columns.getExistsSerialization()->enumerateStreams(settings, callback, exists_data);
             settings.path.pop_back();
@@ -159,8 +159,8 @@ void SerializationMapWithKeyColumnsKeysOrValues::deserializeBinaryBulkStatePrefi
         if (entry.presence_kind == MapKeyPresenceKind::AlwaysPresent)
             continue;
 
-        settings.path.push_back(Substream::MapKeyExists);
-        settings.path.back().name_of_substream = key_columns.keyToStreamName(entry.key);
+        settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+            Substream::MapKeyExists, key_columns.keyToStreamName(entry.key), manifest.stream_name_version));
         key_columns.getExistsSerialization()->deserializeBinaryBulkStatePrefix(settings, keys_or_values_state->exists_states[i], cache);
         settings.path.pop_back();
     }
@@ -206,8 +206,8 @@ void SerializationMapWithKeyColumnsKeysOrValues::deserializeBinaryBulkWithMultip
                 continue;
 
             auto exists_column = ColumnUInt8::create();
-            settings.path.push_back(Substream::MapKeyExists);
-            settings.path.back().name_of_substream = key_columns.keyToStreamName(entry.key);
+            settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+                Substream::MapKeyExists, key_columns.keyToStreamName(entry.key), manifest.stream_name_version));
             if (!insertDataFromSubstreamsCacheIfAny(cache, settings, *exists_column))
             {
                 key_columns.getExistsSerialization()->deserializeBinaryBulkWithMultipleStreams(

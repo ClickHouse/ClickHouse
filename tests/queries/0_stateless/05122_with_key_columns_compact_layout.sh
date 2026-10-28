@@ -8,6 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_map_key_columns=1"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_wkc_compact_files"
 
 ${CLICKHOUSE_CLIENT} -q "
@@ -71,8 +73,8 @@ echo "data_bin=$(has_pattern 'data.bin')"
 echo "compact_marks=$(has_pattern 'data.*mrk4')"
 echo "key_columns_txt=$(has_pattern 'm.key_columns.txt')"
 echo "keys_info_sidecar=$(has_pattern 'm.keys_info*')"
-echo "key_a_bin=$(has_pattern 'm.key_a.bin')"
-echo "key_b_bin=$(has_pattern 'm.key_b.bin')"
+echo "key_a_bin=$(has_pattern 'm.key_1_a.bin')"
+echo "key_b_bin=$(has_pattern 'm.key_1_b.bin')"
 echo "key_presence_bin=$(has_pattern 'm.key_presence.bin')"
 echo "template=$(has_pattern '*template*')"
 

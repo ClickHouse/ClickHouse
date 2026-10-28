@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- Key union for with_key_columns must follow the rows the merge will write:
 -- a patch can introduce a key the source manifest does not have, a lightweight
@@ -100,7 +101,7 @@ SETTINGS
     serialization_info_version = 'with_types',
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
-    map_max_key_columns = 4,
+    max_map_key_columns_keys = 4,
     map_key_columns_per_key_merge_min_keys = 4,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 1,

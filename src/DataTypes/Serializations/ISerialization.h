@@ -349,6 +349,12 @@ public:
         /// Name of substream for type from 'named_types'.
         String name_of_substream;
 
+        /// Physical naming version for `MapKey` and `MapKeyExists`. Version 1 concatenates
+        /// the escaped key with nested value substreams and can lose the key boundary.
+        /// Version 2 prefixes the key with its byte length. Logical subcolumn names are
+        /// unchanged.
+        UInt8 map_key_stream_name_version = 2;
+
         /// Path name for Object type elements.
         String object_path_name;
 

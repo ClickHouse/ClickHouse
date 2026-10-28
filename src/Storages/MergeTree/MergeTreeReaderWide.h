@@ -117,6 +117,11 @@ private:
     /// The elements are never moved or erased, so references to them stay valid.
     std::unordered_multimap<UInt64, StreamInfoEntry> streams_info;
 
+    /// Dense per-key streams can dominate memory when retained for the lifetime of the reader.
+    /// Keep caching only when several requested subcolumns share the storage column.
+    std::vector<bool> read_without_substreams_cache;
+    bool part_uses_map_key_columns = false;
+
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.
     using ColumnReadSelector = std::function<std::optional<bool>(size_t pos)>;
@@ -168,7 +173,8 @@ private:
         bool continue_reading,
         size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        bool use_substreams_cache = true);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(

@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- Compact sources may merge; the output part must be Wide. Every source part
 -- uses the same key set so this test does not depend on Wide first-block key

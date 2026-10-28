@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- Compact selection and fail-closed gates for with_key_columns.
 -- optimize_on_insert must stay off: it writes level-1 parts, which Compact

@@ -1,6 +1,7 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
--- `map_max_key_columns` applies to both the full-column merge and the per-key
+-- `max_map_key_columns_keys` applies to both the full-column merge and the per-key
 -- merge. A non-zero limit smaller than the union fails with `LIMIT_EXCEEDED`
 -- and publishes no merged part. Zero means unlimited and the same data merges.
 
@@ -22,7 +23,7 @@ SETTINGS
     serialization_info_version = 'with_types',
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
-    map_max_key_columns = 1,
+    max_map_key_columns_keys = 1,
     map_key_columns_per_key_merge_min_keys = 100,
     add_minmax_index_for_numeric_columns = 0,
     auto_statistics_types = '';
@@ -40,7 +41,7 @@ SETTINGS
     serialization_info_version = 'with_types',
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
-    map_max_key_columns = 1,
+    max_map_key_columns_keys = 1,
     map_key_columns_per_key_merge_min_keys = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 1,
@@ -70,8 +71,8 @@ SELECT
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_wkc_max_per_key' AND active;
 
-ALTER TABLE t_wkc_max_full MODIFY SETTING map_max_key_columns = 0;
-ALTER TABLE t_wkc_max_per_key MODIFY SETTING map_max_key_columns = 0;
+ALTER TABLE t_wkc_max_full MODIFY SETTING max_map_key_columns_keys = 0;
+ALTER TABLE t_wkc_max_per_key MODIFY SETTING max_map_key_columns_keys = 0;
 
 OPTIMIZE TABLE t_wkc_max_full FINAL;
 OPTIMIZE TABLE t_wkc_max_per_key FINAL;

@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 -- Tag no-random-merge-tree-settings: the randomized `map_serialization_version` replaces `with_key_columns`
 
 -- Several threads reading one part share the cached deserialization prefixes. Each reader must get

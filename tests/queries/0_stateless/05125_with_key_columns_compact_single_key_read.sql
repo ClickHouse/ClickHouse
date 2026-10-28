@@ -1,4 +1,5 @@
 -- Tags: no-object-storage, no-random-settings, no-random-merge-tree-settings, no-parallel
+SET allow_experimental_map_key_columns = 1;
 -- Compact stores every column in data.bin, so FileOpen is not a pruning signal.
 -- Compare ReadBufferFromFileDescriptorReadBytes: one key vs full Map / a cold key.
 

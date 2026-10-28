@@ -265,6 +265,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_map_key_columns;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -1541,11 +1542,10 @@ void MergeTreeData::checkProperties(
 
     if (!attach)
     {
-        const bool uses_with_key_columns
-            = effective_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
-            || effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
-                == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
-        if (uses_with_key_columns && !effective_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
+        const bool zero_level_uses_with_key_columns
+            = effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+            == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        if (zero_level_uses_with_key_columns && !effective_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
         {
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
@@ -1672,6 +1672,45 @@ void MergeTreeData::checkProperties(
 
     /// On CREATE, `old_metadata` and `new_metadata` are the same object; on ALTER they differ.
     const bool is_alter = &old_metadata != &new_metadata;
+
+    const bool new_uses_key_columns
+        = effective_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool zero_level_uses_key_columns
+        = effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+        == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool live_uses_key_columns
+        = live_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    if (!attach && !new_uses_key_columns && zero_level_uses_key_columns)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "map_serialization_version_for_zero_level_parts = 'with_key_columns' requires "
+            "map_serialization_version = 'with_key_columns'");
+    }
+
+    if (new_uses_key_columns && merging_params.mode != MergingParams::Ordinary)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Map serialization version 'with_key_columns' is supported only for MergeTree and ReplicatedMergeTree");
+    }
+
+    if (!attach && is_alter && new_uses_key_columns && !live_uses_key_columns
+        && !(local_context && local_context->getSettingsRef()[Setting::allow_experimental_map_key_columns]))
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Map serialization version 'with_key_columns' is experimental. "
+            "Set the session setting `allow_experimental_map_key_columns = 1` to enable it");
+    }
+
+    if (!attach && is_alter && new_uses_key_columns != live_uses_key_columns && getActivePartsCount() > 0)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot change map_serialization_version to or from 'with_key_columns' while the table has data parts");
+    }
 
     for (const auto & col : new_metadata.columns)
     {

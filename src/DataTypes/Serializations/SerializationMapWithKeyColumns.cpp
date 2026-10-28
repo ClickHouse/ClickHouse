@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationMapWithKeyColumnsSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <limits>
 #include <set>
+#include <unordered_set>
 
 namespace DB
 {
@@ -52,14 +54,15 @@ IColumn & extractNestedColumn(IColumn & column)
 namespace
 {
 
-constexpr UInt64 KEY_COLUMNS_TEXT_VERSION = 1;
+constexpr UInt64 KEY_COLUMNS_TEXT_VERSION_V1 = 1;
+constexpr UInt64 KEY_COLUMNS_TEXT_VERSION_V2 = 2;
 
 MapKeyManifest readKeyColumnsTextImpl(ReadBuffer & istr, const DataTypePtr & key_type)
 {
     UInt64 version = 0;
     readText(version, istr);
     assertChar('\n', istr);
-    if (version != KEY_COLUMNS_TEXT_VERSION)
+    if (version != KEY_COLUMNS_TEXT_VERSION_V1 && version != KEY_COLUMNS_TEXT_VERSION_V2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown key_columns.txt version {}", version);
 
     UInt64 key_count = 0;
@@ -69,6 +72,9 @@ MapKeyManifest readKeyColumnsTextImpl(ReadBuffer & istr, const DataTypePtr & key
     auto key_serialization = key_type->getDefaultSerialization();
     FormatSettings format_settings;
     MapKeyManifest manifest;
+    manifest.stream_name_version = version == KEY_COLUMNS_TEXT_VERSION_V1
+        ? 1
+        : MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
     manifest.keys.reserve(key_count);
     for (UInt64 i = 0; i < key_count; ++i)
     {
@@ -97,7 +103,7 @@ MapKeyManifest readKeyColumnsTextImpl(ReadBuffer & istr, const DataTypePtr & key
 
 void SerializationMapWithKeyColumns::writeKeyColumnsText(WriteBuffer & ostr, const DataTypePtr & key_type, const MapKeyManifest & manifest)
 {
-    writeText(KEY_COLUMNS_TEXT_VERSION, ostr);
+    writeText(KEY_COLUMNS_TEXT_VERSION_V2, ostr);
     writeChar('\n', ostr);
     writeText(manifest.keys.size(), ostr);
     writeChar('\n', ostr);
@@ -201,6 +207,99 @@ MapKeyManifest SerializationMapWithKeyColumns::collectManifestFromColumn(const I
     for (const auto & key : unique_keys)
         manifest.keys.push_back(MapKeyManifestEntry{.key = key});
     return manifest;
+}
+
+ColumnPtr SerializationMapWithKeyColumns::canonicalizeMapKeys(const ColumnPtr & column)
+{
+    const auto & map = assert_cast<const ColumnMap &>(*column);
+    const auto & nested_array = map.getNestedColumn();
+    const auto & nested_data = map.getNestedData();
+    const auto & keys = nested_data.getColumn(0);
+    const auto & offsets = nested_array.getOffsets();
+
+    IColumn::Permutation permutation;
+    permutation.reserve(keys.size());
+    auto canonical_offsets = ColumnArray::ColumnOffsets::create();
+    auto & canonical_offsets_data = canonical_offsets->getData();
+    canonical_offsets_data.reserve(offsets.size());
+
+    bool unchanged = true;
+    for (size_t row = 0; row < offsets.size(); ++row)
+    {
+        const size_t begin = offsets[static_cast<ssize_t>(row) - 1];
+        const size_t end = offsets[row];
+        std::map<Field, size_t> first_position;
+        for (size_t pos = begin; pos < end; ++pos)
+        {
+            Field key;
+            keys.get(pos, key);
+            first_position.try_emplace(std::move(key), pos);
+        }
+
+        for (const auto & [_, pos] : first_position)
+        {
+            unchanged &= pos == permutation.size();
+            permutation.push_back(pos);
+        }
+        canonical_offsets_data.push_back(permutation.size());
+    }
+
+    if (unchanged && permutation.size() == keys.size())
+        return column;
+
+    auto canonical_nested = nested_data.permute(permutation, permutation.size());
+    auto canonical_array = ColumnArray::create(std::move(canonical_nested), std::move(canonical_offsets));
+    return ColumnMap::create(std::move(canonical_array), map.getStatistics());
+}
+
+ColumnPtr SerializationMapWithKeyColumns::canonicalizeMapKeys(const ColumnPtr & column, const IDataType & type)
+{
+    if (isMap(type))
+        return canonicalizeMapKeys(column);
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto & array = assert_cast<const ColumnArray &>(*column);
+        auto data = canonicalizeMapKeys(array.getDataPtr(), *array_type->getNestedType());
+        if (data == array.getDataPtr())
+            return column;
+        return ColumnArray::create(std::move(data), array.getOffsetsPtr());
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        const auto & tuple = assert_cast<const ColumnTuple &>(*column);
+        Columns elements;
+        elements.reserve(tuple.getColumns().size());
+        for (const auto & element : tuple.getColumns())
+            elements.push_back(element);
+        bool changed = false;
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            auto element = canonicalizeMapKeys(elements[i], *tuple_type->getElement(i));
+            changed |= element != elements[i];
+            elements[i] = std::move(element);
+        }
+        if (!changed)
+            return column;
+        return ColumnTuple::create(std::move(elements));
+    }
+
+    return column;
+}
+
+bool SerializationMapWithKeyColumns::hasMap(const IDataType & type)
+{
+    if (isMap(type))
+        return true;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+        return hasMap(*array_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        return std::ranges::any_of(
+            tuple_type->getElements(), [](const auto & element) { return hasMap(*element); });
+    }
+    return false;
 }
 
 std::vector<Field> SerializationMapWithKeyColumns::keysFromManifest(const MapKeyManifest & manifest)
@@ -387,28 +486,72 @@ String SerializationMapWithKeyColumns::keyToStreamName(const Field & key) const
     return buf.str();
 }
 
+ISerialization::Substream SerializationMapWithKeyColumns::makeKeySubstream(
+    ISerialization::Substream::Type type,
+    String key_name,
+    UInt8 stream_name_version)
+{
+    ISerialization::Substream stream(type);
+    stream.name_of_substream = std::move(key_name);
+    stream.map_key_stream_name_version = stream_name_version;
+    return stream;
+}
+
+void SerializationMapWithKeyColumns::validateManifestStreamNames(const MapKeyManifest & manifest) const
+{
+    if (manifest.stream_name_version != 1)
+        return;
+
+    /// Version 1 gave this real key and the Wide writer's template the same name.
+    for (const auto & entry : manifest.keys)
+    {
+        if (keyToStreamName(entry.key) == "template")
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Ambiguous version 1 with_key_columns stream name for Map key 'template'");
+    }
+
+    EnumerateStreamsSettings settings;
+    settings.map_key_columns_manifest = &manifest;
+    std::unordered_set<String> stream_names;
+    enumerateStreams(
+        settings,
+        [&](const SubstreamPath & path)
+        {
+            auto name = getFileNameForStream("map", path, {});
+            if (!stream_names.insert(name).second)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Ambiguous version 1 with_key_columns stream name {}",
+                    name);
+        },
+        SubstreamData(getPtr()).withType(std::make_shared<DataTypeMap>(key_type, value_type)));
+}
+
 void SerializationMapWithKeyColumns::addMapKeyPath(SerializeBinaryBulkSettings & settings, const Field & key) const
 {
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = keyToStreamName(key);
+    settings.path.push_back(makeKeySubstream(Substream::MapKey, keyToStreamName(key)));
 }
 
 void SerializationMapWithKeyColumns::addMapKeyPath(DeserializeBinaryBulkSettings & settings, const Field & key) const
 {
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = keyToStreamName(key);
+    const UInt8 version = settings.map_key_columns_manifest
+        ? settings.map_key_columns_manifest->stream_name_version
+        : MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
+    settings.path.push_back(makeKeySubstream(Substream::MapKey, keyToStreamName(key), version));
 }
 
 void SerializationMapWithKeyColumns::addMapExistsPath(SerializeBinaryBulkSettings & settings, const Field & key) const
 {
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = keyToStreamName(key);
+    settings.path.push_back(makeKeySubstream(Substream::MapKeyExists, keyToStreamName(key)));
 }
 
 void SerializationMapWithKeyColumns::addMapExistsPath(DeserializeBinaryBulkSettings & settings, const Field & key) const
 {
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = keyToStreamName(key);
+    const UInt8 version = settings.map_key_columns_manifest
+        ? settings.map_key_columns_manifest->stream_name_version
+        : MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
+    settings.path.push_back(makeKeySubstream(Substream::MapKeyExists, keyToStreamName(key), version));
 }
 
 void SerializationMapWithKeyColumns::enumerateKeyStreams(
@@ -419,15 +562,13 @@ void SerializationMapWithKeyColumns::enumerateKeyStreams(
 {
     const auto key_name = keyToStreamName(key);
 
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(makeKeySubstream(Substream::MapKey, key_name));
     /// The sample column is a `ColumnMap`. `V` enumerates from its own type.
     auto value_data = SubstreamData(value_serialization).withType(value_type);
     value_serialization->enumerateStreams(settings, callback, value_data);
     settings.path.pop_back();
 
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(makeKeySubstream(Substream::MapKeyExists, key_name));
     auto exists_data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
     exists_serialization->enumerateStreams(settings, callback, exists_data);
     settings.path.pop_back();
@@ -512,8 +653,7 @@ void SerializationMapWithKeyColumns::enumerateStreams(
     {
         const auto key_name = keyToStreamName(entry.key);
 
-        settings.path.push_back(Substream::MapKey);
-        settings.path.back().name_of_substream = key_name;
+        settings.path.push_back(makeKeySubstream(Substream::MapKey, key_name, manifest.stream_name_version));
         auto value_data = SubstreamData(value_serialization).withType(value_type);
         value_serialization->enumerateStreams(settings, callback, value_data);
         settings.path.pop_back();
@@ -523,8 +663,7 @@ void SerializationMapWithKeyColumns::enumerateStreams(
         /// nested bulk path, so it is granule/mark aligned.
         if (entry.presence_kind == MapKeyPresenceKind::Tracked)
         {
-            settings.path.push_back(Substream::MapKeyExists);
-            settings.path.back().name_of_substream = key_name;
+            settings.path.push_back(makeKeySubstream(Substream::MapKeyExists, key_name, manifest.stream_name_version));
             auto exists_data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
             exists_serialization->enumerateStreams(settings, callback, exists_data);
             settings.path.pop_back();

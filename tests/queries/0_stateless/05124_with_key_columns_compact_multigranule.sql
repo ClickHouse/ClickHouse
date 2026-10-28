@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- One Compact part, several granules, one INSERT block. Key set is frozen from
 -- that block; every granule must keep the same substreams.

@@ -76,12 +76,38 @@ TEST(MapWithKeyColumnsManifest, RoundTrip)
     auto column = makeColumn(type);
 
     auto manifest = deserializeManifest(serialization, serializeManifest(serialization, *column));
+    EXPECT_EQ(manifest.stream_name_version, MapKeyManifest::CURRENT_STREAM_NAME_VERSION);
     ASSERT_EQ(manifest.keys.size(), 3u);
     EXPECT_EQ(manifest.keys[0].key, Field("a"));
     EXPECT_EQ(manifest.keys[1].key, Field("b"));
     EXPECT_EQ(manifest.keys[2].key, Field("c"));
     for (const auto & entry : manifest.keys)
         EXPECT_EQ(entry.presence_kind, MapKeyPresenceKind::Tracked);
+}
+
+TEST(MapWithKeyColumnsManifest, ReadsVersionOne)
+{
+    auto serialization = getWithKeyColumnsSerialization(getMapType());
+    auto manifest = deserializeManifest(serialization, "1\n1\n1\tlegacy\n");
+    ASSERT_EQ(manifest.keys.size(), 1u);
+    EXPECT_EQ(manifest.stream_name_version, 1);
+    EXPECT_EQ(manifest.keys[0].key, Field("legacy"));
+}
+
+TEST(MapWithKeyColumnsManifest, RejectsAmbiguousVersionOneStreams)
+{
+    auto type = DataTypeFactory::instance().get("Map(String, Tuple(b UInt64, `a.b` UInt64))");
+    auto serialization_ptr = getWithKeyColumnsSerialization(type);
+    const auto & serialization = assert_cast<const SerializationMapWithKeyColumns &>(*serialization_ptr);
+
+    MapKeyManifest manifest;
+    manifest.stream_name_version = 1;
+    manifest.keys.push_back({.key = Field("k")});
+    manifest.keys.push_back({.key = Field("k.a")});
+    EXPECT_THROW(serialization.validateManifestStreamNames(manifest), Exception);
+
+    manifest.keys = {{.key = Field("template")}};
+    EXPECT_THROW(serialization.validateManifestStreamNames(manifest), Exception);
 }
 
 TEST(MapWithKeyColumnsManifest, EscapedKeyRoundTrip)

@@ -53,6 +53,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_experimental_map_key_columns;
     extern const SettingsBool enable_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -67,6 +68,8 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_tuple_element_aggregation;
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
@@ -1020,6 +1023,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);
             validate_codec_setting("primary_key_compression_codec", (*storage_settings)[MergeTreeSetting::primary_key_compression_codec].value);
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
+        }
+
+        const bool uses_map_key_columns
+            = (*storage_settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+            || (*storage_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+                == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        if (is_fresh_definition && uses_map_key_columns && !local_settings[Setting::allow_experimental_map_key_columns])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Map serialization version 'with_key_columns' is experimental. "
+                "Set the session setting `allow_experimental_map_key_columns = 1` to enable it");
         }
 
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];

@@ -26,6 +26,12 @@ struct MapKeyManifestEntry
 
 struct MapKeyManifest
 {
+    static constexpr UInt8 CURRENT_STREAM_NAME_VERSION = 2;
+
+    /// Version 1 used `.key_<escaped-key>` and `.exists_<escaped-key>`. Version 2
+    /// includes the serialized key length, preserving the boundary before nested
+    /// value substreams.
+    UInt8 stream_name_version = CURRENT_STREAM_NAME_VERSION;
     std::vector<MapKeyManifestEntry> keys;
 };
 
@@ -51,10 +57,20 @@ public:
     const SerializationPtr & getKeySerialization() const { return key_serialization; }
     const SerializationPtr & getValueSerialization() const { return value_serialization; }
     String keyToStreamName(const Field & key) const;
+    static ISerialization::Substream makeKeySubstream(
+        ISerialization::Substream::Type type,
+        String key_name,
+        UInt8 stream_name_version = MapKeyManifest::CURRENT_STREAM_NAME_VERSION);
+    void validateManifestStreamNames(const MapKeyManifest & manifest) const;
     /// Alias mirroring the reference: the per-key subcolumn name for a key.
     String getKeySubcolumnName(const Field & key) const { return keyToStreamName(key); }
 
     static MapKeyManifest collectManifestFromColumn(const IColumn & column);
+    /// Return the stored representation of a Map: keys in comparison order and
+    /// repeated keys reduced to their first value.
+    static ColumnPtr canonicalizeMapKeys(const ColumnPtr & column);
+    static ColumnPtr canonicalizeMapKeys(const ColumnPtr & column, const IDataType & type);
+    static bool hasMap(const IDataType & type);
     /// Plain-text part file `<column>.key_columns.txt`.
     /// Line 1 is the format version, line 2 is the key count, then one line per key:
     /// `<presence_kind>\t<text-escaped key>`. `presence_kind` is the decimal value of

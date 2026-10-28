@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 -- Tag no-random-merge-tree-settings: the randomized `map_serialization_version` replaces `with_key_columns`
 
 -- The columns cache decides from the streams of a part whether a column has any data in it. The

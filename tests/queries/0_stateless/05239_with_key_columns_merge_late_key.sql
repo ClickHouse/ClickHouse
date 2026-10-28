@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- Full-column merge must register the key union before the first output block.
 -- `z` and `a` exist only in the second granule of the second part, and

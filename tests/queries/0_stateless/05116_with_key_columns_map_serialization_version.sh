@@ -4,13 +4,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_LOCAL="$CLICKHOUSE_LOCAL --allow_experimental_map_key_columns=1"
+
 data_path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$data_path"
 
 $CLICKHOUSE_LOCAL --path "$data_path" -m -q "
 SELECT name, value
 FROM system.merge_tree_settings
-WHERE name IN ('map_serialization_version', 'map_serialization_version_for_zero_level_parts', 'map_max_key_columns')
+WHERE name IN ('map_serialization_version', 'map_serialization_version_for_zero_level_parts', 'max_map_key_columns_keys')
 ORDER BY name;
 
 CREATE TABLE t (id UInt64, m Map(String, UInt64))
@@ -18,7 +20,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS
     map_serialization_version = 'with_key_columns',
     map_serialization_version_for_zero_level_parts = 'with_key_columns',
-    map_max_key_columns = 0,
+    max_map_key_columns_keys = 0,
     serialization_info_version = 'with_types',
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0;

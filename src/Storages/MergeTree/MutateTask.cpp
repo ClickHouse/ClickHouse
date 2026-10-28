@@ -27,6 +27,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Processors/ISimpleTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -310,6 +311,41 @@ static bool hasStableRowMaskKeyTypes(
         || type == TypeIndex::UInt64;
     const auto key_type = key->type->getTypeId();
     return valid_prefix && (first.key_from_uint128_array_join ? key_type == TypeIndex::UInt128 : key_type == TypeIndex::String);
+}
+
+class CanonicalizeMapKeyColumnsTransform final : public ISimpleTransform
+{
+public:
+    CanonicalizeMapKeyColumnsTransform(SharedHeader header_, MergeTreeMapSerializationVersion version_)
+        : ISimpleTransform(header_, header_, false)
+        , version(version_)
+    {
+    }
+
+    String getName() const override { return "CanonicalizeMapKeyColumnsTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        MergeTreeDataWriter::canonicalizeMapKeyColumns(block, version);
+        chunk.setColumns(block.getColumns(), block.rows());
+    }
+
+private:
+    MergeTreeMapSerializationVersion version;
+};
+
+static void addCanonicalizeMapKeyColumnsTransform(QueryPipelineBuilder & builder, const MergeTreeData & data)
+{
+    const auto version = (*data.getSettings())[MergeTreeSetting::map_serialization_version];
+    if (version != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+
+    builder.addSimpleTransform([version](const SharedHeader & header)
+    {
+        return std::make_shared<CanonicalizeMapKeyColumnsTransform>(header, version);
+    });
 }
 
 static MutationCommands coalesceSingletonRowMaskUpdates(
@@ -3496,6 +3532,8 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+        MutationHelpers::addCanonicalizeMapKeyColumnsTransform(*builder, *ctx->data);
+
         /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
         /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
         /// the expired values to the defaults. Calculating the index expressions before that would write indices
@@ -3946,6 +3984,7 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            MutationHelpers::addCanonicalizeMapKeyColumnsTransform(*builder, *ctx->data);
             addIndicesRecalculationTransform(*builder, ctx);
 
             /// Some columns may be present in the interpreter output only for

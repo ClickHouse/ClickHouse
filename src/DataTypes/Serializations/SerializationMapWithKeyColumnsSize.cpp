@@ -73,8 +73,10 @@ void SerializationMapWithKeyColumnsSize::enumerateStreams(
         if (entry.presence_kind != MapKeyPresenceKind::Tracked)
             continue;
 
-        settings.path.push_back(ISerialization::Substream::MapKeyExists);
-        settings.path.back().name_of_substream = key_columns.keyToStreamName(entry.key);
+        settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+            ISerialization::Substream::MapKeyExists,
+            key_columns.keyToStreamName(entry.key),
+            manifest.stream_name_version));
         auto exists_data = SubstreamData(key_columns.getExistsSerialization()).withType(std::make_shared<DataTypeUInt8>());
         key_columns.getExistsSerialization()->enumerateStreams(settings, callback, exists_data);
         settings.path.pop_back();
@@ -137,8 +139,10 @@ void SerializationMapWithKeyColumnsSize::deserializeBinaryBulkStatePrefix(
         if (entry.presence_kind == MapKeyPresenceKind::AlwaysPresent)
             continue;
 
-        settings.path.push_back(ISerialization::Substream::MapKeyExists);
-        settings.path.back().name_of_substream = key_columns.keyToStreamName(entry.key);
+        settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+            ISerialization::Substream::MapKeyExists,
+            key_columns.keyToStreamName(entry.key),
+            manifest.stream_name_version));
         key_columns.getExistsSerialization()->deserializeBinaryBulkStatePrefix(settings, size_state->exists_states[i], cache);
         settings.path.pop_back();
     }
@@ -182,8 +186,10 @@ void SerializationMapWithKeyColumnsSize::deserializeBinaryBulkWithMultipleStream
         }
 
         auto exists_column = ColumnUInt8::create();
-        settings.path.push_back(ISerialization::Substream::MapKeyExists);
-        settings.path.back().name_of_substream = key_columns.keyToStreamName(entry.key);
+        settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+            ISerialization::Substream::MapKeyExists,
+            key_columns.keyToStreamName(entry.key),
+            manifest.stream_name_version));
         if (!insertDataFromSubstreamsCacheIfAny(cache, settings, *exists_column))
         {
             key_columns.getExistsSerialization()->deserializeBinaryBulkWithMultipleStreams(

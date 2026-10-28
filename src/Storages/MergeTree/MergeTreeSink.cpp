@@ -46,6 +46,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
 }
 
@@ -140,6 +141,8 @@ void MergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    MergeTreeDataWriter::canonicalizeMapKeyColumns(
+        block, (*storage.getSettings())[MergeTreeSetting::map_serialization_version_for_zero_level_parts]);
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     IColumn::Selector partition_selector;

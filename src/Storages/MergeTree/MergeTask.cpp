@@ -180,7 +180,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsUInt64 map_key_columns_per_key_merge_min_keys;
-    extern const MergeTreeSettingsUInt64 map_max_key_columns;
+    extern const MergeTreeSettingsUInt64 max_map_key_columns_keys;
 }
 
 namespace ErrorCodes
@@ -438,7 +438,7 @@ static MapKeyManifest scanMapKeysFromPart(
         /*mark_ranges=*/ std::nullopt,
         /*filtered_rows_count=*/ nullptr,
         /// Rows removed by a lightweight delete are not in the merged part, so their keys
-        /// must not occupy `map_max_key_columns` or create empty per-key streams.
+        /// must not occupy `max_map_key_columns_keys` or create empty per-key streams.
         /*apply_deleted_mask=*/ true,
         /*read_with_direct_io=*/ false,
         /*prefetch=*/ false);
@@ -3031,11 +3031,11 @@ void MergeTask::VerticalMergeStage::initPerKeyMapState() const
     for (auto & entry : state.union_manifest.keys)
         entry.presence_kind = MapKeyPresenceKind::Tracked;
 
-    const UInt64 max_keys = (*global_ctx->data_settings)[MergeTreeSetting::map_max_key_columns];
+    const UInt64 max_keys = (*global_ctx->data_settings)[MergeTreeSetting::max_map_key_columns_keys];
     if (max_keys && state.union_manifest.keys.size() > max_keys)
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
-            "Number of distinct keys in Map column {} is {}, exceeds map_max_key_columns ({})",
+            "Number of distinct keys in Map column {} is {}, exceeds max_map_key_columns_keys ({})",
             backQuoteIfNeed(column_name),
             state.union_manifest.keys.size(),
             max_keys);

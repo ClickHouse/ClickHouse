@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_map_key_columns=1"
+CLICKHOUSE_LOCAL="$CLICKHOUSE_LOCAL --allow_experimental_map_key_columns=1"
+
 # Side-by-side semantic comparison of `with_key_columns` against `basic` and `with_buckets`.
 # `SELECT m` / `mapKeys` / `mapValues` are compared after `mapSort` because
 # `with_key_columns` parts return keys in dictionary order (documented deviation).

@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 -- Pins the with_key_columns write/read core path: Wide layout, per-key streams,
 -- lookup / exists_ / full Map round-trip, and arrayElement -> key_ subcolumn rewrite.
 SET explain_query_plan_default = 'legacy';

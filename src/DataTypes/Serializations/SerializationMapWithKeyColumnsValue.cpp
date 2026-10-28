@@ -23,6 +23,7 @@ struct DeserializeBinaryBulkStateMapWithKeyColumnsValue : public ISerialization:
     ISerialization::DeserializeBinaryBulkStatePtr with_key_columns_state;
     ISerialization::DeserializeBinaryBulkStatePtr value_state;
     bool key_in_manifest = false;
+    UInt8 stream_name_version = MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -84,8 +85,11 @@ void SerializationMapWithKeyColumnsValue::enumerateStreams(
     /// stream with `check_stream_exists`: it is enumerated only when it exists on disk.
     const bool have_exists_check = settings.check_stream_exists_callback != nullptr;
 
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = key_name;
+    const UInt8 stream_name_version = settings.map_key_columns_manifest
+        ? settings.map_key_columns_manifest->stream_name_version
+        : MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+        Substream::MapKey, key_name, stream_name_version));
     const bool dedicated_exists = !have_exists_check || settings.check_stream_exists_callback(settings.path);
     if (dedicated_exists)
     {
@@ -102,8 +106,7 @@ void SerializationMapWithKeyColumnsValue::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for SerializationMapWithKeyColumnsValue");
 
     auto value_state = std::make_shared<SerializeBinaryBulkStateMapWithKeyColumnsValue>();
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(Substream::MapKey, key_name));
     nested_serialization->serializeBinaryBulkStatePrefix(column, settings, value_state->value_state);
     settings.path.pop_back();
     state = std::move(value_state);
@@ -119,8 +122,7 @@ void SerializationMapWithKeyColumnsValue::serializeBinaryBulkStateSuffix(
         return;
 
     auto * value_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumnsValue>(state);
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(Substream::MapKey, key_name));
     nested_serialization->serializeBinaryBulkStateSuffix(settings, value_state->value_state);
     settings.path.pop_back();
 }
@@ -132,8 +134,7 @@ void SerializationMapWithKeyColumnsValue::serializeBinaryBulkWithMultipleStreams
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkWithMultipleStreams is not implemented for SerializationMapWithKeyColumnsValue");
 
     auto * value_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumnsValue>(state);
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(Substream::MapKey, key_name));
     if (const auto * nested_array = typeid_cast<const ColumnArray *>(&column))
     {
         if (typeid_cast<const ColumnArray *>(&nested_array->getData()))
@@ -178,6 +179,7 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkStatePrefix(
         value_state->with_key_columns_state = stored;
     }
     settings.path.pop_back();
+    value_state->stream_name_version = manifest.stream_name_version;
 
     for (const auto & entry : manifest.keys)
     {
@@ -186,8 +188,8 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkStatePrefix(
 
         value_state->key_in_manifest = true;
 
-        settings.path.push_back(ISerialization::Substream::MapKey);
-        settings.path.back().name_of_substream = key_name;
+        settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+            ISerialization::Substream::MapKey, key_name, manifest.stream_name_version));
         nested_serialization->deserializeBinaryBulkStatePrefix(settings, value_state->value_state, cache);
         settings.path.pop_back();
         break;
@@ -210,8 +212,8 @@ void SerializationMapWithKeyColumnsValue::deserializeBinaryBulkWithMultipleStrea
         return;
     }
 
-    settings.path.push_back(Substream::MapKey);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+        Substream::MapKey, key_name, value_state->stream_name_version));
     if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
     {
         /// Read into a fresh column and publish that, then append to the result.

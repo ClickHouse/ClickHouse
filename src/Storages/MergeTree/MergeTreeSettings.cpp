@@ -436,7 +436,7 @@ Possible values:
 - with_key_columns — Store each key as an independent value stream plus its own presence stream. Reading a single key opens only that key's files.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
-`m['key']` reads that key's value stream. A constant `mapContains`, `mapContainsKey`, `has`, or `notHas` reads that key's presence stream. `mapKeys` reads the presence streams. A full map comes back in key comparison order, and a repeated key in a row is stored once with its first value, so functions over the pairs of the map, such as `mapContainsKeyValue`, do not see the other values. [map_max_key_columns](#map_max_key_columns) bounds the number of independent key streams.
+`m['key']` reads that key's value stream. A constant `mapContains`, `mapContainsKey`, `has`, or `notHas` reads that key's presence stream. `mapKeys` reads the presence streams. A full map comes back in key comparison order, and a repeated key in a row is stored once with its first value, so functions over the pairs of the map, such as `mapContainsKeyValue`, do not see the other values. Enabling this experimental layout requires `allow_experimental_map_key_columns = 1`. [max_map_key_columns_keys](#max_map_key_columns_keys) bounds the number of independent key streams.
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version"}) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
@@ -444,14 +444,15 @@ This setting allows to specify a different serialization version of
 `Map` columns for zero level parts that are created during inserts.
 It can be useful to keep `basic` serialization for zero level parts to avoid
 performance degradation during inserts, while using `with_buckets` or `with_key_columns` for merged parts.
+It cannot be set to `with_key_columns` unless `map_serialization_version` is also `with_key_columns`.
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version for zero-level parts"}) \
-    DECLARE(UInt64, map_max_key_columns, 0, R"(
+    DECLARE(UInt64, max_map_key_columns_keys, 10000, R"(
 Bound on the number of distinct keys that `with_key_columns` `Map` serialization stores as independent streams.
 A value of `0` means no limit. When a part would exceed this bound the write fails with `LIMIT_EXCEEDED`,
 guarding against parts with an unbounded number of key files.
 )", 0, \
-        {"26.11", 0, 0, "New setting bounding the number of independent key streams in `with_key_columns` Map serialization. 0 means no limit. A write that would exceed it fails with `LIMIT_EXCEEDED`."}) \
+        {"26.11", 10000, 10000, "New setting bounding the number of independent key streams in `with_key_columns` Map serialization. 0 means no limit. A write that would exceed it fails with `LIMIT_EXCEEDED`."}) \
     DECLARE(UInt64, map_key_columns_per_key_merge_min_keys, 32, R"(
 When a `with_key_columns` `Map` column's distinct key union across the source parts is at least this many,
 merge uses Vertical merge and gathers one key at a time so the merge does not open every key file together.

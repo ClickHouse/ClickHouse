@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- Per-key Vertical merge for with_key_columns Map: union keys across parts,
 -- missing keys stay absent, Compact sources rewrite to Wide, and DEDUPLICATE

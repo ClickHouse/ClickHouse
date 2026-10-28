@@ -1,4 +1,5 @@
 -- Tags: no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 -- Tag no-random-merge-tree-settings: the randomized `map_serialization_version` replaces `with_key_columns`
 
 -- A full map is read in key order whatever order the keys were inserted in, before and after merges,

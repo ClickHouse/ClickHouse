@@ -1,4 +1,5 @@
 -- Tags: no-object-storage, no-random-settings, no-random-merge-tree-settings, no-parallel
+SET allow_experimental_map_key_columns = 1;
 -- FileOpen / ReadBytes are local-disk specific and sensitive to mark cache and extra indexes.
 
 -- Accessing one Map key on with_key_columns must open only that key's streams, not the whole Map.

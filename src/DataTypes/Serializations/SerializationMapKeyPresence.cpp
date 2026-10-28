@@ -24,6 +24,7 @@ struct DeserializeBinaryBulkStateMapKeyPresence : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr exists_state;
     ssize_t key_index = -1;
     MapKeyPresenceKind presence_kind = MapKeyPresenceKind::Tracked;
+    UInt8 stream_name_version = MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -68,8 +69,11 @@ void SerializationMapKeyPresence::enumerateStreams(
     /// only when it exists on disk.
     const bool have_exists_check = settings.check_stream_exists_callback != nullptr;
 
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = key_name;
+    const UInt8 stream_name_version = settings.map_key_columns_manifest
+        ? settings.map_key_columns_manifest->stream_name_version
+        : MapKeyManifest::CURRENT_STREAM_NAME_VERSION;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+        Substream::MapKeyExists, key_name, stream_name_version));
     const bool dedicated_exists = !have_exists_check || settings.check_stream_exists_callback(settings.path);
     if (dedicated_exists)
         callback(settings.path);
@@ -83,8 +87,7 @@ void SerializationMapKeyPresence::serializeBinaryBulkStatePrefix(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStatePrefix is not implemented for read-only SerializationMapKeyPresence");
 
     const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(Substream::MapKeyExists, key_name));
     key_columns.getExistsSerialization()->serializeBinaryBulkStatePrefix(column, settings, state);
     settings.path.pop_back();
 }
@@ -96,8 +99,7 @@ void SerializationMapKeyPresence::serializeBinaryBulkStateSuffix(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkStateSuffix is not implemented for read-only SerializationMapKeyPresence");
 
     const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(Substream::MapKeyExists, key_name));
     key_columns.getExistsSerialization()->serializeBinaryBulkStateSuffix(settings, state);
     settings.path.pop_back();
 }
@@ -109,8 +111,7 @@ void SerializationMapKeyPresence::serializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeBinaryBulkWithMultipleStreams is not implemented for read-only SerializationMapKeyPresence");
 
     const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = key_name;
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(Substream::MapKeyExists, key_name));
     key_columns.getExistsSerialization()->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
     settings.path.pop_back();
 }
@@ -142,6 +143,7 @@ void SerializationMapKeyPresence::deserializeBinaryBulkStatePrefix(
         presence_state->with_key_columns_state = stored;
     }
     settings.path.pop_back();
+    presence_state->stream_name_version = manifest.stream_name_version;
 
     for (size_t i = 0; i < manifest.keys.size(); ++i)
     {
@@ -153,8 +155,10 @@ void SerializationMapKeyPresence::deserializeBinaryBulkStatePrefix(
 
         if (presence_state->presence_kind == MapKeyPresenceKind::Tracked)
         {
-            settings.path.push_back(ISerialization::Substream::MapKeyExists);
-            settings.path.back().name_of_substream = key_columns.keyToStreamName(key);
+            settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+                ISerialization::Substream::MapKeyExists,
+                key_columns.keyToStreamName(key),
+                manifest.stream_name_version));
             key_columns.getExistsSerialization()->deserializeBinaryBulkStatePrefix(settings, presence_state->exists_state, cache);
             settings.path.pop_back();
         }
@@ -193,8 +197,10 @@ void SerializationMapKeyPresence::deserializeBinaryBulkWithMultipleStreams(
     /// Read only this key's own presence stream, granule/mark aligned, shared with
     /// sibling reads (e.g. a full `m` read) through `cache`. Publish a fresh column
     /// (distinct from the result) so a later range never inserts it into itself.
-    settings.path.push_back(Substream::MapKeyExists);
-    settings.path.back().name_of_substream = key_columns.keyToStreamName(key);
+    settings.path.push_back(SerializationMapWithKeyColumns::makeKeySubstream(
+        Substream::MapKeyExists,
+        key_columns.keyToStreamName(key),
+        presence_state->stream_name_version));
     if (!insertDataFromSubstreamsCacheIfAny(cache, settings, column))
     {
         auto exists_column = ColumnUInt8::create();

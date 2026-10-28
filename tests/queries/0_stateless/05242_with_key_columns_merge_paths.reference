@@ -4,27 +4,27 @@ queries
 except
 0
 full_substreams
-m.key_a
-m.exists_a
-m.key_b
-m.exists_b
-m.key_c
-m.exists_c
+m.key_1_a
+m.exists_1_a
+m.key_1_b
+m.exists_1_b
+m.key_1_c
+m.exists_1_c
 per_key_substreams
-m.key_a
-m.exists_a
-m.key_b
-m.exists_b
-m.key_c
-m.exists_c
+m.key_1_a
+m.exists_1_a
+m.key_1_b
+m.exists_1_b
+m.key_1_c
+m.exists_1_c
 full_manifest
-1
+2
 3
 1	a
 1	b
 1	c
 per_key_manifest
-1
+2
 3
 1	a
 1	b

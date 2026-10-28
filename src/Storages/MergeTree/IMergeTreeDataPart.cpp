@@ -1,6 +1,7 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MapWithKeyColumnsMerge.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -142,6 +143,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
 }
 
 namespace Setting
@@ -164,6 +167,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace FailPoints
@@ -1660,6 +1664,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadColumnsSubstreams();
             loadInvalidatedSystemColumns();
             loadChecksums(require_columns_checksums);
+            applyMapKeyColumnsLayoutFromChecksums();
             loadMapKeyColumnsManifests();
             loadIndexGranularity();
 
@@ -2620,6 +2625,82 @@ void IMergeTreeDataPart::loadChecksums(bool require)
     }
 }
 
+void IMergeTreeDataPart::applyMapKeyColumnsLayoutFromChecksums()
+{
+    /// Projection Maps keep the basic layout independently of their parent table.
+    if (parent_part)
+        return;
+
+    size_t map_columns = 0;
+    size_t manifests = 0;
+    for (const auto & column : getColumns())
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        ++map_columns;
+        if (findMapKeyColumnsFileName(column.name, checksums))
+            ++manifests;
+    }
+
+    if (map_columns == 0)
+        return;
+
+    const auto data_settings = storage.getSettings();
+    const bool table_writes_key_columns
+        = (*data_settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool zero_level_writes_key_columns
+        = (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+        == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool metadata_uses_key_columns
+        = serialization_infos.getSettings().map_serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    if (manifests != 0 && manifests != map_columns)
+    {
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Part {} has key_columns.txt for {} of its {} Map columns",
+            name,
+            manifests,
+            map_columns);
+    }
+
+    if (manifests == 0)
+    {
+        if (metadata_uses_key_columns)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Part {} records with_key_columns Map serialization but has no key_columns.txt",
+                name);
+
+        /// The hybrid layout deliberately permits basic zero-level parts that are
+        /// converted to with_key_columns by a merge.
+        if (table_writes_key_columns && zero_level_writes_key_columns)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Part {} has basic Map streams, but table {} requires with_key_columns for all parts",
+                name,
+                storage.getStorageID().getNameForLogs());
+        return;
+    }
+
+    if (!table_writes_key_columns && !zero_level_writes_key_columns)
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Part {} has with_key_columns Map streams, but table {} uses another Map serialization",
+            name,
+            storage.getStorageID().getNameForLogs());
+
+    if (!metadata_uses_key_columns)
+    {
+        auto adjusted_settings = serialization_infos.getSettings();
+        adjusted_settings.map_serialization_version = MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        SerializationInfoByName adjusted_infos(getColumns(), adjusted_settings);
+        adjusted_infos.replaceData(serialization_infos);
+        setColumns(getColumns(), adjusted_infos, metadata_version);
+    }
+}
+
 void IMergeTreeDataPart::loadMapKeyColumnsManifests()
 {
     map_key_columns_manifests.clear();
@@ -2646,8 +2727,9 @@ void IMergeTreeDataPart::loadMapKeyColumnsManifests()
         const auto checksum_it = checksums.files.find(*file_name);
 
         auto file = getDataPartStorage().readFile(*file_name, {}, checksum_it->second.file_size);
-        map_key_columns_manifests.emplace(
-            column.name, SerializationMapWithKeyColumns::readKeyColumnsText(*file, per_key->getKeyType()));
+        auto manifest = SerializationMapWithKeyColumns::readKeyColumnsText(*file, per_key->getKeyType());
+        per_key->validateManifestStreamNames(manifest);
+        map_key_columns_manifests.emplace(column.name, std::move(manifest));
     }
 }
 

@@ -30,7 +30,7 @@ namespace DB
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsUInt64 map_max_key_columns;
+    extern const MergeTreeSettingsUInt64 max_map_key_columns_keys;
 }
 
 namespace ErrorCodes
@@ -508,14 +508,14 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
         return;
     }
 
-    const UInt64 max_keys = (*storage_settings)[MergeTreeSetting::map_max_key_columns];
+    const UInt64 max_keys = (*storage_settings)[MergeTreeSetting::max_map_key_columns_keys];
     if (max_keys)
     {
         const size_t total_keys = per_key->getRegisteredKeyCount(*state) + new_keys.size();
         if (total_keys > max_keys)
             throw Exception(
                 ErrorCodes::LIMIT_EXCEEDED,
-                "Number of distinct keys in Map column {} is {}, exceeds map_max_key_columns ({})",
+                "Number of distinct keys in Map column {} is {}, exceeds max_map_key_columns_keys ({})",
                 backQuoteIfNeed(name_and_type.name),
                 total_keys,
                 max_keys);

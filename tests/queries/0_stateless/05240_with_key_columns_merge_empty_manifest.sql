@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
+SET allow_experimental_map_key_columns = 1;
 
 -- An empty loaded `with_key_columns` manifest is an empty key set: merging it
 -- with a part that has keys must not invent keys for the empty rows.

@@ -662,7 +662,7 @@ The dropped pairs are gone for every function that looks at the pairs of a map, 
 
 `mapKeys` and `mapValues` follow this same key order. Compare full maps with `mapSort` when the order itself is not significant.
 
-`map_max_key_columns` defaults to `0` (no limit). When a part would exceed the bound, the writer throws `LIMIT_EXCEEDED`. There is no fallback stream for extra keys. Nested `Map` values stay on `basic` serialization.
+`max_map_key_columns_keys` defaults to `10000`. A value of `0` disables the limit. When a part would exceed the bound, the writer throws `LIMIT_EXCEEDED`. There is no fallback stream for extra keys. Nested `Map` values stay on `basic` serialization.
 
 **See Also**
 
