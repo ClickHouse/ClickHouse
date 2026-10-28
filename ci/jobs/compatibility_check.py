@@ -32,7 +32,7 @@ def rseq_check(image: str, expect_rseq: bool, extra_args: str = "") -> str:
     condition = "warnings" if expect_rseq else "not(warnings)"
     return (
         f"docker run --rm --volume={temp_path}/clickhouse:/clickhouse {extra_args} {image} "
-        f'/clickhouse local --query "select throwIf({condition}) from ({RSEQ_WARNING_QUERY})"'
+        f'/clickhouse local --tmp --query "select throwIf({condition}) from ({RSEQ_WARNING_QUERY})"'
     )
 
 
