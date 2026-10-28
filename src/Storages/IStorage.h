@@ -728,6 +728,12 @@ public:
         return {};
     }
 
+    /// The storage that owns the blocker `getActionLock` returns for this action type, or nullptr
+    /// when this storage owns it. A storage that forwards to another table returns that table, so a
+    /// registered lock is attributed to the table whose background activity it actually blocks. The
+    /// returned storage may itself forward, so callers resolve the whole chain.
+    virtual StoragePtr getActionLockOwner(StorageActionBlockType /* action_type */) const { return nullptr; }
+
     /// Call when lock from previous method removed
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
 

@@ -4,8 +4,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 
 #include <algorithm>
+#include <vector>
 
 
 namespace DB
@@ -32,7 +34,58 @@ const char * tryGetActionName(StorageActionBlockType action_type)
     }
 }
 
+/// The storage that owns the blocker `getActionLock` returns. A lock lives exactly as long as that
+/// storage, so keying the registry by it makes `ActionLock::expired` a complete validity check and
+/// attributes the entry to the table the action actually blocks.
+///
+/// `load` materializes a lazy stand-in at every hop. A control command names the table, so loading is
+/// its expected cost and the only way to reach the storage that really owns the blocker; a listing
+/// must not load, and an unloaded stand-in has no entry to find anyway.
+StoragePtr resolveActionLockOwner(const StoragePtr & table, StorageActionBlockType action_type, bool load)
+{
+    StoragePtr owner = table;
+    /// A chain is one hop in practice. Only broken metadata can make it cyclic, so detect a repeat
+    /// rather than capping the depth: a legal chain of any length still resolves to its real owner.
+    std::vector<const IStorage *> seen;
+    while (true)
+    {
+        if (load)
+            owner = resolveStorageProxyLoading(owner);
 
+        StoragePtr next = owner->getActionLockOwner(action_type);
+        if (!next || next.get() == owner.get())
+            return owner;
+
+        if (std::ranges::find(seen, owner.get()) != seen.end())
+            return owner;
+
+        seen.push_back(owner.get());
+        owner = std::move(next);
+    }
+}
+
+/// The storage that holds the registry entry for a table as `system.tables` names it. A proxy is a
+/// transparent stand-in for the same logical table, so the entry lives on the storage it wraps; an
+/// `Alias` or a materialized view is a table in its own right and keeps its own (empty) entry.
+/// Never loads a stand-in: a listing must not materialize a table.
+StoragePtr resolveEntryOwner(const StoragePtr & table)
+{
+    StoragePtr owner = table;
+    for (size_t depth = 0; depth < max_storage_proxy_depth && owner; ++depth)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(owner.get());
+        if (!proxy)
+            break;
+
+        auto nested = proxy->tryGetNested();
+        if (!nested)
+            break;
+
+        owner = std::move(nested);
+    }
+    return owner;
+}
+}
 
 
 ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
@@ -47,13 +100,20 @@ void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType 
 
 void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    ActionLock action_lock = table->getActionLock(action_type);
+    /// Resolve with loading, so the entry lands on the storage that owns the blocker even when a
+    /// forwarding storage points at a lazy stand-in; then take the lock from that same storage, so
+    /// the key and the lock cannot diverge even if the forwarding chain changes in between. For every
+    /// forwarding storage `getActionLock` forwards the same way, and the actions that act on a
+    /// refresher instead return no lock, so this is the same call the named storage would make.
+    StoragePtr owner = resolveActionLockOwner(table, action_type, /*load=*/true);
 
-    if (!action_lock.expired())
-    {
-        std::lock_guard lock(mutex);
-        storage_locks[table.get()][action_type] = std::move(action_lock);
-    }
+    ActionLock action_lock = owner->getActionLock(action_type);
+
+    if (action_lock.expired())
+        return;
+
+    std::lock_guard lock(mutex);
+    storage_locks[owner.get()][action_type] = std::move(action_lock);
 }
 
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
@@ -64,10 +124,14 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    std::lock_guard lock(mutex);
+    /// Resolve the same way `add` did, so a control issued through any forwarding storage releases
+    /// the entry that the target owns. Without loading: a global `SYSTEM START` walks every table and
+    /// must not materialize a lazy stand-in, which has no entry to release anyway.
+    StoragePtr owner = resolveActionLockOwner(table, action_type, /*load=*/false);
 
-    if (storage_locks.contains(table.get()))
-        storage_locks[table.get()].erase(action_type);
+    std::lock_guard lock(mutex);
+    if (auto it = storage_locks.find(owner.get()); it != storage_locks.end())
+        it->second.erase(action_type);
 }
 
 Names ActionLocksManager::getStoppedActions(const StoragePtr & table) const
@@ -76,9 +140,17 @@ Names ActionLocksManager::getStoppedActions(const StoragePtr & table) const
     if (!table)
         return actions;
 
+    /// A proxy is the same logical table as the storage it wraps, and the entry lives on that storage,
+    /// so resolve it here. `resolveEntryOwner` does not load an unloaded stand-in, which could not have
+    /// an entry anyway.
+    StoragePtr owner = resolveEntryOwner(table);
+
     {
         std::lock_guard lock(mutex);
-        const auto it = storage_locks.find(table.get());
+        /// Entries are keyed by the blocker owner, so this reports the actions of this exact
+        /// instance. A forwarding storage holds none of its own: its lock is registered on the
+        /// table it forwards to, which is the table the action actually blocks.
+        const auto it = storage_locks.find(owner.get());
         if (it == storage_locks.end())
             return actions;
 

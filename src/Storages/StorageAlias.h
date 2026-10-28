@@ -269,6 +269,9 @@ public:
         return target->getActionLock(type);
     }
 
+    /// The lock above belongs to the target's blocker, so the target owns the registered entry.
+    StoragePtr getActionLockOwner(StorageActionBlockType /* action_type */) const override { return tryGetTargetTable(); }
+
     TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000)); }
     TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
     {
