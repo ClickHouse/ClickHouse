@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/insertAtEnd.h>
 
@@ -183,6 +184,7 @@ SQLQueryPiece applyLabelManipulationFunction(
     }
 
     chassert(arguments.size() >= 2);
+    arguments[0] = resolveMetricNameDrop(std::move(arguments[0]), context);
     auto & first_argument = arguments[0];
     const String & dest_label = arguments[1].string_value;
 

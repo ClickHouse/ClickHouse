@@ -6,6 +6,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/resolveMetricNameDrop.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -50,6 +51,7 @@ SQLQueryPiece applyFunctionScalar(
     chassert(isFunctionScalar(function_name));
 
     checkArgumentTypes(function_node, arguments, context);
+    arguments[0] = resolveMetricNameDrop(std::move(arguments[0]), context);
     auto & argument = arguments[0];
 
     auto res = argument;
