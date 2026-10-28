@@ -23,7 +23,6 @@ SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
     automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
-SET enable_analyzer = 1;
 
 -- The `IN` is on a column outside the primary key, so the set is not there to be turned into a key
 -- condition - it is only ever a filter, which is the shape that leaves the set source plan otherwise

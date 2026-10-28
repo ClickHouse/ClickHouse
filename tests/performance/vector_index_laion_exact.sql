@@ -1,0 +1,10 @@
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 1)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 2)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 3)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 4)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 5)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 6)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 7)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 8)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 9)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;
+SELECT id FROM laion ORDER BY cosineDistance(vector, (SELECT qv FROM laion_queries WHERE n = 10)) LIMIT 10 FORMAT Null SETTINGS use_skip_indexes = 0, vector_search_with_rescoring = 0;

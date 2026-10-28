@@ -97,6 +97,11 @@ def test_config_with_hosts(start_cluster):
             "pw_azure_url_sas_canary",
             "https://host:123/",
         ),
+        (
+            "SELECT * FROM s3('http://host:123/bucket/k.csv?%73ig=pw_s3_encoded_name_canary', NOSIGN, CSV, 'x UInt8')",
+            "pw_s3_encoded_name_canary",
+            "http://host:123/bucket/k.csv?%73ig=[HIDDEN]",
+        ),
     ],
     ids=[
         "userinfo",
@@ -105,6 +110,7 @@ def test_config_with_hosts(start_cluster):
         "s3_presigned_in_path",
         "azure_connection_string_sas",
         "azure_url_sas_with_account_key",
+        "s3_encoded_name_in_path",
     ],
 )
 def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_url):
