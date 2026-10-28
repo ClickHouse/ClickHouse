@@ -23,37 +23,10 @@ namespace Setting
 namespace
 {
 
-/// The `if` nodes of the query, outside of its subqueries, that are `GROUP BY` keys, collected before any of them is rewritten.
-std::unordered_set<QueryTreeNodePtr> collectGroupByKeyIfNodes(const QueryNode & query_node)
+bool isIfWithThreeArguments(const QueryTreeNodePtr & node)
 {
-    auto is_if = [](const QueryTreeNodePtr & node)
-    {
-        const auto * function_node = node->as<FunctionNode>();
-        return function_node && function_node->getFunctionName() == "if" && function_node->getArguments().getNodes().size() == 3;
-    };
-
-    auto if_keys = getGroupByKeys(query_node);
-    std::erase_if(if_keys, [&](const auto & key) { return !is_if(key); });
-
-    std::unordered_set<QueryTreeNodePtr> result;
-    if (if_keys.empty())
-        return result;
-
-    std::vector<const IQueryTreeNode *> nodes{&query_node};
-    while (!nodes.empty())
-    {
-        const auto * node = nodes.back();
-        nodes.pop_back();
-        for (const auto & child : node->getChildren())
-        {
-            if (!child || child->getNodeType() == QueryTreeNodeType::QUERY || child->getNodeType() == QueryTreeNodeType::UNION)
-                continue;
-            if (is_if(child) && isGroupByKeyAfterAggregation(child, if_keys))
-                result.insert(child);
-            nodes.push_back(child.get());
-        }
-    }
-    return result;
+    const auto * function_node = node->as<FunctionNode>();
+    return function_node && function_node->getFunctionName() == "if" && function_node->getArguments().getNodes().size() == 3;
 }
 
 class IfChainToMultiIfPassVisitor : public InDepthQueryTreeVisitorWithContext<IfChainToMultiIfPassVisitor>
@@ -74,7 +47,9 @@ public:
         if (const auto * query_node = node->as<QueryNode>())
         {
             group_by_key_if_nodes_stack.push_back(
-                getSettings()[Setting::optimize_if_chain_to_multiif] ? collectGroupByKeyIfNodes(*query_node) : std::unordered_set<QueryTreeNodePtr>{});
+                getSettings()[Setting::optimize_if_chain_to_multiif]
+                    ? collectGroupByKeyNodesAfterAggregation(*query_node, isIfWithThreeArguments)
+                    : std::unordered_set<QueryTreeNodePtr>{});
             return;
         }
 
