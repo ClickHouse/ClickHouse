@@ -16,7 +16,7 @@ CREATE TABLE timeout_test_1 (
     ts DateTime,
     value UInt64
 ) ENGINE = MergeTree()
-PARTITION BY toStartOfMonth(ts)
+PARTITION BY toStartOfMinute(ts)
 ORDER BY ts;
 
 -- Table 2: Low resolution, very few rows
@@ -28,13 +28,13 @@ CREATE TABLE timeout_test_10 (
 PARTITION BY toStartOfMonth(ts)
 ORDER BY ts;
 
--- Only insert the rows in the queried time range to stay below the CI read limit.
+-- A small fixture keeps setup and the successful retry cheap, including under sanitizers.
 INSERT INTO timeout_test_1
 SELECT
     1,
     toDateTime('2026-01-01 12:00:00') - INTERVAL number second,
     sipHash64(number)
-FROM numbers(1_000_001);
+FROM numbers(2001);
 
 -- Insert 11 rows.
 INSERT INTO timeout_test_10
@@ -47,10 +47,12 @@ FROM numbers(11);
 -- Create the ABR table
 CREATE TABLE abr ENGINE = ABR('timeout_test', [1, 10], ('ts'));
 
--- Test 1: Query slowed down by sleepEachRow: ~10 seconds on timeout_test_1, negligible on timeout_test_10
-SELECT /* test 05304, query 1 */ avg(sipHash64(value)), avg(cityHash64(_sample_interval)) FROM abr
-WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 1_000_000 second AND sleepEachRow(0.00001) = 0
-SETTINGS max_execution_time = 2, max_threads = 1, send_logs_level = 'error';
+-- The fine tier sleeps for about 20 seconds, exceeding its half of the 10-second budget.
+-- Minute partitions bound each block to 60 rows, below the per-block sleep limit.
+-- This leaves time for the one-row retry on the coarse tier.
+SELECT /* test 05304, query 1 */ count(), sum(_sample_interval) FROM abr
+WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 2000 second AND sleepEachRow(0.01) = 0
+SETTINGS max_execution_time = 10, max_threads = 1, send_logs_level = 'error';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -59,8 +61,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT abr_interval, mapApply((k, v) -> (k, errorCodeToName(v)), abr_exception_codes) AS exception_codes FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%SELECT /* test 05304, query 1 */%' AND type = 2 AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1;
 
 -- Test 2: Same query but without time limit, should use timeout_test_1 and finish quickly
-SELECT /* test 05304, query 2 */ avg(sipHash64(value)), sum(cityHash64(_sample_interval)) FROM abr
-WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 1_000_000 second;
+SELECT /* test 05304, query 2 */ count(), sum(_sample_interval) FROM abr
+WHERE ts >= toDateTime('2026-01-01 12:00:00') - INTERVAL 2000 second;
 
 SYSTEM FLUSH LOGS query_log;
 

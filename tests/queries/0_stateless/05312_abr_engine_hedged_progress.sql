@@ -7,6 +7,10 @@
 
 SET send_logs_level = 'error';
 
+-- `HedgedRequestsChangeReplica` also counts connection-establishment timeouts.
+-- Give connections headroom so the assertions test read progress, not handshake latency.
+SET hedged_connection_timeout_ms = 10000;
+
 DROP TABLE IF EXISTS dist_abr_slow;
 DROP TABLE IF EXISTS dist_mt_slow;
 DROP TABLE IF EXISTS abr_slow;

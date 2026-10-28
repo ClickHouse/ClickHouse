@@ -3,7 +3,12 @@
 --   dist_mem_eff = 1  -> initiator uses the memory-efficient zipper (SortingAggregatedTransform);
 --                        requires ABR shards to emit bucket-sorted output (the isRemote() fix).
 --   dist_mem_eff = 0  -> initiator uses the robust hash-merge path; must also succeed.
--- All variants return the number of distinct keys (1000000).
+-- All variants return the number of distinct keys (10000).
+
+-- Force two-level aggregation without reading millions of rows on every shard.
+SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 0;
+-- Exercise SQL-shipped queries: serialized table reads do not preserve the `ABR` routing predicate.
+SET serialize_query_plan = 0;
 
 DROP TABLE IF EXISTS abr_me;
 DROP TABLE IF EXISTS twolevel_me_1;
@@ -30,12 +35,12 @@ ORDER BY (ts, key);
 INSERT INTO twolevel_me_1
 SELECT 1, toDateTime('2026-06-01 00:00:00') + INTERVAL (number % 3600) SECOND,
        number, 1
-FROM numbers(1000000);
+FROM numbers(10000);
 
 INSERT INTO twolevel_me_10
 SELECT 10, toDateTime('2026-06-01 00:00:00') + INTERVAL (number % 3600) SECOND,
        number, 1
-FROM numbers(1000000);
+FROM numbers(10000);
 
 CREATE TABLE abr_me ENGINE = ABR('twolevel_me', [1, 10], ('ts'));
 
@@ -70,4 +75,3 @@ SELECT count() FROM (
 DROP TABLE abr_me;
 DROP TABLE twolevel_me_1;
 DROP TABLE twolevel_me_10;
-

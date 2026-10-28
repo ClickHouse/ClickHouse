@@ -2,6 +2,9 @@
 -- ^ EXPLAIN PIPELINE of a Distributed query is sensitive to prefer_localhost_replica
 --   Disable random settings and pin the value so the plan is deterministic in CI
 
+-- Force two-level aggregation with a small fixture and keep the SQL-shipped pipeline under test.
+SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 0, serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS abr_2l;
 DROP TABLE IF EXISTS twolevel_1;
 DROP TABLE IF EXISTS twolevel_10;
@@ -27,12 +30,12 @@ ORDER BY (ts, key);
 INSERT INTO twolevel_1
 SELECT 1, toDateTime('2026-06-01 00:00:00') + INTERVAL (number % 3600) SECOND,
        number, 1
-FROM numbers(1000000);
+FROM numbers(10000);
 
 INSERT INTO twolevel_10
 SELECT 10, toDateTime('2026-06-01 00:00:00') + INTERVAL (number % 3600) SECOND,
        number, 1
-FROM numbers(1000000);
+FROM numbers(10000);
 
 CREATE TABLE abr_2l ENGINE = ABR('twolevel', [1, 10], ('ts'));
 
@@ -46,8 +49,8 @@ SETTINGS distributed_aggregation_memory_efficient = 1, max_threads = 4,
          prefer_localhost_replica = 1, enable_analyzer = 0;
 
 -- Execute the query — triggers the duplicate-bucket error before the fix.
--- Also assert correctness: 1000000 distinct keys; each key is summed across the
--- 30 identical localhost shards (value=1 => 30 per key), so sum(total)=30000000.
+-- Also assert correctness: 10000 distinct keys; each key is summed across the
+-- 30 identical localhost shards (value=1 => 30 per key), so sum(total)=300000.
 -- A silently-wrong merge (dropped/duplicated buckets) would change these numbers.
 SELECT count(), sum(total)
 FROM (
@@ -63,4 +66,3 @@ SETTINGS distributed_aggregation_memory_efficient = 1, max_threads = 4,
 DROP TABLE abr_2l;
 DROP TABLE twolevel_1;
 DROP TABLE twolevel_10;
-
