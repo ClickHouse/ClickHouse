@@ -185,6 +185,19 @@ public:
     /// worker comes, so a worker delayed by a transient saturation of the global pool is not an error.
     void scheduleThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
+    /// Like `scheduleThreadOrQueueOrThrow`, but for a thread that is known to return after a finite
+    /// time, such as a worker of a local pool whose jobs return and which keeps no free threads. It
+    /// does not take a slot, because it does not hold a worker forever, and it is rejected only when all
+    /// the slots are already taken by long-lived jobs: then no worker would ever be free for it.
+    /// Otherwise it waits in the queue for any number of such threads scheduled at the same time.
+    void scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
+
+    /// Declares that every job of this local pool returns after a finite time, and the pool keeps no
+    /// free threads (`max_free_threads` is zero), so its workers do not hold threads of the global pool
+    /// for long. They are then scheduled through `scheduleReturningThreadOrQueueOrThrow` instead of
+    /// `scheduleThreadOrQueueOrThrow`. Must be called before the first job is scheduled.
+    void setWorkersReturn() { workers_return = true; }
+
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
@@ -267,7 +280,7 @@ private:
     std::atomic<int64_t> available_threads;
 
     // Number of worker slots not yet taken by jobs scheduled through `scheduleThreadOrThrow` or
-    // `scheduleThreadOrQueueOrThrow`.
+    // `scheduleThreadOrQueueOrThrow`. `scheduleReturningThreadOrQueueOrThrow` only checks that it is positive.
     // Originally equals to max_threads and is adjusted by setMaxThreads together with
     // `remaining_pool_capacity`. Such a job holds its slot from the moment it is scheduled until it
     // finishes, because it occupies a worker for the whole lifetime of that worker. Once this reaches
@@ -276,6 +289,8 @@ private:
 
     bool finished = false;
     bool threads_remove_themselves = true;
+    /// See `setWorkersReturn`.
+    bool workers_return = false;
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
@@ -299,7 +314,8 @@ private:
         std::optional<Int64> wait_microseconds,
         bool propagate_opentelemetry_tracing_context = true,
         bool job_occupies_thread = false,
-        bool thread_job_may_queue = false);
+        bool thread_job_may_queue = false,
+        bool thread_job_takes_slot = true);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
@@ -401,6 +417,9 @@ enum class ThreadFromGlobalPoolScheduleMode : uint8_t
     Queue,
     /// Takes a slot for a long-lived job, but may wait in the queue (`scheduleThreadOrQueueOrThrow`).
     ReserveSlot,
+    /// Takes no slot, is rejected only when all of them are taken by long-lived jobs, and may wait in
+    /// the queue (`scheduleReturningThreadOrQueueOrThrow`).
+    QueueUnlessSlotsExhausted,
     /// Takes a slot for a long-lived job and a worker right away (`scheduleThreadOrThrow`).
     FailIfNoWorker,
 };

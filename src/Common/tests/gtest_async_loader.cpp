@@ -1688,18 +1688,24 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindOrdinaryGlobalJobs)
     while (started != capacity)
         std::this_thread::yield();
 
+    // Enqueue more independent jobs than the global pool has threads, one by one: every enqueue
+    // spawns a worker, and none of the workers can start before the ordinary jobs finish.
+    static constexpr size_t jobs_count = capacity + 2;
     std::atomic<size_t> jobs_done{0};
-    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    std::vector<LoadTaskPtr> tasks;
+    for (size_t i = 0; i < jobs_count; i++)
+        tasks.push_back(t.schedule({makeLoadJob({}, fmt::format("job{}", i), [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })}));
     const size_t jobs_done_while_busy = jobs_done;
 
     release = true;
-    waitLoad(task);
+    for (const auto & task : tasks)
+        waitLoad(task);
     while (finished != capacity)
         std::this_thread::yield();
     limits.restore();
 
     ASSERT_EQ(jobs_done_while_busy, 0);
-    ASSERT_EQ(jobs_done, 1);
+    ASSERT_EQ(jobs_done, jobs_count);
     t.loader.wait();
 }
 

@@ -432,7 +432,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
     std::optional<Int64> wait_microseconds,
     bool propagate_opentelemetry_tracing_context,
     bool job_occupies_thread,
-    bool thread_job_may_queue)
+    bool thread_job_may_queue,
+    bool thread_job_takes_slot)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -462,11 +463,29 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
     /// such jobs, which never return, so a queued job would never start even though its creator
     /// already treats its thread as running. Take a slot optimistically and give it back below if it
     /// turned out not to exist; on any early return the destructor releases it as well.
+    ///
+    /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` does not take a slot: it returns
+    /// and it may wait in the queue, so it only needs a worker to free up eventually. That is impossible
+    /// only when all the slots are held by long-lived jobs, so this is the only case when it is
+    /// rejected. If it took a slot, a few such jobs that are merely queued behind ordinary finite jobs
+    /// would exhaust the slots and make the next one fail while the pool is only transiently busy. It
+    /// cannot be overtaken by a long-lived job while it waits in the queue: a job is queued only when
+    /// every worker is busy, and `scheduleThreadOrThrow` is rejected in that case (see below).
     std::optional<ScopedDecrement> thread_job_slot;
     if (job_occupies_thread)
     {
-        thread_job_slot.emplace(remaining_thread_job_capacity);
-        if (thread_job_slot->valueAfterDecrement() < 0)
+        bool no_slot_left;
+        if (!thread_job_takes_slot)
+        {
+            no_slot_left = remaining_thread_job_capacity.load(std::memory_order_relaxed) <= 0;
+        }
+        else
+        {
+            thread_job_slot.emplace(remaining_thread_job_capacity);
+            no_slot_left = thread_job_slot->valueAfterDecrement() < 0;
+        }
+
+        if (no_slot_left)
         {
             std::lock_guard lock(mutex); // needed to read and reset first_exception.
             if constexpr (std::is_same_v<Thread, GlobalThreadType>)
@@ -587,8 +606,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
         /// queue competes with the jobs scheduled concurrently by other threads, and a higher-priority
         /// ordinary job could take the woken worker while the long-lived job stays queued.
         ///
-        /// A job scheduled through `scheduleThreadOrQueueOrThrow` skips all of this and is queued as an
-        /// ordinary one: only its slot is required.
+        /// A job scheduled through `scheduleThreadOrQueueOrThrow` or `scheduleReturningThreadOrQueueOrThrow`
+        /// skips all of this and is queued as an ordinary one.
         const bool thread_job_needs_worker = job_occupies_thread && !thread_job_may_queue;
         ThreadFromThreadPool * idle_thread_for_job = nullptr;
         if (thread_job_needs_worker && !adding_new_thread)
@@ -871,6 +890,19 @@ void ThreadPoolImpl<Thread>::scheduleThreadOrQueueOrThrow(Job job, Priority prio
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    scheduleImpl<void>(
+        std::move(job),
+        priority,
+        /* wait_microseconds= */ 0,
+        propagate_opentelemetry_tracing_context,
+        /* job_occupies_thread= */ true,
+        /* thread_job_may_queue= */ true,
+        /* thread_job_takes_slot= */ false);
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::wait()
 {
     Stopwatch watch;
@@ -1118,7 +1150,14 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         /// and nobody relies on the worker running before that. Failing here instead would turn a
         /// transient saturation of the global pool into an error for callers that cannot handle one,
         /// such as the mandatory spawn of a worker in `AsyncLoader`.
-        thread = Thread(ThreadFromGlobalPoolScheduleMode::ReserveSlot, &ThreadFromThreadPool::worker, this);
+        ///
+        /// If the jobs of the local pool always return and it keeps no free threads, its worker does not
+        /// hold a global thread for long, so it does not take a slot either (see `setWorkersReturn`).
+        thread = Thread(
+            parent_pool.workers_return ? ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted
+                                       : ThreadFromGlobalPoolScheduleMode::ReserveSlot,
+            &ThreadFromThreadPool::worker,
+            this);
     }
 
     ProfileEvents::increment(
@@ -1600,6 +1639,10 @@ void startThreadFromGlobalPool(
     else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::ReserveSlot)
     {
         GlobalThreadPool::instance().scheduleThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
+    }
+    else if (schedule_mode == ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted)
+    {
+        GlobalThreadPool::instance().scheduleReturningThreadOrQueueOrThrow(std::move(job), {}, propagate_opentelemetry_context);
     }
     else
     {

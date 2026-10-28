@@ -1,4 +1,6 @@
 #include <atomic>
+#include <memory>
+#include <vector>
 
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -74,28 +76,45 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
     }
     EXPECT_TRUE(direct_thread_threw) << "a permanent thread with no free global-pool worker must throw";
 
-    /// This creates a `ThreadFromGlobalPool` for the worker of the local pool. It has a free slot, so
-    /// it is queued and runs the job as soon as one of the ordinary jobs above finishes.
-    std::atomic<bool> local_job_ran = false;
+    /// Each local pool creates a `ThreadFromGlobalPool` for its worker. There are more of them than the
+    /// global pool has threads, but the workers return, so they take no slot, and the slots are not held
+    /// by long-lived threads: all of them are queued and run their jobs as soon as the ordinary jobs
+    /// above finish.
+    static constexpr size_t local_pools_count = capacity + 2;
+    std::atomic<size_t> local_jobs_ran = 0;
     bool threw = false;
     {
-        ThreadPool another_pool(
-            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
-        try
+        std::vector<std::unique_ptr<ThreadPool>> local_pools;
+        for (size_t i = 0; i < local_pools_count; ++i)
         {
-            another_pool.scheduleOrThrowOnError([&] { local_job_ran = true; });
-        }
-        catch (const DB::Exception &)
-        {
-            threw = true;
+            /// Like the pools of `AsyncLoader`: the jobs return and no free threads are kept, so an idle
+            /// worker leaves and frees its global-pool thread.
+            local_pools.push_back(std::make_unique<ThreadPool>(
+                CurrentMetrics::LocalThread,
+                CurrentMetrics::LocalThreadActive,
+                CurrentMetrics::LocalThreadScheduled,
+                /* max_threads = */ 1,
+                /* max_free_threads = */ 0,
+                /* queue_size = */ 0));
+            local_pools.back()->setWorkersReturn();
+            try
+            {
+                local_pools.back()->scheduleOrThrowOnError([&] { ++local_jobs_ran; });
+            }
+            catch (const DB::Exception &)
+            {
+                threw = true;
+            }
         }
         EXPECT_FALSE(threw) << "the worker of a local pool must wait for a global-pool thread busy with an ordinary job";
-        EXPECT_FALSE(local_job_ran);
+        EXPECT_EQ(local_jobs_ran, 0);
 
         release = true;
-        another_pool.wait();
+        for (auto & local_pool : local_pools)
+            local_pool->wait();
     }
-    EXPECT_EQ(local_job_ran, !threw);
+    if (!threw)
+        EXPECT_EQ(local_jobs_ran, local_pools_count);
 
     while (finished != capacity)
         ;
