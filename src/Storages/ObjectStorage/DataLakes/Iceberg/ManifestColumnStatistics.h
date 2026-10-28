@@ -104,8 +104,6 @@ private:
         /// Null when the bounds are missing or do not convert.
         Field min_value;
         Field max_value;
-        /// nullopt when `column_sizes` has no valid entry.
-        std::optional<UInt64> size;
         /// nullopt when the column is not identity-partitioned in the file's spec or the value does not convert; Null for a
         /// NULL partition value.
         std::optional<Field> identity_partition_value;
@@ -115,10 +113,6 @@ private:
     /// every file gives it.
     struct DistinctValuesInputs
     {
-        /// Sum of `column_sizes` over the files, for rule 3.
-        UInt64 sizes = 0;
-        /// False once a file has no `column_sizes` entry for the column.
-        bool sizes_known = true;
         /// Distinct identity-partition values over the files, for rule 1.
         std::set<Field> identity_partition_values;
         /// False once a file has no identity-partition value for the column.
@@ -132,7 +126,7 @@ private:
     std::vector<ColumnMetrics> extractFileMetrics(
         const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file, UInt64 rows);
 
-    /// Adds the size and the identity-partition value that a file gives for a target.
+    /// Adds the identity-partition value that a file gives for a target.
     static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
 
     struct DistinctValues

@@ -7,11 +7,11 @@ ice_types	1	1000
 Expect a1 < b1 AND a3 < b3, the two most selective by the min/max; without statistics a1, a2 in syntax order.
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
 --- T2: rows, then NDV [NULL fraction] per column
-Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range, decimal_value column_sizes / 8, string_value
-10% of rows, event_time range clamped to rows; nullable_int NULL every 4th row.
+Expect NDV id 1000, day 365, nullable_int 99 (75 true) by range, decimal_value and string_value 10% of rows,
+event_time range clamped to rows; nullable_int NULL every 4th row.
 ice_types: 1000 rows
 __table1.day: 365
-__table1.decimal_value: <column_sizes / 8>
+__table1.decimal_value: 100
 __table1.event_time: 1000
 __table1.id: 1000
 __table1.nullable_int: 99 [null 0.25]

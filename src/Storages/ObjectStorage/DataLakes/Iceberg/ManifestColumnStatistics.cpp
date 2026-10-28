@@ -141,7 +141,6 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
         if (type_it == file_types.end())
         {
             metrics.nulls = rows;
-            metrics.size = 0;
             continue;
         }
         /// Type with which file was written
@@ -165,13 +164,8 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
 
         const auto info_it = parsed_entry.columns_infos.find(target.field_id);
         const ColumnInfo * info = info_it != parsed_entry.columns_infos.end() ? &info_it->second : nullptr;
-        if (info)
-        {
-            if (info->nulls_count && *info->nulls_count >= 0 && static_cast<UInt64>(*info->nulls_count) <= rows)
-                metrics.nulls = static_cast<UInt64>(*info->nulls_count);
-            if (info->bytes_size && *info->bytes_size >= 0)
-                metrics.size = static_cast<UInt64>(*info->bytes_size);
-        }
+        if (info && info->nulls_count && *info->nulls_count >= 0 && static_cast<UInt64>(*info->nulls_count) <= rows)
+            metrics.nulls = static_cast<UInt64>(*info->nulls_count);
     }
 
     if (entry.common_partition_specification)
@@ -211,11 +205,6 @@ std::vector<ManifestColumnStatistics::ColumnMetrics> ManifestColumnStatistics::e
 
 void ManifestColumnStatistics::addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics)
 {
-    if (metrics.size)
-        inputs.sizes += *metrics.size;
-    else
-        inputs.sizes_known = false;
-
     if (!metrics.identity_partition_value)
         inputs.identity_partition_known = false;
     else if (!metrics.identity_partition_value->isNull())
@@ -279,9 +268,6 @@ std::optional<ManifestColumnStatistics::DistinctValues> ManifestColumnStatistics
         /// `IN` use it; a column with gaps would look more selective than it is
         measured = *range_width <= non_null_rows;
     }
-    /// `column_sizes` over the width of a fixed-width type.
-    else if (inputs.sizes_known && target.nested_type->haveMaximumSizeOfValue())
-        num_distinct_values = inputs.sizes / target.nested_type->getSizeOfValueInMemory();
     else
         return std::nullopt;
 
