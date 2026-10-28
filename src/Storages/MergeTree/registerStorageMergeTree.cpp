@@ -38,7 +38,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/StoragePolicy.h>
 
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -220,17 +219,34 @@ static void evaluateEngineArgs(ASTs & engine_args, const ContextPtr & context)
 
 /// Stored expressions (keys, TTL, indices, projections) are built with the global context, which has full access,
 /// so access checks done when a function is created do not apply to the user defining the table.
-/// Do a dry-run here: create every function with the local query context to run the checks, then throw it away.
-static void checkAccessToFunctions(const IAST & ast, const ContextPtr & local_context)
+/// Build them again with the query context to run these checks. The result is discarded.
+static void checkAccessToStoredExpressions(const StorageInMemoryMetadata & metadata, const ContextPtr & local_context)
 {
-    if (const auto * function = ast.as<ASTFunction>())
+    const auto & columns = metadata.columns;
+    const auto & virtuals = metadata.virtuals;
+
+    for (const auto * key : {&metadata.partition_key, &metadata.sorting_key, &metadata.sampling_key, &metadata.unique_key})
     {
-        if (FunctionFactory::instance().has(function->name))
-            FunctionFactory::instance().get(function->name, local_context);
+        if (key->definition_ast)
+            KeyDescription::getKeyFromAST(key->definition_ast, columns, virtuals, local_context);
+    }
+    if (metadata.primary_key.definition_ast)
+        KeyDescription::getPrimaryKeyFromAST(metadata.primary_key.definition_ast, metadata.sorting_key, columns, virtuals, local_context);
+
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (!index.isImplicitlyCreated())
+            IndexDescription::getIndexFromAST(index.definition_ast, columns, false, index.escape_filenames, local_context);
     }
 
-    for (const auto & child : ast.children)
-        checkAccessToFunctions(*child, local_context);
+    for (const auto & projection : metadata.projections)
+        ProjectionDescription::getProjectionFromAST(projection.definition_ast, columns, &metadata.partition_key, local_context);
+
+    for (const auto & [name, ttl_ast] : columns.getColumnTTLs())
+        TTLDescription::getTTLFromAST(ttl_ast, columns, local_context, metadata.primary_key, TTLValidationMode::SkipValidation);
+    if (metadata.table_ttl.definition_ast)
+        TTLTableDescription::getTTLForTableFromAST(
+            metadata.table_ttl.definition_ast, columns, local_context, metadata.primary_key, TTLValidationMode::SkipValidation);
 }
 
 /// Returns whether this is a Replicated table engine?
@@ -746,13 +762,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
     }
 
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
-    {
-        checkAccessToFunctions(*args.storage_def, args.getLocalContext());
-        if (args.query.columns_list)
-            checkAccessToFunctions(*args.query.columns_list, args.getLocalContext());
-    }
-
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
@@ -1210,6 +1219,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
     if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
+
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
+        checkAccessToStoredExpressions(metadata, args.getLocalContext());
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])

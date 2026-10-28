@@ -16,6 +16,7 @@ EXECUTE AS u_05442 CREATE TABLE t3 (x String) ENGINE = MergeTree PARTITION BY le
 EXECUTE AS u_05442 CREATE TABLE t4 (x String, INDEX i length(aiEmbed(x, 'm')) TYPE minmax) ENGINE = MergeTree ORDER BY x; -- { serverError ACCESS_DENIED }
 EXECUTE AS u_05442 CREATE TABLE t5 (x String, PROJECTION p (SELECT aiGenerate(x) ORDER BY x)) ENGINE = MergeTree ORDER BY x; -- { serverError ACCESS_DENIED }
 EXECUTE AS u_05442 CREATE TABLE t6 AS src; -- { serverError ACCESS_DENIED }
+EXECUTE AS u_05442 CREATE TABLE t8 (k String, d DateTime, x String) ENGINE = MergeTree ORDER BY (k, d) TTL d + INTERVAL 1 DAY GROUP BY k SET x = any(aiGenerate(x)); -- { serverError ACCESS_DENIED }
 
 EXECUTE AS u_05442 CREATE TABLE t7 (x String, d DateTime) ENGINE = MergeTree ORDER BY x;
 EXECUTE AS u_05442 ALTER TABLE t7 MODIFY TTL d + INTERVAL 1 DAY DELETE WHERE aiFilter(x, 'c'); -- { serverError ACCESS_DENIED }
@@ -26,9 +27,11 @@ EXECUTE AS u_05442 ALTER TABLE t7 ADD COLUMN y String, MODIFY ORDER BY (x, lengt
 GRANT AI FUNCTIONS ON *.* TO u_05442;
 EXECUTE AS u_05442 CREATE TABLE t1 (x String, d DateTime) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY DELETE WHERE aiFilter(x, 'c');
 EXECUTE AS u_05442 CREATE TABLE t6 AS src;
+EXECUTE AS u_05442 CREATE TABLE t8 (k String, d DateTime, x String) ENGINE = MergeTree ORDER BY (k, d) TTL d + INTERVAL 1 DAY GROUP BY k SET x = any(aiGenerate(x));
 
 DROP TABLE src;
 DROP TABLE t1;
 DROP TABLE t6;
 DROP TABLE t7;
+DROP TABLE t8;
 DROP USER u_05442;
