@@ -148,11 +148,12 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
                 throw;
             }
 
-            /// A flush that checked the limits settles the unchecked flushes, any other flush adds its allocations to them.
+            /// A flush that checked the limits settles the unchecked flushes, any other flush adds its allocations to them,
+            /// except the bytes of an allocation that does not enforce the limit itself.
             if (check_unchecked_flushes || (enforce_memory_limit && new_untracked_memory > 0 && canCheckQueryLimit(memory_tracker)))
                 cur_thread->untracked_memory_flushed_unchecked = 0;
             else
-                addUncheckedFlush(*cur_thread, new_untracked_memory);
+                addUncheckedFlush(*cur_thread, enforce_memory_limit ? new_untracked_memory : previous_untracked_memory);
         }
 
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));

@@ -19,6 +19,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TraceCollector.h>
 #include <base/scope_guard.h>
@@ -376,7 +377,10 @@ TEST(MemoryTracker, FreeInSwitchedScopeKeepsUncheckedAllocations)
     runInThread(hierarchy, [&](MemoryTracker &)
     {
         DB::CurrentThread::get().untracked_memory_limit = MB;
-        std::ignore = CurrentMemoryTracker::allocNoThrow(MB + MB / 2);
+        {
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            std::ignore = CurrentMemoryTracker::alloc(MB + MB / 2);
+        }
         {
             DB::MemoryTrackerSwitcher switcher(&other);
             std::ignore = CurrentMemoryTracker::free(MB + MB / 4);
@@ -385,6 +389,147 @@ TEST(MemoryTracker, FreeInSwitchedScopeKeepsUncheckedAllocations)
         expectMemoryLimitExceeded(1);
         std::ignore = CurrentMemoryTracker::free(MB + MB / 2);
     });
+}
+
+/// An allocation that does not enforce the limit, e.g. by `SYSTEM ALLOCATE MEMORY`, does not make the next one check it.
+TEST(MemoryTracker, UnenforcedAllocationIsNotCheckedByNextAllocation)
+{
+    MemoryTrackerHierarchy hierarchy;
+    hierarchy.process.setHardLimit(LIMIT);
+
+    runInThread(hierarchy, [&](MemoryTracker &)
+    {
+        DB::CurrentThread::get().untracked_memory_limit = MB;
+        std::ignore = CurrentMemoryTracker::allocNoThrow(OVER_LIMIT);
+        EXPECT_NO_THROW(std::ignore = CurrentMemoryTracker::alloc(1));
+        std::ignore = CurrentMemoryTracker::free(OVER_LIMIT + 1);
+    });
+}
+
+/// The unchecked flushes of a thread do not follow it into the next group it attaches to.
+TEST(MemoryTracker, UncheckedFlushesDoNotFollowThreadToAnotherGroup)
+{
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto context = getContext().context;
+        auto first = std::make_shared<DB::ThreadGroup>(context, 0);
+        auto second = std::make_shared<DB::ThreadGroup>(context, 0);
+
+        DB::CurrentThread::attachToGroup(first);
+        thread_status.untracked_memory_limit = MB;
+        {
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            std::ignore = CurrentMemoryTracker::alloc(8 * MB);
+        }
+        std::ignore = CurrentMemoryTracker::free(8 * MB);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        /// The second group is over its limit, so any check of it fails, and the attach itself does not fill a batch.
+        second->memory_tracker.adjustWithUntrackedMemory(MB);
+        second->memory_tracker.setHardLimit(1);
+        thread_status.untracked_memory_limit = 16 * MB;
+        EXPECT_NO_THROW({
+            DB::CurrentThread::attachToGroup(second);
+            thread_status.untracked_memory_limit = MB;
+            std::ignore = CurrentMemoryTracker::alloc(64);
+        });
+        std::ignore = CurrentMemoryTracker::free(64);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+        second->memory_tracker.adjustWithUntrackedMemory(-MB);
+    }).join();
+}
+
+/// The unchecked flushes made at the detach of short tasks stay with their group, so a later task of the group checks them.
+TEST(MemoryTracker, UncheckedFlushesStayWithTheirGroup)
+{
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto group = std::make_shared<DB::ThreadGroup>(getContext().context, 0);
+
+        for (int task = 0; task < 2; ++task)
+        {
+            DB::CurrentThread::attachToGroup(group);
+            thread_status.untracked_memory_limit = MB;
+            std::ignore = CurrentMemoryTracker::alloc(3 * MB / 4);
+            DB::CurrentThread::detachFromGroupIfNotDetached();
+        }
+
+        group->memory_tracker.setHardLimit(MB);
+        thread_status.untracked_memory_limit = 16 * MB;
+        DB::CurrentThread::attachToGroup(group);
+        thread_status.untracked_memory_limit = MB;
+        expectMemoryLimitExceeded(1);
+        std::ignore = CurrentMemoryTracker::free(3 * MB / 2);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+}
+
+/// A nested group that charges its parent, e.g. of `EXPLAIN ANALYZE`, shares the unchecked flushes with it.
+TEST(MemoryTracker, UncheckedFlushesOfNestedGroupStayWithParent)
+{
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto parent = std::make_shared<DB::ThreadGroup>(getContext().context, 0);
+        auto nested = DB::ThreadGroup::createForExplainAnalyze(parent);
+
+        for (int task = 0; task < 2; ++task)
+        {
+            DB::CurrentThread::attachToGroup(nested);
+            thread_status.untracked_memory_limit = MB;
+            std::ignore = CurrentMemoryTracker::alloc(3 * MB / 4);
+            DB::CurrentThread::detachFromGroupIfNotDetached();
+        }
+
+        parent->memory_tracker.setHardLimit(MB);
+        thread_status.untracked_memory_limit = 16 * MB;
+        DB::CurrentThread::attachToGroup(parent);
+        thread_status.untracked_memory_limit = MB;
+        expectMemoryLimitExceeded(1);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        parent->memory_tracker.setHardLimit(0);
+        DB::CurrentThread::attachToGroup(nested);
+        std::ignore = CurrentMemoryTracker::free(3 * MB / 2);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
+}
+
+/// The nested group keeps them as well, so a check of its parent does not settle its own limit.
+TEST(MemoryTracker, UncheckedFlushesOfNestedGroupStayWithIt)
+{
+    std::thread([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto parent = std::make_shared<DB::ThreadGroup>(getContext().context, 0);
+        auto nested = DB::ThreadGroup::createForExplainAnalyze(parent);
+
+        for (int task = 0; task < 2; ++task)
+        {
+            DB::CurrentThread::attachToGroup(nested);
+            thread_status.untracked_memory_limit = MB;
+            std::ignore = CurrentMemoryTracker::alloc(3 * MB / 4);
+            DB::CurrentThread::detachFromGroupIfNotDetached();
+        }
+
+        /// The parent has no limit, so the check made by this allocation passes.
+        DB::CurrentThread::attachToGroup(parent);
+        thread_status.untracked_memory_limit = MB;
+        std::ignore = CurrentMemoryTracker::alloc(1);
+        std::ignore = CurrentMemoryTracker::free(1);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+
+        nested->memory_tracker.setHardLimit(MB);
+        thread_status.untracked_memory_limit = 16 * MB;
+        DB::CurrentThread::attachToGroup(nested);
+        thread_status.untracked_memory_limit = MB;
+        expectMemoryLimitExceeded(1);
+        nested->memory_tracker.setHardLimit(0);
+        std::ignore = CurrentMemoryTracker::free(3 * MB / 2);
+        DB::CurrentThread::detachFromGroupIfNotDetached();
+    }).join();
 }
 
 
