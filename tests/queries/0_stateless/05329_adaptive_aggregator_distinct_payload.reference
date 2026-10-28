@@ -1,0 +1,18 @@
+uniqExact(n)
+frozen	1
+uniqExact(n % 40000)
+frozen	1
+uniqExact(7)
+frozen	1
+uniqExact(toString(n))
+frozen	1
+uniqExact(toString(n % 40000))
+frozen	1
+uniqExact(tuple(n, toString(n)))
+frozen	1
+uniqExact(n, toString(n))
+frozen	1
+uniqHLL12(n)
+frozen	1
+uniqExact(n), count()
+frozen	1
