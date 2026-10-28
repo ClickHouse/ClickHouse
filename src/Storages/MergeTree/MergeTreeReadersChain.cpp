@@ -742,6 +742,13 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
     /// even if they read no patched column: for `b DEFAULT rand64()`, `z DEFAULT a + b` and `y DEFAULT b`, evaluating
     /// only `z` again after `a` is patched would leave `y` with the value of `b` the first evaluation gave. A missing
     /// column has no value to keep from one read to the next anyway: its `DEFAULT` is evaluated on every read.
+    /// A candidate added this way gets a new value too, so the candidates that read it, directly or not, are evaluated
+    /// again as well: with `w DEFAULT y` also requested, `w` must take the new value of `y`. This repeats until
+    /// no more candidates are added.
+    NameSet candidate_names;
+    for (const auto & candidate : candidates)
+        candidate_names.insert(candidate.name);
+
     NameSet names_to_evaluate;
     for (const auto & column : columns_to_evaluate)
         names_to_evaluate.insert(column.name);
@@ -762,7 +769,7 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
 
     auto intermediates = reader.getMissingDefaultInputs(columns_to_evaluate, block);
     bool added_candidates = true;
-    while (added_candidates && !missing_inputs_of_candidates.empty())
+    while (added_candidates)
     {
         added_candidates = false;
         NameSet intermediate_names;
@@ -778,6 +785,16 @@ void MergeTreeReadersChain::evaluateDefaultsInRowsFilledByDefaults(
             {
                 columns_to_evaluate.push_back(candidate);
                 names_to_evaluate.insert(candidate.name);
+                added_candidates = true;
+            }
+        }
+
+        auto dependents = reader.getDefaultsDependingOn(candidate_names, names_to_evaluate);
+        for (const auto & candidate : candidates)
+        {
+            if (dependents.contains(candidate.name) && names_to_evaluate.emplace(candidate.name).second)
+            {
+                columns_to_evaluate.push_back(candidate);
                 added_candidates = true;
             }
         }
