@@ -42,9 +42,18 @@
 55
 2
 55
+55
 -- a read that keeps no query info
 2
 2
 2
 2
+-- a serialized query plan
+2
+2
+2
+3
+2
+2
+4
 -- without a policy the row is in scope

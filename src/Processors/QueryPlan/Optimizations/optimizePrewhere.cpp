@@ -314,7 +314,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
         && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
-    const bool row_level_filter_after_read = source_step_with_filter->getQueryInfo().row_level_filter_after_read;
+    const bool row_level_filter_after_read = source_step_with_filter->getQueryInfo().row_level_filter_after_read || filter_step->isRowLevelFilterAfterRead();
     if (row_level_filter_after_read && hasOrderSensitiveFunctions(&filter_root_node))
         return;
 
@@ -418,11 +418,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     QueryPlanStepPtr new_step;
     if (!optimize_result.fully_moved_to_prewhere)
     {
-        new_step = std::make_unique<FilterStep>(
+        auto remaining_filter_step = std::make_unique<FilterStep>(
             source_step_with_filter->getOutputHeader(),
             std::move(remaining_expr),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
+        if (filter_step->isRowLevelFilterAfterRead())
+            remaining_filter_step->markAsRowLevelFilterAfterRead();
+        new_step = std::move(remaining_filter_step);
     }
     else
     {

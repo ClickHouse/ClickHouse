@@ -2132,6 +2132,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> row_policy_filter_after_read;
+                std::optional<std::pair<FilterDAGInfo, DescriptionHolderPtr>> prewhere_after_row_policy;
                 bool row_policy_filter_not_pushed = false;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
@@ -2256,7 +2257,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// A table function read directly on that node loses a pushed-down policy whatever its contract.
                     if (select_query_options.build_logical_plan
                         && (storage->supportedPrewhereColumns().has_value() || (table_function_node && can_push_down_filter)))
-                        where_filters.emplace(where_filters.begin(), std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_after_read.emplace(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
                     else if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
@@ -2268,7 +2269,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// The read evaluates PREWHERE before the rows reach the policy, so filter after the policy instead.
                         if (prewhere_info)
                         {
-                            where_filters.emplace_back(std::move(*prewhere_info).toFilterDAGInfo(), makeDescription("Prewhere"));
+                            prewhere_after_row_policy.emplace(std::move(*prewhere_info).toFilterDAGInfo(), makeDescription("Prewhere"));
                             prewhere_info.reset();
                         }
                     }
@@ -3045,9 +3046,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 };
 
-                /// Before the alias columns, so that they are not computed for the rows it rejects.
+                /// Before the alias columns, so that they are not computed for the rows these filters reject.
                 if (row_policy_filter_after_read)
                     add_filter_step(row_policy_filter_after_read->first, row_policy_filter_after_read->second, true);
+                if (prewhere_after_row_policy)
+                    add_filter_step(prewhere_after_row_policy->first, prewhere_after_row_policy->second, false);
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)

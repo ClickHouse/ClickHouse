@@ -24,6 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -43,6 +44,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -689,6 +691,15 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    if (row_level_filter_after_read)
+    {
+        if (ctx.step_version < 1)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "A Filter step applying a row policy after the read requires query plan serialization version >= {} "
+                "(Filter step version 1), but the peer only supports version {}; all nodes must be upgraded",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK, ctx.version);
+        flags |= 2;
+    }
     writeIntBinary(flags, ctx.out);
 
     /// A cache key must not depend on the name this plan build composed for the filter column
@@ -718,7 +729,10 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
-    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    auto filter_step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    if (flags & 2)
+        filter_step->markAsRowLevelFilterAfterRead();
+    return filter_step;
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
@@ -774,7 +788,8 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Filter", FilterStep::deserialize);
+    /// Version 1 carries the late row-level filter mark (bit 2 of the flags byte).
+    registry.registerStep("Filter", FilterStep::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILTER_ROW_LEVEL_MARK}});
 }
 
 }

@@ -22,8 +22,10 @@ DROP TABLE IF EXISTS t_bare_chain_policy;
 DROP TABLE IF EXISTS t_numbers;
 DROP TABLE IF EXISTS t_join;
 DROP TABLE IF EXISTS j_join;
+DROP TABLE IF EXISTS t_join_partial;
 DROP TABLE IF EXISTS t_np_mt;
 DROP TABLE IF EXISTS t_alias;
+DROP TABLE IF EXISTS t_alias_prewhere;
 DROP TABLE IF EXISTS t_log_bare;
 DROP VIEW IF EXISTS v_sealed;
 DROP TABLE IF EXISTS t_view_base;
@@ -38,8 +40,10 @@ CREATE TABLE t_bare_chain_policy (visible UInt8 DEFAULT 1, payload String) ENGIN
 CREATE TABLE t_numbers (x UInt64) ENGINE = Memory;
 CREATE TABLE t_join (id UInt64, tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE j_join (id UInt64) ENGINE = Memory;
+CREATE TABLE t_join_partial (id UInt64, tenant String DEFAULT 'a', payload String) ENGINE = Memory;
 CREATE TABLE t_np_mt (k UInt64, flag UInt8, s String) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE t_alias (tenant String DEFAULT 'a', payload String, parsed UInt64 ALIAS toUInt64(payload)) ENGINE = Memory;
+CREATE TABLE t_alias_prewhere (tenant String DEFAULT 'a', payload String, parsed UInt64 ALIAS toUInt64(payload)) ENGINE = Memory;
 CREATE TABLE t_log_bare (visible UInt8, payload String) ENGINE = Log;
 CREATE TABLE t_view_base (visible UInt8, payload String) ENGINE = Memory;
 INSERT INTO t_memory VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
@@ -52,8 +56,10 @@ INSERT INTO t_bare_chain_policy VALUES (1, '5'), (1, '20'), (0, 'secret'), (1, '
 INSERT INTO t_numbers SELECT number FROM numbers(10);
 INSERT INTO t_join VALUES (1, 'a', '5'), (2, 'a', '20'), (3, 'b', 'secret'), (4, 'a', '30');
 INSERT INTO j_join VALUES (1), (2), (3), (4);
+INSERT INTO t_join_partial VALUES (1, 'a', '5'), (2, 'a', '20'), (3, 'b', 'secret'), (4, 'a', '30');
 INSERT INTO t_np_mt VALUES (1, 1, '5'), (2, 1, '20'), (3, 0, 'x'), (4, 1, '30');
 INSERT INTO t_alias (tenant, payload) VALUES ('a', '5'), ('a', '20'), ('b', 'secret'), ('a', '30');
+INSERT INTO t_alias_prewhere (tenant, payload) VALUES ('a', '5'), ('a', '20'), ('a', 'bad'), ('a', '30');
 INSERT INTO t_log_bare VALUES (1, '5'), (1, '20'), (0, 'secret'), (1, '30');
 INSERT INTO t_view_base VALUES (1, '5'), (1, '20'), (0, 'secret'), (1, '30');
 CREATE TABLE m_child_policy AS t_memory ENGINE = Merge(currentDatabase(), '^t_memory$');
@@ -71,7 +77,9 @@ CREATE ROW POLICY p_05453_stateful ON t_stateful_policy USING tenant = 'a' AND r
 CREATE ROW POLICY p_05453_bare ON t_bare_policy USING visible TO ALL;
 CREATE ROW POLICY p_05453_bare_chain ON t_bare_chain_policy USING visible AND toUInt64(payload) < 1000 TO ALL;
 CREATE ROW POLICY p_05453_join ON t_join USING tenant = 'a' TO ALL;
+CREATE ROW POLICY p_05453_join_partial ON t_join_partial USING tenant = 'a' AND payload != 'zzz' TO ALL;
 CREATE ROW POLICY p_05453_alias ON t_alias USING tenant = 'a' TO ALL;
+CREATE ROW POLICY p_05453_alias_prewhere ON t_alias_prewhere USING tenant = 'a' TO ALL;
 CREATE ROW POLICY p_05453_log ON t_log_bare USING visible TO ALL;
 CREATE ROW POLICY p_05453_sealed ON v_sealed USING visible TO ALL;
 
@@ -140,6 +148,7 @@ SELECT count() FROM t_alias WHERE parsed > 10 SETTINGS query_plan_enable_optimiz
 SELECT sum(parsed) FROM t_alias SETTINGS query_plan_enable_optimizations = 0;
 SELECT count() FROM m_alias WHERE parsed > 10 SETTINGS query_plan_enable_optimizations = 0;
 SELECT sum(parsed) FROM m_alias SETTINGS query_plan_enable_optimizations = 0;
+SELECT sum(parsed) FROM t_alias_prewhere PREWHERE payload != 'bad' SETTINGS query_plan_enable_optimizations = 0;
 
 SELECT '-- a read that keeps no query info';
 SELECT count() FROM t_log_bare WHERE toUInt64(payload) > 10 AND toUInt64(payload) < 100;
@@ -147,6 +156,23 @@ SELECT count() FROM v_sealed WHERE toUInt64(payload) > 10 AND toUInt64(payload) 
 SELECT count() FROM t_log_bare WHERE toUInt64(payload) > 10 AND toUInt64(payload) < 100
     SETTINGS additional_table_filters = {'t_log_bare': 'payload != \'zzz\''};
 SELECT count() FROM m_log_bare WHERE toUInt64(payload) > 10 AND toUInt64(payload) < 100;
+
+SELECT '-- a serialized query plan';
+SELECT count() FROM cluster('test_shard_localhost', currentDatabase(), t_memory) WHERE toUInt64(payload) > 10
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+SELECT count() FROM cluster('test_shard_localhost', currentDatabase(), t_memory) PREWHERE toUInt64(payload) > 10
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+SELECT count() FROM cluster('test_shard_localhost', currentDatabase(), t_log_bare) WHERE toUInt64(payload) > 10 AND toUInt64(payload) < 100
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+SELECT count() FROM cluster('test_shard_localhost', currentDatabase(), t_bare_chain_policy)
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0;
+SELECT count() FROM cluster('test_shard_localhost', currentDatabase(), t_join_partial) AS t INNER JOIN j_join AS j USING id
+    WHERE toUInt64(t.payload) > 10
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, query_plan_merge_filters = 0, short_circuit_function_evaluation = 'disable',
+        enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, query_plan_join_swap_table = 'false';
+SELECT id FROM cluster('test_shard_localhost', currentDatabase(), t_join) WHERE toUInt64(payload) > 10 ORDER BY payload LIMIT 3
+    SETTINGS serialize_query_plan = 1, prefer_localhost_replica = 0, query_plan_optimize_lazy_materialization = 1,
+        query_plan_max_limit_for_lazy_materialization = 10, query_plan_merge_filters = 0, short_circuit_function_evaluation = 'disable';
 
 SELECT '-- without a policy the row is in scope';
 SELECT count() FROM t_no_policy WHERE toUInt64(payload) > 10; -- { serverError CANNOT_PARSE_TEXT }
@@ -159,7 +185,9 @@ DROP ROW POLICY p_05453_stateful ON t_stateful_policy;
 DROP ROW POLICY p_05453_bare ON t_bare_policy;
 DROP ROW POLICY p_05453_bare_chain ON t_bare_chain_policy;
 DROP ROW POLICY p_05453_join ON t_join;
+DROP ROW POLICY p_05453_join_partial ON t_join_partial;
 DROP ROW POLICY p_05453_alias ON t_alias;
+DROP ROW POLICY p_05453_alias_prewhere ON t_alias_prewhere;
 DROP ROW POLICY p_05453_log ON t_log_bare;
 DROP ROW POLICY p_05453_sealed ON v_sealed;
 DROP TABLE m_child_policy;
@@ -177,8 +205,10 @@ DROP TABLE t_bare_chain_policy;
 DROP TABLE t_numbers;
 DROP TABLE t_join;
 DROP TABLE j_join;
+DROP TABLE t_join_partial;
 DROP TABLE t_np_mt;
 DROP TABLE t_alias;
+DROP TABLE t_alias_prewhere;
 DROP VIEW v_sealed;
 DROP TABLE t_view_base;
 DROP TABLE t_log_bare;
