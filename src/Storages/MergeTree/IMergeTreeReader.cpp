@@ -571,7 +571,7 @@ bool IMergeTreeReader::isReadByKeyOrTTL(const String & column_name) const
 }
 
 std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
-    const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested) const
+    const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested, const String & name_in_table) const
 {
     auto name_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
     const auto & stored_columns = data_part_info_for_read->getColumnsDescription();
@@ -614,9 +614,11 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(
     /// added, and holds a partition, an index, a physical order and TTL infos computed from that subcolumn. For these parts
     /// the name keeps the meaning it had then, as it always did, so that pruning, in-order reads and TTL agree with the
     /// values read. A part that records the column as missing (`skip_empty_columns_on_insert`) was written after, from the
-    /// column's default, which it reads.
+    /// column's default, which it reads. The keys and TTL expressions are those of the current metadata, so they are
+    /// matched by the name in the table: a `RENAME COLUMN` not yet applied to the part gives the column another name
+    /// in the part.
     if (is_missing
-        && (data_part_info_for_read->isProjectionPart() || !isReadByKeyOrTTL(name_in_part)
+        && (data_part_info_for_read->isProjectionPart() || !isReadByKeyOrTTL(name_in_table)
             || data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_storage)))
         return {};
 
@@ -669,7 +671,7 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
     const bool requested_as_nested = isNested(required_column.getTypeInStorage());
-    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second, requested_as_nested);
+    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second, requested_as_nested, required_column.name);
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
 

@@ -321,7 +321,10 @@ private:
 
     /// The column of the part under the given (column name, subcolumn name), or nothing when it has no such
     /// column or subcolumn. @requested_as_nested tells that the column is a subcolumn of a `Nested` column.
-    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested) const;
+    /// @name_in_table is the name of the column or subcolumn in the current metadata of the table, which differs
+    /// from the name in the part while a `RENAME COLUMN` is not yet applied to it.
+    std::optional<NameAndTypePair> tryGetColumnInPart(
+        const String & name_in_storage, const String & subcolumn_name, bool requested_as_nested, const String & name_in_table) const;
 
     /// Whether the partition key, the sorting key or a TTL expression of the table reads the column or subcolumn.
     bool isReadByKeyOrTTL(const String & column_name) const;
