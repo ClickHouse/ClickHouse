@@ -130,7 +130,7 @@ String classifyQueryWithBody(FiberSocket & client, RecordingReader & reader, con
         if (length < size)
             return classifyQuery(query, /*is_prefix=*/ true);
 
-        const String query_type = classifyQuery(query, /*is_prefix=*/ true);
+        String query_type = classifyQuery(query, /*is_prefix=*/ true);
         if (!query_type.empty())
             return query_type;
 
@@ -358,7 +358,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
             catch (...)  // NOLINT(bugprone-empty-catch)
             {
                 /// Not a `database/table` path: the server does not take a database from it either,
-                /// and it is a path of another handler or the server rejects the request.
+                /// and it is a path of another handler or the server rejects the request. Ok to ignore.
             }
         }
     }
