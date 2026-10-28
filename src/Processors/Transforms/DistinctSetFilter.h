@@ -94,8 +94,7 @@ private:
     std::unique_ptr<DictionariesState> dictionaries_state;
     size_t total_byte_count = 0;
 
-    /// Dictionaries that are not shared are identified by content (a hash of all their values) only while
-    /// one of them recurs among the first ones.
+    /// Non-shared dictionaries are identified by content until five new ones got a state and none of them recurred.
     static constexpr size_t NON_SHARED_DICTIONARY_OBSERVATION_COUNT = 5;
     size_t new_non_shared_dictionaries = 0;
     bool non_shared_dictionary_recurred = false;

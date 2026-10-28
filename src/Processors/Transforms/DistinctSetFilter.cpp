@@ -142,8 +142,7 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
 
-    /// A state that is not kept only marks the rows repeating an index within this chunk; the set still
-    /// removes the duplicates of earlier chunks.
+    /// A state that is not kept filters only the repeats within this chunk; the set removes the rest.
     std::optional<DictionariesState::LCDictState> chunk_state;
     DictionariesState::LCDictState * state_ptr = nullptr;
     if (isIdentifiedByContent(column))
