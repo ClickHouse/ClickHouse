@@ -57,4 +57,17 @@ SELECT countIf(explain LIKE '%Aggregating%') AS aggregating_steps,
        countIf(explain LIKE '%any(timeSeriesQuantileToGrid%') AS has_redundant_array_aggregation
 FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'quantile_over_time(0.5, m[20])', 100, 130, 10));
 
+SELECT '-- a table of version 10 stores one sample per row';
+DROP TABLE IF EXISTS prometheus_v10;
+CREATE TABLE prometheus_v10 ENGINE = TimeSeries SETTINGS version = 10, recent_samples_ttl_seconds = 0;
+INSERT INTO prometheus_v10 (metric_name, tags, samples) VALUES
+    ('m', map('host', 'h1'), [(toDateTime64(100, 3), 1.0), (toDateTime64(110, 3), 2.0), (toDateTime64(120, 3), 4.0), (toDateTime64(130, 3), 8.0)]),
+    ('m', map('host', 'h2'), [(toDateTime64(100, 3), 10.0), (toDateTime64(110, 3), 20.0), (toDateTime64(120, 3), 40.0), (toDateTime64(130, 3), 80.0)]);
+SELECT tags, samples FROM prometheusQueryRange('prometheus_v10', 'rate(m[20])', 100, 130, 10) ORDER BY ALL;
+SELECT tags, samples FROM prometheusQueryRange('prometheus_v10', 'predict_linear(m[20], 10)', 100, 130, 10) ORDER BY ALL;
+SELECT tags, samples FROM prometheusQueryRange('prometheus_v10', 'quantile_over_time(0.5, m[20])', 100, 130, 10) ORDER BY ALL;
+SELECT countIf(explain LIKE '%Aggregating%') AS aggregating_steps
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_v10', 'rate(m[20])', 100, 130, 10));
+DROP TABLE prometheus_v10;
+
 DROP TABLE prometheus;
