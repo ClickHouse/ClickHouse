@@ -20,7 +20,9 @@ ORDER BY id
 SETTINGS
     ratio_of_defaults_for_sparse_serialization = 0.9,
     max_uniq_number_for_low_cardinality = 1000,
-    min_bytes_for_wide_part = 0;
+    min_bytes_for_wide_part = 0,
+    -- A randomized tiny `merge_max_block_size` makes `OPTIMIZE` below take minutes in debug builds.
+    merge_max_block_size = 8192;
 
 SYSTEM STOP MERGES t_auto_lc;
 
