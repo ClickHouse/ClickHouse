@@ -2900,6 +2900,18 @@ bool functionChecksOwnAccess(const String & name)
     return functions_checking_access.contains(FunctionFactory::instance().getCanonicalNameIfAny(name));
 }
 
+/// Whether `ast` calls a function from `functionChecksOwnAccess` anywhere inside it.
+bool astCallsFunctionCheckingOwnAccess(const ASTPtr & ast)
+{
+    if (const auto * function = ast->as<ASTFunction>(); function && functionChecksOwnAccess(function->name))
+        return true;
+
+    for (const auto & child : ast->children)
+        if (astCallsFunctionCheckingOwnAccess(child))
+            return true;
+    return false;
+}
+
 void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes, std::unordered_set<String> active_aliases)
 {
     if (!ast)
@@ -3844,6 +3856,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             /// `allow_nonconst_timezone_arguments = 1` — would be rejected there, and by the recovery `ATTACH`
             /// as well, leaving the table detached. Analyze them the same way here and skip the table if that
             /// fails.
+            /// A stored column expression (e.g. `f String ALIAS file('anything', '')`) is expanded only
+            /// during the analysis of the query, after the reattach hook, so the privileges such a function
+            /// checks when it is built (see `functionChecksOwnAccess`) cannot be preflighted. Skip the table.
+            if (create && create->columns_list && astCallsFunctionCheckingOwnAccess(create->columns_list->ptr()))
+                continue;
+
             if (create && create->columns_list && create->columns_list->columns)
             {
                 auto validation_context = Context::createCopy(context);
@@ -3880,6 +3898,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                     /// rejected there the same way.
                     if (create->storage && castStorage<const MergeTreeData>(table, DeferredTable::Load))
                     {
+                        /// A legacy definition (`ENGINE = MergeTree(d, toTimezone(dt, tz), 8192)`) keeps its
+                        /// keys in the engine arguments, which `registerStorageMergeTree` interprets on its
+                        /// own; do not try to mirror that and skip the table.
+                        if (!create->storage->isExtendedStorageDefinition())
+                            continue;
+
                         const auto partition_key = KeyDescription::getKeyFromAST(
                             create->storage->partition_by ? create->storage->partition_by->ptr() : nullptr,
                             columns, MergeTreeData::createVirtuals(nullptr), validation_context);

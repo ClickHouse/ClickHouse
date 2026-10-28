@@ -19,6 +19,7 @@
 #   `05427_reattach_tables_review_followups_2` - multi-file `File` tables, stored keys, busy lazy tables, views, settings carrying query text, refreshable views
 #   `05448_reattach_tables_review_followups_3` - unused `WITH` definitions, storages reading other tables, stored constraints, `joinGet` in refreshable views
 #   `05449_reattach_tables_review_followups_4` - chained unused `WITH` definitions, nested settings profiles, constraints reading the table itself
+#   `05453_reattach_tables_stored_function_access` - stored expressions calling functions that check access, legacy `MergeTree` definitions
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
