@@ -118,6 +118,7 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
+    extern const char mt_mutate_pause_after_alter_lock[];
     extern const char mt_alter_throw_in_durable_rollback[];
     extern const char alter_settings_throw_before_metadata_write[];
     extern const char alter_settings_pause_before_metadata_write[];
@@ -1501,8 +1502,11 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
     Int64 version = 0;
     {
         /// It's important to serialize order of mutations with alter queries because
-        /// they can depend on each other.
-        if (auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]); alter_lock == std::nullopt)
+        /// they can depend on each other. The lock is held until the mutation entry is created:
+        /// settings that gate the on-disk format of the entry, such as `persist_mutation_author`,
+        /// must not change between the check and the write.
+        auto alter_lock = tryLockForAlter(query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (alter_lock == std::nullopt)
         {
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -1510,6 +1514,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
+        FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_pause_after_alter_lock);
         version = startMutation(commands, query_context);
     }
 
