@@ -54,14 +54,14 @@ function wait_for_segments()
     for _ in {1..60}
     do
         actual=$(borrowed_segments)
-        if [ "$actual" -eq "$expected" ]
+        if [ "$actual" -le "$expected" ]
         then
-            echo "segments released"
-            return
+            return 0
         fi
         sleep 0.5
     done
     echo "segments: expected $expected, got $actual"
+    return 1
 }
 
 wrapper_disk="disk(
@@ -73,30 +73,58 @@ wrapper_disk="disk(
     load_metadata_asynchronously = 0
 )"
 
-# The startup of the wrapper fails on its access check.
-before=$(borrowed_segments)
-$CLICKHOUSE_CLIENT -q "
-SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
-CREATE TABLE wrapped (k UInt64) ENGINE = MergeTree() ORDER BY k SETTINGS disk = $wrapper_disk; -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
-"
+function create_wrapped()
+{
+    $CLICKHOUSE_CLIENT -q "
+    CREATE TABLE wrapped (k UInt64) ENGINE = MergeTree() ORDER BY k SETTINGS disk = $wrapper_disk;
+    SYSTEM STOP MERGES wrapped;
+    INSERT INTO wrapped VALUES (10), (20);
+    "
+}
+
+# Runs `prepare`, then `query` with a failed metadata commit, and checks that the segments are released.
+# Background tasks of the server commit metadata too, and one of them may consume the one-shot failpoint
+# first, so that the query succeeds. Then drop the wrapper and try again.
+function fail_commit()
+{
+    local prepare=$1
+    local query=$2
+    local base before output
+    for _ in {1..10}
+    do
+        base=$(borrowed_segments)
+        $prepare
+        before=$(borrowed_segments)
+        output=$($CLICKHOUSE_CLIENT -q "
+        SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
+        $query;
+        " 2>&1)
+        $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction"
+
+        if [[ "$output" == *FAULT_INJECTED* ]]
+        then
+            wait_for_segments "$before" && echo "segments released"
+            return
+        fi
+        if [ -n "$output" ]
+        then
+            echo "unexpected output: $output"
+            return
+        fi
+
+        $CLICKHOUSE_CLIENT -q "DROP TABLE wrapped SYNC"
+        wait_for_segments "$base" || return
+    done
+    echo "the failpoint was consumed by another commit every time"
+}
+
+# The startup of the wrapper fails on the commit of its access check.
+fail_commit ":" "CREATE TABLE wrapped (k UInt64) ENGINE = MergeTree() ORDER BY k SETTINGS disk = $wrapper_disk"
 echo "after the failed wrapper startup"
-wait_for_segments "$before"
 
 # An insert through a running wrapper fails on the metadata commit of one of the files of the part.
-$CLICKHOUSE_CLIENT -q "
-CREATE TABLE wrapped (k UInt64) ENGINE = MergeTree() ORDER BY k SETTINGS disk = $wrapper_disk;
-SYSTEM STOP MERGES wrapped;
-INSERT INTO wrapped VALUES (10), (20);
-"
-before=$(borrowed_segments)
-$CLICKHOUSE_CLIENT -q "
-SYSTEM ENABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
-INSERT INTO wrapped VALUES (30); -- { serverError FAULT_INJECTED }
-SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
-"
+fail_commit create_wrapped "INSERT INTO wrapped VALUES (30)"
 echo "after the failed insert"
-wait_for_segments "$before"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT * FROM borrowed ORDER BY k;
