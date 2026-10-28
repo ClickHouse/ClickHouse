@@ -315,7 +315,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (estimate->estimator)
         {
             auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
-            stats.estimated_rows = filtered.rows;
+            /// At least 1 row: the default 1% of a table of a few rows truncates to 0, which makes the joins above it look empty.
+            stats.estimated_rows = std::max<UInt64>(filtered.rows, 1);
             stats.column_stats = std::move(filtered.column_stats);
             return stats;
         }

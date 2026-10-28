@@ -14,6 +14,7 @@
 # - T5: a filter above a `LIMIT` stays out of the read, and is still estimated, then capped by the `LIMIT`.
 # - T6: a row policy prunes and is estimated.
 # - T7: a filter right above the read is also the read's own filter, and is counted once.
+# - T8: a string equality on a 12-row table is estimated at 1 row, not 0.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -64,6 +65,8 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp USING k < 1000 TO ALL;
     CREATE TABLE p (k Int64, r String) ENGINE = IcebergLocal('${LAKE}/p') PARTITION BY (r);
     INSERT INTO p SELECT number, if(number % 10 < 3, 'us', 'eu') FROM numbers(10000);
+    CREATE TABLE small (v Int32, s String) ENGINE = IcebergLocal('${LAKE}/small');
+    INSERT INTO small SELECT number % 5, if(number = 0, 'rare', 'common') FROM numbers(12);
     CREATE TABLE dim (v Int32) ENGINE = MergeTree ORDER BY v SETTINGS auto_statistics_types = 'uniq';
     INSERT INTO dim SELECT number FROM numbers(5);
 "
@@ -145,6 +148,10 @@ labels t_rp v 't.v >= 0' ${ON}
 echo '--- T7: k % 2 = 0, right above the read'
 echo 'Expect ~100: the default 1% of 10000 rows for a condition that is not a range, once (true 5000).'
 labels t v 't.k % 2 = 0' ${ON}
+
+echo "--- T8: s = 'rare' on a 12-row table"
+echo 'Expect ~1: the default 1% of 12 rows truncates to 0, and a read with rows is estimated at 1 row at least (true 1).'
+labels small v "t.s = 'rare'" ${ON}
 
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${CLICKHOUSE_DATABASE}_rp ON ${CLICKHOUSE_DATABASE}.t_rp"
 rm -rf "${LAKE}"

@@ -63,3 +63,7 @@ rows: 1000
 Expect ~100: the default 1% of 10000 rows for a condition that is not a range, once (true 5000).
 Join: t[no_stats~100] ⋈ dim[5]
 rows: 5000
+--- T8: s = 'rare' on a 12-row table
+Expect ~1: the default 1% of 12 rows truncates to 0, and a read with rows is estimated at 1 row at least (true 1).
+Join: dim[5] ⋈ t[no_stats~1]
+rows: 1
