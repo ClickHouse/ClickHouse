@@ -540,13 +540,14 @@ void SQLClusterFactory::updateFunc()
             else
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
-                chassert(false);
             }
         }
         catch (...)
         {
+            /// A shared definition may be valid on the server that wrote it but not materializable here
+            /// (e.g. `secure = 1` without `port` when this server has no `tcp_port_secure`). Keep the current
+            /// snapshot: the loaded version is not advanced, so the reload is retried on the next update.
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            chassert(false);
         }
     }
 
