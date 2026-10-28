@@ -217,6 +217,26 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_b
     index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_cache_lowcardinality SELECT number, hex(sipHash128(number % 5000)) || hex(sipHash128(number % 5000 + 5000)) FROM numbers(2e5);
 
+-- Each column in a single compressed block, which every stream of the read below loads for its own granules: it is still
+-- the part's to read once.
+DROP TABLE IF EXISTS t_one_block_wide;
+DROP TABLE IF EXISTS t_one_block_compact;
+CREATE TABLE t_one_block_wide (key String, value UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = '10Mi', max_compress_block_size = '10Mi',
+    index_granularity = 128, index_granularity_bytes = '10Mi';
+CREATE TABLE t_one_block_compact (key String, value UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000, min_compress_block_size = '10Mi',
+    max_compress_block_size = '10Mi', index_granularity = 128, index_granularity_bytes = '10Mi';
+INSERT INTO t_one_block_wide SELECT toString(number), number FROM numbers(1e4);
+INSERT INTO t_one_block_compact SELECT * FROM t_one_block_wide;
+
+SELECT key, sum(value) FROM t_one_block_wide GROUP BY key FORMAT Null
+SETTINGS max_threads = 4, max_block_size = 128, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 1, log_comment = '05452_one_block_wide';
+SELECT key, sum(value) FROM t_one_block_compact GROUP BY key FORMAT Null
+SETTINGS max_threads = 4, max_block_size = 128, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    merge_tree_min_read_task_size = 1, merge_tree_min_bytes_per_read_stream = 1, log_comment = '05452_one_block_compact';
+
 -- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, log_comment = '05452_cache_wide_1';
@@ -297,9 +317,23 @@ WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND
     AND log_comment LIKE '05452\\_skew\\_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
 
+WITH
+    (SELECT sum(data_compressed_bytes) FROM system.parts
+     WHERE database = currentDatabase() AND table = 't_one_block_wide' AND active) AS wide_bytes,
+    (SELECT sum(data_compressed_bytes) FROM system.parts
+     WHERE database = currentDatabase() AND table = 't_one_block_compact' AND active) AS compact_bytes
+SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes']
+    BETWEEN 1 AND if(log_comment = '05452_one_block_wide', wide_bytes, compact_bytes) AS block_counted_once
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 15 MINUTE AND current_database = currentDatabase()
+    AND log_comment LIKE '05452\\_one\\_block\\_%' AND type = 'QueryFinish'
+ORDER BY log_comment;
+
 DROP TABLE t_skew_wide;
 DROP TABLE t_skew_compact;
 DROP TABLE t_cache_sparse;
 DROP TABLE t_cache_dynamic;
 DROP TABLE t_cache_quantized;
 DROP TABLE t_cache_lowcardinality;
+DROP TABLE t_one_block_wide;
+DROP TABLE t_one_block_compact;

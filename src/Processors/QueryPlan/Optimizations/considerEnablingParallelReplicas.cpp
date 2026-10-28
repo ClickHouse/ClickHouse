@@ -1495,7 +1495,6 @@ static bool decideAtBoundary(
         if (reads->lazy_to_instrument)
             reads->lazy_to_instrument->setRuntimeDataflowStatisticsCacheUpdater(updater);
 
-        auto duplicated_reads_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true);
         for (auto * read_step : collectReadSteps(*single_replica_plan_boundary))
         {
             /// The coordinated read and its own lazy half are set up above, and their bytes are `input_bytes`.
@@ -1504,7 +1503,9 @@ static bool decideAtBoundary(
                 continue;
             if (!read_step->supportsDataflowStatisticsCollection())
                 continue;
-            read_step->setRuntimeDataflowStatisticsCacheUpdater(duplicated_reads_updater);
+            /// An updater for each read: the blocks are counted once by the updater, and two reads of a table load them twice.
+            read_step->setRuntimeDataflowStatisticsCacheUpdater(
+                std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block, /*duplicated=*/ true));
         }
     }
     return false;

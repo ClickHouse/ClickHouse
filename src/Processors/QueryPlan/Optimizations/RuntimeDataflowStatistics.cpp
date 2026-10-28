@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/sortBlock.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -354,6 +355,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
         cols,
         /*full_bytes=*/{},
         keyOrderProviderFor(columns, keys_positions, getKeyTypesFrom(header, keys_positions)));
+}
+
+RuntimeDataflowStatisticsCacheUpdater::RuntimeDataflowStatisticsCacheUpdater(
+    std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_)
+    : block(std::move(block_))
+    , duplicated(duplicated_)
+    , counted_compressed_blocks(std::make_shared<CountedCompressedBlocks>())
+{
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputBytesRead(std::optional<size_t> compressed_bytes_read)

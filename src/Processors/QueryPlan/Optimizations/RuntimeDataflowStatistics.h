@@ -30,6 +30,8 @@ extern const int BAD_ARGUMENTS;
 
 class Aggregator;
 struct AggregatedDataVariants;
+class CountedCompressedBlocks;
+using CountedCompressedBlocksPtr = std::shared_ptr<CountedCompressedBlocks>;
 
 struct RuntimeDataflowStatistics
 {
@@ -151,11 +153,7 @@ class RuntimeDataflowStatisticsCacheUpdater
 public:
     /// `duplicated` is set on the updater given to the reads parallel replicas would not split: each replica
     /// performs them in full, so their bytes go to `duplicated_bytes` rather than to `input_bytes`.
-    explicit RuntimeDataflowStatisticsCacheUpdater(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_ = false)
-        : block(std::move(block_))
-        , duplicated(duplicated_)
-    {
-    }
+    explicit RuntimeDataflowStatisticsCacheUpdater(std::shared_ptr<RuntimeDataflowStatisticsBlock> block_, bool duplicated_ = false);
 
     /// A permutation putting the sample into the order the replicas send it in. Evaluated only for a
     /// block that is actually sampled, since building it costs a sort of the block's key columns.
@@ -201,6 +199,9 @@ public:
     /// tell, and drops the statistics.
     void recordInputBytesRead(std::optional<size_t> compressed_bytes_read);
 
+    /// Shared by the readers of the updater's reads, see `IMergeTreeReader::countCompressedBytesRead`.
+    const CountedCompressedBlocksPtr & getCountedCompressedBlocks() const { return counted_compressed_blocks; }
+
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
     void markUnsupportedCase()
@@ -229,6 +230,7 @@ private:
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;
+    const CountedCompressedBlocksPtr counted_compressed_blocks;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

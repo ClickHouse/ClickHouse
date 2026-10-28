@@ -44,10 +44,12 @@ catch (...)
 
 std::optional<size_t> MergeTreeReaderCompactSingleBuffer::takeCompressedBytesRead()
 {
-    if (!count_compressed_bytes_read)
+    if (!counted_compressed_blocks)
         return std::nullopt;
 
-    return takeBytesOfCompressedBlockRanges(ranges_read);
+    return counted_compressed_blocks->take(
+        data_part_info_for_read->getDataPartStorage()->getFullPath() + "/" + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
+        ranges_read);
 }
 
 void MergeTreeReaderCompactSingleBuffer::addGranulesServedFromColumnsCache(size_t pos, size_t from_mark, size_t to_mark)
@@ -175,7 +177,7 @@ try
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
     stream->updateReadRequestMap(read_request_map);
-    if (count_compressed_bytes_read)
+    if (counted_compressed_blocks)
         stream->setBlocksReadSink(&ranges_read);
 
     initialized = true;

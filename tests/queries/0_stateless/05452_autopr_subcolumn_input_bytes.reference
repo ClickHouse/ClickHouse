@@ -23,3 +23,5 @@ wide	1
 05452_skew_compact_primary_key	1
 05452_skew_wide_prewhere	1
 05452_skew_wide_primary_key	1
+05452_one_block_compact	1
+05452_one_block_wide	1

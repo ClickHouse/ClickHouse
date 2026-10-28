@@ -88,11 +88,11 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
-void MergeTreeReadTask::Readers::countCompressedBytesRead()
+void MergeTreeReadTask::Readers::countCompressedBytesRead(const CountedCompressedBlocksPtr & counted)
 {
-    main->countCompressedBytesRead();
+    main->countCompressedBytesRead(counted);
     for (auto & reader : prewhere)
-        reader->countCompressedBytesRead();
+        reader->countCompressedBytesRead(counted);
 }
 
 void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
@@ -128,7 +128,7 @@ MergeTreeReadTask::MergeTreeReadTask(
     if (updater)
     {
         /// The compressed bytes read are taken by `dataflow_cache_update_cb`.
-        readers.countCompressedBytesRead();
+        readers.countCompressedBytesRead(updater->getCountedCompressedBlocks());
 
         dataflow_cache_update_cb = [this](std::optional<size_t> compressed_bytes_read)
         {

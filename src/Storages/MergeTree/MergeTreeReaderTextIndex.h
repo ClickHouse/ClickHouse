@@ -49,11 +49,11 @@ public:
 
     /// Only the columns `fallback_reader` reads: the posting lists are not counted.
     std::optional<size_t> takeCompressedBytesRead() override { return fallback_reader ? fallback_reader->takeCompressedBytesRead() : 0; }
-    void countCompressedBytesRead() override
+    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override
     {
-        IMergeTreeReader::countCompressedBytesRead();
         if (fallback_reader)
-            fallback_reader->countCompressedBytesRead();
+            fallback_reader->countCompressedBytesRead(counted);
+        IMergeTreeReader::countCompressedBytesRead(std::move(counted));
     }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
     void updateReadRequestMap(MarkRangesPtr request_map) override;

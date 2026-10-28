@@ -63,7 +63,7 @@ public:
     std::unordered_map<String, std::vector<StreamWithSizeHint>> getAllColumnsSubstreams();
 
     std::optional<size_t> takeCompressedBytesRead() override;
-    void countCompressedBytesRead() override;
+    void countCompressedBytesRead(CountedCompressedBlocksPtr counted) override;
 
 private:
     /// Prefixes or data of a single column can be deserialized in parallel from different streams, so
@@ -105,12 +105,9 @@ private:
     std::mutex ranges_read_mutex;
     std::unordered_map<String, CompressedBlockRanges> ranges_read;
     CompressedBlockRanges & getRangesRead(const String & stream_name);
-    /// The parts of the files counted already, by stream, as merged ranges: a block holds many granules, which are read or
-    /// served from the cache in several read steps, and a block read in one step can hold a granule served in another.
-    std::unordered_map<String, std::map<size_t, size_t>> counted_ranges;
     void addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk);
     /// A granule served from the cache is priced by the blocks of its streams, which are not all known for some columns:
-    /// then the bytes read are not measured.
+    /// then the bytes read are not measured, and the ranges are not kept.
     bool served_from_cache_without_known_streams = false;
 
     struct StreamInfo
