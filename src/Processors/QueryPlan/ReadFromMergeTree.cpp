@@ -5623,8 +5623,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// later read that does not apply it (`apply_mutations_on_fly = 0`, `apply_patch_parts = 0`, or any
     /// read after `KILL MUTATION`) would skip rows. A read with such a snapshot never consults the cache
     /// (see `filterPartsByQueryConditionCache`), so don't write from it either. See issue #122564.
+    /// The same holds for a pending `RENAME COLUMN` or `DROP COLUMN` (possibly followed by adding a
+    /// column with the same name): the part whose column identity it changes is skipped by the per-part
+    /// guard, but the values it returns still tighten the threshold for the other parts.
     if (top_k_filter_info && mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()
+            || mutations_snapshot->hasMetadataMutations()))
         reader_settings.use_query_condition_cache = false;
 
     /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be

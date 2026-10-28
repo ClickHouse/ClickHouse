@@ -1883,6 +1883,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
         return;
 
+    /// The granules a TopK read may skip depend on the rows of every part in the read. A pending
+    /// `RENAME COLUMN` or `DROP COLUMN` (possibly followed by adding a column with the same name) changes
+    /// the rows of the parts it applies to without changing their names, so an entry of any part,
+    /// recorded before the `ALTER` or after `KILL MUTATION`, may be wrong for this read. The write side
+    /// does not record entries for such a read either (see `ReadFromMergeTree::initializePipeline`).
+    if (top_k_filter_info && mutations_snapshot->hasMetadataMutations())
+        return;
+
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 
     /// Each condition is looked up under two keys (see the write sides):
