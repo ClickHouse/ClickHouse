@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 
+#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
@@ -7,7 +8,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
@@ -35,6 +35,7 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <base/EnumReflection.h>
+#include <base/bit_cast.h>
 #include <base/sort.h>
 
 #include <algorithm>
@@ -365,15 +366,13 @@ namespace
             if (!std::is_sorted(row_data, row_data + num_samples, less_by_timestamp))
                 ::sort(row_data, row_data + num_samples, less_by_timestamp);
 
-            /// Collapse each run of equal timestamps into one sample: the sample with the greatest value,
-            /// where a NaN value loses to any other value.
+            /// Collapse each run of equal timestamps into one sample by the rule of the `timeSeries*` functions,
+            /// so the kept sample does not depend on the order of the samples.
             auto new_sample_wins = [&](size_t kept_index, size_t new_index)
             {
                 Float64 kept_value = ts_values.getFloat64(kept_index);
-                Float64 new_value = ts_values.getFloat64(new_index);
-                if (isNaN(new_value))
-                    return false;
-                return isNaN(kept_value) || (new_value > kept_value);
+                Float64 winner = timeseriesMaxValueForDuplicateTimestamp(kept_value, ts_values.getFloat64(new_index));
+                return bit_cast<UInt64>(winner) != bit_cast<UInt64>(kept_value);
             };
 
             size_t last_unique = 0;

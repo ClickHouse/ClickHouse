@@ -1,3 +1,6 @@
 PromQL instant selector: the series is present with NaN
 1	1
 1	1
+PromQL instant selector: +0 is kept over -0
+inf
+inf
