@@ -4,6 +4,9 @@
 -- every range, not only for the range that ends at the task's last mark.
 
 SET max_threads = 1;
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_cc_multi_range;
 

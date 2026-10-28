@@ -1,0 +1,56 @@
+<test>
+    <!--
+        GROUP BY over several LowCardinality keys whose value tuples repeat: dashboards group by
+        metric/region/service-like keys and see the same small set of tuples on every block.
+        HashMethodSerialized serializes, hashes and probes the key for every row; the dense
+        position cache serves a repeated tuple straight from the cached aggregate state.
+
+        The second query groups by plain String copies of the same keys as a control: it takes the
+        same serialized method without the cache and must not change.
+    -->
+    <settings>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_lc_group_by
+        (
+            metric LowCardinality(String),
+            region LowCardinality(String),
+            metric_plain String,
+            region_plain String,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_lc_group_by
+        SELECT
+            concat('cpu.usage.mode.', toString(number % 12)),
+            concat('us-east-', toString(number % 5)),
+            concat('cpu.usage.mode.', toString(number % 12)),
+            concat('us-east-', toString(number % 5)),
+            number
+        FROM numbers_mt(50000000)
+    </fill_query>
+
+    <query>
+        SELECT metric, region, count(), sum(value)
+        FROM t_lc_group_by
+        GROUP BY metric, region
+        FORMAT Null
+        SETTINGS max_threads = 8
+    </query>
+
+    <query>
+        SELECT metric_plain, region_plain, count(), sum(value)
+        FROM t_lc_group_by
+        GROUP BY metric_plain, region_plain
+        FORMAT Null
+        SETTINGS max_threads = 8
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_lc_group_by</drop_query>
+</test>

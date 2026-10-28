@@ -27,10 +27,24 @@ node2 = cluster.add_instance(
     stay_alive=True,
 )
 
-# Only the rotated versions of the local log tables.
+# Only the rotated versions of the local log tables. Drops are synchronous, as in the
+# stateless test harness: replacing an obsolete union table then waits for the old one
+# to be dropped (see `test_recreated_on_rotation`).
 node3 = cluster.add_instance(
     "node3",
-    main_configs=["configs/union_merge.xml"],
+    main_configs=["configs/union_merge.xml", "configs/bucketed_metric_log.xml"],
+    user_configs=["configs/drop_sync.xml"],
+    stay_alive=True,
+)
+
+# Starts with the first release that has union tables and is upgraded. The log tables are prepared
+# during startup, and drops are asynchronous (the default).
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/union_merge.xml", "configs/prepare_on_startup.xml"],
+    image="clickhouse/clickhouse-server",
+    tag="26.8",
+    with_installed_binary=True,
     stay_alive=True,
 )
 
@@ -113,7 +127,9 @@ def test_recreated_on_rotation(start_cluster):
     # created anew, and the union table is recreated as well.
     node3.query("ALTER TABLE system.query_log ADD COLUMN test_rotation UInt8")
     node3.restart_clickhouse()
-    node3.query("SYSTEM FLUSH LOGS query_log")
+    # With synchronous drops, this flush used to wait forever for the obsolete union table
+    # to be dropped while the flush thread itself kept it alive.
+    node3.query("SYSTEM FLUSH LOGS query_log", timeout=60)
 
     assert node3.query("EXISTS TABLE system.query_log_0").strip() == "1"
     assert "AS merge" in node3.query(
@@ -240,6 +256,19 @@ def test_stable_across_restarts(start_cluster):
     assert uuid_before == uuid_after
 
 
+def test_replaced_during_upgrade(start_cluster):
+    node4.query("SYSTEM FLUSH LOGS trace_log")
+    old_create_query = node4.query("SHOW CREATE TABLE system.all_trace_log FORMAT TSVRaw")
+
+    # `all_trace_log` contains the build id, so the first start of another build replaces it, and it does so
+    # before loading the tables left in `metadata_dropped` by previous runs. The replaced table is dropped
+    # by this run and must not be loaded as one of them.
+    node4.restart_with_latest_version()
+
+    assert node4.query("SHOW CREATE TABLE system.all_trace_log FORMAT TSVRaw") != old_create_query
+    assert not node4.contains_in_log("UUID collision", from_host=True)
+
+
 def test_cluster(start_cluster):
     node1.query("SELECT 'test_cluster_marker_node1'")
     node1.query("SYSTEM FLUSH LOGS query_log")
@@ -309,3 +338,23 @@ def test_skip_unavailable_replicas(start_cluster):
         )
     finally:
         node2.start_clickhouse()
+
+
+def test_metric_log_keys_are_read_by_name(start_cluster):
+    # The keys of `metrics` are numbered by the position of a metric, which changes between versions.
+    node3.query("SYSTEM FLUSH LOGS metric_log")
+    node3.query(
+        "CREATE TABLE system.metric_log_1000 (event_time DateTime, "
+        "metrics Map(Enum16('CurrentMetric_Query' = 1, 'ProfileEvent_Query' = 2), Int64)) "
+        "ENGINE = MergeTree ORDER BY event_time"
+    )
+    node3.query(
+        "INSERT INTO system.metric_log_1000 VALUES (now(), {'CurrentMetric_Query': 5, 'ProfileEvent_Query': 7})"
+    )
+    assert (
+        node3.query(
+            "SELECT metrics FROM system.all_metric_log WHERE _table = 'metric_log_1000'"
+        )
+        == "{'CurrentMetric_Query':5,'ProfileEvent_Query':7}\n"
+    )
+    node3.query("DROP TABLE system.metric_log_1000")

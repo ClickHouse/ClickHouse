@@ -6,32 +6,19 @@ title: 'Detección de clústeres'
 doc_type: 'guide'
 ---
 
-<div id="overview">
-  ## Descripción general
-</div>
+## Descripción general {#overview}
 
 La funcionalidad Detección de clústeres de ClickHouse simplifica la configuración del clúster al permitir que los nodos se descubran y se registren automáticamente, sin necesidad de definirlos explícitamente en los archivos de configuración. Esto resulta especialmente útil cuando la definición manual de cada nodo se vuelve engorrosa.
 
 <Note>
-  Detección de clústeres es una funcionalidad experimental y puede modificarse o eliminarse en futuras versiones.
-  Para habilitarla, incluya la opción `allow_experimental_cluster_discovery` en su archivo de configuración:
-
-  ```xml
-  <clickhouse>
-      <!-- ... -->
-      <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
-      <!-- ... -->
-  </clickhouse>
-  ```
+  Detección de clústeres requiere tener configurado [ClickHouse Keeper](/es/guides/sre/keeper/clickhouse-keeper) o ZooKeeper.
+  En versiones anteriores, era una funcionalidad experimental que debía habilitarse con la opción `allow_experimental_cluster_discovery` en el archivo de configuración.
+  Esta opción ya está obsoleta y no tiene ningún efecto.
 </Note>
 
-<div id="remote-servers-configuration">
-  ## Configuración de los servidores remotos
-</div>
+## Configuración de los servidores remotos {#remote-servers-configuration}
 
-<div id="traditional-manual-configuration">
-  ### Configuración manual tradicional
-</div>
+### Configuración manual tradicional {#traditional-manual-configuration}
 
 Tradicionalmente, en ClickHouse, había que especificar manualmente en la configuración cada segmento y cada réplica del clúster:
 
@@ -63,9 +50,7 @@ Tradicionalmente, en ClickHouse, había que especificar manualmente en la config
 
 ```
 
-<div id="using-cluster-discovery">
-  ### Uso de Detección de clústeres
-</div>
+### Uso de Detección de clústeres {#using-cluster-discovery}
 
 Con Detección de clústeres, en lugar de definir explícitamente cada nodo, basta con especificar un path en ZooKeeper. Todos los nodos que se registren bajo este path en ZooKeeper se descubrirán automáticamente y se agregarán al clúster.
 
@@ -113,9 +98,7 @@ para `node3` y `node4`:
 </discovery>
 ```
 
-<div id="observer-mode">
-  ### Modo observador
-</div>
+### Modo observador {#observer-mode}
 
 Los nodos configurados en modo observador no se registrarán como réplicas.
 Solo observarán y detectarán otras réplicas activas en el clúster sin participar activamente.
@@ -128,9 +111,7 @@ Para habilitar el modo observador, incluye la etiqueta `<observer/>` en la secci
 </discovery>
 ```
 
-<div id="discovery-of-clusters">
-  ### Detección de clústeres
-</div>
+### Detección de clústeres {#discovery-of-clusters}
 
 A veces puede ser necesario añadir y eliminar no solo hosts de los clústeres, sino también los propios clústeres. Puede usar el nodo `<multicluster_root_path>` con la ruta raíz de varios clústeres:
 
@@ -171,9 +152,7 @@ Limitaciones:
 * `<multicluster_root_path>` solo puede usarse con `<observer/>`.
 * La última parte de la ruta de Keeper se usa como nombre del clúster, mientras que durante el registro el nombre se toma de la etiqueta XML.
 
-<div id="use-cases-and-limitations">
-  ## Casos de uso y limitaciones
-</div>
+## Casos de uso y limitaciones {#use-cases-and-limitations}
 
 A medida que se añaden o eliminan nodos de la ruta de ZooKeeper especificada, estos se detectan o se eliminan automáticamente del clúster sin necesidad de cambios en la configuración ni de reiniciar el servidor.
 

@@ -53,6 +53,7 @@
         "products/bring-your-own-cloud/reference/faq",
         {
           "group": "Connector Mode",
+          "hidden": true,
           "tag": "Preview",
           "pages": [
             "products/bring-your-own-cloud/connector/overview",
