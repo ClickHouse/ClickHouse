@@ -153,7 +153,8 @@ void Field::destroyContainerIteratively(Types::Which old_which) noexcept
     /// nested value is narrow (a deep literal is query-size bounded, so it cannot also be wide);
     /// the inline buffer keeps that common case allocation-free.
     LockMemoryExceptionInThread block_memory_limit_exception;
-    absl::InlinedVector<Field, 16> to_destroy;
+    /// Only the elements below `size()` are read, and `push_back` constructs each of them.
+    [[clang::uninitialized]] absl::InlinedVector<Field, 16> to_destroy;
 
     auto steal_children = [&to_destroy](Field & container, Types::Which w)
     {
