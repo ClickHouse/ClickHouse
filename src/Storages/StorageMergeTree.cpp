@@ -1603,16 +1603,27 @@ bool lessVersion(const PartVersionWithPartitionIdAndName & f, const PartVersionW
     return f.version < s.version;
 }
 
-/// Data versions of the parts with the partition they belong to, sorted by version.
-/// A patch part is attributed to the partition of the data it patches.
-std::vector<PartVersionWithPartitionIdAndName> getSortedPartVersions(const MergeTreeData::DataPartsVector & parts)
+/// Minimum data versions of the parts, over all parts and per partition. A patch part is
+/// attributed to the partition of the data it patches. Computed once per pass over the
+/// mutations, so that checking each mutation does not rescan the parts.
+struct MinPartDataVersions
 {
-    std::vector<PartVersionWithPartitionIdAndName> part_versions;
-    part_versions.reserve(parts.size());
+    Int64 global = std::numeric_limits<Int64>::max();
+    std::unordered_map<String, Int64> by_partition;
+};
+
+MinPartDataVersions getMinPartDataVersions(const MergeTreeData::DataPartsVector & parts)
+{
+    MinPartDataVersions result;
     for (const auto & part : parts)
-        part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.getOriginalPartitionId(), part->name});
-    std::sort(part_versions.begin(), part_versions.end(), lessVersion);
-    return part_versions;
+    {
+        Int64 data_version = part->info.getDataVersion();
+        result.global = std::min(result.global, data_version);
+        auto [it, inserted] = result.by_partition.emplace(part->info.getOriginalPartitionId(), data_version);
+        if (!inserted)
+            it->second = std::min(it->second, data_version);
+    }
+    return result;
 }
 
 /// Does the mutation still have a part to process, i.e. a part in a partition it affects whose
@@ -1622,14 +1633,15 @@ std::vector<PartVersionWithPartitionIdAndName> getSortedPartVersions(const Merge
 bool hasPartsToMutate(
     const MergeTreeMutationEntry & entry,
     Int64 mutation_version,
-    const std::vector<PartVersionWithPartitionIdAndName> & part_versions)
+    const MinPartDataVersions & min_data_versions)
 {
-    const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
-    auto versions_end_it = std::lower_bound(part_versions.begin(), part_versions.end(), needle, lessVersion);
+    if (entry.partition_ids.empty())
+        return min_data_versions.global < mutation_version;
 
-    for (auto versions_it = part_versions.begin(); versions_it != versions_end_it; ++versions_it)
+    for (const auto & partition_id : entry.partition_ids)
     {
-        if (entry.affectsPartition(versions_it->partition_id))
+        auto it = min_data_versions.by_partition.find(partition_id);
+        if (it != min_data_versions.by_partition.end() && it->second < mutation_version)
             return true;
     }
 
@@ -1843,13 +1855,13 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
 
 std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommandsUnlocked(std::lock_guard<std::mutex> & /*lock*/) const
 {
-    const auto part_versions = getSortedPartVersions(getDataPartsVectorForInternalUsage());
+    const auto min_data_versions = getMinPartDataVersions(getDataPartsVectorForInternalUsage());
 
     std::map<std::string, MutationCommands> result;
 
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        if (hasPartsToMutate(entry, static_cast<Int64>(mutation_version), part_versions))
+        if (hasPartsToMutate(entry, static_cast<Int64>(mutation_version), min_data_versions))
             result.emplace(entry.file_name, *entry.commands);
     }
 
@@ -3355,7 +3367,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     /// Patch parts are counted too: the mutation is applied on the fly to a patch part of an affected
     /// partition with a lower data version (see `MutationsSnapshot::getOnFlyMutationCommandsForPart`),
     /// so its entry must stay until such patch parts are gone.
-    const auto part_versions = getSortedPartVersions(
+    const auto min_data_versions = getMinPartDataVersions(
         getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Regular, DataPartKind::Patch}));
 
     const time_t now = time(nullptr);
@@ -3386,7 +3398,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
                     })))
             continue;
 
-        if (hasPartsToMutate(entry, static_cast<Int64>(version), part_versions))
+        if (hasPartsToMutate(entry, static_cast<Int64>(version), min_data_versions))
             continue;
 
         if (!entry.is_done)
