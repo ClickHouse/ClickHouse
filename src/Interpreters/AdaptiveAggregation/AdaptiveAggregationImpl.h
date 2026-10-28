@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -211,7 +212,8 @@ struct AdaptiveAggregationSession
         /// in `scope` on the first append, and returns the block's bytes. On a temporary volume the stream is created
         /// on a disk with `reserve_size` bytes of room, and the append throws `NOT_ENOUGH_SPACE` when no disk has them.
         /// A later append throws it when the disk of the stream lacks them. The appends of one spill share
-        /// `space_check`, which checks each disk once. Producers append concurrently.
+        /// `space_check`, which checks each disk once. Producers append concurrently. After a failed write the stream
+        /// takes no more appends: they rethrow that failure.
         UInt64 append(
             const TemporaryDataOnDiskScopePtr & scope,
             const PartitionedRecordBuffer & partitions,
@@ -237,6 +239,8 @@ struct AdaptiveAggregationSession
         /// Serializes the producers' appends and the creation of the stream.
         std::mutex mutex;
         std::unique_ptr<TemporaryDataBuffer> stream;
+        /// A failed write cancels the stream and may leave a partial block in it.
+        std::exception_ptr write_failure;
         size_t record_count = 0;
     };
     /// One per partition of the layout.
