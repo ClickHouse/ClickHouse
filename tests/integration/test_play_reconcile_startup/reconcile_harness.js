@@ -1613,6 +1613,43 @@ async function main() {
             vm.runInContext("getActiveTab().query", r.sandbox));
     }
 
+    /// Guard (Back/Forward between mismatched implicit accounts): an entry stamped with implicit user
+    /// `alice` cannot import its `database=` into a visit that has learned `bob` for the same empty
+    /// user field — and it must not keep `bob`'s selection either, otherwise the entry's restored
+    /// query would run against a database selected for a different entry. The control entry of the
+    /// live account proves the gate does restore a matching entry's `database=`.
+    {
+        const origin = new URL(base).origin;
+        const q = 'DELETE FROM target WHERE id = 1';
+        const hash = Buffer.from(q, 'utf8').toString('base64');
+        const r = await runScenario(js, {
+            href: base + '?tab=Report',
+            historyState: null,
+            seedTabs: [
+                { id: 't8', title: 'Report', query: q, params: {}, result: null, lastSavedQuery: q },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+            learnImplicitUser: 'bob',
+        });
+        const navigate = (implicit_user, database) => {
+            const state = { tabId: 't8', tabName: 'Report', query: q, params: {}, result: null,
+                connectionServer: origin, connectionUser: '', connectionImplicitUser: implicit_user };
+            r.sandbox.location._apply(base + '?tab=Report&database=' + database + '#' + hash);
+            r.sandbox.history.state = state;
+            vm.runInContext(`window.onpopstate({ isTrusted: true, state: ${JSON.stringify(state)} })`, r.sandbox);
+        };
+        navigate('bob', 'bob_db');
+        await sleep(50);
+        check('popstate-implicit-account-database', "an entry of the live implicit account restores its database",
+            vm.runInContext('selected_database', r.sandbox) === 'bob_db',
+            vm.runInContext('selected_database', r.sandbox));
+        navigate('alice', 'alice_db');
+        await sleep(50);
+        check('popstate-implicit-account-database', "an entry of another implicit account clears the previous selection",
+            vm.runInContext('selected_database', r.sandbox) === null,
+            vm.runInContext('selected_database', r.sandbox));
+    }
+
     /// Contract (closing the active tab folds its draft into its own entry): a later Back that
     /// recreates the closed tab from `history.state` must restore the draft, not the stale text the
     /// last run left in the entry.

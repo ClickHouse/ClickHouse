@@ -103,6 +103,7 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "download-snapshot",
         "probe-admission",
         "probe-admission-cancel",
+        "popstate-implicit-account-database",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out

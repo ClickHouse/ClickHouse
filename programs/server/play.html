@@ -17800,6 +17800,16 @@ window.onpopstate = function(event) {
         /// identity comparison meaningful after a history navigation).
         stampSelectedDatabaseConnection();
         applySelectedDatabaseHighlight();
+    } else if (selected_database !== null) {
+        /// The entry belongs to another connection, e.g. it was stamped with implicit user `alice`
+        /// while this visit has learned `bob` (both with an empty user field, so the connection
+        /// restore above changed nothing that `resetConnectionScopedState` would notice). Its
+        /// `database=` cannot be imported, but keeping the live selection would be just as wrong:
+        /// the entry's restored query would then run against a database that was selected for a
+        /// different entry. Fail closed as for an unstamped entry: target the server default.
+        selected_database = null;
+        stampSelectedDatabaseConnection();
+        applySelectedDatabaseHighlight();
     }
     /// Does this entry carry a genuine result snapshot (modern nested or legacy flat)? An entry
     /// written while its tab was mid-run does NOT: a run nulls `tab.result` at launch and only
