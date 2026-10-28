@@ -17,6 +17,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/Set.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1009,15 +1010,17 @@ private:
         if (set_elements.size() != 1)
             return std::nullopt;
 
+        /// Probe a `Set` built the same way as for `IN` itself rather than comparing values: the set
+        /// compares keys by their binary representation, so e.g. `-0.0` and `+0.0` are different elements.
         const auto & elements = set_elements.front();
-        auto default_column = elements.type->createColumnConst(1, convertFieldToType(default_value, *elements.type))->convertToFullColumnIfConst();
+        auto set = std::make_shared<Set>(SizeLimits{}, /* max_elements_to_fill */ 0, /* transform_null_in */ false);
+        set->setHeader({ColumnWithTypeAndName(elements.column->cloneEmpty(), elements.type, elements.name)});
+        set->insertFromColumns({elements.column});
+        set->finishInsert();
 
-        for (size_t row = 0; row < elements.column->size(); ++row)
-        {
-            if (elements.column->compareAt(row, 0, *default_column, /* nan_direction_hint */ 1) == 0)
-                return true;
-        }
-        return false;
+        auto default_column = elements.type->createColumnConst(1, convertFieldToType(default_value, *elements.type))->convertToFullColumnIfConst();
+        auto result = set->execute({ColumnWithTypeAndName(default_column, elements.type, elements.name)}, /* negative */ false);
+        return result->getBool(0);
     }
 
     QueryTreeNodePtr preserveResultType(QueryTreeNodePtr replacement_node, const DataTypePtr & original_result_type)
