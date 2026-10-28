@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-parallel
-# no-parallel: the check reads the server-wide `OpenFileForWrite` metric, which concurrent tests disturb.
+# no-parallel: the cache directory of the test is fixed, so concurrent runs of the test would share it.
+# no-replicated-database: the check scans the descriptors of the local server.
 
 # The objects of a `borrow_from_cache` disk are `Ephemeral` file segments, which stay held for as
 # long as the object exists. Writing an object must not leave the file of the segment open for
 # writing until then, otherwise every stored object keeps a file descriptor.
+#
+# The check looks for descriptors open for writing into the files of the cache, as
+# `04403_mergetree_close_fds_before_part_rename` does for parts. The server-wide `OpenFileForWrite`
+# metric is not usable: under load, the flushes of system logs keep thousands of files open for
+# writing for seconds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,32 +42,6 @@ SETTINGS disk = disk(
 SYSTEM STOP MERGES borrowed;
 "
 
-function open_files_for_write()
-{
-    $CLICKHOUSE_CLIENT -q "SELECT value FROM system.metrics WHERE metric = 'OpenFileForWrite'"
-}
-
-# Background tasks keep files open for writing only for a moment, but in bursts: a flush of
-# `system.metric_log` alone writes a part with about a thousand columns. Take the smallest of
-# several samples, so that a burst does not count.
-function min_open_files_for_write()
-{
-    local min=""
-    for _ in {1..20}
-    do
-        local value
-        value=$(open_files_for_write)
-        if [ -z "$min" ] || [ "$value" -lt "$min" ]
-        then
-            min=$value
-        fi
-        sleep 0.1
-    done
-    echo "$min"
-}
-
-before=$(min_open_files_for_write)
-
 # 100 parts of several files each.
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO borrowed SELECT number FROM numbers(100)
@@ -71,9 +51,48 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 SELECT count(), sum(k) FROM borrowed;
 "
 
-# Leaked descriptors would be about a thousand and stay open as long as the table exists.
-after=$(min_open_files_for_write)
-[ $((after - before)) -lt 300 ] && echo 1 || echo "OpenFileForWrite grew from $before to $after"
+# The files of the objects. Check that they are visible from here, otherwise the scan below would
+# pass vacuously.
+cache_files=$($CLICKHOUSE_CLIENT -q "SELECT cache_path FROM system.filesystem_cache WHERE cache_name = '05448_cache_creator' AND kind = 'Ephemeral'")
+visible=0
+for file in $cache_files
+do
+    [ -f "$file" ] && visible=$((visible + 1))
+done
+[ "$visible" -gt 100 ] && echo "cache files are visible" || echo "only $visible cache files are visible"
+cache_dir=$(dirname "$(dirname "$(dirname "$(echo "$cache_files" | head -n1)")")")
+
+# Descriptors (of any process) that point into the files of segments and are open for writing. The
+# segments are in the subdirectories of the cache, while the cache itself keeps its `status` file in
+# the top directory open. The access mode is in the low two bits of the octal `flags` of
+# `/proc/PID/fdinfo/FD` (0 is `O_RDONLY`).
+function write_descriptors_into_cache()
+{
+    local count=0
+    local fd_link flags
+    while read -r fd_link
+    do
+        flags=$(grep -m1 '^flags:' "${fd_link/\/fd\//\/fdinfo\/}" 2>/dev/null | tr -dc '0-7')
+        [ -n "$flags" ] || continue
+        [ $(( 8#$flags & 3 )) -ne 0 ] && count=$((count + 1))
+    done < <(find /proc/[0-9]*/fd -mindepth 1 -maxdepth 1 -lname "${cache_dir}/*/*" 2>/dev/null)
+    echo "$count"
+}
+
+# A leak keeps about a thousand descriptors open for as long as the table exists. A descriptor that
+# is open only for a moment (a concurrent write into the cache) does not persist, so look several
+# times and take the smallest count.
+min=""
+for _ in {1..5}
+do
+    count=$(write_descriptors_into_cache)
+    if [ -z "$min" ] || [ "$count" -lt "$min" ]
+    then
+        min=$count
+    fi
+    sleep 0.1
+done
+echo "write descriptors into the cache: $min"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE borrowed SYNC;
