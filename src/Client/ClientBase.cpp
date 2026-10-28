@@ -2560,7 +2560,8 @@ enum class StdinState
 /// Callers decide whether that is valid for their particular INSERT source.
 ///
 /// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
-/// `POLLERR`/`POLLNVAL`) is reported as end of file rather than failing the INSERT.
+/// `POLLNVAL`, or `POLLERR` without `POLLIN`) is reported as end of file rather than
+/// failing the INSERT.
 /// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
 /// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
 /// being silently swallowed.
@@ -2587,13 +2588,16 @@ StdinState getStdinStateNonBlocking(ReadBuffer & std_in, int fd)
     if (ret == 0)
         return StdinState::Ambiguous;
 
-    if (pfd.revents & (POLLERR | POLLNVAL))
+    if (pfd.revents & POLLNVAL)
         return StdinState::EndOfFile;
 
+    /// `POLLERR` or `POLLHUP` do not imply that no bytes remain readable: e.g. a socket
+    /// whose peer sent data and then reset the connection reports `POLLIN | POLLERR | POLLHUP`,
+    /// and the data is still readable. Check `POLLIN` first, so such data is not ignored.
     if (pfd.revents & POLLIN)
         return StdinState::Data;
 
-    if (pfd.revents & POLLHUP)
+    if (pfd.revents & (POLLERR | POLLHUP))
         return StdinState::EndOfFile;
 
     return StdinState::Ambiguous;

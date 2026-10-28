@@ -113,5 +113,31 @@ run_unused_stdin_test 84 $CLICKHOUSE_CLIENT -q "INSERT INTO test_04064_infile FR
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_04064_infile"
 
+# stdin is a TCP socket whose peer sent data and then reset the connection: `poll` reports
+# `POLLIN | POLLERR | POLLHUP`, but the data is still readable and must not be ignored.
+# For async inserts and `--inline-insert-data`, mixing inline and stdin data must be rejected.
+run_with_reset_socket_stdin()
+{
+    python3 -c '
+import socket, struct, subprocess, sys
+listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+listener.bind(("127.0.0.1", 0))
+listener.listen(1)
+client = socket.create_connection(listener.getsockname())
+peer, _ = listener.accept()
+peer.sendall(b"(42)\n")
+peer.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+peer.close()
+listener.close()
+sys.exit(subprocess.run(sys.argv[1], shell=True, stdin=client.fileno(), timeout=30).returncode)
+' "$1"
+}
+
+$CLICKHOUSE_CLIENT -q "CREATE TABLE IF NOT EXISTS test_04064_socket (x UInt32) ENGINE = MergeTree ORDER BY x"
+run_with_reset_socket_stdin "$CLICKHOUSE_CLIENT --async_insert 1 -q 'INSERT INTO test_04064_socket VALUES (1)'" 2>&1 | grep -o -m1 "both inlined and external data"
+run_with_reset_socket_stdin "$CLICKHOUSE_CLIENT --inline-insert-data -q 'INSERT INTO test_04064_socket VALUES (2)'" 2>&1 | grep -o -m1 "both inlined and external data"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM test_04064_socket"
+$CLICKHOUSE_CLIENT -q "DROP TABLE test_04064_socket"
+
 exec 4>&-
 rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC" "$QUERIES_FILE_INLINE" "$QUERIES_FILE_INFILE" "$INFILE_DATA"
