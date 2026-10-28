@@ -1,0 +1,50 @@
+every part stores the values: applied
+1
+1
+the old parts lack the column, computed from a default that can change between passes: not applied
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+deterministic defaults, and no default: applied
+1
+1
+1
+9	4+	1066
+12	1+	1061
+9	0+	1059
+11	1+	1055
+18	1+	1042
+17	3+	1040
+14	4+	1037
+20	1+	1036
+5	3+	1033
+5	1+	1030
+9	4+	1066
+12	1+	1061
+9	0+	1059
+11	1+	1055
+18	1+	1042
+17	3+	1040
+14	4+	1037
+20	1+	1036
+5	3+	1033
+5	1+	1030
+a new part stores the values, the old parts still lack them: not applied
+0
+1
+a pending mutation applied on the fly: not applied
+0
+1
+a pending ALTER MODIFY COLUMN from Nullable: the reader replaces NULL with the default, not applied for a random one
+0
+1
+1
+two_pass_defaults_on	1	0

@@ -7892,6 +7892,14 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.8", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."}) \
+    DECLARE(Bool, query_plan_two_pass_count_top_k, true, R"(
+Runs `GROUP BY k, s, ... ORDER BY count() DESC LIMIT n` over one MergeTree table, where `k` is an integer column and another key is a string, in passes over the rows of the most frequent values of `k` only, when a pilot over a sample of granules shows that this pays off. The result is the same.
+)", 0, \
+        {"26.11", false, true, "New setting: ORDER BY count() DESC LIMIT n over a multi-key GROUP BY in passes over the rows of frequent values of an integer key."}) \
+    DECLARE(UInt64, query_plan_two_pass_count_top_k_min_rows, 10000000, R"(
+The minimum number of rows the read must select for `query_plan_two_pass_count_top_k` to apply.
+)", 0, \
+        {"26.11", 10000000, 10000000, "New setting."}) \
     DECLARE(Bool, query_plan_aggregation_having_prefilter, true, R"(
 Toggles a query-plan-level optimization for `HAVING count() <comparison> <constant>` over a `GROUP BY`. While a two-level bucket of the aggregation result is converted to chunks, a group whose count cannot satisfy the bound is skipped before its key columns are materialized, instead of being materialized and then discarded by the filter above. Speeds up "groups above a threshold" queries over a high-cardinality `GROUP BY`, where most groups are discarded and the discarded keys are most of the conversion.
 

@@ -1013,6 +1013,9 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Runs last: it puts a step over the LIMIT of the aggregation and keeps the optimized plan below it as the fallback.
+    optimizeTwoPassCountTopK(root, nodes, optimization_settings);
 }
 
 void addStepsToBuildSets(
