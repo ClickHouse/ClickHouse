@@ -1800,6 +1800,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     {
 #if USE_CLIENT_AI
         recordErrorForAIContext(full_query, parsed_query);
+        sanitizeErrorOfUnconfirmedAIQuery();
 #endif
         processError(full_query);
     }
@@ -4174,6 +4175,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
 #if USE_CLIENT_AI
                     recordErrorForAIContext(full_query, parsed_query);
+                    sanitizeErrorOfUnconfirmedAIQuery();
 #endif
                     processError(full_query);
                 }
@@ -4589,7 +4591,18 @@ bool ClientBase::processAIChat(const String & text_)
     /// In the AI mode of the line editor the leading `?` is consumed as the mode switch and the
     /// line arrives only right-trimmed, so the documented `? clear` is passed here as ` clear`.
     /// Trim before matching the commands below (the model does not care about the whitespace).
-    const String text = trim(text_, [](char c) { return isWhitespaceASCII(c); });
+    String text = trim(text_, [](char c) { return isWhitespaceASCII(c); });
+
+    /// Once a conversation is going, the line editor stays in the AI mode, so a `?` typed at the
+    /// start of the line is an ordinary character and the documented `? clear` arrives with it.
+    /// Accept that spelling of the local commands too, instead of sending it to the provider as a
+    /// question with the old conversation still attached.
+    if (text.starts_with('?'))
+    {
+        const String command = trim(text.substr(1), [](char c) { return isWhitespaceASCII(c); });
+        if (command == "clear" || command == "reset")
+            text = command;
+    }
 
     if (!is_interactive)
     {
@@ -4987,6 +5000,19 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// Neither is `IMPORTANT`, so a server that predates them ignores them.
         client_context->setSetting("show_remote_databases_in_system_tables", false);
         client_context->setSetting("show_data_lake_catalogs_in_system_tables", false);
+
+        /// With `apply_mutations_on_fly` a read of a `MergeTree` table evaluates the expressions of
+        /// its pending mutations, which the validation has not seen: a pending `ALTER TABLE t UPDATE
+        /// e = aiEmbed(text, ...)` would send `text` to the embedding provider from an unconfirmed
+        /// `SELECT e FROM t`. A settings profile can turn it on unseen, so it is turned off for the
+        /// query whatever the session has; it is a protected setting, so the query cannot turn it on.
+        client_context->setSetting("apply_mutations_on_fly", false);
+
+        /// The server logs of the query are written to the terminal as they are, and they quote the
+        /// text of the query and the messages of its errors, both chosen by the model. They are not
+        /// made visible-safe like the result is, so the query does not ask for them at all; it is a
+        /// protected setting, so the query cannot ask for them itself.
+        client_context->setSetting("send_logs_level", String("none"));
 
         /// Parallel replicas would run the validated query on other servers than the tables were
         /// checked on (`cluster_for_parallel_replicas`), and in the custom-key modes they add a filter
@@ -5696,6 +5722,25 @@ void ClientBase::recordErrorForAIContext(std::string_view query_or_input, const 
     /// standalone; it must keep the AI-initiated flag, so a failed query of the agent is not
     /// replayed into the conversation as if the user had typed it.
     ai_query_context->recordError(queryTextForAIContext(query_or_input, parsed_query), message, /*from_ai=*/ ai_running_query);
+}
+
+void ClientBase::sanitizeErrorOfUnconfirmedAIQuery()
+{
+    if (!ai_running_unconfirmed_query)
+        return;
+
+    /// The message cannot be changed in place, so an exception with the sanitized message replaces
+    /// the original one; a server stack trace is a part of the message, so it is kept.
+    for (auto * exception : {&server_exception, &client_exception})
+    {
+        if (!*exception)
+            continue;
+        const std::string & message = (*exception)->message();
+        std::string safe_message = AIAgentDisplay::sanitizeForTerminal(message);
+        if (safe_message != message)
+            *exception = std::make_unique<Exception>(Exception::createDeprecated(
+                safe_message, (*exception)->code(), (*exception)->isRemoteException()));
+    }
 }
 
 namespace

@@ -86,7 +86,14 @@ bool isProtectedSetting(const String & name)
         /// `system.columns` contacts it, so the sandbox turns both off; a generated `SETTINGS`
         /// clause must not turn them back on.
         || name == "show_remote_databases_in_system_tables"
-        || name == "show_data_lake_catalogs_in_system_tables";
+        || name == "show_data_lake_catalogs_in_system_tables"
+        /// A read of a `MergeTree` table evaluates the expressions of its pending mutations when
+        /// this is on, and those expressions were never validated (`ALTER TABLE t UPDATE e =
+        /// aiEmbed(text, ...)`), so the sandbox turns it off and the query must not turn it on.
+        || name == "apply_mutations_on_fly"
+        /// The server logs quote the query and its errors and are written to the terminal unsanitized,
+        /// so the sandbox turns them off and the query must not turn them back on.
+        || name == "send_logs_level";
 }
 
 /// The format-schema settings have side effects beyond the validated AST: with
@@ -790,6 +797,8 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "clusters",
         "iceberg_history",
         "iceberg_files",
+        /// Reads the metadata of every Iceberg table from object storage.
+        "iceberg_metadata_log_entries",
         "remote_data_paths",
 
         "processes",

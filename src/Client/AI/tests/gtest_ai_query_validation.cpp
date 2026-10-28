@@ -222,6 +222,7 @@ TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "clusters"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_history"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_files"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_metadata_log_entries"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "remote_data_paths"));
 
     /// `system.tables` and `information_schema.views` expose the stored texts of the queries of
@@ -396,6 +397,20 @@ TEST(AIQueryValidation, CollectsTheDatabaseOfShowTables)
     EXPECT_EQ(collect("SHOW CLUSTERS"), std::vector<String>{});
     EXPECT_EQ(collect("SHOW SETTINGS ILIKE '%max%'"), std::vector<String>{});
     EXPECT_EQ(collect("SHOW TEMPORARY TABLES"), std::vector<String>{});
+}
+
+TEST(AIQueryValidation, RejectsApplyMutationsOnFly)
+{
+    /// A read evaluates the unvalidated expressions of pending mutations with this setting, so the
+    /// sandbox turns it off and a generated `SETTINGS` clause must not turn it back on.
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS apply_mutations_on_fly = 1"));
+    EXPECT_FALSE(isAllowed("SELECT 1 FORMAT TSV SETTINGS apply_mutations_on_fly = 1"));
+}
+
+TEST(AIQueryValidation, RejectsSendLogsLevel)
+{
+    /// The server logs quote the query and its errors unsanitized, so the sandbox turns them off.
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS send_logs_level = 'trace'"));
 }
 
 TEST(AIQueryValidation, RejectsRemoteVisibilityOverrides)

@@ -337,6 +337,12 @@ protected:
     /// Record an error of the current or just-failed query into the AI context buffer.
     void recordErrorForAIContext(std::string_view query_or_input, const ASTPtr & parsed_query);
 
+    /// Make the error of a query that the AI agent runs without asking the user safe to print: its
+    /// message is chosen by the model as much as the result is (`throwIf(1, <escape sequence>)`), and
+    /// `processError` writes it to the terminal as it is. Called after the error is recorded into the
+    /// AI context, so the model still sees the message unchanged.
+    void sanitizeErrorOfUnconfirmedAIQuery();
+
     /// The same, for a query that failed to parse. In interactive mode the parse error is only
     /// printed - no exception is set and no query is ever started - so there is nothing for
     /// `recordErrorForAIContext` to pick up, and the agent would not see the failed query at all.
