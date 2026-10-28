@@ -79,6 +79,11 @@ function write_descriptors_into_cache()
     echo "$count"
 }
 
+# The cache keeps its `status` file open, so if the descriptors of the server cannot be seen from here,
+# the scan would pass vacuously.
+find /proc/[0-9]*/fd -mindepth 1 -maxdepth 1 -lname "${cache_dir}/status" 2>/dev/null | grep -q . \
+    && echo "descriptors of the server are visible" || echo "descriptors of the server are not visible"
+
 # A leak keeps about a thousand descriptors open for as long as the table exists. A descriptor that
 # is open only for a moment (a concurrent write into the cache) does not persist, so look several
 # times and take the smallest count.
