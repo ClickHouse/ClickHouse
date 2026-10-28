@@ -14,6 +14,7 @@
 #include <Processors/TTL/TTLColumnAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
+#include <Storages/TTLDescription.h>
 
 namespace DB
 {
@@ -159,6 +160,10 @@ TTLTransform::TTLTransform(
     /// invalidates the rows-TTL bounds written to this part (see below).
     NameSet rows_ttl_source_columns;
 
+    /// Whether the rows-TTL bounds are carried over without a rescan while they were computed under
+    /// an older rows-TTL expression, whose source columns are not known here.
+    bool rows_ttl_bounds_kept_from_other_expression = false;
+
     if (metadata_snapshot_->hasRowsTTL())
     {
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
@@ -182,6 +187,10 @@ TTLTransform::TTLTransform(
         /// and the epoch rows survive, exactly as they would in a part whose bounds were never expired.
         if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast && !old_ttl_infos.table_ttl.has_epoch_timestamps)
             all_data_dropped = true;
+
+        rows_ttl_bounds_kept_from_other_expression = !algorithm->isMinTTLExpired()
+            && !old_ttl_infos.table_ttl_expression.empty()
+            && old_ttl_infos.table_ttl_expression != getRowsTTLExpressionFingerprint(rows_ttl);
 
         algorithms.emplace_back(std::move(algorithm));
         delete_algorithm = static_cast<const TTLDeleteAlgorithm *>(algorithms.back().get());
@@ -348,6 +357,13 @@ TTLTransform::TTLTransform(
             if (rows_ttl_source_columns.contains(name))
                 rows_ttl_provenance_invalidated = true;
         }
+
+        /// The checks above compare the reset columns with the sources of the current rows TTL only.
+        /// Bounds kept from an older expression (see `TTLDeleteAlgorithm::finalize`) may describe a
+        /// column that is reset here, and a later `MODIFY TTL` back to that expression would shift them
+        /// as if they still matched the rows. Conservatively drop their provenance.
+        if (rows_ttl_bounds_kept_from_other_expression)
+            rows_ttl_provenance_invalidated = true;
     }
 
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
