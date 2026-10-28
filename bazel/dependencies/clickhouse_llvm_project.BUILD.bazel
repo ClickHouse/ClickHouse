@@ -14,14 +14,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-filegroup(
-    name = "llvm_tablegen_inputs",
-    srcs = glob([
-        "llvm/include/**/*.td",
-        "llvm/lib/Target/**/*.td",
-    ]),
-)
-
 _COMPILER_RT_PUBLIC_HEADERS = glob([
     "compiler-rt/include/**/*.h",
     "compiler-rt/include/**/*.inc",

@@ -13,7 +13,16 @@ def _command(tool, flags, td, out, backend = None):
 def llvm_tablegen(*, td, outputs, out_dir = None, tool = "llvm-tblgen", target_compatible_with = []):
     """Run TableGen once for each output filename and its TableGen flags."""
     out_dir = out_dir or td.rsplit("/", 1)[0]
-    srcs = [":llvm_tablegen_inputs", td] + ([] if td == _VALUE_TYPES else [_VALUE_TYPES])
+    input_backend = td.split("/")[3] if td.startswith("llvm/lib/Target/") else None
+    srcs = native.glob(["llvm/include/**/*.td"])
+    backend_pattern = "llvm/lib/Target/%s/**/*.td"
+    if input_backend:
+        srcs += native.glob([backend_pattern % input_backend])
+    elif tool != "llvm-min-tblgen":
+        srcs += select({
+            "@platforms//cpu:" + cpu: native.glob([backend_pattern % backend])
+            for cpu, backend in _BACKENDS.items()
+        })
     tool_label = "@llvm-project//llvm:" + tool
     for filename, flags in outputs.items():
         path = out_dir + "/" + filename
@@ -24,8 +33,8 @@ def llvm_tablegen(*, td, outputs, out_dir = None, tool = "llvm-tblgen", target_c
             outs += [out[:-4] + suffix + ".inc" for suffix in ["Enums", "MCDesc", "Header", "TargetDesc"]]
         if tool == "llvm-min-tblgen":
             cmd = _command(tool_label, flags, td, out)
-        elif td.startswith("llvm/lib/Target/"):
-            cmd = _command(tool_label, flags, td, out, td.split("/")[3])
+        elif input_backend:
+            cmd = _command(tool_label, flags, td, out, input_backend)
         else:
             cmd = select({
                 "@platforms//cpu:" + cpu: _command(tool_label, flags, td, out, backend)

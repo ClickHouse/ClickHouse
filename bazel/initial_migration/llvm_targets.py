@@ -333,9 +333,6 @@ def declare_from_references(root, references):
             '//conditions:default': Glob([zos_wrappers]),
         }),
     ])})
-    build.rule('filegroup', 'llvm_tablegen_inputs', {
-        'srcs': Glob(['llvm/include/**/*.td', 'llvm/lib/Target/**/*.td']),
-    })
     # Headers include libc++'s extensionless standard headers and libc sources
     # textually included by ClickHouse's mem_functions.cpp.
     build.rule('cargo_repository_sources', 'runtime_libcxx_headers', {'root': 'libcxx/include'})
