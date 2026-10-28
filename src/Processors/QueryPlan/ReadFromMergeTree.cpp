@@ -3158,6 +3158,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
     const ContextPtr & query_context,
     const StorageMetadataPtr & metadata_snapshot,
     bool skip_partition_pruning_,
+    bool is_final,
     bool require_ready_sets)
 {
     const auto & settings = query_context->getSettingsRef();
@@ -3165,11 +3166,16 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = data.getSettings();
 
-    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+    /// The versions of a row that `FINAL` merges are in different parts and have different `_block_number` and
+    /// `_block_offset`, so pruning parts by them would drop versions the merge needs. With `FINAL` the parts are pruned
+    /// only by the columns of the partition key, which come first in the min-max index of a part.
+    const auto minmax_columns_up_to = is_final ? MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY
+                                               : MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET;
+    if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, minmax_columns_up_to); !minmax_columns.empty())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, skip_partition_pruning_, minmax_columns, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
-            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
+            auto minmax_expression_actions = std::make_shared<ExpressionActions>(ActionsDAG(minmax_columns), ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
             KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
@@ -3201,11 +3207,13 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & query_context,
+    bool is_final,
     bool skip_partition_pruning_)
 {
     auto filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate, query_context, /* boolean_context */ true);
     Indexes partition_indexes(nullptr);
-    buildPartitionPruningIndexes(partition_indexes, filter_dag, data, query_context, metadata_snapshot, skip_partition_pruning_, /* require_ready_sets */ true);
+    buildPartitionPruningIndexes(
+        partition_indexes, filter_dag, data, query_context, metadata_snapshot, skip_partition_pruning_, is_final, /* require_ready_sets */ true);
     IndexStats unused_stats;
     /// Execution checks forced index usage after it builds subquery sets.
     return MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -3256,7 +3264,7 @@ void ReadFromMergeTree::buildIndexes(
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
 
-    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
+    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_, query_info_.isFinal());
 
     indexes->part_values
         = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
@@ -6891,7 +6899,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 
     /// Statistics-only plans have not built indexes yet. Analyze the scalar predicate
     /// without executing `IN` subqueries, which belong to the actual execution plan.
-    auto parts = filterPartsForStatistics(getParts(), predicate, data, getStorageMetadata(), getContext(), skip_partition_pruning);
+    auto parts = filterPartsForStatistics(getParts(), predicate, data, getStorageMetadata(), getContext(), isQueryWithFinal(), skip_partition_pruning);
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
