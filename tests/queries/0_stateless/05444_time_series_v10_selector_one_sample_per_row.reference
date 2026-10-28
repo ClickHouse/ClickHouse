@@ -1,0 +1,22 @@
+-- timeSeriesSelector returns one sample per row
+id	Tuple(UInt64, LowCardinality(UUID))					
+timestamp	DateTime64(3)					
+value	Float64					
+1970-01-01 00:02:40.000	2
+1970-01-01 00:03:40.000	3
+6
+-- a range selector skips the stale marker and merges the rows of a series into one array
+[('__name__','m'),('env','dev')]	[('1970-01-01 00:02:10.000',10),('1970-01-01 00:03:10.000',20)]
+[('__name__','m'),('env','prod')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:40.000',2),('1970-01-01 00:03:40.000',3)]
+-- an instant selector returns the last sample, a stale marker hides the series
+[('__name__','m'),('env','dev')]	1970-01-01 00:03:20.000	20
+[('__name__','m'),('env','prod')]	1970-01-01 00:03:20.000	2
+[('__name__','m'),('env','dev')]	1970-01-01 00:05:00.000	20
+-- offset and timestamp()
+[('__name__','m'),('env','dev')]	1970-01-01 00:04:20.000	20
+[('__name__','m'),('env','prod')]	1970-01-01 00:04:20.000	2
+[('env','dev')]	1970-01-01 00:03:20.000	190
+[('env','prod')]	1970-01-01 00:03:20.000	160
+-- a function over a range
+[('env','dev')]	[('1970-01-01 00:02:40.000',1),('1970-01-01 00:03:40.000',2),('1970-01-01 00:04:40.000',1)]
+[('env','prod')]	[('1970-01-01 00:02:40.000',2),('1970-01-01 00:03:40.000',2),('1970-01-01 00:04:40.000',1)]

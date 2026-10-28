@@ -236,6 +236,13 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Estimates merge work in independently mergeable state elements, or returns zero without an estimate.
+    /// Callers compare states in these units to decide which merges warrant additional parallelism.
+    virtual size_t getEstimatedMergeWork(ConstAggregateDataPtr /*place*/) const { return 0; }
+
+    /// Estimates state growth in bytes per distinct argument tuple, excluding the fixed storage from
+    /// `sizeOfData`. Returns zero when a linear model of distinct inputs does not describe the state.
+    virtual size_t getStateBytesPerDistinctInput() const { return 0; }
     /// Whether merging `rhs` into `place` is expensive enough to be deferred by `mergeBatchOrDefer` /
     /// `mergeAndDestroyBatchOrDefer` and merged later in parallel via `parallelizeMergeMulti`.
     /// Overridden by functions whose merge cost grows with the state size (e.g. `uniqExact`);
@@ -1180,6 +1187,12 @@ struct AggregateFunctionProperties
       * Some may also name this property as "non-commutative".
       */
     bool is_order_dependent = false;
+
+    /** The result is correct only if each state receives its rows in order, while `merge` puts the states in order by
+      * itself (example: `deltaSumTimestamp`, which compares each row with the previous one and orders the states it
+      * merges by their timestamps). An aggregation that adds the rows of several streams to one state cannot honor it.
+      */
+    bool requires_ordered_rows_per_state = false;
 
     /// Indicates if it's actually window function.
     bool is_window_function = false;
