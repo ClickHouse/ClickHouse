@@ -25,6 +25,7 @@
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/IdentifierNode.h>
@@ -424,6 +425,9 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         query_tree_pass_manager.runOnlyResolve(query_tree);
         /// Not an optimization: a shard plans view bodies the initiator never analyzed, so this pass has not run on them.
         DisableParallelReplicasPass{}.run(query_tree, context);
+        /// Not an optimization either, for the same reason: a view body inlined here (`analyzer_inline_views`) may read `_shard_num`
+        /// of a `Distributed` table, which must become `shardNum` before the query is sent to the shards, whose tables do not have it.
+        ShardNumColumnToFunctionPass{}.run(query_tree, context);
     }
     else
     {
