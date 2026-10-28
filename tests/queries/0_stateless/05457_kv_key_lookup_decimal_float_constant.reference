@@ -1,0 +1,20 @@
+k = 19.99	[1]
+k = -19.99	[2]
+k = 0.29	[4]
+k = 19.99 OR k = 12.5	[1,3]
+k IN (SELECT 19.99)	[1]
+k = CAST(19.99 AS Dynamic)	[1]
+ReadType: GetKeys
+ReadType: GetKeys
+ReadType: FullScan
+ALTER DELETE	[2,3,4]
+Decimal(38, 30)	[2]
+DateTime64(9)	[1,2,3]
+Tuple key =	[1]
+Tuple key IN	[1]
+Array key	[1]
+a = 19.99 AND b = 1	[1]
+(a, b) = (19.99, 1)	[1]
+(a, b) IN (SELECT 19.99, 1)	[1]
+ReadType: GetKeys
+KeeperMap	[1]
