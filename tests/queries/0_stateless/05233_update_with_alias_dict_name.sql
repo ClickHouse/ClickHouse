@@ -27,20 +27,20 @@ INSERT INTO u VALUES (1, ''), (2, ''), (3, '');
 
 -- The alias is visible in the subquery by default, so the dictionary it names is read.
 UPDATE u SET v = (WITH 'other' AS d SELECT (SELECT dictGet(d, 'val', toUInt64(1))))
-    WHERE id = 1 SETTINGS enable_analyzer = 1;
+    WHERE id = 1;
 SELECT v FROM u WHERE id = 1;
 
 -- The subquery does not look into an enclosing scope, so `d` is a dictionary name there.
 UPDATE u SET v = (WITH 'other' AS d
         SELECT (SELECT dictGet(d, 'val', toUInt64(1)) SETTINGS enable_global_with_statement = 0))
-    WHERE id = 2 SETTINGS enable_analyzer = 1;
+    WHERE id = 2;
 SELECT v FROM u WHERE id = 2;
 
 -- With the scopes disabled the declaring select's aliases are copied into every descendant scope, so
 -- a subquery that disables them too reads the alias again.
 UPDATE u SET v = (WITH 'other' AS d
         SELECT (SELECT dictGet(d, 'val', toUInt64(1)) SETTINGS enable_global_with_statement = 0))
-    WHERE id = 3 SETTINGS enable_analyzer = 1, enable_scopes_for_with_statement = 0;
+    WHERE id = 3 SETTINGS enable_scopes_for_with_statement = 0;
 SELECT v FROM u WHERE id = 3;
 
 DROP DICTIONARY d;

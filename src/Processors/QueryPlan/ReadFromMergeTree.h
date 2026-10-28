@@ -106,6 +106,10 @@ struct TopKFilterInfo
 
     /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
+
+    /// Set once `__topKFilter` drops the rows equal to the threshold. Only for `ORDER BY` of a single `String` column:
+    /// for `GROUP BY key LIMIT n`, the later rows of the group on the boundary still count in its aggregates.
+    std::shared_ptr<std::atomic<bool>> rows_equal_to_threshold_dropped = nullptr;
 };
 
 namespace QueryPlanOptimizations
