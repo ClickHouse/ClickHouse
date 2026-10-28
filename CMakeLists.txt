@@ -450,10 +450,9 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 # to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
 # llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
 #
-# Not under sanitizers: compiler-rt intercepts `sincos` (but not `sin` and `cos`), and in a static musl build
-# `REAL(sincos)` binds to musl's `sincos`, which is not correctly rounded, so `h3CellAreaRads2` printed a different
-# last digit in ASan builds. Letting LLVM split the call keeps every build on llvm-libc's `sin` and `cos`.
-if (USE_MUSL AND NOT SANITIZE)
+# Under sanitizers compiler-rt intercepts `sincos`; `__real_sincos` is bound to llvm-libc's `sincos` as well
+# (see contrib/libllvmlibc-cmake), so the bits match `sin` and `cos` in every build.
+if (USE_MUSL)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
 endif ()
 
