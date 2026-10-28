@@ -22,7 +22,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -39,6 +38,9 @@ namespace QueryPlanOptimizations
 
 namespace
 {
+
+/// The sizes of the arrays are unknown, so an array join is assumed to produce this many rows per input row.
+constexpr Float64 array_join_rows_multiplier = 100;
 
 String dumpStatsForLogs(const RelationStats & stats)
 {
@@ -176,7 +178,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// analysis results can be placeholders for deferred work, so only propagate zero
         /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
-            return RelationStats{.estimated_rows = 0, .table_name = table_display_name, .proven_empty = true};
+            return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
         /// `STREAM` defers range analysis until execution. Its placeholder result has zero
         /// selected rows but does not mean that the relation is empty.
@@ -247,10 +249,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                stats.proven_empty = relation_profile.rows == 0 && analyzed_result
-                    && MergeTreeDataSelectExecutor::statisticsExcludeAllParts(
-                        analyzed_result->parts_with_ranges, reading->getStorageMetadata(), reading->getQueryInfo(),
-                        reading->getMutationsSnapshot(), reading->getContext());
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
             }
@@ -318,14 +316,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimated;
     }
 
-    /// An array join changes the row count by unestimated array sizes, so only a proven-empty input gives a known output.
     const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
-    if (typeid_cast<const ArrayJoinStep *>(step) || (expression_step && expression_step->getExpression().hasArrayJoin()))
+    const auto * array_join_step = typeid_cast<const ArrayJoinStep *>(step);
+    if (array_join_step || (expression_step && expression_step->getExpression().hasArrayJoin()))
     {
-        auto input = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
-        if (!input.proven_empty)
-            return {};
-        return RelationStats{.estimated_rows = 0, .table_name = input.table_name, .proven_empty = true};
+        /// A filter above the array join can read its output, which the statistics of the input do not describe.
+        auto stats = estimateReadRowsCount(*node.children.front(), nullptr, for_runtime_filter_transport);
+        if (stats.estimated_rows)
+            stats.estimated_rows = toUInt64Saturating(Float64(*stats.estimated_rows) * array_join_rows_multiplier);
+        if (expression_step)
+            remapColumnStats(stats.column_stats, expression_step->getExpression());
+        else
+            for (const auto & column : array_join_step->getColumns())
+                stats.column_stats.erase(column);
+        return stats;
     }
 
     if (expression_step)

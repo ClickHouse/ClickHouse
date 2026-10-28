@@ -820,49 +820,6 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 }
 
 
-namespace
-{
-
-/// The statistics of the parts cannot exclude a part when:
-/// 1. There are on-the-fly mutations or patch parts (statistics only reflects original data)
-/// 2. A masking policy applies: it rewrites values at read time, so the statistics (like
-///    the on-the-fly mutations above) no longer describe the values the query sees.
-/// 3. A row policy applies: the statistics describe all rows of a part, including the ones the
-///    policy hides, so the number of rows left to read after pruning by the query's predicate,
-///    which is reported to the client, reveals the values of the hidden rows. The policy is
-///    either pushed into this read (possibly from a wrapper such as `Alias`) or belongs to
-///    this table and is applied above the read (e.g. for a child of `Merge`).
-bool canUseStatisticsToExcludeParts(
-    const RangesInDataParts & parts,
-    const SelectQueryInfo & query_info,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const ContextPtr & context)
-{
-    return !(mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
-        && !(!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
-        && !query_info.row_level_filter
-        && !(!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context));
-}
-
-bool statisticsAllowPartToMatch(
-    StatisticsPartPruner & statistics_pruner, const RangesInDataPart & part, const NameSet & required_columns, LoggerPtr log)
-{
-    auto estimates = part.data_part->getEstimates(required_columns);
-    try
-    {
-        return statistics_pruner.checkPartCanMatch(estimates).can_be_true;
-    }
-    catch (const Exception &)
-    {
-        tryLogCurrentException(log, fmt::format(
-            "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
-            part.data_part->name), LogsLevel::debug);
-        return true;
-    }
-}
-
-}
-
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const RangesInDataParts & parts,
     const StorageMetadataPtr & metadata_snapshot,
@@ -877,10 +834,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// Disable statistics-based pruning when:
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
-    /// 3. The statistics cannot exclude a part, see `canUseStatisticsToExcludeParts`
+    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
+    ///    the on-the-fly mutations above) no longer describe the values the query sees.
+    /// 5. A row policy applies: the statistics describe all rows of a part, including the ones the
+    ///    policy hides, so the number of rows left to read after pruning by the query's predicate,
+    ///    which is reported to the client, reveals the values of the hidden rows. The policy is
+    ///    either pushed into this read (possibly from a wrapper such as `Alias`) or belongs to
+    ///    this table and is applied above the read (e.g. for a child of `Merge`).
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || !canUseStatisticsToExcludeParts(parts, query_info, mutations_snapshot, context))
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context))
+        || query_info.row_level_filter
+        || (!parts.empty() && getEffectiveRowPolicyFilter(parts.front().data_part->storage, context)))
     {
         return parts;
     }
@@ -900,10 +867,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
-        if (!statisticsAllowPartToMatch(statistics_pruner, part, required_columns, log))
+        auto estimates = part.data_part->getEstimates(required_columns);
+        try
         {
-            LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
-            continue;
+            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            {
+                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                continue;
+            }
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
+                part.data_part->name), LogsLevel::debug);
         }
         res_parts.push_back(part);
     }
@@ -926,50 +903,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     }
 
     return res_parts;
-}
-
-bool MergeTreeDataSelectExecutor::statisticsExcludeAllParts(
-    const RangesInDataParts & parts,
-    const StorageMetadataPtr & metadata_snapshot,
-    const SelectQueryInfo & query_info,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const ContextPtr & context)
-{
-    if (parts.empty() || !query_info.filter_actions_dag || !canUseStatisticsToExcludeParts(parts, query_info, mutations_snapshot, context))
-        return false;
-
-    /// A pending ALTER leaves statistics that do not describe the values read.
-    if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
-            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
-        return false;
-
-    if (query_info.isFinal() && parts.front().data_part->storage.merging_params.mode != MergeTreeData::MergingParams::Replacing)
-        return false;
-
-    StatisticsPartPruner statistics_pruner(metadata_snapshot, *query_info.filter_actions_dag->getOutputs().front(), context);
-    if (statistics_pruner.isUseless())
-        return false;
-
-    const NameSet required_columns = statistics_pruner.getRequiredColumns();
-    const auto & columns = metadata_snapshot->getColumns();
-    auto log = getLogger("MergeTreeDataSelectExecutor");
-    for (const auto & part : parts)
-    {
-        /// A part that stores a column with another type has statistics of the old values.
-        for (const auto & name : required_columns)
-        {
-            const auto * column = columns.tryGet(name);
-            auto part_column = part.data_part->tryGetColumn(name);
-            if (!column || (part_column && !part_column->type->equals(*column->type)))
-                return false;
-        }
-
-        if (statisticsAllowPartToMatch(statistics_pruner, part, required_columns, log))
-            return false;
-    }
-
-    return true;
 }
 
 
