@@ -1494,13 +1494,16 @@ def test_move_token_is_scoped_to_the_keeper_name(started_cluster):
             )
             == (1, 1)
         )
+        # Both queues name the same path, so the first one's Keeper state has to be gone before the
+        # second one exists, or the second would see the object as already processed and never read it.
+        node.query(f"DROP TABLE {first}_mv SYNC")
+        node.query(f"DROP TABLE {first} SYNC")
     finally:
+        # Disabled only after the drop: the copy is visible before the failpoint is checked.
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_after_move_copy")
-
-    # Both queues name the same path, so the first one's Keeper state has to be gone before the
-    # second one exists, or the second would see the object as already processed and never read it.
-    node.query(f"DROP TABLE {first}_mv SYNC")
-    node.query(f"DROP TABLE {first} SYNC")
+    assert move_counts(
+        started_cluster, "S3Queue", None, files_path, processed_prefix
+    ) == (1, 1)
 
     second = f"move_aux_second_{token}"
     create_table(
