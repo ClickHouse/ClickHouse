@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -282,6 +283,13 @@ private:
         /// BACKUP/RESTORE TO S3 is driven by user SQL, so it must not be able to reuse the server's own
         /// S3 credentials.
         credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
+
+        /// `gcp_oauth` adds an `Authorization` header to every request, so it must obey the same filter.
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth"))
+        {
+            HTTPHeaderEntries gcp_oauth_headers{{"Authorization", "Bearer"}};
+            context->getHTTPHeaderFilter().checkHeaders(gcp_oauth_headers);
+        }
 
         auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
 

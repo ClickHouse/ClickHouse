@@ -319,6 +319,8 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
 
 Эта настройка включает или отключает для пользователя привилегию `SHOW NAMED COLLECTIONS SECRETS`, которая позволяет ему видеть значения, хранящиеся в [named collections](/ru/concepts/features/configuration/server-config/named-collections), например в таблице [`system.named_collections`](/ru/reference/system-tables/named_collections).
 
+Эта привилегия также необходима для переопределения ключа, сохранённого в named collection, при использовании коллекции: например, `url` в `s3(my_collection, url = '...')`, ключа в предложении `SETTINGS` движка таблицы или ключа в источнике для словаря. Для добавления ключа, которого нет в коллекции, эта привилегия не требуется.
+
 По умолчанию она отключена: возможность управлять named collections не означает возможности прочитать уже сохранённые в них учётные данные.
 
 Эта настройка действует только вместе с `named_collection_control`, поскольку при отключённом `named_collection_control` все привилегии на named collections, включая `SHOW NAMED COLLECTIONS SECRETS`, в любом случае отзываются.

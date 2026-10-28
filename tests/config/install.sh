@@ -224,6 +224,7 @@ ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/collect_connection_metrics.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
@@ -232,6 +233,7 @@ ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/graphite_alternative.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/grpc_protocol.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/arrowflight.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/merge_tree_settings.xml $DEST_SERVER_PATH/config.d/
@@ -351,6 +353,7 @@ ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/con
 install_build_type_configs
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/cache_policy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_05212.xml $DEST_SERVER_PATH/config.d/
@@ -596,11 +599,16 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     fi
     # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
     # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
-    # reserve_granularity in 26.7.
+    # reserve_granularity in 26.7. `use_real_disk_size` is introduced by this feature and is not
+    # present in any released version yet: 26.8 was released without it, so gate on 26.9 (the first
+    # version that can contain it) to keep the previous-release server of the upgrade check bootable.
+    # This gate must always be bumped to master's current `VERSION_MINOR` while the feature is
+    # unmerged: the upgrade check boots the previous release, which never has the setting.
     # --remove-destination: an earlier install may have left this path as a symlink to the
     # source; without it cp would follow the link and fail with "same file" under set -e.
     cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.10 || sed -i "s|<use_real_disk_size>1</use_real_disk_size>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     # reserve_granularity was added in 26.7: apply the randomized s3_cache value for new-enough
     # servers, strip it entirely (unknown setting) for older ones in the upgrade/bugfix checks.
@@ -688,6 +696,8 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     # Remove SSH config from replicas to avoid port conflicts on tcp_ssh_port.
     rm -f $ch_server_1_path/config.d/ssh.xml $ch_server_1_path/config.d/ssh_host_rsa_key
     rm -f $ch_server_2_path/config.d/ssh.xml $ch_server_2_path/config.d/ssh_host_rsa_key
+    # Same for the Arrow Flight port.
+    rm -f $ch_server_1_path/config.d/arrowflight.xml $ch_server_2_path/config.d/arrowflight.xml
 fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
