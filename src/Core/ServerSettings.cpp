@@ -886,6 +886,11 @@ A value of `0` means no limitation.
 <max_named_collection_num_to_throw>400</max_named_collection_num_to_throw>
 ```
 )", 0) \
+    DECLARE(Bool, ai_function_allow_sql_named_collections, true, R"(
+Allows AI functions (such as `aiGenerate`, `aiEmbed`, `aiSimilarity`) to use named collections created with `CREATE NAMED COLLECTION`.
+When disabled, AI functions accept only named collections defined in the server configuration file, and using any other collection throws an exception.
+This applies both to the `credentials` parameter and to the `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` settings.
+)", 0) \
     DECLARE(UInt64, max_table_num_to_throw, 0lu, R"(
 If number of tables is greater than this value, server will throw an exception.
 
