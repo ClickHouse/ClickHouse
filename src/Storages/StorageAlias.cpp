@@ -28,6 +28,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsMaxThreads max_insert_threads;
 }
 
 namespace ErrorCodes
@@ -191,13 +192,6 @@ public:
             insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
 
-        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
-        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
-        /// letting every branch fan out again would multiply the number of real sink branches (part
-        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
-        /// budget the user allowed for this INSERT.
-        insert_context->setSetting("max_insert_threads", 1);
-
         /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
         /// Alias matches a direct insert: async batches select async dedup settings and skip the
         /// strict block-limit squashing that would slice their multi-token DeduplicationInfo and
@@ -209,6 +203,14 @@ public:
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_insert */ async_insert);
+
+        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
+        /// stream), and every branch runs its own copy of the nested INSERT, with its own squashing
+        /// stages for the target and its dependent views, which the outer query cannot see. Keep the
+        /// nested INSERT single-stream and let the copies share the memory budget of the squashing
+        /// stages, assuming the widest fan-out. The setting stays in the nested context, so an `Alias`
+        /// that the nested INSERT reaches in turn counts the same copies, see `setOneOfConcurrentCopies`.
+        interpreter.setOneOfConcurrentCopies(getContext()->getSettingsRef()[Setting::max_insert_threads]);
 
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
