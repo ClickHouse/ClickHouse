@@ -704,21 +704,21 @@ void DistributedSink::writeSync(const Block & block)
 
 bool DistributedSink::localJobsRequireSequentialQuorum()
 {
-    if (!isSequentialQuorumInsert(context->getSettingsRef()))
-        return false;
-
     if (!local_jobs_require_sequential_quorum)
     {
         /// All local jobs write the same underlying table, so two of them conflict only when a
         /// write into that table may create a quorum part - in the table itself or in a
         /// `ReplicatedMergeTree` reachable through its dependent-view graph, which the nested
-        /// `INSERT` of each job expands. Fail closed when the local target cannot be resolved.
+        /// `INSERT` of each job expands. A dependent view writes with the context of its
+        /// `SQL SECURITY` definer, which may enable the quorum even if this insert does not.
+        /// Fail closed when the local target of a quorum insert cannot be resolved.
         /// `remote_storage` is never empty here: a table-function target is rejected by
         /// `StorageDistributed::write` before a sink is created.
         auto target = DatabaseCatalog::instance().tryGetTable(storage.remote_storage, context);
-        local_jobs_require_sequential_quorum = !target
-            || InsertDependenciesBuilder::storageMayWriteToReplicatedTable(target, context)
-            || InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(target, context);
+        local_jobs_require_sequential_quorum = target
+            ? InsertDependenciesBuilder::mayCreateSequentialQuorumPart(target, context)
+                || InsertDependenciesBuilder::dependentViewMayCreateSequentialQuorumPart(target, context)
+            : isSequentialQuorumInsert(context->getSettingsRef());
     }
 
     return *local_jobs_require_sequential_quorum;

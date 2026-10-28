@@ -257,6 +257,20 @@ public:
     bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth = 0) const;
     static bool dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
+    /// Whether a write into `storage` arriving with `context` may create a part of a non-parallel quorum
+    /// insert (see `isSequentialQuorumInsert`). The quorum settings are not necessarily those of `context`
+    /// for every write it leads to: a materialized view writes into its target with the context of its
+    /// `SQL SECURITY` definer, whose profile may enable the quorum. So for a `context` that is not a
+    /// non-parallel quorum insert itself, the writes hidden behind `storage` - the nested `INSERT`s of an
+    /// `Alias`, a `Buffer`, a `TimeSeries`, the local shard of a `Distributed`, and the dependent views
+    /// these nested `INSERT`s expand - are followed with the contexts they run with. Otherwise it is
+    /// `storageMayWriteToReplicatedTable`, which fails closed.
+    static bool mayCreateSequentialQuorumPart(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
+    /// The same for the dependent materialized views of `storage` which a nested `INSERT` into it running
+    /// with `context` expands, each with its own `SQL SECURITY` context.
+    static bool dependentViewMayCreateSequentialQuorumPart(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
+
     /// Whether a quorum writer reached through `storage` cannot be tied to a concrete target in
     /// `computeQuorumStreamRequirements`. Unlike other forwarding storages, an `Alias` can be
     /// resolved locally, so a direct alias to a replicated table is not hidden.
@@ -341,7 +355,7 @@ private:
     void collectAllDependencies();
 
     /// Derives `quorum_single_stream` and `quorum_sequential_views` from the sink graph collected by
-    /// `collectAllDependencies` for a non-parallel quorum insert (see `isSequentialQuorumInsert`).
+    /// `collectAllDependencies` and the contexts of its branches (see `isSequentialQuorumInsert`).
     void computeQuorumStreamRequirements();
 
     Chain createPreSink(StorageIDMaybeEmpty view_id) const;
@@ -364,7 +378,6 @@ private:
 
     bool async_insert = false;
     bool skip_destination_table = false;
-    bool sequential_quorum_insert = false;
     /// Graph-derived quorum serialization requirements, see `computeQuorumStreamRequirements`.
     bool quorum_single_stream = false;
     bool quorum_sequential_views = false;

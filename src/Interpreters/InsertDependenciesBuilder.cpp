@@ -1496,6 +1496,104 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
 }
 
 
+bool InsertDependenciesBuilder::mayCreateSequentialQuorumPart(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    if (isSequentialQuorumInsert(context->getSettingsRef()))
+        return storageMayWriteToReplicatedTable(storage, context, depth);
+
+    /// The write into `storage` itself is not a quorum write, but the writes it forwards to may run with
+    /// other contexts.
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        /// `StorageMaterializedView::write` writes into the target table with the `SQL SECURITY` context of the view.
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target)
+            return false;
+        const auto view_metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto view_context = view_metadata->getSQLSecurityOverriddenContext(context);
+        return mayCreateSequentialQuorumPart(target, view_context, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return mayCreateSequentialQuorumPart(proxy->getNested(), context, depth + 1);
+
+    auto forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context)
+    {
+        return target
+            && (mayCreateSequentialQuorumPart(target, target_context, depth + 1)
+                || dependentViewMayCreateSequentialQuorumPart(target, target_context, depth + 1));
+    };
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        return forwarded_to(alias->tryGetTargetTable(), context);
+    if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+        return forwarded_to(buffer->getDestinationTable(), buffer->getDestinationWriteContext());
+    if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
+        return forwarded_to(tryGetDistributedLocalTarget(*distributed, context), context);
+    if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->hasTarget(kind) && forwarded_to(time_series->tryGetTargetTable(kind, context), context))
+                return true;
+        return false;
+    }
+
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::dependentViewMayCreateSequentialQuorumPart(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    const auto & settings = context->getSettingsRef();
+    const auto storage_id = storage->getStorageID();
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage_id))
+    {
+        try
+        {
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+            if (!materialized_view)
+                continue;
+
+            const auto metadata = view->getInMemoryMetadataPtr(context, false);
+            /// A stale dependency is skipped by the nested INSERT as well, see `InsertDependenciesBuilder::observePath`.
+            if (metadata->getSelectQuery().select_table_id != storage_id)
+                continue;
+
+            /// The view writes into its target with its own `SQL SECURITY` context, see `createSelectInsertContext`.
+            const auto view_context = metadata->getSQLSecurityOverriddenContext(context);
+            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
+            if (!target)
+            {
+                /// The nested INSERT fails without writing anything, unless the view is skipped.
+                if (isSequentialQuorumInsert(view_context->getSettingsRef())
+                    && !settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                    && !settings[Setting::materialized_views_ignore_errors])
+                    return true;
+                continue;
+            }
+
+            if (mayCreateSequentialQuorumPart(target, view_context, depth + 1)
+                || dependentViewMayCreateSequentialQuorumPart(target, view_context, depth + 1))
+                return true;
+        }
+        catch (...) // Ok: an error may be ignored by `materialized_views_ignore_errors`.
+        {
+            if (!settings[Setting::materialized_views_ignore_errors])
+                return true;
+        }
+    }
+
+    return false;
+}
+
+
 bool InsertDependenciesBuilder::storageHidesQuorumWriteTarget(const StoragePtr & storage, size_t depth) const
 {
     if (depth > max_insert_forwarding_depth)
@@ -1571,12 +1669,15 @@ bool InsertDependenciesBuilder::storageHidesWriteTarget(const StoragePtr & stora
 
 void InsertDependenciesBuilder::computeQuorumStreamRequirements()
 {
-    if (!sequential_quorum_insert)
-        return;
-
     /// Every branch of the executable graph - the destination and each dependent view - owns one sink
     /// writing into its physical target table (`inner_tables` maps the branch to that target). Count
     /// the writers that may produce a quorum part, per target.
+    ///
+    /// Whether a write is a non-parallel quorum write is decided by the context of its branch, not by the
+    /// settings of the INSERT query: a dependent view writes with the context of its `SQL SECURITY` definer,
+    /// whose profile may enable the quorum while the query does not, or the other way round. A branch whose
+    /// own write is not a quorum write may still create quorum parts through the writes hidden behind its
+    /// target (e.g. the definer views behind an `Alias`), see `mayCreateSequentialQuorumPart`.
     ///
     /// Walk only the branches reachable from `root_view` via `dependent_views`: `collectAllDependencies`
     /// may leave an orphaned `inner_tables` entry for a view it later pruned from the graph - e.g. a view
@@ -1597,7 +1698,12 @@ void InsertDependenciesBuilder::computeQuorumStreamRequirements()
             auto it = storages.find(target_id);
             const StoragePtr target_storage = it == storages.end() ? nullptr : it->second;
 
-            if (!target_storage || storageMayWriteToReplicatedTable(target_storage))
+            auto context_it = insert_contexts.find(branch_id);
+            const ContextPtr branch_context = context_it == insert_contexts.end() ? init_context : context_it->second;
+
+            if (target_storage
+                    ? mayCreateSequentialQuorumPart(target_storage, branch_context)
+                    : isSequentialQuorumInsert(branch_context->getSettingsRef()))
             {
                 ++replicated_writers;
                 if (!target_storage || storageHidesQuorumWriteTarget(target_storage))
@@ -1649,8 +1755,6 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
-
-    sequential_quorum_insert = isSequentialQuorumInsert(settings);
 
     deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
     LOG_DEBUG(logger, "deduplicate_blocks : {}", deduplicate_blocks);
