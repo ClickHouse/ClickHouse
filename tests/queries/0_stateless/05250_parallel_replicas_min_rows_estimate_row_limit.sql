@@ -2,7 +2,6 @@
 -- must not enforce the throwing read row limits: it charges whole granules of the base table, while
 -- the read that executes may be served by a projection or bounded by its read order.
 
-SET enable_analyzer = 1;
 SET use_statistics_for_part_pruning = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET optimize_use_projections = 1, optimize_aggregation_in_order = 0;

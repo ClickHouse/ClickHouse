@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from build_download_helper import get_gh_api
@@ -14,6 +15,10 @@ from ci.jobs.scripts.clickhouse_version import (
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/releases"
 RELEASES_PER_PAGE = 100
+# A degraded GitHub API can answer HTTP 200 with a short page, and its edge caches each
+# answer for `s-maxage=60` seconds.
+RELEASES_FIRST_PAGE_ATTEMPTS = 4
+RELEASES_FIRST_PAGE_RETRY_SLEEP = 60
 
 # Packages that the upgrade check actually installs (see `install_packages` in
 # `tests/docker_scripts/stress_tests.lib`). Only these are essential; a hiccup
@@ -91,26 +96,49 @@ def find_previous_release(
     return False, None
 
 
+def _get_first_page_of_releases() -> list:
+    for attempt in range(1, RELEASES_FIRST_PAGE_ATTEMPTS + 1):
+        response = get_gh_api(
+            CLICKHOUSE_TAGS_URL,
+            params={"page": 1, "per_page": RELEASES_PER_PAGE},
+            timeout=10,
+        )
+        if not response.ok:
+            logger.error(
+                "Cannot load the list of tags from github: %s", response.reason
+            )
+            response.raise_for_status()
+
+        releases = response.json()
+        # The first page carries the newest releases, so a page shorter than requested
+        # is a degraded response rather than the end of the feed.
+        if len(releases) >= RELEASES_PER_PAGE:
+            return releases
+
+        if attempt < RELEASES_FIRST_PAGE_ATTEMPTS:
+            logger.warning(
+                "The first page of %s returned %d releases, expected %d; "
+                "retrying in %d s (attempt %d/%d)",
+                CLICKHOUSE_TAGS_URL,
+                len(releases),
+                RELEASES_PER_PAGE,
+                RELEASES_FIRST_PAGE_RETRY_SLEEP,
+                attempt,
+                RELEASES_FIRST_PAGE_ATTEMPTS,
+            )
+            time.sleep(RELEASES_FIRST_PAGE_RETRY_SLEEP)
+
+    raise ReleaseNotFoundException(
+        f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
+        f"releases, expected {RELEASES_PER_PAGE}, after "
+        f"{RELEASES_FIRST_PAGE_ATTEMPTS} attempts"
+    )
+
+
 def get_previous_release(
     server_version: Optional[ClickHouseVersion],
 ) -> Optional[ReleaseInfo]:
-    response = get_gh_api(
-        CLICKHOUSE_TAGS_URL,
-        params={"page": 1, "per_page": RELEASES_PER_PAGE},
-        timeout=10,
-    )
-    if not response.ok:
-        logger.error("Cannot load the list of tags from github: %s", response.reason)
-        response.raise_for_status()
-
-    releases = response.json()
-    # The first page carries the newest releases, so a page shorter than requested is a
-    # degraded response rather than the end of the feed.
-    if len(releases) < RELEASES_PER_PAGE:
-        raise ReleaseNotFoundException(
-            f"The first page of {CLICKHOUSE_TAGS_URL} returned {len(releases)} "
-            f"releases, expected {RELEASES_PER_PAGE}"
-        )
+    releases = _get_first_page_of_releases()
 
     release_infos = []  # type: List[ReleaseInfo]
     for r in releases:
