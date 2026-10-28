@@ -10,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
@@ -424,12 +425,51 @@ static DataTypePtr replicatedIndexesType(const ColumnReplicated & column)
     }
 }
 
+/// The sum of `byteSizeAt` over the rows [start, start + length) of `column`, computed from offsets instead of
+/// row by row for the common layouts: `ColumnArray::byteSizeAt` walks every element of the array and calls
+/// the nested `byteSizeAt` for each, which costs as much as the payload itself. Fixed-width values, strings,
+/// arrays, nullables, tuples and maps are sized in time proportional to the nesting depth; other columns
+/// fall back to `byteSizeAt` row by row.
+static size_t rangeByteSize(const IColumn & column, size_t start, size_t length)
+{
+    if (length == 0)
+        return 0;
+    if (column.isFixedAndContiguous())
+        return column.sizeOfValueIfFixed() * length;
+    if (const auto * string_column = typeid_cast<const ColumnString *>(&column))
+    {
+        const auto & offsets = string_column->getOffsets();
+        return offsets[start + length - 1] - offsets[start - 1] + sizeof(offsets[0]) * length;
+    }
+    if (const auto * array_column = typeid_cast<const ColumnArray *>(&column))
+    {
+        const auto & offsets = array_column->getOffsets();
+        const size_t data_start = offsets[start - 1];
+        return sizeof(offsets[0]) * length + rangeByteSize(array_column->getData(), data_start, offsets[start + length - 1] - data_start);
+    }
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&column))
+        return sizeof(nullable_column->getNullMapData()[0]) * length + rangeByteSize(nullable_column->getNestedColumn(), start, length);
+    if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(&column))
+    {
+        size_t bytes = 0;
+        for (const auto & element : tuple_column->getColumns())
+            bytes += rangeByteSize(*element, start, length);
+        return bytes;
+    }
+    if (const auto * map_column = typeid_cast<const ColumnMap *>(&column))
+        return rangeByteSize(map_column->getNestedColumn(), start, length);
+    size_t bytes = 0;
+    for (size_t row = start; row < start + length; ++row)
+        bytes += column.byteSizeAt(row);
+    return bytes;
+}
+
 /// The bytes a state-free `ColumnReplicated` puts on the wire once `compactReplicatedColumns` has processed
 /// it, estimated without copying any payload: compaction materializes or filters the nested column, which
 /// for large `String` or `Array` values costs as much as the payload itself, too much for every chunk.
 /// Follow the writer's decision (`convertToFullColumnIfReplicationNotUseful`): a materialized column costs
 /// the nested row each output row refers to; a kept one costs its indexes and every referenced nested row
-/// once, the unreferenced ones being dropped. The referenced rows are sized one by one with `byteSizeAt`
+/// once, the unreferenced ones being dropped. The referenced rows are sized one by one with `rangeByteSize`
 /// rather than at the average nested row size, because the indexes can pick rows of very different sizes -
 /// a filter correlated with the value, say - than the nested column holds on average.
 static size_t replicatedWireBytes(const ColumnReplicated & column)
@@ -448,7 +488,7 @@ static size_t replicatedWireBytes(const ColumnReplicated & column)
             return nested->sizeOfValueIfFixed() * rows;
         size_t bytes = 0;
         for (size_t row = 0; row < rows; ++row)
-            bytes += nested->byteSizeAt(indexes.getIndexAt(row));
+            bytes += rangeByteSize(*nested, indexes.getIndexAt(row), 1);
         return bytes;
     }
     PaddedPODArray<UInt8> referenced(nested_rows, 0);
@@ -459,7 +499,7 @@ static size_t replicatedWireBytes(const ColumnReplicated & column)
         if (!referenced[index])
         {
             referenced[index] = 1;
-            bytes += nested->byteSizeAt(index);
+            bytes += rangeByteSize(*nested, index, 1);
         }
     }
     return bytes;

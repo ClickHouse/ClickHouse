@@ -1792,3 +1792,66 @@ TEST(RuntimeDataflowStatisticsStateSampling, UnsampledReplicatedChunksSizeRefere
     EXPECT_GE(stats->output_bytes, wire_bytes * 4 / 5);
     EXPECT_LE(stats->output_bytes, wire_bytes * 5 / 4);
 }
+
+/// The referenced nested rows of the unsampled chunks are sized from the offsets of their arrays: a large
+/// array referenced by every index is counted in full on every chunk, without visiting its elements.
+TEST(RuntimeDataflowStatisticsStateSampling, UnsampledReplicatedArrayChunksSizeReferencedRowsExactly)
+{
+    constexpr size_t chunks = 30;
+    constexpr size_t rows = 32;
+    constexpr size_t nested_rows = 100;
+    constexpr size_t large_array_size = 1 << 17;
+
+    auto make_replicated = [&](MutableColumnPtr nested)
+    {
+        auto indexes = ColumnUInt8::create();
+        for (size_t row = 0; row < rows; ++row)
+            indexes->insertValue(0);
+        return ColumnPtr(ColumnReplicated::create(std::move(nested), MutableColumnPtr(std::move(indexes))));
+    };
+
+    auto numbers = ColumnArray::create(ColumnUInt64::create());
+    {
+        Array large;
+        for (size_t i = 0; i < large_array_size; ++i)
+            large.push_back(UInt64(i));
+        numbers->insert(large);
+        for (size_t i = 1; i < nested_rows; ++i)
+            numbers->insert(Array{});
+    }
+    auto strings = ColumnArray::create(ColumnString::create());
+    {
+        Array large;
+        for (size_t i = 0; i < large_array_size / 16; ++i)
+            large.push_back(String(16, 'a'));
+        strings->insert(large);
+        for (size_t i = 1; i < nested_rows; ++i)
+            strings->insert(Array{String("x")});
+    }
+
+    Block block;
+    block.insert(ColumnWithTypeAndName{
+        make_replicated(std::move(numbers)), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "numbers"});
+    block.insert(ColumnWithTypeAndName{
+        make_replicated(std::move(strings)), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "strings"});
+
+    const auto none = CompressionCodecFactory::instance().get("NONE", {});
+    WriteBufferFromOwnString wire;
+    NativeWriter writer(wire, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+    wire.finalize();
+    const size_t wire_bytes = wire.str().size() * chunks;
+
+    const size_t cache_key = 0x111985 + 54;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows * chunks, none));
+        Block header = block.cloneEmpty();
+        for (size_t chunk = 0; chunk < chunks; ++chunk)
+            updater.recordOutputChunk(Chunk(block.getColumns(), rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, wire_bytes * 4 / 5);
+    EXPECT_LE(stats->output_bytes, wire_bytes * 5 / 4);
+}
