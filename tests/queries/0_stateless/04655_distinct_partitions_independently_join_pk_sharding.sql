@@ -4,11 +4,6 @@
 -- The independent-partitions optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
 
--- Some CI configurations set DISTINCT size limits at the server level; pin them to unlimited so that
--- independent per-partition DISTINCT is applied.
-SET max_rows_in_distinct = 0;
-SET max_bytes_in_distinct = 0;
-
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain marker lines.
 SET explain_query_plan_default = 'legacy';
@@ -39,9 +34,14 @@ INSERT INTO t_distinct_join_r SELECT number FROM numbers(800);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a) WHERE explain LIKE '%Sharding%' OR explain LIKE '%Read each partition through separate port%';
 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a;
 
--- With independent DISTINCT disabled the same query is sharded by primary-key ranges.
+-- With independent DISTINCT disabled the final DISTINCT merges its input into a single stream, which
+-- cannot be paired with the shards of the other side, so the JOIN is not sharded either.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a SETTINGS allow_distinct_partitions_independently = 0, force_distinct_partitions_independently = 0) WHERE explain LIKE '%Sharding%' OR explain LIKE '%Read each partition through separate port%';
 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a SETTINGS allow_distinct_partitions_independently = 0, force_distinct_partitions_independently = 0;
+
+-- Without DISTINCT the same tables are sharded by primary-key ranges.
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT count() FROM t_distinct_join_l AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a) WHERE explain LIKE '%Sharding%' OR explain LIKE '%Read each partition through separate port%';
+SELECT count() FROM t_distinct_join_l AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a;
 
 DROP TABLE t_distinct_join_l;
 DROP TABLE t_distinct_join_r;

@@ -1,0 +1,293 @@
+---
+slug: /cloud/managed-postgres/guides/cloudflare-workers
+sidebarTitle: 'Cloudflare Workers'
+title: 'Use Cloudflare Workers com o ClickHouse Managed Postgres'
+description: 'Consulte o ClickHouse Managed Postgres a partir de um Cloudflare Worker por meio do Hyperdrive, usando node-postgres, TLS verificado, desenvolvimento local e implantação no workers.dev'
+keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive', 'wrangler', 'node-postgres', 'pg', 'serverless', 'edge', 'tls', 'verify-full']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
+
+Os [Cloudflare Workers](https://developers.cloudflare.com/workers/) executam seu código na rede da Cloudflare, e o [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) mantém um pool de conexões dessa rede com o seu banco de dados, evitando que cada requisição tenha o custo de um novo handshake TCP e TLS. Neste guia, você vai criar uma configuração do Hyperdrive que verifica o certificado da sua instância, desenvolver um Worker em TypeScript que cria e lê linhas com o [`node-postgres`](https://node-postgres.com/) (`pg`), executá-lo localmente com `wrangler dev` e implantá-lo em `workers.dev`.
+
+## Pré-requisitos {#prerequisites}
+
+* Uma [conta na Cloudflare](https://dash.cloudflare.com/sign-up). O Hyperdrive está disponível nos planos Workers Free e Paid.
+* [Node.js](https://nodejs.org/) 20 ou posterior. Este guia foi testado com Node.js 24.21.0, Wrangler 4.145.0, `create-cloudflare` 2.73.1, `pg` 8.23.1 e Postgres 18.
+* Uma conta no ClickHouse Cloud.
+* [`psql`](https://www.postgresql.org/download/), para criar o banco de dados e a tabela. Você também pode executar as instruções SQL no [SQL Console](/pt-BR/integrations/connectors/sql-clients/sql-console).
+
+## Crie um serviço ClickHouse Managed Postgres {#create-service}
+
+No console do ClickHouse Cloud, clique em **New service** e selecione **Postgres**. A instância fica pronta em poucos minutos. Para um passo a passo, consulte o [guia de início rápido](/pt-BR/products/managed-postgres/quickstart).
+
+## Obtenha os detalhes de conexão {#connection-details}
+
+Clique em **Connect** na barra lateral esquerda do seu serviço. Mantenha **Directly** selecionado e ative **Use SSL**. A URL passa a terminar em `sslmode=verify-full&sslrootcert=<service-name>-ca-certificate.pem`. Clique em **Download CA certificate** para baixar o certificado da CA da sua instância. Você também pode baixá-lo em **Settings → CA Certificate**.
+
+Este guia aponta o Hyperdrive para a conexão **direta** na porta `5432`, e não para o PgBouncer integrado na porta `6432`:
+
+* O próprio Hyperdrive é um pooler de conexões que opera em modo de transação. Ele mantém um pequeno pool de conexões de longa duração com o seu banco de dados e as compartilha entre todas as requisições do Worker, função que, de outra forma, caberia ao PgBouncer. A Cloudflare recomenda fornecer ao Hyperdrive uma string de conexão direta em vez de uma com pooling.
+* Apontar o Hyperdrive para a porta `6432` também funciona, mas encadear dois poolers de transação acrescenta um salto de rede e mais um ponto para ajustar tamanhos de pool, sem ganho de capacidade.
+* O Hyperdrive abre no máximo cerca de 20 conexões por configuração no plano Workers Free e cerca de 100 no plano Paid. Isso fica dentro do valor padrão de `max_connections`, que é 500. Se você tiver várias configurações do Hyperdrive ou outros clientes na mesma instância, some as conexões de todos eles e, se necessário, ajuste `max_connections` em [Configurações](/pt-BR/products/managed-postgres/settings) ou o limite de conexões de origem no Hyperdrive.
+
+<Note>
+  Se você usa uma [lista de acesso por IP](/pt-BR/products/managed-postgres/security), lembre-se de que o Hyperdrive se conecta a partir dos [intervalos de IP da Cloudflare](https://www.cloudflare.com/ips/), portanto eles precisam estar liberados.
+</Note>
+
+## Criar o banco de dados {#create-database}
+
+Renomeie o certificado baixado para `ca-certificate.pem`. Em seguida, crie um banco de dados e uma tabela `notes`. Substitua `<PASSWORD>` e o host pelos valores exibidos no modal **Connect**:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_cloudflare;"
+```
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_cloudflare?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE TABLE notes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, content text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());"
+```
+
+```text
+CREATE TABLE
+```
+
+## Crie o projeto do Worker {#create-project}
+
+Crie um Worker em TypeScript a partir do template &quot;Hello World&quot; usando o `create-cloudflare` e instale o `pg`:
+
+```bash
+npm create cloudflare@latest -- hyperdrive-notes --type=hello-world --lang=ts --no-deploy
+cd hyperdrive-notes
+npm install pg
+npm install -D @types/pg
+```
+
+<Tip>
+  **Vai adicionar a um app existente?**
+
+  Pule o `npm create cloudflare`. No seu projeto Worker, execute `npm install pg` e `npm install -D @types/pg` e, em seguida, siga para [Criar uma configuração do Hyperdrive](#create-hyperdrive), que adiciona o binding do Hyperdrive, e [Configurar o Worker](#configure-worker), que habilita o `nodejs_compat`.
+</Tip>
+
+Mova o `ca-certificate.pem` para o diretório do seu projeto. Se você nunca usou o Wrangler, execute `npx wrangler login` para autorizá-lo na sua conta Cloudflare.
+
+## Crie uma configuração do Hyperdrive {#create-hyperdrive}
+
+O Hyperdrive sempre criptografa a conexão com o seu banco de dados, mas, por padrão, não valida o certificado com base na CA da sua instância. Para obter o equivalente a `sslmode=verify-full`, primeiro faça o upload do certificado da CA para a sua conta Cloudflare:
+
+```bash
+npx wrangler cert upload certificate-authority --ca-cert ca-certificate.pem --name managed-postgres-ca
+```
+
+```text
+Success! Uploaded CA Certificate managed-postgres-ca
+ID: <CA_CERTIFICATE_ID>
+```
+
+Use o `ID` da saída para criar a configuração do Hyperdrive. A string de conexão usa a porta `5432` e o banco de dados `guide_cloudflare`, sem parâmetros de SSL; o TLS é configurado por meio de `--sslmode` e `--ca-certificate-id`:
+
+```bash
+npx wrangler hyperdrive create managed-postgres \
+  --connection-string="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_cloudflare" \
+  --ca-certificate-id <CA_CERTIFICATE_ID> \
+  --sslmode verify-full \
+  --caching-disabled \
+  --binding HYPERDRIVE \
+  --update-config
+```
+
+```text
+✅ Created new Hyperdrive PostgreSQL config: <HYPERDRIVE_ID>
+```
+
+O Hyperdrive se conecta ao seu banco de dados ao criar a configuração. Com `--sslmode verify-full`, ele verifica se o certificado do servidor foi assinado pela CA que você enviou e se corresponde ao hostname. Se alguma dessas verificações falhar, o comando falha com um erro como `cert verification failed - unable to get local issuer certificate` e nenhuma configuração é criada. A senha fica armazenada na configuração do Hyperdrive na sua conta Cloudflare, e não no seu projeto.
+
+`--binding HYPERDRIVE --update-config` adiciona a configuração ao `wrangler.jsonc`, para que seu Worker possa acessá-la como `env.HYPERDRIVE`. Se o seu projeto usa `wrangler.toml`, o Wrangler não altera o arquivo; nesse caso, cole nele o trecho `[[hyperdrive]]` exibido pelo comando.
+
+<Tip>
+  **Cache de consultas**
+
+  O Hyperdrive pode armazenar em cache os resultados de consultas de leitura, por padrão durante 60 segundos. Este guia desativa o cache com `--caching-disabled`, para que uma leitura feita logo após uma escrita retorne a nova linha. Para consultas com alto volume de leitura que toleram resultados ligeiramente desatualizados, você pode criar uma segunda configuração com o cache ativado e vincular ambas. Consulte [Cache de consultas](https://developers.cloudflare.com/hyperdrive/concepts/query-caching/).
+</Tip>
+
+## Configure o Worker {#configure-worker}
+
+O `pg` precisa da camada de compatibilidade com o Node.js. Abra o `wrangler.jsonc` e adicione a flag `nodejs_compat` junto ao `compatibility_date`. O trecho relevante do arquivo ficará assim:
+
+```jsonc title="wrangler.jsonc"
+{
+	"name": "hyperdrive-notes",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-26",
+	"compatibility_flags": ["nodejs_compat"],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "<HYPERDRIVE_ID>"
+		}
+	]
+}
+```
+
+Em um arquivo `wrangler.toml`, adicione `compatibility_flags = ["nodejs_compat"]` abaixo de `compatibility_date`, em vez disso. Se o arquivo já tiver `compatibility_flags`, adicione `nodejs_compat` à lista.
+
+Gere novamente os tipos do TypeScript para que `env.HYPERDRIVE` seja tipado:
+
+```bash
+npx wrangler types
+```
+
+Se o seu projeto ainda usa o pacote `@cloudflare/workers-types`, o comando `wrangler types` mostra como migrar para os tipos gerados.
+
+## Consultar o banco de dados {#query}
+
+Substitua `src/index.ts` por um Worker que cria uma nota em `POST /notes` e lista todas as notas em `GET /notes`. Se você já tiver um Worker, adicione o mesmo tratamento de `/notes` ao seu handler `fetch`:
+
+```ts title="src/index.ts"
+import { Client } from "pg";
+
+export default {
+	async fetch(request, env, ctx): Promise<Response> {
+		const url = new URL(request.url);
+		if (url.pathname !== "/notes") {
+			return new Response("Not found", { status: 404 });
+		}
+
+		// Hyperdrive keeps the connections to Postgres, so a new client per request is cheap.
+		const client = new Client({ connectionString: env.HYPERDRIVE.connectionString });
+		await client.connect();
+
+		try {
+			if (request.method === "POST") {
+				// Create
+				const { content } = await request.json<{ content: string }>();
+				const { rows } = await client.query(
+					"INSERT INTO notes (content) VALUES ($1) RETURNING id, content, created_at",
+					[content],
+				);
+				return Response.json(rows[0], { status: 201 });
+			}
+
+			// Read
+			const { rows } = await client.query("SELECT id, content, created_at FROM notes ORDER BY id");
+			return Response.json(rows);
+		} finally {
+			// Close the client after the response is sent.
+			ctx.waitUntil(client.end());
+		}
+	},
+} satisfies ExportedHandler<Env>;
+```
+
+`env.HYPERDRIVE.connectionString` aponta para o Hyperdrive, e não para a sua instância. A conexão entre o Worker e o Hyperdrive permanece dentro da Cloudflare, por isso não precisa de parâmetros SSL. O Hyperdrive cuida da conexão TLS verificada com o Postgres.
+
+<Note>
+  O Hyperdrive opera em modo de transação, assim como o PgBouncer: cada transação pode usar uma conexão diferente com o Postgres. Consultas parametrizadas, transações e prepared statements nomeados do `pg` funcionam normalmente. Não dependa do estado da sessão entre consultas, como um `SET` em nível de sessão; em vez disso, use `SET LOCAL` dentro de uma transação.
+</Note>
+
+## Executar localmente {#local-development}
+
+`wrangler dev` executa o Worker na sua máquina. Localmente, o Hyperdrive não mantém um pool de conexões; o binding se conecta diretamente ao banco de dados definido em `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>`. Defina essa variável com a string de conexão direta, incluindo `sslmode=verify-full` e o caminho para o certificado da CA, e depois inicie o Worker:
+
+```bash
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_cloudflare?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+npx wrangler dev --port 3108
+```
+
+```text
+Found a non-empty CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE variable for binding. Hyperdrive will connect to this database during local development.
+...
+Ready on http://localhost:3108
+```
+
+O Wrangler cuida do TLS da conexão local. O caminho de `sslrootcert` é resolvido em relação ao diretório a partir do qual você executa `wrangler dev`.
+
+<Warning>
+  Se você omitir `sslmode`, a conexão local **não será criptografada**. Com `sslmode=require`, ela é criptografada, mas o certificado não é verificado. Use sempre `sslmode=verify-full` com `sslrootcert`. Se a CA estiver ausente ou incorreta, as requisições falharão com `Connection terminated unexpectedly`.
+</Warning>
+
+Em um segundo terminal, crie uma nota:
+
+```bash
+curl -X POST http://localhost:3108/notes -H "Content-Type: application/json" -d '{"content": "Hello from wrangler dev"}'
+```
+
+```json
+{"id":"1","content":"Hello from wrangler dev","created_at":"2026-09-30T16:58:16.232Z"}
+```
+
+Liste as notas:
+
+```bash
+curl http://localhost:3108/notes
+```
+
+```json
+[{"id":"1","content":"Hello from wrangler dev","created_at":"2026-09-30T16:58:16.232Z"}]
+```
+
+O `pg` retorna colunas `bigint` como strings; por isso, `id` é `"1"`, e não `1`.
+
+## Implantação {#deploy}
+
+Implante o Worker:
+
+```bash
+npx wrangler deploy
+```
+
+```text
+Your Worker has access to the following bindings:
+Binding                                   Resource
+env.HYPERDRIVE (<HYPERDRIVE_ID>)          Hyperdrive Config
+
+Uploaded hyperdrive-notes (2.35 sec)
+Deployed hyperdrive-notes triggers (0.76 sec)
+  https://hyperdrive-notes.<your-subdomain>.workers.dev
+```
+
+Se este for o seu primeiro Worker, o Wrangler pedirá que você registre um subdomínio `workers.dev`. Crie uma nota usando o Worker implantado:
+
+```bash
+curl -X POST https://hyperdrive-notes.<your-subdomain>.workers.dev/notes -H "Content-Type: application/json" -d '{"content": "Hello from Hyperdrive"}'
+```
+
+```json
+{"id":"2","content":"Hello from Hyperdrive","created_at":"2026-09-30T16:58:39.733Z"}
+```
+
+Abra `https://hyperdrive-notes.<your-subdomain>.workers.dev/notes` no navegador para ver as duas notas. A resposta será semelhante a esta:
+
+```json
+[{"id":"1","content":"Hello from wrangler dev","created_at":"2026-09-30T16:58:16.232Z"},{"id":"2","content":"Hello from Hyperdrive","created_at":"2026-09-30T16:58:39.733Z"}]
+```
+
+## Verifique no console {#verify}
+
+Abra o **SQL Console** na barra lateral esquerda do seu serviço, expanda `guide_cloudflare` e, em seguida, `public` e clique na tabela `notes`. Ela exibe as duas notas:
+
+| id | content                 | created&#95;at                |
+| -- | ----------------------- | ----------------------------- |
+| 1  | Hello from wrangler dev | 2026-09-30 16:58:16.232466+00 |
+| 2  | Hello from Hyperdrive   | 2026-09-30 16:58:39.733203+00 |
+
+## Limpeza {#clean-up}
+
+Para remover o que você criou na sua conta da Cloudflare, exclua o Worker, a configuração do Hyperdrive e o certificado da CA:
+
+```bash
+npx wrangler delete
+npx wrangler hyperdrive delete <HYPERDRIVE_ID>
+npx wrangler cert delete --name managed-postgres-ca
+```
+
+Se o comando `wrangler cert delete` retornar `Certificate cannot be deleted while in use`, aguarde um minuto após excluir a configuração do Hyperdrive e execute-o novamente.
+
+## Próximos passos {#next-steps}
+
+* [Conexão](/pt-BR/products/managed-postgres/connection): strings de conexão, PgBouncer e TLS
+* [Configurações](/pt-BR/products/managed-postgres/settings): parâmetros do Postgres, como `max_connections`
+* [Réplicas de leitura](/pt-BR/products/managed-postgres/read-replicas): escale o tráfego de leitura
+* [Documentação do Hyperdrive](https://developers.cloudflare.com/hyperdrive/): cache de consultas, ajuste do pool de conexões e observabilidade

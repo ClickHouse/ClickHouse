@@ -1,7 +1,6 @@
 -- Test NaiveBayes dictionary layout
 
 -- Named-tuple element access (such as x.probability) is resolved only by the analyzer.
-SET enable_analyzer = 1;
 
 -- Setup: create source table and populate with n-gram data
 
