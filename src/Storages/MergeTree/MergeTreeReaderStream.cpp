@@ -8,6 +8,7 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <algorithm>
+#include <ranges>
 #include <utility>
 #include <filesystem>
 
@@ -640,12 +641,38 @@ MergeTreeReaderStreamMultipleColumns::estimateMarkRangeBytesOneColumn(const Mark
     return {max_range_bytes, sum_range_bytes};
 }
 
-void MergeTreeReaderStream::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
+void MergeTreeReaderStream::addRangeOfMark(size_t mark, CompressedBlockRanges & ranges)
 {
     /// All marks of an empty file point to its beginning, so don't load them.
     if (file_size == 0)
         return;
 
+    loadMarks();
+    const size_t begin = marks_getter->getMark(mark, 0).offset_in_compressed_file;
+    size_t end = file_size;
+    if (mark + 1 < marks_count)
+    {
+        const auto next_mark = marks_getter->getMark(mark + 1, 0);
+        end = next_mark.offset_in_compressed_file;
+        /// The block goes on to the next later offset if the next mark is inside it. The granule needs the block also if
+        /// it wrote nothing of its own, like the granules that share a `LowCardinality` dictionary: then the next mark is
+        /// the same, at the start of the block, as in `MergeTreeReaderStreamSingleColumn::getRightOffset`.
+        if (next_mark.offset_in_decompressed_block != 0 || next_mark.offset_in_compressed_file == begin)
+        {
+            /// The offsets don't decrease, and many marks can share the block, so search instead of scanning them.
+            const auto marks = std::views::iota(mark + 1, marks_count);
+            const auto it = std::ranges::partition_point(marks, [&](size_t i)
+            {
+                return marks_getter->getMark(i, 0).offset_in_compressed_file <= next_mark.offset_in_compressed_file;
+            });
+            end = it == marks.end() ? file_size : marks_getter->getMark(*it, 0).offset_in_compressed_file;
+        }
+    }
+    ranges.emplace_back(begin, end);
+}
+
+void MergeTreeReaderStreamMultipleColumns::addRangeOfPosition(size_t mark, size_t position, CompressedBlockRanges & ranges)
+{
     loadMarks();
     /// The granules of a stripe are written column by column, so the data that follows in the file is found among all the
     /// marks, in the order of the file. The marks of empty data coincide with the next one, and are ordered as written.

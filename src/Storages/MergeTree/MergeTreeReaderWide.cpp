@@ -1133,7 +1133,7 @@ void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const st
 
             /// A block that holds the granule is counted once for the reader by `takeCompressedBytesRead`, also when it is read,
             /// or holds other granules or columns served from the cache.
-            stream->addRangeOfPosition(mark, 0, getRangesRead(*stream_name));
+            stream->addRangeOfMark(mark, getRangesRead(*stream_name));
         });
     }
 }
