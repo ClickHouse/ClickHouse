@@ -2810,6 +2810,9 @@ def main():
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
     needs_s3 = bool(s3_paths)
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
+    needs_iceberg_read_dataset = needs_s3_read_dataset or any(
+        map(test_discovery.test_requires_local_read_dataset, run_paths)
+    )
     needs_s3_public_data = nightly and any(map(test_discovery.test_requires_public_data, run_paths))
     needs_s3_catalog = nightly and any(map(test_discovery.test_requires_s3_catalog, run_paths))
 
@@ -3019,7 +3022,11 @@ def main():
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
-        if not Path(f"{db_path}/.done").is_file():
+        db_done = Path(f"{db_path}/.done").is_file()
+        iceberg_dir = Path(db_path) / "user_files" / s3_service.READ_DATASET_DIRECTORY
+        iceberg_done = Path(db_path) / f".{s3_service.READ_DATASET_DIRECTORY}.done"
+        # Retry missing or partially extracted Iceberg fixtures in cached db0.
+        if not db_done or (needs_iceberg_read_dataset and (not iceberg_dir.is_dir() or not iceberg_done.is_file())):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
@@ -3030,6 +3037,8 @@ def main():
                 "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
+            if db_done:
+                dataset_paths = {"tpch_ice10": dataset_paths["tpch_ice10"]}
             stop_watch = Utils.Stopwatch()
             errors = download_and_extract_datasets(dataset_paths.values(), db_path)
             res = not errors
@@ -3043,7 +3052,9 @@ def main():
                 )
             )
             if res:
-                Shell.check(f"touch {db_path}/.done")
+                iceberg_done.touch()
+                if not db_done:
+                    Shell.check(f"touch {db_path}/.done")
 
     if res and JobStages.CONFIGURE in stages:
         print("Configure")
