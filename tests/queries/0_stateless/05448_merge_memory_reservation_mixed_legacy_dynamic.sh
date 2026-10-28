@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-darwin
+# no-darwin: on a case-insensitive disk (macOS APFS by default) MergeTree names every stream file by its hash
+# (replaceFileNameToHashIfNeeded), so the dynamic substreams of a legacy part cannot be recovered from the
+# names of its .bin files, which is exactly what this test checks.
 
 # Regression test for the merge memory reservation (CompactionStatistics::estimateNeededMemoryForMerge) of a
 # merge that mixes modern parts with a legacy wide part written before columns_substreams.txt existed. The
