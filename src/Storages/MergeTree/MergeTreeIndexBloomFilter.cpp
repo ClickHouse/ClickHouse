@@ -1383,6 +1383,24 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
                         return false;
                 }
+                else if (isDateOrDate32OrDateTimeOrDateTime64(map_value_type)
+                    && isDateOrDate32OrDateTimeOrDateTime64(removeLowCardinalityAndNullable(value_type)))
+                {
+                    /// A missing key yields the column default, zero even for `Date32` (whose `getDefault` is `1900-01-01`),
+                    /// and `equals` compares it with the constant in their least supertype.
+                    const DataTypePtr constant_type = removeLowCardinalityAndNullable(value_type);
+                    const DataTypePtr supertype = getLeastSupertype(DataTypes{map_value_type, constant_type});
+                    auto missing_value = map_value_type->createColumn();
+                    missing_value->insertDefault();
+                    const Field missing_in_supertype = convertFieldToType((*missing_value)[0], *supertype, map_value_type.get());
+                    const Field constant_in_supertype = convertFieldToType(value_field, *supertype, constant_type.get());
+                    if (missing_in_supertype.isNull() || constant_in_supertype.isNull() || missing_in_supertype == constant_in_supertype)
+                        return false;
+
+                    map_value_field = convertConstantLikeSearchFunction(value_field, value_type, map_value_type, /*cast_to_supertype=*/ true);
+                    if (map_value_field.isNull())
+                        return false;
+                }
             }
 
             size_t position = 0;
@@ -1407,14 +1425,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-
-            if (!map_info->has_keys_index && isDateOrDate32OrDateTimeOrDateTime64(removeLowCardinalityAndNullable(value_type)))
-            {
-                const_value = convertConstantLikeSearchFunction(const_value, value_type, actual_type, /*cast_to_supertype=*/ true);
-                if (const_value.isNull() || const_value == actual_type->getDefault())
-                    return false;
-            }
-
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
 
             return true;

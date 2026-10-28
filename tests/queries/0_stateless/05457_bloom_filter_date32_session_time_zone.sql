@@ -42,3 +42,23 @@ SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDate32('1970-01-01');
 SELECT count() FROM t_bf_date32_tz WHERE mv['k'] = toDateTime64('2024-01-02 00:00:00', 0, 'UTC');
 
 DROP TABLE t_bf_date32_tz;
+
+-- A `mapKeys` index probes the key, so it must decline whenever a missing key equals the constant.
+DROP TABLE IF EXISTS t_bf_date32_tz_keys;
+
+CREATE TABLE t_bf_date32_tz_keys
+(
+    id UInt64,
+    mv Map(String, DateTime('Europe/Moscow')),
+    mv32 Map(String, Date32),
+    INDEX i_mv mapKeys(mv) TYPE bloom_filter GRANULARITY 1,
+    INDEX i_mv32 mapKeys(mv32) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO t_bf_date32_tz_keys VALUES (1, {'other': '2024-01-01 00:00:00'}, {'other': '2024-01-01'});
+
+SELECT count() FROM t_bf_date32_tz_keys WHERE mv['missing'] = toDate32('1970-01-01');
+SELECT count() FROM t_bf_date32_tz_keys WHERE mv32['missing'] = toDate32('1970-01-01');
+
+DROP TABLE t_bf_date32_tz_keys;
