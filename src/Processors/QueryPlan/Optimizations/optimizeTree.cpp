@@ -1015,7 +1015,8 @@ void optimizeTreeSecondPass(
     }
 
     /// Runs last: it puts a step over the LIMIT of the aggregation and keeps the optimized plan below it as the fallback.
-    optimizeTwoPassCountTopK(root, nodes, optimization_settings);
+    if (optimization_settings.two_pass_count_top_k)
+        optimizeTwoPassCountTopK(root, nodes, optimization_settings);
 }
 
 void addStepsToBuildSets(

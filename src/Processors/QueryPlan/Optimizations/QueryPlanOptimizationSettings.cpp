@@ -63,6 +63,8 @@ namespace Setting
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool query_plan_aggregation_bucket_top_k;
     extern const SettingsBool query_plan_aggregation_having_prefilter;
+    extern const SettingsBool query_plan_two_pass_count_top_k;
+    extern const SettingsUInt64 query_plan_two_pass_count_top_k_min_rows;
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
@@ -293,6 +295,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
     aggregation_having_prefilter
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
+    two_pass_count_top_k = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_two_pass_count_top_k];
+    two_pass_count_top_k_min_rows = from[Setting::query_plan_two_pass_count_top_k_min_rows];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
     enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];

@@ -53,8 +53,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool query_plan_two_pass_count_top_k;
-    extern const SettingsUInt64 query_plan_two_pass_count_top_k_min_rows;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
@@ -1197,8 +1195,6 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
 
     const auto & context = read->getContext();
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::query_plan_two_pass_count_top_k])
-        return false;
 
     if (settings[Setting::max_rows_to_group_by] || settings[Setting::max_rows_to_read] || settings[Setting::max_bytes_to_read]
         || settings[Setting::max_rows_to_read_leaf] || settings[Setting::max_bytes_to_read_leaf]
@@ -1300,7 +1296,7 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
         analysis = read->selectRangesToRead();
         read->setAnalyzedResult(analysis);
     }
-    const UInt64 min_rows = settings[Setting::query_plan_two_pass_count_top_k_min_rows];
+    const UInt64 min_rows = optimization_settings.two_pass_count_top_k_min_rows;
     if (!analysis || !analysis->isUsable() || analysis->readFromProjection() || analysis->selected_rows < min_rows
         || !readerExpressionsAreRepeatable(*read, analysis->parts_with_ranges))
         return false;
@@ -1330,7 +1326,6 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
     templ->count_position = output_header->getPositionByName(description.front().column_name);
     templ->min_rows = min_rows;
     templ->context = context;
-    (void)optimization_settings;
 
     auto & original = nodes.emplace_back(QueryPlan::Node{.step = std::move(node.step), .children = std::move(node.children)});
     node.step = std::make_unique<TwoPassCountTopKStep>(original.step->getOutputHeader(), std::move(templ));
@@ -1345,7 +1340,7 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
 /// an integer key: see `TwoPassCountTopKTransform`. The step keeps the optimized plan below the LIMIT as the fallback.
 void optimizeTwoPassCountTopK(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (optimization_settings.make_distributed_plan)
+    if (optimization_settings.make_distributed_plan || optimization_settings.serialize_query_plan)
         return;
 
     Stack stack;
