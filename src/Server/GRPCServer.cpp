@@ -826,8 +826,7 @@ namespace
         std::atomic<bool> failed_to_send_result = false;
         std::atomic<bool> responder_finished = false;
 
-        /// Taken to start a write on `responder`. Shared with the fatal error callback, which runs on the signal listener
-        /// thread and can outlive the call: it uses the call only under `mutex` and while `call_closed` is false.
+        /// Taken to start a write on `responder`. The fatal error callback can outlive the call: it checks `call_closed` under `mutex`.
         struct ResponderLock
         {
             std::timed_mutex mutex;
@@ -864,7 +863,6 @@ namespace
             {
                 tryLogCurrentException("GRPCServer");
             }
-            /// From here on `Runner` may destroy the call while the fatal error callback can still run.
             {
                 std::lock_guard lock{responder_lock->mutex};
                 responder_lock->call_closed = true;
@@ -1550,7 +1548,7 @@ namespace
     void Call::onFatalError()
     {
         /// call_thread may still be running (or be the faulting thread), so `result` and the output buffers are not used.
-        want_to_cancel = true; /// Nobody can receive the rest of the output.
+        want_to_cancel = true;
         if (!responder || responder_finished)
             return;
         try
@@ -1910,7 +1908,6 @@ namespace
         Stopwatch client_reading_final_watch;
         {
             std::lock_guard lock{responder_lock->mutex};
-            /// `onFatalError` may have finished the call.
             if (responder_finished)
                 return;
             result.mutable_logs()->Swap(unsent_logs.mutable_logs());
@@ -1926,7 +1923,6 @@ namespace
                 responder->write(result, callback);
         }
 
-        /// Start sending the result.
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
