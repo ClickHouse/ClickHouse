@@ -8,10 +8,14 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 
+#include <map>
+
 namespace DB
 {
 
 class ColumnsDescription;
+struct IndexReadTask;
+using IndexReadTasks = std::map<String, IndexReadTask>;
 
 bool tryBuildPrewhereSteps(
     PrewhereInfoPtr prewhere_info,
@@ -19,6 +23,7 @@ bool tryBuildPrewhereSteps(
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
     const ColumnsDescription * columns = nullptr,
-    bool read_ahead_columns = false);
+    bool read_ahead_columns = false,
+    const IndexReadTasks * index_read_tasks = nullptr);
 
 }

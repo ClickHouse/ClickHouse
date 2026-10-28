@@ -12,6 +12,7 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -49,6 +50,8 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <TableFunctions/ITableFunction.h>
 #include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
@@ -74,9 +77,11 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool transform_null_in;
 }
 
@@ -558,11 +563,17 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
+        {
             result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_size);
+        }
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
+        {
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->children.push_back(result_table_expression->sample_offset);
+        }
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
@@ -900,6 +911,14 @@ TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tr
     return result;
 }
 
+bool isGlobalJoin(const JoinNode & join_node, const Settings & settings)
+{
+    const auto distributed_product_mode = settings[Setting::distributed_product_mode];
+    return join_node.getLocality() == JoinLocality::Global
+        || distributed_product_mode == DistributedProductMode::GLOBAL
+        || (distributed_product_mode != DistributedProductMode::LOCAL && settings[Setting::prefer_global_in_and_join]);
+}
+
 namespace
 {
 
@@ -1169,6 +1188,31 @@ QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
 
     return std::make_shared<ConstantNode>(
         ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
+}
+
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto * get_scalar_function_node = node->as<FunctionNode>();
+    if (!get_scalar_function_node || get_scalar_function_node->getFunctionName() != "__getScalar")
+        return nullptr;
+
+    const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+    if (!get_scalar_const_arg || !context->hasQueryContext())
+        return nullptr;
+
+    auto query_context = context->getQueryContext();
+    auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
+    if (!query_context->hasScalar(scalar_string))
+        return nullptr;
+
+    auto scalar = query_context->getScalar(scalar_string);
+    const auto & scalar_column = scalar.getByPosition(0).column;
+    /// The column comes from the scalars map while the type comes from the resolved node, and the
+    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+    if (scalar_column->size() != 1 || !columnMatchesType(*scalar_column, *get_scalar_function_node->getResultType()))
+        return nullptr;
+
+    return ColumnConst::create(scalar_column, 1);
 }
 
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
@@ -1742,6 +1786,33 @@ String decimalFieldToText(const Field & field)
     return wb.str();
 }
 
+/// `String -> Decimal` rejects more digits than the precision of the type, while the type holds every value of
+/// its native integer, so a value beyond the precision is sent as that integer.
+template <typename T>
+ASTPtr makeDecimalLiteralASTImpl(const Field & field, const IDataType & type)
+{
+    using NativeType = typename T::NativeType;
+    const NativeType raw = field.safeGet<DecimalField<T>>().getValue().value;
+    const NativeType bound = DecimalUtils::scaleMultiplier<NativeType>(getDecimalPrecision(type));
+    if (raw > -bound && raw < bound)
+        return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(decimalFieldToText(field)), make_intrusive<ASTLiteral>(type.getName()));
+
+    auto native = makeASTFunction("_CAST", make_intrusive<ASTLiteral>(toString(raw)), make_intrusive<ASTLiteral>(String(TypeName<NativeType>)));
+    return makeASTFunction("reinterpret", std::move(native), make_intrusive<ASTLiteral>(type.getName()));
+}
+
+ASTPtr makeDecimalLiteralAST(const Field & field, const IDataType & type)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32: return makeDecimalLiteralASTImpl<Decimal32>(field, type);
+        case Field::Types::Decimal64: return makeDecimalLiteralASTImpl<Decimal64>(field, type);
+        case Field::Types::Decimal128: return makeDecimalLiteralASTImpl<Decimal128>(field, type);
+        case Field::Types::Decimal256: return makeDecimalLiteralASTImpl<Decimal256>(field, type);
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a decimal field");
+    }
+}
+
 ASTPtr makeASTFunctionFromList(std::string_view name, ASTs children)
 {
     auto function = make_intrusive<ASTFunction>();
@@ -1811,9 +1882,7 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
             /// Reconstruct with the value's exact decimal type so it stays a valid Variant member.
-            return makeASTFunction(
-                "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
-                make_intrusive<ASTLiteral>(type->getName()));
+            return makeDecimalLiteralAST((*column)[row], *type);
         case TypeIndex::QBit:
         {
             /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
@@ -2050,6 +2119,14 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
     }
 
     return true;
+}
+
+bool isInsertedDataOfTableFunction(const StoragePtr & storage, const StorageID & storage_id, const ContextPtr & context)
+{
+    auto view_source = context->getViewSource();
+    return view_source && storage == view_source && !context->isViewInnerQuery()
+        && storage_id.database_name == ITableFunction::getDatabaseName()
+        && !DatabaseCatalog::instance().isDatabaseExist(storage_id.database_name);
 }
 
 }

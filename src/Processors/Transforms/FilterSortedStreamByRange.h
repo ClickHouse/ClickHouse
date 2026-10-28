@@ -23,6 +23,7 @@ public:
         bool on_totals_ = false);
 
     String getName() const override { return "FilterSortedStreamByRange"; }
+    std::span<ISpillable * const> getSpillables() override { return filter_transform.getSpillables(); }
 
     void transform(Chunk & chunk) override;
 

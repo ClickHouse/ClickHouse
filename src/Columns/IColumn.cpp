@@ -189,7 +189,7 @@ char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */, co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemory(std::span<char *> /* memories */, const IColumn::SerializationSettings * /* settings */) const
+void IColumn::batchSerializeValueIntoMemory(std::span<char *> /* memories */, size_t /* start_row */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
@@ -211,7 +211,7 @@ char * IColumn::serializeValueIntoMemoryWithNull(
 }
 
 void IColumn::batchSerializeValueIntoMemoryWithNull(
-    std::span<char *> /* memories */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
+    std::span<char *> /* memories */, size_t /* start_row */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
@@ -586,7 +586,8 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
     }
 }
 
-/// Fills column from pre-resolved row data pointers. Devirtualized insertData.
+/// Fills columns from resolved row pointers. Fixed-size columns without missing rows grow once,
+/// so the copy loop does not update their size or check capacity for every value.
 template <bool has_defaults, bool with_null_map, bool range_mode, typename ColumnType>
 static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> * null_map, size_t begin, size_t count)
 {
@@ -604,7 +605,17 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
     [[maybe_unused]] const char * const base_ptr = row_store_ptrs.base_ptr;
     [[maybe_unused]] const size_t row_length = row_store_ptrs.row_length;
 
-    col->reserve(col->size() + count);
+    constexpr bool copy_fixed_values = !has_defaults && std::is_base_of_v<ColumnFixedSizeHelper, ColumnType>;
+    char * values_dst = nullptr;
+    if constexpr (copy_fixed_values)
+    {
+        const size_t column_value_size = col->sizeOfValueIfFixed();
+        chassert(value_size == column_value_size);
+        value_size = column_value_size;
+        values_dst = col->insertRawUninitialized(count).data();
+    }
+    else
+        col->reserve(col->size() + count);
     for (size_t i = 0; i < count; ++i)
     {
         /// TODO: try prefetching row store rows.
@@ -627,7 +638,10 @@ static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & typ
 
         if constexpr (with_null_map)
             null_dst[i] = *reinterpret_cast<const UInt8 *>(row_store_ptr + field_offset);
-        col->insertData(row_store_ptr + value_offset, value_size);
+        if constexpr (copy_fixed_values)
+            memcpy(values_dst + i * value_size, row_store_ptr + value_offset, value_size);
+        else
+            col->insertData(row_store_ptr + value_offset, value_size);
     }
 }
 
@@ -734,24 +748,24 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
 
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
-    std::span<char *> memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+    std::span<char *> memories, size_t start_row, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
+    chassert(start_row + memories.size() <= self.size());
 
     if (!is_null)
     {
-        self.batchSerializeValueIntoMemory(memories, settings);
+        self.batchSerializeValueIntoMemory(memories, start_row, settings);
         return;
     }
 
-    size_t rows = self.size();
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t i = 0; i < memories.size(); ++i)
     {
-        *memories[i] = is_null[i];
+        const size_t row = start_row + i;
+        *memories[i] = is_null[row];
         ++memories[i];
-        if (!is_null[i])
-            memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
+        if (!is_null[row])
+            memories[i] = self.serializeValueIntoMemory(row, memories[i], settings);
     }
 }
 
@@ -768,12 +782,13 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(
+    std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
-    chassert(memories.size() == self.size());
-    for (size_t i = 0; i < self.size(); ++i)
-        memories[i] = self.serializeValueIntoMemory(i, memories[i], settings);
+    chassert(start_row + memories.size() <= self.size());
+    for (size_t i = 0; i < memories.size(); ++i)
+        memories[i] = self.serializeValueIntoMemory(start_row + i, memories[i], settings);
 }
 
 template <typename Derived, typename Parent>

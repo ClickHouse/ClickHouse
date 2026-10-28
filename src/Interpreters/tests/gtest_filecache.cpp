@@ -29,7 +29,6 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
-#include <Interpreters/FileCache/QueryLimit.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
@@ -2339,7 +2338,8 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
     CacheMetadata cache_metadata(cache_path,
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
+                                 /* write_cache_per_user_directory */false,
+                                 /* use_real_disk_size */false);
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -2470,7 +2470,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     auto key = DB::FileCacheKey::fromPath("evict_key");
     auto origin = FileCache::getCommonOrigin();
@@ -2587,7 +2587,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     LRUFileCachePriority dst(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "dst");
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
@@ -3315,7 +3315,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const std::string cache_path = caches_dir / "test_slru_modify_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3371,7 +3371,8 @@ TEST_F(FileCacheTest, LRUDecrementSizeToZeroDropsElement)
     CacheMetadata cache_metadata(cache_path,
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
+                                 /* write_cache_per_user_directory */false,
+                                 /* use_real_disk_size */false);
 
     const auto key = DB::FileCacheKey::fromPath("lru_decrement_to_zero_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3418,7 +3419,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     const std::string cache_path = caches_dir / "test_split_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
@@ -3461,7 +3462,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     const std::string cache_path = caches_dir / "test_split_resize";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
@@ -3531,7 +3532,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const std::string cache_path = caches_dir / "test_slru_downgrade_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -3620,7 +3621,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
@@ -3677,7 +3678,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
 
     const auto cache_path = caches_dir / "test_queue_metrics";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -3721,7 +3722,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -4074,115 +4075,6 @@ TEST_F(FileCacheTest, ReserveAheadFallsBackToExactSize)
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheReserveAheadRetries], retries_before + 2);
     ASSERT_EQ(segment->getReservedSize(), 12u);
     ASSERT_EQ(cache->getUsedCacheSize(), 12u);
-}
-
-TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
-{
-    /// Regression test: while one holder for a query_id releases its query context,
-    /// another holder for the same query_id must keep it alive, and a later release must not fail
-    /// with "Attempt to release query context that does not exist".
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_revive";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        /// Take the context for the first time; `query_map` and `context1` reference it.
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        ASSERT_TRUE(context1 != nullptr);
-        /// A second holder revives the same context: `getOrSetQueryContext` returns the existing entry.
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-    const auto * context_raw = context1.get();
-
-    /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr; the holders
-    /// and `query_map` hold the only references once the local copies are dropped.
-    auto holder1 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context1);
-    auto holder2 = std::make_unique<FileCacheQueryLimit::QueryContextHolder>(
-        query_id, /* cache */ nullptr, &query_limit, context2);
-    context1.reset();
-    context2.reset();
-
-    /// The first holder releases. Another holder is still alive, so the entry must be kept (no erase,
-    /// no throw) and enforcement preserved: the context is still discoverable.
-    ASSERT_NO_THROW(holder1.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), context_raw);
-    }
-
-    /// The second holder is now the last one; releasing it removes the entry, once, without throwing.
-    ASSERT_NO_THROW(holder2.reset());
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
-}
-
-TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
-{
-    /// Regression for #109508: parallel read streams create several holders for one query_id.
-    /// `~QueryContextHolder` drops its own reference under `query_limit->lock()` before checking
-    /// `use_count`, so two holders releasing concurrently cannot both skip the erase and orphan
-    /// `query_map[query_id]`. This test releases sequentially and only pins the single-erase,
-    /// no-throw outcome; the concurrent case is not reproduced here.
-
-    FileCacheQueryLimit query_limit;
-
-    const std::string query_id = "query_id_concurrent_release";
-    FilesystemCacheSettings cache_settings;
-    cache_settings.max_download_size_per_query = 1024;
-
-    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
-    FileCacheQueryLimit::QueryContextPtr context1;
-    FileCacheQueryLimit::QueryContextPtr context2;
-    {
-        auto lock = query_limit.lock();
-        context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-        context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, lock);
-    }
-    ASSERT_EQ(context1.get(), context2.get());
-    ASSERT_EQ(context1.use_count(), 3);
-
-    {
-        /// `~QueryContextHolder` does not use its `cache` member, so tests pass nullptr.
-        FileCacheQueryLimit::QueryContextHolder holder1(query_id, /* cache */ nullptr, &query_limit, context1);
-        FileCacheQueryLimit::QueryContextHolder holder2(query_id, /* cache */ nullptr, &query_limit, context2);
-        context1.reset();
-        context2.reset();
-        /// At scope end holder2 releases first (another holder still alive, entry kept), then holder1
-        /// releases and erases the entry once. Neither throws.
-    }
-
-    /// The entry must be gone: a leaked entry (both releases skipping the erase, as described in
-    /// the comment at the top of this test) would still be found by `tryGetQueryContext`.
-    {
-        DB::ThreadStatus thread_status;
-        auto query_context = DB::Context::createCopy(getContext().context);
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(query_id);
-        auto query_scope_holder = DB::QueryScope::create(query_context);
-
-        ASSERT_EQ(query_limit.tryGetQueryContext().get(), nullptr);
-    }
 }
 
 /// Concurrent readBigAt calls on AsynchronousBoundedReadBuffer over a cached buffer, with a

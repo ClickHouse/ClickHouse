@@ -19,6 +19,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpandedASTBudget.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -64,10 +65,12 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool allow_statistics;
     extern const SettingsTimezone session_timezone;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -90,6 +93,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -374,6 +378,27 @@ std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments,
     return res;
 }
 
+/// `allow_statistics` gates the statistics DDL - whether statistics may be declared on a table -
+/// so only the submitting session's value is meaningful for it, and the gate must be applied
+/// exactly once, here at submission time.
+///
+/// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` carries an `AlterCommand` and is gated by
+/// `AlterCommands::validate`, but `MATERIALIZE STATISTICS` parses into a `MutationCommands`
+/// segment only, so it is checked here, next to the other submission-time mutation validation.
+/// `MutationsInterpreter` does not check it: it also runs in the background with a context that
+/// reads the server-default profile instead of the submitting session.
+void checkStatisticsMutationsAreAllowed(const MutationCommands & commands, const Settings & settings)
+{
+    if (settings[Setting::allow_statistics])
+        return;
+
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::MATERIALIZE_STATISTICS || command.type == MutationCommand::DROP_STATISTICS)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+    }
+}
+
 BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, bool no_ddl_lock)
 {
     BlockIO res;
@@ -408,6 +433,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
+            context->onQueryExecutionStarted();
             table->alter(*alter_commands, context, alter_lock, ddl_guard);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
@@ -415,14 +441,19 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
                 auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                /// Before the snapshot: on a lazily loaded table this loads the nested storage, and only
+                /// then does the snapshot carry the sorting key, partition key and projections that
+                /// `MutationsInterpreter` validates against, instead of the stand-in's columns-only metadata.
                 table->checkMutationIsPossible(*mutation_commands, settings);
+                checkStatisticsMutationsAreAllowed(*mutation_commands, settings);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.
                 MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
                 MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                context->onQueryExecutionStarted();
                 table->mutate(*mutation_commands, context);
             }
         }
@@ -431,6 +462,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
+            context->onQueryExecutionStarted();
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
                 res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
@@ -438,6 +470,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
         {
             auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+            context->onQueryExecutionStarted();
             for (const auto * execute_command : *execute_commands)
             {
                 ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
@@ -609,10 +642,14 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
+    /// The query of `MODIFY QUERY` and the expressions of all mutation commands share one budget, so
+    /// `max_expanded_ast_elements` bounds the whole query rather than each of them separately.
+    ExpandedASTBudget expansion_budget(settings[Setting::max_expanded_ast_elements], *query_ptr);
+
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query, expansion_budget);
     }
 
     /// The same for the expressions of the mutation commands, as `InterpreterUpdateQuery` does: the
@@ -629,7 +666,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             if (!expression)
                 continue;
             ASTPtr expression_ptr = expression->ptr();
-            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext());
+            ApplyWithSubqueryVisitor::visit(expression_ptr, getContext(), expansion_budget);
         }
     }
 

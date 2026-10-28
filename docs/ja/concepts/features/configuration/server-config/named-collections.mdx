@@ -6,7 +6,7 @@ title: '名前付きコレクション'
 doc_type: 'reference'
 ---
 
-名前付きコレクションは、外部ソースとのインテグレーションを設定するためのキー・バリューのペアの集合を保存する仕組みです。名前付きコレクションは、辞書、テーブル、テーブル関数、オブジェクトストレージで使用できます。
+名前付きコレクションは、外部ソースとのインテグレーションを設定するためのキー・バリューのペアの集合を保存する仕組みです。名前付きコレクションは、Dictionary、テーブル、テーブル関数、オブジェクトストレージで使用できます。
 
 <Note>
   DDL で作成された名前付きコレクションは、一部の ClickHouse Cloud サービスで有効にできます。利用可能かどうかはサポートにお問い合わせください。ClickHouse Cloud では、ユーザーがサーバー設定ファイルを変更できないため、設定ファイルで定義した名前付きコレクションは利用できません。
@@ -16,14 +16,15 @@ doc_type: 'reference'
 
 名前付きコレクション内のキーは、対応する関数、テーブルエンジン、データベースなどのパラメータ名と一致している必要があります。以下の例では、各タイプごとにパラメータ一覧へのリンクを示しています。
 
-名前付きコレクションで設定したパラメータは SQL でオーバーライドできます。これについては以下の例で示します。この動作は、`[NOT] OVERRIDABLE` キーワード、XML 属性、および/または設定オプション `allow_named_collection_override_by_default` を使って制限できます。
+名前付きコレクションに保存されたパラメータをオーバーライドするには、そのコレクションに対する `SHOW NAMED COLLECTIONS SECRETS` 権限が必要です。これはパラメータに `OVERRIDABLE` が指定されている場合も同様です。SQL で `NOT OVERRIDABLE`、または XML で `overridable="false"` が指定されたキーはオーバーライドできません。コレクションに保存されていないパラメータを追加する場合、この追加権限は不要です。`host` に対する `addresses_expr` のような別名も、保存されたパラメータのオーバーライドとして扱われます。
 
-<Warning>
-  上書きが許可されている場合、管理者アクセス権のないユーザーが
-  隠そうとしている認証情報を突き止められる可能性があります。
-  この目的で名前付きコレクションを使用している場合は、
-  `allow_named_collection_override_by_default` (デフォルトで有効) を無効にしてください。
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+このチェックに必要なのは権限のみであり、シークレットの表示を制御する設定には依存しません。`allow_named_collection_override_by_default` 設定は廃止されており、何の効果もありません。
+
+Dictionary ソースにも同じルールが適用されます。権限は、Dictionary の作成時、アタッチ時、またはリストア時にチェックされます。Dictionary のロード時には、`NOT OVERRIDABLE` が指定されたキーに対してのみ制限が適用されます。
 
 ## system database に 名前付きコレクション を格納する {#storing-named-collections-in-the-system-database}
 
@@ -38,9 +39,9 @@ url = 'https://connection.url/'
 
 上記の例では:
 
-* `key_1` は常にオーバーライドできます。
+* `key_1` は、そのコレクションに対して `SHOW NAMED COLLECTIONS SECRETS` 権限を持つユーザーであればオーバーライドできます。
 * `key_2` は一切オーバーライドできません。
-* `url` は、`allow_named_collection_override_by_default` の値によって、オーバーライドできる場合とできない場合があります。
+* `url` は、そのコレクションに対して `SHOW NAMED COLLECTIONS SECRETS` 権限を持つユーザーであればオーバーライドできます。
 
 ### DDL を使用して 名前付きコレクション を作成するための権限 {#permissions-to-create-named-collections-with-ddl}
 
@@ -120,9 +121,9 @@ WHERE name = 'named_collections_storage.type';
 
 上記の例では:
 
-* `key_1` は常に上書きできます。
-* `key_2` は上書きできません。
-* `url` は、`allow_named_collection_override_by_default` の値に応じて、上書きできる場合とできない場合があります。
+* `key_1` は、そのコレクションに対して `SHOW NAMED COLLECTIONS SECRETS` 権限を持つユーザーがオーバーライドできます。
+* `key_2` はオーバーライドできません。
+* `url` は、そのコレクションに対して `SHOW NAMED COLLECTIONS SECRETS` 権限を持つユーザーがオーバーライドできます。
 
 ## 名前付きコレクションの変更 {#modifying-named-collections}
 
@@ -492,12 +493,19 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-### ソースが ClickHouse の Dictionary での named collections の使用例 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
+### ソースが ClickHouse の Dictionary での 名前付きコレクション の使用例 {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -681,7 +689,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -693,5 +701,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-  名前付きコレクション では、コレクション名に `my_collection` を指定しています。関数呼び出しでは、別のコレクションを選択するために `collection = 'my_dict'` を指定してこれを上書きします。
+  この Dictionary は、名前付きコレクションで指定されている `my_collection` を使用します。別の MongoDB コレクションを使用するには、そのコレクションを値として指定した名前付きコレクションを別途定義してください。
 </Note>

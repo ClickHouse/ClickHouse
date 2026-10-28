@@ -13,9 +13,11 @@ Estas celdas contienen elementos de uso frecuente.
 
 La clave del diccionario tiene el tipo [UInt64](/es/reference/data-types/int-uint).
 
-Al buscar en un diccionario, primero se consulta la caché. Para cada block de datos, todas las claves que no se encuentran en la caché o que están desactualizadas se solicitan desde el origen mediante `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Después, los datos recibidos se escriben en la caché.
+Al buscar en un diccionario, primero se consulta la caché. Para cada block de datos, todas las claves que no se encuentran en la caché o que están desactualizadas se solicitan desde la fuente mediante `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Después, los datos recibidos se escriben en la caché.
 
-Esto se aplica a la búsqueda de una clave: `dictGet` y las demás funciones de diccionario. Leer el diccionario **como una tabla** con `SELECT ... FROM <dictionary>` es diferente: como una caché no conserva ningún registro de qué claves existen, la lectura enumera únicamente las celdas que residen en la caché en ese momento y que contienen un valor, y un `WHERE` sobre la clave es un filtro normal sobre esas celdas, no una lista de claves que obtener. Una clave que no está en la caché no puede descubrirse de esta forma, sin importar lo que indique el `WHERE`. Una clave que *sí* se buscó pero no se encontró en el origen tampoco es visible: la caché recuerda el fallo como una celda predeterminada, y una lectura como tabla omite las celdas predeterminadas. Las celdas residentes tampoco son ajenas al origen: una celda expirada se lee por la misma vía que `dictGet`, por lo que se vuelve a solicitar al origen, de forma síncrona o asíncrona si `allow_read_expired_keys` está habilitado.
+El contenido de la caché es local de cada servidor y se pierde cuando un servidor se reinicia o se reemplaza. No use `cache` ni `complex_key_cache` si necesita un enriquecimiento fiable en el momento de la inserción: con la caché vacía, las inserciones pasan a depender de búsquedas en la fuente del diccionario. En ClickHouse Cloud, el escalado automático y el reemplazo gestionado de nodos hacen que esta situación sea más probable. En su lugar, use un layout que cargue el diccionario completo en cada servidor; consulte [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+
+Esto se aplica a la búsqueda de una clave: `dictGet` y las demás funciones de diccionario. Leer el diccionario **como una tabla** con `SELECT ... FROM <dictionary>` es diferente: como una caché no conserva ningún registro de qué claves existen, la lectura enumera únicamente las celdas que residen en la caché en ese momento y que contienen un valor, y un `WHERE` sobre la clave es un filtro normal sobre esas celdas, no una lista de claves que obtener. Una clave que no está en la caché no puede descubrirse de esta forma, sin importar lo que indique el `WHERE`. Una clave que *sí* se buscó pero no se encontró en la fuente tampoco es visible: la caché recuerda el fallo como una celda predeterminada, y una lectura como tabla omite las celdas predeterminadas. Las celdas residentes tampoco son ajenas a la fuente: una celda expirada se lee por la misma vía que `dictGet`, por lo que se vuelve a solicitar a la fuente, de forma síncrona o asíncrona si `allow_read_expired_keys` está habilitado.
 
 ```sql
 CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
@@ -33,7 +35,7 @@ SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
 3
 ```
 
-Por tanto, un diccionario cache está pensado para usarse mediante funciones de diccionario. Si necesita que la búsqueda de claves arbitrarias llegue siempre al origen, use `dictGet` con el layout [direct](/es/reference/statements/create/dictionary/layouts/direct), que consulta el origen en cada búsqueda y no almacena nada en caché. Tenga en cuenta que leer un diccionario `direct` como tabla tampoco es una obtención por clave: `SELECT ... FROM <dictionary> WHERE key IN (...)` carga todo el origen y filtra después, porque ClickHouse no traslada el filtro de clave al diccionario. Para leer un diccionario como una tabla, use un layout que lo contenga por completo, como [flat](/es/reference/statements/create/dictionary/layouts/flat) o [hashed](/es/reference/statements/create/dictionary/layouts/hashed).
+Por tanto, un diccionario cache está pensado para usarse mediante funciones de diccionario. Si necesita que la búsqueda de claves arbitrarias llegue siempre a la fuente, use `dictGet` con el layout [direct](/es/reference/statements/create/dictionary/layouts/direct), que consulta la fuente en cada búsqueda y no almacena nada en caché. Tenga en cuenta que leer un diccionario `direct` como tabla tampoco es una obtención por clave: `SELECT ... FROM <dictionary> WHERE key IN (...)` carga toda la fuente y filtra después, porque ClickHouse no traslada el filtro de clave al diccionario. Para leer un diccionario como una tabla, use un layout que lo contenga por completo, como [flat](/es/reference/statements/create/dictionary/layouts/flat) o [hashed](/es/reference/statements/create/dictionary/layouts/hashed).
 
 Si las claves no se encuentran en el diccionario, se crea una tarea de actualización de la caché y se añade a la cola de actualización. Las propiedades de la cola de actualización pueden controlarse con las configuraciones `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
@@ -41,13 +43,13 @@ Para los diccionarios cache, se puede establecer el [lifetime](/es/reference/sta
 
 Esta es la forma menos eficaz de almacenar diccionarios. La velocidad de la caché depende en gran medida de una configuración correcta y del escenario de uso. Un diccionario de tipo cache funciona bien solo cuando la tasa de aciertos es lo bastante alta (se recomienda un 99% o más). Puede ver la tasa media de aciertos en la tabla [system.dictionaries](/es/reference/system-tables/dictionaries).
 
-Si la configuración `allow_read_expired_keys` se establece en 1, su valor predeterminado es 0. En ese caso, el diccionario puede admitir actualizaciones asíncronas. Si un cliente solicita claves y todas están en la caché, pero algunas han expirado, el diccionario devolverá al cliente las claves expiradas y las solicitará de forma asíncrona desde el origen.
+Si la configuración `allow_read_expired_keys` se establece en 1 (de forma predeterminada es 0), el diccionario puede admitir actualizaciones asíncronas. Si un cliente solicita claves y todas están en la caché, pero algunas han expirado, el diccionario devolverá las claves expiradas al cliente y las solicitará de forma asíncrona a la fuente.
 
-Para mejorar el rendimiento de la caché, use una subquery con `LIMIT` y llame a la función con el diccionario externamente.
+Para mejorar el rendimiento de la caché, use una subconsulta con `LIMIT` y llame a la función con el diccionario de forma externa.
 
-Se admiten todos los tipos de Sources.
+Se admiten todos los tipos de fuentes.
 
-Ejemplo de configuraciones:
+Ejemplo de configuración:
 
 <Tabs>
   <Tab title="DDL">
@@ -88,7 +90,7 @@ Establezca un tamaño de caché lo bastante grande. Debe experimentar para deter
 4. Aumente o disminuya el número de celdas hasta alcanzar el consumo de memoria deseado.
 
 <Note>
-  No se recomienda usar ClickHouse como origen para este layout. Las búsquedas en diccionarios requieren lecturas puntuales aleatorias, que no son el patrón de acceso para el que ClickHouse está optimizado.
+  No se recomienda usar ClickHouse como fuente para este layout. Las búsquedas en diccionarios requieren lecturas puntuales aleatorias, que no son el patrón de acceso para el que ClickHouse está optimizado.
 </Note>
 
 {/*AUTOGENERATED_END*/}
