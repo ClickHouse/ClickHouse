@@ -71,6 +71,7 @@ INSERT INTO t_kv_tuple VALUES (('V0', 1), 0), (('V0\0', 1), 1), (('V0X', 1), 2);
 
 SELECT count() FROM t_kv_tuple WHERE key = (toFixedString('V0', 3), 1);
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_tuple WHERE key = ('V0', 1)) WHERE explain ILIKE '%ReadType%';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_tuple WHERE key = '(\'V0\', 1)') WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_tuple;
 
@@ -88,6 +89,8 @@ INSERT INTO t_kv_array VALUES (['V0'], 0), (['V0\0'], 1);
 
 SELECT count() FROM t_kv_array WHERE key = [toFixedString('V0', 3)];
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array WHERE key = ['V0']) WHERE explain ILIKE '%ReadType%';
+SELECT count() FROM t_kv_array WHERE key = '[\'V0\']';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array WHERE key = '[\'V0\']') WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_array;
 
@@ -97,8 +100,19 @@ INSERT INTO t_kv_map VALUES (map('a', '2020-01-01 00:00:00'), 0);
 
 SELECT count() FROM t_kv_map WHERE key = map('a', toDate('2020-01-01'));
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_map WHERE key = map('a', toDateTime('2020-01-01 00:00:00', 'UTC'))) WHERE explain ILIKE '%ReadType%';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_map WHERE key = '{\'a\':\'2020-01-01 00:00:00\'}') WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_map;
+
+-- A text constant is parsed into a composite key type, also inside a composite constant.
+DROP TABLE IF EXISTS t_kv_nested;
+CREATE TABLE t_kv_nested (key Tuple(Array(UInt32), String), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
+INSERT INTO t_kv_nested VALUES (([1, 2], 'a'), 0), (([3], 'b'), 1);
+
+SELECT count() FROM t_kv_nested WHERE key = ('[1, 2]', 'a');
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_nested WHERE key = ('[1, 2]', 'a')) WHERE explain ILIKE '%ReadType%';
+
+DROP TABLE t_kv_nested;
 
 -- The shape the AST fuzzer found.
 DROP TABLE IF EXISTS t_keeper_map;

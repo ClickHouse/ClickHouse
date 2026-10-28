@@ -132,6 +132,10 @@ bool isCompleteKeyLookup(const DataTypePtr & key_type, const DataTypePtr & value
     const auto key = removeLowCardinalityAndNullable(key_type);
     const auto value = removeLowCardinalityAndNullable(value_type);
 
+    /// `=` parses a text constant into a composite key type, as the conversion does.
+    if (isStringOrFixedString(value) && (isTuple(key) || isArray(key) || isMap(key)))
+        return true;
+
     const auto * key_tuple = typeid_cast<const DataTypeTuple *>(key.get());
     const auto * value_tuple = typeid_cast<const DataTypeTuple *>(value.get());
     if (key_tuple || value_tuple)
