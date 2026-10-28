@@ -7,6 +7,7 @@ use futures::StreamExt;
 use lance::dataset::builder::DatasetBuilder;
 use lance::dataset::ReadParams;
 use lance::io::{ObjectStoreParams, RecordBatchStream};
+use lance::table::format::{Manifest, MAGIC as LANCE_MAGIC};
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
 use object_store::client::{HttpClient, HttpConnector};
@@ -1319,6 +1320,62 @@ unsafe fn snapshot_from_ffi(
     Ok(snapshot)
 }
 
+fn decode_manifest_bytes(bytes: &[u8]) -> Option<Manifest> {
+    // The layout written by Lance: the manifest message prefixed with its length, then the offset of the
+    // message (8 bytes), the format version (4 bytes) and the magic number (4 bytes).
+    let len = bytes.len();
+    if len < 16 || !bytes.ends_with(LANCE_MAGIC) {
+        return None;
+    }
+    let position = usize::try_from(i64::from_le_bytes(
+        bytes[len - 16..len - 8].try_into().ok()?,
+    ))
+    .ok()?;
+    if position > len - 16 || len - 16 - position < 4 {
+        return None;
+    }
+    let message = &bytes[position..len - 16];
+    let message_len = usize::try_from(u32::from_le_bytes(message[0..4].try_into().ok()?)).ok()?;
+    if message.len() - 4 != message_len {
+        return None;
+    }
+    let proto =
+        <lance::table::format::pb::Manifest as prost::Message>::decode(&message[4..]).ok()?;
+    Manifest::try_from(proto).ok()
+}
+
+fn ensure_manifest_bytes_match_dataset(
+    dataset: &Dataset,
+    manifest_bytes: &[u8],
+    origin: ChLanceErrorOrigin,
+    path: &impl std::fmt::Display,
+) -> FfiResult<()> {
+    let loaded = dataset.manifest.as_ref();
+    let matches = match decode_manifest_bytes(manifest_bytes) {
+        Some(mut decoded) => {
+            // For the legacy format, `Dataset` fills the dictionaries of the schema from the data files,
+            // which are not in the manifest itself.
+            if loaded.should_use_legacy_format() {
+                decoded.schema = loaded.schema.clone();
+            }
+            decoded == *loaded
+        }
+        None => false,
+    };
+    if !matches {
+        return Err(FfiError::new(
+            ChLanceErrorKind::CorruptData,
+            origin,
+            format!(
+                "Lance manifest {} changed after the dataset version {} was loaded",
+                path,
+                dataset.version().version
+            ),
+        ));
+    }
+    Ok(())
+}
+
 async fn snapshot_identity(
     dataset: &Dataset,
     origin: ChLanceErrorOrigin,
@@ -1360,6 +1417,11 @@ async fn snapshot_identity(
             ));
         }
     }
+
+    // `Dataset` has already loaded its manifest, while the bytes above were read again, so the file could
+    // have been replaced in between (e.g. by recreating a local dataset with a manifest of the same size).
+    // The identity must describe the manifest the handle uses, so the bytes must decode to the same manifest.
+    ensure_manifest_bytes_match_dataset(dataset, &manifest_bytes, origin, &location.path)?;
 
     let scheme = match format!("{:?}", location.naming_scheme).as_str() {
         "V1" => 1_u8,
@@ -4849,6 +4911,50 @@ mod tests {
         unsafe {
             ch_lance_free_dataset(latest_dataset);
             ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_rejects_dataset_recreated_between_open_and_first_pin() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let original = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!original.is_null());
+
+        // The replacement has the same version and the same shape, so its manifest has the same size,
+        // as long as nothing but the identifiers and the timestamps differs.
+        std::fs::remove_dir_all(dir.path()).unwrap();
+        let replacement_batch = make_batch(vec![101, 102, 103]);
+        let replacement_schema = replacement_batch.schema();
+        let replacement_reader =
+            RecordBatchIterator::new(vec![Ok(replacement_batch)].into_iter(), replacement_schema);
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(
+                replacement_reader,
+                dir.path().to_str().unwrap(),
+                None,
+            ))
+            .unwrap();
+
+        // The handle still holds the original manifest, so it must not be pinned under the identity
+        // of the replacement.
+        let mut pinned = ch_lance_snapshot_info::default();
+        assert!(!unsafe {
+            ch_lance_current_snapshot(
+                original,
+                addr_of_mut!(pinned),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::CorruptData as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_dataset(original);
         }
     }
 
