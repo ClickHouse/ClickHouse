@@ -2068,6 +2068,21 @@ bool mayEndInsideCSVQuotedField(std::string_view data, const String & format_nam
     return open_quote != 0;
 }
 
+/// Whether the line break at the end of `data` is escaped by a backslash. The `Escaped` rule
+/// (`readEscapedStringIntoImpl`, used by `TSV` and others) reads a backslash followed by a literal line
+/// break as a part of the value, so such a line break does not end the row. An even number of
+/// backslashes escapes each other instead. Checked for every format, as it only suppresses the
+/// explanation.
+bool endsWithEscapedLineBreak(std::string_view data)
+{
+    if (!data.ends_with('\n'))
+        return false;
+    size_t backslashes = 0;
+    for (size_t i = data.size() - 1; i > 0 && data[i - 1] == '\\'; --i)
+        ++backslashes;
+    return backslashes % 2 == 1;
+}
+
 }
 
 PrefixCapturingReadBuffer::CapturedPrefix
@@ -2081,9 +2096,10 @@ PrefixCapturingReadBuffer::getCapturedPrefix(const String & format_name, const C
     /// therefore may end inside a row. In the other formats an unfinished row usually makes inference
     /// fail instead, and a complete input commonly does not end with a line break there (`Values`,
     /// `Form`, the binary formats), so it cannot be told from a cut one. A trailing line break does not
-    /// end a row when it is inside a quoted multiline `CSV` field.
+    /// end a row when it is inside a quoted multiline `CSV` field or escaped by a backslash.
     bool may_end_inside_row = !reached_end_of_input && !captured.empty() && formatEndsRowsWithLineBreak(format_name)
-        && (captured.back() != '\n' || mayEndInsideCSVQuotedField(captured, format_name, getFormatSettings(context)));
+        && (captured.back() != '\n' || endsWithEscapedLineBreak(captured)
+            || mayEndInsideCSVQuotedField(captured, format_name, getFormatSettings(context)));
     return {captured, prefix_truncated || may_end_inside_row};
 }
 
