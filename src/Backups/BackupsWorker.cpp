@@ -847,6 +847,7 @@ void BackupsWorker::writeBackupEntries(
             backup_entries.size());
     }
 
+
     std::atomic_bool failed = false;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
