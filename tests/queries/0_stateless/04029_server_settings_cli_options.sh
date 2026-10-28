@@ -149,7 +149,15 @@ fi
 # The server is also started with `--SKIP_CHECK_FOR_INCORRECT_SETTINGS:1` - a spelling accepted by `Poco`, but
 # not by `argsToConfig` - and the escape hatch must keep working on a config reload, not only at startup:
 # reloading a config with an unknown top-level key must succeed.
+# The configuration that the config reloader validates and keeps as the previous one must see the direct
+# options exactly as the live configuration does. The config file has a standalone Prometheus listener with a
+# constant `device` label, which collides with a label of the key-value asynchronous metrics, so the server only
+# starts if `--ASYNCHRONOUS_METRICS_KEY_VALUES_MODE legacy_names` (spelled in a different case) is honored by the
+# validation of the initial load. And `--prometheus_keeper_metrics_only 1` (bound to
+# `prometheus.keeper_metrics_only`) must not look like a change of the mode on every reload, which would
+# needlessly restart the Prometheus listener.
 srv_dir2="${CLICKHOUSE_TMP}/srv2"
+SRV2_PROMETHEUS_PORT=50224
 mkdir -p "$srv_dir2"
 cfg2="$srv_dir2/custom_config.xml"
 cat > "$cfg2" <<XML
@@ -159,6 +167,12 @@ cat > "$cfg2" <<XML
         <console>true</console>
     </logger>
     <max_connections>777</max_connections>
+    <prometheus>
+        <port>${SRV2_PROMETHEUS_PORT}</port>
+        <labels>
+            <device>sda</device>
+        </labels>
+    </prometheus>
     <users>
         <default>
             <password></password>
@@ -179,6 +193,7 @@ cat > "$cfg2" <<XML
 XML
 $CLICKHOUSE_BINARY server \
     --config-file "$srv_dir2/no_such_config.xml" --CONFIG_FILE "$cfg2" --SKIP_CHECK_FOR_INCORRECT_SETTINGS:1 \
+    --prometheus_keeper_metrics_only 1 --ASYNCHRONOUS_METRICS_KEY_VALUES_MODE legacy_names \
     -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir2/" > "${CLICKHOUSE_TMP}/server2.log" 2>&1 &
 PID=$!
 wait_for_server "${CLICKHOUSE_TMP}/server2.log"
@@ -188,6 +203,12 @@ $CLICKHOUSE_CLIENT --query "SELECT value = '$cfg2' FROM system.server_settings W
 
 sed -i 's|<max_connections>777</max_connections>|<max_connections>777</max_connections><no_such_server_setting>1</no_such_server_setting>|' "$cfg2"
 $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" && echo "OK: config with an unknown setting is reloaded"
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG"
+if grep -q 'Stopped listening for Prometheus' "${CLICKHOUSE_TMP}/server2.log"; then
+    echo "FAIL: the Prometheus listener is restarted on a config reload"
+else
+    echo "OK: the Prometheus listener is kept on a config reload"
+fi
 
 stop_server
 

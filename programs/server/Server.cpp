@@ -2773,9 +2773,17 @@ try
 
             /// The Prometheus check below, the reloaders and `latest_config` keep the configuration they are given, so it must have
             /// the command line on top of the file and, like `config()`, resolve `${application.*}` and `${system.*}` references.
+            /// The command line is canonicalized and the values of the path-backed server settings are mirrored into their
+            /// config paths, same as for `config()` at startup, so that a direct option (`--prometheus_keeper_metrics_only 1`,
+            /// `--ASYNCHRONOUS_METRICS_KEY_VALUES_MODE legacy_names`, ...) is seen here exactly as in the live configuration.
             Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
             file_and_command_line->add(loaded_config, PRIO_DEFAULT);
-            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            {
+                Poco::Util::OptionSet builtin_options;
+                defineBuiltinOptions(builtin_options);
+                argsToConfig(ServerSettings::canonicalizeCommandLine(argv(), builtin_options), *file_and_command_line, PRIO_APPLICATION - 100);
+                ServerSettings::mirrorCommandLineToConfigPaths(argv(), builtin_options, *file_and_command_line);
+            }
             file_and_command_line->add(application_properties, PRIO_APPLICATION, /* shared */ true);
             file_and_command_line->add(new Poco::Util::SystemConfiguration, PRIO_SYSTEM, /* shared */ false);
             const ConfigurationPtr reload_config = file_and_command_line;
