@@ -354,8 +354,7 @@ void PipelineExecutor::finalizeExecution()
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
-                if (read_progress->counters.read_rows || read_progress->counters.read_bytes
-                    || read_progress->counters.total_rows_approx || read_progress->counters.total_bytes)
+                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
                     read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
             }
         }
