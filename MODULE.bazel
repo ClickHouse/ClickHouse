@@ -157,9 +157,11 @@ crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
         version = version,
     )
     for crate_name, versions in {
+        "delta_kernel": ("0.23.0",),
         "getrandom": ("0.3.4", "0.4.2", "0.4.3"),
         "icu_normalizer_data": ("2.2.0", "2.3.0"),
         "icu_properties_data": ("2.2.0", "2.3.0"),
+        "libc": ("0.2.186", "0.2.190"),
         "libm": ("0.2.16",),
         "parking_lot_core": ("0.9.12",),
         "serde": ("1.0.228", "1.0.229"),

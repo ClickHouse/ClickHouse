@@ -622,7 +622,6 @@ _GRPC_CPP_PUBLIC_HEADERS = [
     "include/grpcpp/impl/codegen/channel_interface.h",
     "include/grpcpp/impl/codegen/client_unary_call.h",
     "include/grpcpp/impl/codegen/config.h",
-    "include/grpcpp/impl/codegen/config_protobuf.h",
     "include/grpcpp/impl/codegen/create_auth_context.h",
     "include/grpcpp/impl/codegen/intercepted_channel.h",
     "include/grpcpp/impl/codegen/interceptor_common.h",
@@ -1698,6 +1697,16 @@ cc_library(
     deps = [":grpc_c_api"],
 )
 
+cc_library(
+    name = "grpc++_config_proto",
+    hdrs = ["include/grpcpp/impl/codegen/config_protobuf.h"],
+    includes = ["include"],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_google_protobuf//:_libprotobuf",
+    ],
+)
+
 # grpc_cpp_plugin emits ports_def.inc and ports_undef.inc in generated
 # headers and sources. The gRPC runtime itself does not include this pair.
 
@@ -1785,6 +1794,7 @@ ch_cc_library(
     ],
     textual_hdrs = glob(["include/grpcpp/*.inc"]),
     deps = [
+        ":grpc++_config_proto",
         "@clickhouse_google_protobuf//:_libprotobuf",
         ":grpc_c_api",
         "@clickhouse_abseil_cpp//:absl_cord",
@@ -1865,6 +1875,7 @@ ch_cc_library(
     local_includes = _GRPC_LOCAL_INCLUDES,
     textual_hdrs = glob(["include/grpcpp/*.inc"]),
     deps = [
+        ":grpc++_config_proto",
         "@clickhouse_google_protobuf//:_libprotobuf",
         ":grpc_c_api",
         "@clickhouse_abseil_cpp//:absl_cord",
@@ -1959,7 +1970,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GRPC_LOCAL_INCLUDES,
     deps = [
-        ":grpc++",
+        ":grpc++_config_proto",
         "@clickhouse_google_protobuf//:_libprotobuf",
         "@clickhouse_google_protobuf//:_libprotoc__compile_0",
     ],
