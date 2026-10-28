@@ -296,6 +296,51 @@ SELECT 'FixedString', count() FROM tab WHERE hasTokenMatch(m['k'], '^[^a]') SETT
 
 DROP TABLE tab;
 
+-- An index on the element of an integer key is found through the subcolumn too, e.g. m.key_1 for m[1].
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(UInt64, String),
+    INDEX idx_1(m[1]) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, multiIf(number < 16, map(1, if(number % 2 = 0, 'env:prod-eu', 'env:prod-us')), number < 24, map(1, 'env prod'), number < 32, map(2, 'env:prod-eu'), map(1, 'dev')) FROM numbers(64);
+
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenPrefix(m[1], 'env:prod');
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenPrefix(m[1], 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenPrefix(m[1], 'env:prod') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenPrefix(m[1], 'env:prod') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenPrefix(m[1], 'env:prod', 'array') SETTINGS use_skip_indexes = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenLike(m[1], 'env:prod-%');
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenLike(m[1], 'env:prod-%') SETTINGS use_skip_indexes = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenLike(m[1], 'env:prod-%') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenMatch(m[1], '^env:prod-(eu|us)$');
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenMatch(m[1], '^env:prod-(eu|us)$') SETTINGS use_skip_indexes = 0;
+SELECT 'UInt64 key', count() FROM tab WHERE hasTokenMatch(m[1], '^env:prod-(eu|us)$') SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(Int64, String),
+    INDEX idx_1(m[-1]) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi', text_index_posting_list_block_size = 1048576;
+
+INSERT INTO tab SELECT number, if(number < 16, map(-1, 'env:prod-eu'), map(-1, 'dev')) FROM numbers(64);
+
+SELECT 'Int64 key', count() FROM tab WHERE hasTokenPrefix(m[-1], 'env:prod');
+SELECT 'Int64 key', count() FROM tab WHERE hasTokenPrefix(m[-1], 'env:prod') SETTINGS use_skip_indexes = 0;
+SELECT 'Int64 key', count() FROM tab WHERE hasTokenPrefix(m[-1], 'env:prod') SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE tab;
+
 SET optimize_functions_to_subcolumns = DEFAULT;
 
 SELECT '-- LowCardinality(String): direct read';

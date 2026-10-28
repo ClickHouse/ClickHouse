@@ -111,6 +111,20 @@ FixedString	8
 FixedString	8
 FixedString	8
 FixedString	8
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+UInt64 key	16
+Int64 key	16
+Int64 key	16
+Int64 key	16
 -- LowCardinality(String): direct read
 8
 8

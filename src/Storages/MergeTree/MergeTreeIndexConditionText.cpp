@@ -2334,9 +2334,18 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementSubcolumn(const String & 
         return false;
 
     /// `serializeText` is the identity for a String key, which the index expression names as a quoted literal.
-    /// Same assumption as traverseMapElementKeyNode. A key of another type is not matched.
+    /// Same assumption as traverseMapElementKeyNode.
     const auto & [map_column_name, serialized_key] = *parsed;
-    return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, quoteString(serialized_key)));
+    if (hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, quoteString(serialized_key))))
+        return true;
+
+    /// An integer key is named as a number literal, e.g. `arrayElement(m, 1)` for `m[1]`.
+    std::string_view digits = serialized_key;
+    if (digits.starts_with('-'))
+        digits.remove_prefix(1);
+    if (digits.empty() || !std::ranges::all_of(digits, [](char c) { return isNumericASCII(c); }))
+        return false;
+    return hasIndexForColumn(fmt::format("arrayElement({}, {})", map_column_name, serialized_key));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
