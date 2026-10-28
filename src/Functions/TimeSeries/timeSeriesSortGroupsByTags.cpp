@@ -35,7 +35,7 @@ namespace
 using TagNamesAndValuesPtr = TimeSeriesTagsFunctionHelpers::TagNamesAndValuesPtr;
 
 /// naturalLess is ported from github.com/facette/natsort, Copyright (c) 2015, Vincent Batoufflet and Marc Falzon. All rights reserved.
-/// GoSort is ported from Go's slices package, Copyright 2022 The Go Authors. All rights reserved. Both are under the BSD-3-Clause license.
+/// GoSort is ported from Go's slices package, Copyright 2022 The Go Authors. All rights reserved. Both are BSD-3-Clause (utils/list-licenses/ported/).
 
 /*
 Copyright (c) 2015, Vincent Batoufflet and Marc Falzon

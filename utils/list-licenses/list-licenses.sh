@@ -218,7 +218,8 @@ export -f to_relative_path process_library process_rust_crate
 export GREP_CMD FIND_CMD ROOT_PATH LIBS_PATH
 
 # Process C/C++ libraries in parallel
-libs=$(echo "${ROOT_PATH}/base/poco"; (${FIND_CMD} "${LIBS_PATH}" -mindepth 1 -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
+# Code ported into the sources from other projects keeps its upstream license in utils/list-licenses/ported/<project>/.
+libs=$(echo "${ROOT_PATH}/base/poco"; (${FIND_CMD} "${LIBS_PATH}" "${ROOT_PATH}/utils/list-licenses/ported" -mindepth 1 -maxdepth 1 -type d -not -name '*-cmake' -not -name 'rust_vendor' | LC_ALL=C sort) )
 
 # Use xargs for parallel processing (fall back to 4 jobs if nproc not available)
 JOBS=$(nproc 2>/dev/null || echo 4)
