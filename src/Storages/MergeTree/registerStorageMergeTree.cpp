@@ -1686,8 +1686,8 @@ Data skipping indexes can also be created on composite columns:
 
 ```sql
 -- on columns of type Map:
-INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
-INDEX map_value_index mapValues(map_column) TYPE bloom_filter
+INDEX map_key_index map_column.keys TYPE bloom_filter
+INDEX map_value_index map_column.values TYPE bloom_filter
 
 -- on columns of type JSON:
 INDEX json_paths_index JSONAllPaths(json_column) TYPE bloom_filter
@@ -1758,7 +1758,7 @@ The following data types are supported:
 - `Map`
 
 <Note title="Map data type: specifying index creation with keys or values">
-For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [`mapValues`](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions.
+For the `Map` data type, the index can be created for keys or for values, either on the `keys`/`values` [subcolumn](/reference/data-types/map#reading-subcolumns-of-map) or using the [`mapKeys`](/reference/functions/regular-functions/tuple-map-functions#mapKeys) or [`mapValues`](/reference/functions/regular-functions/tuple-map-functions#mapValues) functions. Both forms are used by `map_column['key'] = 'value'`, `map_column['key'] IN (...)`, `mapContains` and `mapContainsValue`. An index on a subcolumn is built from the stored keys or values, while `mapKeys` and `mapValues` convert `LowCardinality` keys or values to their full type for every row, so for such a map the subcolumn index needs less memory on `INSERT`.
 </Note>
 
 <Note title="JSON data type: indexing JSON paths">

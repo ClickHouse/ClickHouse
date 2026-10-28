@@ -1,0 +1,39 @@
+bloom_filter parts	1
+bloom_filter
+64
+64
+1
+1
+64
+64
+2
+2
+64
+1
+6400
+Parts: 1 | Granules: 2
+Granules: 100/100
+Granules: 2/100
+Parts: 1 | Granules: 3
+Granules: 100/100
+Granules: 3/100
+text parts	1
+text
+64
+64
+1
+1
+64
+tokenbf_v1 parts	1
+tokenbf_v1
+64
+64
+nullable parts	1
+nullable
+1
+1
+0
+json parts	1
+json
+64
+64

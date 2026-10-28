@@ -107,6 +107,68 @@ NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
 namespace
 {
 
+/// A part computes the index column `name` as `Block::findSubcolumnByName` does: from a column named `name`,
+/// else from the shortest column prefix that has the rest as a subcolumn.
+bool isMapSubcolumnIndexColumn(
+    const ActionsDAG & dag, const ColumnsDescription & columns, const String & name, const String & map_column_name)
+{
+    const auto * node = dag.tryFindInOutputs(name);
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+
+    if (!node || node->type != ActionsDAG::ActionType::INPUT || node->result_name != name || columns.has(name))
+        return false;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = columns.tryGet(String(column_name));
+        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+            return column_name == map_column_name && isMap(column->type)
+                && (column->default_desc.kind == ColumnDefaultKind::Default || column->default_desc.kind == ColumnDefaultKind::Materialized);
+    }
+
+    return false;
+}
+
+}
+
+NameToNameMap IMergeTreeIndex::getMapSubcolumnIndexColumns() const
+{
+    NameToNameMap result;
+    const auto & dag = index.expression->getActionsDAG();
+    const auto & columns = metadata_snapshot->getColumns();
+
+    for (const auto & index_column : index.sample_block)
+    {
+        for (const auto & [suffix, function_name] : {std::pair<std::string_view, std::string_view>{".keys", "mapKeys"}, {".values", "mapValues"}})
+        {
+            if (!index_column.name.ends_with(suffix))
+                continue;
+
+            String map_column_name = index_column.name.substr(0, index_column.name.size() - suffix.size());
+            String function_column_name = fmt::format("{}({})", function_name, map_column_name);
+
+            if (!index.sample_block.has(function_column_name)
+                && isMapSubcolumnIndexColumn(dag, columns, index_column.name, map_column_name))
+                result.emplace(std::move(function_column_name), index_column.name);
+        }
+    }
+
+    return result;
+}
+
+String getMapIndexColumnName(
+    const NameToNameMap & map_subcolumn_index_columns, std::string_view function_name, const String & map_column_name)
+{
+    auto name = fmt::format("{}({})", function_name, map_column_name);
+    if (auto it = map_subcolumn_index_columns.find(name); it != map_subcolumn_index_columns.end())
+        return it->second;
+    return name;
+}
+
+namespace
+{
+
 /// Is a granule written with @from decoded identically when read back as @to?
 ///
 /// This deliberately duplicates part of AlterCommands' isMetadataOnlyConversion() instead of calling
