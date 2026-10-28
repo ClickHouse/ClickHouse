@@ -822,7 +822,7 @@ Example:
 [example:trace_view]
 )",
         .examples = {{"trace_view", "SELECT span, status, duration, timeline FROM traceView('5c9e4a3b-2f61-4d6e-8b7a-90c1d2e3f405')", ""}},
-        .category = FunctionDocumentation::Category::TableFunction},
+        .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         /// A read-only wrapper over the span log: the caller's SELECT on it is checked before the log
         /// is looked up and by the queries it runs, no CREATE TEMPORARY TABLE is needed, and it works
         /// under readonly = 1.

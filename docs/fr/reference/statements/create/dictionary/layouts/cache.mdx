@@ -15,6 +15,8 @@ La clé du dictionnaire est de type [UInt64](/fr/reference/data-types/int-uint).
 
 Lors d&#39;une recherche dans un dictionnaire, le cache est consulté en premier. Pour chaque bloc de données, toutes les clés qui ne sont pas trouvées dans le cache ou qui sont obsolètes sont demandées à la source à l&#39;aide de `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Les données reçues sont ensuite écrites dans le cache.
 
+Le contenu du cache est propre à chaque serveur et il est perdu lorsqu&#39;un serveur redémarre ou est remplacé. N&#39;utilisez pas `cache` ou `complex_key_cache` pour un enrichissement fiable au moment de l&#39;insertion : avec un cache vide, les insertions dépendent des recherches effectuées auprès de la source du dictionnaire. Dans ClickHouse Cloud, l&#39;autoscaling et le remplacement géré des nœuds rendent cette situation plus probable. Utilisez plutôt un layout qui charge l&#39;intégralité du dictionnaire sur chaque serveur ; consultez [Bonnes pratiques pour les dictionnaires](/fr/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+
 Cela s&#39;applique à la **recherche** d&#39;une clé — `dictGet` et les autres fonctions de dictionnaire. Lire le dictionnaire **en tant que table** avec `SELECT ... FROM <dictionary>` est différent : comme un cache ne conserve aucune trace des clés existantes, la lecture énumère uniquement les cellules qui se trouvent présentes dans le cache à cet instant et qui contiennent une valeur, et un `WHERE` sur la clé est un filtre ordinaire appliqué à ces cellules, et non une liste de clés à récupérer. Une clé absente du cache ne peut pas être découverte de cette manière, quel que soit le contenu du `WHERE`. Une clé qui *a* été recherchée mais qui n&#39;a pas été trouvée à la source n&#39;est pas visible non plus : le cache mémorise l&#39;échec sous la forme d&#39;une cellule par défaut, et une lecture sous forme de table ignore les cellules par défaut. Les cellules présentes ne sont pas non plus exemptes de sollicitation de la source : une cellule expirée est lue via le même chemin que `dictGet`, elle est donc redemandée à la source — de manière synchrone, ou asynchrone si `allow_read_expired_keys` est activé.
 
 ```sql
@@ -41,9 +43,9 @@ Pour les dictionnaires cache, la [durée de vie](/fr/reference/statements/create
 
 C&#39;est la méthode la moins efficace de toutes pour stocker des dictionnaires. La vitesse du cache dépend fortement du bon réglage des paramètres et du scénario d&#39;utilisation. Un dictionnaire de type cache n&#39;est performant que lorsque le taux de réussite est suffisamment élevé (99 % ou plus recommandé). Vous pouvez consulter le taux de réussite moyen dans la table [system.dictionaries](/fr/reference/system-tables/dictionaries).
 
-Si le paramètre `allow_read_expired_keys` est défini sur 1 (0 par défaut), le dictionnaire peut alors prendre en charge des mises à jour asynchrones. Si un client demande des clés et qu&#39;elles sont toutes dans le cache, mais que certaines ont expiré, le dictionnaire renverra au client les clés expirées et les redemandera de manière asynchrone à la source.
+Si le paramètre `allow_read_expired_keys` est défini sur 1 (0 par défaut), le dictionnaire peut prendre en charge les mises à jour asynchrones. Si un client demande des clés qui sont toutes présentes dans le cache, mais dont certaines ont expiré, le dictionnaire renvoie les clés expirées au client et les redemande de manière asynchrone à la source.
 
-Pour améliorer les performances du cache, utilisez une sous-requête avec `LIMIT` et appelez la fonction avec le dictionnaire à l&#39;extérieur.
+Pour améliorer les performances du cache, utilisez une sous-requête avec `LIMIT` et appelez la fonction avec le dictionnaire à l&#39;extérieur de celle-ci.
 
 Tous les types de sources sont pris en charge.
 
@@ -80,7 +82,7 @@ Exemple de paramètres :
 
 <br />
 
-Définissez une taille de cache suffisamment grande. Vous devrez faire des essais pour choisir le nombre de cellules :
+Définissez une taille de cache suffisamment grande. Vous devrez faire des essais pour choisir le nombre de cellules :
 
 1. Définissez une valeur.
 2. Exécutez des requêtes jusqu&#39;à ce que le cache soit complètement rempli.

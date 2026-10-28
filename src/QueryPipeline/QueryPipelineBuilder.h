@@ -26,6 +26,8 @@ struct SizeLimits;
 struct ExpressionActionsSettings;
 
 class IJoin;
+class FillingRightJoinSideTransform;
+using FillingRightJoinSideTransformRawPtrs = std::vector<FillingRightJoinSideTransform *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using JoinPtr = std::shared_ptr<IJoin>;
 class TableJoin;
 
@@ -34,6 +36,7 @@ using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 struct SetAndKey;
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
+struct SetSpillSettings;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
@@ -77,6 +80,25 @@ public:
     using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
+
+    /// Connect all pending seal inputs of the gated reads in the probe pipeline (see
+    /// SealGatedReadTransform) to the build completion seal of the given filling transforms
+    /// (exactly one of them emits; many ports are collapsed with a resize, many gates are fed
+    /// through one copy). The seal carries the completed runtime filter with the given key as
+    /// an optional payload. Called for joins marked as gating their probe side; unmarked
+    /// joins carry the pending inputs upward. No-op without pending seal inputs.
+    static void wireSealGatedReading(
+        QueryPipelineBuilder & probe,
+        QueryPipelineBuilder & build,
+        const FillingRightJoinSideTransformRawPtrs & filling_transforms,
+        const String & runtime_filter_key,
+        Processors * collected_processors);
+
+    /// Feed the pending seal inputs from null sources: the gated reads then proceed without
+    /// the runtime filter (fail-open). Used when the gates cannot or must not be wired, e.g.
+    /// for a gated read which ended up on the build side of a join (wiring it would deadlock)
+    /// or in a pipeline which does not support gating.
+    static void terminatePendingSealInputs(QueryPipelineBuilder & builder, Processors * collected_processors);
 
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
@@ -142,6 +164,7 @@ public:
         size_t max_streams,
         IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
+        const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
@@ -190,6 +213,7 @@ public:
         SetAndKeyPtr set_and_key,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache,
+        SetSpillSettings spill_settings,
         bool recoverable_build = false);
 
     void addMaterializingCTETransform(

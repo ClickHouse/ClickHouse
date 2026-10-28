@@ -12,21 +12,19 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버 구성에 사용되며 ClickHouse 소스에서 자동 생성됩니다.
 
-<div id="allow_experimental_executable_udf_drivers">
-  ## allow_experimental_executable_udf_drivers
-</div>
+## allow_experimental_cluster_discovery {#allow_experimental_cluster_discovery}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />클러스터 디스커버리(Cluster Discovery)는 더 이상 Experimental 기능이 아니며, `remote_servers`에 `discovery` 섹션이 있는 클러스터에서는 항상 활성화됩니다. 이 설정은 사용 중단 예정(deprecated)이며 아무런 효과가 없습니다. 빈 태그를 포함해 이전에 허용되던 모든 값이 계속 허용되도록 `String` 유형으로 유지됩니다.
+
+## allow_experimental_executable_udf_drivers {#allow_experimental_executable_udf_drivers}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />`user_defined_executable_function_drivers_config`를 통해 선언된 실행형 사용자 정의 함수용 드라이버에 대한 실험적 지원을 활성화합니다. 드라이버는 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`에 지정된 사용자 코드 조각을 실행 가능한 실행형 UDF로 변환합니다.
 
-<div id="allow_experimental_webassembly_udf">
-  ## allow_experimental_webassembly_udf
-</div>
+## allow_experimental_webassembly_udf {#allow_experimental_webassembly_udf}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />WebAssembly UDF에 대한 실험적 지원을 활성화합니다
 
-<div id="allow_experimental_webterminal">
-  ## allow_experimental_webterminal
-</div>
+## allow_experimental_webterminal {#allow_experimental_webterminal}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />`enable_webterminal`의 이전 실험용 이름입니다. `enable_webterminal`이 설정되지 않은 경우, 이전 버전과의 호환성을 위해 여전히 인식됩니다. 이 설정은 사용 중단 예정입니다.
 

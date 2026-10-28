@@ -10,7 +10,7 @@ merge	1
 part log	MergeParts	37528
 part log	MergePartsStart	37528
 part log	NewPart	37528
-pruned read	1
+pruned read	2
 pruned plan	1
 out of range	1
 partition id	20200523-37528

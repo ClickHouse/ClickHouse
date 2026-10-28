@@ -213,6 +213,10 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Bytes flushed by `flushUntrackedMemory` without a limit check (e.g. by `~MemoryTrackerSwitcher`, which cannot throw).
+    /// Once it exceeds `untracked_memory_limit`, the next allocation checks the limits. Not reset by `MemoryTrackerSwitcher`,
+    /// so allocations split over many short scopes are still checked.
+    Int64 untracked_memory_flushed_unchecked = 0;
     /// Per-CPU untracked memory
     PerCPUMemoryThreadState per_cpu_untracked_memory;
 
@@ -337,6 +341,9 @@ public:
     public:
         QueryCancellationBlocker();
         ~QueryCancellationBlocker();
+
+        /// Whether a blocker is alive in the current thread. `ThreadPool` carries it into the jobs scheduled under it.
+        static bool isActive();
 
     private:
         bool previous;

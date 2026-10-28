@@ -82,8 +82,8 @@ TEST(ProxyCredentials, UserInfoIsNotDecodedByPocoURI)
 namespace
 {
 
-/// Exposes the protected `proxyAuthenticate` hook that `sendRequest` calls for a request
-/// sent through a proxy without a `CONNECT` tunnel.
+/// Exposes the protected `proxyAuthenticate` hook that `sendRequest` calls for every request
+/// sent through a proxy.
 class TestHTTPSClientSession : public Poco::Net::HTTPSClientSession
 {
 public:
@@ -124,6 +124,30 @@ TEST(ProxyCredentials, HTTPSSessionSendsCredentialsWithoutTunnel)
     Poco::Net::HTTPRequest request_without_credentials(Poco::Net::HTTPRequest::HTTP_GET, "/root/data", Poco::Net::HTTPMessage::HTTP_1_1);
     session.proxyAuthenticate(request_without_credentials);
     ASSERT_FALSE(request_without_credentials.has("Proxy-Authorization"));
+}
+
+TEST(ProxyCredentials, HTTPSSessionDoesNotSendCredentialsInsideTunnel)
+{
+    Poco::Net::Context::Params params;
+    params.verificationMode = Poco::Net::Context::VERIFY_NONE;
+    Poco::Net::Context::Ptr context = new Poco::Net::Context(Poco::Net::Context::CLIENT_USE, params);
+
+    TestHTTPSClientSession session("minio1", 9001, context);
+
+    /// An `https` target through an `http` proxy with a `CONNECT` tunnel: the credentials go only
+    /// to the proxy with `CONNECT`, the request inside the tunnel reaches the target server.
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+    proxy_config.host = "proxy";
+    proxy_config.port = 3128;
+    proxy_config.protocol = "http";
+    proxy_config.tunnel = true;
+    proxy_config.username = "user";
+    proxy_config.password = "p@ssword";
+    session.setProxyConfig(proxy_config);
+
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, "/root/data", Poco::Net::HTTPMessage::HTTP_1_1);
+    session.proxyAuthenticate(request);
+    ASSERT_FALSE(request.has("Proxy-Authorization"));
 }
 
 #endif

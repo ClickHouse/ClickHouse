@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
+-- Tag no-replicated-database: the replicated DDL worker evaluates the `IcebergLocal` arguments without the session, so it does not see the `TEMPORARY TABLE iceberg_path`
 -- Requires `IcebergLocal` (USE_AVRO).
 -- Regression: https://github.com/ClickHouse/ClickHouse/issues/120165
 

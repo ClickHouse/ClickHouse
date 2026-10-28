@@ -1,6 +1,10 @@
 #pragma once
 
+#include <optional>
+#include <utility>
+
 #include <Common/ColumnsHashing.h>
+#include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/Arena.h>
@@ -230,6 +234,98 @@ struct SetMethodHashed
     }
 };
 
+/// Whether the keys of `Method` are the values of fixed-size key columns, packed into an integer.
+template <typename Method>
+inline constexpr bool set_method_has_fixed_size_keys = false;
+
+template <typename FieldType, typename TData, bool use_cache>
+inline constexpr bool set_method_has_fixed_size_keys<SetMethodOneNumber<FieldType, TData, use_cache>> = true;
+
+template <typename TData, bool has_nullable_keys>
+inline constexpr bool set_method_has_fixed_size_keys<SetMethodKeysFixed<TData, has_nullable_keys>> = true;
+
+/// Whether the keys of `Method` are the values of one `String` key column or of one `FixedString` key column
+/// too long to pack, which its table keeps as they are.
+template <typename Method>
+inline constexpr bool set_method_has_string_keys = false;
+
+template <typename TData>
+inline constexpr bool set_method_has_string_keys<SetMethodString<TData>> = true;
+
+template <typename TData>
+inline constexpr bool set_method_has_string_keys<SetMethodFixedString<TData>> = true;
+
+/// Reads the keys of the table of `Method` into new columns of `key_types`, in batches, with
+/// `Method::insertKeyIntoColumns`: the key columns of the set, or one `UInt128` column with the hashes that
+/// the `hashed` method keeps. Packed keys can hold their columns in another order than the original one,
+/// which is computed once for all keys (see `HashMethodKeysFixed::packedKeysOrder`). The table must stay
+/// alive and unchanged while the reader reads it.
+template <typename Method>
+class SetMethodKeyReader
+{
+public:
+    SetMethodKeyReader(const Method & method, DataTypes key_types_, Sizes key_sizes_)
+        : key_types(std::move(key_types_))
+        , key_sizes(std::move(key_sizes_))
+        , position(method.data.begin())
+        , end(method.data.end())
+    {
+        if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+            unpack_order = Method::State::packedKeysOrder(key_sizes);
+    }
+
+    bool atEnd() const { return position == end; }
+
+    /// Returns at most `max_rows` keys, stopping after a complete key reaches `max_bytes` of allocated column
+    /// memory. The byte target is soft because a key or an allocation can exceed it; zero disables it.
+    /// `max_rows` must be positive.
+    MutableColumns read(size_t max_rows, size_t max_bytes)
+    {
+        chassert(max_rows > 0);
+
+        MutableColumns columns;
+        std::vector<IColumn *> raw_columns;
+        columns.reserve(key_types.size());
+        raw_columns.reserve(key_types.size());
+        for (const auto & key_type : key_types)
+        {
+            columns.push_back(key_type->createColumn());
+            raw_columns.push_back(columns.back().get());
+        }
+
+        size_t rows = 0;
+        while (position != end && rows < max_rows)
+        {
+            if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+                Method::insertKeyIntoColumns(
+                    position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
+            else
+                Method::insertKeyIntoColumns(position->getValue(), raw_columns, key_sizes);
+
+            ++position;
+            ++rows;
+
+            if (max_bytes)
+            {
+                size_t bytes = 0;
+                for (const auto & column : columns)
+                    bytes += column->allocatedBytes();
+                if (bytes >= max_bytes)
+                    break;
+            }
+        }
+
+        return columns;
+    }
+
+private:
+    const DataTypes key_types;
+    const Sizes key_sizes;
+    std::optional<Sizes> unpack_order;
+    typename Method::Data::const_iterator position;
+    const typename Method::Data::const_iterator end;
+};
+
 /** Different implementations of the set.
   */
 struct NonClearableSet
@@ -353,6 +449,23 @@ struct SetVariantsTemplate: public Variant
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     void init(Type type_);
+
+    /// Calls `func` with the method of the set, which must be initialized, and returns what `func` returns.
+    /// The method is const for a const set.
+    template <typename Self, typename Func>
+    decltype(auto) callOnMethod(this Self & self, Func && func)
+    {
+        switch (self.type)
+        {
+            case Type::EMPTY:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The method of an uninitialized set is called");
+
+        #define M(NAME) case Type::NAME: return std::forward<Func>(func)(std::forward_like<Self &>(*self.NAME));
+            APPLY_FOR_SET_VARIANTS(M)
+        #undef M
+        }
+        UNREACHABLE();
+    }
 
     /// Estimates peak additional key-storage memory assuming every input row is new. Includes hash-table
     /// buffers and arena allocations for the range beginning at `start_row`. Requires an initialized
