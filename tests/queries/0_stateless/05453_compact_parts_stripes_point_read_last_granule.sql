@@ -28,7 +28,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ReadBufferFromS3Bytes'] < 100000
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-    AND current_database = currentDatabase() AND log_comment LIKE '05453_%'
+    AND current_database = currentDatabase() AND log_comment IN ('05453_middle', '05453_stripe_end', '05453_part_end')
 ORDER BY log_comment;
 
 DROP TABLE t_compact_point_read;
