@@ -337,6 +337,12 @@ private:
     /// The `system_identifier` of the PostgreSQL cluster `connection_info` currently points to, read through
     /// `IDENTIFY_SYSTEM` on a replication connection.
     String fetchSourceSystemIdentifier();
+    static String fetchSourceSystemIdentifier(pqxx::nontransaction & replication_tx);
+
+    /// Throws unless `source_system_identifier` is the one recorded at <keeper_path>/source_system_identifier.
+    /// The active worker calls it for every connection it creates, adopts or consumes the shared slot and
+    /// publication through, because a connection made after the registration may lead to another cluster.
+    void checkSourceIsRecordedSourceCluster(const String & source_system_identifier);
 
     /// Called by the last-replica teardown right before it drops the shared slot and publication by name.
     /// Throws unless the PostgreSQL cluster `connection_info` currently points to is the one recorded at

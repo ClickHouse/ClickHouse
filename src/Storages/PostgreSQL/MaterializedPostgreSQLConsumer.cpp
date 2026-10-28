@@ -66,7 +66,8 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     bool schema_as_a_part_of_table_name_,
     bool coordinated_,
     StorageInfos storages_info_,
-    const String & name_for_logger)
+    const String & name_for_logger,
+    std::function<void()> verify_source_)
     : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
@@ -78,9 +79,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , max_block_size(max_block_size_)
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
     , coordinated(coordinated_)
+    , verify_source(std::move(verify_source_))
 {
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(getVerifiedConnection());
         current_lsn = advanceLSN(tx);
         tx->commit();
     }
@@ -1217,7 +1219,7 @@ void MaterializedPostgreSQLConsumer::updateLsn()
 {
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(getVerifiedConnection());
         current_lsn = advanceLSN(tx);
         tables_to_sync.clear();
         tx->commit();
@@ -1226,6 +1228,27 @@ void MaterializedPostgreSQLConsumer::updateLsn()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+pqxx::connection & MaterializedPostgreSQLConsumer::getVerifiedConnection()
+{
+    pqxx::connection & result = connection->getRef();
+    if (verify_source && connection->getGeneration() != verified_connection_generation)
+    {
+        try
+        {
+            verify_source();
+        }
+        catch (...)
+        {
+            /// Never read or advance the slot through this connection. Breaking the consumer makes the
+            /// replication handler release the leadership; whoever takes over checks the source again.
+            broken = true;
+            throw;
+        }
+        verified_connection_generation = connection->getGeneration();
+    }
+    return result;
 }
 
 String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransaction> tx)
@@ -1399,7 +1422,9 @@ void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
 bool MaterializedPostgreSQLConsumer::consume()
 {
     if (broken)
-        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "The coordinated replication consumer stopped because a table cannot be replicated any more");
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "The coordinated replication consumer stopped because a table cannot be replicated any more "
+            "or the connection does not lead to the recorded source PostgreSQL cluster");
 
     if (!tables_to_sync.empty())
     {
@@ -1409,7 +1434,7 @@ bool MaterializedPostgreSQLConsumer::consume()
     bool slot_empty = true;
     try
     {
-        auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+        auto tx = std::make_shared<pqxx::nontransaction>(getVerifiedConnection());
 
         /// Read up to max_block_size rows changes (upto_n_changes parameter). It might return larger number as the limit
         /// is checked only after each transaction block.

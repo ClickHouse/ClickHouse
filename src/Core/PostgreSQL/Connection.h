@@ -64,6 +64,10 @@ public:
 
     String getInfoForLog() const { return connection_info.host_port; }
 
+    /// Incremented every time a new connection is opened, so a user can tell that it talks to a server
+    /// it has not checked yet: a reconnection resolves the endpoint again and may reach another server.
+    UInt64 getGeneration() const { return generation; }
+
 private:
 
     pqxx::ConnectionPtr connection;
@@ -71,6 +75,7 @@ private:
 
     bool replication;
     size_t num_tries;
+    UInt64 generation = 0;
 
     LoggerPtr log;
 };

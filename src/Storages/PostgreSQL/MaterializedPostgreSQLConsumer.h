@@ -101,7 +101,8 @@ public:
             bool schema_as_a_part_of_table_name_,
             bool coordinated_,
             StorageInfos storages_,
-            const String & name_for_logger);
+            const String & name_for_logger,
+            std::function<void()> verify_source_ = {});
 
     bool consume();
 
@@ -125,6 +126,10 @@ private:
     void updateLsn();
 
     String advanceLSN(std::shared_ptr<pqxx::nontransaction> ntx);
+
+    /// The connection to read and advance the slot through. When `verify_source` is set, every newly opened
+    /// connection is checked with it before it is used, and a failed check breaks the consumer.
+    pqxx::connection & getVerifiedConnection();
 
     void processReplicationMessage(const char * replication_message, size_t size);
 
@@ -191,8 +196,16 @@ private:
     bool schema_as_a_part_of_table_name;
     const bool coordinated;
 
-    /// Set by `markTableAsSkipped` in coordinated mode.
+    /// Set by `markTableAsSkipped` in coordinated mode, or when `verify_source` fails.
     bool broken = false;
+
+    /// In coordinated mode, throws unless the endpoint of the connection still leads to the PostgreSQL cluster
+    /// recorded for the setup. A reconnection resolves the endpoint again, so after a repointed hostname or
+    /// proxy it could reach another cluster with the same slot, publication and table names, and consuming
+    /// there would write that cluster's changes into the shared nested tables.
+    std::function<void()> verify_source;
+    /// The generation of `connection` that `verify_source` last accepted (see `postgres::Connection::getGeneration`).
+    UInt64 verified_connection_generation = 0;
 
     String table_to_insert;
 

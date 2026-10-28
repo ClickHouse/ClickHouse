@@ -1342,6 +1342,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
+
+    /// The source cluster was checked when this replica registered, but this function also runs on every later
+    /// election and retry, with a connection that resolves the endpoint again. After a repointed hostname or
+    /// proxy it could lead to another cluster with the same database and table names, and taking over there
+    /// would create or adopt a publication, truncate the shared nested tables for a new snapshot, or consume
+    /// that cluster's slot into this setup's history. Check the very connection that does all of that.
+    if (coordination_enabled)
+        checkSourceIsRecordedSourceCluster(fetchSourceSystemIdentifier(tx));
+
     adoptLegacyReplicationIdentityIfNeeded(tx);
     createPublicationIfNeeded(tx);
 
@@ -1653,7 +1662,13 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 schema_as_a_part_of_table_name,
                 coordination_enabled,
                 nested_storages,
-                (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list));
+                (is_materialized_postgresql_database ? postgres_database : postgres_database + '.' + tables_list),
+                /// The consumer reconnects on its own after a connection failure, so it checks every new
+                /// connection as well. `IDENTIFY_SYSTEM` needs a replication connection, which the consumer's
+                /// connection is not, so the check opens a separate one to the same endpoint.
+                coordination_enabled
+                    ? std::function<void()>([this] { checkSourceIsRecordedSourceCluster(fetchSourceSystemIdentifier()); })
+                    : std::function<void()>{});
     }
 
     replication_handler_initialized = true;
@@ -2776,16 +2791,22 @@ void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
 }
 
 
-String PostgreSQLReplicationHandler::fetchSourceSystemIdentifier()
+String PostgreSQLReplicationHandler::fetchSourceSystemIdentifier(pqxx::nontransaction & replication_tx)
 {
     /// `IDENTIFY_SYSTEM` reports the `system_identifier` of the PostgreSQL cluster, which is unique per
     /// cluster and shared by its physical standbys - exactly the identity of the source whose slot and
     /// publication the coordinated replicas share. It needs a replication connection, which this engine
     /// requires anyway.
+    pqxx::result result{replication_tx.exec("IDENTIFY_SYSTEM")};
+    return result[0][0].as<std::string>();
+}
+
+
+String PostgreSQLReplicationHandler::fetchSourceSystemIdentifier()
+{
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
-    pqxx::result result{tx.exec("IDENTIFY_SYSTEM")};
-    return result[0][0].as<std::string>();
+    return fetchSourceSystemIdentifier(tx);
 }
 
 
@@ -2813,6 +2834,31 @@ void PostgreSQLReplicationHandler::ensureCoordinatedSourceClusterCompatible()
             "replication slot and publication. (If the existing setup was dropped incompletely, remove the leftover "
             "Keeper path manually.)",
             coordination_keeper_path, published_system_identifier, local_system_identifier);
+}
+
+
+void PostgreSQLReplicationHandler::checkSourceIsRecordedSourceCluster(const String & source_system_identifier)
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::checkSourceIsRecordedSourceCluster");
+
+    /// Fail closed: a replica of this setup records or checks the identifier during its registration, before
+    /// it can ever become the active worker, and the node is removed only at the very end of the final
+    /// teardown, so a missing node leaves nothing to prove that the source is the right one.
+    const String path = coordination_keeper_path + "/source_system_identifier";
+    String recorded_system_identifier;
+    if (!getContext()->getZooKeeper()->tryGet(path, recorded_system_identifier))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The source PostgreSQL cluster of the coordinated MaterializedPostgreSQL setup at Keeper path '{}' "
+            "is not recorded at {}, so the shared replication slot is not consumed",
+            coordination_keeper_path, path);
+
+    if (source_system_identifier != recorded_system_identifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' replicates the PostgreSQL cluster with "
+            "system identifier {}, but the connection now leads to the PostgreSQL cluster with system identifier {}. "
+            "The replication slot and publication with the same names on that cluster do not belong to this setup, "
+            "so they are neither created nor consumed. Point the connection back to the original cluster",
+            coordination_keeper_path, recorded_system_identifier, source_system_identifier);
 }
 
 
