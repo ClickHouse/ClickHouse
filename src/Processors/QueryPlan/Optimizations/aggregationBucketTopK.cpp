@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -12,20 +13,6 @@ namespace DB::QueryPlanOptimizations
 
 namespace
 {
-
-/// Traces an output column of a pass-through expression to the input column it forwards:
-/// aliases are unwrapped, anything computed disqualifies.
-const String * traceThroughExpression(const ExpressionStep & expression, const String & name)
-{
-    const auto * node = expression.getExpression().tryFindInOutputs(name);
-    if (!node)
-        return nullptr;
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.front();
-    if (node->type != ActionsDAG::ActionType::INPUT)
-        return nullptr;
-    return &node->result_name;
-}
 
 /// Whether the threshold merge may rank groups by values of this type. The `Subadditive` bound
 /// does arithmetic on the values, so they must be `UInt64` (which is what both `count` and
@@ -95,10 +82,10 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         if (expression->getExpression().hasArrayJoin())
             return 0;
 
-        const String * traced = traceThroughExpression(*expression, column);
+        const auto * traced = findForwardedInput(expression->getExpression(), column);
         if (!traced || node->children.size() != 1)
             return 0;
-        column = *traced;
+        column = traced->result_name;
         node = node->children.front();
     }
 

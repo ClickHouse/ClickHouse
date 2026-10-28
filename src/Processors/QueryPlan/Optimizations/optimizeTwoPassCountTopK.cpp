@@ -1088,18 +1088,6 @@ bool isStringType(const DataTypePtr & type)
     return which.isString() || which.isFixedString();
 }
 
-std::optional<String> passedThrough(const ActionsDAG & dag, const String & name)
-{
-    const auto * node = dag.tryFindInOutputs(name);
-    if (!node)
-        return {};
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.front();
-    if (node->type != ActionsDAG::ActionType::INPUT)
-        return {};
-    return node->result_name;
-}
-
 /// Every pass evaluates the expressions again over other granules and blocks: they must give the same values.
 bool isRepeatable(const ActionsDAG & dag)
 {
@@ -1300,10 +1288,10 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
         const auto & dag = typeid_cast<ExpressionStep &>(*post->step).getExpression();
         if (!isRepeatable(dag))
             return false;
-        auto input = passedThrough(dag, count_name);
+        const auto * input = findForwardedInput(dag, count_name);
         if (!input)
             return false;
-        count_name = *input;
+        count_name = input->result_name;
     }
     std::optional<size_t> count_aggregate;
     for (size_t i = 0; i < params.aggregates.size(); ++i)
@@ -1361,9 +1349,13 @@ bool tryApply(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanO
         for (auto * pre : pre_nodes)
         {
             const auto & dag = expressionOf(*pre->step);
-            name = passedThrough(dag, *name);
-            if (!name)
+            const auto * input = findForwardedInput(dag, *name);
+            if (!input)
+            {
+                name.reset();
                 break;
+            }
+            name = input->result_name;
         }
         if (!name || std::ranges::find(read_columns, *name) == read_columns.end())
             continue;

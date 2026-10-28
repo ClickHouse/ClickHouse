@@ -24,17 +24,27 @@ DROP TABLE IF EXISTS t_two_pass_flat;
 CREATE TABLE t_two_pass_flat (k UInt32, s String) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_two_pass_flat SELECT
-    if(number % 100 = 0, 37 * (intDiv(number, 100) % 10) + 3, number % 400) AS k,
+    if(number % 100 = 0, 37 * (intDiv(number, 100) % 10) + 3, intHash32(number) % 400) AS k,
     if(number % 100 = 0, 'heavy', toString(intHash32(number) % 1000)) AS s
 FROM numbers(800000);
+
+-- 200 groups of exactly 1250 rows (50 keys x 4 strings) spread evenly over a table without a sorting key, the other rows
+-- scattered over 200000 keys: the pilot samples every group, so OFFSET, ties and the count-only sort run the passes.
+DROP TABLE IF EXISTS t_two_pass_uniform;
+CREATE TABLE t_two_pass_uniform (k UInt32, s String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 128, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_two_pass_uniform SELECT
+    if(number % 4 = 0, intDiv(number, 4) % 50, 1000 + intHash32(number) % 200000) AS k,
+    if(number % 4 = 0, toString(intDiv(intDiv(number, 4), 50) % 4), toString(intHash32(number + 1) % 1000)) AS s
+FROM numbers(1000000);
 
 SELECT 'results with and without the optimization';
 SELECT k, s, count() FROM t_two_pass GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS log_comment = 'two_pass_q1_on';
 SELECT k, s, count() FROM t_two_pass GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS log_comment = 'two_pass_q1_off', query_plan_two_pass_count_top_k = 0;
 
 -- OFFSET, and ties at the boundary broken by the other sort columns.
-SELECT k, s, count() FROM t_two_pass GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 OFFSET 95 SETTINGS log_comment = 'two_pass_q2_on';
-SELECT k, s, count() FROM t_two_pass GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 OFFSET 95 SETTINGS query_plan_two_pass_count_top_k = 0;
+SELECT k, s, count() FROM t_two_pass_uniform GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 OFFSET 95 SETTINGS log_comment = 'two_pass_q2_on';
+SELECT k, s, count() FROM t_two_pass_uniform GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 OFFSET 95 SETTINGS query_plan_two_pass_count_top_k = 0;
 
 -- WHERE moved to PREWHERE, another aggregate, an alias of count().
 SELECT k, s, count() AS c, sum(x) FROM t_two_pass WHERE m != 1 GROUP BY k, s ORDER BY c DESC, k, s LIMIT 7 SETTINGS log_comment = 'two_pass_q3_on';
@@ -48,6 +58,10 @@ SELECT s, ks, x % 3 AS r, count() FROM t_two_pass PREWHERE x < 900 GROUP BY s, k
 SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS log_comment = 'two_pass_q5_on';
 SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 10 SETTINGS query_plan_two_pass_count_top_k = 0;
 
+-- The final pass with an OFFSET.
+SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 5 OFFSET 5 SETTINGS log_comment = 'two_pass_q8_on';
+SELECT k, s, count() FROM t_two_pass_flat GROUP BY k, s ORDER BY count() DESC, k, s LIMIT 5 OFFSET 5 SETTINGS query_plan_two_pass_count_top_k = 0;
+
 -- Aliases with the names of the nodes the passes add do not name nodes of the plan.
 SELECT k AS __two_pass_count_top_k_bound, s, count() AS __two_pass_count_top_k_in FROM t_two_pass GROUP BY __two_pass_count_top_k_bound, s
 ORDER BY __two_pass_count_top_k_in DESC, __two_pass_count_top_k_bound, s LIMIT 5 SETTINGS log_comment = 'two_pass_q7_on';
@@ -55,8 +69,8 @@ SELECT k AS __two_pass_count_top_k_bound, s, count() AS __two_pass_count_top_k_i
 ORDER BY __two_pass_count_top_k_in DESC, __two_pass_count_top_k_bound, s LIMIT 5 SETTINGS query_plan_two_pass_count_top_k = 0;
 
 -- Only the counts are determined when the boundary has ties and there is no other sort column.
-SELECT arraySort(groupArray(c)) FROM (SELECT k, s, count() AS c FROM t_two_pass GROUP BY k, s ORDER BY c DESC LIMIT 50) SETTINGS log_comment = 'two_pass_q6_on';
-SELECT arraySort(groupArray(c)) FROM (SELECT k, s, count() AS c FROM t_two_pass GROUP BY k, s ORDER BY c DESC LIMIT 50) SETTINGS query_plan_two_pass_count_top_k = 0;
+SELECT arraySort(groupArray(c)) FROM (SELECT k, s, count() AS c FROM t_two_pass_uniform GROUP BY k, s ORDER BY c DESC LIMIT 50) SETTINGS log_comment = 'two_pass_q6_on';
+SELECT arraySort(groupArray(c)) FROM (SELECT k, s, count() AS c FROM t_two_pass_uniform GROUP BY k, s ORDER BY c DESC LIMIT 50) SETTINGS query_plan_two_pass_count_top_k = 0;
 
 -- The pilot rejects a near-unique key and small groups: the original plan runs.
 SELECT u, s, count() FROM t_two_pass GROUP BY u, s ORDER BY count() DESC, u, s LIMIT 3 SETTINGS log_comment = 'two_pass_unique_on';
@@ -153,6 +167,11 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'two\_pass\_q%'
 ORDER BY log_comment;
 
+SELECT log_comment, ProfileEvents['TwoPassCountTopKPasses'], ProfileEvents['TwoPassCountTopKFallbacks']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('two_pass_q2_on', 'two_pass_q5_on', 'two_pass_q6_on', 'two_pass_q8_on')
+ORDER BY log_comment;
+
 SELECT log_comment, ProfileEvents['TwoPassCountTopKPasses'], ProfileEvents['TwoPassCountTopKFallbacks'], read_rows >= 1000000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('two_pass_unique_on', 'two_pass_small_on', 'two_pass_unpruned_on', 'two_pass_explain_pipeline')
@@ -177,4 +196,5 @@ WHERE event_date >= yesterday() AND query_id = (
 
 DROP TABLE t_two_pass;
 DROP TABLE t_two_pass_flat;
+DROP TABLE t_two_pass_uniform;
 DROP TABLE t_two_pass_unpruned;
