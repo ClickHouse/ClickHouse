@@ -695,6 +695,9 @@ private:
             {"sort_desc", {ResultType::INSTANT_VECTOR}},
             {"histogram_count", {ResultType::INSTANT_VECTOR}},
             {"histogram_sum", {ResultType::INSTANT_VECTOR}},
+            {"histogram_avg", {ResultType::INSTANT_VECTOR}},
+            {"histogram_stddev", {ResultType::INSTANT_VECTOR}},
+            {"histogram_stdvar", {ResultType::INSTANT_VECTOR}},
             {"histogram_fraction", {ResultType::SCALAR, ResultType::SCALAR, ResultType::INSTANT_VECTOR}},
         };
 
@@ -757,10 +760,8 @@ private:
         PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
     }
 
-    /// The conversion to SQL supports only some forms of phi of `histogram_quantile` and `quantile` and of the level of
-    /// `quantile_over_time`, e.g. not `histogram_quantile(scalar(up), up)`, but Prometheus only checks that they are scalars.
-    /// So such a parameter is checked as an expression of its own and replaced with a constant.
-    /// A literal is kept, so that error messages show the expression as it was written.
+    /// The SQL conversion needs a constant phi or level, but Prometheus only checks that it is a scalar.
+    /// So a non-literal parameter is checked on its own and replaced with a constant.
     static void replaceParameterWithConstant(
         PrometheusQueryTree::Node & node, std::vector<std::unique_ptr<PrometheusQueryTree::Node>> & constants, UInt32 time_scale)
     {

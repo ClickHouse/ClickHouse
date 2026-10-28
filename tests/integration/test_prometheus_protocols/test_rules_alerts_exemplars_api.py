@@ -108,6 +108,10 @@ def test_rules_ignores_filter_parameters():
         "histogram_count(up)",
         "histogram_sum(up)",
         "histogram_fraction(0, 1, up)",
+        "histogram_avg(up)",
+        "histogram_stddev(up)",
+        "histogram_stdvar(up)",
+        "sum(histogram_stddev(rate(up[5m])))",
         "sort(up) + up",
         "sum(sort(rate(up[5m])))",
         "histogram_fraction(0, scalar(sort(up)), up)",
@@ -125,7 +129,9 @@ def test_query_exemplars_valid_query(query):
     check_response(response, "query_exemplars")
 
 
-@pytest.mark.parametrize("query", ["1 + 1", "vector(1)", "sort(vector(1))", '"abc"'])
+@pytest.mark.parametrize(
+    "query", ["1 + 1", "vector(1)", "sort(vector(1))", "histogram_avg(vector(1))", '"abc"']
+)
 def test_query_exemplars_without_selector(query):
     # Prometheus answers 204 No Content when the expression has no series selector.
     response = requests.get(
@@ -166,6 +172,11 @@ def test_query_exemplars_post():
         ("query_exemplars", {"query": "sort(rate(up))"}),
         ("query_exemplars", {"query": "sort(up) + rate(up)"}),
         ("query_exemplars", {"query": "histogram_count(1)"}),
+        ("query_exemplars", {"query": "histogram_avg()"}),
+        ("query_exemplars", {"query": "histogram_avg(up, up)"}),
+        ("query_exemplars", {"query": "histogram_stddev(1)"}),
+        ("query_exemplars", {"query": "histogram_stdvar(up[5m])"}),
+        ("query_exemplars", {"query": "histogram_avg(up) + rate(up)"}),
         ("query_exemplars", {"query": "histogram_fraction(0, up)"}),
         ("query_exemplars", {"query": "histogram_fraction(up, 1, up)"}),
         ("query_exemplars", {"query": "histogram_fraction(0, scalar(rate(up)), up)"}),
