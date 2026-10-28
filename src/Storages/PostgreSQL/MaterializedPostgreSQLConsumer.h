@@ -144,7 +144,8 @@ private:
         size_t size,
         PostgreSQLQuery type,
         bool old_value = false,
-        std::optional<size_t> key_source_row_idx = {});
+        std::optional<size_t> key_source_row_idx = {},
+        bool key_source_is_full_row = false);
 
     template<typename T>
     static T unhexN(const char * message, size_t pos, size_t n);
