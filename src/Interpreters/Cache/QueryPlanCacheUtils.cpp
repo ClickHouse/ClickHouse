@@ -4,6 +4,7 @@
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
@@ -505,7 +506,8 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
     return true;
 }
 
-/// Returns true for functions whose results must not be frozen into a cached plan.
+/// Returns true for functions whose results must not be frozen into a cached plan, and for names
+/// that no factory resolves.
 /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is
 /// pure (same argument - same set of rows), so it is safe for the plan cache.
 bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr & context)
@@ -527,7 +529,20 @@ bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr
     if (UserDefinedSQLFunctionFactory::instance().tryGet(function.name))
         return true;
 
-    return false;
+    if (AggregateFunctionFactory::instance().isAggregateFunctionName(function.name))
+        return false;
+
+    /// Names that the analyzer resolves itself, without any factory.
+    static const std::unordered_set<std::string_view> analyzer_special_functions = {"lambda", "exists", "grouping", "untuple"};
+    if (analyzer_special_functions.contains(function.name))
+        return false;
+
+    /// A name that no factory knows, e.g. an executable or WebAssembly UDF removed after an expanded
+    /// view body that calls it was planned (SQL UDFs are inlined into persisted metadata on `CREATE`):
+    /// removing a function changes no fingerprint of the view or its tables, so every later hit would
+    /// serve the plan built with the function instead of throwing `UNKNOWN_FUNCTION`.
+    /// The row-policy walker rejects this case too (see `RowPolicyFilterContents::has_unknown_function`).
+    return true;
 }
 
 /// Function names whose subquery argument is a set, not a scalar (re-executed on every run).
@@ -667,7 +682,7 @@ private:
             if (isFunctionUnsafeForPlanCache(*function, context))
             {
                 LOG_DEBUG(getLogger("QueryPlanCache"),
-                    "Not caching plan: query or view body uses non-deterministic function {}", function->name);
+                    "Not caching plan: query or view body uses function {} unsafe for the plan cache", function->name);
                 return false;
             }
 

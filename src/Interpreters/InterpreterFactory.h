@@ -32,6 +32,10 @@ public:
         ContextMutablePtr context,
         const SelectQueryOptions & options = {});
 
+    /// Increments the `Query`, `InitialQuery`, `SelectQuery`, ... counters that `get` increments for every
+    /// query. For a code path that constructs an interpreter without `get`.
+    static void incrementQueryProfileEvents(const IAST & query, const ContextPtr & context);
+
     using CreatorFn = std::function<InterpreterPtr(const Arguments & arguments)>;
 
     using Interpreters = std::unordered_map<String, CreatorFn>;

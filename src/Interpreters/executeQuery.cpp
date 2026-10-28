@@ -1339,6 +1339,13 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     if (!context->getExternalTables().empty())
         return nullptr;
 
+    /// The planner checks that every storage read by the query supports transactions
+    /// (`checkStoragesSupportTransactions`), and a hit skips the planner, while the cache key does not
+    /// include the transaction state. Keep queries inside a transaction off the plan cache, so that a
+    /// plan warmed outside of a transaction cannot read a non-transactional storage inside one.
+    if (context->getCurrentTransaction())
+        return nullptr;
+
     /// A cacheable logical plan does not prepare the key-value lookups of a direct join (they bind a
     /// live storage into the plan, see `PlannerJoinTree`), so when `direct` is the only enabled join
     /// algorithm, a join that the ordinary planner executes would throw `NOT_IMPLEMENTED` instead.
@@ -3718,7 +3725,12 @@ static BlockIO executeQueryImpl(
                         .secondaryQueryRoot(!internal && is_secondary_query);
 
                     if (can_use_query_plan_cache)
+                    {
                         interpreter = tryInterpretWithQueryPlanCache(out_ast, context, select_options, query_plan_cache);
+                        /// The plan cache path constructs its interpreters directly, bypassing the query counters of `InterpreterFactory::get`.
+                        if (interpreter)
+                            InterpreterFactory::incrementQueryProfileEvents(*out_ast, context);
+                    }
 
                     if (!interpreter)
                         interpreter = InterpreterFactory::instance().get(out_ast, context, select_options);
