@@ -303,8 +303,8 @@ public:
 
         ColumnPtr left_full = left.column->convertToFullColumnIfConst();
         ColumnPtr right_full = right.column->convertToFullColumnIfConst();
-        const NullMap * left_nulls;
-        const NullMap * right_nulls;
+        const NullMap * left_nulls = nullptr;
+        const NullMap * right_nulls = nullptr;
         const auto & left_tuple = split_nullable({left_full, left.type, left.name}, left_nulls);
         const auto & right_tuple = split_nullable({right_full, right.type, right.name}, right_nulls);
 
