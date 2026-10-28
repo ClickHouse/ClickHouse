@@ -20,6 +20,7 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -491,7 +492,13 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
         NamesAndTypesList result;
         for (size_t i = 0; i != data_type_names.size(); ++i)
             result.emplace_back(column_names[i], DataTypeFactory::instance().get(data_type_names[i]));
-        declared_type_names = std::move(data_type_names);
+        declared_type_names.clear();
+        std::unordered_set<String> repeated_names;
+        for (size_t i = 0; i != data_type_names.size(); ++i)
+            if (!declared_type_names.emplace(column_names[i], data_type_names[i]).second)
+                repeated_names.insert(column_names[i]);
+        for (const auto & name : repeated_names)
+            declared_type_names.erase(name);
         return result;
     }
 

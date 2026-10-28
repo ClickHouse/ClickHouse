@@ -203,7 +203,7 @@ public:
     /// the destination type, not the types themselves.
     bool validatesDeclaredTypesByName() const override { return hasExactTypesFromData(); }
 
-    std::vector<String> getDeclaredTypeNames() const override { return declared_type_names; }
+    std::unordered_map<String, String> getDeclaredTypeNames() const override { return declared_type_names; }
 
     /// When a types row is present but the parser is configured to ignore it
     /// (`input_format_with_types_use_header` = 0), `readSchema` still returns those declared types
@@ -271,7 +271,7 @@ private:
     bool names_detected_from_data = false;
     bool types_detected_from_data = false;
     /// The type names of the types row as read by the last `readSchema` call, see `getDeclaredTypeNames`.
-    std::vector<String> declared_type_names;
+    std::unordered_map<String, String> declared_type_names;
     bool header_detection_attempted = false;
     DataTypes buffered_types;
 };

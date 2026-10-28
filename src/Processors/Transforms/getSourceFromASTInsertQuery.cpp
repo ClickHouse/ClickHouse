@@ -338,7 +338,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_strict_order_of_columns = true;
     bool format_has_exact_types_from_data = false;
     bool format_validates_declared_types_by_name = false;
-    std::vector<String> format_declared_type_names;
+    std::unordered_map<String, String> format_declared_type_names;
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
     bool format_allows_fewer_columns_than_expected = false;
@@ -486,20 +486,24 @@ String getInsertDataSchemaMismatchDescription(
     /// reports each of those fields as a separate column. The inferred layout then does not line up
     /// with the logical columns of the destination, so a comparison would manufacture a mismatch for
     /// data that the parser accepts (e.g. `1,2,1.5` into `(a Tuple(UInt8, UInt8), n UInt8)`, failing
-    /// only on `1.5`). Stay inconclusive for such a destination in the formats that read fields with
-    /// the `CSV` escaping rule.
+    /// only on `1.5`). Conversely, the same deserializer reads a whole tuple from one quoted field —
+    /// always for a `Nullable(Tuple(...))` (`SerializationNullable::adjustCSVSettingsForNullableTuple`)
+    /// and for any `Tuple` when the setting is disabled — while inference keeps that field as `String`
+    /// (e.g. `"(1,2)",1.5` into `(a Nullable(Tuple(UInt8, UInt8)), n UInt8)`). Stay inconclusive for a
+    /// `Tuple` destination in the formats that read fields with the `CSV` escaping rule.
     {
         bool format_reads_csv_fields = format_name.starts_with("CSV")
             || (format_name.starts_with("CustomSeparated") && format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
             || (format_name == "Regexp" && format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::CSV)
             /// The escaping rules of `Template` are given per field in the template itself.
             || format_name.starts_with("Template");
-        if (format_reads_csv_fields && format_settings.csv.deserialize_separate_columns_into_tuple
+        if (format_reads_csv_fields
             && std::ranges::any_of(
                 expected,
                 [](const NameAndTypePair & column)
                 {
-                    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeLowCardinality(column.type).get());
+                    const auto * tuple
+                        = typeid_cast<const DataTypeTuple *>(removeNullable(recursiveRemoveLowCardinality(column.type)).get());
                     return tuple && !tuple->getElements().empty();
                 }))
             return {};
@@ -794,6 +798,29 @@ String getInsertDataSchemaMismatchDescription(
     /// pass typed them and where they sit in the sample — so that the value-level rules below (a `String`
     /// confirmed to be non-numeric text, a numeric value into a `Bool` destination) work at every nesting
     /// level; the recursive calls narrow it to the nested value instead of dropping it.
+    /// Schema inference substitutes `String` for a type it could not complete: a value that is `NULL`
+    /// in every sampled row, and an empty JSON object, become `String` / `Nullable(String)`
+    /// (`input_format_json_infer_incomplete_types_as_strings`, the default type of the text formats).
+    /// Whether every sampled value behind `evidence` is such a placeholder (`NULL` or `{}`) rather than
+    /// a string token; false when the sample is unavailable.
+    auto sampled_values_are_inference_placeholders = [&](const SampledValueEvidence & evidence)
+    {
+        return evidence.column_index
+            && sampled_string_values_satisfy(
+                   *evidence.column_index,
+                   evidence.path,
+                   [](const String & value)
+                   {
+                       String text = value;
+                       std::erase_if(text, isWhitespaceASCII);
+                       return text == "{}";
+                   })
+                   .value_or(false);
+    };
+
+    /// The names of the inferred columns by `SampledValueEvidence::column_index`.
+    const Names inferred_names = inferred.getNames();
+
     std::function<bool(const DataTypePtr &, const DataTypePtr &, const SampledValueEvidence &)> types_are_compatible
         = [&](const DataTypePtr & inferred_type, const DataTypePtr & expected_type, const SampledValueEvidence & evidence) -> bool
     {
@@ -804,8 +831,12 @@ String getInsertDataSchemaMismatchDescription(
         /// even though the inferred type is canonicalized to the same name; use that text when known.
         if (format_validates_declared_types_by_name)
         {
-            if (evidence.column_index && evidence.path.empty() && *evidence.column_index < format_declared_type_names.size())
-                return format_declared_type_names[*evidence.column_index] == expected_type->getName();
+            if (evidence.column_index && evidence.path.empty() && *evidence.column_index < inferred_names.size())
+            {
+                if (auto it = format_declared_type_names.find(inferred_names[*evidence.column_index]);
+                    it != format_declared_type_names.end())
+                    return it->second == expected_type->getName();
+            }
             return inferred_type->getName() == expected_type->getName();
         }
 
@@ -1001,9 +1032,12 @@ String getInsertDataSchemaMismatchDescription(
                     return format_settings.json.read_bools_as_numbers;
                 return which_expected.isObject();
             }
+            /// With custom `bool_true_representation` / `bool_false_representation` (e.g. `1` / `0`),
+            /// the flat-text inference reads those tokens as `Bool` although they may be valid numbers
+            /// for the numeric destination, so the inferred `Bool` is no evidence of a word token there.
             if (format_bool_value_into_numeric == BoolValueIntoNumericColumn::None
                 && (which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat()))
-                return false;
+                return format_settings.bool_true_representation != "true" || format_settings.bool_false_representation != "false";
             if (format_bool_value_into_numeric == BoolValueIntoNumericColumn::IntegerBacked)
             {
                 switch (expected_unwrapped->getTypeId())
@@ -1260,9 +1294,10 @@ String getInsertDataSchemaMismatchDescription(
 
             /// `SerializationJSON` accepts only an object token. Do this before the generic scalar
             /// compatibility rules below, which otherwise treat scalar JSON values as compatible with
-            /// the `Object` type index.
+            /// the `Object` type index. An inferred `String` that only stands in for missing evidence
+            /// (see `sampled_values_are_inference_placeholders`) may be an empty object, which is valid.
             if (which_expected.isObject())
-                return false;
+                return which_inferred.isString() && sampled_values_are_inference_placeholders(evidence);
         }
 
         /// Checked after the structured-token rule below, which mirrors the parser more closely for the
@@ -1301,24 +1336,10 @@ String getInsertDataSchemaMismatchDescription(
 
         if (which_inferred.isString())
         {
-            /// Schema inference substitutes `String` for a type it could not complete: a value that is
-            /// `NULL` in every sampled row, and an empty JSON object, become `String` /
-            /// `Nullable(String)` (`input_format_json_infer_incomplete_types_as_strings`, the default
-            /// type of the text formats). That is a placeholder for missing evidence, not a string
-            /// token: `{}` is a valid empty `Map`, and `NULL` is read as the default of an `Array` or a
-            /// `Bool` column with `input_format_null_as_default`. So when every sampled value is `NULL`
-            /// or an empty object, the comparison is inconclusive.
-            if (evidence.column_index
-                && sampled_string_values_satisfy(
-                       *evidence.column_index,
-                       evidence.path,
-                       [](const String & value)
-                       {
-                           String text = value;
-                           std::erase_if(text, isWhitespaceASCII);
-                           return text == "{}";
-                       })
-                       .value_or(false))
+            /// An inference placeholder is not a string token: `{}` is a valid empty `Map`, and `NULL`
+            /// is read as the default of an `Array` or a `Bool` column with `input_format_null_as_default`.
+            /// So when every sampled value is `NULL` or an empty object, the comparison is inconclusive.
+            if (sampled_values_are_inference_placeholders(evidence))
                 return true;
 
             /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers

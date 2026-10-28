@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
@@ -74,8 +76,11 @@ public:
     /// The type names exactly as declared in the data by the last `readSchema` call, before they are
     /// parsed and canonicalized by `DataTypeFactory` (a declared `Boolean` becomes `Bool`). Meaningful
     /// only when `validatesDeclaredTypesByName` is true: the parser compares this original text with
-    /// `getName` of the destination type. Empty if unknown.
-    virtual std::vector<String> getDeclaredTypeNames() const { return {}; }
+    /// `getName` of the destination type. Keyed by the column name, because the schema returned by
+    /// `readSchemaFromFormat` drops the columns with empty names and may reorder the rest, so a
+    /// position in the types row does not identify an inferred column. A name declared more than once
+    /// is left out. Empty if unknown.
+    virtual std::unordered_map<String, String> getDeclaredTypeNames() const { return {}; }
 
     /// True when the schema returned by `readSchema` describes the structure the parser actually reads
     /// and validates. It is false for the metadata-based `JSON*` formats (`JSON`, `JSONCompact`,
