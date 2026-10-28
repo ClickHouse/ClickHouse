@@ -5,7 +5,9 @@
 # - _REENTRANT: thread-safe libc functions
 # - _POSIX_PTHREAD_SEMANTICS: POSIX-compliant function signatures
 # - __EXTENSIONS__: expose non-standard but necessary APIs
-add_compile_definitions(_REENTRANT _POSIX_PTHREAD_SEMANTICS __EXTENSIONS__)
+# - _XOPEN_SOURCE=600: select XPG6 interfaces, e.g. `msg_control` in `msghdr`. Clang
+#   predefined it for Solaris targets until version 23.
+add_compile_definitions(_REENTRANT _POSIX_PTHREAD_SEMANTICS __EXTENSIONS__ _XOPEN_SOURCE=600)
 
 # We use illumos ld for native builds and lld to cross-build on linux. Detect
 # the linker being used for conditional options below.

@@ -12,6 +12,8 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <limits>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -487,14 +489,27 @@ private:
             }
         }
 
+        /// A constant source is read at index 0 on every row, a column source at `row_i`.
+        VectorWithMemoryTracking<size_t> index_masks(instructions.size());
+        for (size_t i = 0; i < instructions.size(); ++i)
+            index_masks[i] = instructions[i].source_is_constant ? 0 : std::numeric_limits<size_t>::max();
+
+        /// Raw pointers for the row loop: the stores into the result may alias the vectors' buffers as far as
+        /// the compiler knows, and clang-23 reloads `data()` of every vector on each row otherwise.
+        const S * inserts_data = inserts.data();
+        const size_t * index_masks_data = index_masks.data();
+        const T * const * data_cols_data = data_cols.data();
+        const UInt8 * const * null_map_cols_data = null_map_cols.data();
+        T * res = res_data.data();
+        UInt8 * res_null = nullable_result ? res_null_map->data() : nullptr;
+
         for (size_t row_i = 0; row_i < rows; ++row_i)
         {
-            S insert = inserts[row_i];
-            const auto & instruction = instructions[insert];
-            size_t index = instruction.source_is_constant ? 0 : row_i;
-            res_data[row_i] = *(data_cols[insert] + index);
+            S insert = inserts_data[row_i];
+            size_t index = row_i & index_masks_data[insert];
+            res[row_i] = data_cols_data[insert][index];
             if constexpr (nullable_result)
-                (*res_null_map)[row_i] = *(null_map_cols[insert] + index);
+                res_null[row_i] = null_map_cols_data[insert][index];
         }
     }
 

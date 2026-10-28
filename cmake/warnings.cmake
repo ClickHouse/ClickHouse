@@ -59,14 +59,20 @@ if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # captured reference to the container variable itself, while in reality only
     # references to the container's elements would be invalidated.
     no_warning(lifetime-safety-invalidation)
-endif ()
-if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
     # Too many false positives: it flags the pervasive idiom of taking a raw pointer out
     # of a `unique_ptr`, moving the owner into a container and returning the pointer -
     # the storage is on the heap and outlives the local, and the diagnostic text itself
     # concedes it "could be a false positive as the storage may have been moved".
-    # Emitted from clang 23 on, alongside the three related diagnostics suppressed above.
     no_warning(lifetime-safety-return-stack-addr-moved)
+    # False positives: it does not understand a field that is deliberately cleared before the
+    # captured local dies (e.g. via SCOPE_EXIT), see `after_fuzz_reconnect` in `FuzzLoop.cpp`.
+    no_warning(lifetime-safety-dangling-field)
+    # Without AVX, passing a 32-byte vector by value changes the ABI. From clang 23 on, it is
+    # reported at every such definition, including `ALWAYS_INLINE` helpers whose calls never
+    # use that ABI, e.g. in `sliceHasImplAnyAll.h`.
+    if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 3)
+        no_warning(psabi)
+    endif ()
 endif ()
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning

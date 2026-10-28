@@ -542,6 +542,32 @@ public:
             complex_key_arena->rollback(current_complex_key.size());
     }
 
+    /// Calls `callback(key_index, key)` for every key, in order, and leaves the extractor past the last key.
+    /// Hot loops use it instead of `extractCurrentKey` per key: a simple key is then read through one
+    /// hoisted data pointer, where `extractCurrentKey` goes through `key_columns[0]`, the column and its
+    /// data pointer every time, and the store of `current_key_index` keeps clang-23 with libc++ 23 (whose
+    /// `std::vector` keeps a `size_t` size) from hoisting those loads and their bounds checks out of the loop.
+    template <typename Callback>
+    void forEachKey(Callback && callback)
+    {
+        if constexpr (key_type == DictionaryKeyType::Simple)
+        {
+            const UInt64 * __restrict keys = static_cast<const ColumnVector<UInt64> &>(*key_columns[0]).getData().data();
+            for (size_t key_index = current_key_index; key_index < keys_size; ++key_index)
+                callback(key_index, keys[key_index]);
+            current_key_index = keys_size;
+        }
+        else
+        {
+            while (current_key_index < keys_size)
+            {
+                size_t key_index = current_key_index;
+                callback(key_index, extractCurrentKey());
+                rollbackCurrentKey();
+            }
+        }
+    }
+
     PaddedPODArray<KeyType> extractAllKeys()
     {
         PaddedPODArray<KeyType> result;

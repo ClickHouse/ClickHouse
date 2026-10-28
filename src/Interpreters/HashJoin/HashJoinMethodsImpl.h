@@ -114,8 +114,11 @@ KeyGetter createJoinKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & k
 }
 
 /// Free of the join kind, so the instantiation units share one copy per maps type.
+/// Kept out of line: with the libc++ 23 headers the inliner folds every instantiation into `insertFromBlockImpl`
+/// (5 KB to 43 KB), and the build loop then overlaps fewer of its independent cache misses with join software
+/// prefetch on (TPC-H Q9 1.3x slower at 4 to 16 threads on aarch64). The call runs once per block.
 template <typename MapsTemplate, typename KeyGetter, typename HashMap, typename Selector>
-void insertFromBlockImplTypeCase(
+NO_INLINE void insertFromBlockImplTypeCase(
     HashJoin & join,
     HashMap & map,
     const ColumnRawPtrs & key_columns,
