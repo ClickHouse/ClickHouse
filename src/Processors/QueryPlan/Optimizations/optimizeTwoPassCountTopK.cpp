@@ -751,6 +751,7 @@ private:
     {
         LOG_DEBUG(log, "Running the original plan: {}", reason);
         ProfileEvents::increment(ProfileEvents::TwoPassCountTopKFallbacks);
+        restricted_chunks.clear();
         if (current && current != &inputs.front())
             to_close = current;
         current = &inputs.front();
@@ -782,7 +783,9 @@ private:
             for (const auto & column : chunk.getColumns())
                 columns.push_back(column->cut(begin, length));
             to_emit.emplace_back(std::move(columns), length);
+            chunk.clear();
         }
+        restricted_chunks.clear();
         stage = Stage::Emitting;
     }
 
@@ -1029,6 +1032,7 @@ private:
             emitRestricted();
             return;
         }
+        restricted_chunks.clear();
         close_original = true;
         startPass(Pass::Final, makeRestrictedPlan(*templ, firstKeys(num_candidates), templ->limit, templ->offset));
     }
