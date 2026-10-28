@@ -52,7 +52,7 @@ def setup():
         send_protobuf_to_remote_write(
             node.ip_address, 9093, "/write", convert_time_series_to_protobuf(time_series)
         )
-        assert_eq_with_retry(node, "SELECT count() FROM timeSeriesData(prometheus)", "9")
+        assert_eq_with_retry(node, "SELECT sum(length(samples)) FROM timeSeriesData(prometheus)", "9")
         yield cluster
     finally:
         cluster.shutdown()

@@ -1116,7 +1116,8 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
         if (!selects.empty())
             selects += " UNION ALL ";
         selects += fmt::format(
-            "SELECT id, timestamp, value FROM timeSeriesSelector({}, {}, {}, fromUnixTimestamp64Milli({}), fromUnixTimestamp64Milli({}))",
+            "SELECT id, timestamp, value FROM timeSeriesSelector({}, {}, {}, fromUnixTimestamp64Milli({}), fromUnixTimestamp64Milli({}), "
+            "'timestamp_and_value')",
             quoteString(storage_id.getDatabaseName()), quoteString(storage_id.getTableName()), quoteString(match_param),
             min_time_ms, max_time_ms);
     }
