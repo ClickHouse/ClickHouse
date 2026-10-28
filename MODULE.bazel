@@ -94,7 +94,10 @@ single_version_override(
 single_version_override(
     module_name = "rules_rs",
     patch_strip = 1,
-    patches = ["//bazel/patches:rules_rs-local-workspaces.patch"],
+    patches = [
+        "//bazel/patches:rules_rs-local-workspaces.patch",
+        "//bazel/patches:rules_rs-cargo-cc-toolchain.patch",
+    ],
 )
 
 # Export declared zstd headers without an empty generated include directory.
@@ -135,9 +138,31 @@ use_repo(rust_toolchains, "default_rust_toolchains")
 register_toolchains("@default_rust_toolchains//...")
 
 rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
+rules_rust.patch(
+    patches = ["//bazel/patches:rules_rust-build-script-linker.patch"],
+    strip = 1,
+)
 use_repo(rules_rust, "rules_rust")
 
 crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+
+# These pinned build scripts use Rust configuration or rustc alone.
+[
+    crate.annotation(
+        build_script_use_cc_toolchain = "off",
+        crate = crate_name,
+        version = version,
+    )
+    for crate_name, version in [
+        ("serde", "1.0.228"),
+        ("serde", "1.0.229"),
+        ("serde_core", "1.0.228"),
+        ("serde_core", "1.0.229"),
+        ("serde_json", "1.0.150"),
+        ("serde_json", "1.0.151"),
+    ]
+]
+
 crate.from_cargo(
     name = "clickhouse_crates",
     cargo_lock = "@clickhouse_cargo_sources//rust/workspace:Cargo.lock",

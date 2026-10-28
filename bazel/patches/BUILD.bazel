@@ -25,6 +25,8 @@ exports_files([
     "perfetto-protos-protoc.patch",
     "protobuf-generated-cc-deps.patch",
     "rules_rs-local-workspaces.patch",
+    "rules_rs-cargo-cc-toolchain.patch",
+    "rules_rust-build-script-linker.patch",
     "zstd-public-headers.patch",
     "rules_cc-implementation-deps-local-includes.patch",
     "rules_cc-source-header-directories.patch",
