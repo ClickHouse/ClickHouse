@@ -1,4 +1,10 @@
 <test>
+    <!-- The multi-join queries pin `query_plan_join_swap_table = false`, so the build side is whatever
+         the join order algorithm emits; keep `greedy` so the test measures lazy indexing, not join order. -->
+    <settings>
+        <query_plan_optimize_join_order_algorithm>greedy</query_plan_optimize_join_order_algorithm>
+    </settings>
+
     <substitutions>
         <substitution>
             <name>lazy_indexing</name>

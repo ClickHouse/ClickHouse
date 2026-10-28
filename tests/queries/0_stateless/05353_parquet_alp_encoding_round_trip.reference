@@ -1,0 +1,37 @@
+--- default page size
+1
+Row 1:
+──────
+arrayMap(lam⋯), columns): [('id',['PLAIN','RLE_DICTIONARY']),('d_decimal',['ALP']),('f_decimal',['ALP']),('d_special',['ALP']),('f_special',['ALP']),('d_random',['PLAIN']),('f_random',['ALP']),('d_large',['ALP']),('d_const',['ALP']),('f_const',['ALP']),('d_nullable',['RLE','ALP']),('f_nullable',['RLE','ALP']),('d_array.list.element',['RLE','ALP']),('f_array.list.element',['RLE','ALP'])]
+--- small pages and row groups
+3
+1
+0	7FF8000000000000	7FC00000
+1	00	00
+53	10000000000000	3F000000
+59	7E37E43C8800759C	7F61B1E6
+61	FFF8000000000001	3F19999A
+67	7FF800DEADBEEF00	7FC0DEAD
+71	4020DA304D95FB06	4106D182
+73	01	01
+79	8000000000000000	80000000
+83	FFF0000000000000	FF800000
+89	7FF0000000000000	7F800000
+97	7FF8000000000000	7FC00000
+10006	4059066666666666	42C83333
+10427945317906667762	10427945317906667762
+[4650687894887858176,4650691149442276393,4650694403996694610,4650697658551112827,4650700913105531044]	[4650687894887858176,4650691149442276393,4650694403996694610,4650697658551112827,4650700913105531044]
+1898	8109
+1	100
+1	100
+3336	0
+--- empty and tiny files
+0
+\N
+\N
+\N
+0.5
+--- ALP is smaller than PLAIN for decimal-like values (but not much for Float32, which has many exceptions)
+[('d_decimal',['PLAIN']),('f_decimal',['PLAIN'])]
+[('d_decimal',['ALP']),('f_decimal',['ALP'])]
+[20166,33472]	[80129,40085]	[1,1]

@@ -10,7 +10,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 opts=(
-    --enable_analyzer=1
     --max_threads=4
 )
 
