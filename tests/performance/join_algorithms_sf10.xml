@@ -1,0 +1,97 @@
+<!--
+    The `join_algorithm` matrix on TPC-H SF10 (`tpch10.lineitem`, 60 M rows, joined with `tpch10.orders`, 15 M rows, and
+    `tpch10.partsupp`, 8 M rows): `hash`, `parallel_hash`, `grace_hash`, `full_sorting_merge`, `partial_merge`, `direct`
+    (a `HASHED` dictionary and a `Join(ANY, LEFT)` table over `orders`), in memory and spilled, a wide right side, a
+    composite key and joins without matches. Every query returns one row.
+    The right side is pinned (`query_plan_join_swap_table = 0`) and the ratio thresholds are off, so only the explicit
+    thresholds spill: `max_bytes_before_external_join` (`hash` and `parallel_hash` switch to `grace_hash`),
+    `max_bytes_before_external_sort` (`full_sorting_merge`), `max_bytes_in_join` (`partial_merge`). Merge joins read
+    `lineitem` filtered by `l_shipdate` (its first key column) to stay under a minute.
+    The setup runs every timed query once and checks its result against sums computed without a join (`GROUP BY` of the
+    key over `lineitem UNION ALL orders`, or `partsupp`), and which queries wrote temporary data in `system.query_log`
+    (bytes: `grace_hash` creates the two files of its first bucket even in memory).
+    Per server and invocation: the `Join` table (110 MB); temporary spill files of up to 640 MB per query, about 11-15 GB
+    in total; no S3.
+    `full_sorting_merge` in memory on `lineitem` filtered by `l_shipdate` is no longer timed: noisy in A/A runs.
+-->
+<test run_all_queries="1" max_query_seconds="90">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <max_bytes_before_external_join>0</max_bytes_before_external_join>
+    <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    <max_bytes_ratio_before_external_sort>0</max_bytes_ratio_before_external_sort>
+    <query_plan_join_swap_table>0</query_plan_join_swap_table>
+</settings>
+
+<create_query>CREATE DICTIONARY orders_dict (o_orderkey UInt64, o_totalprice Decimal(15, 2)) PRIMARY KEY o_orderkey SOURCE(CLICKHOUSE(DB 'tpch10' TABLE 'orders')) LAYOUT(HASHED()) LIFETIME(0)</create_query>
+<create_query>CREATE TABLE join_algorithms_sf10_mark ENGINE = Memory AS SELECT now64(6) AS t</create_query>
+<create_query>CREATE TABLE orders_join (o_orderkey Int32, o_totalprice Decimal(15, 2)) ENGINE = Join(ANY, LEFT, o_orderkey)</create_query>
+
+<fill_query>SYSTEM RELOAD DICTIONARY orders_dict</fill_query>
+<fill_query>INSERT INTO orders_join SELECT o_orderkey, o_totalprice FROM tpch10.orders</fill_query>
+
+<fill_query>SELECT throwIf(count() != 59986052) FROM tpch10.lineitem</fill_query>
+<fill_query>SELECT throwIf(count() != 15000000) FROM tpch10.orders</fill_query>
+<fill_query>SELECT throwIf(count() != 8000000) FROM tpch10.partsupp</fill_query>
+<fill_query>SELECT throwIf(element_count != 15000000) FROM system.dictionaries WHERE database = 'default' AND name = 'orders_dict'</fill_query>
+<fill_query>SELECT throwIf(total_rows != 15000000) FROM system.tables WHERE database = 'default' AND name = 'orders_join'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'hash', log_comment = 'join_algorithms_sf10.q0'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'parallel_hash', log_comment = 'join_algorithms_sf10.q1'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 20000000000, log_comment = 'join_algorithms_sf10.q2'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'parallel_hash', max_bytes_before_external_join = 100000000, log_comment = 'join_algorithms_sf10.q3'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 100000000, log_comment = 'join_algorithms_sf10.q4'</fill_query>
+<fill_query>SELECT throwIf(count() != 7595510 OR sum(l_extendedprice) != '290459110643.47' OR sum(o_totalprice) != '1434475293007.35') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 100000000, log_comment = 'join_algorithms_sf10.q5'</fill_query>
+<fill_query>SELECT throwIf(count() != 3013330 OR sum(l_extendedprice) != '115220637563.16' OR sum(o_totalprice) != '569117515277.93') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'partial_merge', log_comment = 'join_algorithms_sf10.q6'</fill_query>
+<fill_query>SELECT throwIf(count() != 3013330 OR sum(l_extendedprice) != '115220637563.16' OR sum(o_totalprice) != '569117515277.93') FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'partial_merge', max_bytes_in_join = 100000000, log_comment = 'join_algorithms_sf10.q7'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem LEFT ANY JOIN orders_dict ON toUInt64(l_orderkey) = o_orderkey SETTINGS join_algorithm = 'direct', log_comment = 'join_algorithms_sf10.q8'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01') FROM tpch10.lineitem LEFT ANY JOIN orders_join ON l_orderkey = o_orderkey SETTINGS log_comment = 'join_algorithms_sf10.q9'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_extendedprice) != '2293813156773.36' OR sum(o_totalprice) != '11329533808416.01' OR sum(length(o_comment)) != 2893128738 OR sum(length(o_clerk)) != 899790780) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey SETTINGS join_algorithm = 'parallel_hash', log_comment = 'join_algorithms_sf10.q10'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_quantity) != '1529738036' OR sum(ps_supplycost) != '30021667165.86') FROM tpch10.lineitem INNER JOIN tpch10.partsupp ON l_partkey = ps_partkey AND l_suppkey = ps_suppkey SETTINGS join_algorithm = 'hash', log_comment = 'join_algorithms_sf10.q11'</fill_query>
+<fill_query>SELECT throwIf(count() != 59986052 OR sum(l_quantity) != '1529738036' OR sum(ps_supplycost) != '30021667165.86') FROM tpch10.lineitem INNER JOIN tpch10.partsupp ON l_partkey = ps_partkey AND l_suppkey = ps_suppkey SETTINGS join_algorithm = 'parallel_hash', log_comment = 'join_algorithms_sf10.q12'</fill_query>
+<fill_query>SELECT throwIf(count() != 0) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = -o_orderkey SETTINGS join_algorithm = 'parallel_hash', log_comment = 'join_algorithms_sf10.q13'</fill_query>
+<fill_query>SELECT throwIf(count() != 0) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = -o_orderkey SETTINGS join_algorithm = 'full_sorting_merge', log_comment = 'join_algorithms_sf10.q14'</fill_query>
+<fill_query>SYSTEM FLUSH LOGS</fill_query>
+<fill_query>
+    SELECT throwIf(groupArray((log_comment, ProfileEvents['ExternalProcessingCompressedBytesTotal'] > 0)) != [
+            ('join_algorithms_sf10.q0', 0), ('join_algorithms_sf10.q1', 0), ('join_algorithms_sf10.q2', 0), ('join_algorithms_sf10.q3', 1),
+            ('join_algorithms_sf10.q4', 1), ('join_algorithms_sf10.q5', 1), ('join_algorithms_sf10.q6', 0), ('join_algorithms_sf10.q7', 1),
+            ('join_algorithms_sf10.q8', 0), ('join_algorithms_sf10.q9', 0), ('join_algorithms_sf10.q10', 0), ('join_algorithms_sf10.q11', 0),
+            ('join_algorithms_sf10.q12', 0), ('join_algorithms_sf10.q13', 0), ('join_algorithms_sf10.q14', 0)],
+        'the setup runs of the measured queries are not in query_log, or their spills differ')
+    FROM
+    (
+        SELECT log_comment, ProfileEvents FROM system.query_log
+        WHERE type = 'QueryFinish' AND log_comment LIKE 'join_algorithms_sf10.q%'
+            AND query_start_time_microseconds >= (SELECT t FROM join_algorithms_sf10_mark)
+        ORDER BY event_time_microseconds
+    )
+</fill_query>
+
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'hash'</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 20000000000</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash', max_bytes_before_external_join = 100000000</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 100000000</query>
+
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1993-01-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', max_bytes_before_external_sort = 100000000</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM (SELECT l_orderkey, l_extendedprice FROM tpch10.lineitem WHERE l_shipdate &lt; '1992-07-01') AS l INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'partial_merge', max_bytes_in_join = 100000000</query>
+
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem LEFT ANY JOIN orders_dict ON toUInt64(l_orderkey) = o_orderkey FORMAT Null SETTINGS join_algorithm = 'direct'</query>
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice) FROM tpch10.lineitem LEFT ANY JOIN orders_join ON l_orderkey = o_orderkey FORMAT Null</query>
+
+<query>SELECT count(), sum(l_extendedprice), sum(o_totalprice), sum(length(o_comment)), sum(length(o_clerk)) FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = o_orderkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+<query>SELECT count(), sum(l_quantity), sum(ps_supplycost) FROM tpch10.lineitem INNER JOIN tpch10.partsupp ON l_partkey = ps_partkey AND l_suppkey = ps_suppkey FORMAT Null SETTINGS join_algorithm = 'hash'</query>
+<query>SELECT count(), sum(l_quantity), sum(ps_supplycost) FROM tpch10.lineitem INNER JOIN tpch10.partsupp ON l_partkey = ps_partkey AND l_suppkey = ps_suppkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+<query>SELECT count() FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = -o_orderkey FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+<query>SELECT count() FROM tpch10.lineitem INNER JOIN tpch10.orders ON l_orderkey = -o_orderkey FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+<drop_query>DROP DICTIONARY IF EXISTS orders_dict</drop_query>
+<drop_query>DROP TABLE IF EXISTS orders_join, join_algorithms_sf10_mark SYNC</drop_query>
+
+</test>

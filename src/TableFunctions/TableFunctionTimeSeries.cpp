@@ -234,9 +234,9 @@ This function is similar to [range selectors](https://prometheus.io/docs/prometh
 ## Syntax {#syntax}
 
 ```sql
-timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time)
-timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_time)
-timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
+timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time, return_columns)
+timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_time, return_columns)
+timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time, return_columns)
 ```
 
 ## Arguments {#arguments}
@@ -246,23 +246,38 @@ timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
 - `instant_query` - An instant selector written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), without `@` or `offset` modifiers.
 - `min_time` - Start timestamp, inclusive.
 - `max_time` - End timestamp, inclusive.
+- `return_columns` - The columns returning the samples: `'samples'` or `'timestamp_and_value'`, see below.
 
 `min_time` and `max_time` can have fractions of a second even if the timestamps in the table are whole seconds:
 the function selects the samples with `min_time <= timestamp <= max_time` exactly, without rounding the bounds to the type of the timestamps.
 
 ## Returned value {#returned-value}
 
-The function returns three columns:
-- `id` - Contains the identifiers of time series matching the specified selector.
-- `timestamp` - Contains timestamps.
-- `value` - Contains values.
+The function returns the column `id` with the identifiers of the time series matching the specified selector, and the samples
+in the columns chosen by the argument `return_columns`:
+
+- `'samples'` - the column `samples` with the samples of a time series as an array of tuples `(timestamp, value)` sorted by timestamp.
+  The samples of a time series can be returned in multiple rows, for example one row per time bucket of the samples table.
+  Use the aggregate function `timeSeriesGroupArray` to merge the rows of a time series.
+- `'timestamp_and_value'` - the columns `timestamp` and `value` with one sample per row.
+
+A `TimeSeries` table of version 11 or later stores buckets of samples as arrays, the tables of earlier versions store one sample per row.
+The samples are converted when the requested columns differ from the layout of the table, which costs some time; the PromQL functions
+request the columns matching the layout of the table.
 
 There is no specific order for returned data.
 
-## Example {#example}
+## Examples {#examples}
 
 ```sql
-SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
+SELECT id, timeSeriesGroupArray(samples) AS samples
+FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'samples')
+GROUP BY id
+```
+
+```sql
+SELECT id, timestamp, value
+FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now(), 'timestamp_and_value')
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 

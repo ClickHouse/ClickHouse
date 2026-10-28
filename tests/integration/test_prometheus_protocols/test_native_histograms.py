@@ -253,7 +253,7 @@ def test_mixed_samples_and_histograms():
     )
 
     assert node.query(
-        "SELECT timestamp, value FROM timeSeriesSamples(prometheus)"
+        "SELECT s.1, s.2 FROM timeSeriesSamples(prometheus) ARRAY JOIN samples AS s"
     ) == TSV([["2024-01-01 00:00:05.000", "42"]])
     assert query_histograms("timestamp, count, sum") == TSV(
         [["2024-01-01 00:00:06.000", "1", "0.5"]]
@@ -295,7 +295,7 @@ def test_table_without_histograms_target_drops_histograms():
     )
 
     assert node.query(
-        "SELECT timestamp, value FROM timeSeriesSamples(prometheus)"
+        "SELECT s.1, s.2 FROM timeSeriesSamples(prometheus) ARRAY JOIN samples AS s"
     ) == TSV([["2024-01-01 00:00:07.000", "1"]])
     assert node.contains_in_log("Dropping 1 native histogram samples")
     events_after = histogram_events()
