@@ -48,6 +48,10 @@
 #    include <netinet/tcp.h>
 #endif
 
+#if defined(OS_DARWIN)
+#    include <sys/sysctl.h>
+#endif
+
 
 namespace DB
 {
@@ -2821,6 +2825,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+    }
+#endif
+
+#if defined(OS_DARWIN)
+    {
+        UInt64 memory_total = 0;
+        size_t len = sizeof(memory_total);
+        int mib[2] = {CTL_HW, HW_MEMSIZE};
+        if (0 == sysctl(mib, 2, &memory_total, &len, nullptr, 0))
+            new_values["OSMemoryTotal"] = { memory_total, "The total amount of memory on the host system, in bytes." };
+        else
+            LOG_ERROR(log, "Cannot obtain the total amount of memory via sysctl: {}", errnoToString(errno));
     }
 #endif
 
