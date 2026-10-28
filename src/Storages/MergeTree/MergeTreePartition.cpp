@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
@@ -521,7 +522,7 @@ NamesAndTypesList MergeTreePartition::executePartitionByExpression(const Storage
     for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
     {
         if (!block.has(required_column))
-            block.insert(block.getSubcolumnByName(required_column));
+            block.insert(getColumnOrSubcolumnFromBlock(block, required_column, metadata_snapshot->getColumns()));
     }
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();
