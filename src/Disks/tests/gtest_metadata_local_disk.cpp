@@ -267,6 +267,7 @@ TEST_F(MetadataLocalDiskTest, TestAddEmptyBlob)
     EXPECT_EQ(blobs[0].remote_path, "/TestAddEmptyBlob/data");
     EXPECT_EQ(blobs[0].bytes_size, 42);
     EXPECT_EQ(metadata->getFileSize("f.txt"), 42);
+    verifyBlobsToRemove(metadata, {"/TestAddEmptyBlob/empty1", "/TestAddEmptyBlob/empty2"});
 }
 
 TEST_F(MetadataLocalDiskTest, TestValidCreateMetadataAddBlob)

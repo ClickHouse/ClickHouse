@@ -459,7 +459,7 @@ void MetadataStorageFromDiskTransaction::createMetadataFile(const std::string & 
 
 void MetadataStorageFromDiskTransaction::addBlobToMetadata(const std::string & path, const StoredObject & object)
 {
-    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk));
+    operations.addOperation(std::make_unique<AddBlobOperation>(path, object, metadata_storage.compatible_key_prefix, *metadata_storage.disk, objects_to_remove));
 }
 
 void MetadataStorageFromDiskTransaction::truncateFile(const std::string & src_path, size_t target_size)

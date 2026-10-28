@@ -254,16 +254,18 @@ private:
 
 struct AddBlobOperation final : public IMetadataOperation
 {
-    AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix, IDisk & disk_);
+    AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix, IDisk & disk_, StoredObjects & objects_to_remove_);
 
     void execute() override;
     void undo() override;
+    void finalize() override;
 
 private:
     const std::string path;
     const StoredObject object;
     const std::string & compatible_key_prefix;
     IDisk & disk;
+    StoredObjects & objects_to_remove;
 
     std::unique_ptr<WriteFileOperation> write_operation;
 };
