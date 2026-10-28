@@ -5,9 +5,9 @@
 #pragma once
 
 #define CUDF_VERSION_MAJOR 26
-#define CUDF_VERSION_MINOR 8
-#define CUDF_VERSION_PATCH 1
-#define CUDF_VERSION "26.8.1"
+#define CUDF_VERSION_MINOR 12
+#define CUDF_VERSION_PATCH 0
+#define CUDF_VERSION "26.12.0"
 #ifndef CUDF_VERSION_GT
 #define CUDF_VERSION_GT(maj, min, pat) \
   ((CUDF_VERSION_MAJOR > (maj)) || \

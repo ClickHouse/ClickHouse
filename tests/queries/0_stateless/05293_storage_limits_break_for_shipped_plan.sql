@@ -6,7 +6,7 @@ DROP TABLE IF EXISTS t_shipped_limits_break SYNC;
 CREATE TABLE t_shipped_limits_break (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8192;
 INSERT INTO t_shipped_limits_break SELECT number FROM numbers(100000);
 
-SET enable_analyzer = 1, max_block_size = 1000;
+SET max_block_size = 1000;
 SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed_plan_default_reader_bucket_count = 3, max_rows_to_group_by = 0;
 

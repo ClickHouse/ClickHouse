@@ -86,3 +86,10 @@ merge constant out of projection range
 5	3
 5	4
 5	4
+buffer over distributed
+5	1
+recursive cte with automatic parallel replicas
+5	0
+5	1
+5	2
+1
