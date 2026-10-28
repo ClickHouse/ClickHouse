@@ -882,12 +882,23 @@ bool PostgreSQLReplicationHandler::checkReplicationStateOnAttach(pqxx::nontransa
             publication_exists ? "" : fmt::format(", and publication {} does not exist either", doubleQuoteString(publication_name)));
     }
 
+    /// A nested table whose snapshot did not complete does not hold replicated data: it is dropped and loaded again
+    /// in startSynchronization, or, if the table is not published (an `ATTACH TABLE` interrupted before it published
+    /// the table), the table is not replicated. Such a table must not be required in the publication, otherwise
+    /// every retry of the startup would fail before reaching that recovery, and stop the replication of all tables.
+    const auto snapshot_positions = loadSnapshotPositions();
+    auto has_incomplete_snapshot = [&](const String & table_name)
+    {
+        auto it = snapshot_positions.find(table_name);
+        return it != snapshot_positions.end() && !it->second.completed;
+    };
+
     /// In the single-schema modes the comparison is by exact (schema, table) pair rather than by bare name,
     /// so that a publication rewritten from `foo.a` to `bar.a` is not taken for the same table.
     std::set<std::pair<String, String>> expected;
     for (const auto & [table_name, storage] : materialized_storages)
     {
-        if (has_configured_tables_list || storage->tryGetNested())
+        if (has_configured_tables_list || (storage->tryGetNested() && !has_incomplete_snapshot(table_name)))
             expected.insert(resolveSchemaAndTableName(tx, table_name));
     }
 
