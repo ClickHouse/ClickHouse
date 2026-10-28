@@ -1092,8 +1092,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// grandfathered metadata that predates a validation, and rejecting it here would make the backup unrestorable,
     /// which is worse than the restored table failing later when the definition is compiled (the same grandfathering
     /// the local metadata-loading paths get; see the other `is_restore_from_backup` relaxations in this file).
-    const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
-        || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax);
+    /// A definition replayed on a secondary replica of a `Replicated` database, or reconstructed from metadata stored
+    /// in Keeper (`SYSTEM DROP DATABASE REPLICA ... FROM ZKPATH ... WITH TABLES`), can arrive as a plain `CREATE`,
+    /// so `mode` alone cannot tell it apart, and `isReplayedTableDefinition` checks the context too.
+    const bool is_fresh_definition = !isReplayedTableDefinition(mode, create, getContext());
 
     if (create.columns_list)
     {
