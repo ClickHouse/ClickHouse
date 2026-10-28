@@ -676,6 +676,8 @@ SELECT node FROM reach ORDER BY node;
 
 **Example:** Shortest paths, refuting non-improving candidates with `<cte_name>_settled`
 
+The predicate compares a candidate against the state accumulated before the step, so several candidates for the same node may pass it within one step. `ORDER BY cost DESC` makes the cheapest of them the last produced one, so it is the one that is kept.
+
 ```sql
 SET allow_experimental_keyed_recursive_cte = 1;
 
@@ -691,6 +693,7 @@ WITH RECURSIVE sp USING KEY (node) AS
     INNER JOIN w_edges e ON e.u = s.node
     LEFT JOIN sp_settled st ON st.node = e.v
     WHERE s.cost + e.w < if(st.node = 0, 1e308, st.cost)
+    ORDER BY cost DESC
 )
 SELECT node, cost FROM sp ORDER BY node;
 ```
