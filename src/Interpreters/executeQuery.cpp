@@ -3208,6 +3208,9 @@ static BlockIO executeQueryImpl(
             && settings[Setting::enable_query_plan_cache]
             && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            /// The requested processing stage is not a part of the key, and a plan built for an
+            /// earlier stage (e.g. `--stage fetch_columns`) lacks the later steps.
+            && stage == QueryProcessingStage::Complete
             && out_ast && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
             && settings[Setting::allow_experimental_analyzer]
             /// Parallel replicas optimizer operates on ReadFromMergeTree nodes which are absent from
@@ -3436,46 +3439,50 @@ static BlockIO executeQueryImpl(
                 /// A plan built with a row-level filter is never cached: the policy may have been created
                 /// after the lookup key was built, and a policy applying to the current query is checked
                 /// again in case it was created after planning (always-true policies leave no filter).
+                /// Nondeterministic functions can also come from identifiers (`CURRENT_USER`) or `ALIAS`
+                /// columns, which are only visible after analysis. Their folded values would be stored
+                /// in the plan and shared with other queries and users.
                 if (query_plan_cache_lookup_context && !query_plan_cache_hit && interpreter_with_analyzer
                     && interpreter_with_analyzer->getPlanner().getUsedRowPolicies().empty()
-                    && !hasRowPolicyForQueryPlanCache(context, query_plan_cache_lookup_context->storage_id))
+                    && !hasRowPolicyForQueryPlanCache(context, query_plan_cache_lookup_context->storage_id)
+                    && !queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(interpreter_with_analyzer->getQueryTree())
+                    && isSerializablePlan(interpreter_with_analyzer->getPlanner().getQueryPlan()))
                 {
-                    /// Clone the plan immediately before any further use to avoid holding a reference
-                    /// into planner.query_plan across subsequent operations.
-                    QueryPlan plan_copy = interpreter_with_analyzer->getPlanner().getQueryPlan().clone();
-                    if (isSerializablePlan(plan_copy))
+                    try
                     {
-                        try
-                        {
-                            universalizePlan(plan_copy);
-                            WriteBufferFromOwnString serialized_plan;
-                            plan_copy.serializeForQueryPlanCache(serialized_plan);
-                            serialized_plan.finalize();
-                            QueryPlanCacheEntry entry;
-                            entry.serialized_plan = serialized_plan.str();
-                            entry.max_threads_follows_settings = plan_copy.getMaxThreads() == getEffectiveMaxThreads(settings);
-                            const auto planner_context = interpreter_with_analyzer->getPlanner().getPlannerContext();
-                            entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
-                            entry.read_columns = getReadColumnsForQueryPlanCacheEntry(planner_context);
-                            entry.access_checked_columns = getAccessCheckedColumnsForQueryPlanCacheEntry(planner_context);
-                            entry.dependencies = buildQueryPlanCacheDependencies(
-                                *query_plan_cache_lookup_context,
-                                plan_copy,
-                                planner_context,
-                                entry.selected_columns,
-                                entry.read_columns,
-                                entry.access_checked_columns);
-                            query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry));
-                        }
-                        catch (const Exception & e)
-                        {
-                            /// Only swallow failures that mean "this plan cannot be cached but is still
-                            /// executable" (e.g. a step type that does not implement serialization yet).
-                            /// Other errors must propagate so we do not mask real bugs in the planner.
-                            if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
-                                throw;
-                            tryLogCurrentException("QueryPlanCache", "Failed to insert plan into cache");
-                        }
+                        /// Clone the plan immediately before any further use to avoid holding a reference
+                        /// into planner.query_plan across subsequent operations. Cloning is inside the
+                        /// error boundary: a step without a `clone` implementation makes the plan
+                        /// uncacheable, but the query is still executed.
+                        QueryPlan plan_copy = interpreter_with_analyzer->getPlanner().getQueryPlan().clone();
+                        universalizePlan(plan_copy);
+                        WriteBufferFromOwnString serialized_plan;
+                        plan_copy.serializeForQueryPlanCache(serialized_plan);
+                        serialized_plan.finalize();
+                        QueryPlanCacheEntry entry;
+                        entry.serialized_plan = serialized_plan.str();
+                        entry.max_threads_follows_settings = plan_copy.getMaxThreads() == getEffectiveMaxThreads(settings);
+                        const auto planner_context = interpreter_with_analyzer->getPlanner().getPlannerContext();
+                        entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
+                        entry.read_columns = getReadColumnsForQueryPlanCacheEntry(planner_context);
+                        entry.access_checked_columns = getAccessCheckedColumnsForQueryPlanCacheEntry(planner_context);
+                        entry.dependencies = buildQueryPlanCacheDependencies(
+                            *query_plan_cache_lookup_context,
+                            plan_copy,
+                            planner_context,
+                            entry.selected_columns,
+                            entry.read_columns,
+                            entry.access_checked_columns);
+                        query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry));
+                    }
+                    catch (const Exception & e)
+                    {
+                        /// Only swallow failures that mean "this plan cannot be cached but is still
+                        /// executable" (e.g. a step type that does not implement serialization yet).
+                        /// Other errors must propagate so we do not mask real bugs in the planner.
+                        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
+                            throw;
+                        tryLogCurrentException("QueryPlanCache", "Failed to insert plan into cache");
                     }
                 }
 

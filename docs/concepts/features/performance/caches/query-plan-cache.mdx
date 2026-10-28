@@ -33,7 +33,7 @@ The lookup key is built before query analysis. A found entry is treated as a can
 The cache key includes:
 
 - The exact canonical representation of the normalized query AST. A 128-bit AST hash is used only to accelerate lookup; equality never relies on the hash alone.
-- A 64-bit hash of the planner-affecting session settings (resource limits, output formatting, logging settings, and a few cache-related settings are excluded — see [`isSettingIgnoredInQueryPlanCache`](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Cache/QueryPlanCache.cpp)).
+- A 64-bit hash of the planner-affecting session settings (resource limits, logging settings, and a few cache-related settings are excluded — see [`isSettingIgnoredInQueryPlanCache`](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Cache/QueryPlanCache.cpp)).
 
 The key does not contain a user identity or table UUID, so compatible plans can be shared across users and across a compatible `DROP TABLE` followed by `CREATE TABLE` of the same logical table. Every hit revalidates `SELECT` privileges for the current user and binds the plan to the current storage snapshot. `SYSTEM DROP QUERY PLAN CACHE` invalidates the cache eagerly.
 
@@ -60,7 +60,9 @@ A query is admitted to the cache only if **all** of the following hold:
 - The table is a direct local, non-system, non-view `MergeTree`-family storage. Distributed tables, table functions, dictionaries, views, materialized views, and wrapper engines such as `Buffer` or `Merge` are excluded.
 - [`enable_analyzer`](/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) is `1` (the default).
 - The query does not run with parallel replicas (`enable_parallel_replicas = 0`).
-- The query does not contain non-deterministic functions (`now`, `rand`, etc.) or subqueries.
+- The query does not contain non-deterministic functions (`now`, `rand`, etc.) or subqueries. This includes non-deterministic functions that only appear after analysis, such as the `CURRENT_USER` identifier or an `ALIAS` column defined with `currentUser`.
+- The query is executed up to the complete processing stage (e.g. not with `clickhouse-client --stage fetch_columns`).
+- The table is not the target of a refreshable materialized view.
 - No row policy applies to the current user for the table. Queries with any applicable row policy, including an always-true policy, bypass the plan cache.
 
 Queries that fail any check are still executed normally; they simply do not interact with the cache.

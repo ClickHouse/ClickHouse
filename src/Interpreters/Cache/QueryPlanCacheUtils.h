@@ -18,10 +18,19 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 
+/// Checks the analyzed query tree for nondeterministic functions that are not visible in the AST:
+/// identifiers resolved to functions and expanded `ALIAS` columns. Such plans must not be cached.
+bool queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(const QueryTreeNodePtr & query_tree);
+
 /// Row policies are outside the cache contract: any applicable policy, including an always-true
 /// one, bypasses lookup and insertion. Policies can be created or dropped while a query runs, so
 /// this is checked again on the hit path and before inserting a freshly built plan.
 bool hasRowPolicyForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id);
+
+/// The target of a refreshable materialized view is resolved by `RefreshTask::getAndLockTargetTable`,
+/// which synchronizes a newly observed target table (e.g. one refreshed on another replica) before
+/// reading it. A cache hit would bypass that, so such tables are outside the cache contract.
+bool isRefreshTargetForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id);
 
 Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 

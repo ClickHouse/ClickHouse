@@ -27,8 +27,10 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
     return setting_name == "enable_query_plan_cache"
         || setting_name.starts_with("query_cache_")
         || setting_name.ends_with("_query_cache")
-        /// Output formatting: applied after the plan and never baked into a plan step.
-        || setting_name.starts_with("output_format_") || setting_name == "send_progress_in_http_headers"
+        /// HTTP response details: applied after the plan and never baked into a plan step.
+        /// `output_format_*` settings are not ignored: functions such as `toJSONString` capture them
+        /// during analysis, and constant arguments are folded into the plan.
+        || setting_name == "send_progress_in_http_headers"
         || setting_name == "http_response_headers"
         /// Generic resource limits: enforced by execution-time guards, not stored on any plan step.
         || setting_name == "max_execution_time" || setting_name == "max_memory_usage" || setting_name == "max_rows_to_read"

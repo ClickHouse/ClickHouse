@@ -1,0 +1,23 @@
+stage: fetch_columns first
+2
+2
+stage: complete first
+2
+1
+CURRENT_USER identifier
+ok
+ok
+ALIAS column with currentUser
+ok
+ok
+ALIAS column with currentUser in WHERE
+1
+1
+1
+output format settings
+"1"
+1
+"1"
+trivial count with the default settings
+1
+1

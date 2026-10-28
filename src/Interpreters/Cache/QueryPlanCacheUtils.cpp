@@ -3,6 +3,9 @@
 #include <Access/Common/AccessType.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/ContextAccess.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
@@ -22,6 +25,7 @@
 #include <Planner/PlannerContext.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Storages/IStorage.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageProxy.h>
 #include <Common/Exception.h>
@@ -196,6 +200,48 @@ std::optional<QueryPlanCacheStorageDependency> buildStorageDependency(
     return dependency;
 }
 
+/// Finds nondeterministic functions in the analyzed query tree, including the ones that come from
+/// identifiers (`CURRENT_USER`) and `ALIAS` columns, and the ones already folded into constants.
+class NonDeterministicFunctionsFinderVisitor : public ConstInDepthQueryTreeVisitor<NonDeterministicFunctionsFinderVisitor>
+{
+public:
+    bool has_non_deterministic_functions = false;
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (has_non_deterministic_functions)
+            return;
+
+        if (const auto * constant_node = node->as<ConstantNode>())
+        {
+            if (!constant_node->isDeterministic())
+                has_non_deterministic_functions = true;
+        }
+        else if (const auto * function_node = node->as<FunctionNode>())
+        {
+            if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+                has_non_deterministic_functions = true;
+        }
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) const
+    {
+        return !has_non_deterministic_functions;
+    }
+};
+
+}
+
+bool isRefreshTargetForQueryPlanCache(const ContextPtr & context, const StorageID & storage_id)
+{
+    return context->getRefreshSet().tryGetTaskForInnerTable(storage_id) != nullptr;
+}
+
+bool queryTreeContainsNonDeterministicFunctionsForQueryPlanCache(const QueryTreeNodePtr & query_tree)
+{
+    NonDeterministicFunctionsFinderVisitor visitor;
+    visitor.visit(query_tree);
+    return visitor.has_non_deterministic_functions;
 }
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast)
@@ -246,6 +292,9 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
         return {};
 
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+        return {};
+
+    if (isRefreshTargetForQueryPlanCache(context, storage_id))
         return {};
 
     if (hasRowPolicyForQueryPlanCache(context, storage_id))
@@ -395,6 +444,10 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
 
     const auto & cached_dependency = entry.dependencies.front();
     if (cached_dependency.table_name != lookup_context.storage_id.getFullTableName())
+        return {};
+
+    /// The table may have become the target of a refreshable materialized view after the entry was cached.
+    if (isRefreshTargetForQueryPlanCache(context, lookup_context.storage_id))
         return {};
 
     auto storage = DatabaseCatalog::instance().tryGetTable(lookup_context.storage_id, context);
