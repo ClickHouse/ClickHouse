@@ -6,6 +6,7 @@
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -419,11 +420,36 @@ bool SpillingHashJoin::canPreserveLeftBlockOrder() const
     bool in_memory_join_preserves_order
         = concurrent_join ? concurrent_join->preservesLeftBlockOrder() : hash_join->preservesLeftBlockOrder();
 
+    /// Hash-key equality must survive the switch: the hash join matches the key's byte
+    /// representation while MergeJoin matches with `compareAt`, and for some types the two
+    /// disagree - floating point (`-0.0` == `+0.0`, NaNs with different payloads compare equal
+    /// but hash differently), `JSON` and `Dynamic` (the hash depends on the physical layout) -
+    /// also when nested. Crossing the spill threshold must not change the result, so such keys
+    /// cannot take the order-preserving fallback (see `keyTypeBreaksHashSharding`).
+    auto keys_preserve_hash_equality = [this]
+    {
+        auto keys_ok = [](const Names & key_names, const Block & header)
+        {
+            for (const auto & name : key_names)
+            {
+                const auto * key = header.findByName(name);
+                /// Be conservative when a key column cannot be found.
+                if (!key || QueryPlanOptimizations::keyTypeBreaksHashSharding(*key->type))
+                    return false;
+            }
+            return true;
+        };
+
+        const auto & on_clause = table_join->getOnlyClause();
+        return keys_ok(on_clause.key_names_left, *left_sample_block) && keys_ok(on_clause.key_names_right, right_sample_block);
+    };
+
     /// The spill fallback must be able to run as an order-preserving MergeJoin. `any_take_last_row`
     /// has no MergeJoin counterpart: it picks the first match in the right sort order instead.
     bool merge_join_fallback_is_possible = MergeJoin::isSupported(table_join)
         && (table_join->strictness() == JoinStrictness::Any || table_join->strictness() == JoinStrictness::All)
-        && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any);
+        && isInnerOrLeft(table_join->kind()) && !(any_take_last_row && table_join->strictness() == JoinStrictness::Any)
+        && keys_preserve_hash_equality();
 
     return in_memory_join_preserves_order && merge_join_fallback_is_possible;
 }
