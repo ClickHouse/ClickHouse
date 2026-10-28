@@ -223,10 +223,9 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.buzz_fuzzer_jobs
         ],
-        *[
-            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.performance_comparison_with_master_head_jobs
-        ],
+        # Temporary: CFI measurement of #127960, these depend only on the release builds.
+        *JobConfigs.performance_comparison_with_master_head_jobs,
+        *JobConfigs.functional_tests_master_release_jobs,
         JobConfigs.parser_memory_check_job,
         JobConfigs.storage_memory_check_job,
         # ClickBench runs on PRs only when files in its digest change
