@@ -3673,7 +3673,8 @@ std::optional<Field> tryFoldStructureArgument(const ASTPtr & argument, const Con
 /// Lowercase function names and type names of `ast`, without the column, table and database names, so that
 /// a gate matched on them is never carried by an object's name.
 String nameTokens(
-    const IAST & ast, const IAST * skip, bool with_types, const ContextPtr & context, std::vector<ASTPtr> * validated_types = nullptr)
+    const IAST & ast, const IAST * skip, bool with_types, const ContextPtr & context, std::vector<ASTPtr> * validated_types = nullptr,
+    std::vector<ASTPtr> * structure_columns = nullptr)
 {
     String names;
     std::set<const IAST *> table_functions;
@@ -3686,7 +3687,12 @@ String nameTokens(
             ParserDataType type_parser;
             IParser & parser = is_structure ? static_cast<IParser &>(structure_parser) : type_parser;
             const ASTPtr parsed = parseQuery(parser, text, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            names += nameTokens(*parsed, nullptr, true, context, validated_types);
+            names += nameTokens(*parsed, nullptr, true, context, validated_types, structure_columns);
+            /// CREATE also checks the statistics and codecs that a structure declares, like those of its own columns.
+            if (structure_columns && is_structure)
+                for (const auto & child : parsed->children)
+                    if (child->as<ASTColumnDeclaration>())
+                        structure_columns->push_back(child);
             if (validated_types && !is_structure)
                 validated_types->push_back(parsed);
             else if (validated_types)
@@ -4430,9 +4436,10 @@ ReplayGateNeeds collectReplayGateNeeds(
         /// Shared gates: each carrier is matched on the statement's names or AST, over-approximated
         /// where the exact check site is not worth mirroring.
         std::vector<ASTPtr> validated_types;
-        String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, context, &validated_types);
+        std::vector<ASTPtr> declared_columns;
+        String names = nameTokens(*create_ast, unread_select, /* with_types= */ !plain_view, context, &validated_types, &declared_columns);
         for (const auto & query : eval_queries)
-            names += nameTokens(*query, nullptr, /* with_types= */ true, context, &validated_types);
+            names += nameTokens(*query, nullptr, /* with_types= */ true, context, &validated_types, &declared_columns);
 
         /// `nameTokens` names one of each gated aggregate function for an aggregate function name it cannot fold.
         needs.funnel_functions |= hasToken(names, "sequencenextnode", true);
@@ -4479,11 +4486,13 @@ ReplayGateNeeds collectReplayGateNeeds(
             for (const auto & child : create->columns_list->columns->children)
                 needs.column_declaration |= child->as<ASTColumnDeclaration>() != nullptr;
 
-        /// `allow_statistics` is read for every column STATISTICS (`getColumnsDescription`).
+        /// `allow_statistics` is read for every column STATISTICS (`getColumnsDescription`), also in a table-function structure.
         if (create->columns_list && create->columns_list->columns)
-            for (const auto & child : create->columns_list->columns->children)
-                if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getStatisticsDesc())
-                    needs.statistics = true;
+            declared_columns.insert(
+                declared_columns.end(), create->columns_list->columns->children.begin(), create->columns_list->columns->children.end());
+        for (const auto & child : declared_columns)
+            if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getStatisticsDesc())
+                needs.statistics = true;
 
         /// Codec gates come from the codec factory itself, for every column CODEC (`getColumnsDescription`).
         const auto add_codec_gates = [&needs](const std::vector<String> & gates)
@@ -4496,10 +4505,9 @@ ReplayGateNeeds collectReplayGateNeeds(
                     needs.codec_gates.insert(gate);
             }
         };
-        if (create->columns_list && create->columns_list->columns)
-            for (const auto & child : create->columns_list->columns->children)
-                if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getCodec())
-                    add_codec_gates(codecGateNeeds(column->getCodec(), column->getType(), codec_gates_to_check));
+        for (const auto & child : declared_columns)
+            if (const auto * column = child->as<ASTColumnDeclaration>(); column && column->getCodec())
+                add_codec_gates(codecGateNeeds(column->getCodec(), column->getType(), codec_gates_to_check));
 
         /// `SHOW CREATE` lists the codecs declared for subcolumns after the columns, as `CODEC name (codecs)`. CREATE reads
         /// `enable_subcolumn_codecs` for each, and validates its codecs against the type of the subcolumn like a column

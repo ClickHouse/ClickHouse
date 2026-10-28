@@ -11,3 +11,10 @@ data path unchanged by the refused dump
 xgboost: dump rc=0
 SET enable_xgboost = 1;
 xgboost: replay rc=0
+--- the declarations of a table-function structure keep their gates ---
+structure_statistics: dump rc=0
+SET allow_statistics = 1;
+structure_statistics: replay rc=0
+structure_codec: dump rc=0
+SET enable_zxc_codec = 1;
+structure_codec: replay rc=0

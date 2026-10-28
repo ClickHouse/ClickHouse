@@ -3,7 +3,7 @@
 # Tag no-fasttest: the XGBoost contrib is not built in the fast test.
 
 # --dump-schema in clickhouse-local leaves the data path as it was, also where loading repairs or cleans up files.
-# It also orders objects after the dictionary that their predictXGBoost call reads.
+# It also orders objects after their predictXGBoost dictionary and keeps the gates of table-function structures.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -110,3 +110,12 @@ CREATE DICTIONARY d.zzz_model (x1 Float64, x2 Float64, y Float64) PRIMARY KEY (x
 CREATE TABLE d.src (x1 Float64, x2 Float64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW d.aaa_mv ENGINE = Memory AS SELECT predictXGBoost('d.zzz_model', x1, x2) AS p FROM d.src;
 CREATE TABLE d.aaa_default (x1 Float64, x2 Float64, p Float64 DEFAULT predictXGBoost('d.zzz_model', x1, x2)) ENGINE = Memory;"
+
+echo '--- the declarations of a table-function structure keep their gates ---'
+round_trip structure_statistics "
+CREATE DATABASE d;
+CREATE TABLE d.t (x UInt64) ENGINE = Remote('127.0.0.1', input('x UInt64 STATISTICS(tdigest)'));" --allow_statistics=0
+round_trip structure_codec "
+SET enable_zxc_codec = 1;
+CREATE DATABASE d;
+CREATE TABLE d.t (x UInt64) ENGINE = Remote('127.0.0.1', input('x UInt64 CODEC(ZXC)'));"
