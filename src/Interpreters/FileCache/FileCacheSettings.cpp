@@ -70,6 +70,7 @@ namespace ErrorCodes
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
     DECLARE(UInt64, idle_client_ttl_sec, 7 * 24 * 60 * 60, "If non-zero and the cache policy tracks per-client usage, all cache entries that belong to a client (user_id) which has not been accessed for this many seconds are fully removed from the cache. Each access by the client refreshes the timer. Default is 1 week. Used by the distributed cache server.", 0) \
     DECLARE(UInt64, idle_client_check_interval_sec, 0, "How often the idle client eviction task runs, in seconds. Only meaningful when `idle_client_ttl_sec` is non-zero. 0 means an automatic value (`max(1, idle_client_ttl_sec / 10)`).", 0) \
+    DECLARE(NonZeroUInt64, client_weight_persist_interval_sec, 300, "How often the per-client weights are written to disk, in seconds, so that a client which has not reconnected yet keeps its weight across a restart. The first write happens one interval after startup, and a clean shutdown writes them out as well. Only meaningful when the cache policy tracks per-client usage.", 0) \
     DECLARE(NonZeroUInt64, idle_client_eviction_threads, 4, "Maximum number of threads used to purge idle clients' cache. Only meaningful when `idle_client_ttl_sec` is non-zero.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
@@ -309,6 +310,38 @@ void FileCacheSettings::validate()
             settings[FileCacheSetting::max_size_ratio_to_total_space].value,
             settings[FileCacheSetting::path].value,
             settings[FileCacheSetting::max_size].value, total_space);
+    }
+
+    /// With an SLRU policy, a file segment must fit whole into each SLRU queue
+    /// (of both the data and the system part with `use_split_cache`).
+    const auto policy = settings[FileCacheSetting::cache_policy].value;
+    if (policy == FileCachePolicy::SLRU || policy == FileCachePolicy::SLRU_OVERCOMMIT)
+    {
+        /// The same rounding as in `SplitFileCachePriority` and `SLRUFileCachePriority`.
+        auto get_ratio = [](size_t total, double ratio)
+        {
+            return static_cast<size_t>(std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
+        };
+
+        const size_t max_size = settings[FileCacheSetting::max_size];
+        const double ratio = settings[FileCacheSetting::slru_size_ratio];
+        auto get_smallest_queue_size = [&](size_t size) { return std::min(get_ratio(size, ratio), get_ratio(size, 1 - ratio)); };
+
+        size_t smallest_queue_size = get_smallest_queue_size(max_size);
+        if (settings[FileCacheSetting::use_split_cache])
+        {
+            const double system_ratio = settings[FileCacheSetting::split_cache_ratio];
+            smallest_queue_size = std::min(
+                get_smallest_queue_size(get_ratio(max_size, 1 - system_ratio)),
+                get_smallest_queue_size(get_ratio(max_size, system_ratio)));
+        }
+
+        if (settings[FileCacheSetting::max_file_segment_size] > smallest_queue_size)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`max_file_segment_size` ({}) must not exceed the size of each SLRU queue ({} with `max_size` {}): "
+                "a file segment must fit whole into the protected and the probationary queue",
+                settings[FileCacheSetting::max_file_segment_size].value, smallest_queue_size, max_size);
     }
 }
 
