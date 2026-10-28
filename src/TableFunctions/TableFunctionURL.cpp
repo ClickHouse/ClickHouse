@@ -678,6 +678,13 @@ SELECT * FROM url(
 Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
 :::
 
+The body is resolved in the scope of the enclosing query, so it can use `WITH` aliases and common table expressions. It cannot reference columns of the enclosing query:
+
+```sql
+WITH '{"user":"alice"}' AS payload
+SELECT * FROM url('https://api.example.com/echo', JSONEachRow, body(payload));
+```
+
 A subquery body is not supported for clustered reads: [`urlCluster`](/reference/functions/table-functions/urlCluster) rejects it, and `url` does not use parallel replicas when the body is a subquery. Every participating server would re-execute the subquery locally, so the request body could differ between the servers. A constant string body is identical everywhere and works with both.
 
 ## Dispatching by URL scheme {#scheme-dispatch}

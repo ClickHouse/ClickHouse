@@ -5480,6 +5480,38 @@ static bool findIdentifier(const FunctionNode & function)
 }
 
 /// Resolve table function node in scope
+/** Resolve the first argument of a special wrapper argument of a table function (for example, `body` of `url`)
+  * in the enclosing scope, keeping the wrapper itself unresolved. A subquery is resolved as a table expression,
+  * so it is not evaluated as a scalar. After resolution, references to `WITH` aliases and CTEs are replaced by
+  * their definitions, so the argument converted back to AST is self-contained.
+  */
+void QueryAnalyzer::resolveFirstArgumentOfTableFunctionWrapper(FunctionNode & wrapper_function, const String & table_function_name, IdentifierResolveScope & scope)
+{
+    auto & argument = wrapper_function.getArguments().getNodes().front();
+    const auto argument_node_type = argument->getNodeType();
+    const bool is_subquery = argument_node_type == QueryTreeNodeType::QUERY || argument_node_type == QueryTreeNodeType::UNION;
+
+    resolveExpressionNode(argument, scope, false /*allow_lambda_expression*/, is_subquery /*allow_table_expression*/);
+
+    if (is_subquery)
+    {
+        bool is_correlated = argument_node_type == QueryTreeNodeType::QUERY
+            ? argument->as<QueryNode &>().isCorrelated()
+            : argument->as<UnionNode &>().isCorrelated();
+        if (is_correlated)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The subquery in the argument `{}` of table function {} cannot reference columns of the enclosing query",
+                wrapper_function.getFunctionName(), table_function_name);
+        return;
+    }
+
+    /// Do not print the argument: it may contain secrets (e.g. the request body of `url` is masked in logs).
+    if (argument->getNodeType() != QueryTreeNodeType::CONSTANT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The first argument of `{}` in table function {} must be a constant expression or a subquery",
+            wrapper_function.getFunctionName(), table_function_name);
+}
+
 void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     IdentifierResolveScope & scope,
     QueryExpressionsAliasVisitor & expressions_visitor,
@@ -5586,6 +5618,11 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_function_argument_index);
         if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
         {
+            auto * wrapper_function = table_function_argument->as<FunctionNode>();
+            if (wrapper_function && table_function_ptr->isWrapperWithResolvedFirstArgument(wrapper_function->getFunctionName())
+                && !wrapper_function->getArguments().getNodes().empty())
+                resolveFirstArgumentOfTableFunctionWrapper(*wrapper_function, table_function_name, scope);
+
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }

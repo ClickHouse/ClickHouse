@@ -62,6 +62,13 @@ public:
       */
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
+    /** Return true if `function_name` is a special wrapper argument of this table function (for example, `body` of `url`).
+      * Its index must be returned by `skipAnalysisForArguments`, because the wrapper itself is not a regular function,
+      * but its first argument is still resolved in the enclosing scope, so that it can use `WITH` aliases and CTEs
+      * of the enclosing query. The first argument must resolve to a constant or to a non-correlated subquery.
+      */
+    virtual bool isWrapperWithResolvedFirstArgument(const String & /*function_name*/) const { return false; }
+
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail

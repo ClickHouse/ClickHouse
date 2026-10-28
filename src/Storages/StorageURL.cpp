@@ -2737,7 +2737,9 @@ size_t StorageURL::evalArgsAndCollectHeadersAndBody(
                         ErrorCodes::BAD_ARGUMENTS,
                         "URL table function body=() with a constant string accepts a single argument; format applies to subqueries only");
 
-                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(input_argument, context);
+                /// Do not turn a bare identifier into a string, as it is done for the other arguments: it is more likely a
+                /// reference to an alias (e.g. from `WITH`) than the intended payload, and sending its name silently would be wrong.
+                auto ast_literal = evaluateConstantExpressionAsLiteral(input_argument, context);
                 auto literal_value = ast_literal->as<ASTLiteral>()->value;
                 if (literal_value.getType() != Field::Types::Which::String)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as body argument");
