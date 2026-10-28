@@ -614,7 +614,58 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
     return false;
 }
 
-std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
+namespace
+{
+
+/// Pre-order ranges of join tree nodes, so that `isFromJoinTree(node, root)` is a range check.
+class JoinTreeRanges
+{
+public:
+    void add(const IQueryTreeNode * root)
+    {
+        if (ranges.contains(root))
+            return;
+
+        /// A node and whether its children are already on the stack.
+        std::vector<std::pair<const IQueryTreeNode *, bool>> stack{{root, false}};
+        std::vector<const IQueryTreeNode *> children;
+        while (!stack.empty())
+        {
+            auto [node, children_added] = stack.back();
+            if (children_added)
+            {
+                ranges[node].second = next_position;
+                stack.pop_back();
+                continue;
+            }
+
+            stack.back().second = true;
+            ranges[node] = {next_position++, 0};
+            children.clear();
+            collectJoinTreeChildTableExpressions(node, children);
+            for (const auto * child : children)
+                stack.emplace_back(child, false);
+        }
+    }
+
+    /// `isFromJoinTree(node, root)` for an indexed `root`.
+    bool isFromSubtree(const IQueryTreeNode * node, const IQueryTreeNode * root) const
+    {
+        auto root_it = ranges.find(root);
+        chassert(root_it != ranges.end());
+        auto node_it = ranges.find(node);
+        return root_it != ranges.end() && node_it != ranges.end()
+            && root_it->second.first <= node_it->second.first && node_it->second.first < root_it->second.second;
+    }
+
+private:
+    /// Pre-order position of a node and the end of its subtree.
+    std::unordered_map<const IQueryTreeNode *, std::pair<size_t, size_t>> ranges;
+    size_t next_position = 0;
+};
+
+std::optional<JoinTableSide> getColumnSideFromJoinTree(
+    const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node, const JoinTreeRanges & join_tree_ranges)
 {
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
         return {};
@@ -628,7 +679,7 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
         std::optional<JoinTableSide> result;
         for (const auto & argument_node : argument_nodes)
         {
-            auto table_side = getColumnSideFromJoinTree(argument_node, join_node);
+            auto table_side = getColumnSideFromJoinTree(argument_node, join_node, join_tree_ranges);
             if (table_side && result && *table_side != *result)
                 return {};
             result = table_side;
@@ -638,11 +689,13 @@ std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const Quer
 
     const auto * column_src = resolved_identifier->as<ColumnNode &>().getColumnSource().get();
 
-    if (isFromJoinTree(column_src, join_node.getLeftTableExpressionNode().get()))
+    if (join_tree_ranges.isFromSubtree(column_src, join_node.getLeftTableExpressionNode().get()))
         return JoinTableSide::Left;
-    if (isFromJoinTree(column_src, join_node.getRightTableExpressionNode().get()))
+    if (join_tree_ranges.isFromSubtree(column_src, join_node.getRightTableExpressionNode().get()))
         return JoinTableSide::Right;
     return {};
+}
+
 }
 
 IdentifierResolveScope & QueryAnalyzer::createIdentifierResolveScope(const QueryTreeNodePtr & scope_node, IdentifierResolveScope * parent_scope)
@@ -2989,22 +3042,42 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
           * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
           * If it's on null side, we need to convert column type to Nullable.
           */
+        JoinTreeRanges join_tree_ranges;
+        /// The whole join tree first, so that its JOINs are indexed by one traversal.
+        if (const auto * query_node = join_tree_scope->scope_node->as<QueryNode>(); query_node && query_node->getJoinTreeNode())
+            join_tree_ranges.add(query_node->getJoinTreeNode().get());
+        for (const auto & table_expression : join_tree_scope->registered_table_expression_nodes)
+        {
+            if (table_expression->getNodeType() == QueryTreeNodeType::JOIN)
+                join_tree_ranges.add(table_expression.get());
+        }
+
+        /// Whether the node of a matched column is already a copy made by this loop.
+        std::vector<bool> is_copied(matched_expression_nodes_with_names.size());
+
         for (const auto & table_expression : join_tree_scope->registered_table_expression_nodes)
         {
             const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
             if (!nearest_scope_join_node)
                 continue;
 
-            for (auto & [node, node_name] : matched_expression_nodes_with_names)
+            for (size_t i = 0; i < matched_expression_nodes_with_names.size(); ++i)
             {
-                auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node);
+                auto & node = matched_expression_nodes_with_names[i].first;
+                auto join_identifier_side = getColumnSideFromJoinTree(node, *nearest_scope_join_node, join_tree_ranges);
                 if (!join_identifier_side)
+                    continue;
+                /// Copying a copy again without a type change gives the same node.
+                if (is_copied[i] && !IdentifierResolver::needToConvertJoinedColumnTypeToNull(
+                        node, nearest_scope_join_node->getKind(), join_identifier_side, *join_tree_scope))
                     continue;
                 auto projection_name_it = node_to_projection_name.find(node);
                 /// Records the type change in the given scope's `join_columns_with_changed_types`.
                 auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, node->getResultType(), nearest_scope_join_node->getKind(), join_identifier_side, *join_tree_scope);
                 if (nullable_node)
                 {
+                    if (nullable_node != node)
+                        is_copied[i] = true;
                     node = nullable_node;
                     /// Set the same projection name for new nullable node
                     if (projection_name_it != node_to_projection_name.end())
