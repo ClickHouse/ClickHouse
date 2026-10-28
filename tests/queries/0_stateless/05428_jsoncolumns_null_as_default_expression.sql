@@ -36,3 +36,15 @@ INSERT INTO FUNCTION file(currentDatabase() || '_05428.json', JSONColumns, 'a UI
 SELECT b FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a*2');
 SELECT b FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a*2, c UInt32 DEFAULT b + 1');
 SELECT c FROM file(currentDatabase() || '_05428.json', JSONColumns, 'a UInt32, b UInt32 DEFAULT a*2, c UInt32 DEFAULT b + 1');
+
+-- A DEFAULT which depends on a subcolumn reads its column.
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_tuple.json', JSONColumns, 'a Tuple(x UInt32), b Nullable(UInt32)')
+    SELECT * FROM values('a Tuple(x UInt32), b Nullable(UInt32)', (tuple(6), NULL), (tuple(7), 3)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_05428_tuple.json', JSONColumns, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
+
+INSERT INTO FUNCTION file(currentDatabase() || '_05428_tuple.parquet', Parquet, 'a Tuple(x UInt32), b Nullable(UInt32)')
+    SELECT * FROM values('a Tuple(x UInt32), b Nullable(UInt32)', (tuple(6), NULL), (tuple(7), 3)) SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT b FROM file(currentDatabase() || '_05428_tuple.parquet', Parquet, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');
+SELECT a.x, b FROM file(currentDatabase() || '_05428_tuple.parquet', Parquet, 'a Tuple(x UInt32), b UInt32 DEFAULT a.x * 2');

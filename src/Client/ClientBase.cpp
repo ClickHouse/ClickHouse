@@ -2544,12 +2544,14 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 }
 
 /// Replaces the not inserted columns in a default expression with their defaults, as the server does.
-void substituteNotInsertedColumns(ASTPtr & ast, const NameSet & inserted_columns, const ColumnsDescription & columns)
+/// `lambda_arguments` are the names bound by the enclosing lambdas, they are not columns.
+void substituteNotInsertedColumns(
+    ASTPtr & ast, const NameSet & inserted_columns, const ColumnsDescription & columns, const NameSet & lambda_arguments = {})
 {
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
         const String & name = identifier->name();
-        if (inserted_columns.contains(name) || !columns.has(name))
+        if (lambda_arguments.contains(name) || inserted_columns.contains(name) || !columns.has(name))
             return;
 
         const auto & column = columns.get(name);
@@ -2566,8 +2568,22 @@ void substituteNotInsertedColumns(ASTPtr & ast, const NameSet & inserted_columns
         return;
     }
 
+    /// Keep the declarations of the lambda arguments and their uses in the lambda body.
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda" && function->arguments
+        && function->arguments->children.size() == 2)
+    {
+        NameSet body_lambda_arguments = lambda_arguments;
+        if (const auto * arguments_tuple = function->arguments->children[0]->as<ASTFunction>(); arguments_tuple && arguments_tuple->arguments)
+            for (const auto & argument : arguments_tuple->arguments->children)
+                if (const auto * argument_identifier = argument->as<ASTIdentifier>())
+                    body_lambda_arguments.insert(argument_identifier->name());
+
+        substituteNotInsertedColumns(function->arguments->children[1], inserted_columns, columns, body_lambda_arguments);
+        return;
+    }
+
     for (auto & child : ast->children)
-        substituteNotInsertedColumns(child, inserted_columns, columns);
+        substituteNotInsertedColumns(child, inserted_columns, columns, lambda_arguments);
 }
 }
 

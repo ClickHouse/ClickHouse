@@ -27,4 +27,11 @@ $CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t (c) FROM I
 $CLICKHOUSE_CLIENT -q "SELECT a, b, c FROM t ORDER BY b, c"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
-rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json"
+# A lambda argument with the name of a not inserted column is not replaced.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_lambda (a UInt32 DEFAULT 5, b UInt32 DEFAULT arraySum(arrayMap(a -> a + 1, [1, 2])) + a) ENGINE = Memory"
+printf '{"b":null}\n' > "${DATA_FILE}_lambda.jsonl"
+$CLICKHOUSE_CLIENT --input_format_null_as_default 1 -q "INSERT INTO t_lambda (b) FROM INFILE '${DATA_FILE}_lambda.jsonl' FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT -q "SELECT a, b FROM t_lambda"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lambda"
+
+rm -f "${DATA_FILE}.json" "${DATA_FILE}.jsonl" "${DATA_FILE}_c.json" "${DATA_FILE}_lambda.jsonl"
