@@ -43,9 +43,9 @@ namespace DB::Parquet
 {
 
 SchemaConverter::SchemaConverter(
-    const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
+    const FileFooter & file_footer_, const ReadOptions & options_,
     const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
-    : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
+    : file_footer(file_footer_), file_metadata(file_footer_.metadata), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
     if (precomputed_geo_columns.has_value())
@@ -470,6 +470,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 
     DataTypePtr primitive_type_hint = node.type_hint;
     bool output_nullable = false;
+    bool output_nullable_requested = false;
     bool output_nullable_if_not_json = false;
     if (primitive_type_hint)
     {
@@ -480,6 +481,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         if (primitive_type_hint->isNullable())
         {
             output_nullable = true;
+            output_nullable_requested = true;
             primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
         }
     }
@@ -518,7 +520,9 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(*node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata);
+        processPrimitiveColumn(
+            *node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata,
+            primitive_column_idx - 1);
     }
     catch (Exception & e)
     {
@@ -534,10 +538,12 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         }
     }
 
-    /// GeoParquet types like Point or Polygon can't be inside Nullable.
+    /// Geo types based on arrays, like Polygon, can't be inside Nullable.
     /// Geometry (Variant) is also not Nullable-compatible.
+    /// Point (Tuple) can be inside Nullable, but it is inferred as non-nullable. If `Nullable(Point)`
+    /// is requested explicitly, keep the null map, otherwise NULLs would silently become (0, 0).
     if (typeid_cast<const DataTypeArray *>(inferred_type.get())
-        || typeid_cast<const DataTypeTuple *>(inferred_type.get())
+        || (typeid_cast<const DataTypeTuple *>(inferred_type.get()) && !output_nullable_requested)
         || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
     {
         output_nullable = false;
@@ -1204,10 +1210,69 @@ std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & 
 
 }
 
+std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_t column_idx) const
+{
+    /// WKB (ISO) codes of 2D geometries are 1..6. With Z and/or M the code is increased by 1000,
+    /// 2000 or 3000. Such geometries have no corresponding ClickHouse type and cannot be parsed.
+    auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
+
+    /// The footer is parsed without column chunks, parse the chunks of only this column.
+    std::vector<FileColumnChunks> parsed;
+    deserializeColumnChunks(
+        file_footer.serialized.data(), file_footer.serialized.size(), file_footer.column_chunk_offsets, {column_idx}, parsed);
+    const auto & chunks = parsed.at(0).chunks;
+
+    std::optional<Int32> single_type;
+    bool is_mixed = false;
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (column_idx >= file_footer.numColumnChunks(row_group_idx))
+        {
+            is_mixed = true;
+            continue;
+        }
+        const auto & column_meta = chunks.at(row_group_idx).meta_data;
+
+        /// A column chunk with only NULLs has no geometry types.
+        if (column_meta.statistics.__isset.null_count && column_meta.statistics.null_count == column_meta.num_values)
+            continue;
+
+        /// An empty list means that the types are unknown.
+        if (!column_meta.__isset.geospatial_statistics || column_meta.geospatial_statistics.geospatial_types.empty())
+        {
+            is_mixed = true;
+            continue;
+        }
+
+        for (Int32 geospatial_type : column_meta.geospatial_statistics.geospatial_types)
+        {
+            if (!is_2d_geometry_type(geospatial_type))
+                return std::nullopt;
+            if (single_type.has_value() && *single_type != geospatial_type)
+                is_mixed = true;
+            single_type = geospatial_type;
+        }
+    }
+
+    if (is_mixed || !single_type.has_value())
+        return GeoType::Mixed;
+
+    switch (*single_type)
+    {
+        case 1: return GeoType::Point;
+        case 2: return GeoType::LineString;
+        case 3: return GeoType::Polygon;
+        case 4: return GeoType::MultiPoint;
+        case 5: return GeoType::MultiLineString;
+        case 6: return GeoType::MultiPolygon;
+        default: return GeoType::Mixed;
+    }
+}
+
 void SchemaConverter::processPrimitiveColumn(
     const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const
+    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const
 {
     /// Inputs:
     ///  * Parquet Type ("physical type"),
@@ -1397,12 +1462,12 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
-    auto set_plain_int64_decoder = [&]
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
     {
         out_inferred_type = std::make_shared<DataTypeInt64>();
         auto converter = std::make_shared<IntConverter>();
         converter->input_size = 8;
-        out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
         out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
         out_decoder.fixed_size_converter = std::move(converter);
     };
@@ -1442,6 +1507,80 @@ void SchemaConverter::processPrimitiveColumn(
         }
     }
 
+    /// Parquet `GEOMETRY` and `GEOGRAPHY` logical types: WKB values. ClickHouse has no geography
+    /// type, so `GEOGRAPHY` (whose coordinates are longitude/latitude) is read into the same geo
+    /// types as `GEOMETRY`, and its edge interpolation algorithm is not represented. The CRS is not
+    /// represented either. The sort order of these logical types is undefined, so min/max
+    /// statistics must be ignored: `allow_stats` stays false here and in the `String` case below.
+    const bool is_geospatial_logical_type = logical.__isset.GEOMETRY || logical.__isset.GEOGRAPHY;
+    if (is_geospatial_logical_type && type != parq::Type::BYTE_ARRAY)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for geospatial logical type: {}", thriftToString(element));
+
+    /// If the type hint is String, return the raw WKB bytes.
+    if (is_geospatial_logical_type && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
+    {
+        std::optional<GeoType> type_from_hint;
+        if (type_hint)
+        {
+            const String hint_name = type_hint->getName();
+            if (hint_name == "Point")
+                type_from_hint = GeoType::Point;
+            else if (hint_name == "MultiPoint")
+                type_from_hint = GeoType::MultiPoint;
+            else if (hint_name == "LineString" || hint_name == "Ring")
+                /// `Ring` has the same structure as `LineString` and is not a WKB geometry type.
+                type_from_hint = GeoType::LineString;
+            else if (hint_name == "Polygon")
+                type_from_hint = GeoType::Polygon;
+            else if (hint_name == "MultiLineString")
+                type_from_hint = GeoType::MultiLineString;
+            else if (hint_name == "MultiPolygon")
+                type_from_hint = GeoType::MultiPolygon;
+            else if (hint_name == "Geometry")
+                type_from_hint = GeoType::Mixed;
+        }
+
+        /// A geo type requested explicitly is decoded even if the inference of geo types is disabled.
+        if (options.format.parquet.allow_geoparquet_parser || type_from_hint)
+        {
+            GeoColumnMetadata column_geo_metadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
+            bool decode_geo = true;
+            if (type_from_hint)
+            {
+                /// Decode directly into the requested type (a value of another type is an error).
+                column_geo_metadata.type = *type_from_hint;
+            }
+            else if (geo_metadata.has_value())
+            {
+                /// GeoParquet 1.1 allows to have both the `geo` metadata and the logical type. Use
+                /// the geometry type declared in the metadata, the same as for a column without
+                /// the logical type.
+                if (geo_metadata->encoding != GeoEncoding::WKB)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Column with the geospatial logical type {} is declared with a non-WKB encoding in GeoParquet metadata",
+                        thriftToString(element));
+                column_geo_metadata.type = geo_metadata->type;
+            }
+            else if (auto type_from_statistics = getGeoTypeFromGeospatialStatistics(column_idx))
+            {
+                column_geo_metadata.type = *type_from_statistics;
+            }
+            else
+            {
+                /// The column has geometries with Z and/or M coordinates, which cannot be parsed.
+                /// Return the raw WKB bytes instead.
+                decode_geo = false;
+            }
+
+            if (decode_geo)
+            {
+                out_inferred_type = getGeoDataType(column_geo_metadata.type);
+                out_decoder.string_converter = std::make_shared<GeoConverter>(column_geo_metadata, options.format.precise_float_parsing);
+                return;
+            }
+        }
+    }
+
     /// GeoParquet.
     /// Spec says "Geometry columns MUST be at the root of the schema", but we allow them to be
     /// nested in tuples etc, why not. (Though nesting in arrays/maps probably currently wouldn't
@@ -1466,7 +1605,11 @@ void SchemaConverter::processPrimitiveColumn(
         return;
     }
 
-    if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
+    if (is_geospatial_logical_type)
+    {
+        /// Raw WKB bytes, see above. Fall through to dispatch by physical type only.
+    }
+    else if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
         converted == CONV::BSON || converted == CONV::ENUM)
     {
@@ -1571,7 +1714,7 @@ void SchemaConverter::processPrimitiveColumn(
 
         if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
         {
-            set_plain_int64_decoder();
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
             return;
         }
 
@@ -1922,7 +2065,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT64:
         {
-            set_plain_int64_decoder();
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
             return;
         }
         case parq::Type::INT96:
@@ -1952,7 +2095,8 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeString>();
             auto converter = std::make_shared<TrivialStringConverter>();
-            out_decoder.allow_stats = is_output_type_string();
+            /// The sort order of the geospatial logical types is undefined, their min/max must be ignored.
+            out_decoder.allow_stats = is_output_type_string() && !is_geospatial_logical_type;
             out_decoder.string_converter = std::move(converter);
 
             if ((logical.__isset.JSON || converted == CONV::JSON) && options.format.parquet.enable_json_parsing)

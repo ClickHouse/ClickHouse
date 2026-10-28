@@ -8,8 +8,6 @@ DROP TABLE IF EXISTS t1_04201;
 CREATE TABLE t1_04201 (x Int32) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t1_04201 VALUES (1), (2), (3);
 
-SET enable_analyzer = 1;
-
 -- SELECT expression `t1.x + t2.x` does NOT match GROUP BY `t1.x + t1.x` because the
 -- second argument has a different column source. Without recursive source-equality check,
 -- the parent FunctionNode would be incorrectly considered "in GROUP BY".
