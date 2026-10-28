@@ -1,0 +1,14 @@
+JSONCompact	1	a
+JSONCompact	2	a
+ProtobufList	1	a
+ProtobufList	2	a
+ProtobufSingle	1	a
+Protobuf	1	a
+Protobuf	11	b
+JSONEachRow	1	a
+JSONEachRow	11	b
+JSONEachRow array_of_rows	1	a
+Template resultset	1	a
+Template resultset	11	b
+CustomSeparated	1	a
+CustomSeparated	2	a

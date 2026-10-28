@@ -36,7 +36,7 @@ String taskBucketId(const DistributedQueryTask & task)
 /// True when `from_stage` already depends on `to_stage` (directly or through other stages).
 /// Delivery would add the reverse edge and cycle.
 bool stageDependsOnTransitively(
-    const std::unordered_map<String, std::unordered_map<String, String>> & stage_depends_on,
+    const std::unordered_map<String, StageDependencies> & stage_depends_on,
     const String & from_stage,
     const String & to_stage)
 {
@@ -422,7 +422,7 @@ private:
     {
         const String & child_stage = level == 0 ? producer.stage : level_stages[level - 1];
         addExchange(level_exchanges[level], child_buckets.size(), level_sizes[level]);
-        distributed_plan.stage_depends_on[level_stages[level]][child_stage] = level_exchanges[level];
+        distributed_plan.stage_depends_on[level_stages[level]].push_back({child_stage, level_exchanges[level]});
 
         auto outputs = levelOutputs(level);
         DistributedQueryStage stage;
@@ -493,7 +493,7 @@ private:
                 task.input_exchange_streams.push_back(std::move(stream));
             }
             if (receiver.has_completion_edge)
-                distributed_plan.stage_depends_on[receiver.name][level_stages.back()] = broadcast_exchanges[index];
+                distributed_plan.stage_depends_on[receiver.name].push_back({level_stages.back(), broadcast_exchanges[index]});
         }
     }
 };

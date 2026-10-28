@@ -18,7 +18,7 @@ INSERT INTO t1 VALUES (0,'v1_0'),(1,'v1_1'),(2,'v1_2');
 INSERT INTO t2 VALUES (0,'v2_0'),(1,'v2_1'),(3,'v2_3');
 INSERT INTO t3 VALUES (0,'v3_0'),(1,'v3_1'),(4,'v3_4');
 
-SET enable_analyzer = 1, single_join_prefer_left_table = 0;
+SET single_join_prefer_left_table = 0;
 -- Make t1 look expensive so the detector prefers to reorder t2/t3 to the front.
 SET param__internal_join_table_stat_hints = '{"t1": {"cardinality": 100000, "distinct_keys": {"id": 2}}, "t2": {"cardinality": 3, "distinct_keys": {"id": 3}}, "t3": {"cardinality": 3, "distinct_keys": {"id": 3}}}';
 

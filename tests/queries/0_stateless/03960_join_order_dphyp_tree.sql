@@ -17,7 +17,6 @@
 --
 -- After the fix both algorithms must pick the same optimal join order.
 
-SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 -- Statistics are not built on insert by default, so without this the tables would have
 -- no column statistics at query time and the NDV-based estimation path would go untested.

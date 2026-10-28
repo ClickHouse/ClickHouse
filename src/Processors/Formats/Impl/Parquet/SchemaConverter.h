@@ -20,6 +20,8 @@ struct SchemaConverter
     using OutputColumnInfo = Reader::OutputColumnInfo;
     using LevelInfo = Reader::LevelInfo;
 
+    /// Its column chunks are parsed only where needed, see getGeoTypeFromGeospatialStatistics.
+    const FileFooter & file_footer;
     const parq::FileMetaData & file_metadata;
     const ReadOptions & options;
     const Block * sample_block;
@@ -49,7 +51,7 @@ struct SchemaConverter
     /// failed parse caught by the caller (which leaves an empty map) does not cause
     /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
     /// parse according to its own settings.
-    SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
+    SchemaConverter(const FileFooter &, const ReadOptions &, const Block *,
                     std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
 
     void prepareForReading();
@@ -149,7 +151,13 @@ private:
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
+        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const;
+
+    /// For a column with the `GEOMETRY` or `GEOGRAPHY` logical type: if `GeospatialStatistics` of
+    /// all its column chunks list the same single 2D geometry type, returns that type. If any of
+    /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
+    /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
+    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
