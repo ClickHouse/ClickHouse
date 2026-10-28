@@ -4,6 +4,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -492,6 +494,22 @@ std::vector<String> getNamedCollectionsReferencedByTableDefinition(const ASTCrea
 
     if (create.as_table_function)
         collectNestedTableFunctionNamedCollections(create.as_table_function->ptr(), collection_names);
+
+    /// The source of a dictionary references a collection by its `name` key, see
+    /// `getNamedCollectionsReferencedByDictionaryConfig`. The parser lowercases the keys.
+    if (create.is_dictionary && create.dictionary && create.dictionary->source && create.dictionary->source->elements)
+    {
+        for (const auto & child : create.dictionary->source->elements->children)
+        {
+            const auto * pair = child->as<ASTPair>();
+            if (!pair || pair->first != "name" || !pair->second)
+                continue;
+            if (const auto * identifier = pair->second->as<ASTIdentifier>())
+                collection_names.push_back(identifier->name());
+            else if (const auto * literal = pair->second->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+                collection_names.push_back(literal->value.safeGet<String>());
+        }
+    }
 
     return collection_names;
 }
