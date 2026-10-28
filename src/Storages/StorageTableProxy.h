@@ -91,8 +91,13 @@ public:
 
         auto nested_storage = get_nested();
         nested_storage->startup();
-        nested_storage->renameInMemory(getStorageID());
-        setNested(std::move(nested_storage));
+        {
+            /// A concurrent `renameInMemory` either runs before this block, and `getStorageID` returns the new
+            /// name, or after it, and finds the table in `loaded_nested`.
+            std::lock_guard rename_lock{rename_mutex};
+            nested_storage->renameInMemory(getStorageID());
+            setNested(std::move(nested_storage));
+        }
         get_nested = {};
         return nested;
     }
@@ -220,12 +225,14 @@ public:
         return storage->write(query, nested_metadata, context, async_insert);
     }
 
+    /// Not under `nested_mutex`: `DatabaseAtomic::renameTable` calls this while holding the database mutex,
+    /// and `getNested` holds `nested_mutex` while loading the table, which may lock the database mutex.
     void renameInMemory(const StorageID & new_table_id) override
     {
-        std::lock_guard lock{nested_mutex};
+        std::lock_guard lock{rename_mutex};
         IStorage::renameInMemory(new_table_id); // NOLINT(bugprone-parent-virtual-call)
-        if (nested)
-            nested->renameInMemory(new_table_id);
+        if (StoragePtr loaded = tryGetLoadedNested())
+            loaded->renameInMemory(new_table_id);
     }
 
     void checkTableCanBeDropped(ContextPtr query_context) const override
@@ -363,6 +370,9 @@ private:
     /// is locked while it is held.
     mutable std::mutex loaded_nested_mutex;
     mutable StoragePtr loaded_nested;
+    /// Serializes `renameInMemory` with the rename of a freshly loaded table to the current name in `getNested`,
+    /// so the loaded table cannot miss a concurrent rename. Taken after `nested_mutex` or a database mutex.
+    mutable std::mutex rename_mutex;
     bool drop_load_failed = false; /// `drop()` could not load the lazy table; force fail-closed cleanup decision.
     /// Storage-free answer to "could this table be a `StorageMergeTree` with `leader_election`
     /// on?", resolved from the `CREATE` query's engine and settings and the server-wide
