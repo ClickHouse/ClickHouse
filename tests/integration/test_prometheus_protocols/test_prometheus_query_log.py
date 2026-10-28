@@ -257,7 +257,7 @@ def test_remote_write_skips_time_series_without_metric_name():
     # Only the named series and its sample are stored.
     assert_eq_with_retry(
         node,
-        f"SELECT tags.metric_name, data.value "
+        f"SELECT tags.metric_name, arrayJoin(data.samples).2 "
         f"FROM timeSeriesData(prometheus) AS data "
         f"JOIN timeSeriesTags(prometheus) AS tags ON data.id = tags.id "
         f"WHERE tags.tags['job'] = '{metric_name}'",
