@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDataType.h>
@@ -51,10 +52,15 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsDataType id_type;
+    extern const TimeSeriesSettingsUInt64 recent_samples_bucket_step_seconds;
     extern const TimeSeriesSettingsUInt64 recent_samples_index_granularity;
+    extern const TimeSeriesSettingsUInt64 recent_samples_index_granularity_bytes;
     extern const TimeSeriesSettingsASTFunction recent_samples_partition_by;
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
+    extern const TimeSeriesSettingsUInt64 samples_bucket_step_seconds;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
+    extern const TimeSeriesSettingsUInt64 samples_index_granularity_bytes;
+    extern const TimeSeriesSettingsASTFunction samples_partition_by;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsBool store_time_ranges;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
@@ -87,47 +93,32 @@ namespace
         return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TimeRanges, ViewTarget::MetricFamilies};
     }
 
-    /// Makes the AST of the type `SimpleAggregateFunction(<function_name>, <argument_type>)`.
-    ASTPtr makeSimpleAggregateFunctionTypeAST(const String & function_name, const DataTypePtr & argument_type)
+    /// If `type` is `Array(Tuple(timestamp_type, value_type))`, optionally wrapped in `SimpleAggregateFunction`, returns
+    /// `timestamp_type` and `value_type`, otherwise returns two null pointers. The elements must be named `timestamp` and `value`,
+    /// as in the `samples` column of a samples table, or have no names if `allow_unnamed_tuple` is set (the outer `samples` column).
+    std::pair<DataTypePtr, DataTypePtr> trySplitSamplesType(const DataTypePtr & type, bool allow_unnamed_tuple)
     {
-        AggregateFunctionProperties properties;
-        auto function = AggregateFunctionFactory::instance().get(function_name, NullsAction::EMPTY, {argument_type}, {}, properties);
-        auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{argument_type}, Array{});
-        auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
-        return dataTypeToAST(type);
+        /// A type wrapped in `SimpleAggregateFunction` is the nested type with a custom name, so no unwrapping is needed.
+        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+        const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
+        if (!tuple_type || (tuple_type->getElements().size() != 2))
+            return {};
+
+        const bool names_ok = tuple_type->hasExplicitNames()
+            ? (tuple_type->getElementNames() == Strings{TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value})
+            : allow_unnamed_tuple;
+        if (!names_ok)
+            return {};
+
+        return {tuple_type->getElements()[0], tuple_type->getElements()[1]};
     }
 
-    /// The generated engine of the inner "tags" table: `AggregatingMergeTree` when it aggregates `min_time` and `max_time`
-    /// (tables of earlier versions with `aggregate_min_time_and_max_time` enabled), otherwise `ReplacingMergeTree`.
-    std::string_view getGeneratedTagsEngineKind(const TimeSeriesSettings & settings)
+    /// Whether `type` is `SimpleAggregateFunction(timeSeriesGroupArray, ...)`: the aggregating engine of a samples table
+    /// merges the rows of the same series and bucket with this function.
+    bool isTimeSeriesGroupArraySimpleAggregate(const DataTypePtr & type)
     {
-        bool aggregate = (settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
-            && settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
-        return aggregate ? "AggregatingMergeTree" : "ReplacingMergeTree";
-    }
-
-    /// Whether the create query defines inner columns for the specified target.
-    bool hasInnerColumns(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
-    {
-        return create_query.getTargetInnerColumns(kind) != nullptr;
-    }
-
-    /// Whether the create query defines an inner engine for the specified target.
-    bool hasInnerEngine(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
-    {
-        return create_query.getTargetInnerEngine(kind) != nullptr;
-    }
-
-    /// Whether the create query specifies an external table for the specified target.
-    bool hasTargetTableID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
-    {
-        return create_query.hasTargetTableID(kind);
-    }
-
-    /// Whether the create query has an inner UUID for the specified target.
-    bool hasInnerUUID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
-    {
-        return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
+        const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+        return simple_aggregate_function && (simple_aggregate_function->getFunctionName() == "timeSeriesGroupArray");
     }
 
     /// Normalize `DEFAULT` expressions written inside `Tuple` data types by pulling them up to the column
@@ -151,14 +142,6 @@ namespace
 
         for (auto kind : getTargetKinds())
             pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind));
-    }
-
-    /// Returns the name of the column with the name of a metric family in the "metric families" table used by the versions
-    /// of TimeSeries tables other than `version` (see `TimeSeriesColumnNames::getInnerMetricFamily`).
-    const char * getInnerMetricFamilyOfOtherVersions(UInt64 version)
-    {
-        return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
-            ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -205,17 +188,15 @@ namespace
             if ((name == TimeSeriesColumnNames::Samples || name == TimeSeriesColumnNames::TimeSeries) && column_declaration->getType())
             {
                 auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
-                const auto * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
-                const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
-                if (!tuple_type || (tuple_type->getElements().size() != 2))
+                auto [samples_timestamp_type, samples_value_type] = trySplitSamplesType(column_type, /* allow_unnamed_tuple = */ true);
+                if (!samples_timestamp_type || !samples_value_type)
                     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
                         "{}: Column `{}` must have type Array(Tuple(timestamp, value)), got {}",
                         table_id.getNameForLogs(), name, column_type->getName());
 
-                const auto & elems = tuple_type->getElements();
                 String source = fmt::format("outer column `{}`", name);
-                setOrCheckDataType(timestamp_type, timestamp_src, elems[0], source, "timestamp", table_id);
-                setOrCheckDataType(value_type, value_src, elems[1], source, "value", table_id);
+                setOrCheckDataType(timestamp_type, timestamp_src, samples_timestamp_type, source, "timestamp", table_id);
+                setOrCheckDataType(value_type, value_src, samples_value_type, source, "value", table_id);
             }
 
             /// Columns `id`, `timestamp`, `value` belong to the prealpha version and must not be here.
@@ -231,8 +212,9 @@ namespace
         }
     }
 
-    /// Reads SAMPLES INNER COLUMNS declarations and extracts types
-    /// `timestamp_type`, `value_type`, `id_type`.
+    /// Reads SAMPLES INNER COLUMNS declarations and extracts types `timestamp_type`, `value_type`, `id_type`.
+    /// A table with buckets of samples declares the timestamp and value types in the `samples` column,
+    /// the tables of earlier versions declare them in the `timestamp` and `value` columns.
     void readTypesFromInnerSamples(
         const ASTCreateQuery & query,
         DataTypePtr & timestamp_type, String & timestamp_src,
@@ -257,6 +239,16 @@ namespace
                 setOrCheckDataType(value_type, value_src, column_type, "samples inner column `value`", "value", table_id);
             else if (column_declaration->name == TimeSeriesColumnNames::ID)
                 setOrCheckDataType(id_type, id_src, column_type, "samples inner column `id`", "id", table_id);
+            else if (column_declaration->name == TimeSeriesColumnNames::Samples)
+            {
+                auto [samples_timestamp_type, samples_value_type] = trySplitSamplesType(column_type, /* allow_unnamed_tuple = */ false);
+                if (!samples_timestamp_type || !samples_value_type || !isTimeSeriesGroupArraySimpleAggregate(column_type))
+                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                        "{}: Column `{}` must have type SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp <timestamp type>, value <value type>))), got {}",
+                        table_id.getNameForLogs(), TimeSeriesColumnNames::Samples, column_type->getName());
+                setOrCheckDataType(timestamp_type, timestamp_src, samples_timestamp_type, "samples inner column `samples`", "timestamp", table_id);
+                setOrCheckDataType(value_type, value_src, samples_value_type, "samples inner column `samples`", "value", table_id);
+            }
         }
     }
 
@@ -545,6 +537,212 @@ namespace
         return types;
     }
 
+    /// Whether the create query defines inner columns for the specified target.
+    bool hasInnerColumns(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
+    {
+        return create_query.getTargetInnerColumns(kind) != nullptr;
+    }
+
+    /// Whether the create query defines an inner engine for the specified target.
+    bool hasInnerEngine(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
+    {
+        return create_query.getTargetInnerEngine(kind) != nullptr;
+    }
+
+    /// Whether the create query specifies an external table for the specified target.
+    bool hasTargetTableID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
+    {
+        return create_query.hasTargetTableID(kind);
+    }
+
+    /// Whether the create query has an inner UUID for the specified target.
+    bool hasInnerUUID(const ASTCreateQuery & create_query, ViewTarget::Kind kind)
+    {
+        return create_query.getTargetInnerUUID(kind) != UUIDHelpers::Nil;
+    }
+
+    /// The family of the inner engines when none is declared: it follows the `default_table_engine` setting.
+    /// The value `None` is kept: then the inner engines must be declared explicitly.
+    DefaultTableEngine getDefaultInnerEngineFamily(const Settings & query_settings, const StorageID & table_id)
+    {
+        auto default_table_engine = query_settings[Setting::default_table_engine].value;
+        switch (default_table_engine)
+        {
+            case DefaultTableEngine::MergeTree:
+            case DefaultTableEngine::ReplicatedMergeTree:
+            case DefaultTableEngine::SharedMergeTree:
+            case DefaultTableEngine::None:
+                return default_table_engine;
+            default:
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "{}: The `default_table_engine` setting value '{}' cannot be used to choose the engines of the inner tables "
+                    "of a TimeSeries table (supported values are MergeTree, ReplicatedMergeTree and SharedMergeTree); "
+                    "specify the inner tables' engines explicitly", table_id.getNameForLogs(), magic_enum::enum_name(default_table_engine));
+        }
+    }
+
+    /// The prefix of the name of an inner engine for the family of the inner engines, e.g. "Replicated" for `ReplicatedMergeTree`.
+    std::string_view getInnerEngineFamilyPrefix(DefaultTableEngine inner_engine_family, ViewTarget::Kind inner_table_kind)
+    {
+        switch (inner_engine_family)
+        {
+            case DefaultTableEngine::MergeTree:
+                return "";
+            case DefaultTableEngine::ReplicatedMergeTree:
+                return "Replicated";
+            case DefaultTableEngine::SharedMergeTree:
+                return "Shared";
+            case DefaultTableEngine::None:
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "The inner {} table of a TimeSeries table requires an explicit engine "
+                    "because the `default_table_engine` setting is 'None'", inner_table_kind);
+            default:
+                UNREACHABLE();
+        }
+    }
+
+    /// The engine kind of an inner table generated for `settings`, without the family prefix (see `getInnerEngineFamilyPrefix`).
+    /// The tables merging rows need an aggregating engine: the samples tables of a table with buckets of samples (the rows of the same
+    /// series and bucket), the time ranges table (the range of a series), and the tags table of the earlier versions aggregating
+    /// `min_time` and `max_time`. The other tables use `MergeTree` or `ReplacingMergeTree`.
+    std::string_view getDefaultInnerEngineKind(const TimeSeriesSettings & settings, ViewTarget::Kind inner_table_kind)
+    {
+        switch (inner_table_kind)
+        {
+            case ViewTarget::Samples:
+            case ViewTarget::RecentSamples:
+                return settings.hasBucketedSamples() ? "AggregatingMergeTree" : "MergeTree";
+
+            case ViewTarget::Tags:
+            {
+                bool aggregate = (settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_TIME_RANGES_TARGET)
+                    && settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                return aggregate ? "AggregatingMergeTree" : "ReplacingMergeTree";
+            }
+
+            case ViewTarget::TimeRanges:
+                return "AggregatingMergeTree";
+
+            case ViewTarget::MetricFamilies:
+                return "ReplacingMergeTree";
+
+            default:
+                UNREACHABLE();
+        }
+    }
+
+    /// The codecs of the generated columns of the samples tables: `Delta`, `T64`, `ZSTD(3)` for the timestamps (the columns `bucket`,
+    /// `min_time` and `max_time` of a table with buckets of samples get it too), `ALP`, `ZSTD(3)` for the values.
+    /// Near-monotonic timestamps barely compress under generic codecs.
+    ASTPtr getDefaultTimestampCodec()
+    {
+        return makeASTFunction(
+            "CODEC",
+            make_intrusive<ASTIdentifier>("Delta"),
+            make_intrusive<ASTIdentifier>("T64"),
+            makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3})));
+    }
+
+    ASTPtr getDefaultValueCodec()
+    {
+        return makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3})));
+    }
+
+    /// The value of `index_granularity` of an inner samples table generated for `settings`: the `*_index_granularity` setting if set,
+    /// otherwise the default of the setting for a table with buckets of samples (its rows are much bigger than the rows
+    /// of the tables of earlier versions, so the default is smaller), or the default of the earlier versions.
+    UInt64 getIndexGranularityFromSettings(const TimeSeriesSettings & settings, ViewTarget::Kind inner_table_kind)
+    {
+        chassert((inner_table_kind == ViewTarget::Samples) || (inner_table_kind == ViewTarget::RecentSamples));
+        const bool is_samples = (inner_table_kind == ViewTarget::Samples);
+
+        const auto & setting = settings[is_samples ? TimeSeriesSetting::samples_index_granularity : TimeSeriesSetting::recent_samples_index_granularity];
+        if (setting.isChanged() || settings.hasBucketedSamples())
+            return setting.value;
+        return is_samples ? 32768 : 8192;
+    }
+
+    ASTPtr getDefaultTagsIndex()
+    {
+        auto index = make_intrusive<ASTIndexDeclaration>(
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
+            makeASTFunction("text", makeASTOperator("equals",
+                make_intrusive<ASTIdentifier>("tokenizer"), make_intrusive<ASTLiteral>("keyValuePairs"))),
+            "tags_idx");
+        /// A text index covers the whole part; its posting lists identify individual rows.
+        index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+        return index;
+    }
+
+    /// The generated partition key of a samples table with buckets of samples: one partition per month. `toDateTime` makes the key
+    /// work for any type of the timestamps, and the timezone is named because `toYYYYMM` counts from local midnight, so a change
+    /// of the server timezone would otherwise move the meaning of the partition values already written.
+    ASTPtr getDefaultSamplesPartitionKey()
+    {
+        return makeASTFunction("toYYYYMM",
+            makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket), make_intrusive<ASTLiteral>(String{"UTC"})));
+    }
+
+    /// The generated partition key of an inner recent samples table, as the given version spells it: 5-hour intervals
+    /// of the start of the bucket (with buckets of samples) or of the timestamp (earlier versions).
+    /// `toDateTime` makes the key work for any type of the timestamps (e.g. a raw `UInt32`).
+    /// `toStartOfInterval` counts hours from local midnight, so from `MIN_WITH_UTC_PARTITION_KEY` the
+    /// timezone is named instead of being taken from the server.
+    ASTPtr getDefaultRecentSamplesPartitionKey(UInt64 version)
+    {
+        ASTPtr time;
+        if (version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+            time = makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket), make_intrusive<ASTLiteral>(String{"UTC"}));
+        else if (version >= TimeSeriesVersion::MIN_WITH_UTC_PARTITION_KEY)
+            time = makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTLiteral>(String{"UTC"}));
+        else
+            time = makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
+        return makeASTFunction("toStartOfInterval", std::move(time), makeASTFunction("toIntervalHour", make_intrusive<ASTLiteral>(static_cast<UInt64>(5))));
+    }
+
+    /// The generated TTL expression of an inner recent samples table: a row expires when all its samples are older than
+    /// `recent_samples_ttl_seconds`. The samples of a row of a table with buckets of samples have timestamps in
+    /// [bucket, bucket + bucket_step), so the TTL counts from the start of the bucket plus the step.
+    ASTPtr getRecentSamplesTTLFromSettings(const TimeSeriesSettings & settings)
+    {
+        UInt64 ttl_seconds = settings[TimeSeriesSetting::recent_samples_ttl_seconds];
+        ASTPtr time;
+        if (settings.hasBucketedSamples())
+        {
+            ttl_seconds += settings[TimeSeriesSetting::recent_samples_bucket_step_seconds];
+            time = makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
+        }
+        else
+        {
+            time = makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
+        }
+        return makeASTOperator("plus", std::move(time), makeASTFunction("toIntervalSecond", make_intrusive<ASTLiteral>(ttl_seconds)));
+    }
+
+    /// The codec declared by the entry `CODEC <name> (...)` of the column list of an inner table, where `name` is a column
+    /// or a subcolumn of a column written as a dotted name (e.g. `samples.timestamp`), or nullptr if there is no such entry.
+    ASTPtr getCodecDeclaration(const ASTColumns & inner_table_columns, std::string_view name)
+    {
+        if (!inner_table_columns.codec_declarations)
+            return nullptr;
+
+        for (const auto & child : inner_table_columns.codec_declarations->children)
+        {
+            const auto & declaration = child->as<const ASTCodecDeclaration &>();
+            if (declaration.name == name)
+                return declaration.getCodec();
+        }
+        return nullptr;
+    }
+
+    /// Returns the name of the column with the name of a metric family in the "metric families" table used by the versions
+    /// of TimeSeries tables other than `version` (see `TimeSeriesColumnNames::getInnerMetricFamily`).
+    const char * getInnerMetricFamilyOfOtherVersions(UInt64 version)
+    {
+        return (version >= TimeSeriesVersion::MIN_WITH_METRIC_FAMILY_INNER_COLUMN)
+            ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
+    }
+
     /// Removes the settings copied from the old table which this table must not inherit. `new_settings` is
     /// the SETTINGS clause of the query, which is applied on top of the copied settings afterwards.
     void removeOldSettingsDisabledByNewSettings(SettingsChanges & old_settings, const ASTSetQuery * new_settings)
@@ -597,9 +795,16 @@ namespace
         else
             old_settings.removeSetting("store_time_ranges");
 
+        /// The settings of the buckets of samples exist from version MIN_WITH_BUCKETED_SAMPLES (see TimeSeriesVersion.h),
+        /// so they aren't copied into a table pinned to an earlier version.
+        if (new_version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+            old_settings.removeSettings({"samples_bucket_step_seconds", "samples_partition_by", "samples_index_granularity_bytes",
+                                         "recent_samples_bucket_step_seconds", "recent_samples_index_granularity_bytes"});
+
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
-            old_settings.removeSettings({"recent_samples_partition_by", "recent_samples_index_granularity"});
+            old_settings.removeSettings({"recent_samples_bucket_step_seconds", "recent_samples_partition_by",
+                                         "recent_samples_index_granularity", "recent_samples_index_granularity_bytes"});
 
         /// The columns `min_time` and `max_time` of the tags table exist in tables of earlier versions only, and the default
         /// value of `store_min_time_and_max_time` is true, so an absent setting doesn't disable them.
@@ -620,6 +825,34 @@ namespace
             old_settings.removeSettings({"id_type", "id_generator"});
     }
 
+    /// Removes a column from the column list of an inner table together with the codecs declared for its subcolumns
+    /// (the entries `CODEC <column>.<subcolumn> (...)` of the list). Nothing happens if there is no such column.
+    void removeInnerColumn(ASTColumns & inner_table_columns, std::string_view column_name)
+    {
+        if (inner_table_columns.columns)
+        {
+            auto & columns = inner_table_columns.columns->children;
+            auto has_name = [&](const ASTPtr & column) { return column->as<const ASTColumnDeclaration &>().name == column_name; };
+            columns.erase(std::remove_if(columns.begin(), columns.end(), has_name), columns.end());
+        }
+
+        if (inner_table_columns.codec_declarations)
+        {
+            const String prefix = String{column_name} + ".";
+            auto & declarations = inner_table_columns.codec_declarations->children;
+            auto is_for_column = [&](const ASTPtr & child)
+            {
+                const auto & declared_name = child->as<const ASTCodecDeclaration &>().name;
+                return (declared_name == column_name) || declared_name.starts_with(prefix);
+            };
+            declarations.erase(std::remove_if(declarations.begin(), declarations.end(), is_for_column), declarations.end());
+
+            /// The clause goes away with its last declaration.
+            if (declarations.empty())
+                inner_table_columns.reset(inner_table_columns.codec_declarations);
+        }
+    }
+
     /// Removes the columns copied from the old table which the settings of this table disable.
     /// `old_settings` are the settings of the old table, `new_settings` are the settings of this table.
     void removeInnerColumnsDisabledByNewSettings(
@@ -628,18 +861,32 @@ namespace
         if (!inner_table_columns.columns)
             return;
 
-        auto & columns = inner_table_columns.columns->children;
-        auto remove_column = [&](std::string_view name)
-        {
-            auto has_name = [&](const ASTPtr & column) { return column->as<ASTColumnDeclaration &>().name == name; };
-            columns.erase(std::remove_if(columns.begin(), columns.end(), has_name), columns.end());
-        };
+        auto remove_column = [&](std::string_view name) { removeInnerColumn(inner_table_columns, name); };
 
         if (inner_table_kind == ViewTarget::MetricFamilies)
         {
             /// The column with the name of a metric family is named by the version (see TimeSeriesVersion.h),
             /// so a column under the name used by the other versions isn't kept.
             remove_column(getInnerMetricFamilyOfOtherVersions(new_settings[TimeSeriesSetting::version]));
+            return;
+        }
+
+        if ((inner_table_kind == ViewTarget::Samples) || (inner_table_kind == ViewTarget::RecentSamples))
+        {
+            /// A table with buckets of samples has the columns `samples`, `bucket`, `min_time`, `max_time`, a table of an earlier
+            /// version has the columns `timestamp`, `value` (see TimeSeriesVersion.h): the columns of the other layout aren't kept.
+            if (new_settings.hasBucketedSamples() && !old_settings.hasBucketedSamples())
+            {
+                remove_column(TimeSeriesColumnNames::Timestamp);
+                remove_column(TimeSeriesColumnNames::Value);
+            }
+            else if (!new_settings.hasBucketedSamples() && old_settings.hasBucketedSamples())
+            {
+                remove_column(TimeSeriesColumnNames::Samples);
+                remove_column(TimeSeriesColumnNames::Bucket);
+                remove_column(TimeSeriesColumnNames::MinTime);
+                remove_column(TimeSeriesColumnNames::MaxTime);
+            }
             return;
         }
 
@@ -679,7 +926,9 @@ namespace
     /// Whether a column of an inner table looks like a column generated by `normalizeInnerColumns` of the current or
     /// of an older version of the server. `settings` are the settings of the table the column was generated for.
     /// Such a column carries no information beyond the settings, so it can be generated again.
-    bool isGeneratedInnerColumn(const ASTColumnDeclaration & column, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
+    /// `inner_table_columns` is the column list the column belongs to: the codecs of the subcolumns are declared there.
+    bool isGeneratedInnerColumn(
+        const ASTColumnDeclaration & column, const ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
     {
         if (!column.getType() || column.getComment() || column.getStatisticsDesc() || column.getTTL()
             || column.getCollation() || column.getSettings() || column.null_modifier || column.primary_key_specifier)
@@ -691,6 +940,9 @@ namespace
 
         const bool is_version_0 = (settings[TimeSeriesSetting::version] == 0);
         const bool has_default = column.getDefaultExpression() || (column.default_specifier != ColumnDefaultSpecifier::Empty);
+
+        /// Whether a declared expression is the same as a generated one when formatted.
+        auto same_ast = [](const IAST & lhs, const IAST & rhs) { return lhs.formatWithSecretsOneLine() == rhs.formatWithSecretsOneLine(); };
 
         /// Any type accepted for "timestamp" and "value" counts, see `resolveTimeSeriesTypes`.
         auto is_value_type = [](const IDataType & value_type)
@@ -736,7 +988,46 @@ namespace
                 if (name == TimeSeriesColumnNames::ID)
                     return !codec;
 
-                /// The generated "timestamp" and "value" columns have codecs (see `normalizeInnerColumns`).
+                if (settings.hasBucketedSamples())
+                {
+                    /// The generated "samples" column has no codec of its own, the codecs are declared for its elements
+                    /// `timestamp` and `value` (see `normalizeInnerColumns`): the column is generated if it has no codecs at all
+                    /// or exactly the generated ones.
+                    if (name == TimeSeriesColumnNames::Samples)
+                    {
+                        auto [samples_timestamp_type, samples_value_type] = trySplitSamplesType(type, /* allow_unnamed_tuple = */ false);
+                        if (!samples_timestamp_type || !samples_value_type || !is_timestamp_type(*samples_timestamp_type) || !is_value_type(*samples_value_type))
+                            return false;
+
+                        /// A codec of the column itself is its inline clause or the entry `CODEC samples (...)`, which mean the same.
+                        if (codec || getCodecDeclaration(inner_table_columns, column.name))
+                            return false;
+
+                        ASTPtr timestamp_codec = getCodecDeclaration(inner_table_columns, column.name + "." + TimeSeriesColumnNames::Timestamp);
+                        ASTPtr value_codec = getCodecDeclaration(inner_table_columns, column.name + "." + TimeSeriesColumnNames::Value);
+                        if (!timestamp_codec && !value_codec)
+                            return true;
+
+                        return timestamp_codec && value_codec
+                            && same_ast(*timestamp_codec, *getDefaultTimestampCodec()) && same_ast(*value_codec, *getDefaultValueCodec());
+                    }
+
+                    /// The generated `bucket`, `min_time` and `max_time` columns have the codec of the timestamps (see `normalizeInnerColumns`).
+                    if (codec && !same_ast(*codec, *getDefaultTimestampCodec()))
+                        return false;
+
+                    if (name == TimeSeriesColumnNames::Bucket)
+                        return is_timestamp_type(*type);
+
+                    /// `SimpleAggregateFunction(min|max, <timestamp type>)`.
+                    if ((name == TimeSeriesColumnNames::MinTime) || (name == TimeSeriesColumnNames::MaxTime))
+                        return is_min_or_max_simple_aggregate([&](const DataTypePtr & argument_type) { return is_timestamp_type(*argument_type); });
+
+                    return false;
+                }
+
+                /// The generated "timestamp" and "value" columns have codecs (see `normalizeInnerColumns`): the current ones
+                /// or the ones generated by the earlier servers (`DoubleDelta, ZSTD(1)` and `ZSTD(3)`).
                 /// The codecs are not checked for version 0: its columns are converted to the current form anyway.
                 if (name == TimeSeriesColumnNames::Timestamp)
                 {
@@ -744,8 +1035,7 @@ namespace
                         return false;
                     if (!codec || is_version_0)
                         return true;
-                    auto codec_name = codec->formatWithSecretsOneLine();
-                    return (codec_name == "CODEC(DoubleDelta, ZSTD(1))") || (codec_name == "CODEC(Delta, T64, ZSTD(3))");
+                    return same_ast(*codec, *getDefaultTimestampCodec()) || (codec->formatWithSecretsOneLine() == "CODEC(DoubleDelta, ZSTD(1))");
                 }
 
                 if (name == TimeSeriesColumnNames::Value)
@@ -754,8 +1044,7 @@ namespace
                         return false;
                     if (!codec || is_version_0)
                         return true;
-                    auto codec_name = codec->formatWithSecretsOneLine();
-                    return (codec_name == "CODEC(ZSTD(3))") || (codec_name == "CODEC(ALP, ZSTD(3))");
+                    return same_ast(*codec, *getDefaultValueCodec()) || (codec->formatWithSecretsOneLine() == "CODEC(ZSTD(3))");
                 }
 
                 return false;
@@ -778,7 +1067,7 @@ namespace
                         return false;
 
                     auto canonical_default = TimeSeriesIDGenerator::tryGetDefault(type);
-                    if (canonical_default && (default_expression->formatWithSecretsOneLine() == canonical_default->formatWithSecretsOneLine()))
+                    if (canonical_default && same_ast(*default_expression, *canonical_default))
                         return true;
 
                     /// Version 0 had other canonical expressions, hashing the ephemeral "all_tags" column.
@@ -852,40 +1141,15 @@ namespace
         }
     }
 
-    /// The generated partition key of an inner recent samples table, as the given version spells it.
-    /// `toStartOfInterval` counts hours from local midnight, so from `MIN_WITH_UTC_PARTITION_KEY` the
-    /// timezone is named instead of being taken from the server.
-    String defaultRecentSamplesPartitionBy(UInt64 version)
-    {
-        return version >= TimeSeriesVersion::MIN_WITH_UTC_PARTITION_KEY
-            ? "toStartOfInterval(toDateTime(timestamp, 'UTC'), toIntervalHour(5))"
-            : "toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))";
-    }
-
-    ASTPtr makeDefaultTagsIndex()
-    {
-        auto index = make_intrusive<ASTIndexDeclaration>(
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
-            makeASTFunction("text", makeASTOperator("equals",
-                make_intrusive<ASTIdentifier>("tokenizer"), make_intrusive<ASTLiteral>("keyValuePairs"))),
-            "tags_idx");
-        /// A text index covers the whole part; its posting lists identify individual rows.
-        index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        return index;
-    }
-
     /// Removes the default `tags` index copied by `CREATE AS`, so it is generated for the new engine.
     void removeGeneratedInnerIndices(ASTColumns & inner_columns, ViewTarget::Kind kind)
     {
         if (kind != ViewTarget::Tags || !inner_columns.indices)
             return;
 
-        const auto default_index = makeDefaultTagsIndex()->formatWithSecretsOneLine();
+        const auto default_index = getDefaultTagsIndex()->formatWithSecretsOneLine();
         auto & indices = inner_columns.indices->children;
-        auto is_generated = [&](const ASTPtr & index)
-        {
-            return index->formatWithSecretsOneLine() == default_index;
-        };
+        auto is_generated = [&](const ASTPtr & index) { return index->formatWithSecretsOneLine() == default_index; };
         indices.erase(std::remove_if(indices.begin(), indices.end(), is_generated), indices.end());
     }
 
@@ -896,38 +1160,80 @@ namespace
         if (!inner_table_columns.columns)
             return;
 
-        auto & columns = inner_table_columns.columns->children;
-        auto is_generated = [&](const ASTPtr & column)
+        /// The names are collected first because the removal changes the list being iterated.
+        Strings generated_columns;
+        for (const auto & column : inner_table_columns.columns->children)
         {
-            return isGeneratedInnerColumn(column->as<ASTColumnDeclaration &>(), inner_table_kind, settings);
-        };
-        columns.erase(std::remove_if(columns.begin(), columns.end(), is_generated), columns.end());
+            const auto & column_declaration = column->as<const ASTColumnDeclaration &>();
+            if (isGeneratedInnerColumn(column_declaration, inner_table_columns, inner_table_kind, settings))
+                generated_columns.push_back(column_declaration.name);
+        }
+
+        for (const auto & name : generated_columns)
+            removeInnerColumn(inner_table_columns, name);
     }
 
-    /// Removes the keys of an inner table's engine copied from the old table which refer to a column this table names
-    /// differently. `new_settings` are the settings of this table.
-    void removeInnerEngineKeysDisabledByNewSettings(ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & new_settings)
+    /// Removes what this table can't keep from an inner engine copied from the old table: the engine if this table generates
+    /// another kind (then `normalizeInnerEngine` generates it), and the keys referring to columns this table doesn't have.
+    /// `old_settings` are the settings of the old table, `new_settings` are the settings of this table.
+    void removeInnerEngineDisabledByNewSettings(
+        ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & old_settings, const TimeSeriesSettings & new_settings)
     {
-        if (inner_table_kind != ViewTarget::MetricFamilies)
+        /// An engine of another kind than this table generates (e.g. `MergeTree` for a table which must merge rows) isn't kept:
+        /// it's generated again with the same family, without the arguments of the old engine.
+        if (getDefaultInnerEngineKind(old_settings, inner_table_kind) != getDefaultInnerEngineKind(new_settings, inner_table_kind))
+            inner_engine.reset(inner_engine.engine);
+
+        /// The names of the columns the keys of the old table can refer to which this table doesn't have.
+        std::vector<std::string_view> missing_columns;
+
+        if (inner_table_kind == ViewTarget::MetricFamilies)
+        {
+            /// The column with the name of a metric family is named by the version (see TimeSeriesVersion.h),
+            /// so the keys referring to it under the name used by the other versions can't be kept.
+            missing_columns.emplace_back(getInnerMetricFamilyOfOtherVersions(new_settings[TimeSeriesSetting::version]));
+        }
+        else if ((inner_table_kind == ViewTarget::Samples) || (inner_table_kind == ViewTarget::RecentSamples))
+        {
+            /// A table with buckets of samples has the columns `samples`, `bucket`, `min_time`, `max_time`, a table of an earlier
+            /// version has the columns `timestamp`, `value` (see TimeSeriesVersion.h): the keys over the columns of the other
+            /// layout can't be kept.
+            if (new_settings.hasBucketedSamples() && !old_settings.hasBucketedSamples())
+                missing_columns = {TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value};
+            else if (!new_settings.hasBucketedSamples() && old_settings.hasBucketedSamples())
+                missing_columns = {TimeSeriesColumnNames::Samples, TimeSeriesColumnNames::Bucket, TimeSeriesColumnNames::MinTime, TimeSeriesColumnNames::MaxTime};
+        }
+        else if (inner_table_kind == ViewTarget::Tags)
+        {
+            /// The columns `min_time` and `max_time` exist in the tags table of the earlier versions only (see TimeSeriesVersion.h):
+            /// the keys over them can't be kept by a table which doesn't store them there.
+            if (old_settings.hasMinTimeAndMaxTimeInTagsTable() && !new_settings.hasMinTimeAndMaxTimeInTagsTable())
+                missing_columns = {TimeSeriesColumnNames::MinTime, TimeSeriesColumnNames::MaxTime};
+        }
+
+        if (missing_columns.empty())
             return;
 
-        /// The column with the name of a metric family is named by the version (see TimeSeriesVersion.h),
-        /// so the keys referring to it under the name used by the other versions can't be kept.
-        const char * other_name = getInnerMetricFamilyOfOtherVersions(new_settings[TimeSeriesSetting::version]);
-        auto references_other_name = [&](const IAST * key)
+        auto references_missing_column = [&](const IAST * key)
         {
             IdentifierNameSet identifiers;
             if (key)
                 key->collectIdentifierNames(identifiers);
-            return identifiers.contains(other_name);
+            return std::any_of(missing_columns.begin(), missing_columns.end(),
+                               [&](std::string_view name) { return identifiers.contains(String{name}); });
         };
 
-        if (references_other_name(inner_engine.order_by))
+        /// The primary key and the sorting key go together: a surviving primary key alone would become the sorting key,
+        /// shorter than the generated one.
+        if (references_missing_column(inner_engine.order_by) || references_missing_column(inner_engine.primary_key))
+        {
             inner_engine.reset(inner_engine.order_by);
-        if (references_other_name(inner_engine.primary_key))
             inner_engine.reset(inner_engine.primary_key);
-        if (references_other_name(inner_engine.partition_by))
+        }
+        if (references_missing_column(inner_engine.partition_by))
             inner_engine.reset(inner_engine.partition_by);
+        if (references_missing_column(inner_engine.ttl_table))
+            inner_engine.reset(inner_engine.ttl_table);
     }
 
     /// Strips generated inner engine clauses (partition by, TTL, settings) so they are regenerated.
@@ -935,18 +1241,6 @@ namespace
     /// `settings` are the settings of the table the engine was generated for.
     void removeGeneratedInnerEngine(ASTStorage & inner_engine, ViewTarget::Kind inner_table_kind, const TimeSeriesSettings & settings)
     {
-        if (!inner_engine.engine)
-            return;
-
-        const auto & engine = *inner_engine.engine;
-        const bool has_arguments = engine.parameters || (engine.arguments && !engine.arguments->children.empty());
-
-        std::string_view engine_name = engine.name;
-        if (engine_name.starts_with("Replicated"))
-            engine_name.remove_prefix(strlen("Replicated"));
-        else if (engine_name.starts_with("Shared"))
-            engine_name.remove_prefix(strlen("Shared"));
-
         const bool is_version_0 = (settings[TimeSeriesSetting::version] == 0);
 
         /// Whether the sorting key consists of the specified columns. A tuple is written as `(a, b)`, or as `tuple(a, b)`
@@ -983,50 +1277,80 @@ namespace
                 inner_engine.reset(inner_engine.settings);
         };
 
-        bool engine_is_generated = false;
+        /// A generated engine (the kind generated for the old settings, without arguments) is dropped to be generated again.
+        /// Its clauses are checked below either way: a declared engine can carry generated keys and settings.
+        if (inner_engine.engine)
+        {
+            const auto & engine = *inner_engine.engine;
+            const bool has_arguments = engine.parameters || (engine.arguments && !engine.arguments->children.empty());
+
+            std::string_view engine_name = engine.name;
+            if (engine_name.starts_with("Replicated"))
+                engine_name.remove_prefix(strlen("Replicated"));
+            else if (engine_name.starts_with("Shared"))
+                engine_name.remove_prefix(strlen("Shared"));
+
+            if (!has_arguments && (engine_name == getDefaultInnerEngineKind(settings, inner_table_kind)))
+                inner_engine.reset(inner_engine.engine);
+        }
 
         switch (inner_table_kind)
         {
             case ViewTarget::Samples:
-            {
-                engine_is_generated = !has_arguments && (engine_name == "MergeTree");
-                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
-                    inner_engine.reset(inner_engine.order_by);
-                remove_settings({{"index_granularity", settings[TimeSeriesSetting::samples_index_granularity].value}});
-                break;
-            }
-
             case ViewTarget::RecentSamples:
             {
-                engine_is_generated = !has_arguments && (engine_name == "MergeTree");
-                if (!inner_engine.primary_key && sorting_key_equals("id, timestamp"))
+                /// The generated sorting key and settings follow the version of the old table (see TimeSeriesVersion.h):
+                /// a table with buckets of samples merges the rows of the same bucket, the tables of earlier versions don't merge rows.
+                const bool bucketed = settings.hasBucketedSamples();
+                if (!inner_engine.primary_key && sorting_key_equals(bucketed ? "id, bucket" : "id, timestamp"))
                     inner_engine.reset(inner_engine.order_by);
 
-                /// The partition key is the `recent_samples_partition_by` setting if set, otherwise the default one.
-                const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value;
-                /// The default names a timezone only from the version that introduced it, so an older table's
-                /// own spelling is still recognised as generated and does not survive into a copy of it.
-                String expected_partition_by = partition_by
-                    ? partition_by->formatWithSecretsOneLine()
-                    : defaultRecentSamplesPartitionBy(settings[TimeSeriesSetting::version]);
-                if (partitioning_equals(expected_partition_by))
-                    inner_engine.reset(inner_engine.partition_by);
+                std::unordered_map<std::string_view, Field> expected_inner_settings{{"index_granularity", getIndexGranularityFromSettings(settings, inner_table_kind)}};
+                if (bucketed)
+                {
+                    const auto & index_granularity_bytes = settings[(inner_table_kind == ViewTarget::Samples)
+                        ? TimeSeriesSetting::samples_index_granularity_bytes : TimeSeriesSetting::recent_samples_index_granularity_bytes];
+                    expected_inner_settings.emplace("index_granularity_bytes", index_granularity_bytes.value);
+                }
 
-                UInt64 ttl_seconds = settings[TimeSeriesSetting::recent_samples_ttl_seconds];
-                if (ttl_equals(fmt::format("toDateTime(timestamp) + toIntervalSecond({})", ttl_seconds)))
-                    inner_engine.reset(inner_engine.ttl_table);
+                if (inner_table_kind == ViewTarget::Samples)
+                {
+                    /// The partition key of a table with buckets of samples is the `samples_partition_by` setting if set, otherwise the default one.
+                    /// The tables of earlier versions were generated without a partition key.
+                    if (bucketed)
+                    {
+                        const auto & partition_by = settings[TimeSeriesSetting::samples_partition_by].value;
+                        String expected_partition_by = partition_by
+                            ? partition_by->formatWithSecretsOneLine()
+                            : getDefaultSamplesPartitionKey()->formatWithSecretsOneLine();
+                        if (partitioning_equals(expected_partition_by))
+                            inner_engine.reset(inner_engine.partition_by);
+                    }
+                }
+                else
+                {
+                    /// The partition key is the `recent_samples_partition_by` setting if set, otherwise the default one.
+                    const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value;
+                    /// The default names a timezone only from the version that introduced it, so an older table's
+                    /// own spelling is still recognised as generated and does not survive into a copy of it.
+                    String expected_partition_by = partition_by
+                        ? partition_by->formatWithSecretsOneLine()
+                        : getDefaultRecentSamplesPartitionKey(settings[TimeSeriesSetting::version])->formatWithSecretsOneLine();
+                    if (partitioning_equals(expected_partition_by))
+                        inner_engine.reset(inner_engine.partition_by);
 
-                remove_settings({
-                    {"index_granularity", settings[TimeSeriesSetting::recent_samples_index_granularity].value},
-                    {"ttl_only_drop_parts", static_cast<UInt64>(1)}});
+                    if (ttl_equals(getRecentSamplesTTLFromSettings(settings)->formatWithSecretsOneLine()))
+                        inner_engine.reset(inner_engine.ttl_table);
+
+                    expected_inner_settings.emplace("ttl_only_drop_parts", static_cast<UInt64>(1));
+                }
+
+                remove_settings(expected_inner_settings);
                 break;
             }
 
             case ViewTarget::Tags:
             {
-                /// The generated engine kind follows the settings and the version of the old table.
-                engine_is_generated = !has_arguments && (engine_name == getGeneratedTagsEngineKind(settings));
-
                 /// The primary key and the sorting key are connected, so they are considered together.
                 bool primary_key_is_generated = !inner_engine.primary_key
                     || (inner_engine.primary_key->formatWithSecretsOneLine() == "metric_name");
@@ -1057,7 +1381,6 @@ namespace
 
             case ViewTarget::TimeRanges:
             {
-                engine_is_generated = !has_arguments && (engine_name == "AggregatingMergeTree");
                 if (!inner_engine.primary_key && sorting_key_equals("id"))
                     inner_engine.reset(inner_engine.order_by);
                 break;
@@ -1065,7 +1388,6 @@ namespace
 
             case ViewTarget::MetricFamilies:
             {
-                engine_is_generated = !has_arguments && (engine_name == "ReplacingMergeTree");
                 if (!inner_engine.primary_key && sorting_key_equals(TimeSeriesColumnNames::getInnerMetricFamily(settings[TimeSeriesSetting::version])))
                     inner_engine.reset(inner_engine.order_by);
                 break;
@@ -1074,9 +1396,23 @@ namespace
             default:
                 UNREACHABLE();
         }
+    }
 
-        if (engine_is_generated)
-            inner_engine.reset(inner_engine.engine);
+    /// The type of the samples in a row of a samples table with buckets of samples: `Array(Tuple(timestamp <timestamp_type>, value <value_type>))`.
+    DataTypePtr makeSamplesType(const DataTypePtr & timestamp_type, const DataTypePtr & value_type)
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+            DataTypes{timestamp_type, value_type}, Strings{TimeSeriesColumnNames::Timestamp, TimeSeriesColumnNames::Value}));
+    }
+
+    /// Makes the AST of the type `SimpleAggregateFunction(<function_name>, <argument_type>)`.
+    ASTPtr makeSimpleAggregate(const String & function_name, const DataTypePtr & argument_type)
+    {
+        AggregateFunctionProperties properties;
+        auto function = AggregateFunctionFactory::instance().get(function_name, NullsAction::EMPTY, {argument_type}, {}, properties);
+        auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{argument_type}, Array{});
+        auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+        return dataTypeToAST(type);
     }
 
     /// Adds missing required columns to an inner table's column list, building them in canonical order.
@@ -1118,6 +1454,15 @@ namespace
             return decl.get();
         };
 
+        /// Declares a codec for a subcolumn of a generated column: the entry `CODEC <column>.<subcolumn> (...)` of the column list.
+        auto add_codec_declaration = [&](const String & subcolumn_name, ASTPtr codec)
+        {
+            if (!inner_table_columns.codec_declarations)
+                inner_table_columns.set(inner_table_columns.codec_declarations, make_intrusive<ASTExpressionList>());
+            inner_table_columns.codec_declarations->children.push_back(make_intrusive<ASTCodecDeclaration>(subcolumn_name, std::move(codec)));
+            changed = true;
+        };
+
         switch (inner_table_kind)
         {
             case ViewTarget::Samples:
@@ -1128,18 +1473,35 @@ namespace
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Generated `timestamp` columns use `Delta`, `T64`, and `ZSTD(3)`.
-                /// Generated `value` columns use `ALP` and `ZSTD(3)`.
-                /// Explicitly declared columns keep the user's codecs.
+                if (time_series_settings.hasBucketedSamples())
+                {
+                    /// The generated `samples` column gets the codecs of the `timestamp` and `value` columns of the earlier versions, declared
+                    /// for the elements of its tuples; a declared column keeps the user's codecs.
+                    auto samples_type = makeSamplesType(resolved_types.timestamp_type, resolved_types.value_type);
+                    if (add_column_if_missing(TimeSeriesColumnNames::Samples, makeSimpleAggregate("timeSeriesGroupArray", samples_type)))
+                    {
+                        add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Timestamp, getDefaultTimestampCodec());
+                        add_codec_declaration(String{TimeSeriesColumnNames::Samples} + "." + TimeSeriesColumnNames::Value, getDefaultValueCodec());
+                    }
+
+                    /// `bucket` is computed on insertion from the `*_bucket_step_seconds` setting of the table. The three columns get the codec
+                    /// of the timestamps: they are sorted or nearly sorted timestamps, and they dominate the rows with few samples.
+                    if (auto * bucket_decl = add_column_if_missing(TimeSeriesColumnNames::Bucket, dataTypeToAST(resolved_types.timestamp_type)))
+                        bucket_decl->setCodec(getDefaultTimestampCodec());
+
+                    /// The time range of the samples in the row: it's used to skip rows when reading a time range.
+                    if (auto * min_time_decl = add_column_if_missing(TimeSeriesColumnNames::MinTime, makeSimpleAggregate("min", resolved_types.timestamp_type)))
+                        min_time_decl->setCodec(getDefaultTimestampCodec());
+                    if (auto * max_time_decl = add_column_if_missing(TimeSeriesColumnNames::MaxTime, makeSimpleAggregate("max", resolved_types.timestamp_type)))
+                        max_time_decl->setCodec(getDefaultTimestampCodec());
+                    break;
+                }
+
+                /// Generated `timestamp` and `value` columns get the generated codecs, explicitly declared columns keep the user's codecs.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(makeASTFunction(
-                        "CODEC",
-                        make_intrusive<ASTIdentifier>("Delta"),
-                        make_intrusive<ASTIdentifier>("T64"),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                    timestamp_decl->setCodec(getDefaultTimestampCodec());
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.value_type)))
-                    value_decl->setCodec(makeASTFunction(
-                        "CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                    value_decl->setCodec(getDefaultValueCodec());
 
                 break;
             }
@@ -1185,8 +1547,8 @@ namespace
                     if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                     {
                         /// When aggregation is enabled the columns need a custom SimpleAggregateFunction type.
-                        add_column_if_missing(TimeSeriesColumnNames::MinTime, makeSimpleAggregateFunctionTypeAST("min", min_max_time_type));
-                        add_column_if_missing(TimeSeriesColumnNames::MaxTime, makeSimpleAggregateFunctionTypeAST("max", min_max_time_type));
+                        add_column_if_missing(TimeSeriesColumnNames::MinTime, makeSimpleAggregate("min", min_max_time_type));
+                        add_column_if_missing(TimeSeriesColumnNames::MaxTime, makeSimpleAggregate("max", min_max_time_type));
                     }
                     else
                     {
@@ -1204,8 +1566,8 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
                 /// Columns "min_time" and "max_time" are always aggregated: the time range of a time series grows with every insert.
-                add_column_if_missing(TimeSeriesColumnNames::MinTime, makeSimpleAggregateFunctionTypeAST("min", resolved_types.timestamp_type));
-                add_column_if_missing(TimeSeriesColumnNames::MaxTime, makeSimpleAggregateFunctionTypeAST("max", resolved_types.timestamp_type));
+                add_column_if_missing(TimeSeriesColumnNames::MinTime, makeSimpleAggregate("min", resolved_types.timestamp_type));
+                add_column_if_missing(TimeSeriesColumnNames::MaxTime, makeSimpleAggregate("max", resolved_types.timestamp_type));
                 break;
             }
 
@@ -1413,8 +1775,8 @@ namespace
                         if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                         {
                             /// When aggregation is enabled the columns need a custom SimpleAggregateFunction type.
-                            add_column(TimeSeriesColumnNames::MinTime, makeSimpleAggregateFunctionTypeAST("min", min_max_time_type));
-                            add_column(TimeSeriesColumnNames::MaxTime, makeSimpleAggregateFunctionTypeAST("max", min_max_time_type));
+                            add_column(TimeSeriesColumnNames::MinTime, makeSimpleAggregate("min", min_max_time_type));
+                            add_column(TimeSeriesColumnNames::MaxTime, makeSimpleAggregate("max", min_max_time_type));
                         }
                         else
                         {
@@ -1480,46 +1842,6 @@ namespace
         setEngineSettings(*create_query.storage, "recent_samples_ttl_seconds", Field(ttl_to_pin));
     }
 
-    /// The family of the inner engines when none is declared: it follows the `default_table_engine` setting.
-    /// The value `None` is kept: then the inner engines must be declared explicitly.
-    DefaultTableEngine getDefaultInnerEngineFamily(const Settings & query_settings, const StorageID & table_id)
-    {
-        auto default_table_engine = query_settings[Setting::default_table_engine].value;
-        switch (default_table_engine)
-        {
-            case DefaultTableEngine::MergeTree:
-            case DefaultTableEngine::ReplicatedMergeTree:
-            case DefaultTableEngine::SharedMergeTree:
-            case DefaultTableEngine::None:
-                return default_table_engine;
-            default:
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "{}: The `default_table_engine` setting value '{}' cannot be used to choose the engines of the inner tables "
-                    "of a TimeSeries table (supported values are MergeTree, ReplicatedMergeTree and SharedMergeTree); "
-                    "specify the inner tables' engines explicitly", table_id.getNameForLogs(), magic_enum::enum_name(default_table_engine));
-        }
-    }
-
-    /// The prefix of the name of an inner engine for the family of the inner engines, e.g. "Replicated" for `ReplicatedMergeTree`.
-    std::string_view getInnerEngineFamilyPrefix(DefaultTableEngine inner_engine_family, ViewTarget::Kind inner_table_kind)
-    {
-        switch (inner_engine_family)
-        {
-            case DefaultTableEngine::MergeTree:
-                return "";
-            case DefaultTableEngine::ReplicatedMergeTree:
-                return "Replicated";
-            case DefaultTableEngine::SharedMergeTree:
-                return "Shared";
-            case DefaultTableEngine::None:
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "The inner {} table of a TimeSeries table requires an explicit engine "
-                    "because the `default_table_engine` setting is 'None'", inner_table_kind);
-            default:
-                UNREACHABLE();
-        }
-    }
-
     /// Generates the engine of an inner table if it's not specified, and applies the TimeSeries settings to it,
     /// whether the engine was generated or specified by the user.
     /// The replication type of a generated engine (`MergeTree`, `ReplicatedMergeTree` or `SharedMergeTree`) is taken
@@ -1548,6 +1870,14 @@ namespace
         };
 
         auto is_merge_tree = [&] { return inner_engine.engine->name.ends_with("MergeTree"); };
+
+        /// Throws if the engine is not a MergeTree-family engine; `what` names the feature which needs one.
+        auto require_merge_tree = [&](std::string_view what)
+        {
+            if (!is_merge_tree())
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "{}: {} requires a MergeTree-family engine of the inner {} table", table_id.getNameForLogs(), what, inner_table_kind);
+        };
 
         /// A declared MergeTree engine without keys gets the same keys as a generated one.
         /// A dropped sorting key is only regenerated while no explicit primary key survives, so the three
@@ -1605,12 +1935,17 @@ namespace
             changed = true;
         };
 
-        /// The `*_index_granularity` settings set `index_granularity` of the inner MergeTree tables, overriding the engine declaration.
-        auto set_index_granularity = [&](const SettingFieldUInt64 & index_granularity)
+        /// The `*_index_granularity` and `*_index_granularity_bytes` settings set the same-named settings of the inner MergeTree tables,
+        /// overriding the engine declaration. `value` is the value of the setting, or the default of the version if the setting isn't set.
+        auto set_merge_tree_setting = [&](std::string_view name, const SettingFieldUInt64 & setting, UInt64 value)
         {
-            if (is_merge_tree() && (index_granularity.isChanged() || !has_engine_setting("index_granularity")))
-                set_engine_setting("index_granularity", index_granularity.value);
+            if (is_merge_tree() && (setting.isChanged() || !has_engine_setting(name)))
+                set_engine_setting(name, value);
         };
+
+        /// A missing engine is generated; a declared engine is kept and gets the generated keys and settings below.
+        if (!inner_engine.engine)
+            set_engine(getDefaultInnerEngineKind(settings, inner_table_kind));
 
         switch (inner_table_kind)
         {
@@ -1619,28 +1954,52 @@ namespace
             {
                 /// The recent samples table gets the same generated engine as the samples table; it becomes
                 /// partitioned and TTL'd below.
-                if (!inner_engine.engine)
-                    set_engine("MergeTree");
+                const bool bucketed = settings.hasBucketedSamples();
+
+                /// The rows of the same series and bucket are merged by `timeSeriesGroupArray`, which needs an aggregating engine:
+                /// `AggregatingMergeTree`, `ReplicatedAggregatingMergeTree` or `SharedAggregatingMergeTree`.
+                if (bucketed && !inner_engine.engine->name.ends_with("AggregatingMergeTree"))
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "{}: The inner {} table of a TimeSeries table of version {} requires an engine of the AggregatingMergeTree family "
+                        "to merge the rows of the same time series and bucket, got {}",
+                        table_id.getNameForLogs(), inner_table_kind, settings[TimeSeriesSetting::version].value, inner_engine.engine->name);
 
                 if (needs_sorting_key())
                 {
                     set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
-                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)});
+                        make_intrusive<ASTIdentifier>(bucketed ? TimeSeriesColumnNames::Bucket : TimeSeriesColumnNames::Timestamp)});
                 }
 
-                const auto & index_granularity = settings[(inner_table_kind == ViewTarget::Samples)
-                    ? TimeSeriesSetting::samples_index_granularity
-                    : TimeSeriesSetting::recent_samples_index_granularity];
-                set_index_granularity(index_granularity);
+                const bool is_samples = (inner_table_kind == ViewTarget::Samples);
+                const auto & index_granularity = settings[is_samples
+                    ? TimeSeriesSetting::samples_index_granularity : TimeSeriesSetting::recent_samples_index_granularity];
+                set_merge_tree_setting("index_granularity", index_granularity, getIndexGranularityFromSettings(settings, inner_table_kind));
 
-                if (inner_table_kind != ViewTarget::RecentSamples)
+                if (bucketed)
+                {
+                    const auto & index_granularity_bytes = settings[is_samples
+                        ? TimeSeriesSetting::samples_index_granularity_bytes : TimeSeriesSetting::recent_samples_index_granularity_bytes];
+                    set_merge_tree_setting("index_granularity_bytes", index_granularity_bytes, index_granularity_bytes.value);
+                }
+
+                if (is_samples)
+                {
+                    /// The engine is a MergeTree one here: the setting requires a version with buckets of samples (see `checkTimeSeriesSettings`).
+                    if (const auto & partition_by = settings[TimeSeriesSetting::samples_partition_by].value)
+                    {
+                        /// An explicitly set `samples_partition_by` overrides the partition key from the engine declaration.
+                        set_partition_by(partition_by->clone());
+                    }
+                    else if (bucketed && !has_partition_by())
+                    {
+                        /// Otherwise a declared partition key is kept; if there is none, the default one (one partition per month) is used.
+                        set_partition_by(getDefaultSamplesPartitionKey());
+                    }
                     break;
+                }
 
                 /// `recent_samples_ttl_seconds` is a correctness contract for the reader: the TTL always comes from it; non-TTL engines are rejected.
-                if (!is_merge_tree())
-                    throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                        "{}: The inner recent samples table requires a MergeTree-family engine to apply the TTL "
-                        "defined by the `recent_samples_ttl_seconds` setting", table_id.getNameForLogs());
+                require_merge_tree("The TTL defined by the `recent_samples_ttl_seconds` setting");
 
                 /// The table is partitioned by time, so `ttl_only_drop_parts` lets the TTL drop whole expired parts instead of rewriting them.
                 if (!has_engine_setting("ttl_only_drop_parts"))
@@ -1653,32 +2012,17 @@ namespace
                 }
                 else if (!has_partition_by())
                 {
-                    /// Otherwise a declared partition key is kept; if there is none, the default one (5-hour buckets) is used.
-                    /// `toDateTime` makes the default partition key work for any timestamp type (e.g. a raw `UInt32`),
-                    /// same as the TTL expression. From `MIN_WITH_UTC_PARTITION_KEY` its timezone is pinned, because
-                    /// `toStartOfInterval` counts hours from local midnight and every server timezone change would
-                    /// otherwise move the meaning of the partition values already written.
-                    auto timestamp = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-                    auto to_date_time
-                        = (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_UTC_PARTITION_KEY)
-                        ? makeASTFunction("toDateTime", timestamp, make_intrusive<ASTLiteral>(String{"UTC"}))
-                        : makeASTFunction("toDateTime", timestamp);
-                    set_partition_by(makeASTFunction("toStartOfInterval", to_date_time,
-                        makeASTFunction("toIntervalHour", make_intrusive<ASTLiteral>(static_cast<UInt64>(5)))));
+                    /// Otherwise a declared partition key is kept; if there is none, the default one (5-hour intervals) is used
+                    /// (see getDefaultRecentSamplesPartitionKey).
+                    set_partition_by(getDefaultRecentSamplesPartitionKey(settings[TimeSeriesSetting::version]));
                 }
 
-                set_ttl(makeASTOperator("plus",
-                    makeASTFunction("toDateTime", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
-                    makeASTFunction("toIntervalSecond",
-                        make_intrusive<ASTLiteral>(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value))));
+                set_ttl(getRecentSamplesTTLFromSettings(settings));
                 break;
             }
 
             case ViewTarget::Tags:
             {
-                if (!inner_engine.engine)
-                    set_engine(getGeneratedTagsEngineKind(settings));
-
                 if (needs_sorting_key())
                 {
                     set_primary_key(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
@@ -1697,7 +2041,7 @@ namespace
                     set_sorting_key(std::move(key_columns));
                 }
 
-                set_index_granularity(settings[TimeSeriesSetting::tags_index_granularity]);
+                set_merge_tree_setting("index_granularity", settings[TimeSeriesSetting::tags_index_granularity], settings[TimeSeriesSetting::tags_index_granularity].value);
 
                 /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags` Map) outside
                 /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
@@ -1716,10 +2060,6 @@ namespace
 
             case ViewTarget::TimeRanges:
             {
-                /// The time ranges are always aggregated: every insert of a time series extends its time range.
-                if (!inner_engine.engine)
-                    set_engine("AggregatingMergeTree");
-
                 if (needs_sorting_key())
                     set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID)});
                 break;
@@ -1727,9 +2067,6 @@ namespace
 
             case ViewTarget::MetricFamilies:
             {
-                if (!inner_engine.engine)
-                    set_engine("ReplacingMergeTree");
-
                 if (needs_sorting_key())
                     set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::getInnerMetricFamily(settings[TimeSeriesSetting::version]))});
                 break;
@@ -1751,7 +2088,7 @@ namespace
             return false;
 
         auto indices = make_intrusive<ASTExpressionList>();
-        indices->children.push_back(makeDefaultTagsIndex());
+        indices->children.push_back(getDefaultTagsIndex());
         inner_columns.setOrReplace(inner_columns.indices, indices);
         return true;
     }
@@ -1852,13 +2189,14 @@ namespace
             check_column(column_name);
             const auto * col = target_table_columns.tryGet(String(column_name));
             DataTypePtr type = col->type;
-            if (const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
-                simple_aggregate_function && (simple_aggregate_function->getFunctionName() == aggregate_function_name)
-                && (simple_aggregate_function->getArgumentsDataTypes().size() == 1))
+            if (const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
             {
-                type = simple_aggregate_function->getArgumentsDataTypes()[0];
+                /// The storage type of a `SimpleAggregateFunction` compares equal to the plain type, so the wrapper is checked by name.
+                bool is_expected_wrapper = (simple_aggregate_function->getFunctionName() == aggregate_function_name)
+                    && (simple_aggregate_function->getArgumentsDataTypes().size() == 1);
+                type = is_expected_wrapper ? simple_aggregate_function->getArgumentsDataTypes()[0] : nullptr;
             }
-            if (removeNullable(type)->equals(*resolved_types.timestamp_type))
+            if (type && removeNullable(type)->equals(*resolved_types.timestamp_type))
                 return;
             throw Exception(
                 ErrorCodes::BAD_TYPE_OF_FIELD,
@@ -1869,6 +2207,63 @@ namespace
                 col->type->getName(),
                 resolved_types.timestamp_type->getName(),
                 aggregate_function_name);
+        };
+
+        /// Accepts `SimpleAggregateFunction(min, <timestamp type>)` for `min_time` and `SimpleAggregateFunction(max, <timestamp type>)`
+        /// for `max_time` only: the aggregating engine merges the rows of the same series and bucket, and the bounds of a merged row
+        /// must cover all its samples (a plain or Nullable column would keep the bounds of one insert, other wrappers would merge them wrongly).
+        auto check_column_bucket_bound = [&](std::string_view column_name, std::string_view aggregate_function_name)
+        {
+            check_column(column_name);
+            const auto * col = target_table_columns.tryGet(String(column_name));
+            if (const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(col->type->getCustomName());
+                simple_aggregate_function && (simple_aggregate_function->getFunctionName() == aggregate_function_name)
+                && (simple_aggregate_function->getArgumentsDataTypes().size() == 1)
+                && simple_aggregate_function->getArgumentsDataTypes()[0]->equals(*resolved_types.timestamp_type))
+            {
+                return;
+            }
+            throw Exception(
+                ErrorCodes::BAD_TYPE_OF_FIELD,
+                "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction({}, {})",
+                table_id.getNameForLogs(),
+                column_name,
+                target_kind,
+                col->type->getName(),
+                aggregate_function_name,
+                resolved_types.timestamp_type->getName());
+        };
+
+        /// Accepts `SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp <timestamp type>, value <value type>)))` only:
+        /// the inserts write sorted arrays, the aggregating engine merges the rows of the same series and bucket with that function
+        /// (a plain array wouldn't be merged, other wrappers would merge it wrongly), and the codecs of the elements are declared by these names.
+        auto check_column_samples = [&](std::string_view column_name)
+        {
+            check_column(column_name);
+            const auto * col = target_table_columns.tryGet(String(column_name));
+            auto [samples_timestamp_type, samples_value_type] = trySplitSamplesType(col->type, /* allow_unnamed_tuple = */ false);
+            if (isTimeSeriesGroupArraySimpleAggregate(col->type) && samples_timestamp_type && samples_value_type
+                && samples_timestamp_type->equals(*resolved_types.timestamp_type) && samples_value_type->equals(*resolved_types.value_type))
+                return;
+            throw Exception(
+                ErrorCodes::BAD_TYPE_OF_FIELD,
+                "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp {}, value {})))",
+                table_id.getNameForLogs(),
+                column_name,
+                target_kind,
+                col->type->getName(),
+                resolved_types.timestamp_type->getName(),
+                resolved_types.value_type->getName());
+        };
+
+        /// Checks that a column of the layout of the other versions is not declared.
+        auto check_column_not_exists = [&](std::string_view column_name)
+        {
+            if (target_table_columns.tryGet(String(column_name)))
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "{}: Column {} must not exist in the {} table of a TimeSeries table of version {}: "
+                    "the table stores buckets of samples in the columns `samples`, `bucket`, `min_time`, `max_time`",
+                    table_id.getNameForLogs(), column_name, target_kind, time_series_settings[TimeSeriesSetting::version].value);
         };
 
         auto check_metric_family_column = [&](std::string_view column_name)
@@ -1896,8 +2291,22 @@ namespace
             case ViewTarget::RecentSamples:
             {
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
-                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
-                check_column_type(TimeSeriesColumnNames::Value, resolved_types.value_type);
+
+                if (!time_series_settings.hasBucketedSamples())
+                {
+                    check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
+                    check_column_type(TimeSeriesColumnNames::Value, resolved_types.value_type);
+                    break;
+                }
+
+                /// The columns `timestamp` and `value` belong to the layout of the earlier versions.
+                check_column_not_exists(TimeSeriesColumnNames::Timestamp);
+                check_column_not_exists(TimeSeriesColumnNames::Value);
+
+                check_column_samples(TimeSeriesColumnNames::Samples);
+                check_column_type(TimeSeriesColumnNames::Bucket, resolved_types.timestamp_type);
+                check_column_bucket_bound(TimeSeriesColumnNames::MinTime, "min");
+                check_column_bucket_bound(TimeSeriesColumnNames::MaxTime, "max");
                 break;
             }
 
@@ -1968,7 +2377,7 @@ namespace
 
     /// Makes the description of the columns of an inner table from their declarations. Only the names and the types
     /// are needed to check the columns here, the whole declarations are checked when the inner table is created.
-    ColumnsDescription getInnerColumnsDescription(const ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const StorageID & table_id)
+    ColumnsDescription toColumnsDescription(const ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const StorageID & table_id)
     {
         ColumnsDescription result;
         if (!inner_table_columns.columns)
@@ -2105,8 +2514,11 @@ namespace
                 if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
                 {
                     auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
-                    removeInnerEngineKeysDisabledByNewSettings(*new_inner_engine, kind, new_settings);
+                    /// The generated clauses are recognized by the spelling of the old table first: removing the clauses of the old
+                    /// layout before that could leave a generated clause unrecognized, e.g. `allow_nullable_key` without the key it was
+                    /// generated for.
                     removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
+                    removeInnerEngineDisabledByNewSettings(*new_inner_engine, kind, old_settings, new_settings);
                     create_query.setTargetInnerEngine(kind, new_inner_engine);
                 }
             }
@@ -2270,6 +2682,22 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
 
         const bool recent_samples_enabled = settings.isRecentSamplesTargetEnabled();
 
+        /// Pin the steps of the buckets, so that the table keeps its buckets if a future version changes the defaults:
+        /// the rows are read with the assumption that the buckets are aligned to the steps.
+        if (settings.hasBucketedSamples() && create_query.storage)
+        {
+            if (!settings[TimeSeriesSetting::samples_bucket_step_seconds].isChanged())
+            {
+                setEngineSettings(*create_query.storage, "samples_bucket_step_seconds",
+                    Field(settings[TimeSeriesSetting::samples_bucket_step_seconds].value));
+            }
+            if (recent_samples_enabled && !settings[TimeSeriesSetting::recent_samples_bucket_step_seconds].isChanged())
+            {
+                setEngineSettings(*create_query.storage, "recent_samples_bucket_step_seconds",
+                    Field(settings[TimeSeriesSetting::recent_samples_bucket_step_seconds].value));
+            }
+        }
+
         /// A RECENT SAMPLES declaration can't be used with `recent_samples_ttl_seconds = 0`
         if (!recent_samples_enabled)
         {
@@ -2324,7 +2752,7 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
-                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, /* is_external = */ false, settings, resolved_types, table_id);
+                checkTargetTable(toColumnsDescription(*inner_columns, kind, table_id), kind, /* is_external = */ false, settings, resolved_types, table_id);
 
                 auto inner_engine = create_query.getTargetInnerEngine(kind)
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
