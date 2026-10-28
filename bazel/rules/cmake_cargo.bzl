@@ -66,14 +66,14 @@ def _cmake_cargo_impl(ctx):
     args.add("--linux-headers", linux_headers.path)
     args.add("--glibc-headers", glibc_headers.path)
     args.add_all(["--mount", link_runtime_root(ctx.attr._link_files), "contrib/sysroot"])
-    args.add_all(ctx.files._link_files, before_each = "--source")
+    args.add_all("--sources", ctx.files._link_files)
     source_depsets = [
         ctx.attr.workspace_sources[DefaultInfo].files,
         ctx.attr._link_files[DefaultInfo].files,
         ctx.attr._linux_headers[DefaultInfo].files,
         ctx.attr._glibc_headers[DefaultInfo].files,
     ]
-    args.add_all(ctx.attr.workspace_sources[DefaultInfo].files, before_each = "--source")
+    args.add_all("--sources", ctx.attr.workspace_sources[DefaultInfo].files)
     destinations = {"contrib/sysroot": True}
     for target, destination in ctx.attr.repositories.items():
         if destination in destinations:
@@ -83,7 +83,7 @@ def _cmake_cargo_impl(ctx):
         if not source_root:
             fail("Cargo repositories must come from fetched source repositories: " + str(target.label))
         args.add_all(["--mount", source_root, destination])
-        args.add_all(target[DefaultInfo].files, before_each = "--source")
+        args.add_all("--sources", target[DefaultInfo].files)
         source_depsets.append(cargo_source_inputs(target))
     for required in ["contrib/rust_vendor"]:
         if required not in destinations:
@@ -121,7 +121,7 @@ def _cmake_cargo_impl(ctx):
             ctx.attr._native_headers.label.workspace_root,
             "contrib/llvm-project",
         ])
-        args.add_all(native_headers, before_each = "--source")
+        args.add_all("--sources", native_headers)
         source_depsets.append(cargo_source_inputs(ctx.attr._native_headers))
     if ctx.attr.openssl_headers:
         args.add("--openssl-headers", ctx.file.openssl_headers.path)

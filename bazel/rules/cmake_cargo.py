@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("--cargo-feature", action="append", default=[])
     parser.add_argument("--path-crate", action="append", default=[])
     parser.add_argument("--mount", nargs=2, action="append", required=True, metavar=("INPUT_ROOT", "CLICKHOUSE_DIRECTORY"))
-    parser.add_argument("--source", type=Path, action="append", required=True)
+    parser.add_argument("--sources", type=Path, nargs="+", action="extend", dest="source", required=True)
     parser.add_argument("--rust-flag", action="append", default=[])
     parser.add_argument("--native-source-root", type=Path)
     parser.add_argument("--native-compilation", action="store_true")

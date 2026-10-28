@@ -114,7 +114,9 @@ bazel_args=(
 # --include_param_files would flatten every CppCompile's original header
 # depset. The extraction below rejects any remaining unresolved @ argument;
 # it must never treat an incomplete command as a match.
-aquery=(timeout --kill-after=60s 20m bazel --host_jvm_args=-Xmx24g aquery)
+bazel_cmd=(bazel --host_jvm_args=-Xmx24g)
+aquery=(timeout --kill-after=60s 20m "${bazel_cmd[@]}" aquery)
+"${bazel_cmd[@]}" info output_base > "$output/bazel-output-base.txt"
 native_query='mnemonic("CppCompile|ObjcCompile|CppLink|CppArchive|ClickHouseNativeLink|ClickHouseNativeArchive|ClickHouseRustArchive|ClickHouseRustSymbols|ClickHouseCargo|Symlink", deps(//:clickhouse))'
 assembly_query='mnemonic("Assemble|PreprocessAssemble|NasmCompile", deps(//:clickhouse)) union mnemonic("Genrule", //bazel:generate_x86_64_hdfs_crc)'
 # Restrict FileWrite contents to the real MRI scripts, not every generated
@@ -158,6 +160,7 @@ stage "native archive and object audit"
 python3 bazel/initial_migration/audit_native_actions.py --any2bazel "$any2bazel" \
     --cmake-model "$output/model.cmake.clickhouse.json" --cmake-build "$build" \
     --bazel-model "$output/model.bazel.json" --config "$root/bazel/initial_migration/any2bazel.json" \
+    --bazel-output-base "$(cat "$output/bazel-output-base.txt")" \
     --native-aquery "$output/native.aquery.json" --mri-aquery "$output/mri.aquery.json" \
     --assembly-aquery "$output/assembly.aquery.json" --output "$output/native-actions.json" \
     > "$output/native-actions.log" 2>&1 || audit_status=$?

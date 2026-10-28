@@ -337,11 +337,17 @@ python3 bazel/initial_migration/audit_native_actions.py \
   --any2bazel /path/to/any2bazel \
   --cmake-model build_bazel_reference_x86_64/model.cmake.json \
   --bazel-model /path/to/model.bazel.x86_64.json \
+  --bazel-output-base "$(cat /path/to/bazel-output-base.txt)" \
   --native-aquery /path/to/native.aquery.json \
   --mri-aquery /path/to/mri.aquery.json \
   --assembly-aquery /path/to/graph-nasm-x86_64.aquery.json \
   --output /path/to/native-actions-x86_64.json
 ```
+
+The capture script records Bazel's output base in `bazel-output-base.txt`.
+The audit uses the captured external repositories to check the files under
+declared Cargo source directories. Older captures that declare every Cargo
+source file individually can omit `--bazel-output-base`.
 
 LLVM's module groups some libraries differently from CMake. The audit maps
 their exact source identities and checks that the resulting objects reach

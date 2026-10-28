@@ -222,10 +222,50 @@ class BuildIncludeEvidence:
         return row
 
 
+def checked_cargo_sources(argv, declared, mounts, output_base):
+    """Check each staged file against the captured action's individual or directory inputs."""
+    from functools import cache
+
+    sources = set()
+    i = 0
+    while i < len(argv):
+        flag = argv[i]
+        i += 1
+        if flag not in ('--source', '--sources'):
+            continue
+        if i == len(argv) or argv[i].startswith('-'):
+            raise ValueError(f'Cargo option lacks a source file: {flag}')
+        while i < len(argv) and not argv[i].startswith('-'):
+            sources.add(argv[i])
+            i += 1
+            if flag == '--source':
+                break
+    resolved = cache(Path.resolve)
+    for value in sources:
+        path = Path(value)
+        roots = [Path(root) for root in mounts.values() if value.startswith(root + '/')]
+        if len(roots) != 1 or path.is_absolute() or '..' in path.parts or str(path) != value:
+            raise ValueError(f'Cargo source is outside its declared mount: {value}')
+        if value in declared:
+            continue
+        root, = roots
+        # A source directory represents its physical files in the pinned Bazel repository.
+        directory = next((p for p in path.parents if str(p) in declared and p.is_relative_to(root)), None)
+        if output_base is None or not root.parts or root.parts[0] != 'external' or directory is None:
+            raise ValueError(f'Cargo source has no declared input: {value}')
+        repository = resolved(output_base / root)
+        physical = resolved(output_base / directory)
+        file = output_base / path
+        leaf = file.resolve() if file.is_symlink() else resolved(file.parent) / file.name
+        if not physical.is_relative_to(repository) or not file.is_file() or not leaf.is_relative_to(physical):
+            raise ValueError(f'Cargo source is missing from its declared directory: {value}')
+    return sources
+
+
 class ArchiveEvidence:
     """Walk actual link/ar/MRI operands, never infer archive members from depsets."""
 
-    def __init__(self, native, assembly, mri, cfg, build, repo_root):
+    def __init__(self, native, assembly, mri, cfg, build, repo_root, bazel_output_base=None):
         from extract_bazel import _build_path_index, DepsetResolver
         self.producers = defaultdict(list)
         self.links = defaultdict(list)
@@ -233,6 +273,7 @@ class ArchiveEvidence:
         self.cfg = cfg
         self.build = build
         self.repo_root = repo_root
+        self.bazel_output_base = bazel_output_base
         self.custom_assembly = {}
         self.cargo_native = {}
         for filename in (native, assembly, mri):
@@ -329,14 +370,12 @@ class ArchiveEvidence:
         tools = {name: single('--' + name) for name in
                  ('cargo', 'rustc', 'rust-sysroot-anchor', 'cc', 'cxx', 'ar')}
         declared = self.inputs(record)
-        sources = set(values('--source'))
         if (single('--output') != source or single('--evidence') != evidence_output
                 or single('--cargo-package') != '_ch_rust_skim_rust'
                 or argv.count('--native-compilation') != 1
                 or values('--cargo-feature') or values('--openssl-headers') or values('--cmake')
                 or single('--native-source-root') != self.repo_root
                 or not {manifest, workspace_manifest, config, *tools.values()}.issubset(declared)
-                or not sources or not sources.issubset(declared)
                 or self.cfg.map_include(config) != 'contrib/corrosion-cmake/config.toml.in'):
             raise ValueError('Skim Cargo package, native mode, tools, configuration or inputs differ')
 
@@ -353,6 +392,7 @@ class ArchiveEvidence:
         for destination in ('rust/workspace', 'contrib/rust_vendor', 'contrib/llvm-project', 'contrib/sysroot'):
             if destination not in mounts or self.cfg.map_include(mounts[destination]) != destination:
                 raise ValueError('Skim Cargo lacks its declared repository mount: ' + destination)
+        sources = checked_cargo_sources(argv[1:], declared, mounts, self.bazel_output_base)
         sysroot = mounts['contrib/sysroot'].rstrip('/') + '/'
         if not any(path.startswith(sysroot) for path in sources):
             raise ValueError('Skim Cargo has no declared sysroot sources')
@@ -812,6 +852,7 @@ def main():
     parser.add_argument('--bazel-model', required=True, type=Path)
     parser.add_argument('--native-aquery', required=True, type=Path)
     parser.add_argument('--mri-aquery', type=Path)
+    parser.add_argument('--bazel-output-base', type=Path, help='Source directories from the captured aquery')
     parser.add_argument('--config', default=Path(__file__).resolve().parent / 'any2bazel.json', type=Path)
     parser.add_argument('--assembly-aquery', type=Path)
     parser.add_argument('--output', required=True, type=Path)
@@ -830,7 +871,7 @@ def main():
     cfg = config.load(str(args.config))
     build = (args.cmake_build or args.cmake_model.parent).resolve()
     evidence = ArchiveEvidence(args.native_aquery, args.assembly_aquery, args.mri_aquery,
-                               cfg, build, reference.repo_root)
+                               cfg, build, reference.repo_root, args.bazel_output_base)
     link_evidence = {}
     for name, target in reference.targets.items():
         if target.kind == 'executable' and not cfg.target_excluded(name):
