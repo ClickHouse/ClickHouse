@@ -1941,6 +1941,12 @@ void MergeTreeData::setProperties(
     /// The implicit index of an expression alias is built over its expanded expression, so the replacement
     /// of an alias it reaches (`b` for `c ALIAS b + 1`) leaves its files stale too, even if `c` itself keeps
     /// the same definition.
+    /// A column that keeps its name, has no implicit index and changes its type or default is checked too. An
+    /// earlier `ALTER` may have dropped its index deliberately while leaving the files in the parts (`MODIFY COLUMN
+    /// b ... DEFAULT 0` of `b ALIAS a + 1`, after which `MATERIALIZE COLUMN b` carries them over), and the change
+    /// is not guaranteed to rewrite them: `EPHEMERAL` keeps the data of the column in the parts, and the mutation
+    /// of a type change may be killed before it rewrites every part. A column without such files, e.g. `String`
+    /// becoming `UInt64`, gets the index.
     std::optional<StorageInMemoryMetadata> metadata_without_foreign_implicit_indices;
     {
         static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
@@ -1981,6 +1987,11 @@ void MergeTreeData::setProperties(
                     new_implicit_indices.insert(index.name);
             }
             else if (redefined_alias_columns.contains(column_name) || dependent_alias_columns.contains(column_name))
+            {
+                new_implicit_indices.insert(index.name);
+            }
+            else if (!old_metadata.secondary_indices.has(index.name)
+                && (!old_column->type->equals(*new_column->type) || !(old_column->default_desc == new_column->default_desc)))
             {
                 new_implicit_indices.insert(index.name);
             }
