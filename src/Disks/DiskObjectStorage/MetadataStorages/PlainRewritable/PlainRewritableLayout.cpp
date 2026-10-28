@@ -7,6 +7,7 @@
 #include <Common/getRandomASCIIString.h>
 
 #include <base/find_symbols.h>
+#include <base/pathToString.h>
 
 #include <fmt/format.h>
 
@@ -107,7 +108,8 @@ std::string PlainRewritableLayout::restoreLocalPathOfPendingRemoval(const std::s
         relative_path /= *it;
 
     /// The same shape as the paths `MoveDirectoryOperation` writes: `path_from / subdir / ""`.
-    return (std::filesystem::path(original_local_path) / relative_path / "").string();
+    /// Read back as generic UTF-8: the result is a logical `/`-separated path, not a path of the local filesystem.
+    return pathToGenericString(pathFromString(original_local_path) / relative_path / "");
 }
 
 std::string PlainRewritableLayout::makeCommittedTombstoneContent(const std::string & removed_name)
