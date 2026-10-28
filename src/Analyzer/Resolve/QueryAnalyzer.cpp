@@ -2990,21 +2990,24 @@ static const IQueryTreeNode * getMatchedColumnSource(const QueryTreeNodePtr & no
     return nullptr;
 }
 
-/// Whether the expression `node` uses a column of `column_source` (see getMatchedColumnSource).
-static bool expressionReferencesColumnSource(const QueryTreeNodePtr & node, const IQueryTreeNode * column_source)
+/** Whether the unresolved lambda body `node` may use the lambda argument `argument_name`. Columns captured from the
+  * table expressions (`x -> b + c`) do not count: they do not carry the name of the matched column. A nested lambda
+  * that shadows the argument or a matcher in the body is conservatively treated as a use.
+  */
+static bool lambdaBodyMayUseArgument(const QueryTreeNodePtr & node, const std::string & argument_name)
 {
-    if (!node || !column_source)
+    if (!node)
         return false;
 
-    if (node->as<ColumnNode>())
-        return getMatchedColumnSource(node) == column_source;
+    if (const auto * identifier_node = node->as<IdentifierNode>())
+        return identifier_node->getIdentifier().front() == argument_name;
 
-    if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
-        return expressionReferencesColumnSource(constant_node->getSourceExpression(), column_source);
+    if (node->as<MatcherNode>())
+        return true;
 
     for (const auto & child : node->getChildren())
     {
-        if (expressionReferencesColumnSource(child, column_source))
+        if (lambdaBodyMayUseArgument(child, argument_name))
             return true;
     }
 
@@ -3349,11 +3352,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
                     node = lambda_expression_to_resolve_typed.getExpression();
 
-                    /// A lambda that ignores its argument (`x -> 0`) names the result after its body alone, so qualifying
-                    /// the matched column would not change that name. A prefix keeps the (qualified) column name.
+                    /// A lambda that ignores its argument (`x -> 0`, `x -> b + c`) names the result after its body alone, so
+                    /// qualifying the matched column would not change that name. A prefix keeps the name the transformer
+                    /// received, which is derived from the column only if no earlier transformer has discarded it
+                    /// (`APPLY (x -> 0) APPLY (x -> x, 'f')` produces `f0` for every column).
+                    const auto & unresolved_lambda = expression_node->as<LambdaNode &>();
                     auto & matched_column = matched_columns_before_transformers.back();
-                    matched_column.projection_name_derived_from_column = !apply_column_name_prefix.empty()
-                        || expressionReferencesColumnSource(node, getMatchedColumnSource(matched_column.node));
+                    matched_column.projection_name_derived_from_column = matched_column.projection_name_derived_from_column
+                        && (!apply_column_name_prefix.empty()
+                            || lambdaBodyMayUseArgument(unresolved_lambda.getExpression(), unresolved_lambda.getArguments().getNames().front()));
                 }
                 else if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
                 {

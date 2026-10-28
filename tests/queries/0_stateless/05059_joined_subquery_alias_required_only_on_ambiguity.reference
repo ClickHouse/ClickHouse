@@ -60,6 +60,10 @@ plus(1, item_id)	plus(1, brand)	plus(1, other)
 0	0
 0	0	0
 0	0	0
+f0	f0
+0	0
+plus(b, c)	plus(b, c)	plus(b, c)	plus(b, c)
+6	6	6	6
 -- Equally named columns of a single table expression do not need a qualification
 1	1
 1	1	3
