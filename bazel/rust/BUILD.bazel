@@ -91,6 +91,7 @@ rust_cbindgen(
     name = "delta_ffi_headers",
     srcs = ["@clickhouse_delta_kernel_rs//:cbindgen_sources"],
     cargo_config = "//contrib/corrosion-cmake:config.toml.in",
+    cargo_runtime = "@rules_rust//rust/toolchain:current_cargo_files",
     cbindgen_tool = "@delta_crates//:cbindgen_cli",
     config = "@clickhouse_delta_kernel_rs//:ffi/cbindgen.toml",
     crate = "delta_kernel_ffi",

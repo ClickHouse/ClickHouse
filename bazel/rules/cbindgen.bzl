@@ -4,6 +4,9 @@ load(":cargo_sources.bzl", "cargo_source_inputs")
 
 def _rust_cbindgen_impl(ctx):
     rust = ctx.toolchains["@rules_rust//rust:toolchain_type"]
+    rust_files = rust.all_files
+    if ctx.attr.cargo_runtime:
+        rust_files = ctx.attr.cargo_runtime[DefaultInfo].default_runfiles.files
     outputs = []
     args = ctx.actions.args()
     args.add("--cargo", rust.cargo)
@@ -23,7 +26,7 @@ def _rust_cbindgen_impl(ctx):
         arguments = [args],
         inputs = depset(
             [ctx.file.manifest, ctx.file.config, ctx.file.cargo_config],
-            transitive = [rust.all_files, cargo_source_inputs(ctx.attr.vendor)] + [cargo_source_inputs(src) for src in ctx.attr.srcs],
+            transitive = [rust_files, cargo_source_inputs(ctx.attr.vendor)] + [cargo_source_inputs(src) for src in ctx.attr.srcs],
         ),
         tools = [ctx.attr.cbindgen_tool[DefaultInfo].files_to_run],
         outputs = outputs,
@@ -40,6 +43,7 @@ rust_cbindgen = rule(
         "manifest": attr.label(allow_single_file = True, mandatory = True),
         "config": attr.label(allow_single_file = True, mandatory = True),
         "cargo_config": attr.label(allow_single_file = True, mandatory = True),
+        "cargo_runtime": attr.label(doc = "Cargo runtime for configs with no parse.expand.crates. Omit for macro expansion with Cargo."),
         "vendor": attr.label(mandatory = True),
         "headers": attr.string_dict(mandatory = True, doc = "cbindgen language to header filename, relative to the target name."),
         "cbindgen_tool": attr.label(executable = True, cfg = "exec", mandatory = True),
