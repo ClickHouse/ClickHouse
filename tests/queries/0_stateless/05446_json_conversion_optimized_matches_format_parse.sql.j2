@@ -79,6 +79,19 @@ SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings 
 {{ check('accepted: removed empty Array', 'JSON(a Array(Int8))', 'JSON', ['{"a": []}']) }}
 {{ check('accepted: removed Float64 NaN', 'JSON(a Float64)', 'JSON', ['{"a": "nan"}']) }}
 
+-- A missing or absent typed path must get the destination type's default, which is not physical zero for
+-- an Enum. Cover a new Enum path absent in a whole block and in some rows, from dynamic and shared data,
+-- and an Enum path zeroed by a new skip rule.
+{{ check("new Enum8 absent in the whole block", "JSON", "JSON(a Enum8('x' = 1, 'y' = 2))", ['{"b": 1}']) }}
+{{ check("new Enum8 from dynamic, present and absent", "JSON", "JSON(a Enum8('x' = 1, 'y' = 2))", ['{"a": "y"}', '{}', '{"a": "x"}']) }}
+{{ check("new Enum8 from shared data, present and absent", "JSON(max_dynamic_paths = 0)", "JSON(max_dynamic_paths = 0, a Enum8('x' = 1, 'y' = 2))", ['{"a": "y"}', '{}']) }}
+
+-- A source null must become the destination default, not the source default converted to the new nested type.
+{{ check("changed Nullable(UInt8) to String with null", "JSON(a Nullable(UInt8))", "JSON(a String)", ['{"a": 5}', '{"a": null}', '{}']) }}
+{{ check("changed Nullable(Int32) to Int64 with null", "JSON(a Nullable(Int32))", "JSON(a Int64)", ['{"a": 5}', '{"a": null}']) }}
+{{ check("changed Array(Nullable(Int8)) to Array(String) with null", "JSON(a Array(Nullable(Int8)))", "JSON(a Array(String))", ['{"a": [5, null]}']) }}
+{{ check("changed LowCardinality(Nullable(String)) to String with null", "JSON(a LowCardinality(Nullable(String)))", "JSON(a String)", ['{"a": "hi"}', '{"a": null}']) }}
+
 -- Removed, new and changed typed paths under the parser settings that the conversion has to follow.
 {% for settings in [
     'type_json_skip_null_typed_paths = 1',

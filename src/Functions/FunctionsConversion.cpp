@@ -2141,6 +2141,29 @@ bool hasNullableMismatchForCast(const DataTypePtr & src_type, const DataTypePtr 
     return false;
 }
 
+/// True when `src_type` and `dst_type` differ only by a removable Nullable/LowCardinality(Nullable)
+/// wrapper. Then stripping it leaves every non-null value unchanged and a null exposes the nested
+/// default, which equals the destination default; any other difference would make the exposed source
+/// default diverge from the destination default the parser inserts for a null.
+bool nullableMismatchIsOnlyDifference(const DataTypePtr & src_type, const DataTypePtr & dst_type)
+{
+    if (src_type->equals(*dst_type))
+        return true;
+
+    if (src_type->isNullable() && !dst_type->isNullable())
+        return assert_cast<const DataTypeNullable &>(*src_type).getNestedType()->equals(*dst_type);
+
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_type->isNullable())
+        return removeNullableOrLowCardinalityNullable(src_type)->equals(*dst_type);
+
+    if (isArray(*src_type) && isArray(*dst_type))
+        return nullableMismatchIsOnlyDifference(
+            assert_cast<const DataTypeArray &>(*src_type).getNestedType(),
+            assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
+
+    return false;
+}
+
 /// Returns true if CAST and format+parse produce different results for the given type,
 /// meaning we must fall back to format+parse. Checks the type itself and all nested subtypes.
 /// Cases:
@@ -2582,12 +2605,14 @@ bool validateNewLeafTypedPaths(
     const ColumnObject & src,
     const ObjectConversionPlan & plan,
     size_t rows,
+    bool skip_null_typed_paths,
     bool throw_on_invalid_row)
 {
     /// Nothing to reject in an empty block: the parser would not read any value either.
     if (plan.new_leaf_typed_paths.empty() || rows == 0)
         return false;
 
+    const auto & src_typed_paths = src.getTypedPaths();
     const auto & src_dynamic_paths = src.getDynamicPaths();
     const auto & sorted_dynamic_paths = src.getSortedDynamicPaths();
     auto [shared_data_paths, shared_data_values] = src.getSharedDataPathsAndValues();
@@ -2601,6 +2626,7 @@ bool validateNewLeafTypedPaths(
     struct Leaf
     {
         std::string_view path;
+        String descendant_prefix;                   /// "<path>.", the start of the range of paths below the leaf
         const IDataType * type = nullptr;           /// for the error message
         const IColumn * scalar = nullptr;           /// dynamic path at the leaf, absent in some rows
         VectorWithMemoryTracking<const IColumn *> below;
@@ -2613,6 +2639,7 @@ bool validateNewLeafTypedPaths(
     {
         Leaf leaf;
         leaf.path = path;
+        leaf.descendant_prefix = path + '.';
         leaf.type = plan.new_typed_paths.at(path).get();
 
         if (auto it = src_dynamic_paths.find(path); it != src_dynamic_paths.end())
@@ -2625,17 +2652,22 @@ bool validateNewLeafTypedPaths(
                 leaf.scalar = it->second.get();
         }
 
-        /// A source typed path below the leaf is necessarily removed, since a destination path below
-        /// the leaf would have kept it out of new_leaf_typed_paths. Typed paths hold a value in every
-        /// row, so such a path puts data below the leaf in every row.
-        leaf.always_below = std::any_of(
-            plan.removed_typed_paths.begin(),
-            plan.removed_typed_paths.end(),
-            [&](const auto & entry) { return isDescendantPath(entry.first, path); });
+        /// A source typed path below the leaf is necessarily removed, since a destination path below the
+        /// leaf would have kept it out of new_leaf_typed_paths. A typed path holds a value in every row,
+        /// except a Nullable one under type_json_skip_null_typed_paths: the serializer omits it where it is
+        /// null, so it is checked per row like a dynamic path.
+        for (const auto & [removed_path, removed_type] : plan.removed_typed_paths)
+        {
+            if (!isDescendantPath(removed_path, path))
+                continue;
+            if (skip_null_typed_paths && (removed_type->isNullable() || removed_type->isLowCardinalityNullable()))
+                leaf.below.push_back(src_typed_paths.at(removed_path).get());
+            else
+                leaf.always_below = true;
+        }
 
         /// Everything below the leaf is one contiguous range starting at "<leaf>.".
-        String path_prefix = path + '.';
-        for (auto it = sorted_dynamic_paths.lower_bound(path_prefix); it != sorted_dynamic_paths.end() && it->starts_with(path_prefix); ++it)
+        for (auto it = sorted_dynamic_paths.lower_bound(leaf.descendant_prefix); it != sorted_dynamic_paths.end() && it->starts_with(leaf.descendant_prefix); ++it)
         {
             const auto & column = src_dynamic_paths.at(String(*it));
             size_t absent = absent_rows(*column);
@@ -2687,19 +2719,18 @@ bool validateNewLeafTypedPaths(
 
             if (search_start != search_end)
             {
-                /// Paths are sorted within a row, so the first entry at or after the leaf is either
-                /// the leaf itself or the first path below it — one search answers both questions.
-                size_t lower_bound
+                /// The leaf itself and the range below it ("<leaf>.") need separate lookups: a sibling key
+                /// such as "a!" sorts between "a" and "a.", so a single lower bound of "a" could stop there
+                /// and miss "a.b". Paths are sorted within a row and leaves across rows, so the bounds advance.
+                size_t exact_lower_bound
                     = ColumnObject::findPathLowerBoundInSharedData(leaf.path, *shared_data_paths, search_start, search_end);
-                search_start = lower_bound;
-                if (lower_bound != search_end)
-                {
-                    auto entry = shared_data_paths->getDataAt(lower_bound);
-                    if (entry == leaf.path)
-                        continue;
-                    if (isDescendantPath(entry, leaf.path))
-                        has_value_below = true;
-                }
+                search_start = exact_lower_bound;
+                if (exact_lower_bound != search_end && shared_data_paths->getDataAt(exact_lower_bound) == leaf.path)
+                    continue;
+                size_t below_lower_bound
+                    = ColumnObject::findPathLowerBoundInSharedData(leaf.descendant_prefix, *shared_data_paths, exact_lower_bound, search_end);
+                if (below_lower_bound != search_end && isDescendantPath(shared_data_paths->getDataAt(below_lower_bound), leaf.path))
+                    has_value_below = true;
             }
 
             if (!has_value_below)
@@ -2802,7 +2833,7 @@ ColumnPtr convertDynamicColumnToTyped(
     {
         if (src_column->isNullAt(i))
         {
-            dest_column->insertDefault();
+            dest_type->insertDefaultInto(*dest_column);
             continue;
         }
 
@@ -2814,7 +2845,7 @@ ColumnPtr convertDynamicColumnToTyped(
         {
             if (skip_on_failure)
             {
-                dest_column->insertDefault();
+                dest_type->insertDefaultInto(*dest_column);
                 continue;
             }
             throw Exception(
@@ -2828,7 +2859,7 @@ ColumnPtr convertDynamicColumnToTyped(
         {
             if (skip_on_failure)
             {
-                dest_column->insertDefault();
+                dest_type->insertDefaultInto(*dest_column);
                 continue;
             }
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
@@ -2872,7 +2903,7 @@ ColumnPtr convertTypedColumnToTyped(
         {
             if (skip_on_failure)
             {
-                dest_column->insertDefault();
+                dest_type->insertDefaultInto(*dest_column);
                 continue;
             }
             throw Exception(
@@ -2886,7 +2917,7 @@ ColumnPtr convertTypedColumnToTyped(
         {
             if (skip_on_failure)
             {
-                dest_column->insertDefault();
+                dest_type->insertDefaultInto(*dest_column);
                 continue;
             }
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
@@ -2973,7 +3004,8 @@ ColumnPtr convertObjectColumns(
     /// With type_json_skip_invalid_typed_paths the parser defaults such a path and drops the data
     /// below it. Reproducing that would mean rewriting the reused sub-columns and shared data.
     const bool skip_invalid = format_settings.json.type_json_skip_invalid_typed_paths;
-    if (validateNewLeafTypedPaths(src, plan, rows, /*throw_on_invalid_row=*/!skip_invalid))
+    if (validateNewLeafTypedPaths(
+            src, plan, rows, format_settings.json.type_json_skip_null_typed_paths, /*throw_on_invalid_row=*/!skip_invalid))
         return {};
 
     /// ======================== Phase 2: Classify source dynamic paths ========================
@@ -3006,8 +3038,9 @@ ColumnPtr convertObjectColumns(
         if (shouldSkip(path))
         {
             /// New skip rule covers this typed path — fill with defaults, matching format+parse behavior.
-            auto col = dst_typed_path_types.at(path)->createColumn();
-            col->insertManyDefaults(rows);
+            const auto & type = dst_typed_path_types.at(path);
+            auto col = type->createColumn();
+            type->insertManyDefaultsInto(*col, rows);
             dst_typed_columns[path] = std::move(col);
         }
         else
@@ -3024,26 +3057,31 @@ ColumnPtr convertObjectColumns(
         if (shouldSkip(path))
         {
             auto col = to_tp->createColumn();
-            col->insertManyDefaults(rows);
+            to_tp->insertManyDefaultsInto(*col, rows);
             dst_typed_columns[path] = std::move(col);
         }
         else
         {
             auto it = src_typed_paths.find(path);
 
-            /// When the destination drops Nullable, format+parse turns a source NULL into the default
-            /// only with null_as_default, otherwise it raises, so stripping Nullable before CAST is wrong.
-            /// type_json_skip_null_typed_paths is the exception for a NULL of the typed path itself:
-            /// the path is left out of the serialized object and the parser fills the default.
+            /// Stripping Nullable and casting reproduces the parser only when a source NULL maps to the
+            /// destination default: nothing but the Nullable wrapper may differ (else the converted source
+            /// default diverges from the destination default), the destination default must be the plain
+            /// zero CAST produces (not e.g. an Enum's first value), and a NULL must become a default at all.
+            /// A NULL becomes a default with null_as_default, or with type_json_skip_null_typed_paths when the
+            /// path itself is the dropped Nullable, since then it is left out of the serialized object.
             const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
-            const bool nulls_become_defaults = format_settings.null_as_default
-                || (format_settings.json.type_json_skip_null_typed_paths
-                    && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp));
+            const bool can_strip_nullable = nullable_mismatch
+                && nullableMismatchIsOnlyDifference(from_tp, to_tp)
+                && to_tp->isDefaultInsertTrivial()
+                && (format_settings.null_as_default
+                    || (format_settings.json.type_json_skip_null_typed_paths
+                        && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp)));
 
             if (skip_invalid
                 || needsFormatParseFallback(from_tp, format_settings)
                 || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)
-                || (nullable_mismatch && !nulls_become_defaults))
+                || (nullable_mismatch && !can_strip_nullable))
             {
                 dst_typed_columns[path]
                     = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
@@ -3055,7 +3093,7 @@ ColumnPtr convertObjectColumns(
 
                 /// Strip Nullable where destination is non-Nullable to avoid
                 /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. Values under NULLs are
-                /// type-defaults, which is what the parser inserts here (see nulls_become_defaults).
+                /// type-defaults, which is what the parser inserts here (see can_strip_nullable).
                 if (nullable_mismatch)
                 {
                     if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
@@ -3085,8 +3123,10 @@ ColumnPtr convertObjectColumns(
             dst_typed_columns[path] = convertDynamicColumnToTyped(
                 it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
         }
-        else if (canCastDynamicToTyped(dynamic_col, it_type->second))
+        else if (it_type->second->isDefaultInsertTrivial() && canCastDynamicToTyped(dynamic_col, it_type->second))
         {
+            /// CAST fills an absent (NULL) row with the plain zero, so it is only correct for a destination
+            /// whose default is that zero; an Enum and the like need the parser's insertDefaultInto.
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
             dst_typed_columns[path] = castColumnWithSettings(
                 {it_col->second, dynamic_type, ""}, it_type->second, convert_settings, CastType::accurate);
@@ -3347,7 +3387,7 @@ ColumnPtr convertObjectColumns(
             for (auto & [path, col] : new_typed_path_mutable_columns)
             {
                 if (!populated_in_row.contains(path))
-                    col->insertDefault();
+                    plan.new_typed_paths.at(path)->insertDefaultInto(*col);
             }
         }
 
@@ -3362,7 +3402,7 @@ ColumnPtr convertObjectColumns(
         if (col->empty())
         {
             /// Path was absent — fill entirely with defaults.
-            col->insertManyDefaults(rows);
+            plan.new_typed_paths.at(path)->insertManyDefaultsInto(*col, rows);
         }
         dst_typed_columns[path] = std::move(col);
     }

@@ -82,3 +82,17 @@ SELECT materialize(arrayJoin(['{"a":42,"a":{"b":43}}','{"a":{"b":1}}']))::JSON::
 
 SELECT '{"a":{"b":1}}'::JSON::JSON(a Int32, SKIP `a.b`) SETTINGS json_use_optimized_type_conversion = 0, type_json_skip_invalid_typed_paths = 1;
 SELECT '{"a":{"b":1}}'::JSON::JSON(a Int32, SKIP `a.b`) SETTINGS json_use_optimized_type_conversion = 1, type_json_skip_invalid_typed_paths = 1;
+
+-- A descendant in shared data must be found even when a sibling key sorts between the leaf and the
+-- "<leaf>." range: `a!` (`!` < `.`) sits between `a` and `a.b`, so the object below `a` still raises.
+SELECT '{"a!":0,"a":{"b":1}}'::JSON(max_dynamic_paths=0)::JSON(a Int32, max_dynamic_paths=0) SETTINGS json_use_optimized_type_conversion = 0; -- { serverError INCORRECT_DATA }
+SELECT '{"a!":0,"a":{"b":1}}'::JSON(max_dynamic_paths=0)::JSON(a Int32, max_dynamic_paths=0) SETTINGS json_use_optimized_type_conversion = 1; -- { serverError INCORRECT_DATA }
+
+-- A Nullable typed descendant under type_json_skip_null_typed_paths is omitted where it is null, so a
+-- row holding only nulls below the leaf is valid and the leaf gets its default, matching format+parse.
+SELECT '--- type_json_skip_null_typed_paths omits a null typed descendant ---';
+SELECT '{"a":{"b":null}}'::JSON(`a.b` Nullable(Int32))::JSON(a Int32) SETTINGS json_use_optimized_type_conversion = 0, type_json_skip_null_typed_paths = 1;
+SELECT '{"a":{"b":null}}'::JSON(`a.b` Nullable(Int32))::JSON(a Int32) SETTINGS json_use_optimized_type_conversion = 1, type_json_skip_null_typed_paths = 1;
+-- A non-null value below the leaf still raises, even under the setting.
+SELECT '{"a":{"b":5}}'::JSON(`a.b` Nullable(Int32))::JSON(a Int32) SETTINGS json_use_optimized_type_conversion = 0, type_json_skip_null_typed_paths = 1; -- { serverError INCORRECT_DATA }
+SELECT '{"a":{"b":5}}'::JSON(`a.b` Nullable(Int32))::JSON(a Int32) SETTINGS json_use_optimized_type_conversion = 1, type_json_skip_null_typed_paths = 1; -- { serverError INCORRECT_DATA }

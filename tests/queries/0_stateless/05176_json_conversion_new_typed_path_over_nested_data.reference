@@ -28,3 +28,6 @@
 {"a":0}
 {"a":0}
 {"a":0}
+--- type_json_skip_null_typed_paths omits a null typed descendant ---
+{"a":0}
+{"a":0}
