@@ -138,8 +138,17 @@ protected:
 
 private:
     MarkRangesPtr request_map;
-    /// All the marks of the file, sorted, see `addRangeOfPosition`.
-    VectorWithMemoryTracking<MarkInCompressedFile> marks_in_file_order;
+    /// All the marks of the file in the order of the file, see `addRangeOfPosition`.
+    struct MarkInFile
+    {
+        MarkInCompressedFile mark;
+        size_t stripe;
+        size_t position;
+        size_t granule;
+        auto operator<=>(const MarkInFile &) const = default;
+    };
+    VectorWithMemoryTracking<MarkInFile> marks_in_file_order;
+    VectorWithMemoryTracking<size_t> stripe_of_granule;
 };
 
 /// Class for reading a single column (or index) from file

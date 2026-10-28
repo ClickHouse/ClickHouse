@@ -8,7 +8,6 @@
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <algorithm>
-#include <limits>
 #include <utility>
 #include <filesystem>
 
@@ -648,28 +647,32 @@ void MergeTreeReaderStream::addRangeOfPosition(size_t mark, size_t position, Com
         return;
 
     loadMarks();
-    /// The granules of a stripe are written column by column, so the data that follows in the file is found among all the marks.
+    /// The granules of a stripe are written column by column, so the data that follows in the file is found among all the
+    /// marks, in the order of the file. The marks of empty data coincide with the next one, and are ordered as written.
+    const size_t num_positions = marks_getter->getNumColumns();
     if (marks_in_file_order.empty())
     {
-        const size_t num_positions = marks_getter->getNumColumns();
+        stripe_of_granule.resize(marks_count);
+        for (size_t i = 1; i < marks_count; ++i)
+            stripe_of_granule[i] = stripe_of_granule[i - 1]
+                + (marks_getter->getMark(i, 0) >= marks_getter->getMark(i - 1, num_positions - 1));
+
         marks_in_file_order.reserve(marks_count * num_positions);
         for (size_t i = 0; i < marks_count; ++i)
             for (size_t j = 0; j < num_positions; ++j)
-                marks_in_file_order.push_back(marks_getter->getMark(i, j));
+                marks_in_file_order.push_back({marks_getter->getMark(i, j), stripe_of_granule[i], j, i});
         std::sort(marks_in_file_order.begin(), marks_in_file_order.end());
     }
 
-    auto next_mark_after = [&](const MarkInCompressedFile & after)
+    const MarkInFile begin{marks_getter->getMark(mark, position), stripe_of_granule[mark], position, mark};
+    auto it = std::upper_bound(marks_in_file_order.begin(), marks_in_file_order.end(), begin);
+    /// The next data starts inside a compressed block, which then holds the end of this data too.
+    if (it != marks_in_file_order.end() && it->mark.offset_in_decompressed_block != 0)
     {
-        auto it = std::upper_bound(marks_in_file_order.begin(), marks_in_file_order.end(), after);
-        return it == marks_in_file_order.end() ? MarkInCompressedFile{file_size, 0} : *it;
-    };
-
-    const auto begin = marks_getter->getMark(mark, position);
-    auto end = next_mark_after(begin);
-    if (end.offset_in_decompressed_block != 0)
-        end = next_mark_after({end.offset_in_compressed_file, std::numeric_limits<size_t>::max()});
-    ranges.emplace_back(begin.offset_in_compressed_file, end.offset_in_compressed_file);
+        const size_t block = it->mark.offset_in_compressed_file;
+        it = std::partition_point(it, marks_in_file_order.end(), [&](const MarkInFile & next) { return next.mark.offset_in_compressed_file <= block; });
+    }
+    ranges.emplace_back(begin.mark.offset_in_compressed_file, it == marks_in_file_order.end() ? file_size : it->mark.offset_in_compressed_file);
 }
 
 MarkInCompressedFile MergeTreeReaderStreamMultipleColumns::getStartOfNextStripeMark(size_t row_index, size_t column_position)
