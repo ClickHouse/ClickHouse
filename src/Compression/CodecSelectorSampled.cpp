@@ -20,18 +20,15 @@ namespace DB::AdaptiveCodec
 CodecSelectorSampled::CodecSelectorSampled(Codecs candidates_, UInt64 selection_period_)
     : candidates(std::move(candidates_))
     , selection_period(selection_period_)
+    , sizes(candidates.size())
 {
-    chassert(!candidates.empty() && candidates.size() <= MAX_CANDIDATES);
+    chassert(!candidates.empty());
     to_try.reserve(candidates.size());
 }
 
 void CodecSelectorSampled::beginBlock(UInt32 source_size_)
 {
-    ran.reset();
-    best.reset();
-    best_size = ICompressionCodec::getHeaderSize() + source_size_;
-    runner_up_size = std::numeric_limits<UInt32>::max();
-    default_size = 0;
+    std::ranges::fill(sizes, 0u);
     source_size = source_size_;
 
     const UInt64 block = block_index++;
@@ -41,8 +38,10 @@ void CodecSelectorSampled::beginBlock(UInt32 source_size_)
 
 std::span<const CompressionCodecPtr> CodecSelectorSampled::codecsToTry()
 {
+    const auto pending = static_cast<size_t>(std::ranges::count(sizes, 0u));
+
     /// Nothing ran on the block yet.
-    if (ran.none())
+    if (pending == sizes.size())
     {
         /// No winner → either this is stream's first block or last block did full pricing and chose NONE.
         if (!winner || in_sample)
@@ -56,27 +55,28 @@ std::span<const CompressionCodecPtr> CodecSelectorSampled::codecsToTry()
     }
 
     /// Every candidate ran.
-    if (ran.count() == candidates.size())
+    if (pending == 0)
     {
-        winner = best;
-        winner_runner_up_size = runner_up_size;
+        const Ranking ranking = rank();
+        winner = ranking.best;
+        winner_runner_up_size = ranking.runner_up_size;
         winner_source_size = source_size;
 
         if (in_sample && candidates.size() > 1)
         {
-            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesDefault, default_size);
-            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesWritten, best_size);
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesDefault, sizes[0]);
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesWritten, ranking.best_size);
         }
         return {};
     }
 
     /// The winner alone ran, but it writes more per source byte than the runner-up did when priced. Thus, try the rest.
-    if (static_cast<UInt64>(best_size) * winner_source_size > static_cast<UInt64>(winner_runner_up_size) * source_size)
+    if (static_cast<UInt64>(rank().best_size) * winner_source_size > static_cast<UInt64>(winner_runner_up_size) * source_size)
     {
         ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksRepriced);
         to_try.clear();
         for (size_t i = 0; i < candidates.size(); ++i)
-            if (!ran[i])
+            if (sizes[i] == 0)
                 to_try.push_back(candidates[i]);
         return to_try;
     }
@@ -89,27 +89,34 @@ void CodecSelectorSampled::record(const CompressionCodecPtr & codec, UInt32 size
 {
     const auto it = std::ranges::find(candidates, codec);
     chassert(it != candidates.end());
-    const size_t position = static_cast<size_t>(it - candidates.begin());
-
-    /// A codec that ran already runs again only as its chain's base, same size, ranked once.
-    if (ran[position])
-        return;
-    ran.set(position);
-
-    if (position == 0)
-        default_size = size;
-
-    /// The smallest size wins. Among equals the raw block wins, then the earlier candidate.
-    if (size < best_size || (size == best_size && best && position < *best))
-    {
-        runner_up_size = best_size;
-        best_size = size;
-        best = position;
-    }
-    else
-        runner_up_size = std::min(runner_up_size, size);
+    /// A codec that ran already runs again only as its chain's base, so it writes the same size.
+    sizes[static_cast<size_t>(it - candidates.begin())] = size;
 }
 
-CompressionCodecPtr CodecSelectorSampled::codecToUse() const { return best ? candidates[*best] : nullptr; }
+CompressionCodecPtr CodecSelectorSampled::codecToUse() const
+{
+    const auto best = rank().best;
+    return best ? candidates[*best] : nullptr;
+}
+
+CodecSelectorSampled::Ranking CodecSelectorSampled::rank() const
+{
+    Ranking ranking{.best = std::nullopt, .best_size = rawSize(), .runner_up_size = std::numeric_limits<UInt32>::max()};
+    for (size_t i = 0; i < sizes.size(); ++i)
+    {
+        if (sizes[i] == 0)
+            continue;
+
+        if (sizes[i] < ranking.best_size)
+        {
+            ranking.runner_up_size = ranking.best_size;
+            ranking.best_size = sizes[i];
+            ranking.best = i;
+        }
+        else
+            ranking.runner_up_size = std::min(ranking.runner_up_size, sizes[i]);
+    }
+    return ranking;
+}
 
 }

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bitset>
 #include <optional>
 #include <Compression/ICodecSelector.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::AdaptiveCodec
 {
@@ -20,8 +20,6 @@ namespace DB::AdaptiveCodec
 class CodecSelectorSampled final : public ICodecSelector
 {
 public:
-    static constexpr size_t MAX_CANDIDATES = 64;
-
     CodecSelectorSampled(Codecs candidates_, UInt64 selection_period_);
 
     void beginBlock(UInt32 source_size_) override;
@@ -30,21 +28,28 @@ public:
     CompressionCodecPtr codecToUse() const override;
 
 private:
-    /// `candidates` in pool order, [0] the default codec. The smallest output wins, among equals the raw block, then the earlier candidate.
+    struct Ranking
+    {
+        std::optional<size_t> best; /// Index into `candidates`, empty when the raw block wins
+        UInt32 best_size;
+        UInt32 runner_up_size;
+    };
+
+    /// The smallest output so far wins, among equals the raw block, then the earlier candidate.
+    Ranking rank() const;
+    UInt32 rawSize() const { return ICompressionCodec::getHeaderSize() + source_size; }
+
+    /// `candidates` in pool order, [0] the default codec.
     const Codecs candidates;
     const UInt64 selection_period;
 
-    /// The block in hand
+    /// The block in hand. `sizes[i]` is what `candidates[i]` wrote, header included, so 0 until it ran.
+    VectorWithMemoryTracking<UInt32> sizes;
     Codecs to_try;
-    std::bitset<MAX_CANDIDATES> ran;
-    std::optional<size_t> best;
-    UInt32 best_size = 0;
-    UInt32 runner_up_size = 0;
-    UInt32 default_size = 0;
     UInt32 source_size = 0;
     bool in_sample = false;
 
-    /// What the stream remembers
+    /// What the stream remembers. `winner` is the `best` of the last priced block.
     UInt64 block_index = 0;
     std::optional<size_t> winner;
     UInt32 winner_runner_up_size = 0;

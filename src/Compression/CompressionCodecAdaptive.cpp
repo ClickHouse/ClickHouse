@@ -67,9 +67,6 @@ Codecs candidatesOf(const AdaptiveCodec::Pool & pool)
     return all;
 }
 
-/// The default and every specialized codec with its chain must fit the selector
-static_assert(2 * (1 + SPECIALIZED_CODECS.size()) <= AdaptiveCodec::CodecSelectorSampled::MAX_CANDIDATES);
-
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
 /// E.g. `T64` derives its `type_idx` from it to compress.
 CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & type)
