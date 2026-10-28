@@ -158,9 +158,9 @@ public:
                     }
                     catch (...)
                     {
-                        has_failed_checks = true;
                         if (check.deferred)
                         {
+                            has_failed_deferred_checks = true;
                             check.deferred->exception = std::current_exception();
                             failed_deferred.emplace_back(check.enforced_by, check.deferred);
                         }
@@ -190,9 +190,10 @@ private:
     bool done = false;
     std::exception_ptr exception;
 
-    /// Whether a deferred or an isolated check failed when the decision was made. Such a gate is not lent to
-    /// a group write, see `InsertStartGates::get`.
-    bool has_failed_checks = false;
+    /// Whether a deferred check failed when the decision was made. Such a gate is not lent to a group write,
+    /// see `InsertStartGates::get`. A failed isolated check does not count: the write it rejected is the
+    /// ignored write of a view branch, which a group write never performs.
+    bool has_failed_deferred_checks = false;
 
     /// Registered while the gate is not `done`.
     std::vector<Check> checks;
@@ -305,10 +306,14 @@ public:
         /// new write that decides anew.
         ///
         /// The same holds for a gate whose decision was an acceptance for some of its sinks only - a deferred
-        /// check (e.g. with the limits of a `Buffer` over the table) or the check of an ignored view branch
-        /// failed. The group write - e.g. an `OPTIMIZE` or a background flush of that `Buffer` writing out
-        /// the rows the query left in it - is not necessarily one of the writes the decision accepted, so it
-        /// decides anew with its own limits instead of being mistaken for one of them.
+        /// check (e.g. with the limits of a `Buffer` over the table) failed. The group write - e.g. an
+        /// `OPTIMIZE` or a background flush of that `Buffer` writing out the rows the query left in it - is
+        /// not necessarily one of the writes the decision accepted, so it decides anew with its own limits
+        /// instead of being mistaken for one of them. The failure of an isolated check - of a view branch
+        /// whose errors are ignored - does not prevent the lending: a group write never performs the write
+        /// of that branch, and the deferred checks it may perform (the flushes of a `Buffer` the query
+        /// writes through) were accepted, so it observes that acceptance instead of counting the parts the
+        /// earlier flushes of the same query have created.
         ///
         /// The gates are locked at once, in the order of their addresses, which is global as well. A gate
         /// may be shared with registries that are not locked here, so another group write can merge one
@@ -355,7 +360,7 @@ public:
 
             for (const auto & candidate : candidates)
             {
-                if (candidate->done && !candidate->exception && !candidate->has_failed_checks)
+                if (candidate->done && !candidate->exception && !candidate->has_failed_deferred_checks)
                 {
                     gate = candidate;
                     break;
