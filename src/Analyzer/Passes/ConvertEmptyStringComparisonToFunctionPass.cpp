@@ -7,6 +7,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTLiteral.h>
@@ -78,7 +79,9 @@ public:
         const auto expr_type = expr_node->getResultType();
         if (!expr_type)
             return;
-        if (expr_type->isNullable() ? !isString(removeNullable(expr_type)) : !isStringOrFixedString(expr_type))
+
+        const auto unwrapped_type = removeLowCardinality(expr_type);
+        if (unwrapped_type->isNullable() ? !isString(removeNullable(unwrapped_type)) : !isStringOrFixedString(unwrapped_type))
             return;
 
         const String replacement_func = (func_name == "equals") ? "empty" : "notEmpty";
