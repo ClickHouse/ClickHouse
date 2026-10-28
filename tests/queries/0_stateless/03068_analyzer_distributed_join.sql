@@ -1,7 +1,6 @@
 -- Tags: no-replicated-database, shard
 -- Closes: https://github.com/ClickHouse/ClickHouse/issues/6571
 
-SET enable_analyzer=1;
 CREATE TABLE LINEITEM_shard ON CLUSTER test_shard_localhost
 (
     L_ORDERKEY UInt64,

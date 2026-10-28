@@ -14,6 +14,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/getDiskConfigurationFromAST.h>
 #endif
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
@@ -27,6 +28,7 @@
 
 #include <Common/Macros.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
 #include <filesystem>
@@ -42,6 +44,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 hdfs_replication;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -239,7 +246,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+        RemoteHostFilterCheck remote_host_filter_check) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -249,16 +256,37 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         /// We keep using empty prefix by default for compatibility, but allow to configure another one
         const String & common_key_prefix = config.getString(config_prefix + ".common_key_prefix_for_azure", "");
 
+        /// A custom disk is configured at the root, where `validateResolvedAzureDiskCredentials` has written the decision.
+        const bool server_credentials_allowed = hasAzureServerCredentialsMarker(config);
+
         AzureBlobStorage::ConnectionParams params
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            /// Only a custom disk, `disk(...)` in user SQL, is checked; a disk from the server config may use the server's identity.
+            .forbid_implicit_credentials = remote_host_filter_check != RemoteHostFilterCheck::None
+                && !server_credentials_allowed && context->shouldRestrictUserQueryS3Credentials(),
+            /// A custom disk loaded from existing metadata gets no credentials instead of failing the table load.
+            .anonymous_fallback_for_server_credentials = remote_host_filter_check == RemoteHostFilterCheck::Warn
+                && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted],
+            .follows_session_restriction = false,
         };
+
+        const bool drop_credentials = params.checkOrDropServerManagedCredentials();
+        if (drop_credentials)
+            LOG_WARNING(
+                getLogger("ObjectStorageFactory"),
+                "Loading the dynamic Azure disk {} with a client that has no credentials: it uses the server's own "
+                "identity, which is restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). "
+                "The disk stays inaccessible; set s3_load_table_anonymously_if_credentials_restricted = 0 to fail "
+                "loading instead.",
+                name);
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            /// A client without credentials must not probe or create the container: the denied request would fail the load.
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ drop_credentials), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
