@@ -23,6 +23,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Prints the largest reservation observed while the selected merge is parked on the failpoint.
 #
+# max_memory_ratio_to_activate_adaptive_write_buffer is disabled: two streams of the projection with a 256 MiB
+# block size would otherwise preallocate enough of the server memory limit on a smaller host to switch the
+# projection writer to adaptive buffers, and the estimate (mirroring the writer) would then price both tables
+# at the same small adaptive buffers, hiding the effect this test checks.
+#
 # The data is written by one clickhouse-local process and merged by the next one: a background merge is
 # only selected once min_age_to_force_merge_seconds is set, and the second process sets it only after it has
 # armed the failpoint, so the merge cannot be selected (and run to completion unobserved) before that. Both
@@ -38,7 +43,7 @@ function reserved_for_merge()
         CREATE TABLE t_merge_mem_reserved (k UInt64, v String)
         ENGINE = MergeTree ORDER BY k
         SETTINGS min_bytes_for_wide_part = 0, max_compress_block_size = 1048576,
-                 materialize_projections_on_merge = 1;
+                 materialize_projections_on_merge = 1, max_memory_ratio_to_activate_adaptive_write_buffer = 0;
 
         INSERT INTO t_merge_mem_reserved SELECT number, repeat('a', 100) FROM numbers(1000);
         INSERT INTO t_merge_mem_reserved SELECT number, repeat('b', 100) FROM numbers(1000, 1000);
