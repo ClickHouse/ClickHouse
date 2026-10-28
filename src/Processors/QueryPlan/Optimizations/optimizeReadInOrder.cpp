@@ -1406,15 +1406,6 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// With parallel replicas, the read-in-order-through-join optimization can produce
-        /// different results on the initiator and remote replicas (due to differences in plan
-        /// construction such as AST optimizations), leading to coordination mode mismatch
-        /// ("Replica decided to read in Default mode, not in WithOrder").
-        /// Skip this optimization for parallel replicas when it goes through a JOIN,
-        /// similar to the existing check for parallel replicas in the Union case.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
-            return nullptr;
-
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -1444,8 +1435,11 @@ InputOrderInfoPtr buildInputOrderInfo(
                     return table_join.kind() != JoinKind::Left
                         || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
                 });
+            /// With parallel replicas every replica must take the same decision, otherwise the coordinator sees
+            /// conflicting reading modes. The virtual row bounds depend on the parts of each replica, so skip.
             if (join_requires_virtual_rows && optimization_settings.read_in_order_through_join != 2
-                && (!uses_virtual_row || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
+                && (reading->isParallelReadingFromReplicas() || !uses_virtual_row
+                    || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
             {
                 LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
                 reading->resetVirtualRowConversions();
@@ -1537,11 +1531,6 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
-        /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
-            return {};
-
         /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
         if (reading->isParallelReadingFromReplicas() && aggregating.getParams().only_merge)
             return {};
@@ -1681,11 +1670,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: skip distinct-in-order through JOIN for parallel replicas
-        /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
-            return {};
-
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,

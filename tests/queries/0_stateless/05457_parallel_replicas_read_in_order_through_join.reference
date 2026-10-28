@@ -1,0 +1,45 @@
+left join, order by
+['ReadType: Default','ReadType: InOrder']
+0	0	0
+0	75000	0
+0	150000	0
+0	225000	0
+0	300000	0
+74999	876923	
+74999	801923	
+74999	726923	
+74999	651923	
+74999	565909	
+left join, group by
+['ReadType: Default','ReadType: InOrder']
+0	12	0
+1	12	
+2	12	1
+3	12	
+4	12	2
+left join, distinct
+['ReadType: Default','ReadType: InOrder']
+0	0
+1	
+2	1
+3	
+4	2
+inner join, order by
+['ReadType: Default','ReadType: Default']
+0	0	0
+0	75000	0
+0	150000	0
+0	225000	0
+0	300000	0
+inner join, order by, force
+['ReadType: Default','ReadType: InOrder']
+0	0	0
+0	75000	0
+0	150000	0
+0	225000	0
+0	300000	0
+checksums
+12976354504418027450	900000
+1211817631821443607	75000
+12976354504418027450	900000
+1211817631821443607	75000
