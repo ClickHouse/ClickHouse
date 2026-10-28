@@ -1,0 +1,85 @@
+Compact
+compact	0	7
+compact	1	-1
+compact	2	-1
+compact	3	7
+Wide
+wide	0	1	7
+wide	1	2	-1
+wide	2	3	-1
+wide	3	4	7
+update	0	0	0
+update	1	1	-1
+update	2	2	-1
+update	3	100	1000
+chain	0	0	10	0
+chain	1	1	20	0
+chain	2	2	30	0
+chain	3	100	1010	1
+subcolumns	0	0	0	0
+subcolumns	1	10	10	0
+subcolumns	2	20	20	0
+subcolumns	3	1001	1000	1
+nested	0	[]	0	0
+nested	1	[0]	1	1
+nested	2	[0,1]	2	2
+nested	3	[1,2,3,4,5]	5	5
+subcolumn_read	0	0	0	0
+subcolumn_read	1	1	0	10
+subcolumn_read	2	2	22	20
+subcolumn_read	3	100	1100	1000
+alias_subcolumn	0	0	0
+alias_subcolumn	1	100	1000
+alias_subcolumn	2	2	20
+delete	0	0	0
+delete	1	1	10
+delete	3	100	1000
+combined	0	0	0
+combined	1	1	-1
+combined	2	2	-1
+combined	3	100	1000
+materialize_twice	0	0	0
+materialize_twice	1	1	10
+materialize_twice	2	2	20
+materialize_twice	3	100	30
+stored_input	0	0	1	10
+stored_input	1	1	2	-1
+stored_input	2	2	3	30
+stored_input	3	100	4	40
+dotted	0	0	10	100
+dotted	1	1	11	-1
+dotted	2	100	12	120
+no_match	0	0	0
+no_match	1	1	10
+no_match	2	2	20
+no_match	3	100	1000
+ephemeral	0	0	1	10
+ephemeral	1	1	2	-1
+ephemeral	2	100	3	30
+materialized_input	0	0	1	10
+materialized_input	1	1	2	20
+materialized_input	2	100	101	1010
+barrier	0	0	1	10
+barrier	1	1	2	-1
+barrier	2	100	3	30
+barrier_first	0	0	1	10
+barrier_first	1	1	2	-1
+barrier_first	2	100	3	30
+materialized_barrier	0	0	1	10
+materialized_barrier	1	1	2	-1
+materialized_barrier	2	2	3	30
+queued_drop	0	0	7	0
+queued_drop	1	1	7	-1
+queued_drop	2	2	7	20
+stored	0	0
+stored	1	10
+stored	2	20
+stored	3	30
+materialize	0	0
+materialize	1	1000
+materialize	2	20
+materialize	3	30
+patch	0	0
+patch	1	-1
+patch	2	20
+patch	3	30
