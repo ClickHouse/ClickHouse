@@ -239,14 +239,14 @@ bool containsFloat(const DataTypePtr & type)
     return isFloat(unwrapped);
 }
 
-bool tupleHasNullableMember(const DataTypePtr & type)
+bool tupleMemberCanContainNull(const DataTypePtr & type)
 {
     auto unwrapped = removeNullable(removeLowCardinality(type));
 
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
     {
         for (const auto & element : tuple->getElements())
-            if (removeLowCardinality(element)->isNullable() || tupleHasNullableMember(element))
+            if (canContainNull(*element) || tupleMemberCanContainNull(element))
                 return true;
 
         return false;
@@ -255,7 +255,7 @@ bool tupleHasNullableMember(const DataTypePtr & type)
     if (const auto * variant = typeid_cast<const DataTypeVariant *>(unwrapped.get()))
     {
         for (const auto & alternative : variant->getVariants())
-            if (tupleHasNullableMember(alternative))
+            if (tupleMemberCanContainNull(alternative))
                 return true;
 
         return false;

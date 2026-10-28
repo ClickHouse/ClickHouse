@@ -132,7 +132,7 @@ public:
 
         /// `equals` propagates the NULL of a tuple member, so `arrayExists(x -> x = tuple(NULL::Nullable(UInt64)), a)`
         /// never matches, while `has` treats the NULL member as a value and finds `(NULL)` in `a`.
-        if (tupleHasNullableMember(nested_type) || tupleHasNullableMember(constant_type))
+        if (tupleMemberCanContainNull(nested_type) || tupleMemberCanContainNull(constant_type))
             return;
 
         /// A plain float is compared numerically by both `equals` and `has`, but a composite carrier

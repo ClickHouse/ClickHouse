@@ -1135,11 +1135,11 @@ static void convertNotEqualsChainToNotIn(
                 all_constants_convert_losslessly = false;
 
             /// `notEquals` propagates the NULL of a tuple member, set membership treats it as a value.
-            if (tupleHasNullableMember(literal->getResultType()))
+            if (tupleMemberCanContainNull(literal->getResultType()))
                 all_constants_convert_losslessly = false;
         }
 
-        if (tupleHasNullableMember(expr_type))
+        if (tupleMemberCanContainNull(expr_type))
             all_constants_convert_losslessly = false;
 
         /// `notEquals` compares floats numerically while the set is keyed on the raw bits:
@@ -2797,11 +2797,11 @@ private:
                 /// `equals` propagates the NULL of a tuple member, set membership treats it as a value:
                 /// `tuple(NULL::Nullable(UInt64)) = tuple(NULL::Nullable(UInt64))` is NULL, while
                 /// `tuple(NULL::Nullable(UInt64)) IN (tuple(NULL))` is true.
-                if (tupleHasNullableMember(literal->getResultType()))
+                if (tupleMemberCanContainNull(literal->getResultType()))
                     all_constants_convert_losslessly = false;
             }
 
-            if (tupleHasNullableMember(expr_type))
+            if (tupleMemberCanContainNull(expr_type))
                 all_constants_convert_losslessly = false;
 
             /// `equals` compares floats numerically while the set is keyed on the raw bits:
