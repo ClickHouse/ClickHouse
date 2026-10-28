@@ -2323,7 +2323,7 @@ Possible values:
 )", 0, \
         {"26.8", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."}) \
     DECLARE(UInt64, group_by_top_k_optimization_observation_rows, 65536, R"(
-For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity, if the heap is full or has a `COLLATE` key. A frozen heap means aggregation continues as if the optimization were disabled.
+For `enable_group_by_top_k_optimization`: the number of rows each aggregation stream observes before freezing a top-K heap that skipped less than 10% of input rows and evicted fewer keys than its capacity, if the heap is full or has a `COLLATE` key. A heap with a `COLLATE` key on a stream without the adaptive aggregator freezes on the low skip rate alone. A frozen heap means aggregation continues as if the optimization were disabled.
 
 The effective window is at least twice the heap's reserved size, so a heap always gets a chance to fill before being judged. `0` disables this freeze and the one of a heap with a `COLLATE` key that stops keeping new keys out of the hash table (the heap still freezes when a boundary tie-set overgrows it). `0` also starts a heap with a `COLLATE` key with the first block instead of waiting for its start check.
 
