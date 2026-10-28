@@ -17,6 +17,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/scope_guard_safe.h>
 
 #include <IO/WriteHelpers.h>
@@ -253,6 +254,8 @@ namespace
                 /// See the constructor: nothing was sent to it.
                 if (worker_untouched)
                     valid_command = true;
+
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
                 if (command && valid_command)
                     command_holder->returnCommand(std::move(command));

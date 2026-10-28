@@ -134,11 +134,10 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
-ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
+ShellCommand::ShellCommand(int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
     : in(in_fd_)
     , out(out_fd_)
     , err(err_fd_)
-    , pid(pid_)
     , config(config_)
 {
 }
@@ -176,6 +175,10 @@ void ShellCommand::discardWithoutGrace() noexcept
 
 ShellCommand::~ShellCommand()
 {
+    /// The child was never started, or its start failed and it was reaped already.
+    if (pid == -1)
+        return;
+
     /// `setDoNotTerminate`: nothing is done to the child, its group included.
     if (do_not_terminate)
         return;
@@ -709,6 +712,30 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate the child error pipe");
     staged_fds.push_back(child_error_fd);
 
+    /// Owns the parent's ends of the pipes from here on. Constructed before `vfork`, because the
+    /// constructor allocates (a buffer for each of the three pipes), and an allocation refused by
+    /// the query's memory limit after `vfork` would leave a process that has `exec`ed running with
+    /// nobody to signal, reap or count it. Until `pid` is set the destructor leaves the child alone.
+    std::unique_ptr<ShellCommand> res(new ShellCommand(
+        pipes.pipe_stdin.fds_rw[1],
+        pipes.pipe_stdout.fds_rw[0],
+        pipes.pipe_stderr.fds_rw[0],
+        config));
+
+    for (size_t i = 0; i < config.read_fds.size(); ++i)
+    {
+        auto & fds = *pipes.read_pipe_fds[i];
+        auto fd = config.read_fds[i];
+        res->read_fds.emplace(fd, fds.fds_rw[0]);
+    }
+
+    for (size_t i = 0; i < config.write_fds.size(); ++i)
+    {
+        auto & fds = *pipes.write_pipe_fds[i];
+        auto fd = config.write_fds[i];
+        res->write_fds.emplace(fd, fds.fds_rw[1]);
+    }
+
     /// `vfork` must be called directly, not through a pointer obtained with `dlsym`: the compiler
     /// knows `vfork` as a function that returns twice, and only a call it can see as such makes
     /// it keep the stack slots of this frame intact across the child's execution. The child runs
@@ -759,45 +786,11 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
     checkChildSetupReport(pid, pipe_child_error.fds_rw[0], config.own_process_group);
 
-    /// The child has started, and until `res` owns it nobody does: the constructor allocates (a
-    /// buffer for each of the three pipes), and an allocation refused by the query's memory limit
-    /// would leave a process that has `exec`ed running with nobody to signal, reap or count it -
-    /// and, for a shared-memory UDF, holding the descriptor of a region the server is about to
-    /// free and stop charging for. So it is killed and reaped before the failure goes out, like a
-    /// child whose start could not be established (`checkChildSetupReport`): the alternative is
-    /// leaking the process. From `res` on, its destructor is in charge.
-    std::unique_ptr<ShellCommand> res;
-    try
-    {
-        res.reset(new ShellCommand(
-            pid,
-            pipes.pipe_stdin.fds_rw[1],
-            pipes.pipe_stdout.fds_rw[0],
-            pipes.pipe_stderr.fds_rw[0],
-            config));
-    }
-    catch (...)
-    {
-        killAndReapOrphan(pid, config.own_process_group);
-        throw;
-    }
+    /// The child has started; from here on the destructor of `res` is in charge of it.
+    res->pid = pid;
 
     if (config.register_in_udf_process_registry)
         res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
-
-    for (size_t i = 0; i < config.read_fds.size(); ++i)
-    {
-        auto & fds = *pipes.read_pipe_fds[i];
-        auto fd = config.read_fds[i];
-        res->read_fds.emplace(fd, fds.fds_rw[0]);
-    }
-
-    for (size_t i = 0; i < config.write_fds.size(); ++i)
-    {
-        auto & fds = *pipes.write_pipe_fds[i];
-        auto fd = config.write_fds[i];
-        res->write_fds.emplace(fd, fds.fds_rw[1]);
-    }
 
     LOG_TRACE(
         getLogger(),

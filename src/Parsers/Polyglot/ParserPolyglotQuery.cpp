@@ -117,7 +117,7 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
         "Polyglot SQL transpiler is not available. "
-        "Rust code or polyglot itself may be disabled. Use another dialect!");
+        "Rust code or polyglot itself may be disabled. Use another dialect.");
 #else
     /// Pass the entire remaining input to polyglot as an opaque string.
     /// Foreign dialects may contain syntax that the ClickHouse Lexer cannot
