@@ -3250,15 +3250,15 @@ static BlockIO executeQueryImpl(
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
 
+                        /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
+                        /// subqueries against the current data. Read them before `getSource` moves the source out of the reader.
+                        if (flags.collect_result_column_origins)
+                            result_details.result_column_origins = reader->entryResultColumnOrigins();
+
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
-
-                        /// The origins are stored with the cached result: analyzing the query again here would evaluate its scalar
-                        /// subqueries against the current data.
-                        if (flags.collect_result_column_origins)
-                            result_details.result_column_origins = reader->entryResultColumnOrigins();
 
                         return true;
                     }
