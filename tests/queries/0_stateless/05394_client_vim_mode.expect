@@ -484,5 +484,52 @@ submit
 expect "1023"
 expect ":) "
 
+# After `di` or `da`, a key that is not a text object cancels the command instead of running as a motion.
+send -- "SELECT 1000+123"
+escape
+send -- "0f1di\$lx"
+submit
+expect "223"
+expect ":) "
+
+send -- "SELECT 2000+123"
+escape
+send -- "dihx"
+submit
+expect "2012"
+expect ":) "
+
+# `cw` on an empty line keeps the line break.
+send -- "SELECT 1000\r\r+ 123"
+escape
+send -- "ggjcw-- comment"
+escape
+submit
+expect "1123"
+expect ":) "
+
+# An operator applies to the Backspace motion, which wraps to the previous line.
+send -- "SELECT 1000+123"
+escape
+send -- "d\x7f"
+submit
+expect "1013"
+expect ":) "
+
+send -- "SELECT 2000+123"
+escape
+send -- "c\x7f9"
+escape
+submit
+expect "2193"
+expect ":) "
+
+send -- "SELECT 3000\r456"
+escape
+send -- "0d\x7f"
+submit
+expect "3000456"
+expect ":) "
+
 send -- "\4"
 expect eof

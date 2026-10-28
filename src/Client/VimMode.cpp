@@ -567,7 +567,22 @@ Replxx::key_press_handler_t ReplxxLineReader::vimHandler(T && f)
 template <typename T>
 void ReplxxLineReader::bindKey(char32_t key, T && f, int mode)
 {
-    rx.bind_key(key, vimHandler(std::forward<T>(f)), mode);
+    Replxx::key_press_handler_t handler = vimHandler(std::forward<T>(f));
+    /* After `di` or `da` only a text object can complete the command: any other key cancels it
+     * instead of running as an ordinary motion, e.g. `di$` must not act like `d$`. */
+    if (mode == MODE_NORMAL && !std::u32string_view(U"wWb()[]{}<>").contains(key))
+    {
+        handler = [this, handler = std::move(handler)](char32_t c)
+        {
+            if (flag)
+            {
+                resetVim();
+                return Replxx::ACTION_RESULT::CONTINUE;
+            }
+            return handler(c);
+        };
+    }
+    rx.bind_key(key, std::move(handler), mode);
 }
 
 template <typename T>
@@ -611,6 +626,21 @@ void ReplxxLineReader::vimWordMotion(int & pos, std::u32string & text, char moti
     {
         pos = wordEndForward(text, pos, reps, bigword, true);
         text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
+        pos = oldpos;
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim();
+        return;
+    }
+
+    /* On an empty line `cw` keeps the line break, like vim: the exclusive motion that ends in the
+     * first column of the next line ends at the end of the empty line instead. */
+    if (kind == 'w' && op == OPERATOR_C && (pos == 0 || text[pos - 1] == '\n')
+        && (pos == static_cast<int>(text.length()) || text[pos] == '\n'))
+    {
+        pos = wordForward(text, pos, reps, bigword, true);
+        if (pos > oldpos && text[pos - 1] == '\n')
+            pos--;
+        text.erase(oldpos, pos - oldpos);
         pos = oldpos;
         rx.set_editing_mode(MODE_INSERT);
         resetVim();
@@ -1008,15 +1038,22 @@ void ReplxxLineReader::setupVimKeybindings(bool allow_editor)
         Replxx::KEY::BACKSPACE,
         [this](int & pos, std::u32string & text, char32_t)
         {
-            (void)text;
+            /* Like `h`, but wraps to the previous line. */
+            int oldpos = pos;
             int reps = vimReps();
             for (int rep = 0; rep < reps && pos > 0; rep++)
             {
                 pos--;
                 if (text[pos] == '\n')
+                {
+                    /* Like vim, with an operator a wrap ends the motion after the last character
+                     * of the previous line, so that only the line break is in the range. */
+                    if (op)
+                        break;
                     rep--;
+                }
             }
-            resetVim(&pos, &text);
+            vimCharwise(pos, text, oldpos);
         },
         MODE_NORMAL);
 
