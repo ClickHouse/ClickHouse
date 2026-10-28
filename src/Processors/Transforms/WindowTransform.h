@@ -103,6 +103,8 @@ private:
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
+    /// Whether some general function reads arguments; `argument_blocks` is kept only then.
+    bool has_arguments = false;
     /// One entry per block of `blocks`, in the same order; positions are counted from the first input row.
     WindowArguments::Blocks argument_blocks;
     SlidingIndexes indexes;

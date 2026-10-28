@@ -112,6 +112,8 @@ WindowTransform::WindowTransform(
         destroyStates(general_functions, workspaces);
         throw;
     }
+
+    has_arguments = std::ranges::any_of(general_functions, [](const GeneralWindowFunctionSlot & slot) { return slot.arguments.size() != 0; });
 }
 
 WindowTransform::~WindowTransform()
@@ -196,8 +198,11 @@ void WindowTransform::addInputBlock(Chunk chunk)
     auto materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize);
     auto index = indexes.calculate(materialized_columns, rows_count);
     auto & block = blocks.add(std::move(chunk), std::move(materialized_columns), std::move(index));
-    const Int64 first_position = argument_blocks.empty() ? 0 : argument_blocks.back().end_position;
-    argument_blocks.push_back({.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
+    if (has_arguments)
+    {
+        const Int64 first_position = argument_blocks.empty() ? 0 : argument_blocks.back().end_position;
+        argument_blocks.push_back({.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
+    }
     partition.advance(blocks);
 
     block.result_columns.resize(general_functions.size() + workspaces.size());
@@ -270,9 +275,12 @@ void WindowTransform::flushBatch()
     if (bounds.rows == 0)
         return;
 
-    const Int64 partition_start = argument_blocks[batch_start.block - blocks.begin().block].first_position + batch_start.row - bounds.row[0];
-    for (auto & slot : general_functions)
-        slot.arguments.setBlocks(argument_blocks, partition_start);
+    if (has_arguments)
+    {
+        const Int64 partition_start = argument_blocks[batch_start.block - blocks.begin().block].first_position + batch_start.row - bounds.row[0];
+        for (auto & slot : general_functions)
+            slot.arguments.setBlocks(argument_blocks, partition_start);
+    }
 
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
     for (const auto & slot : general_functions)
@@ -395,7 +403,8 @@ void WindowTransform::releaseUnusedBlocks()
     while (blocks.begin().block < first_used_block)
     {
         blocks.pop();
-        argument_blocks.pop_front();
+        if (has_arguments)
+            argument_blocks.pop_front();
     }
 }
 
