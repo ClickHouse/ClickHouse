@@ -2865,6 +2865,20 @@ static BlockIO executeQueryImpl(
     }
     catch (...)
     {
+        /// The background run of a query rewritten at dispatch is given the rewritten text, and it
+        /// may fail before the submitted query's logging data is restored above (e.g. parsing it
+        /// can exceed `max_parser_depth`). Log the query as submitted, never the rewritten text:
+        /// the result template of the rule may contain secrets that regex masking does not hide.
+        if (flags.rewritten_query_origin)
+        {
+            const auto & origin = *flags.rewritten_query_origin;
+            logQuery(origin.query_for_logging, context, internal, stage);
+            logExceptionBeforeStart(origin.query_for_logging, origin.normalized_query_hash, context, origin.ast_for_formatted_query,
+                query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, origin.applied_rewrite_rules,
+                origin.ast_for_formatted_query);
+            throw;
+        }
+
         /// Anyway log the query.
         if (query.empty())
             query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
