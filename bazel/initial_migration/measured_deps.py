@@ -351,6 +351,35 @@ def editable_dependency_lists(build, node, drop, canonical, replacements=None, *
     return edits if visit(node, True) else None
 
 
+def declare_dbms_google_grpc_link(root):
+    """Keep the Google gRPC objects in DBMS link order without exporting their headers."""
+    path = root / 'src/BUILD.bazel'
+    build = Build(root, path, (), ())
+    rules = {attributes(rule)['name'].value: rule for _, rule in build.source.rules()}
+    if 'dbms_google_grpc_link' in rules:
+        return
+    stubs = [f'@clickhouse_google_cloud_cpp//:google_cloud_cpp_{name}_protos' for name in (
+        'api_annotations', 'api_client', 'api_field_behavior', 'api_http', 'api_launch_stage',
+        'api_resource', 'api_routing', 'iam_v1_iam_policy', 'iam_v1_options', 'iam_v1_policy',
+        'storage', 'type_date', 'type_expr',
+    )]
+    rule = rules['dbms__compile_0']
+    deps = attributes(rule)['deps']
+    for cpu in CPUS:
+        values = ast.literal_eval(eval_node(deps, constant_defs(build.source.module), cpu))
+        i = values.index(stubs[0])
+        if values[i:i + len(stubs)] != stubs:
+            raise ValueError(f'dbms__compile_0: unordered Google gRPC libraries for {cpu}')
+    edits = editable_dependency_lists(build, deps, set(stubs[1:]), lambda label: label,
+                                      {stubs[0]: ':dbms_google_grpc_link'})
+    if not edits:
+        raise ValueError('dbms__compile_0: cannot group Google gRPC dependencies')
+    start = build.source.span(rule)[0]
+    edits.append((start, start, 'cc_library(name = "dbms_google_grpc_link", implementation_deps = ' +
+                  json.dumps(stubs) + ', visibility = ["//visibility:private"])\n\n'))
+    path.write_text(build.source.rewrite(edits))
+
+
 def declare_s2_link(root):
     """Only the S2 functions compile against S2; dbms still links the S2 objects."""
     path = root / 'src/BUILD.bazel'
@@ -710,4 +739,5 @@ def apply(root):
 
     usearch_implementation_dep(root)
     declare_s2_link(root)
+    declare_dbms_google_grpc_link(root)
     private_function_vendor_deps(root)

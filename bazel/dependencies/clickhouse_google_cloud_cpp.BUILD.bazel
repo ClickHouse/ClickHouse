@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:ch_grpc_cc_library.bzl", "google_cloud_grpc_libraries")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(":google/cloud/google_cloud_cpp_common.bzl", "google_cloud_cpp_common_hdrs", "google_cloud_cpp_common_srcs")
 load(":google/cloud/google_cloud_cpp_grpc_utils.bzl", "google_cloud_cpp_grpc_utils_srcs")
 load(":google/cloud/google_cloud_cpp_rest_internal.bzl", "google_cloud_cpp_rest_internal_srcs")
@@ -99,12 +100,8 @@ _COMMON_PRIVATE_HEADERS = [
     "internal/user_agent_prefix.h",
 ]
 
-# google_cloud_cpp_grpc_utils owns disable_deprecation_warnings.inc.
 # disable_msvc_crt_secure_warnings.inc is only used on Windows.
-_COMMON_HEADER_EXCLUSIONS = _COMMON_PRIVATE_HEADERS + [
-    "internal/disable_deprecation_warnings.inc",
-    "internal/disable_msvc_crt_secure_warnings.inc",
-]
+_COMMON_HEADER_EXCLUSIONS = _COMMON_PRIVATE_HEADERS + ["internal/disable_msvc_crt_secure_warnings.inc"]
 
 ch_cc_library(
     name = "google_cloud_cpp_common",
@@ -188,9 +185,7 @@ ch_cc_library(
         "google/cloud/internal/async_read_*.h",
         "google/cloud/internal/async_streaming_*.h",
         "google/cloud/internal/streaming_read_*.h",
-    ]) + [
-        "google/cloud/internal/disable_deprecation_warnings.inc",
-    ],
+    ]),
     implementation_deps = [
         "@clickhouse//bazel:google_rpc_error_details_cc_proto",
     ],
@@ -213,6 +208,13 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_strings",
         "@clickhouse_abseil_cpp//:absl_variant",
     ],
+)
+
+# //src:unit_tests_dbms inherits the grpc_utils link inputs through google_cloud_cpp_storage.
+cc_library(
+    name = "google_cloud_cpp_grpc_utils_link",
+    implementation_deps = [":google_cloud_cpp_grpc_utils"],
+    visibility = ["//visibility:private"],
 )
 
 ch_cc_library(
@@ -358,7 +360,7 @@ ch_cc_library(
         "-g1",
     ],
     implementation_deps = [
-        ":google_cloud_cpp_grpc_utils",
+        ":google_cloud_cpp_grpc_utils_link",
         "@clickhouse_abseil_cpp//:absl_function_ref",
         "@clickhouse_crc32c//:_crc32c",
         "@clickhouse_abseil_cpp//:absl_base_config",

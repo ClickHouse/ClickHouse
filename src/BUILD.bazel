@@ -1267,19 +1267,7 @@ _PRIVATE_DBMS_0_HEADERS = glob(
 _PROTO_LIBRARIES = [
     "//src/Server/grpc_protos:clickhouse_grpc_protos",
     "@clickhouse_arrow//:_arrow_flight",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_client_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_field_behavior_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_http_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_launch_stage_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_resource_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_routing_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_iam_policy_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_options_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_policy_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_type_date_protos",
-    "@clickhouse_google_cloud_cpp//:google_cloud_cpp_type_expr_protos",
+    ":dbms_google_grpc_link",
     "@clickhouse_libhdfs3//:_hdfs3",
     "@clickhouse_orc//:_orc",
 ]
@@ -1916,6 +1904,26 @@ cc_library(
         "//src/Functions:__pkg__",
         "//src/Functions/array:__pkg__",
     ],
+)
+
+cc_library(
+    name = "dbms_google_grpc_link",
+    implementation_deps = [
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_annotations_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_client_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_field_behavior_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_http_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_launch_stage_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_resource_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_api_routing_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_iam_policy_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_options_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_iam_v1_policy_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_storage_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_type_date_protos",
+        "@clickhouse_google_cloud_cpp//:google_cloud_cpp_type_expr_protos",
+    ],
+    visibility = ["//visibility:private"],
 )
 
 ch_cc_library(
