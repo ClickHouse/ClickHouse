@@ -182,7 +182,7 @@ def test_sync_insert_timeout_returns_503():
     # The default sleeps 2 seconds per row, so the insert exceeds a 1-second `max_execution_time`.
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
-        "SAMPLES INNER COLUMNS (slow UInt8 DEFAULT sleepEachRow(2))"
+        "SAMPLES INNER COLUMNS (slow SimpleAggregateFunction(any, UInt8) DEFAULT sleepEachRow(2))"
     )
 
     time_series = [({"__name__": "slow_metric"}, {1724112000: 1.5})]
