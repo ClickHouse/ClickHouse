@@ -213,7 +213,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     }
                     else
                     {
-                        const auto & allSettings = allTableSettings.at(teng);
+                        const auto & allSettings = allColumnSettings.at(teng);
                         auto * svs = cdef.mutable_setting_values();
 
                         for (int j = 0; j < svs->other_values_size() + 1; j++)
@@ -405,7 +405,7 @@ String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, 
     if (is_clickhouse)
         return db ? ("`" + escapeSQLString(db->getName(), '`') + "`.`" + escapeSQLString(tname, '`') + "`")
                   : ("`" + escapeSQLString(tname, '`') + "`");
-    return "`test`.`" + escapeSQLString(tname, '`') + "`";
+    return "`" + escapeSQLString(sc.database, '`') + "`.`" + escapeSQLString(tname, '`') + "`";
 }
 
 String MySQLIntegration::truncateStatement()
