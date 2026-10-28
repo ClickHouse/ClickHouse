@@ -70,16 +70,18 @@ err --query 'db.mongo_t.insertOne({"id" : 5, "profile" : {}});'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM mongo_t WHERE id = 5"
 
 echo '-- bounded growth'
+# Five levels stay within the stack budget the analyzer has under TSan, and while the linear
+# translation needs at most about 350 AST elements, one that doubled with every level would exceed 600.
 nest() {
     python3 -c "
 import json, sys
 e = json.loads(sys.argv[2])
-for _ in range(10):
+for _ in range(5):
     e = json.loads(sys.argv[1].replace('E', json.dumps(e)))
 print(json.dumps(e))" "$1" "$2"
 }
 for template in '{"$size" : {"$range" : [0, E]}}' '{"$size" : {"$slice" : [[1, 2, 3], E]}}' '{"$toInt" : {"$toDecimal" : E}}' '{"$strLenBytes" : {"$dateToString" : {"date" : {"$toDate" : E}, "format" : "%L%L"}}}'; do
-    mongo --max_ast_elements 10000 --query "db.mongo_t.aggregate([{\"\$match\" : {\"id\" : 1}}, {\"\$project\" : {\"_id\" : 0, \"r\" : $(nest "$template" 1)}}]);"
+    mongo --max_ast_elements 600 --query "db.mongo_t.aggregate([{\"\$match\" : {\"id\" : 1}}, {\"\$project\" : {\"_id\" : 0, \"r\" : $(nest "$template" 1)}}]);"
 done
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE mongo_t"
