@@ -50,6 +50,7 @@
 
 #if defined(OS_DARWIN)
 #    include <sys/sysctl.h>
+#    include <mach/mach.h>
 #endif
 
 
@@ -2837,6 +2838,63 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             new_values["OSMemoryTotal"] = { memory_total, "The total amount of memory on the host system, in bytes." };
         else
             LOG_ERROR(log, "Cannot obtain the total amount of memory via sysctl: {}", errnoToString(errno));
+    }
+
+    {
+        mach_port_t host_port = mach_host_self();
+
+        vm_size_t page_size = 0;
+        vm_statistics64_data_t vm_stats;
+        mach_msg_type_number_t info_count = HOST_VM_INFO64_COUNT;
+
+        kern_return_t res = host_page_size(host_port, &page_size);
+        if (res == KERN_SUCCESS)
+            res = host_statistics64(host_port, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm_stats), &info_count);
+
+        if (res == KERN_SUCCESS)
+        {
+            /// Speculative pages are file-backed readahead, i.e. a part of the page cache, but the kernel counts them inside free_count
+            /// (the `vm_stat` utility subtracts them from "Pages free" in the same way).
+            UInt64 free_without_cached_bytes = static_cast<UInt64>(vm_stats.free_count - vm_stats.speculative_count) * page_size;
+            /// File-backed (external) and purgeable pages can be reclaimed at any moment,
+            /// similarly to the reclaimable page cache on Linux.
+            UInt64 available_bytes = free_without_cached_bytes
+                + (static_cast<UInt64>(vm_stats.external_page_count) + vm_stats.purgeable_count) * page_size;
+
+            new_values["OSMemoryFreeWithoutCached"] = { free_without_cached_bytes,
+                "The amount of free memory on the host system, in bytes."
+                " This does not include the memory used by the OS page cache memory, in bytes."
+                " The page cache memory is also available for usage by programs, so the value of this metric can be confusing."
+                " See the `OSMemoryAvailable` metric instead."
+                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+            new_values["OSMemoryAvailable"] = { available_bytes,
+                "The amount of memory available to be used by programs, in bytes."
+                " It is estimated as the free memory plus the file-backed and purgeable pages that the OS can reclaim at any moment."
+                " This is a system-wide metric, it includes all the processes on the host machine, not just clickhouse-server." };
+        }
+        else
+            LOG_ERROR(log, "Cannot obtain memory statistics via host_statistics64: {}", mach_error_string(res));
+
+        processor_set_name_t pset = PROCESSOR_SET_NULL;
+        res = processor_set_default(host_port, &pset);
+        if (res == KERN_SUCCESS)
+        {
+            processor_set_load_info_data_t load_info;
+            mach_msg_type_number_t load_info_count = PROCESSOR_SET_LOAD_INFO_COUNT;
+            res = processor_set_statistics(pset, PROCESSOR_SET_LOAD_INFO,
+                reinterpret_cast<processor_set_info_t>(&load_info), &load_info_count);
+            mach_port_deallocate(mach_task_self(), pset);
+
+            if (res == KERN_SUCCESS)
+                new_values["OSThreadsTotal"] = { static_cast<UInt64>(load_info.thread_count),
+                    "The total number of threads, as the OS kernel scheduler sees it." };
+            else
+                LOG_ERROR(log, "Cannot obtain the number of threads via processor_set_statistics: {}", mach_error_string(res));
+        }
+        else
+            LOG_ERROR(log, "Cannot obtain the default processor set via processor_set_default: {}", mach_error_string(res));
+
+        mach_port_deallocate(mach_task_self(), host_port);
     }
 #endif
 
