@@ -108,11 +108,12 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
 
 StatusFile::~StatusFile()
 {
-    if (0 != close(fd))
-        LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
-
+    /// Unlink before releasing the lock, so whoever takes the released lock never finds the path still naming this file.
     if (0 != unlink(path.c_str()))
         LOG_ERROR(getLogger("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
+
+    if (0 != close(fd))
+        LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 }
 
 }
