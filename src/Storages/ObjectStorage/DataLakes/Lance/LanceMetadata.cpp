@@ -65,6 +65,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool exact_rows_before_limit;
 extern const SettingsSeconds http_connection_timeout;
 extern const SettingsSeconds http_send_timeout;
 extern const SettingsSeconds http_receive_timeout;
@@ -1249,8 +1250,11 @@ Pipe LanceMetadata::makeReadPipe(
     const Names scan_projection = columns_to_read.getNames();
     const bool use_row_count_source = scan_projection.empty() && residual_physical_columns.empty();
 
+    /// The limit is a hint from the query plan, but the scanner applies it as a hard cap, so it is not pushed down
+    /// when the `LIMIT` has to read the whole input to report `rows_before_limit_at_least` exactly.
     std::optional<UInt64> scan_limit;
-    if (limit && *limit > 0 && !use_row_count_source && predicate_pushdown.is_complete && fragment_ids.empty())
+    if (limit && *limit > 0 && !use_row_count_source && predicate_pushdown.is_complete && fragment_ids.empty()
+        && !settings[Setting::exact_rows_before_limit])
         scan_limit = static_cast<UInt64>(*limit);
 
     if (predicate_pushdown.is_complete)
