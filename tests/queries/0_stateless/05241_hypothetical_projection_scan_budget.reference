@@ -18,6 +18,5 @@ over max_rows_to_read
 --- the largest step that keeps 30 granules ---
 empirical_status: ok
 sampled_marks: 30 / 59
---- an offset filter on a sampled estimate ---
-status: applicable
-empirical_status: unsupported
+--- an offset filter on a projection that does not store parent offsets ---
+status: not_applicable

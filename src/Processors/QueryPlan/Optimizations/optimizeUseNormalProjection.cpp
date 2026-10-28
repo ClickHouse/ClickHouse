@@ -542,7 +542,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
-            if (!projection->sample_block.findColumnOrSubcolumnByName(col) && !projection->metadata->virtuals.has(col))
+            if (!projection->canProvideParentColumn(col))
                 return false;
         }
 

@@ -83,8 +83,8 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF projection_scan_budget_rows = 1000 SELECT count() FROM t_scan_59 WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 3000;
 " | grep -E '^\s+(empirical_status|sampled_marks):' | awk '{$1=$1; print}'
 
-# a sample's row offsets are not the part's, so an offset filter leaves the estimate unsupported
-echo "--- an offset filter on a sampled estimate ---"
+# a projection that does not store parent offsets cannot serve an offset filter
+echo "--- an offset filter on a projection that does not store parent offsets ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
     EXPLAIN WHATIF projection_scan_budget_rows = 5000 SELECT count() FROM t_scan WHERE b < 100 AND _part_offset < 10000 SETTINGS ${PIN};
