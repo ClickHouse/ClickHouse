@@ -8,7 +8,6 @@
 -- log result_rows = 1 and the comparison would be meaningless.
 -- The in-memory cell is a control that was already correct before the fix and must not change.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 -- Pin the join orientation: side swapping decides which side emits non-joined rows.
 SET query_plan_optimize_join_order_randomize = 0;
@@ -82,9 +81,9 @@ FORMAT Null;
 
 -- The two parallel_hash cells below take the concurrent `SpillingHashJoin` constructor, a
 -- different code path from the single-thread one every cell above uses, and they are the only
--- cells here that build the second `DelayedPortsProcessor` of `QueryPipelineBuilder`. They pin
--- that the total stays exact through that extra port layer. The `NonJoinedBlocksTransform`
--- sources this shape also wires stay silent while the join is spilled, because
+-- cells here that also wire parallel `NonJoinedBlocksTransform` sources behind a
+-- `DelayedPortsProcessor`. They pin that the total stays exact with that shape. Those sources
+-- stay silent while the join is spilled, because
 -- `SpillingHashJoin::isParallelNonJoinedProcessingEnabled` requires the in-memory state, so the
 -- delayed worker is still the only emitter of the non-joined rows.
 

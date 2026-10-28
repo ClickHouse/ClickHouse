@@ -1,0 +1,24 @@
+-- a nested profile enabling use_query_cache creates a subquery cache entry
+3
+1
+-- a nested profile followed by an explicit use_query_cache = 0 does not create an entry
+3
+0
+-- an explicit use_query_cache = 1 followed by a profile that sets it to 0 does not create an entry
+3
+0
+-- a profile that does not mention use_query_cache does not let the outer use_query_cache propagate
+3
+0
+-- under query_cache_for_subqueries, a profile opting out stops the propagation like the literal does
+3
+1
+3
+0
+-- a CTE referenced twice (cloned query tree) still produces a subquery cache entry
+1
+-- a UNION subquery opted in through a profile creates the same entries as the literal
+6
+2
+6
+2

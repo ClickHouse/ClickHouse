@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <iomanip>
 #include <random>
 #include <sstream>
@@ -383,6 +384,144 @@ TEST(StringSimilarity, EditDistanceStressUtf8)
             FAIL() << "\nUTF8 stress test failed\n"
                    << "a(hex): " << toHex(a.data(), a.size()) << "\n"
                    << "b(hex): " << toHex(b.data(), b.size()) << "\n"
+                   << "ref=" << ref << " my=" << my;
+        }
+    }
+}
+
+
+/// Longest common subsequence: the bit-parallel implementation against textbook dynamic programming.
+
+template <bool is_utf8>
+UInt32 referenceLCS(const SymbolT<is_utf8> * a, size_t a_size, const SymbolT<is_utf8> * b, size_t b_size)
+{
+    VectorWithMemoryTracking<UInt32> prev(b_size + 1, 0);
+    VectorWithMemoryTracking<UInt32> curr(b_size + 1, 0);
+    for (size_t i = 1; i <= a_size; ++i)
+    {
+        for (size_t j = 1; j <= b_size; ++j)
+            curr[j] = (a[i - 1] == b[j - 1]) ? prev[j - 1] + 1 : std::max(prev[j], curr[j - 1]);
+        std::swap(prev, curr);
+    }
+    return prev[b_size];
+}
+
+template <bool is_utf8>
+UInt32 bitParallelLCS(const SymbolT<is_utf8> * a, size_t a_size, const SymbolT<is_utf8> * b, size_t b_size)
+{
+    /// The bit vector runs over the shorter string, which must not be empty.
+    if (a_size < b_size)
+    {
+        std::swap(a, b);
+        std::swap(a_size, b_size);
+    }
+    if (b_size == 0)
+        return 0;
+    return LongestCommonSubsequenceImpl<is_utf8>::length(a, static_cast<UInt32>(a_size), b, static_cast<UInt32>(b_size));
+}
+
+static void runLCSTest(std::string_view a, std::string_view b)
+{
+    const auto * a_data = reinterpret_cast<const UInt8 *>(a.data());
+    const auto * b_data = reinterpret_cast<const UInt8 *>(b.data());
+    UInt32 expected = referenceLCS<false>(a_data, a.size(), b_data, b.size());
+    UInt32 actual = bitParallelLCS<false>(a_data, a.size(), b_data, b.size());
+    ASSERT_EQ(expected, actual) << "a: [" << a << "]\nb: [" << b << "]";
+}
+
+class LongestCommonSubsequenceParamTest : public ::testing::TestWithParam<size_t>
+{
+};
+
+/// Lengths around word boundaries, where the carry of the addition crosses from one word to the next.
+TEST_P(LongestCommonSubsequenceParamTest, LongestCommonSubsequenceMultiBlock)
+{
+    const size_t len = GetParam();
+
+    /// Periodic strings shifted by one symbol: "abab..." vs "baba...", LCS = len - 1.
+    std::string periodic_a;
+    std::string periodic_b;
+    for (size_t i = 0; i < len; ++i)
+    {
+        periodic_a += "ab"[i % 2];
+        periodic_b += "ba"[i % 2];
+    }
+    runLCSTest(periodic_a, periodic_b);
+
+    /// One mismatching symbol at the end of each word.
+    std::string same(len + 30, 'a');
+    std::string changed(len, 'a');
+    for (size_t i = 63; i < len; i += 64)
+        changed[i] = 'b';
+    runLCSTest(same, changed);
+
+    /// Random strings over small alphabets, which have long common subsequences.
+    std::mt19937_64 rng(len);
+    for (size_t alphabet : {2, 4, 26})
+    {
+        std::uniform_int_distribution<int> char_dist(0, static_cast<int>(alphabet) - 1);
+        std::string a(len + 17, ' ');
+        std::string b(len, ' ');
+        for (auto & c : a)
+            c = static_cast<char>('a' + char_dist(rng));
+        for (auto & c : b)
+            c = static_cast<char>('a' + char_dist(rng));
+        runLCSTest(a, b);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    StringSimilarity,
+    LongestCommonSubsequenceParamTest,
+    ::testing::Values(1, 2, 63, 64, 65, 127, 128, 129, 191, 192, 193, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2049));
+
+TEST(StringSimilarity, LongestCommonSubsequenceStress)
+{
+    std::random_device rd;
+    std::mt19937_64 rng(rd());
+    std::uniform_int_distribution<size_t> len_dist(0, 1500);
+    constexpr std::array<UInt32, 4> alphabets = {2, 4, 26, 256};
+    std::uniform_int_distribution<size_t> alphabet_dist(0, alphabets.size() - 1);
+
+    constexpr size_t iterations = 100;
+
+    for (size_t it = 0; it < iterations; ++it)
+    {
+        const UInt32 alphabet = alphabets[alphabet_dist(rng)];
+        std::uniform_int_distribution<UInt32> symbol_dist(0, alphabet - 1);
+
+        VectorWithMemoryTracking<UInt8> a(len_dist(rng));
+        VectorWithMemoryTracking<UInt8> b(len_dist(rng));
+        for (auto & c : a)
+            c = static_cast<UInt8>(symbol_dist(rng));
+        for (auto & c : b)
+            c = static_cast<UInt8>(symbol_dist(rng));
+
+        UInt32 ref = referenceLCS<false>(a.data(), a.size(), b.data(), b.size());
+        UInt32 my = bitParallelLCS<false>(a.data(), a.size(), b.data(), b.size());
+        if (ref != my)
+        {
+            FAIL() << "\nLCS ASCII stress test failed\n"
+                   << "a(hex): " << toHex(a.data(), a.size()) << "\n"
+                   << "b(hex): " << toHex(b.data(), b.size()) << "\n"
+                   << "ref=" << ref << " my=" << my;
+        }
+
+        /// The same strings as code points, spread over the whole Unicode range.
+        VectorWithMemoryTracking<UInt32> a_utf8(a.begin(), a.end());
+        VectorWithMemoryTracking<UInt32> b_utf8(b.begin(), b.end());
+        for (auto & cp : a_utf8)
+            cp = cp * 4099 + 0x80;
+        for (auto & cp : b_utf8)
+            cp = cp * 4099 + 0x80;
+
+        ref = referenceLCS<true>(a_utf8.data(), a_utf8.size(), b_utf8.data(), b_utf8.size());
+        my = bitParallelLCS<true>(a_utf8.data(), a_utf8.size(), b_utf8.data(), b_utf8.size());
+        if (ref != my)
+        {
+            FAIL() << "\nLCS UTF8 stress test failed\n"
+                   << "a(hex): " << toHex(a_utf8.data(), a_utf8.size()) << "\n"
+                   << "b(hex): " << toHex(b_utf8.data(), b_utf8.size()) << "\n"
                    << "ref=" << ref << " my=" << my;
         }
     }
