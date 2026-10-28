@@ -215,7 +215,7 @@ DROP TABLE IF EXISTS t_cache_lowcardinality;
 CREATE TABLE t_cache_lowcardinality (key UInt64, lc LowCardinality(String)) ENGINE = MergeTree ORDER BY key
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_compress_block_size = 1, index_granularity = 8192,
     index_granularity_bytes = '10Mi', ratio_of_defaults_for_sparse_serialization = 1;
-INSERT INTO t_cache_lowcardinality SELECT number, hex(SHA256(toString(number % 5000))) FROM numbers(2e5);
+INSERT INTO t_cache_lowcardinality SELECT number, hex(sipHash128(number % 5000)) || hex(sipHash128(number % 5000 + 5000)) FROM numbers(2e5);
 
 -- Rows served from the columns cache are read from no file, and must be priced as reading them from the part would be.
 SELECT key, max(s) FROM t_skew_wide GROUP BY key FORMAT Null
