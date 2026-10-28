@@ -277,7 +277,7 @@ class Runner:
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):
-        # source env file to write data into fs (workflow config json, workflow status json)
+        # source env file to write data into the filesystem (workflow config json, workflow status json)
         Shell.check(f". {Settings.ENV_SETUP_SCRIPT}", verbose=True, strict=True)
 
         # parse the same env script and apply envs from python so that this process sees them
@@ -616,7 +616,7 @@ class Runner:
         if preserve_stdio:
             print("WARNING: Preserving stdio")
 
-        # work around for old clickhouse jobs
+        # workaround for old clickhouse jobs
         os.environ["PRAKTIKA"] = "1"
         if env.WORKFLOW_CONFIG:
             try:
@@ -828,7 +828,7 @@ class Runner:
                 host_metrics = host_metrics_collector.stop()
 
                 # When running Docker containers as root (non-rootless mode), any files
-                # created by the job will be owned by root.  Fix ownership here, before
+                # created by the job will be owned by root. Fix ownership here, before
                 # reading the result file or writing the host-side result, so that the
                 # host user can open them without a PermissionError.
                 if job.run_in_docker and not no_docker and from_root:
@@ -846,8 +846,7 @@ class Runner:
                     workflow.enable_exit_code_result,
                 )
         finally:
-            # Idempotent: a no-op if stop() already ran above; guarantees the
-            # sampling thread is always joined even if TeePopen raised.
+            # Idempotent no-op if stop() already ran; still joins the sampling thread if TeePopen raised.
             host_metrics_collector.stop()
 
         return exit_code

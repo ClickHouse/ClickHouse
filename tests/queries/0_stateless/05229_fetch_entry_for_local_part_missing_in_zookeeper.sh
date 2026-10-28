@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
-# no-parallel: the log entry below is written into ZooKeeper by hand, which needs the table's queue
-#   to itself while it is processed.
+# Tags: zookeeper, no-shared-merge-tree, no-replicated-database
 # no-shared-merge-tree: the part's node under `replicas/<r>/parts/` that the test removes by hand
 #   is a `ReplicatedMergeTree` structure, and the entry it then watches is a `ReplicatedMergeTree`
 #   queue entry; neither exists when the engine is substituted.
@@ -34,9 +32,17 @@ INSERT INTO t_fetch_missing_znode_r1 SELECT number, number FROM numbers(100);
 SYSTEM SYNC REPLICA t_fetch_missing_znode_r2;
 "
 
-part_name=$(${CLICKHOUSE_CLIENT} -q "
-    SELECT name FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_fetch_missing_znode_r2' AND active")
+read -r part_name part_type <<< "$(${CLICKHOUSE_CLIENT} -q "
+    SELECT any(name), any(part_type) FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_fetch_missing_znode_r2' AND active
+    HAVING count() = 1 AND sum(rows) = 100")"
+
+# The nodes below are written by hand, so the state built above is checked first: a replica that
+# pulls a log entry naming no part, or a part intersecting its own, terminates the server.
+if [[ -z "$part_name" || -z "$part_type" ]]; then
+    echo "the setup did not leave the part on r2"
+    exit 1
+fi
 
 # The self-inconsistent state: the part stays in the working set, its node in ZooKeeper is gone.
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rm '$zk_path/replicas/r2/parts/$part_name'"
@@ -45,10 +51,6 @@ ${CLICKHOUSE_KEEPER_CLIENT} -q "ls '$zk_path/replicas/r2/parts'" | grep -c "$par
 
 # A fetch entry for the part the replica already holds, written by hand because this state is not
 # reachable through SQL.
-part_type=$(${CLICKHOUSE_CLIENT} -q "
-    SELECT part_type FROM system.parts
-    WHERE database = currentDatabase() AND table = 't_fetch_missing_znode_r2' AND active")
-
 ${CLICKHOUSE_KEEPER_CLIENT} -q "create '$zk_path/log/log-' 'format version: 4
 create_time: 2026-01-01 00:00:00
 source replica: r1
