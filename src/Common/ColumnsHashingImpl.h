@@ -239,6 +239,10 @@ public:
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
+    /// Whether borrowed key bytes survive later `getKeyHolder` calls and key discards within this block.
+    /// Methods that reuse serialization scratch or roll back key allocations override this contract.
+    bool keyViewsAreBlockStable() const { return true; }
+
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
@@ -282,10 +286,8 @@ public:
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
-                const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
-                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
-                return emplaceImpl<false>(key_holder, data, hashes[row]);
+                derived.prefetchByPrecomputedHash(data, row + derived.prefetch_look_ahead);
+                return emplaceImpl<false>(key_holder, data, derived.getPrecomputedHash(data, row));
             }
         }
         return emplaceImpl<true>(key_holder, data, 0);
@@ -328,11 +330,9 @@ public:
             {
                 if (row == derived.calibration_row)
                     derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
-                const auto & hashes = derived.precomputed_hashes;
-                if (row + derived.prefetch_look_ahead < hashes.size())
-                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+                derived.prefetchByPrecomputedHash(data, row + derived.prefetch_look_ahead);
 
-                if (data.isEmptyCell(hashes[row]))
+                if (data.isEmptyCell(derived.getPrecomputedHash(data, row)))
                 {
                     if constexpr (has_mapped)
                         return FindResult(nullptr, false, 0);
@@ -615,6 +615,11 @@ protected:
     const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
+    }
+
+    const ColumnRawPtrs & getNullMaps() const
+    {
+        return null_maps;
     }
 
     /// Create a bitmap that indicates whether, for a particular row,

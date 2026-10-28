@@ -72,11 +72,11 @@ public:
 
         /// Sorted array of `postings`, built once and shared by all readers of the granule.
         /// It is clipped to this query's readable rows, so it must never go to the server-wide postings cache.
-        FlatPostingsPtr getFlatPostings() const;
+        PaddedPODArrayPtr getFlatPostings() const;
 
     private:
         mutable std::once_flag flat_postings_once;
-        mutable FlatPostingsPtr flat_postings;
+        mutable PaddedPODArrayPtr flat_postings;
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);

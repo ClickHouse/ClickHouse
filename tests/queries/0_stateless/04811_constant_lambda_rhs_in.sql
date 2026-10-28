@@ -8,8 +8,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 1;
-
 SELECT toFloat64(-0.0) IN (arrayMap(x -> x, [toFloat64(0.0)]));
 SELECT toFloat64(-0.0) IN (arraySum(x -> x, [toFloat64(0.0)]));
 SELECT 3 IN (arrayMap(x -> x + 1, [1, 2]));

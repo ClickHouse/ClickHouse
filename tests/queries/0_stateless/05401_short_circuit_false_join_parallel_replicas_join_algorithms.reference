@@ -1,0 +1,5 @@
+hash RIGHT	2
+parallel_hash RIGHT spill	2
+grace_hash RIGHT	2
+join_use_nulls	\N	a
+join_use_nulls	\N	c

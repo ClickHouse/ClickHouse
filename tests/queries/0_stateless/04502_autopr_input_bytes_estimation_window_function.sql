@@ -1,6 +1,6 @@
 -- Verify how query plans containing a Window step interact with the automatic parallel replicas
 -- optimization. Before the Window step supported dataflow statistics collection, any plan containing a
--- window function was rejected outright (`optimizeTree: Some steps in the plan don't support dataflow
+-- window function was rejected outright (`AutoParallelReplicas: Some steps in the plan don't support dataflow
 -- statistics collection ... Unsupported steps: Window_...`) and no statistics were gathered. Now the
 -- plan passes the "simple enough" gate, and statistics are collected at whichever boundary the two
 -- plans have in common, as long as that boundary can observe the bytes replicas would send to the
@@ -8,12 +8,13 @@
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t(key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
+-- Keep the columns dense: each holds one default, so a randomized zero sparse ratio stores them Sparse,
+-- which inflates the output estimate the bounds below compare against the input.
+CREATE TABLE t(key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
 
-SET enable_analyzer=1;
 SET max_threads=4;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET automatic_parallel_replicas_min_bytes_per_replica=0;
