@@ -3030,7 +3030,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
-                auto add_filter_step = [&](FilterDAGInfo & filter_info, const DescriptionHolderPtr & description)
+                auto add_filter_step = [&](FilterDAGInfo & filter_info, const DescriptionHolderPtr & description, bool is_row_level_filter_after_read)
                 {
                     if (query_plan.isInitialized() &&
                         till_stage == QueryProcessingStage::FetchColumns)
@@ -3040,13 +3040,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             filter_info.column_name,
                             filter_info.do_remove_column);
                         description->setStepDescription(*filter_step);
+                        if (is_row_level_filter_after_read)
+                            filter_step->markAsRowLevelFilterAfterRead();
                         query_plan.addStep(std::move(filter_step));
                     }
                 };
 
                 /// Before the alias columns, so that they are not computed for the rows it rejects.
                 if (row_policy_filter_after_read)
-                    add_filter_step(row_policy_filter_after_read->first, row_policy_filter_after_read->second);
+                    add_filter_step(row_policy_filter_after_read->first, row_policy_filter_after_read->second, true);
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
@@ -3056,7 +3058,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 for (auto && [filter_info, description] : where_filters)
-                    add_filter_step(filter_info, description);
+                    add_filter_step(filter_info, description, false);
 
                 if (query_context->hasQueryContext() && !select_query_options.is_internal)
                 {

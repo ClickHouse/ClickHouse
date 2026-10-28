@@ -2159,6 +2159,7 @@ void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step)
 void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextPtr local_context) const
 {
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
+    filter_step->markAsRowLevelFilterAfterRead();
     plan.addStep(std::move(filter_step));
 
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an

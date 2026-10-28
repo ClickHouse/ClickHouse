@@ -32,6 +32,7 @@ public:
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
         , condition(other.condition)
+        , row_level_filter_after_read(other.row_level_filter_after_read)
     {}
 
     String getName() const override { return "Filter"; }
@@ -52,6 +53,10 @@ public:
     void resetConditionForQueryConditionCache() { condition.reset(); }
     /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
     void saltConditionForQueryConditionCache(UInt64 salt);
+
+    /// The filter applies a row-level security filter that the read could not take (`SelectQueryInfo::row_level_filter_after_read`).
+    void markAsRowLevelFilterAfterRead() { row_level_filter_after_read = true; }
+    bool isRowLevelFilterAfterRead() const { return row_level_filter_after_read; }
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -151,6 +156,7 @@ private:
     bool remove_filter_column;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+    bool row_level_filter_after_read = false;
 };
 
 /// Can the atom be evaluated before the atoms that precede it in the AND chain? It is evaluated on more rows then,

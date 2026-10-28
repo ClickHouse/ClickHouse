@@ -97,6 +97,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (parent_filter->isRowLevelFilterAfterRead())
+            filter->markAsRowLevelFilterAfterRead();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -106,13 +108,22 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     return 0;
 }
 
-/// Is the filter of the node over a read whose row-level filter is applied after it (`SelectQueryInfo::row_level_filter_after_read`)?
+/// Is the filter of the node over a row-level filter applied after the read (`FilterStep::isRowLevelFilterAfterRead`),
+/// or over a read whose row-level filter is applied after it (`SelectQueryInfo::row_level_filter_after_read`)?
 static bool isOverReadWithRowLevelFilterAfterIt(const QueryPlan::Node & node)
 {
     const auto * current = &node;
-    while (current->children.size() == 1
-        && (typeid_cast<const FilterStep *>(current->step.get()) || typeid_cast<const ExpressionStep *>(current->step.get())))
+    while (true)
+    {
+        const auto * filter = typeid_cast<const FilterStep *>(current->step.get());
+        if (filter && filter->isRowLevelFilterAfterRead())
+            return true;
+
+        if (current->children.size() != 1 || !(filter || typeid_cast<const ExpressionStep *>(current->step.get())))
+            break;
+
         current = current->children.front();
+    }
 
     const auto * source = dynamic_cast<const SourceStepWithFilter *>(current->step.get());
     return source && source->getQueryInfo().row_level_filter_after_read;
@@ -185,6 +196,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    condition_name,
                                                    true);
         filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
+        if (child_filter->isRowLevelFilterAfterRead() || parent_filter->isRowLevelFilterAfterRead())
+            filter->markAsRowLevelFilterAfterRead();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);

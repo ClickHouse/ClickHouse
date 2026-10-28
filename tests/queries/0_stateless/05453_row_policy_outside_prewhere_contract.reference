@@ -42,4 +42,9 @@
 55
 2
 55
+-- a read that keeps no query info
+2
+2
+2
+2
 -- without a policy the row is in scope
