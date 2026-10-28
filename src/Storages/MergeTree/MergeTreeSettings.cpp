@@ -247,7 +247,7 @@ A value of `0` disables automatic `LowCardinality` serialization: no new part is
 rewrite of an already encoded part drops the encoding, so setting it back to `0` and running
 `OPTIMIZE TABLE ... FINAL` or `ALTER TABLE ... REWRITE PARTS` rolls the table back to the plain
 representation.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.11", 0, 0, "New setting for automatic LowCardinality serialization"}) \
     DECLARE(Bool, skip_empty_columns_on_insert, false, R"(
 If enabled, columns whose values are entirely type-defaults in a given INSERT
