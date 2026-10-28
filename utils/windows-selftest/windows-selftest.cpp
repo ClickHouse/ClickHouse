@@ -322,6 +322,25 @@ void alignedAllocationsOfZeroBytesSucceedAndReportTheirSize()
     DB::alignedFree(ptr);
 }
 
+/// mingw-w64 adds its overhead to the size without an overflow check, so these sizes would wrap
+/// to a tiny block that is then written past; they must be rejected instead.
+void alignedAllocationsRejectSizesThatOverflowTheOverhead()
+{
+    void * ptr = nullptr;
+    const size_t max_size = static_cast<size_t>(-1);
+    check(DB::alignedMalloc(max_size - 15) == nullptr, "`alignedMalloc` rejects a size that overflows the allocator overhead");
+    check(DB::alignedMalloc(max_size) == nullptr, "`alignedMalloc(SIZE_MAX)` is rejected");
+    check(DB::alignedCalloc(max_size - 15, 1) == nullptr, "`alignedCalloc` rejects a size that overflows the allocator overhead");
+    check(DB::alignedAlloc(64, max_size - 63) == nullptr, "`alignedAlloc` rejects a size that overflows the allocator overhead");
+    check(DB::alignedPosixMemalign(&ptr, 64, max_size - 63) == ENOMEM && ptr == nullptr,
+        "`alignedPosixMemalign` rejects a size that overflows the allocator overhead with `ENOMEM`");
+
+    ptr = DB::alignedMalloc(16);
+    check(ptr && DB::alignedRealloc(ptr, max_size - 15) == nullptr, "`alignedRealloc` rejects a size that overflows the allocator overhead");
+    check(ptr && DB::alignedAllocationSize(ptr, DB::DEFAULT_MALLOC_ALIGNMENT) == 16, "a rejected `alignedRealloc` leaves the original block intact");
+    DB::alignedFree(ptr);
+}
+
 /// mingw-w64's `signgam` is a process-global variable, so a `lgamma_r` built on `lgamma` races on it.
 /// Threads computing arguments of both signs at once, including one that overflows, must each get
 /// their own sign back, and `signgam` itself must not be touched.
@@ -432,6 +451,7 @@ int main(int, char **)
     passphraseLineLeavesTheRestOfTheInputUnread();
     lgammaRIsReentrant();
     alignedAllocationsOfZeroBytesSucceedAndReportTheirSize();
+    alignedAllocationsRejectSizesThatOverflowTheOverhead();
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) + " check(s)\n" : "OK\n");
     return failures ? 1 : 0;

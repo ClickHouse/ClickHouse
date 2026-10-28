@@ -42,12 +42,28 @@ namespace DB
 /// below request on Windows so that every pointer in this family is release-compatible.
 inline constexpr size_t DEFAULT_MALLOC_ALIGNMENT = alignof(std::max_align_t);
 
+#if defined(OS_WINDOWS)
+/// Whether `__mingw_aligned_malloc` / `__mingw_aligned_realloc` can serve `size` bytes at `alignment`.
+/// They allocate `size + alignment - 1 + sizeof(void *)` bytes (with `alignment` raised to at least
+/// `sizeof(void *)`) without checking that sum for overflow, so a size near `SIZE_MAX` would wrap to a
+/// tiny block, which they then write their bookkeeping past and return as if it were large.
+/// Such a size can never be served anyway, so it is rejected up front as out of memory.
+inline bool alignedSizeFitsMinGWOverhead(size_t size, size_t alignment)
+{
+    const size_t effective_alignment = alignment < sizeof(void *) ? sizeof(void *) : alignment;
+    const size_t overhead = effective_alignment - 1 + sizeof(void *);
+    return size <= static_cast<size_t>(-1) - overhead;
+}
+#endif
+
 /// `posix_memalign`: returns 0 on success, or a POSIX error number without touching `errno`.
 inline int alignedPosixMemalign(void ** out, size_t alignment, size_t size)
 {
 #if defined(OS_WINDOWS)
     /// `_aligned_malloc` rejects a non-power-of-two alignment with EINVAL, matching
     /// `posix_memalign`, but reports it through `errno` rather than the return value.
+    if (!alignedSizeFitsMinGWOverhead(size, alignment))
+        return ENOMEM;
     void * ptr = ::__mingw_aligned_malloc(size ? size : 1, alignment);
     if (!ptr)
         return errno == EINVAL ? EINVAL : ENOMEM;
@@ -62,6 +78,11 @@ inline int alignedPosixMemalign(void ** out, size_t alignment, size_t size)
 inline void * alignedAlloc(size_t alignment, size_t size)
 {
 #if defined(OS_WINDOWS)
+    if (!alignedSizeFitsMinGWOverhead(size, alignment))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     return ::__mingw_aligned_malloc(size ? size : 1, alignment);
 #else
     return ::aligned_alloc(alignment, size);
@@ -71,6 +92,11 @@ inline void * alignedAlloc(size_t alignment, size_t size)
 inline void * alignedMalloc(size_t size)
 {
 #if defined(OS_WINDOWS)
+    if (!alignedSizeFitsMinGWOverhead(size, DEFAULT_MALLOC_ALIGNMENT))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     return ::__mingw_aligned_malloc(size ? size : 1, DEFAULT_MALLOC_ALIGNMENT);
 #else
     return ::malloc(size);
@@ -85,6 +111,11 @@ inline void * alignedCalloc(size_t nmemb, size_t size)
     if (nmemb != 0 && size > static_cast<size_t>(-1) / nmemb)
         return nullptr;
     const size_t bytes = nmemb * size;
+    if (!alignedSizeFitsMinGWOverhead(bytes, DEFAULT_MALLOC_ALIGNMENT))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     void * ptr = ::__mingw_aligned_malloc(bytes ? bytes : 1, DEFAULT_MALLOC_ALIGNMENT);
     if (ptr)
         ::memset(ptr, 0, bytes);
@@ -100,6 +131,12 @@ inline void * alignedCalloc(size_t nmemb, size_t size)
 inline void * alignedRealloc(void * ptr, size_t size)
 {
 #if defined(OS_WINDOWS)
+    /// On failure the original block is left untouched, as `realloc` does.
+    if (!alignedSizeFitsMinGWOverhead(size, DEFAULT_MALLOC_ALIGNMENT))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     /// The third parameter is the alignment, although mingw-w64's header calls it `_Offset`.
     return ::__mingw_aligned_realloc(ptr, size, DEFAULT_MALLOC_ALIGNMENT);
 #else
