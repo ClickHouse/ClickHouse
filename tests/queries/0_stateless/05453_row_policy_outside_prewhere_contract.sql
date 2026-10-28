@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS m_child_policy;
 DROP TABLE IF EXISTS m_own_policy;
 DROP TABLE IF EXISTS m_bare_policy;
 DROP TABLE IF EXISTS m_alias;
+DROP TABLE IF EXISTS m_alias_prewhere;
 DROP TABLE IF EXISTS m_log_bare;
 DROP TABLE IF EXISTS t_memory;
 DROP TABLE IF EXISTS t_file;
@@ -66,6 +67,7 @@ CREATE TABLE m_child_policy AS t_memory ENGINE = Merge(currentDatabase(), '^t_me
 CREATE TABLE m_own_policy AS t_no_policy ENGINE = Merge(currentDatabase(), '^t_no_policy$');
 CREATE TABLE m_bare_policy AS t_bare_policy ENGINE = Merge(currentDatabase(), '^t_bare_policy$');
 CREATE TABLE m_alias (tenant String, payload String, parsed UInt64) ENGINE = Merge(currentDatabase(), '^t_alias$');
+CREATE TABLE m_alias_prewhere (tenant String, payload String, parsed UInt64) ENGINE = Merge(currentDatabase(), '^t_alias_prewhere$');
 CREATE TABLE m_log_bare (visible UInt8, payload String) ENGINE = Merge(currentDatabase(), '^t_log_bare$');
 CREATE VIEW v_sealed DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT visible, payload FROM t_view_base;
 
@@ -149,6 +151,7 @@ SELECT sum(parsed) FROM t_alias SETTINGS query_plan_enable_optimizations = 0;
 SELECT count() FROM m_alias WHERE parsed > 10 SETTINGS query_plan_enable_optimizations = 0;
 SELECT sum(parsed) FROM m_alias SETTINGS query_plan_enable_optimizations = 0;
 SELECT sum(parsed) FROM t_alias_prewhere PREWHERE payload != 'bad' SETTINGS query_plan_enable_optimizations = 0;
+SELECT sum(parsed) FROM m_alias_prewhere PREWHERE payload != 'bad' SETTINGS query_plan_enable_optimizations = 0;
 
 SELECT '-- a read that keeps no query info';
 SELECT count() FROM t_log_bare WHERE toUInt64(payload) > 10 AND toUInt64(payload) < 100;
@@ -194,6 +197,7 @@ DROP TABLE m_child_policy;
 DROP TABLE m_own_policy;
 DROP TABLE m_bare_policy;
 DROP TABLE m_alias;
+DROP TABLE m_alias_prewhere;
 DROP TABLE m_log_bare;
 DROP TABLE t_memory;
 DROP TABLE t_file;

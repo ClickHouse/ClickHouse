@@ -2416,10 +2416,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     if (applies_row_policy_here)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
 
-    for (const auto & alias : aliases)
-        if (!applies_row_policy_here || !row_policy_data_opt->requiresColumn(alias.name))
-            add_alias_step(alias);
-
+    /// Before the remaining ALIAS columns: PREWHERE reads only physical columns of a child, see `supportedPrewhereColumns`.
     if (child.prewhere_after_row_policy)
     {
         auto & prewhere = *child.prewhere_after_row_policy;
@@ -2428,6 +2425,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
         prewhere_step->setStepDescription("Prewhere");
         child.plan.addStep(std::move(prewhere_step));
     }
+
+    for (const auto & alias : aliases)
+        if (!applies_row_policy_here || !row_policy_data_opt->requiresColumn(alias.name))
+            add_alias_step(alias);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,
