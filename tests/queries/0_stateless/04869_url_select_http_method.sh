@@ -95,8 +95,8 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE url_put_62352 (x String) ENGINE = URL('http://localhost:1/plain.csv', CSV, http_method='PUT');
     SHOW CREATE TABLE url_put_62352 FORMAT TSVRaw;
     DROP TABLE url_put_62352" | grep -cE "http_method ?= ?'PUT'"
-# A named collection's method is for writes only, so a table over it with wildcards (here the
-# collection is edited after the table was created) is not rejected for its method when read.
+# A named collection's method is for writes only, so a wildcard table over it (collection edited after CREATE) reads
+# without the method error. The read cannot connect, so one try keeps it short.
 $CLICKHOUSE_CLIENT -q "
     DROP NAMED COLLECTION IF EXISTS ${NC_MAIN};
     CREATE NAMED COLLECTION ${NC_MAIN} AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'POST';
@@ -104,7 +104,7 @@ $CLICKHOUSE_CLIENT -q "
     ALTER NAMED COLLECTION ${NC_MAIN} SET url = 'http://localhost:1/files/*.csv';
     DETACH TABLE url_${NC_MAIN};
     ATTACH TABLE url_${NC_MAIN}"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_MAIN}" 2>&1 | grep -c "cannot be combined with http_method"
+$CLICKHOUSE_CLIENT --http_max_tries=1 -q "SELECT * FROM url_${NC_MAIN}" 2>&1 | grep -c "cannot be combined with http_method"
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_MAIN}; DROP NAMED COLLECTION ${NC_MAIN}"
 # The same holds for a collection's PUT.
 $CLICKHOUSE_CLIENT -q "
@@ -114,7 +114,7 @@ $CLICKHOUSE_CLIENT -q "
     ALTER NAMED COLLECTION ${NC_PUT} SET url = 'http://localhost:1/files/*.csv';
     DETACH TABLE url_${NC_PUT};
     ATTACH TABLE url_${NC_PUT}"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_PUT}" 2>&1 | grep -c "cannot be combined with http_method"
+$CLICKHOUSE_CLIENT --http_max_tries=1 -q "SELECT * FROM url_${NC_PUT}" 2>&1 | grep -c "cannot be combined with http_method"
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_PUT}; DROP NAMED COLLECTION ${NC_PUT}"
 # Non-HTTP scheme dispatch ignores a named collection's http_method, as before, but rejects
 # the inline argument, which is new syntax, like headers(...).
