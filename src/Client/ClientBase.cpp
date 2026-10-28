@@ -111,6 +111,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -3402,6 +3403,54 @@ void ClientBase::processParsedSingleQuery(
 }
 
 
+/// Returns the `INSERT` (possibly under `EXPLAIN`) whose data follows the query in its text,
+/// e.g. `INSERT INTO t FORMAT CSV 1,2`, or nullptr.
+static ASTInsertQuery * getInsertWithInlineData(const ASTPtr & parsed_query)
+{
+    auto * insert_ast = parsed_query->as<ASTInsertQuery>();
+    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
+    if (!insert_ast)
+    {
+        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
+        if (explain_ast && explain_ast->getExplainedQuery())
+            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
+    }
+    if (insert_ast && insert_ast->data)
+        return insert_ast;
+    return nullptr;
+}
+
+/// Finds where the inline data of an `INSERT` ends, without executing anything.
+/// - If the INSERT statement FORMAT is VALUES, we use the VALUES format parser to skip the inserted data until we reach the trailing single semicolon.
+/// - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
+///   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
+static const char * findInsertInlineDataEnd(const ASTInsertQuery & insert_ast, const char * all_queries_end)
+{
+    if (insert_ast.format == "Values")
+    {
+        // Invoke the VALUES format parser to skip the inserted data.
+        // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
+        // whitespace: a trailing comment after the last row would otherwise be scanned
+        // as row data past the terminating ';', swallowing the following queries.
+        ReadBufferFromMemory data_in(insert_ast.data, all_queries_end - insert_ast.data);
+        skipBOMIfExists(data_in);
+        do
+        {
+            skipWhitespaceAndSQLComments(data_in);
+            if (data_in.eof() || *data_in.position() == ';')
+                break;
+        }
+        while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
+        return insert_ast.data + data_in.count();
+    }
+
+    // Handling of generic formats
+    auto pos_newline = std::string_view(insert_ast.data, all_queries_end).find("\n\n");
+    if (pos_newline != std::string_view::npos)
+        return insert_ast.data + pos_newline;
+    return all_queries_end;
+}
+
 MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
     ASTPtr & parsed_query,
@@ -3517,42 +3566,14 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         return MultiQueryProcessingStage::PARSING_FAILED;
     }
 
-    // INSERT queries may have the inserted data in the query text that follow the query itself, e.g. "insert into t format CSV 1,2". They
-    // need special handling.
-    // - If the INSERT statement FORMAT is VALUES, we use the VALUES format parser to skip the inserted data until we reach the trailing single semicolon.
-    // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
-    //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
-    auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
-    if (!insert_ast)
+    if (auto * insert_ast = getInsertWithInlineData(parsed_query))
     {
-        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
-        if (explain_ast && explain_ast->getExplainedQuery())
-        {
-            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
-        }
-    }
-    if (insert_ast && insert_ast->data)
-    {
+        this_query_end = findInsertInlineDataEnd(*insert_ast, all_queries_end);
         if (insert_ast->format == "Values")
         {
-            // Invoke the VALUES format parser to skip the inserted data.
-            // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
-            // whitespace: a trailing comment after the last row would otherwise be scanned
-            // as row data past the terminating ';', swallowing the following queries.
-            ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
-            skipBOMIfExists(data_in);
-            do
-            {
-                skipWhitespaceAndSQLComments(data_in);
-                if (data_in.eof() || *data_in.position() == ';')
-                    break;
-            }
-            while (ValuesBlockInputFormat::skipToNextRow(&data_in, 1, 0));
             // Handle the case of a comment followed by a semicolon
             //   Example: INSERT INTO tab VALUES xx; -- {serverError xx}
             // If we use this error hint, the next query should not be placed on the same line
-            this_query_end = insert_ast->data + data_in.count();
             const auto * pos_newline = find_first_symbols<'\n'>(this_query_end, all_queries_end);
             if (pos_newline != this_query_end)
             {
@@ -3560,15 +3581,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 if (hint.hasClientErrors() || hint.hasServerErrors())
                     this_query_end = pos_newline;
             }
-        }
-        else
-        {
-            // Handling of generic formats
-            auto pos_newline = String(insert_ast->data, all_queries_end).find("\n\n");
-            if (pos_newline != std::string::npos)
-                this_query_end = insert_ast->data + pos_newline;
-            else
-                this_query_end = all_queries_end;
         }
         insert_ast->end = this_query_end;
     }
@@ -4180,7 +4192,23 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         unsigned max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
 
         Tokens tokens(begin, end, 0, true);
+        /// Token streams restarted at a statement boundary by `resume_at` (see below).
+        std::list<Tokens> resumed_tokens;
         IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+
+        /// Restart the shared parse position at `resume_pos`, the beginning of the next statement,
+        /// when it was found by other means than the SQL tokens: by the KQL parser, by the scan of
+        /// a JSON object, or by skipping the inline data of an `INSERT`. Advancing the SQL tokens
+        /// up to it instead is not reliable, because a SQL token can straddle the boundary: e.g.
+        /// in the KQL `print @'\'; print (` the SQL lexer takes the closing quote of the verbatim
+        /// string for an escaped one and swallows the rest of the buffer into one string token.
+        /// (The new position inherits the limits and counters; switching to the new tokens counts
+        /// as one backtrack.)
+        auto resume_at = [&](const char * resume_pos)
+        {
+            resumed_tokens.emplace_back(resume_pos, end, 0, true);
+            token_iterator = IParser::Pos(resumed_tokens.back(), token_iterator);
+        };
 
         /// Mirror a `SET` that the executor would have run before parsing the next statement:
         /// apply its changes to the local settings copy and rebuild the parser (and the parse
@@ -4402,10 +4430,8 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 if (const auto * json_set_query = json_ast->as<ASTSetQuery>())
                     mirror_set_query(*json_set_query);
 
-                /// Advance the shared parse position past the object, up to its terminator.
-                /// (`mirror_set_query` may have rebuilt the position, but not moved it.)
-                while (!token_iterator->isEnd() && token_iterator->begin < json_end)
-                    ++token_iterator;
+                /// Move the shared parse position past the object, up to its terminator.
+                resume_at(json_end);
                 continue;
             }
 
@@ -4435,10 +4461,9 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                         effective_settings[Setting::max_parser_depth],
                         effective_settings[Setting::max_parser_backtracks]);
                     parsed = true;
-                    /// Advance the shared position past the consumed statement
+                    /// Move the shared position past the consumed statement
                     /// (`parseKQLQuery` works on raw characters, not on these tokens).
-                    while (!token_iterator->isEnd() && token_iterator->begin < kql_pos)
-                        ++token_iterator;
+                    resume_at(kql_pos);
                 }
                 else
                 {
@@ -4591,6 +4616,17 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// running the prefix even though the final `print` is still incomplete.
             if (const auto * set_query = ast->as<ASTSetQuery>())
                 mirror_set_query(*set_query);
+
+            /// The parser stops at the inline data of an `INSERT`, e.g. at the `(` of
+            /// `INSERT INTO t VALUES (1); SELECT`. The executor skips that data without
+            /// interpreting it as SQL and goes on with the statements after it, so do the same
+            /// (also keeping the data out of the bracket heuristic): otherwise the unfinished
+            /// trailing `SELECT` would be missed and the `INSERT` executed on <ENTER>.
+            if (const auto * insert_ast = getInsertWithInlineData(ast))
+            {
+                resume_at(findInsertInlineDataEnd(*insert_ast, end));
+                continue;
+            }
 
             if (token_iterator->isEnd())
                 return false;
