@@ -171,27 +171,26 @@ getSnapshotVersion(const Settings & settings)
 DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resolveLatestSnapshot() const
 {
     DeltaLake::TableSnapshotPtr snapshot;
-    const auto client_options = kernel_helper->resolveClientOptions();
+    UInt64 resolution = 0;
     {
         std::lock_guard lock(snapshots_mutex);
-        /// Callers with equal client options share one in-flight build. A latest-version load is
-        /// never retried on the same object, so an abandoned one is replaced.
-        auto it = latest_snapshots_in_flight.find(client_options);
-        if (it == latest_snapshots_in_flight.end() || it->second.snapshot->isAbandonedWithoutWaiters())
+        /// Concurrent callers share one in-flight build. A latest-version load is never retried on
+        /// the same object, so an abandoned one is replaced.
+        if (!latest_snapshot_in_flight || latest_snapshot_in_flight->snapshot->isAbandonedWithoutWaiters())
         {
-            /// Constructor itself is lightweight.
-            auto fresh_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
-                /* version */std::nullopt,
-                kernel_helper,
-                object_storage,
-                log);
-            /// Before publishing, so that the first load uses the options the object is shared under.
-            fresh_snapshot->reserveClientOptions(client_options);
-            it = latest_snapshots_in_flight.insert_or_assign(
-                client_options, LatestSnapshotInFlight{.snapshot = std::move(fresh_snapshot), .users = 0}).first;
+            latest_snapshot_in_flight = LatestSnapshotInFlight{
+                /// Constructor itself is lightweight.
+                .snapshot = std::make_shared<DeltaLake::TableSnapshot>(
+                    /* version */std::nullopt,
+                    kernel_helper,
+                    object_storage,
+                    log),
+                .resolution = ++latest_resolutions_started,
+                .users = 0};
         }
-        ++it->second.users;
-        snapshot = it->second.snapshot;
+        ++latest_snapshot_in_flight->users;
+        snapshot = latest_snapshot_in_flight->snapshot;
+        resolution = latest_snapshot_in_flight->resolution;
     }
 
     /// May block on object storage, so not under `snapshots_mutex`.
@@ -204,24 +203,27 @@ DeltaLakeMetadataDeltaKernel::LatestSnapshot DeltaLakeMetadataDeltaKernel::resol
     {
         /// Keep the object for the callers still waiting on it; drop the entry with the last one.
         std::lock_guard lock(snapshots_mutex);
-        auto it = latest_snapshots_in_flight.find(client_options);
-        if (it != latest_snapshots_in_flight.end() && it->second.snapshot == snapshot)
-        {
-            --it->second.users;
-            if (it->second.users == 0)
-                latest_snapshots_in_flight.erase(it);
-        }
+        if (latest_snapshot_in_flight && latest_snapshot_in_flight->snapshot == snapshot
+            && --latest_snapshot_in_flight->users == 0)
+            latest_snapshot_in_flight.reset();
         throw;
     }
 
     std::lock_guard lock(snapshots_mutex);
-    if (auto it = latest_snapshots_in_flight.find(client_options);
-        it != latest_snapshots_in_flight.end() && it->second.snapshot == snapshot)
-        latest_snapshots_in_flight.erase(it);
+    if (latest_snapshot_in_flight && latest_snapshot_in_flight->snapshot == snapshot)
+        latest_snapshot_in_flight.reset();
 
-    /// A slower resolution must not move "latest" backwards.
-    if (!latest_snapshot_version.has_value() || version >= latest_snapshot_version.value())
-        latest_snapshot_version = version;
+    /// A resolution which started before the published one is older, so it must not move "latest"
+    /// back; its caller still gets the snapshot it loaded, which is not cached.
+    if (resolution < latest_published_resolution)
+        return LatestSnapshot{.snapshot = snapshot, .version = version, .created = true};
+
+    /// A newer resolution which finds a lower version means the table was replaced at this
+    /// location: the cached versions belong to the old table.
+    if (latest_snapshot_version.has_value() && version < latest_snapshot_version.value())
+        snapshots.clear();
+    latest_snapshot_version = version;
+    latest_published_resolution = resolution;
 
     /// Keep an initialized cached entry; replace only one which never got a state (e.g. a stuck load).
     auto [cached, created] = snapshots.getOrSet(version, [&]() { return snapshot; });

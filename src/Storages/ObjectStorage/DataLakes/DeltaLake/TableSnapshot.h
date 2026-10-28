@@ -47,9 +47,6 @@ public:
 
     bool isInitialized() const;
 
-    /// The options the first load must use (the ones this object is shared under).
-    void reserveClientOptions(const KernelClientOptions & client_options);
-
     std::optional<size_t> getTotalRows() const;
     std::optional<size_t> getTotalBytes() const;
 
@@ -102,7 +99,6 @@ private:
         KernelSnapshotState(
             const IKernelHelper & helper_,
             std::optional<size_t> snapshot_version_,
-            const KernelClientOptions & client_options_,
             DB::UInt128 & used_credentials_fingerprint);
 
         KernelExternEngine engine;
@@ -131,12 +127,10 @@ private:
         std::atomic<State> state{State::Running};
         /// Registered under `TableSnapshot::mutex`; a load is dead only when nobody waits for it.
         std::atomic<Int64> waiters{0};
-        KernelClientOptions client_options;
         /// Written by the worker before the future is ready; the stale-token retry compares against it.
         DB::UInt128 credentials_fingerprint{};
     };
     mutable std::shared_ptr<InflightSnapshotLoad> inflight_load TSA_GUARDED_BY(mutex);
-    mutable std::optional<KernelClientOptions> reserved_client_options TSA_GUARDED_BY(mutex);
 
     struct SchemaInfo
     {
@@ -190,7 +184,7 @@ private:
 
     /// Starts a build on a worker thread within the bounded worker permits; never blocks on the kernel.
     static std::shared_ptr<InflightSnapshotLoad> startKernelSnapshotLoad(
-        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const KernelClientOptions & client_options);
+        KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build);
 
     /// The only cancellation point of a snapshot load: `KILL QUERY`, `max_execution_time` and
     /// `delta_lake_snapshot_load_timeout_ms` abort this waiter only; the build keeps running.

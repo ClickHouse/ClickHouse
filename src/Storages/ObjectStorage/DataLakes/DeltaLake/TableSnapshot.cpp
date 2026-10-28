@@ -731,12 +731,6 @@ bool TableSnapshot::isInitialized() const
     return kernel_snapshot_state != nullptr;
 }
 
-void TableSnapshot::reserveClientOptions(const KernelClientOptions & client_options)
-{
-    std::lock_guard lock(mutex);
-    reserved_client_options = client_options;
-}
-
 size_t TableSnapshot::getVersionUnlocked() const
 {
     return getKernelSnapshotState()->snapshot_version;
@@ -947,8 +941,6 @@ void TableSnapshot::initOrUpdateSnapshot() const
         log, "{}",
         kernel_snapshot_state ? "Rebuilding kernel snapshot state (credentials rotated)" : "Initializing snapshot");
 
-    const auto client_options = helper->resolveClientOptions();
-
     for (size_t attempt = 0;; ++attempt)
     {
         /// A sibling may have installed a state while this waiter handled a failed build.
@@ -967,14 +959,9 @@ void TableSnapshot::initOrUpdateSnapshot() const
         auto load = inflight_load;
         const bool given_up = load && load->state.load() == InflightSnapshotLoad::State::Abandoned
             && load->waiters.load() == 0;
-        const bool other_options = load && !(load->client_options == client_options);
-        if (!load || (version_to_build.has_value() && (given_up || other_options)))
+        if (!load || (version_to_build.has_value() && given_up))
         {
-            /// The first load uses the options this object is shared under.
-            const auto load_options = (!kernel_snapshot_state && reserved_client_options)
-                ? *reserved_client_options
-                : client_options;
-            load = startKernelSnapshotLoad(helper, version_to_build, load_options);
+            load = startKernelSnapshotLoad(helper, version_to_build);
             inflight_load = load;
         }
 
@@ -1041,7 +1028,7 @@ namespace
 }
 
 std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelSnapshotLoad(
-    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const KernelClientOptions & client_options)
+    KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build)
 {
     /// The kernel FFI has no cancellation hook, so a stuck call could not be killed (#117280).
     /// It runs on a worker thread which never touches `this` and may outlive every waiter.
@@ -1073,14 +1060,12 @@ std::shared_ptr<TableSnapshot::InflightSnapshotLoad> TableSnapshot::startKernelS
     });
 
     auto load = std::make_shared<InflightSnapshotLoad>();
-    load->client_options = client_options;
     auto task = std::make_shared<std::packaged_task<std::shared_ptr<KernelSnapshotState>()>>(
-        [kernel_helper, version_to_build, client_options, load]
+        [kernel_helper, version_to_build, load]
         {
             /// Simulates a kernel call which never returns (used by tests).
             DB::FailPointInjection::pauseFailPoint(DB::FailPoints::delta_kernel_snapshot_load_pause);
-            return std::make_shared<KernelSnapshotState>(
-                *kernel_helper, version_to_build, client_options, load->credentials_fingerprint);
+            return std::make_shared<KernelSnapshotState>(*kernel_helper, version_to_build, load->credentials_fingerprint);
         });
     load->future = task->get_future().share();
 
@@ -1170,7 +1155,7 @@ void TableSnapshot::markAbandoned(InflightSnapshotLoad & load, const IKernelHelp
 std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::loadKernelSnapshotState(
     KernelHelperPtr kernel_helper, std::optional<size_t> version_to_build, const LoggerPtr & log)
 {
-    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build, kernel_helper->resolveClientOptions());
+    auto load = startKernelSnapshotLoad(kernel_helper, version_to_build);
     try
     {
         waitForSnapshotLoad(*load, *kernel_helper);
@@ -1194,7 +1179,6 @@ std::shared_ptr<TableSnapshot::KernelSnapshotState> TableSnapshot::getKernelSnap
 TableSnapshot::KernelSnapshotState::KernelSnapshotState(
     const IKernelHelper & helper_,
     std::optional<size_t> snapshot_version_,
-    const KernelClientOptions & client_options_,
     DB::UInt128 & used_credentials_fingerprint)
 {
     fiu_do_on(DB::FailPoints::delta_kernel_force_stale_token_error,
@@ -1205,7 +1189,7 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(
     });
 
     /// Published before the kernel calls below, which may throw.
-    auto * engine_builder = helper_.createBuilderWithOptions(client_options_, credentials_fingerprint);
+    auto * engine_builder = helper_.createBuilderWithFingerprint(credentials_fingerprint);
     used_credentials_fingerprint = credentials_fingerprint;
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 

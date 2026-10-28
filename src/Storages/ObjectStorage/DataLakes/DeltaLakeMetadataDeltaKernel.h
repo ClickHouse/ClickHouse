@@ -12,7 +12,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <map>
 #include <optional>
 
 namespace DeltaLake
@@ -123,14 +122,18 @@ private:
     mutable TableSnapshotCache snapshots TSA_GUARDED_BY(snapshots_mutex);
     mutable std::mutex snapshots_mutex;
     mutable std::optional<SnapshotVersion> latest_snapshot_version;
-    /// "Latest" resolutions in flight, keyed by client options because a build uses the options
-    /// of the query which starts it.
+    /// "Latest" resolutions are numbered in the order they start; only one which started after the
+    /// published one may publish (see `resolveLatestSnapshot`).
+    mutable UInt64 latest_resolutions_started TSA_GUARDED_BY(snapshots_mutex) = 0;
+    mutable UInt64 latest_published_resolution TSA_GUARDED_BY(snapshots_mutex) = 0;
+    /// The "latest" resolution in flight.
     struct LatestSnapshotInFlight
     {
         DeltaLake::TableSnapshotPtr snapshot;
+        UInt64 resolution = 0;
         size_t users = 0;
     };
-    mutable std::map<DeltaLake::KernelClientOptions, LatestSnapshotInFlight> latest_snapshots_in_flight TSA_GUARDED_BY(snapshots_mutex);
+    mutable std::optional<LatestSnapshotInFlight> latest_snapshot_in_flight TSA_GUARDED_BY(snapshots_mutex);
 
     void logMetadataFiles(ContextPtr context) const;
 
@@ -156,7 +159,7 @@ private:
         SnapshotVersion version;
         bool created;
     };
-    /// Loads outside `snapshots_mutex` so the wait stays killable; never moves the latest version back.
+    /// Loads outside `snapshots_mutex` so the wait stays killable.
     LatestSnapshot resolveLatestSnapshot() const;
 };
 

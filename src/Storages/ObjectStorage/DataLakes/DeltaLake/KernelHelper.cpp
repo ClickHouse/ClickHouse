@@ -10,9 +10,6 @@
 #include <Common/SipHash.h>
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
-#include <Common/CurrentThread.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -38,12 +35,6 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsUInt64 connect_timeout_ms;
     extern const S3AuthSettingsUInt64 request_timeout_ms;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsUInt64 s3_connect_timeout_ms;
-    extern const SettingsUInt64 s3_request_timeout_ms;
 }
 
 namespace DB::FailPoints
@@ -160,34 +151,13 @@ public:
         return object_storage->tryRefreshCredentialsViaCallback();
     }
 
-    KernelClientOptions resolveClientOptions() const override
-    {
-        /// The storage's live settings, overridden by the ones the query changed.
-        UInt64 connect = connect_timeout_ms;
-        UInt64 request = request_timeout_ms;
-        if (const auto live_settings = object_storage->tryGetS3StorageSettings())
-        {
-            connect = live_settings->auth_settings[DB::S3AuthSetting::connect_timeout_ms];
-            request = live_settings->auth_settings[DB::S3AuthSetting::request_timeout_ms];
-        }
-        if (auto query_context = DB::CurrentThread::tryGetQueryContext())
-        {
-            const auto & settings = query_context->getSettingsRef();
-            if (settings[DB::Setting::s3_connect_timeout_ms].changed)
-                connect = settings[DB::Setting::s3_connect_timeout_ms];
-            if (settings[DB::Setting::s3_request_timeout_ms].changed)
-                request = settings[DB::Setting::s3_request_timeout_ms];
-        }
-        return KernelClientOptions{.s3_connect_timeout_ms = connect, .s3_request_timeout_ms = request};
-    }
-
     ffi::EngineBuilder * createBuilder() const override
     {
         DB::UInt128 credentials_fingerprint;
-        return createBuilderWithOptions(resolveClientOptions(), credentials_fingerprint);
+        return createBuilderWithFingerprint(credentials_fingerprint);
     }
 
-    ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions & options, DB::UInt128 & credentials_fingerprint) const override
+    ffi::EngineBuilder * createBuilderWithFingerprint(DB::UInt128 & credentials_fingerprint) const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
             ffi::get_engine_builder(
@@ -234,10 +204,16 @@ public:
             set_option("aws_endpoint", url.endpoint);
         }
 
-        /// The kernel's object_store client does not see the server's S3 settings, so pass the timeouts.
-        /// `0` (no timeout) cannot be expressed there and keeps object_store's defaults (30 s / 5 s).
-        const UInt64 effective_connect_timeout_ms = options.s3_connect_timeout_ms.value_or(connect_timeout_ms);
-        const UInt64 effective_request_timeout_ms = options.s3_request_timeout_ms.value_or(request_timeout_ms);
+        /// The kernel's object_store client does not see the server's S3 settings, so pass the timeouts the
+        /// storage's own S3 client uses now (`applyNewSettings` keeps them current). `0` (no timeout) cannot be
+        /// expressed there and keeps object_store's defaults (30 s / 5 s).
+        UInt64 effective_connect_timeout_ms = connect_timeout_ms;
+        UInt64 effective_request_timeout_ms = request_timeout_ms;
+        if (const auto live_settings = object_storage->tryGetS3StorageSettings())
+        {
+            effective_connect_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::connect_timeout_ms];
+            effective_request_timeout_ms = live_settings->auth_settings[DB::S3AuthSetting::request_timeout_ms];
+        }
 
         if (effective_connect_timeout_ms)
             set_option("connect_timeout", fmt::format("{}ms", effective_connect_timeout_ms));

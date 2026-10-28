@@ -5,12 +5,9 @@
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#include <compare>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <optional>
 
 namespace ffi
 {
@@ -26,18 +23,6 @@ struct ConnectionParams;
 
 namespace DeltaLake
 {
-
-/// Effective S3 client options for one kernel engine build: the storage's live settings overridden
-/// by the query's, resolved on the query thread because the snapshot-load thread has no query context.
-/// Two queries share an in-flight build only when these options are equal.
-struct KernelClientOptions
-{
-    std::optional<UInt64> s3_connect_timeout_ms;
-    std::optional<UInt64> s3_request_timeout_ms;
-
-    bool operator==(const KernelClientOptions &) const = default;
-    auto operator<=>(const KernelClientOptions &) const = default;
-};
 
 /**
  * A helper class to manage different storage types,
@@ -62,16 +47,12 @@ public:
     /// with object storage layer.
     virtual ffi::EngineBuilder * createBuilder() const = 0;
 
-    /// Same as createBuilder() with the given client options; also returns the fingerprint of the
-    /// credentials the builder was filled with.
-    virtual ffi::EngineBuilder * createBuilderWithOptions(const KernelClientOptions &, DB::UInt128 & credentials_fingerprint) const
+    /// Same as createBuilder(); also returns the fingerprint of the credentials the builder was filled with.
+    virtual ffi::EngineBuilder * createBuilderWithFingerprint(DB::UInt128 & credentials_fingerprint) const
     {
         credentials_fingerprint = getCredentialsFingerprint();
         return createBuilder();
     }
-
-    /// Must be called on the query thread.
-    virtual KernelClientOptions resolveClientOptions() const { return {}; }
 
     /// Make the table location ready for a brand-new table; the local helper creates the root directory, object stores (S3/Azure) default to a no-op.
     virtual void prepareForTableCreation() const {}

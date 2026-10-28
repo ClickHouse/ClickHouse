@@ -6806,16 +6806,15 @@ def test_kill_waiter_on_shared_snapshot_load(started_cluster):
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-def test_latest_snapshot_load_shared_per_client_options(started_cluster):
-    """Latest-version queries with the same effective S3 client options share one in-flight
-    snapshot load, also when a query with other options resolves the latest version in between:
-    that query builds with its own options and must not make the next query with the first
-    options start a duplicate load."""
+def test_latest_snapshot_load_shared(started_cluster):
+    """Latest-version queries share one in-flight snapshot load, also when their query-level S3
+    settings differ: the build uses the storage's S3 settings at the time it starts. Killing the
+    query which started it leaves the build to the other waiter."""
     from concurrent.futures import ThreadPoolExecutor
 
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_latest_snapshot_load_shared_per_client_options")
+    TABLE_NAME = randomize_table_name("test_latest_snapshot_load_shared")
     delta_path = f"/{TABLE_NAME}"
 
     write_delta_from_df(spark, spark.range(10).selectExpr("id as a"), delta_path)
@@ -6826,11 +6825,8 @@ def test_latest_snapshot_load_shared_per_client_options(started_cluster):
     # The failpoint pauses one snapshot load: the one started by the first query below.
     instance.query(f"SYSTEM ENABLE FAILPOINT {SNAPSHOT_LOAD_PAUSE_FAILPOINT}")
 
-    # Every query resolves the latest version anew. Query-level S3 timeouts are forwarded into
-    # the kernel client, so they decide whether two queries may share a build.
+    # Every query resolves the latest version anew.
     select = f"SELECT count() FROM {TABLE_NAME}"
-    options = {"s3_request_timeout_ms": 20000}
-    other_options = {"s3_request_timeout_ms": 25000}
     first_id = f"{TABLE_NAME}_first"
     second_id = f"{TABLE_NAME}_second"
     executor = ThreadPoolExecutor(max_workers=3)
@@ -6842,20 +6838,23 @@ def test_latest_snapshot_load_shared_per_client_options(started_cluster):
         )
         first_future = executor.submit(
             lambda: instance.query_and_get_error(
-                select, settings=options, query_id=first_id, timeout=120
+                select,
+                settings={"s3_request_timeout_ms": 20000},
+                query_id=first_id,
+                timeout=120,
             )
         )
         # The build started by the first query is paused inside the kernel call.
         wait_future.result(timeout=60)
 
-        # A query with other options does not adopt that build: it resolves the latest version
-        # through a build of its own, which is not paused.
-        assert instance.query(select, settings=other_options, timeout=120).strip() == "10"
-
-        # The paused build is still the one in flight for the first query's options, so the
-        # next query with these options joins it instead of starting a duplicate.
+        # A query with other S3 settings joins that build instead of starting one of its own.
         second_future = executor.submit(
-            lambda: instance.query(select, settings=options, query_id=second_id, timeout=120)
+            lambda: instance.query(
+                select,
+                settings={"s3_request_timeout_ms": 25000},
+                query_id=second_id,
+                timeout=120,
+            )
         )
         second_is_waiting = False
         for _ in range(300):
@@ -7363,3 +7362,39 @@ def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
     assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
 
     instance.query(f"DROP TABLE {table_name}")
+
+
+def test_table_replaced_at_same_location(started_cluster):
+    """A Delta table deleted and recreated at the same location starts again at version 0. The
+    replacement must be read, although its version is lower than the one the table has cached."""
+    instance = started_cluster.instances["node1"]
+    bucket = started_cluster.minio_bucket
+    minio_client = started_cluster.minio_client
+    TABLE_NAME = randomize_table_name("test_table_replaced_at_same_location")
+    table_uri = f"s3://{bucket}/{TABLE_NAME}"
+    storage_options = get_storage_options(started_cluster)
+    schema = pa.schema([("id", pa.int64(), False)])
+
+    def rows(count):
+        return pa.Table.from_arrays([pa.array(range(count), type=pa.int64())], schema=schema)
+
+    # Versions 0, 1 and 2.
+    for _ in range(3):
+        write_deltalake_with_retry(table_uri, rows(10), storage_options, mode="append")
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/"
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME} (id Int64) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')"
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 30
+
+    # Replace the table: a new one at the same location starts again at version 0.
+    objects = list_s3_objects(minio_client, bucket, prefix=f"{TABLE_NAME}/")
+    errors = minio_client.remove_objects(bucket, [DeleteObject(obj) for obj in objects])
+    assert len(list(errors)) == 0
+    write_deltalake_with_retry(table_uri, rows(5), storage_options, mode="overwrite")
+
+    # The metadata cache works by timestamps.
+    time.sleep(1)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 5
+    instance.query(f"DROP TABLE {TABLE_NAME}")
