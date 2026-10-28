@@ -33,7 +33,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -72,11 +71,6 @@ namespace Setting
     extern const SettingsBool force_primary_key;
     extern const SettingsBool force_index_by_date;
     extern const SettingsString force_data_skipping_indexes;
-}
-
-namespace FailPoints
-{
-    extern const char two_pass_count_top_k_pause_between_passes[];
 }
 
 namespace ErrorCodes
@@ -604,7 +598,6 @@ public:
                 pending_chunk.reset();
                 break;
             case Stage::Deciding:
-                FailPointInjection::pauseFailPoint(FailPoints::two_pass_count_top_k_pause_between_passes);
                 decide();
                 break;
             case Stage::Forwarding:
