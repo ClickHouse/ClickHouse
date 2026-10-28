@@ -1433,10 +1433,11 @@ void DDLWorker::markReplicasActive(bool reinitialized)
 
     /// `replica_host` replaces the interserver IO host in the host IDs that Replicated DBs publish,
     /// so claim it too: otherwise the first `ON CLUSTER` query may see this replica as inactive.
+    String replica_host;
     if (context->hasReplicaHost())
     {
         /// Use the same form as the cluster of a Replicated DB, which publishes IPv6 literals in brackets.
-        String replica_host = context->getReplicaHost();
+        replica_host = context->getReplicaHost();
         if (replica_host.contains(':') && !replica_host.starts_with('['))
             replica_host = '[' + replica_host + ']';
 
@@ -1480,7 +1481,14 @@ void DDLWorker::markReplicasActive(bool reinitialized)
             HostID host = HostID::fromString(host_id);
             checking_host_ids.insert(host.toString());
 
-            is_self_host = DDLTask::isSelfHostID(log, host, maybe_secure_port, port);
+            /// With an explicit `distributed_ddl.host_name`, `DDLTask::findCurrentHostID` accepts `replica_host` by name
+            /// without resolving it, so apply the same rule here: otherwise this replica executes the tasks addressed
+            /// to `replica_host` but is never marked active under it.
+            if (config_host_name && !replica_host.empty() && host.host_name == replica_host
+                && (host.port == port || (maybe_secure_port && host.port == *maybe_secure_port)))
+                is_self_host = true;
+            else
+                is_self_host = DDLTask::isSelfHostID(log, host, maybe_secure_port, port);
         }
         catch (const Exception & e)
         {

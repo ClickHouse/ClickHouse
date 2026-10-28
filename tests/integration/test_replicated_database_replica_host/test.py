@@ -475,10 +475,14 @@ def test_replica_host_on_cluster_with_ddl_host_name(started_cluster):
     With `host_name` configured, `DDLTask::findCurrentHostID` matches host IDs by name instead of
     resolving them. The cluster of a Replicated database lists node1 under its `replica_host`
     (`public.node1.com`), which is neither `host_name` nor resolvable here, so the `DDLWorker` must
-    accept `replica_host` as a self-name, or node1 never executes its part of the query.
+    accept `replica_host` as a self-name, or node1 never executes its part of the query. By the same
+    rule it must mark the `replica_host` host ID active, or `*_only_active` modes treat node1 as inactive.
     """
     db = "test_on_cluster_ddl_host_name"
     config_path = "/etc/clickhouse-server/config.d/distributed_ddl_host_name.xml"
+    # Host IDs are stored in Keeper with the host escaped by `escapeForFileName`.
+    replica_host_id = "public%2Enode1%2Ecom:9000"
+    replicas_dir = "/clickhouse/task_queue/replicas"
 
     node1.copy_file_to_container(
         os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs/distributed_ddl_host_name.xml"),
@@ -487,6 +491,16 @@ def test_replica_host_on_cluster_with_ddl_host_name(started_cluster):
 
     try:
         node1.restart_clickhouse()
+
+        # `public.node1.com` does not resolve here, but the host ID must still be claimed by node1 at startup.
+        node1.query_with_retry(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{replicas_dir}/{replica_host_id}' AND name = 'active'",
+            check_callback=lambda result: result.strip() == "1",
+        )
+        active_owner = node1.query(
+            f"SELECT value FROM system.zookeeper WHERE path = '{replicas_dir}/{replica_host_id}' AND name = 'active'"
+        ).strip()
+        assert active_owner == node1.query("SELECT serverUUID()").strip()
 
         for node in [node1, node2]:
             node.query(
@@ -498,7 +512,7 @@ def test_replica_host_on_cluster_with_ddl_host_name(started_cluster):
         # on the cluster of the Replicated database.
         result = node2.query(
             f"CREATE TABLE default.t_on_cluster_ddl_host_name ON CLUSTER {db} (x UInt64) ENGINE = Memory "
-            "SETTINGS distributed_ddl_output_mode = 'throw', distributed_ddl_task_timeout = 60"
+            "SETTINGS distributed_ddl_output_mode = 'throw_only_active', distributed_ddl_task_timeout = 60"
         )
         print(f"ON CLUSTER result: {result}")
         assert "public.node1.com" in result, f"Expected node1 to be reported by its replica_host, got: {result}"
