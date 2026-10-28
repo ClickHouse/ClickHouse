@@ -159,6 +159,9 @@ void deleteFilesFromS3(
     /// A refused pinned delete is reported only after the other objects are deleted, so one overwritten
     /// object does not leave the rest in place.
     std::exception_ptr changed_generation_error;
+    /// With pinned deletes an ordinary error is reported at the end too, so a later changed object is still found.
+    const bool pinned = !etags_to_match.empty();
+    std::exception_ptr other_error_at_end;
 
     if (try_batch_delete)
     {
@@ -327,7 +330,12 @@ void deleteFilesFromS3(
                         LOG_TRACE(log, "Object with paths [{}] were skipped because they didn't exist", not_found_keys);
                     }
 
-                    if (other_error)
+                    if (other_error && pinned)
+                    {
+                        if (!other_error_at_end)
+                            other_error_at_end = other_error;
+                    }
+                    else if (other_error)
                     {
                         /// A changed object must not look like an ordinary failure, which the caller may skip.
                         if (changed_generation_error)
@@ -359,10 +367,17 @@ void deleteFilesFromS3(
                 }
                 else
                 {
-                    if (changed_generation_error)
-                        std::rethrow_exception(changed_generation_error);
-                    throw S3Exception(err.GetErrorType(), "{} (Code: {}) while removing objects with paths [{}] from S3",
-                                      err.GetMessage(), static_cast<size_t>(err.GetErrorType()), comma_separated_keys);
+                    auto error = std::make_exception_ptr(S3Exception(
+                        err.GetErrorType(), "{} (Code: {}) while removing objects with paths [{}] from S3",
+                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), comma_separated_keys));
+                    if (!pinned)
+                    {
+                        if (changed_generation_error)
+                            std::rethrow_exception(changed_generation_error);
+                        std::rethrow_exception(error);
+                    }
+                    if (!other_error_at_end)
+                        other_error_at_end = error;
                 }
             }
         }
@@ -371,6 +386,8 @@ void deleteFilesFromS3(
         {
             if (changed_generation_error)
                 std::rethrow_exception(changed_generation_error);
+            if (other_error_at_end)
+                std::rethrow_exception(other_error_at_end);
             return;
         }
     }
@@ -393,9 +410,15 @@ void deleteFilesFromS3(
             /// was written over is reported once.
             if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
             {
-                if (changed_generation_error)
-                    std::rethrow_exception(changed_generation_error);
-                throw;
+                if (!pinned)
+                {
+                    if (changed_generation_error)
+                        std::rethrow_exception(changed_generation_error);
+                    throw;
+                }
+                if (!other_error_at_end)
+                    other_error_at_end = std::current_exception();
+                continue;
             }
             if (!changed_generation_error)
                 changed_generation_error = std::current_exception();
@@ -408,6 +431,8 @@ void deleteFilesFromS3(
 
     if (changed_generation_error)
         std::rethrow_exception(changed_generation_error);
+    if (other_error_at_end)
+        std::rethrow_exception(other_error_at_end);
 }
 
 }

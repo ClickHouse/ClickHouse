@@ -842,4 +842,46 @@ TEST(DeleteFilesFromS3, ChangedObjectWinsOverOtherErrors)
     }
 }
 
+TEST(DeleteFilesFromS3, ChangedObjectInLaterChunkIsFoundAfterOtherError)
+{
+    /// The first chunk fails one key for an ordinary reason and the second refuses the rewritten key.
+    /// A pinned delete must still send the second chunk and report the changed object.
+    const auto client = std::make_shared<ClientFake>();
+    size_t requests = 0;
+    client->deleteObjectsImpl = [&requests](const Aws::S3::Model::DeleteObjectsRequest & request) -> Aws::S3::Model::DeleteObjectsOutcome
+    {
+        ++requests;
+        Aws::S3::Model::DeleteObjectsResult result;
+        Aws::S3::Model::Error error;
+        error.SetKey(request.GetDelete().GetObjects().front().GetKey());
+        if (error.GetKey() == "denied")
+        {
+            error.SetCode("AccessDenied");
+            error.SetMessage("Access Denied.");
+        }
+        else
+        {
+            error.SetCode("PreconditionFailed");
+            error.SetMessage("At least one of the pre-conditions you specified did not hold");
+        }
+        result.SetErrors({error});
+        return Aws::S3::Model::DeleteObjectsOutcome(std::move(result));
+    };
+
+    DB::S3Capabilities capabilities(/*support_batch_delete_=*/true);
+    try
+    {
+        DB::deleteFilesFromS3(
+            client, "test_bucket", {"denied", "deleted", "rewritten", "other"}, /*if_exists=*/true, capabilities,
+            /*batch_size=*/2, /*blob_storage_log=*/nullptr, {}, {}, std::nullopt, /*successful_keys=*/nullptr,
+            /*etags_to_match=*/{"\"etag-1\"", "\"etag-2\"", "\"etag-3\"", "\"etag-4\""});
+        FAIL() << "Expected an exception";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ) << e.message();
+    }
+    ASSERT_EQ(requests, 2);
+}
+
 #endif

@@ -268,11 +268,14 @@ void ObjectStorageQueuePostProcessor::process(
                 });
                 /// Two generations of one key can share an `ETag`, so on a versioned bucket only the version
                 /// (reported by the read, never by a listing) names the ingested generation.
+                std::exception_ptr versioned_error;
                 const StoredObjects unversioned
-                    = type == ObjectStorageType::S3 ? deleteVersionedS3Objects(objects, successful_objects) : objects;
+                    = type == ObjectStorageType::S3 ? deleteVersionedS3Objects(objects, successful_objects, versioned_error) : objects;
                 /// Deletes every object it can before reporting one that changed.
                 if (!unversioned.empty())
                     object_storage->removeObjectsIfExist(unversioned, &successful_objects);
+                if (versioned_error)
+                    std::rethrow_exception(versioned_error);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
@@ -725,7 +728,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 }
 
 StoredObjects ObjectStorageQueuePostProcessor::deleteVersionedS3Objects(
-    const StoredObjects & objects, StoredObjects & successful_objects) const
+    const StoredObjects & objects, StoredObjects & successful_objects, std::exception_ptr & versioned_error) const
 {
 #if USE_AWS_S3
     auto * s3_storage = dynamic_cast<S3ObjectStorage *>(object_storage.get());
@@ -741,12 +744,22 @@ StoredObjects ObjectStorageQueuePostProcessor::deleteVersionedS3Objects(
             unversioned.push_back(object);
             continue;
         }
-        s3_storage->removeObjectVersionIfExists(object, object.version_id);
+        try
+        {
+            s3_storage->removeObjectVersionIfExists(object, object.version_id);
+        }
+        catch (...)
+        {
+            if (!versioned_error)
+                versioned_error = std::current_exception();
+            continue;
+        }
         successful_objects.push_back(object);
     }
     return unversioned;
 #else
     (void)successful_objects;
+    (void)versioned_error;
     return objects;
 #endif
 }

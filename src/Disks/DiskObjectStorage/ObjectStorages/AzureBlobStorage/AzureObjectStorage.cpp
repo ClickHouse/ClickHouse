@@ -573,6 +573,11 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         }
     };
 
+    /// With pinned deletes an error is reported after the last batch, so a changed blob in a later batch is still found.
+    const bool pinned = std::ranges::any_of(objects, [](const StoredObject & object) { return !object.etag.empty(); });
+    std::exception_ptr throw_at_end;
+    std::exception_ptr changed_generation_error;
+
     StoredObjectsSpan rest_objects = objects;
     while (!rest_objects.empty())
     {
@@ -608,7 +613,11 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
             for (const auto & object : object_batch)
                 add_log_entry(object, elapsed, static_cast<Int32>(e.StatusCode), e.Message);
-            throw;
+            if (!pinned)
+                throw;
+            if (!throw_at_end)
+                throw_at_end = std::current_exception();
+            continue;
         }
         catch (...)
         {
@@ -617,12 +626,14 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             const auto batch_error = getCurrentExceptionMessage(false);
             for (const auto & object : object_batch)
                 add_log_entry(object, elapsed, -1, batch_error);
-            throw;
+            if (!pinned)
+                throw;
+            if (!throw_at_end)
+                throw_at_end = std::current_exception();
+            continue;
         }
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
-        std::exception_ptr throw_at_end;
-        std::exception_ptr changed_generation_error;
         for (const auto [object, deferred_response] : std::views::zip(object_batch, responses))
         {
             try
@@ -664,12 +675,15 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             }
         }
 
-        /// A changed object must not look like an ordinary failure, which the caller may skip.
-        if (changed_generation_error)
-            std::rethrow_exception(changed_generation_error);
-        if (throw_at_end)
+        if (!pinned && throw_at_end)
             std::rethrow_exception(throw_at_end);
     }
+
+    /// A changed object must not look like an ordinary failure, which the caller may skip.
+    if (changed_generation_error)
+        std::rethrow_exception(changed_generation_error);
+    if (throw_at_end)
+        std::rethrow_exception(throw_at_end);
 }
 
 void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
@@ -687,33 +701,38 @@ void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
         /// An object that is no longer the generation the caller selected is left in place, but
         /// that must not keep the other objects from being deleted.
         std::exception_ptr throw_at_end;
+        /// With pinned deletes an ordinary error is reported at the end too, so a later changed object is still found.
+        const bool pinned = std::ranges::any_of(objects, [](const StoredObject & object) { return !object.etag.empty(); });
+        std::exception_ptr other_error;
         for (const auto & object : objects)
         {
             try
             {
                 removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log, successful_objects);
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+                if (getCurrentExceptionCode() == ErrorCodes::FILE_CHANGED_DURING_READ)
+                {
+                    if (!throw_at_end)
+                        throw_at_end = std::current_exception();
+                    continue;
+                }
+                /// An Azure error, such as a denied delete, must not hide a changed object either.
+                if (!pinned)
                 {
                     if (throw_at_end)
                         std::rethrow_exception(throw_at_end);
                     throw;
                 }
-                if (!throw_at_end)
-                    throw_at_end = std::current_exception();
-            }
-            catch (...)
-            {
-                /// An Azure error, such as a denied delete, must not hide a changed object either.
-                if (throw_at_end)
-                    std::rethrow_exception(throw_at_end);
-                throw;
+                if (!other_error)
+                    other_error = std::current_exception();
             }
         }
         if (throw_at_end)
             std::rethrow_exception(throw_at_end);
+        if (other_error)
+            std::rethrow_exception(other_error);
         return;
     }
 

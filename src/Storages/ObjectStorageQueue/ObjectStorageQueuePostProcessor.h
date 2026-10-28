@@ -106,7 +106,9 @@ private:
     /// `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ` once the whole batch is handled (see `process`).
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
     /// Deletes each object that has a read version by that version and returns the others, left to the `ETag` delete.
-    StoredObjects deleteVersionedS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
+    /// The first failed version delete goes to `versioned_error`, so the others are still handled.
+    StoredObjects deleteVersionedS3Objects(
+        const StoredObjects & objects, StoredObjects & successful_objects, std::exception_ptr & versioned_error) const;
 
     /// Move processed S3 objects, possibly to another S3 storage
     void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
