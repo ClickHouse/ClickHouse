@@ -16,6 +16,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 #include <Common/Hex.h>
 #include <Common/SipHash.h>
 
@@ -35,6 +36,11 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
+namespace FailPoints
+{
+    extern const char columns_cache_reader_pause_before_later_range[];
 }
 
 namespace ErrorCodes
@@ -261,7 +267,7 @@ std::vector<bool> getBinaryColumns(const Parquet::parq::FileMetaData & file_meta
 
 }
 
-std::shared_ptr<const Parquet::ColumnsCacheOptions> MergeTreeReaderParquet::getColumnsCacheOptions() const
+std::shared_ptr<const Parquet::ColumnsCacheOptions> MergeTreeReaderParquet::getColumnsCacheOptions()
 {
     /// The entries of a part are keyed by the UUID of the table and the name of the part, like the entries of Wide parts,
     /// so they are removed with the part. The names of projection parts are not unique.
@@ -288,6 +294,13 @@ std::shared_ptr<const Parquet::ColumnsCacheOptions> MergeTreeReaderParquet::getC
     options->write_budget = settings.columns_cache_write_budget;
     if (!options->write_budget)
         options->write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+
+    /// Lets a test invalidate the cache before the state of a later task of the reader is created.
+    if (columns_cache_generation)
+        FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_before_later_range);
+    else
+        columns_cache_generation = options->cache->getInvalidationGeneration(options->table_uuid);
+    options->invalidation_generation = columns_cache_generation;
 
     /// The schema of the query and the content of the data file. The name of the part already identifies its content,
     /// the checksum makes it explicit.

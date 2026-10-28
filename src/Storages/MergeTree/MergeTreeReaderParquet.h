@@ -77,7 +77,7 @@ private:
     size_t addColumnInFile(const NameAndTypePair & column_in_part, size_t position_in_part);
 
     /// Null if the columns cache is not used.
-    std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions() const;
+    std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions();
 
     void initState();
     void seek(size_t row_group);
@@ -99,6 +99,12 @@ private:
     Block sample_block;
 
     std::unique_ptr<State> state;
+
+    /// The invalidation generation of the columns cache, captured when the first state is created. The state is
+    /// created anew for the next task or a backward seek, and the writes of all states are checked against this
+    /// generation, like the writes of the other readers (see `IMergeTreeReader::cache_table_generation`): otherwise
+    /// a reader that began before `SYSTEM DROP COLUMNS CACHE` would repopulate the cache from its next state.
+    std::optional<UInt64> columns_cache_generation;
 };
 
 }

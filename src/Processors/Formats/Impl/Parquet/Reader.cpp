@@ -4684,7 +4684,9 @@ void Reader::initColumnsCache()
 
     columns_cache_writes_possible = cache_options.enable_writes && canWriteToColumnsCache();
     if (columns_cache_writes_possible)
-        columns_cache_generation = cache.getInvalidationGeneration(cache_options.table_uuid);
+        columns_cache_generation = cache_options.invalidation_generation
+            ? *cache_options.invalidation_generation
+            : cache.getInvalidationGeneration(cache_options.table_uuid);
 
     size_t hits = 0;
     size_t misses = 0;

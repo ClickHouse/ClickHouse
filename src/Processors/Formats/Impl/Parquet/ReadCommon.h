@@ -5,6 +5,8 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Formats/FormatSettings.h>
 
+#include <optional>
+
 namespace DB
 {
 struct FormatParserSharedResources;
@@ -56,6 +58,13 @@ struct ColumnsCacheOptions
     /// Whether the reader charges the estimate budget of `write_budget` with the size of the columns it is
     /// going to write. False if the caller has already charged it (as `MergeTree` read pools do).
     bool charge_estimated_bytes = true;
+
+    /// The invalidation generation of `table_uuid` that the writes to the cache are checked against. If not set,
+    /// the reader takes the current one. Set by a caller that creates the reader anew while reading the same
+    /// data, so that the writes of all its readers are checked against the generation captured before the
+    /// first of them: a reader created after `SYSTEM DROP COLUMNS CACHE` for a read that began before it
+    /// doesn't repopulate the cache.
+    std::optional<UInt64> invalidation_generation;
 };
 
 struct ReadOptions
