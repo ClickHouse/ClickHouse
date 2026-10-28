@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 
 #include <Client/LineReader.h>
@@ -40,6 +41,12 @@ public:
         Patterns delimiters;
         std::span<char> word_break_characters;
         Highlighter highlighter;
+        /// Called on <ENTER> in single-line mode with the current edit buffer.
+        /// If it returns true, the query is considered incomplete and a newline
+        /// is inserted into the same buffer instead of committing the query.
+        /// Optional: when unset (e.g. for keeper-client and disks, which do not
+        /// process SQL queries), no continuation is performed.
+        std::function<bool(const String &)> query_needs_continuation = nullptr;
         std::istream & input_stream = std::cin;
         std::ostream & output_stream = std::cout;
         int in_fd = STDIN_FILENO;
@@ -86,6 +93,7 @@ private:
 
     replxx::Replxx rx;
     Highlighter highlighter;
+    std::function<bool(const String &)> query_needs_continuation;
 
     /// If highlight is on, the highlighter reports whether the last token is a delimiter.
     /// This is used to determine the behavior of <ENTER> key when multiline is enabled.

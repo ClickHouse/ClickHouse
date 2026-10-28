@@ -1,0 +1,62 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must parse statements of the `trino` dialect
+# with `ParserTrinoQuery`, like the executor does. The Trino `SET SESSION` form is
+# rejected by `ParserQuery`, so a probe using it would not see the dialect switch,
+# would fail on the `let`, decide the buffer is complete, and submit it --
+# executing the `SET SESSION` and `let x = 1` even though the final `print` is
+# still incomplete.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --enable_trino_dialect 1 --dialect trino --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+send -- "SET SESSION dialect = 'kusto'; let x = 1; print\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
+# Complete the query on the continuation line. The whole buffer now runs as one:
+# `SET SESSION` switches to Kusto, `let x = 1` binds `x`, and `print x` prints 1.
+send -- "x\r"
+expect {
+    "Syntax error" { exit 1 }
+    "Unknown expression identifier" { exit 1 }
+    -re {│ +1 │} {}
+}
+expect ":) "
+
+send -- "SET dialect = 'trino'\r"
+expect ":) "
+
+# An incomplete Trino statement folds as well: the translated statement fails to
+# parse at the end of input. `;` on the next line submits it.
+send -- "SELECT 1 +\r"
+sleep 1
+send -- "2;\r"
+expect -re {│ +3 │}
+expect ":) "
+
+send -- "\4"
+expect eof
