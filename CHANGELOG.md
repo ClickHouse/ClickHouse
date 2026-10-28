@@ -24,6 +24,24 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the nightly changelog CI job; do not edit them manually -->
+### ClickHouse release b4fae473345e73ce794e39c673ad154167fb69f5 (b4fae473345) FIXME as compared to 9a348d8c282741a1e07a112418909550f8369131 (9a348d8c282)
+
+#### Performance Improvement
+* Queries with `ARRAY JOIN` followed by `ORDER BY ... LIMIT` can run faster when the sort keys do not depend on expanded columns. The query planner can move bounded sorting below the expansion so only the top-n input rows are expanded, while the outer `LIMIT` still truncates the expanded output. For an inner `ARRAY JOIN`, an emptiness guard is inserted so rows whose arrays are all empty are filtered before the moved sort. The rewrite is controlled by `query_plan_top_k_through_array_join` and is disabled by default. [#116550](https://github.com/ClickHouse/ClickHouse/pull/116550) ([yanglongwei](https://github.com/ylw510)).
+* Faster `ORDER BY` over the result of a `JOIN` whose columns are replicated lazily (`enable_lazy_columns_replication`): merging these columns no longer pays a hash table lookup and a memory allocation for every row, and merged blocks without shared values are passed on as plain columns. The query from [#122436](https://github.com/ClickHouse/ClickHouse/issues/122436) became about 9 times faster, and sorting wide replicated values keeps the memory savings of lazy replication. [#124702](https://github.com/ClickHouse/ClickHouse/pull/124702) ([Pavel Kruglov](https://github.com/Avogar)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed `executable_pool` dictionaries, functions and the `ExecutablePool` table engine permanently losing a pool slot when a worker process failed to start, after which every call failed with `Could not get process from pool`. Also fixed child processes of executable commands being left unreaped when their startup failed. [#116619](https://github.com/ClickHouse/ClickHouse/pull/116619) ([Groene AI](https://github.com/groeneai)).
+* Reject non-digit day values in `parseDateTime` with the `%d` format. [#126486](https://github.com/ClickHouse/ClickHouse/pull/126486) ([Minh Vu](https://github.com/fallintoplace)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Not applicable — test-only change. [#123968](https://github.com/ClickHouse/ClickHouse/pull/123968) ([ClickGap AI Bot](https://github.com/clickgapai)).
+* darwin fast test: enable the job in PRs again and skip five tests failing on macOS. [#127646](https://github.com/ClickHouse/ClickHouse/pull/127646) ([Alexei Fedotov](https://github.com/leshikus)).
+* Run `04117_detach_database_kill_query` sequentially again. [#127935](https://github.com/ClickHouse/ClickHouse/pull/127935) ([Igor Nikonov](https://github.com/devcrafter)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="2611"></a> ClickHouse release 26.11, FIXME (in progress)
 
 #### Backward Incompatible Change
