@@ -108,7 +108,7 @@ Float coordinateLimit(size_t dim)
         std::sqrt(static_cast<double>(std::numeric_limits<Float>::max()) / (4.0 * static_cast<double>(dim))));
 }
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 /// Assign every point to its nearest centroid.
 ///
@@ -202,7 +202,7 @@ void accumulateSums(
     }
 }
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is disabled (ARM, and any
 /// build with `ENABLE_MULTITARGET_CODE=OFF`) only `Default` exists, which is why the kernels above are
