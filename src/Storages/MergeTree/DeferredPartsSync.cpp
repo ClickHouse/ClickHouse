@@ -18,11 +18,21 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBoolAuto group_fsync_before_insert_finish;
 }
 
+bool DeferredPartsSync::shouldSyncExistingParts(const MergeTreeData & storage)
+{
+    if (!(*storage.getSettings())[MergeTreeSetting::fsync_after_insert])
+        return false;
+
+    const auto disks = storage.getStoragePolicy()->getDisks();
+    return std::ranges::all_of(disks, [](const auto & disk) { return disk->getDataSourceDescription().type == DataSourceType::Local; });
+}
+
 bool DeferredPartsSync::isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot)
 {
-    const auto settings = storage.getSettings();
-    if (!(*settings)[MergeTreeSetting::fsync_after_insert])
+    if (!shouldSyncExistingParts(storage))
         return false;
+
+    const auto settings = storage.getSettings();
 
     /// With `auto`, only for non-replicated tables: another replica can deduplicate an insert against
     /// a part that is committed but not yet synced here, and it has no local files to sync.
@@ -30,11 +40,7 @@ bool DeferredPartsSync::isEnabled(const MergeTreeData & storage, const StorageMe
         return false;
 
     /// `MergeTreeSink::commitUniqueKeyPart` commits the parts by its own path, so they keep the inline fsync.
-    if (metadata_snapshot->hasUniqueKey())
-        return false;
-
-    const auto disks = storage.getStoragePolicy()->getDisks();
-    return std::ranges::all_of(disks, [](const auto & disk) { return disk->getDataSourceDescription().type == DataSourceType::Local; });
+    return !metadata_snapshot->hasUniqueKey();
 }
 
 DeferredPartsSync::~DeferredPartsSync()

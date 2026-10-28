@@ -33,6 +33,11 @@ public:
     /// With `group_fsync_before_insert_finish = 'auto'`, it is enabled only for non-replicated tables.
     static bool isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot);
 
+    /// Whether an insert into the table must sync the existing parts that it relies on, for example, a part
+    /// that its block is deduplicated against. It does not depend on `group_fsync_before_insert_finish`,
+    /// because such a part may be written by another insert with a different value of this setting.
+    static bool shouldSyncExistingParts(const MergeTreeData & storage);
+
     DeferredPartsSync() = default;
     DeferredPartsSync(const DeferredPartsSync &) = delete;
     DeferredPartsSync & operator=(const DeferredPartsSync &) = delete;

@@ -152,6 +152,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
             "Should be checked earlier: async inserts with quorum only make sense with enabled insert_quorum_parallel setting");
 
     defer_fsync = DeferredPartsSync::isEnabled(storage, metadata_snapshot);
+    sync_existing_parts = DeferredPartsSync::shouldSyncExistingParts(storage);
 
     LOG_TEST(log, "Create ReplicatedMergeTreeSink {} async_insert={}, deduplicate={}, quorum_size={}, max_parts_per_block={}, quorum_parallel={}, is_attach={}",
         storage.getStorageID().getNameForLogs(),
@@ -508,9 +509,10 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     break;
                 }
 
-                /// The existing local part may be committed by another insert that has not synced it yet.
-                /// This insert relies on it, so it must not be acknowledged before the part is durable.
-                if (defer_fsync)
+                /// The existing local part may be committed by another insert that has not synced it yet,
+                /// or its sync may have failed. This insert relies on it, so it must not be acknowledged
+                /// before the part is durable, even if this insert syncs its own parts inline.
+                if (sync_existing_parts)
                 {
                     for (const auto & hash : conflicts)
                         if (hash.hasConflictPartName())
@@ -1069,6 +1071,9 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
                         /// The Keeper commit may have succeeded, so `writeExistingPart` must not
                         /// move the locally committed part back to its original directory.
                         part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
+                        /// The part stays in the table, so it is synced when the sink is destroyed.
+                        if (defer_fsync)
+                            parts_to_sync.add(part);
                     }
                     else
                     {

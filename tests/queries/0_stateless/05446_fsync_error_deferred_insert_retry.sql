@@ -30,6 +30,10 @@ SELECT count(), sum(v) FROM t_fsync_error;
 
 INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
 
+-- An insert that syncs its own parts inline still relies on the existing part that it is deduplicated against.
+ALTER TABLE t_fsync_error MODIFY SETTING group_fsync_before_insert_finish = 0;
+INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (1, 1), (2, 2); -- { serverError CANNOT_FSYNC }
+
 -- Other inserts are not affected.
 INSERT INTO t_fsync_error SETTINGS insert_deduplicate = 1 VALUES (3, 3);
 SELECT count(), sum(v) FROM t_fsync_error;

@@ -13,6 +13,7 @@
 #include <base/scope_guard.h>
 
 #include <array>
+#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -53,7 +54,9 @@ namespace
 /// the part with this file, or a part produced by a mutation that hardlinks this file.
 ///
 /// The files are identified by their inodes, which are shared by the hardlinks. The failed files are kept open,
-/// so that their inodes are not reused for other files. Such failures are rare, so it costs nothing.
+/// so that their inodes are not reused for other files. When the last hardlink of a failed file is removed
+/// (for example, its part is merged away or its table is dropped), no new attempt to sync it is possible,
+/// so its descriptor is closed, and its disk space is released, see `releaseUnlinked`.
 ///
 /// The attempts to sync the same file are serialized, so that another attempt cannot start the fsync after this one
 /// consumed the error, but succeed before the failure is remembered.
@@ -86,6 +89,40 @@ public:
         {
             [[maybe_unused]] int err = ::close(fd);
         }
+        has_files.store(true, std::memory_order_relaxed);
+    }
+
+    /// Close the failed files that have no hardlinks left.
+    void releaseUnlinked()
+    {
+        if (!has_files.load(std::memory_order_relaxed))
+            return;
+
+        std::vector<struct stat> unlinked;
+        {
+            std::lock_guard lock(files_mutex);
+            for (const auto & [key, fd] : files)
+            {
+                struct stat st{};
+                if (::fstat(fd, &st) == 0 && st.st_nlink == 0)
+                    unlinked.push_back(st);
+            }
+        }
+
+        for (const auto & st : unlinked)
+        {
+            /// Serialize with the attempts to sync this file, which take the mutex for the file before `files_mutex`.
+            std::lock_guard file_lock(getMutex(st));
+            std::lock_guard lock(files_mutex);
+            auto it = files.find({st.st_dev, st.st_ino});
+            if (it == files.end())
+                continue;
+            [[maybe_unused]] int err = ::close(it->second);
+            files.erase(it);
+        }
+
+        std::lock_guard lock(files_mutex);
+        has_files.store(!files.empty(), std::memory_order_relaxed);
     }
 
 private:
@@ -94,6 +131,7 @@ private:
 
     std::mutex files_mutex;
     std::map<std::pair<dev_t, ino_t>, int> files;
+    std::atomic<bool> has_files{false};
 };
 
 void syncPath(const std::string & path)
@@ -186,6 +224,8 @@ void parallelSyncFiles(const std::vector<const MergeTreeWriterStream *> & stream
 
 void parallelSyncPaths(const std::vector<std::string> & paths)
 {
+    FailedFiles::instance().releaseUnlinked();
+
     /// Group the files into batches, so that the number of tasks does not depend on the number of files.
     static constexpr size_t batch_size = 64;
     std::vector<std::pair<size_t, size_t>> batches;
