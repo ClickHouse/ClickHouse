@@ -495,6 +495,13 @@ def run_fuzz_job(check_name: str):
     # Their contents are also merged into stderr.log/server.log, but upload the
     # originals too for debugging truncated reports.
     paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
+    # Logs of the object storage emulators started by run-fuzzer.sh
+    paths.extend([WORKSPACE_PATH / "seaweedfs.log", WORKSPACE_PATH / "azurite.log"])
+
+    # jemalloc heap profiles dumped by the server on peak growth and on hitting its memory
+    # limit, plus a symbolized rendering of the latest one (see run-fuzzer.sh).
+    jemalloc_profiles = WORKSPACE_PATH / "jemalloc.tar.zst"
+    paths.append(jemalloc_profiles)
 
     server_died = False
     server_exit_code = 0
@@ -677,6 +684,13 @@ def run_fuzz_job(check_name: str):
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)
+    elif jemalloc_profiles.exists() and Shell.check(
+        f"rg -Fqa 'after total memory exceeded' {server_log}"
+    ):
+        # The fuzzer keeps going after a server-side MEMORY_LIMIT_EXCEEDED, so a run
+        # that hit the total limit can still finish cleanly; that flush is the reason
+        # the profiles are collected.
+        result.set_files(jemalloc_profiles)
 
     result.complete_job()
 

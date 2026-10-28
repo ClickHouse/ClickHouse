@@ -24,16 +24,36 @@ The library provides its own API to send requests to a server. The library also 
 ## Setup {#setup}
 
 - Maven Central (project web page): https://mvnrepository.com/artifact/com.clickhouse/client-v2
+- Nightly builds (repository link): https://central.sonatype.com/repository/maven-snapshots/
 <br/>
+<Tabs>
+<Tab title="Maven">
 
 ```xml
 <dependency>
     <groupId>com.clickhouse</groupId>
     <artifactId>client-v2</artifactId>
-    <version>0.10.0</version>
+    <version>0.9.8</version>
 </dependency>
 ```
 
+</Tab>
+<Tab title="Gradle (Kotlin)">
+
+```kotlin
+// https://mvnrepository.com/artifact/com.clickhouse/client-v2
+implementation("com.clickhouse:client-v2:0.9.8")
+```
+</Tab>
+<Tab title="Gradle">
+
+```groovy
+// https://mvnrepository.com/artifact/com.clickhouse/client-v2
+implementation 'com.clickhouse:client-v2:0.9.8'
+```
+
+</Tab>
+</Tabs>
 <br/>
 
 ## Initialization {#initialization}
