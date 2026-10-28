@@ -260,3 +260,36 @@ ALTER TABLE t_alter_previous_commands_nested DROP COLUMN `n.a`, ADD COLUMN `n.a`
 SELECT id, `n.a`, `n.b` FROM t_alter_previous_commands_nested;
 CHECK TABLE t_alter_previous_commands_nested SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_alter_previous_commands_nested;
+
+-- The drop of a stored column does not remove the mark of default values that a later command renames to its name.
+CREATE TABLE t_alter_previous_commands_marker (id UInt64, q UInt32, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', ratio_of_defaults_for_sparse_serialization = 1.0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
+SELECT groupArray(column) FROM (SELECT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_marker' AND active ORDER BY column);
+ALTER TABLE t_alter_previous_commands_marker DROP COLUMN q, RENAME COLUMN x TO q SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_marker;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_alter_previous_commands_marker' AND NOT is_done;
+ALTER TABLE t_alter_previous_commands_marker MODIFY COLUMN q UInt32 DEFAULT 7 SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_marker;
+DETACH TABLE t_alter_previous_commands_marker;
+ATTACH TABLE t_alter_previous_commands_marker;
+SELECT * FROM t_alter_previous_commands_marker;
+DROP TABLE t_alter_previous_commands_marker;
+
+CREATE TABLE t_alter_previous_commands_marker (id UInt64, q UInt32, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', ratio_of_defaults_for_sparse_serialization = 1.0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
+ALTER TABLE t_alter_previous_commands_marker RENAME COLUMN q TO r, RENAME COLUMN x TO q SETTINGS alter_sync = 2;
+SELECT id, q, r FROM t_alter_previous_commands_marker;
+DROP TABLE t_alter_previous_commands_marker;
+
+CREATE TABLE t_alter_previous_commands_marker (id UInt64, q UInt32, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', ratio_of_defaults_for_sparse_serialization = 1.0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
+ALTER TABLE t_alter_previous_commands_marker DROP COLUMN q, RENAME COLUMN x TO q SETTINGS alter_sync = 2;
+ALTER TABLE t_alter_previous_commands_marker MODIFY COLUMN q UInt32 DEFAULT 7 SETTINGS alter_sync = 2;
+SELECT * FROM t_alter_previous_commands_marker;
+DROP TABLE t_alter_previous_commands_marker;
+
+CREATE TABLE t_alter_previous_commands_marker (id UInt64, q UInt32, x UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, skip_empty_columns_on_insert = 1, serialization_info_version = 'with_missing_columns', ratio_of_defaults_for_sparse_serialization = 1.0, enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO t_alter_previous_commands_marker VALUES (1, 42, 0);
+ALTER TABLE t_alter_previous_commands_marker RENAME COLUMN q TO r, DROP COLUMN r, ADD COLUMN r UInt32 DEFAULT 7, RENAME COLUMN x TO q SETTINGS alter_sync = 2;
+SELECT id, q, r FROM t_alter_previous_commands_marker;
+DROP TABLE t_alter_previous_commands_marker;

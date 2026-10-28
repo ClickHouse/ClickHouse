@@ -1395,7 +1395,8 @@ getColumnsForNewDataPart(
             auto it = renamed_columns_from_to.find(mc.name);
             auto new_name = it == renamed_columns_from_to.end() ? mc.name : it->second;
 
-            if (!storage_columns_set.contains(new_name) || removed_columns.contains(new_name))
+            /// A drop of a column the part stores removes that column, not a marker renamed into its name.
+            if (!storage_columns_set.contains(new_name) || (removed_columns.contains(new_name) && !part_columns.has(new_name)))
                 continue;
             if (updated_header.has(new_name))
                 continue;
@@ -1534,10 +1535,18 @@ getColumnsForNewDataPart(
                         auto renamed_from = renamed_columns_to_from.at(it->name);
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
                         if (!maybe_name_and_type)
+                        {
+                            /// Only a missing-column marker of the source part is renamed into this name, so the new part does not store it.
+                            if (serialization_infos.isMissingColumn(renamed_from))
+                            {
+                                it = storage_columns.erase(it);
+                                continue;
+                            }
                             throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Got incorrect mutation commands, column {} was renamed from {}, but it doesn't exist in source columns {}",
                                 it->name, renamed_from, source_columns.toString());
+                        }
 
                         /// A full rewrite produces this column at the type in storage, the same
                         /// way it does for the two cases around this one.
