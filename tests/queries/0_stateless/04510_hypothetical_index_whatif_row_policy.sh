@@ -30,20 +30,22 @@ SETTINGS index_granularity = 3, min_bytes_for_wide_part = 0;
 INSERT INTO tab SELECT number, number + 100 FROM numbers(12);
 
 CREATE USER $user_name;
-GRANT SELECT ON $CLICKHOUSE_DATABASE.tab TO $user_name;
+GRANT SELECT, ALTER ADD PROJECTION ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 "
 
 # A hypothetical index is session-scoped, so create it and run EXPLAIN WHATIF in the same client session.
 function check_with_policy()
 {
     # $1 = row policy USING expression, or empty for no policy.
+    # $2 = the hypothetical object to estimate, a hypothetical index by default.
+    local create_object="${2:-CREATE HYPOTHETICAL INDEX idx_v ON tab (v) TYPE minmax GRANULARITY 1}"
     if [ -n "$1" ]; then
         $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p_04510 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING $1 TO $user_name;"
     fi
 
     local output
     output=$($CLICKHOUSE_CLIENT --user "$user_name" -n -q "
-        CREATE HYPOTHETICAL INDEX idx_v ON tab (v) TYPE minmax GRANULARITY 1;
+        $create_object;
         EXPLAIN WHATIF SELECT key FROM tab WHERE v = 105;
     " 2>&1)
     local rc=$?
@@ -73,6 +75,12 @@ check_with_policy "0"
 
 # An always-true policy hides nothing, so it must NOT block the estimate.
 check_with_policy "1"
+
+# A hypothetical projection is built from every row as well, so the same applies when it is the only candidate.
+projection="CREATE HYPOTHETICAL PROJECTION p_v ON tab (SELECT key, v ORDER BY v)"
+check_with_policy "" "$projection"
+check_with_policy "key < 5" "$projection"
+check_with_policy "1" "$projection"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS tab;

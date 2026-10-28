@@ -1,0 +1,3 @@
+GRANT(p): p.s+ p.o+
+GRANT(p.s): p.s+ p.o-
+GRANT table, REVOKE(p.s): p.s- p.o+

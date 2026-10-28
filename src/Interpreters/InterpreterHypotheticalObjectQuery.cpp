@@ -137,25 +137,30 @@ BlockIO createHypotheticalIndex(
 
     /// The alias checks also read ALIAS column definitions that constant folding removed from `index_desc.expression`.
     const auto & columns = metadata->getColumns();
-    NameSet referenced_columns;
+    NameSet traversed_columns;
+    Names referenced_columns;
     auto collect_columns = [&](this auto && self, const ASTPtr & ast) -> void
     {
         RequiredSourceColumnsVisitor::Data data;
         RequiredSourceColumnsVisitor(data).visit(ast);
         for (const auto & name : data.requiredColumns())
         {
-            /// Access is granted per storage column; a name that is neither a column nor a subcolumn is an alias in the expression.
+            /// A name that is neither a column nor a subcolumn is an alias in the expression.
             const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
             if (!column)
                 continue;
+            /// Keep the requested (sub)column name: `getColumnNamesForSelectAccessCheck` below maps it to its storage
+            /// column unless a grant names the subcolumn itself.
+            referenced_columns.push_back(name);
             const String storage_name = column->getNameInStorage();
-            if (referenced_columns.insert(storage_name).second && columns.hasAlias(storage_name))
+            if (traversed_columns.insert(storage_name).second && columns.hasAlias(storage_name))
                 if (auto column_default = columns.getDefault(storage_name))
                     self(column_default->expression);
         }
     };
     collect_columns(expanded_index_decl->as<ASTIndexDeclaration &>().getExpression());
-    context->checkAccess(AccessType::SELECT, table_id, Names(referenced_columns.begin(), referenced_columns.end()));
+    context->checkAccess(
+        AccessType::SELECT, table_id, columns.getColumnNamesForSelectAccessCheck(referenced_columns, context, table_id));
 
     KeyDescription::checkNoAlias(expanded_index_decl.get(), "INDEX");
     KeyDescription::checkNoAlias(index_desc.expression_list_ast.get(), "INDEX " + index_desc.name);
