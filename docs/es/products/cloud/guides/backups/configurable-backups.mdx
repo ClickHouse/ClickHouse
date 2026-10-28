@@ -26,6 +26,8 @@ import ConfigurableBackupsCLI from "/snippets/es/cloud/backups/_configurable_bac
 
     Se abrirá una pestaña a la derecha donde podrás elegir los valores de retención, frecuencia y hora de inicio. Tendrás que guardar la configuración seleccionada para que los cambios surtan efecto.
 
+    La frecuencia de las copias de seguridad determina la antigüedad máxima que puede tener el punto de restauración más reciente (tu RPO). La retención controla cuánto tiempo se conservan los datos de las copias de seguridad, pero no reduce la antigüedad del punto de restauración más reciente. Por ejemplo, con una retención de 1 día y una frecuencia de una copia cada 48 horas, el punto de restauración más reciente puede tener casi 48 horas de antigüedad.
+
     <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Seleccionar la retención y la frecuencia de las copias de seguridad" border />
 
     <Note>

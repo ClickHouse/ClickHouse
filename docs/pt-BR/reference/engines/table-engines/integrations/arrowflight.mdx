@@ -11,9 +11,7 @@ doc_type: 'reference'
 O motor de tabela ArrowFlight permite que o ClickHouse leia de e grave em conjuntos de dados remotos por meio do protocolo [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
 Essa integração permite que o ClickHouse interaja com servidores externos com suporte a Flight no formato colunar Arrow, com alto desempenho.
 
-<div id="creating-a-table">
-  ## Criando uma tabela
-</div>
+## Criando uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
@@ -31,9 +29,7 @@ Se `username` e `password` forem omitidos, a autenticação não será usada (is
 
 A lista de colunas é opcional — se omitida, o esquema é inferido do servidor Arrow Flight remoto via `GetSchema`.
 
-<div id="named-collections">
-  ## Coleções nomeadas
-</div>
+## Coleções nomeadas {#named-collections}
 
 O motor oferece suporte a [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections) para armazenar parâmetros de conexão:
 
@@ -56,15 +52,12 @@ Parâmetros da coleção nomeada:
 | `ssl_ca`                   | Não                                  | `""`    | Caminho para o arquivo do certificado da CA para verificação TLS. |
 | `ssl_override_hostname`    | Não                                  | `""`    | Substitui o hostname verificado durante a verificação TLS.        |
 
-<div id="settings">
-  ## Configurações
-</div>
+## Configurações {#settings}
 
 * `arrow_flight_request_descriptor_type` — Controla como o nome do conjunto de dados é enviado ao servidor Flight. Valores possíveis: `path` (padrão; envia como um descritor PATH) ou `command` (envia como um descritor CMD com `SELECT * FROM <dataset>`). Use `command` em servidores Flight que esperam comandos SQL (por exemplo, Dremio).
+* `arrow_flight_request_timeout_sec` — Tempo limite, em segundos, para uma única requisição Arrow Flight; o padrão é `300`. Esse limite se aplica à requisição inteira: no caso de um `SELECT`, abrange todo o stream de resultados, e não apenas a espera pelo primeiro lote de registros. `0` significa sem tempo limite; nesse caso, um servidor Flight que aceite uma requisição e nunca responda bloqueará a consulta até que a conexão seja encerrada.
 
-<div id="usage-example">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#usage-example}
 
 Leitura de dados de um servidor remoto do Arrow Flight:
 
@@ -93,18 +86,14 @@ Inserindo dados em um servidor remoto do Arrow Flight:
 INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 ```
 
-<div id="notes">
-  ## Notas
-</div>
+## Notas {#notes}
 
 * Se colunas forem especificadas na instrução `CREATE TABLE`, elas deverão corresponder ao esquema retornado pelo servidor Flight.
 * Se as colunas forem omitidas, o esquema será inferido automaticamente do servidor remoto.
 * Há suporte tanto para leitura (`SELECT`) quanto para gravação (`INSERT`).
 * A configuração `arrow_flight_request_descriptor_type` controla se o nome do conjunto de dados é enviado como um descritor PATH ou como um descritor CMD que encapsula uma consulta `SELECT *`.
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [função de tabela arrowFlight](/pt-BR/reference/functions/table-functions/arrowflight)
 * [interface do Arrow Flight](/pt-BR/concepts/features/interfaces/arrowflight)

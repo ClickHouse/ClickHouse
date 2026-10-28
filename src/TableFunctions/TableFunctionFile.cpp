@@ -457,7 +457,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 - [Rename files after processing](/reference/settings/session-settings/other#rename_files_after_processing)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 }
 
 }

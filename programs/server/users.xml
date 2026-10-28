@@ -115,6 +115,8 @@
             <named_collection_control>1</named_collection_control>
 
             <!-- User can see the values stored in named collections, e.g. in the `system.named_collections` table.
+                 It is also required to override a key stored in a named collection when the collection is used
+                 (adding a missing key is allowed without it).
                  It is disabled by default: being able to manage named collections does not mean
                  being able to read back the credentials that are already stored in them.
 

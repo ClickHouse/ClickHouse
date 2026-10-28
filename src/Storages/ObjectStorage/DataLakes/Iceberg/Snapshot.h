@@ -27,9 +27,8 @@ struct IcebergDataSnapshot
 
     std::optional<size_t> getTotalRows() const
     {
-        if (total_rows.has_value() && total_position_delete_rows.has_value() && *total_position_delete_rows <= *total_rows
-            && total_equality_delete_rows == 0)
-            return *total_rows - *total_position_delete_rows;
+        if (total_rows.has_value() && total_position_delete_rows == 0 && total_equality_delete_rows == 0)
+            return total_rows;
         return std::nullopt;
     }
 };

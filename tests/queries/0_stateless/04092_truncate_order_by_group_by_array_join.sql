@@ -3,7 +3,6 @@
 -- projection contains arrayJoin, because it multiplies rows after GROUP BY
 -- and the "one row per group" assumption no longer holds.
 
-SET enable_analyzer = 1;
 SET optimize_truncate_order_by_after_group_by_keys = 1;
 
 DROP TABLE IF EXISTS t;
