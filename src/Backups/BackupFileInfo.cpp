@@ -229,43 +229,64 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     std::atomic_bool failed = false;
 
-    /// The runner keeps every task until the end, and a backup can have millions of entries, so a bounded number of
-    /// workers take the entries one by one from a shared index instead of a task per entry. One by one, because building
-    /// an info may read the whole file to calculate its checksum.
+    /// The runner keeps every task until the end, and a backup can have millions of entries, so the entries are claimed
+    /// one by one from a shared index instead of getting a task each. One by one, because building an info may read the
+    /// whole file to calculate its checksum, so a task that happens to claim expensive entries must not keep the others
+    /// idle.
     std::atomic<size_t> next_entry = 0;
-    const size_t num_workers = std::min<size_t>(backup_entries.size(), std::max<size_t>(thread_pool.getMaxThreads(), 1));
+
+    /// A task returns after this many entries instead of claiming until none remain, so that it releases its slot of the
+    /// thread pool, which is shared by every backup of the server and has no queue beyond its threads: the scan of a
+    /// large backup would otherwise hold every slot, and another backup could neither start its own scan nor be
+    /// cancelled while it waits. The number trades the time a slot is held for the number of tasks retained; a smaller
+    /// portion would retain more of them, and the whole point here is to retain few.
+    static constexpr size_t entries_per_task = 128;
+    const size_t num_tasks = (backup_entries.size() + entries_per_task - 1) / entries_per_task;
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
-    for (size_t worker = 0; worker != num_workers; ++worker)
+    try
     {
-        /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
-        /// of an exception
-        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &next_entry, log, &failed, current_component = Coordination::getCurrentComponent()]()
+        for (size_t task = 0; task != num_tasks; ++task)
         {
-            auto component_guard = Coordination::setCurrentComponent(current_component);
-            while (!failed)
+            if (failed)
+                break;
+
+            /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
+            /// of an exception
+            runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, &next_entry, log, &failed, current_component = Coordination::getCurrentComponent()]()
             {
-                const size_t i = next_entry.fetch_add(1);
-                if (i >= backup_entries.size())
-                    return;
-
-                try
+                auto component_guard = Coordination::setCurrentComponent(current_component);
+                for (size_t processed = 0; (processed != entries_per_task) && !failed; ++processed)
                 {
-                    const auto & name = backup_entries[i].first;
-                    const auto & entry = backup_entries[i].second;
+                    const size_t i = next_entry.fetch_add(1);
+                    if (i >= backup_entries.size())
+                        return;
 
-                    if (process_list_element)
-                        process_list_element->checkTimeLimit();
+                    try
+                    {
+                        const auto & name = backup_entries[i].first;
+                        const auto & entry = backup_entries[i].second;
 
-                    infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+                        if (process_list_element)
+                            process_list_element->checkTimeLimit();
+
+                        infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
+                    }
+                    catch (...)
+                    {
+                        failed = true;
+                        throw;
+                    }
                 }
-                catch (...)
-                {
-                    failed = true;
-                    throw;
-                }
-            }
-        });
+            });
+        }
+    }
+    catch (...)
+    {
+        /// A task that could not be scheduled leaves the running ones scanning files for a backup that has already
+        /// failed, and the runner waits for them before the error is reported.
+        failed = true;
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
