@@ -516,7 +516,9 @@ AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, cons
 void AddBlobOperation::execute()
 {
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk).value_or(DiskObjectStorageMetadata(disk.getPath(), path));
-    object_metadata.objects.push_back(object);
+    /// An empty append uploads no blob (`WriteBufferInlineOrBlob`), so there is no object to record; the file is still written.
+    if (object.bytes_size > 0)
+        object_metadata.objects.push_back(object);
 
     write_operation = std::make_unique<WriteFileOperation>(path, object_metadata.serializeToString(), disk);
     write_operation->execute();
