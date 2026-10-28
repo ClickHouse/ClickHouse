@@ -99,11 +99,13 @@ class AggregateFunctionEntropy final : public IAggregateFunctionDataHelper<Entro
 {
 private:
     size_t num_args;
+    bool normalize_floats;
 
 public:
     explicit AggregateFunctionEntropy(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {}, createResultType())
         , num_args(argument_types_.size())
+        , normalize_floats(isNegativeZeroNormalizationNeeded(argument_types_))
     {
     }
 
@@ -126,7 +128,7 @@ public:
         }
         else
         {
-            this->data(place).add(UniqVariadicHash<true, false>::apply(num_args, columns, row_num));
+            this->data(place).add(UniqVariadicHash<true, false>::apply(num_args, columns, row_num, normalize_floats));
         }
     }
 

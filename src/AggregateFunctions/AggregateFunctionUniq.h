@@ -342,14 +342,14 @@ struct Adder
     /// We have to introduce this template parameter (and a bunch of ugly code dealing with it), because we cannot
     /// add runtime branches in whatever_hash_set::insert - it will immediately pop up in the perf top.
     template <SetLevelHint hint = Data::is_able_to_parallelize_merge ? SetLevelHint::unknown : SetLevelHint::singleLevel>
-    static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num)
+    static void ALWAYS_INLINE add(Data & data, const IColumn ** columns, size_t num_args, size_t row_num, bool normalize_floats = true)
     {
         if constexpr (Data::is_variadic)
         {
             if constexpr (IsUniqExactSet<typename Data::Set>::value)
-                data.set.template insert<T, hint>(UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num));
+                data.set.template insert<T, hint>(UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num, normalize_floats));
             else
-                data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num)});
+                data.set.insert(T{UniqVariadicHash<Data::is_exact, Data::argument_is_tuple>::apply(num_args, columns, row_num, normalize_floats)});
         }
 #if USE_DATASKETCHES
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
@@ -373,16 +373,18 @@ struct Adder
         }
     }
 
-    static void addMany(Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map)
+    static void addMany(
+        Data & data, const IColumn ** columns, size_t num_args, size_t row_begin, size_t row_end, const char8_t * flags, const UInt8 * null_map,
+        bool normalize_floats = true)
     {
         bool use_single_level_hash_table = true;
         if constexpr (Data::is_able_to_parallelize_merge)
             use_single_level_hash_table = data.set.isSingleLevel();
 
         if (use_single_level_hash_table)
-            addManyImpl<SetLevelHint::singleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addManyImpl<SetLevelHint::singleLevel>(data, columns, num_args, row_begin, row_end, flags, null_map, normalize_floats);
         else
-            addManyImpl<SetLevelHint::twoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map);
+            addManyImpl<SetLevelHint::twoLevel>(data, columns, num_args, row_begin, row_end, flags, null_map, normalize_floats);
 
         if constexpr (Data::is_able_to_parallelize_merge)
         {
@@ -524,30 +526,31 @@ private:
         size_t row_begin,
         size_t row_end,
         const char8_t * flags,
-        const UInt8 * null_map)
+        const UInt8 * null_map,
+        bool normalize_floats)
     {
         if (flags && null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (!null_map[row] && flags[row])
-                    add<hint>(data, columns, num_args, row);
+                    add<hint>(data, columns, num_args, row, normalize_floats);
         }
         else if (flags)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (flags[row])
-                    add<hint>(data, columns, num_args, row);
+                    add<hint>(data, columns, num_args, row, normalize_floats);
         }
         else if (null_map)
         {
             for (size_t row = row_begin; row < row_end; ++row)
                 if (!null_map[row])
-                    add<hint>(data, columns, num_args, row);
+                    add<hint>(data, columns, num_args, row, normalize_floats);
         }
         else if constexpr (!is_batchable)
         {
             for (size_t row = row_begin; row < row_end; ++row)
-                add<hint>(data, columns, num_args, row);
+                add<hint>(data, columns, num_args, row, normalize_floats);
         }
         else
         {
@@ -793,10 +796,12 @@ private:
     static constexpr bool is_uniques_hash_set = detail::IsUniquesHashSet<typename Data::Set>::value;
 
     size_t num_args = 0;
+    bool normalize_floats = true;
 
 public:
     explicit AggregateFunctionUniqVariadic(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>(arguments, {}, std::make_shared<DataTypeUInt64>())
+        , normalize_floats(isNegativeZeroNormalizationNeeded(arguments))
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -839,7 +844,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        detail::Adder<T, ColumnTuple, Data>::add(this->data(place), columns, num_args, row_num);
+        detail::Adder<T, ColumnTuple, Data>::add(this->data(place), columns, num_args, row_num, normalize_floats);
     }
 
     ALWAYS_INLINE void addBatchSinglePlace(
@@ -850,7 +855,8 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */);
+        detail::Adder<T, ColumnTuple, Data>::addMany(
+            this->data(place), columns, num_args, row_begin, row_end, flags, nullptr /* null_map */, normalize_floats);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -866,7 +872,7 @@ public:
         if (if_argument_pos >= 0)
             flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
-        detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
+        detail::Adder<T, ColumnTuple, Data>::addMany(this->data(place), columns, num_args, row_begin, row_end, flags, null_map, normalize_floats);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
