@@ -116,12 +116,12 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [33340f0c7](https://github.com/dzbarsky/clickhouse/commit/33340f0c74afa261a53a4d1e83b8cb47a3388249), both `-c opt` builds produced the same stripped ClickHouse SHA-256 and byte count as native CMake.
+At [852a8b465](https://github.com/dzbarsky/clickhouse/commit/852a8b465ca46f13b5067d58a3201ff807a0a6d1), both `-c opt` builds produced the same stripped ClickHouse SHA-256 and byte count as native CMake.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/a226b189-6741-4404-86b2-e2c88816783d) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/3fc32385-0512-4197-a21e-ff9ef0e2e46b) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/4b14b3a1-baa2-46fd-8944-985f50ea0039) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/10953536-a9de-42cf-a6da-8f22db0281b0) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
 The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks for the previous comparison.
 
