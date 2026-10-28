@@ -80,6 +80,43 @@ SELECT count() FROM t_name_part WHERE `if(greater(v, 0), v, 0)` = 9 SETTINGS use
 ALTER TABLE t_name_part DELETE WHERE `if(greater(v, 0), v, 0)` = 9 SETTINGS mutations_sync = 2;
 SELECT count() FROM t_name_part WHERE `if(greater(v, 0), v, 0)` = 9 SETTINGS use_partition_pruning = 0;
 
+-- A lambda: the name index analysis reconstructs for the rewritten expression differs from the name of its node.
+DROP TABLE IF EXISTS t_lambda_pk;
+DROP TABLE IF EXISTS t_lambda_idx;
+DROP TABLE IF EXISTS t_lambda_part;
+
+CREATE TABLE t_lambda_pk (a Array(Int32), `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` Int32)
+ENGINE = MergeTree ORDER BY arraySum(arrayMap(x -> multiIf(x > 0, x, 0), a))
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_lambda_pk SELECT [toInt32(100 + number)], number FROM numbers(100);
+
+SELECT count() FROM t_lambda_pk WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 99;
+SELECT count() FROM t_lambda_pk WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 99 SETTINGS use_primary_key = 0;
+
+CREATE TABLE t_lambda_idx (a Array(Int32), `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` Int32, INDEX idx arraySum(arrayMap(x -> multiIf(x > 0, x, 0), a)) TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_lambda_idx SELECT [toInt32(100 + number)], number FROM numbers(100);
+
+SELECT count() FROM t_lambda_idx WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 99;
+SELECT count() FROM t_lambda_idx WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 99 SETTINGS use_skip_indexes = 0;
+
+CREATE TABLE t_lambda_part (a Array(Int32), `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` Int32)
+ENGINE = MergeTree PARTITION BY arraySum(arrayMap(x -> multiIf(x > 0, x, 0), a)) ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_lambda_part SELECT [toInt32(100 + number)], number FROM numbers(10);
+
+SELECT count() FROM t_lambda_part WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 9;
+SELECT count() FROM t_lambda_part WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 9 SETTINGS use_partition_pruning = 0;
+
+-- Partition pruning of a mutation.
+ALTER TABLE t_lambda_part DELETE WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 9 SETTINGS mutations_sync = 2;
+SELECT count() FROM t_lambda_part WHERE `arraySum(arrayMap(lambda(tuple(x), if(greater(x, 0), x, 0)), a))` = 9 SETTINGS use_partition_pruning = 0;
+
+DROP TABLE t_lambda_pk;
+DROP TABLE t_lambda_idx;
+DROP TABLE t_lambda_part;
+
 -- Without the colliding column, the rewritten filter still uses the key.
 DROP TABLE IF EXISTS t_no_collision;
 CREATE TABLE t_no_collision (v Int32)

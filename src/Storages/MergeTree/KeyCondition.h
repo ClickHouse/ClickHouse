@@ -67,10 +67,15 @@ struct DeterministicKeyTransformDag
 /// names of the key columns. `expression` computes the same key columns as the original key
 /// expression, with all (sub)expressions in the alternative form, so the paths that match key
 /// subexpressions against filter expressions by name can search it in addition to the original.
+/// `computed_names` holds every name of a computed (non-input) node of the alternative form under
+/// which a filter expression can be matched with it: `column_names`, the names of the nodes of
+/// `expression`, and the names index analysis reconstructs for those nodes (they differ e.g. for
+/// lambdas, whose bodies are reconstructed from the captured DAG).
 struct AlternativeKeyExpression
 {
     Names column_names;
     ExpressionActionsPtr expression;
+    NameSet computed_names;
 };
 
 using AlternativeKeyExpressionPtr = std::shared_ptr<const AlternativeKeyExpression>;

@@ -227,6 +227,14 @@ AlternativeKeyExpressionPtr computeAlternativeExpression(
         return nullptr;
 
     auto alternative_key = std::make_shared<AlternativeKeyExpression>();
+    for (const auto & node : canonical_dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT)
+            continue;
+        alternative_key->computed_names.insert(node.result_name);
+        alternative_key->computed_names.insert(RPNBuilderTreeNode(&node, context).getColumnName());
+    }
+    alternative_key->computed_names.insert(result.begin(), result.end());
     alternative_key->column_names = std::move(result);
     /// The expression carries the rewritten form of the key expressions; it is only searched
     /// by index analysis, never executed.
@@ -324,7 +332,9 @@ private:
 ///   key's source column, is a column of the table.
 /// - A rewritten (sub)expression can be named as another column of the table (e.g. a column named
 ///   `if(greater(v, 0), v, 0)` while the key is `multiIf(v > 0, v, 0)`), and the filter on that column
-///   would be matched with the key by name.
+///   would be matched with the key by name. The name index analysis reconstructs for a node can differ
+///   from the node's name (e.g. `arraySum(arrayMap(lambda(tuple(x), ...), a))` for a lambda), so all of
+///   them are checked, see `AlternativeKeyExpression::computed_names`.
 /// This does not depend on the settings, so it is checked for every table rather than cached.
 bool collidesWithOtherTableColumn(
     const AlternativeKeyExpression & alternative_key,
@@ -335,14 +345,16 @@ bool collidesWithOtherTableColumn(
     for (const auto & column : expression->getRequiredColumns())
         key_source_columns.insert(column);
 
+    /// Check every name a filter expression can be matched by, not only the names of the nodes:
+    /// the names index analysis reconstructs can differ from them (e.g. for lambdas).
+    for (const auto & name : alternative_key.computed_names)
+        if (table_columns.has(name))
+            return true;
+
     for (const auto & node : alternative_key.expression->getActionsDAG().getNodes())
     {
         if (node.type != ActionsDAG::ActionType::INPUT)
-        {
-            if (table_columns.has(node.result_name))
-                return true;
             continue;
-        }
 
         if (key_source_columns.contains(node.result_name))
             continue;
