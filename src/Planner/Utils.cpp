@@ -35,7 +35,7 @@
 
 #include <Storages/IStorage.h>
 
-#include <WindowFunctions/IWindowFunction.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/traverseQueryTree.h>
@@ -341,7 +341,8 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     if (!options.ignore_limits)
     {
         limits = getLimitsForStorage(settings, options);
-        leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
+        if (context.getClientInfo().distributed_depth > 0)
+            leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], settings[Setting::max_bytes_to_read_leaf], settings[Setting::read_overflow_mode_leaf]);
     }
 
     return {limits, leaf_limits};
@@ -588,6 +589,9 @@ NameSet checkAccessRights(
 {
     /// StorageDummy is created on preliminary stage, ignore access check for it.
     if (typeid_cast<const StorageDummy *>(storage.get()))
+        return {};
+
+    if (isInsertedDataOfTableFunction(storage, storage_id, query_context))
         return {};
 
     if (column_names.empty())
@@ -859,11 +863,9 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
     const auto & window_frame = window_node.getWindowFrame();
     if (!window_frame.is_default)
         return window_frame;
-    auto aggregate_function = node.getAggregateFunction();
-    if (const auto * win_func = dynamic_cast<const IWindowFunction *>(aggregate_function.get()))
-    {
-        return win_func->getDefaultFrame();
-    }
+    if (const auto general = asGeneralWindowFunction(node.getAggregateFunction()))
+        return general->getDefaultFrame();
+
     return {};
 }
 

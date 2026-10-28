@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -67,6 +68,7 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Columns definition");
     w.writeChild("columns", columns);
+    w.writeChild("codec_declarations", codec_declarations);
     w.writeChild("indices", indices);
     w.writeChild("lookup_indices", lookup_indices);
     w.writeChild("constraints", constraints);
@@ -115,6 +117,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "A column-level 'primary_key_specifier' is not allowed in `Columns` during AST JSON deserialization");
 
+    readDeclarationList.operator()<ASTCodecDeclaration>("codec_declarations", codec_declarations);
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
@@ -341,6 +344,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->columns, columns->clone());
     if (lookup_indices)
         res->set(res->lookup_indices, lookup_indices->clone());
+    if (codec_declarations)
+        res->set(res->codec_declarations, codec_declarations->clone());
     if (indices)
         res->set(res->indices, indices->clone());
     if (constraints)
@@ -376,6 +381,16 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
             auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "LOOKUP INDEX";
             elem->set(elem->elem, index->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (codec_declarations)
+    {
+        for (const auto & declaration : codec_declarations->children)
+        {
+            auto elem = make_intrusive<ASTColumnsElement>();
+            elem->prefix = "CODEC";
+            elem->set(elem->elem, declaration->clone());
             list.children.push_back(elem);
         }
     }

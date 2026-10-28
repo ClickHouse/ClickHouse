@@ -14,7 +14,7 @@
 0xfffffffffffffff0;0xfffffffffffffff2 4
 0xfffffffffffffff0;0xfffffffffffffff3 3
 0xfffffffffffffff0;0xfffffffffffffff3 3
---- trace containing a zero stops descent (find() breaks on ptr==0) ---
-0xfffffffffffffff0 7
+--- a zero frame in a trace is skipped ---
+0xfffffffffffffff0;0xfffffffffffffff2 7
 --- Error paths ---
 --- Introspection-disabled path ---
