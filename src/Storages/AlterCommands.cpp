@@ -1123,7 +1123,9 @@ void AlterCommand::apply(
                     /// carries them over unchanged, because it rewrites only the indices of the current metadata.
                     /// Keep the absence then, until a rewrite of the column (e.g. a change of its type) builds
                     /// fresh files. A type change that keeps the stored bytes (`UInt32` <-> `DateTime`) rewrites
-                    /// nothing either.
+                    /// nothing either. Neither is a rewrite guaranteed (`EPHEMERAL` keeps the data in the parts, a
+                    /// mutation can be killed), so `MergeTreeData::setProperties` does not create the index anyway
+                    /// while an active part has files under its name.
                     const bool is_physical = column.default_desc.kind != ColumnDefaultKind::Alias
                         && column.default_desc.kind != ColumnDefaultKind::Ephemeral;
                     const bool keeps_absence = !had_implicit_index && was_physical && is_physical
