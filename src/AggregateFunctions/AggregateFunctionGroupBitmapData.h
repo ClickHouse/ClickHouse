@@ -504,6 +504,55 @@ public:
     }
 
     /**
+     * Context for `rb_contains_bulk`. It caches the container found by the previous lookup in the same bitmap
+     * (or its absence), so consecutive lookups of values that share the high 16 bits skip the container search.
+     * It is bound to one bitmap: a context must not be reused with another bitmap.
+     */
+    struct BulkContext
+    {
+        const roaring::internal::container_t * container = nullptr;
+        /// High 16 bits of the previous lookup, -1 before the first lookup.
+        Int32 key = -1;
+        uint8_t typecode = 0;
+    };
+
+    /**
+     * Same as `rb_contains`, but for a sequence of lookups in the same bitmap.
+     * Unlike `roaring::Roaring::containsBulk`, a change of the container is handled by the same search as in
+     * `rb_contains` rather than by galloping from the previous container, so unordered lookups are not slower.
+     */
+    ALWAYS_INLINE UInt8 rb_contains_bulk(UInt64 x, BulkContext & context) const /// NOLINT
+    {
+        if constexpr (use_roaring64)
+            return rb_contains(x);
+        else
+        {
+            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
+                return 0;
+
+            if (isSmall())
+                return small.find(static_cast<T>(x)) != small.end();
+
+            const Value value = static_cast<Value>(static_cast<T>(x));
+            const Int32 key = static_cast<Int32>(value >> 16);
+            if (key != context.key)
+                findContainer(key, context);
+            return context.container && roaring::internal::container_contains(context.container, value & 0xFFFF, context.typecode);
+        }
+    }
+
+    /// The slow path of `rb_contains_bulk`, kept out of line so that the per-row part stays small enough to inline.
+    NO_INLINE void findContainer(Int32 key, BulkContext & context) const
+    {
+        const auto & high_low_container = roaring_bitmap->roaring.high_low_container;
+        const Int32 index = roaring::internal::ra_get_index(&high_low_container, static_cast<UInt16>(key));
+        context.key = key;
+        context.container = index < 0
+            ? nullptr
+            : roaring::internal::ra_get_container_at_index(&high_low_container, static_cast<UInt16>(index), &context.typecode);
+    }
+
+    /**
      * Convert elements to integer array, return number of elements
      */
     template <typename Element>
@@ -1003,7 +1052,8 @@ struct AggregateFunctionGroupBitmapData
 {
     // If false, all bitmap operations will be treated as merge to initialize the state
     bool init = false;
-    RoaringBitmapWithSmallSet<T, 32> roaring_bitmap_with_small_set;
+    using Bitmap = RoaringBitmapWithSmallSet<T, 32>;
+    Bitmap roaring_bitmap_with_small_set;
     static const char * name() { return "groupBitmap"; }
 };
 

@@ -38,10 +38,13 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include "config.h"
+
 using namespace DB;
 
 namespace DB::ErrorCodes
 {
+extern const int ILLEGAL_STATISTICS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -1010,3 +1013,164 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
     EXPECT_FALSE(restored->hasNullCount());
 }
+
+#if USE_DATASKETCHES
+
+TEST(Statistics, CountMinSketchRoundTrip)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    auto round_trip = [&](const ColumnStatisticsPtr & stats)
+    {
+        WriteBufferFromOwnString wb;
+        stats->serialize(wb);
+        ReadBufferFromString rb(wb.str());
+        auto restored = ColumnStatistics::deserialize(rb, data_type);
+        EXPECT_TRUE(rb.eof());
+        return restored;
+    };
+
+    auto estimate_equal = [](const ColumnStatisticsPtr & stats, UInt64 value)
+    {
+        auto estimate = stats->getStats().at(StatisticsType::CountMinSketch)->estimateEqual(Field(value));
+        EXPECT_TRUE(estimate.has_value());
+        return estimate.value_or(-1.0);
+    };
+
+    /// An empty sketch.
+    {
+        auto restored = round_trip(createTestStats({StatisticsType::CountMinSketch}, data_type));
+        ASSERT_TRUE(restored != nullptr);
+        EXPECT_DOUBLE_EQ(estimate_equal(restored, 5), 0.0);
+    }
+
+    /// 1000 rows with the values 0 .. 9, 100 rows each.
+    {
+        MutableColumnPtr col = data_type->createColumn();
+        for (UInt64 i = 0; i < 1000; ++i)
+            col->insert(i % 10);
+        auto stats = createTestStats({StatisticsType::CountMinSketch}, data_type);
+        stats->build(std::move(col));
+
+        auto restored = round_trip(stats);
+        ASSERT_TRUE(restored != nullptr);
+        EXPECT_EQ(restored->getNumRows(), 1000u);
+        for (UInt64 value : {0, 5, 9, 10})
+            EXPECT_DOUBLE_EQ(estimate_equal(restored, value), estimate_equal(stats, value)) << "value " << value;
+        EXPECT_GE(estimate_equal(restored, 5), 100.0);
+    }
+}
+
+/// A malformed sketch makes `datasketches` throw `std::invalid_argument` or `std::out_of_range`, or parse into a sketch
+/// that is read out of bounds later. Each case must be rejected with `ILLEGAL_STATISTICS`: a `std::logic_error`
+/// escaping from `deserialize` lost the part and column context and aborted debug and sanitizer builds.
+TEST(Statistics, CountMinSketchDeserializeCorrupted)
+{
+    auto data_type = std::make_shared<DataTypeUInt64>();
+
+    /// `StatisticsCountMinSketch` itself, without the `ColumnStatistics` wrapper.
+    auto create = [&]
+    {
+        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(StatisticsType::CountMinSketch, data_type);
+        EXPECT_TRUE(stats != nullptr);
+        return stats;
+    };
+
+    /// `StatisticsCountMinSketch::serialize` writes the `UInt64` size of the sketch, then the sketch.
+    auto serialize = [&](const ColumnPtr & column)
+    {
+        auto stats = create();
+        stats->build(column);
+        WriteBufferFromOwnString wb;
+        stats->serialize(wb);
+        ReadBufferFromString rb(wb.str());
+        UInt64 size = 0;
+        readIntBinary(size, rb);
+        String bytes = wb.str().substr(sizeof(UInt64));
+        EXPECT_EQ(size, bytes.size());
+        return bytes;
+    };
+
+    MutableColumnPtr col = data_type->createColumn();
+    for (UInt64 i = 0; i < 1000; ++i)
+        col->insert(i % 10);
+    const String sketch_bytes = serialize(std::move(col));
+    const String empty_sketch_bytes = serialize(data_type->createColumn());
+
+    /// The sizes of 7 hashes x 2718 buckets: two preamble longs, then the total weight and the counters.
+    ASSERT_EQ(empty_sketch_bytes.size(), 16u);
+    ASSERT_EQ(sketch_bytes.size(), 16u + 8 * (1 + 7 * 2718));
+
+    auto with_size = [](UInt64 size, const String & bytes)
+    {
+        WriteBufferFromOwnString wb;
+        writeIntBinary(size, wb);
+        wb.write(bytes.data(), bytes.size());
+        return wb.str();
+    };
+
+    /// In the second preamble long: [8, 12) the number of buckets, 12 the number of hashes, [13, 15) the seed hash.
+    auto with_dimensions = [&](UInt32 buckets, UInt8 hashes)
+    {
+        String bytes = sketch_bytes;
+        memcpy(bytes.data() + 8, &buckets, sizeof(buckets));
+        bytes[12] = static_cast<char>(hashes);
+        return with_size(bytes.size(), bytes);
+    };
+
+    auto expect_illegal_statistics = [&](const String & case_name, const String & payload)
+    {
+        SCOPED_TRACE(case_name);
+        auto stats = create();
+        const size_t allocated_bytes = stats->allocatedBytes();
+        ReadBufferFromString rb(payload);
+        try
+        {
+            stats->deserialize(rb, StatisticsFileVersion::V4);
+            ADD_FAILURE() << "expected ILLEGAL_STATISTICS";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_STATISTICS) << e.message();
+            EXPECT_NE(e.message().find("MATERIALIZE STATISTICS"), std::string::npos) << e.message();
+        }
+        catch (const std::exception & e)
+        {
+            ADD_FAILURE() << "expected DB::Exception, got std::exception: " << e.what();
+        }
+        /// The rejected sketch did not replace the existing one.
+        EXPECT_EQ(stats->allocatedBytes(), allocated_bytes);
+    };
+
+    /// The valid payloads are accepted.
+    for (const String & bytes : {sketch_bytes, empty_sketch_bytes})
+    {
+        auto stats = create();
+        const String payload = with_size(bytes.size(), bytes);
+        ReadBufferFromString rb(payload);
+        EXPECT_NO_THROW(stats->deserialize(rb, StatisticsFileVersion::V4));
+        EXPECT_TRUE(rb.eof());
+    }
+
+    {
+        String bytes = sketch_bytes;
+        bytes[13] = static_cast<char>(bytes[13] ^ 0xFF);
+        expect_illegal_statistics("seed hash", with_size(bytes.size(), bytes));
+    }
+
+    /// A valid sketch of other dimensions.
+    expect_illegal_statistics("1 hash x 3 buckets", with_dimensions(3, 1));
+
+    /// The number of counters overflows 32 bits, so `datasketches` 5.2.0 parses a sketch without counters.
+    expect_illegal_statistics("2 hashes x 2^31 buckets", with_dimensions(1u << 31, 2));
+
+    /// Truncated payloads with a consistent size. `datasketches` 5.2.0 does not detect a sketch that is
+    /// at most 16 bytes too short.
+    expect_illegal_statistics("truncated by 8 bytes", with_size(sketch_bytes.size() - 8, sketch_bytes.substr(0, sketch_bytes.size() - 8)));
+    expect_illegal_statistics("truncated to the preamble", with_size(16, sketch_bytes.substr(0, 16)));
+
+    /// A size that cannot be allocated (#91206).
+    expect_illegal_statistics("size UINT64_MAX", with_size(std::numeric_limits<UInt64>::max(), sketch_bytes));
+}
+
+#endif

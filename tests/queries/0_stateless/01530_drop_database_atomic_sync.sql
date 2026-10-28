@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: creates database
-
 drop database if exists {CLICKHOUSE_DATABASE_1:Identifier} sync;
 
 create database {CLICKHOUSE_DATABASE_1:Identifier} Engine=Atomic;
