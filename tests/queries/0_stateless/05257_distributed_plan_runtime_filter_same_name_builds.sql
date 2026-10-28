@@ -12,7 +12,7 @@ INSERT INTO s SELECT number, number FROM numbers(5000);
 INSERT INTO x SELECT number, number FROM numbers(20000);
 CREATE VIEW vs AS SELECT s.v AS v FROM s AS s JOIN r1 AS r ON s.k = r.k;
 
-SET enable_analyzer = 1, enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0;
 SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, max_rows_to_group_by = 0;
 SET query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET enable_cascades_optimizer = 1;
