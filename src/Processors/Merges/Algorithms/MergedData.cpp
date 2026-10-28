@@ -229,6 +229,8 @@ Chunk MergedData::pull()
         empty_columns.emplace_back(column->cloneEmpty());
 
     empty_columns.swap(columns);
+    for (auto & column : empty_columns)
+        finishMergedReplicatedColumn(column);
     Chunk chunk(std::move(empty_columns), merged_rows);
 
     merged_rows = 0;
