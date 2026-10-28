@@ -1924,10 +1924,44 @@ cc_binary(
         "@clickhouse_llvm_project//:cxx",
         "@clickhouse_llvm_project//:cxxabi",
         "@clickhouse//base/glibc-compatibility",
-        ":grpc_plugin_support",
+        ":grpc_cpp_generator",
         "@clickhouse_llvm_project//:unwind",
         "@clickhouse_google_protobuf//:utf8_validity",
     ],
+)
+
+_GRPC_GENERATOR_HDRS = [
+    "src/compiler/config.h",
+    "src/compiler/config_protobuf.h",
+    "src/compiler/cpp_generator.h",
+    "src/compiler/cpp_generator_helpers.h",
+    "src/compiler/generator_helpers.h",
+    "src/compiler/proto_parser_helper.h",
+    "src/compiler/protobuf_plugin.h",
+    "src/compiler/python_generator.h",
+    "src/compiler/python_generator_helpers.h",
+    "src/compiler/python_private_generator.h",
+    "src/compiler/schema_interface.h",
+]
+
+_GRPC_GENERATOR_DEPS = [
+    ":grpc++_config_proto",
+    "@clickhouse_google_protobuf//:_libprotobuf",
+    "@clickhouse_google_protobuf//:_libprotoc__compile_0",
+]
+
+ch_cc_library(
+    name = "grpc_cpp_generator",
+    srcs = [
+        "src/compiler/cpp_generator.cc",
+        "src/compiler/proto_parser_helper.cc",
+    ],
+    hdrs = _GRPC_GENERATOR_HDRS,
+    copts = _GENERATED_COPTS_1,
+    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_includes = _GRPC_LOCAL_INCLUDES,
+    visibility = ["//visibility:private"],
+    deps = _GRPC_GENERATOR_DEPS,
 )
 
 ch_cc_library(
@@ -1953,27 +1987,11 @@ ch_cc_library(
         "src/compiler/ruby_generator_map-inl.h",
         "src/compiler/ruby_generator_string-inl.h",
     ],
-    hdrs = [
-        "src/compiler/config.h",
-        "src/compiler/config_protobuf.h",
-        "src/compiler/cpp_generator.h",
-        "src/compiler/cpp_generator_helpers.h",
-        "src/compiler/generator_helpers.h",
-        "src/compiler/proto_parser_helper.h",
-        "src/compiler/protobuf_plugin.h",
-        "src/compiler/python_generator.h",
-        "src/compiler/python_generator_helpers.h",
-        "src/compiler/python_private_generator.h",
-        "src/compiler/schema_interface.h",
-    ],
+    hdrs = _GRPC_GENERATOR_HDRS,
     copts = _GENERATED_COPTS_1,
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GRPC_LOCAL_INCLUDES,
-    deps = [
-        ":grpc++_config_proto",
-        "@clickhouse_google_protobuf//:_libprotobuf",
-        "@clickhouse_google_protobuf//:_libprotoc__compile_0",
-    ],
+    deps = _GRPC_GENERATOR_DEPS,
 )
 
 ch_cc_library(

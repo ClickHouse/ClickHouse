@@ -111,8 +111,7 @@ alias(
 
 cc_library(
     name = "_aws",
-    deps = [
-        ":_aws__compile_0",
+    implementation_deps = [
         "@clickhouse_aws_checksums//:aws_checksums",
         "@clickhouse_aws_c_compression//:aws_c_compression",
         "@clickhouse_aws_c_s3//:aws_c_s3",
@@ -120,4 +119,5 @@ cc_library(
         ":_aws__compile_2",
         ":_aws__compile_3",
     ],
+    deps = [":_aws__compile_0"],
 )
