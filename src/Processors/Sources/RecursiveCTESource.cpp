@@ -444,7 +444,15 @@ private:
 
         for (size_t row = 0; row < rows; ++row)
         {
+            /// Retain one serialized key per distinct key of the step: when the key was already produced
+            /// during this step, release the just serialized copy and reuse the stored one.
             std::string_view key = serializeKey(chunk_columns, row, candidates.keys_arena);
+            auto [last_row_it, inserted] = candidates.last_row_for_key.try_emplace(key, StepCandidates::UNCHANGED);
+            if (!inserted)
+            {
+                candidates.keys_arena.rollback(key.size());
+                key = last_row_it->first;
+            }
 
             /// A row identical to the accumulated one does not change the state and is not propagated
             /// to the next step's working table. This is what terminates cycles and refutes re-derived
@@ -465,7 +473,7 @@ private:
 
                 if (!row_changed)
                 {
-                    candidates.last_row_for_key[key] = StepCandidates::UNCHANGED;
+                    last_row_it->second = StepCandidates::UNCHANGED;
                     continue;
                 }
             }
@@ -474,7 +482,7 @@ private:
             for (size_t i = 0; i < columns_size; ++i)
                 candidates.columns[i]->insertFrom(*chunk_columns[i], row);
             candidates.row_keys.push_back(key);
-            candidates.last_row_for_key[key] = new_row_index;
+            last_row_it->second = new_row_index;
         }
     }
 
