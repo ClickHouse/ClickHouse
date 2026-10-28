@@ -7,6 +7,10 @@
 
 SET session_timezone = 'UTC';
 
+-- Range-splitting fault injection can read the same granule in multiple layers.
+-- Disable it so `max_rows_to_read` measures partition pruning rather than those extra reads.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+
 DROP TABLE IF EXISTS abr;
 DROP TABLE IF EXISTS predicate_test_1;
 DROP TABLE IF EXISTS predicate_test_10;

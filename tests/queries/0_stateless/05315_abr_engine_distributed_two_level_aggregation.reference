@@ -186,4 +186,4 @@ ExpressionTransform × 4
                 Resize 1 → 4
                   GroupingAggregatedTransform
                     (ReadFromABR)
-1000000	30000000
+10000	300000

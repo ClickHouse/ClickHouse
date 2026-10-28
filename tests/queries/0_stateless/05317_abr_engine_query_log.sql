@@ -20,19 +20,24 @@ DROP TABLE IF EXISTS query_log_test_10;
 DROP TABLE IF EXISTS query_log_empty_1;
 DROP TABLE IF EXISTS query_log_empty_10;
 
+-- Keep each part in one granule so the read-limit checks do not depend on randomized granularity.
 CREATE TABLE query_log_test_1 (
     ts DateTime,
     value UInt64
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(ts)
-ORDER BY ts;
+ORDER BY ts
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 CREATE TABLE query_log_test_10 (
     ts DateTime,
     value UInt64
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(ts)
-ORDER BY ts;
+ORDER BY ts
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 -- Short retention: 500 rows at 1h granularity -> 500h of coverage.
 INSERT INTO query_log_test_1

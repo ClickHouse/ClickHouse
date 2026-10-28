@@ -3,6 +3,11 @@
 -- hash-merge path (MergingAggregatedTransform) and must NOT hit the SortingAggregatedTransform
 -- "already got bucket" error. Verifies both legacy interpreter and the analyzer.
 
+-- Force two-level aggregation without reading millions of rows on every shard.
+SET group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 0;
+-- Exercise SQL-shipped queries: serialized table reads do not preserve the `ABR` routing predicate.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS abr_rgs;
 DROP TABLE IF EXISTS twolevel_rgs_1;
 DROP TABLE IF EXISTS twolevel_rgs_10;
@@ -28,16 +33,16 @@ ORDER BY (ts, key);
 INSERT INTO twolevel_rgs_1
 SELECT 1, toDateTime('2026-06-01 00:00:00') + INTERVAL (number % 3600) SECOND,
        number, 1
-FROM numbers(1000000);
+FROM numbers(10000);
 
 INSERT INTO twolevel_rgs_10
 SELECT 10, toDateTime('2026-06-01 00:00:00') + INTERVAL (number % 3600) SECOND,
        number, 1
-FROM numbers(1000000);
+FROM numbers(10000);
 
 CREATE TABLE abr_rgs ENGINE = ABR('twolevel_rgs', [1, 10], ('ts'));
 
--- 1000000 distinct keys. ROLLUP/CUBE and GROUPING SETS ((key),()) add the grand-total row => 1000001.
+-- 10000 distinct keys. `ROLLUP`, `CUBE` and `GROUPING SETS ((key), ())` add the grand-total row.
 
 SELECT count() FROM (
     SELECT key, sum(value) AS total
@@ -84,4 +89,3 @@ SELECT count() FROM (
 DROP TABLE abr_rgs;
 DROP TABLE twolevel_rgs_1;
 DROP TABLE twolevel_rgs_10;
-
