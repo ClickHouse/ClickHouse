@@ -1357,11 +1357,13 @@ def test_drop_collection_recreated_under_table_failed_to_load(cluster):
     """The eager counterpart of `test_drop_collection_recreated_under_lazily_loaded_table`: a table
     whose load at startup fails because the collection it references does not exist is left out of
     the catalog without registering any dependency, while its metadata is loaded again at the next
-    start. If the collection is recreated, dropping it must still be refused."""
+    start. If the collection is recreated, dropping it must still be refused. The same holds for a
+    table whose load job never runs because it is cancelled after the failure of a table it depends on."""
     node = cluster.instances["node"]
 
     node.query("DROP DATABASE IF EXISTS eager_recreate_db")
     node.query("DROP NAMED COLLECTION IF EXISTS eager_recreated_collection")
+    node.query("DROP NAMED COLLECTION IF EXISTS eager_holder_collection")
 
     node.query(
         "CREATE DATABASE eager_recreate_db ENGINE = Atomic SETTINGS lazy_load_tables = 0"
@@ -1370,7 +1372,15 @@ def test_drop_collection_recreated_under_table_failed_to_load(cluster):
         "CREATE NAMED COLLECTION eager_recreated_collection AS url = 'http://localhost:8123', format = 'CSV'"
     )
     node.query(
+        "CREATE NAMED COLLECTION eager_holder_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    node.query(
         "CREATE TABLE eager_recreate_db.t (x UInt32) ENGINE = URL(eager_recreated_collection)"
+    )
+    # The scalar subquery of the constraint makes `holder` a loading dependent of `t`.
+    node.query(
+        "CREATE TABLE eager_recreate_db.holder (x UInt32, CONSTRAINT c CHECK x <= (SELECT count() FROM eager_recreate_db.t)) "
+        "ENGINE = URL(eager_holder_collection)"
     )
 
     # An unchecked drop removes the collection while the table still references it.
@@ -1379,11 +1389,15 @@ def test_drop_collection_recreated_under_table_failed_to_load(cluster):
         settings={"check_named_collection_dependencies": 0},
     )
 
-    # With `async_load_databases` (the default), the server starts, but the table fails to load.
+    # With `async_load_databases` (the default), the server starts, but the table fails to load, and the
+    # load job of `holder` is cancelled.
     node.restart_clickhouse()
 
     assert "NAMED_COLLECTION_DOESNT_EXIST" in node.query_and_get_error(
         "SELECT count() FROM eager_recreate_db.t"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION eager_holder_collection"
     )
 
     node.query(
@@ -1393,21 +1407,25 @@ def test_drop_collection_recreated_under_table_failed_to_load(cluster):
         "DROP NAMED COLLECTION eager_recreated_collection"
     )
 
-    # The failed load is not retried before the next start, where the table is loaded with the
-    # recreated collection and keeps holding it until it is dropped.
+    # The failed load is not retried before the next start, where the tables are loaded with the
+    # recreated collection and keep holding the collections until they are dropped.
     node.restart_clickhouse()
     assert (
         node.query(
-            "SELECT engine FROM system.tables WHERE database = 'eager_recreate_db' AND name = 't'"
-        ).strip()
-        == "URL"
+            "SELECT name, engine FROM system.tables WHERE database = 'eager_recreate_db' ORDER BY name"
+        )
+        == "holder\tURL\nt\tURL\n"
     )
     assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
         "DROP NAMED COLLECTION eager_recreated_collection"
     )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION eager_holder_collection"
+    )
 
     node.query("DROP DATABASE eager_recreate_db SYNC")
     node.query("DROP NAMED COLLECTION eager_recreated_collection")
+    node.query("DROP NAMED COLLECTION eager_holder_collection")
 
 
 def test_drop_not_used_by_lazily_loaded_remote_table(cluster):

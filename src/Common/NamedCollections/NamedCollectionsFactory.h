@@ -157,8 +157,11 @@ public:
     /// Records a dependency of a detached table directly, for metadata whose dependencies were never
     /// registered as active ones. `UNDROP TABLE` uses it for the metadata it moves back into the database:
     /// the attach that follows can fail or be cancelled before it registers anything (e.g. while the
-    /// collection does not exist), leaving that metadata behind.
-    void addDetachedDependency(const String & collection_name, const String & database_name, const String & table_name);
+    /// collection does not exist), leaving that metadata behind. Returns whether the entry was not
+    /// recorded yet.
+    bool addDetachedDependency(const String & collection_name, const String & database_name, const String & table_name);
+    /// Removes a single entry added by `addDetachedDependency`.
+    void removeDetachedDependency(const String & collection_name, const String & database_name, const String & table_name);
     /// The detached tables that referenced the collection when they were detached.
     std::vector<StorageID> getDetachedDependents(const String & collection_name) const;
     /// `DROP TABLE` and `DETACH TABLE ... PERMANENTLY` remove the metadata the entry stands for.

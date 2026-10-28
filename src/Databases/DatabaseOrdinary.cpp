@@ -786,13 +786,24 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
+    /// Record the collections the metadata references as dependencies of a detached table until the load
+    /// succeeds (see `loadTableFromMetadata`). Doing it here, before scheduling, also covers a job that never
+    /// runs: `AsyncLoader` cancels the jobs that depend on a failed one without executing them, and the server
+    /// keeps running with such a table left out of the catalog, while its metadata stays. Only the entries
+    /// added here are removed after the load: the ones recorded before (e.g. by `DETACH DATABASE`) must stay
+    /// until the operation that recorded them is complete.
+    std::vector<String> added_detached_dependencies;
+    for (auto & collection_name : getNamedCollectionsReferencedByTableDefinition(ast->as<const ASTCreateQuery &>()))
+        if (NamedCollectionFactory::instance().addDetachedDependency(collection_name, name.database, name.table))
+            added_detached_dependencies.push_back(std::move(collection_name));
+
     TransactionManager::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
         TablesLoaderBackgroundLoadPoolId,
         fmt::format("load table {}", name.getFullName()),
-        [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
+        [this, local_context, file_path, name, ast, mode, added_detached_dependencies](AsyncLoader &, const LoadJobPtr &)
         {
             SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
             /// The tables of the `system` database are loaded synchronously at startup, pausing them would
@@ -800,6 +811,9 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
             if (name.database != DatabaseCatalog::SYSTEM_DATABASE)
                 FailPointInjection::pauseFailPoint(FailPoints::database_ordinary_load_table_pause);
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            /// The table is in the catalog now, and its storage has registered its own dependencies.
+            for (const auto & collection_name : added_detached_dependencies)
+                NamedCollectionFactory::instance().removeDetachedDependency(collection_name, name.database, name.table);
         });
 
     return load_table[name.table] = makeLoadTask(async_loader, {job});
