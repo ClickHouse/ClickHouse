@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -65,7 +66,7 @@ using LambdaNames = std::unordered_set<String>;
 
 bool substituteBareUUIDInPlace(
     IAST & ast, bool in_table_function_position, std::string_view replacement, const LambdaNames * lambda_names = nullptr);
-bool foldConstantStringExpression(ASTPtr & argument);
+bool foldConstantStringExpression(ASTPtr & argument, const LambdaNames * lambda_names);
 
 /// Position of the type name argument of a function, or `last_type_name_argument` when the type name is
 /// always the last argument (as for the `JSONExtract` family, which takes a variable number of path arguments).
@@ -106,7 +107,7 @@ constexpr TypeNameArgument type_name_arguments[]
     {"JSONExtractKeysAndValuesCaseInsensitive", last_type_name_argument},
 };
 
-bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_view replacement)
+bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_view replacement, const LambdaNames * lambda_names)
 {
     if (!function.arguments)
         return false;
@@ -139,7 +140,7 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function, std::string_vie
     /// Fold a copy, so that an argument is replaced by a literal only when the type name in it is rewritten.
     auto & type_argument = arguments[*type_argument_index];
     ASTPtr folded_type_argument = type_argument->clone();
-    if (!foldConstantStringExpression(folded_type_argument))
+    if (!foldConstantStringExpression(folded_type_argument, lambda_names))
         return false;
 
     auto * type_literal = folded_type_argument->as<ASTLiteral>();
@@ -270,14 +271,31 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
 
     /// `azureBlobStorage` has several positional overloads. The structure, when present, is always
     /// the final argument of the corresponding overload; other trailing strings can be credentials,
-    /// a format, or a compression method and must stay unchanged.
-    const auto azure_structure_argument = [&arguments, &argument_at](size_t first_argument) -> std::vector<ASTPtr *>
+    /// a format, or a compression method and must stay unchanged. As in the parser (see
+    /// `TableFunctionObjectStorage::parseArguments` and `AzureStorageParsedArguments::fromAST`), the `SETTINGS` clause
+    /// and the first `extra_credentials(...)` do not take a positional slot.
+    const auto azure_structure_argument = [&arguments](size_t first_argument) -> std::vector<ASTPtr *>
     {
-        if (arguments.size() < first_argument)
-            return {};
+        std::vector<ASTPtr *> positional_arguments;
+        bool seen_settings = false;
+        bool seen_extra_credentials = false;
+        for (size_t index = first_argument; index < arguments.size(); ++index)
+        {
+            if (!seen_settings && arguments[index]->as<ASTSetQuery>())
+            {
+                seen_settings = true;
+                continue;
+            }
+            if (const auto * function = arguments[index]->as<ASTFunction>();
+                !seen_extra_credentials && function && function->name == "extra_credentials")
+            {
+                seen_extra_credentials = true;
+                continue;
+            }
+            positional_arguments.push_back(&arguments[index]);
+        }
 
-        const size_t argument_count = arguments.size() - first_argument;
-        switch (argument_count)
+        switch (positional_arguments.size())
         {
             case 4:
             case 6:
@@ -285,7 +303,7 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
             case 8:
             case 9:
             case 10:
-                return {argument_at(arguments.size() - 1)};
+                return {positional_arguments.back()};
             default:
                 return {};
         }
@@ -357,7 +375,7 @@ std::vector<ASTPtr *> getTableFunctionStructureArguments(ASTFunction & table_fun
 
 /// Fold every argument of the function into a string, recursively. Fails when any argument is not a
 /// constant string expression this folder understands.
-bool foldFunctionArgumentsToStrings(ASTFunction & function, std::vector<String> & values)
+bool foldFunctionArgumentsToStrings(ASTFunction & function, std::vector<String> & values, const LambdaNames * lambda_names)
 {
     values.clear();
     values.reserve(function.arguments->children.size());
@@ -365,7 +383,7 @@ bool foldFunctionArgumentsToStrings(ASTFunction & function, std::vector<String> 
     {
         /// An alias inside the folded expression can be referenced elsewhere in the query, and the folded literal
         /// cannot keep it.
-        if (!child->tryGetAlias().empty() || !foldConstantStringExpression(child))
+        if (!child->tryGetAlias().empty() || !foldConstantStringExpression(child, lambda_names))
             return false;
         const auto * literal = child->as<ASTLiteral>();
         if (literal->value.getType() != Field::Types::String)
@@ -415,7 +433,7 @@ String replaceSubstring(const String & haystack, const String & needle, const St
   * The callers fold a copy of the argument and replace the original only when they rewrite the folded literal, so that
   * an expression without a bare `UUID` is left as written.
   */
-bool foldConstantStringExpression(ASTPtr & argument)
+bool foldConstantStringExpression(ASTPtr & argument, const LambdaNames * lambda_names)
 {
     if (argument->as<ASTLiteral>())
         return true;
@@ -431,13 +449,17 @@ bool foldConstantStringExpression(ASTPtr & argument)
     if (!function || !function->arguments || function->parameters)
         return false;
 
+    /// A lambda declared with the same name takes precedence over the function (see `collectLambdaNames`).
+    if (lambda_names && lambda_names->contains(function->name))
+        return false;
+
     const auto is = [&](std::string_view name) { return equalsCaseInsensitiveString(function->name, name); };
 
     std::vector<String> values;
 
     if (is("concat"))
     {
-        if (!foldFunctionArgumentsToStrings(*function, values) || values.empty())
+        if (!foldFunctionArgumentsToStrings(*function, values, lambda_names) || values.empty())
             return false;
         String result;
         for (const auto & value : values)
@@ -448,7 +470,7 @@ bool foldConstantStringExpression(ASTPtr & argument)
 
     if (is("replaceOne") || is("replaceAll") || is("replace"))
     {
-        if (!foldFunctionArgumentsToStrings(*function, values) || values.size() != 3)
+        if (!foldFunctionArgumentsToStrings(*function, values, lambda_names) || values.size() != 3)
             return false;
         make_literal(replaceSubstring(values[0], values[1], values[2], !is("replaceOne")));
         return true;
@@ -457,7 +479,7 @@ bool foldConstantStringExpression(ASTPtr & argument)
     /// The ASCII-only case flips; `upperUTF8` / `lowerUTF8` are deliberately absent.
     if (is("upper") || is("ucase") || is("lower") || is("lcase"))
     {
-        if (!foldFunctionArgumentsToStrings(*function, values) || values.size() != 1)
+        if (!foldFunctionArgumentsToStrings(*function, values, lambda_names) || values.size() != 1)
             return false;
         const bool to_upper = is("upper") || is("ucase");
         for (auto & c : values[0])
@@ -476,7 +498,7 @@ bool foldConstantStringExpression(ASTPtr & argument)
 
 /** Rewrite the schema string of a table function in a persisted definition.
   */
-bool substituteBareUUIDInTableFunction(ASTFunction & table_function, std::string_view replacement)
+bool substituteBareUUIDInTableFunction(ASTFunction & table_function, std::string_view replacement, const LambdaNames * lambda_names)
 {
     bool substituted = false;
     for (auto * structure_argument : getTableFunctionStructureArguments(table_function))
@@ -485,7 +507,7 @@ bool substituteBareUUIDInTableFunction(ASTFunction & table_function, std::string
             continue;
         /// Fold a copy, so that an argument is replaced by a literal only when the schema in it is rewritten.
         ASTPtr folded_structure_argument = (*structure_argument)->clone();
-        if (foldConstantStringExpression(folded_structure_argument)
+        if (foldConstantStringExpression(folded_structure_argument, lambda_names)
             && substituteBareUUIDInColumnsListLiteral(*folded_structure_argument->as<ASTLiteral>(), replacement))
         {
             *structure_argument = std::move(folded_structure_argument);
@@ -495,7 +517,7 @@ bool substituteBareUUIDInTableFunction(ASTFunction & table_function, std::string
     return substituted;
 }
 
-bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function, std::string_view replacement)
+bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function, std::string_view replacement, const LambdaNames * lambda_names)
 {
     if (!function.arguments)
         return false;
@@ -509,7 +531,7 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function, std:
             return false;
         /// Fold a copy, so that the argument is replaced by a literal only when the schema in it is rewritten.
         ASTPtr folded_argument = arguments[candidate.argument_index]->clone();
-        if (!foldConstantStringExpression(folded_argument)
+        if (!foldConstantStringExpression(folded_argument, lambda_names)
             || !substituteBareUUIDInColumnsListLiteral(*folded_argument->as<ASTLiteral>(), replacement))
             return false;
         arguments[candidate.argument_index] = std::move(folded_argument);
@@ -617,10 +639,10 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position, std:
     auto * function = ast.as<ASTFunction>();
     if (function && !(lambda_names && lambda_names->contains(function->name)))
     {
-        substituted |= substituteBareUUIDInTypeNameLiteral(*function, replacement);
-        substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function, replacement);
+        substituted |= substituteBareUUIDInTypeNameLiteral(*function, replacement, lambda_names);
+        substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function, replacement, lambda_names);
         if (in_table_function_position)
-            substituted |= substituteBareUUIDInTableFunction(*function, replacement);
+            substituted |= substituteBareUUIDInTableFunction(*function, replacement, lambda_names);
     }
 
     /// A table function is recognized by its position rather than by its name, so that the schema string of any

@@ -781,9 +781,10 @@ namespace
         /// A cast between `UUID` and `UUID2` (also nested, e.g. `Tuple(UUID)` to `Tuple(UUID2)`) keeps the value but
         /// swaps the halves of its representation, so compare both entries with their `UUID` values in the same layout.
         /// A `Field` of a `Dynamic` value has its `UUID2` values in the `UUID` layout (see `ColumnDynamic::get`), so a
-        /// `Dynamic` entry is compared in the same way.
+        /// `Dynamic` entry, or an entry cast to a `Dynamic` input type (also nested), is compared in the same way.
+        const auto is_dynamic = [](const IDataType & t) { return isDynamic(t); };
         const bool cast_between_uuid_types = typesHaveDifferentUUIDLayouts(*from_type, *from_array_nested_type)
-            || anyInTypeTree(*from_array_nested_type, [](const IDataType & t) { return isDynamic(t); });
+            || anyInTypeTree(*from_array_nested_type, is_dynamic) || anyInTypeTree(*from_type, is_dynamic);
 
         const auto entry_converted_exactly = [&](size_t i)
         {
