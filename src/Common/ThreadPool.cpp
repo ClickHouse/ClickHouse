@@ -340,6 +340,7 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
     remaining_thread_job_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
+    workers_return.store(max_free_threads == 0, std::memory_order_relaxed);
 }
 
 template <typename Thread>
@@ -355,6 +356,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 
     max_threads = value;
     max_free_threads = std::min(max_free_threads, max_threads);
+    workers_return.store(max_free_threads == 0, std::memory_order_relaxed);
 
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
@@ -404,6 +406,7 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
     bool need_finish_free_threads = (value < max_free_threads);
 
     max_free_threads = std::min(value, max_threads);
+    workers_return.store(max_free_threads == 0, std::memory_order_relaxed);
 
     if (need_finish_free_threads)
     {
@@ -464,36 +467,25 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
     /// already treats its thread as running. Take a slot optimistically and give it back below if it
     /// turned out not to exist; on any early return the destructor releases it as well.
     ///
-    /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` does not take a slot: it returns
-    /// and it may wait in the queue, so it only needs a worker to free up eventually. That is impossible
-    /// only when all the slots are held by long-lived jobs, so this is the only case when it is
-    /// rejected. If it took a slot, a few such jobs that are merely queued behind ordinary finite jobs
-    /// would exhaust the slots and make the next one fail while the pool is only transiently busy. It
-    /// cannot be overtaken by a long-lived job while it waits in the queue: a job is queued only when
-    /// every worker is busy, and `scheduleThreadOrThrow` is rejected in that case (see below).
-    std::optional<ScopedDecrement> thread_job_slot;
-    if (job_occupies_thread)
+    /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` does not take a slot, see below.
+    auto on_no_slot_left = [&]
     {
-        bool no_slot_left;
-        if (!thread_job_takes_slot)
-        {
-            no_slot_left = remaining_thread_job_capacity.load(std::memory_order_relaxed) <= 0;
-        }
+        if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+            return on_error(fmt::format(
+                "all {} threads of the global thread pool are already occupied by long-lived threads, "
+                "consider increasing the `max_thread_pool_size` setting", max_threads));
         else
-        {
-            thread_job_slot.emplace(remaining_thread_job_capacity);
-            no_slot_left = thread_job_slot->valueAfterDecrement() < 0;
-        }
+            return on_error(fmt::format("all {} threads of the pool are already occupied by long-lived threads", max_threads));
+    };
 
-        if (no_slot_left)
+    std::optional<ScopedDecrement> thread_job_slot;
+    if (job_occupies_thread && thread_job_takes_slot)
+    {
+        thread_job_slot.emplace(remaining_thread_job_capacity);
+        if (thread_job_slot->valueAfterDecrement() < 0)
         {
             std::lock_guard lock(mutex); // needed to read and reset first_exception.
-            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
-                return on_error(fmt::format(
-                    "all {} threads of the global thread pool are already occupied by long-lived threads, "
-                    "consider increasing the `max_thread_pool_size` setting", max_threads));
-            else
-                return on_error(fmt::format("all {} threads of the pool are already occupied by long-lived threads", max_threads));
+            return on_no_slot_left();
         }
     }
 
@@ -551,6 +543,24 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
 
         if (finished)
             return on_error("finished");
+
+        /// A job scheduled through `scheduleReturningThreadOrQueueOrThrow` returns and may wait in the
+        /// queue, so it only needs a worker to free up eventually. That is impossible only when all the
+        /// slots are held by long-lived jobs, so this is the only case when it is rejected. If it took a
+        /// slot, a few such jobs that are merely queued behind ordinary finite jobs would exhaust the
+        /// slots and make the next one fail while the pool is only transiently busy.
+        ///
+        /// The check is made under `mutex`, which is held until the job is put into the queue, so a
+        /// long-lived job cannot overtake it once it is accepted. Every job that holds a slot and waits
+        /// in the queue, i.e. was scheduled through `scheduleThreadOrQueueOrThrow`, either took its slot
+        /// before this check (then it is counted here), or takes it after and is queued behind this job
+        /// (the queue is stable, and all these jobs have the same priority). Neither a job scheduled through
+        /// `scheduleThreadOrThrow` can take a worker before it: that one is handed only an idle or a new
+        /// worker, and a worker that finishes a job takes the next one from the queue instead of going
+        /// idle. So when this check passes, the workers that are left after all the long-lived jobs
+        /// ahead in the queue have started run only finite jobs, and one of them is going to take this job.
+        if (job_occupies_thread && !thread_job_takes_slot && remaining_thread_job_capacity.load(std::memory_order_relaxed) <= 0)
+            return on_no_slot_left();
 
         /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
         /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
@@ -1151,11 +1161,14 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         /// transient saturation of the global pool into an error for callers that cannot handle one,
         /// such as the mandatory spawn of a worker in `AsyncLoader`.
         ///
-        /// If the jobs of the local pool always return and it keeps no free threads, its worker does not
-        /// hold a global thread for long, so it does not take a slot either (see `setWorkersReturn`).
+        /// If the local pool keeps no free threads, its worker does not hold a global thread for long: it
+        /// leaves as soon as it finds no job (see `returns_when_idle`), and the jobs of such pools return.
+        /// So it does not take a slot either. Otherwise the workers of such pools, merely running finite
+        /// jobs, would exhaust the slots while the global pool is only transiently busy.
+        returns_when_idle = parent_pool.workers_return.load(std::memory_order_relaxed);
         thread = Thread(
-            parent_pool.workers_return ? ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted
-                                       : ThreadFromGlobalPoolScheduleMode::ReserveSlot,
+            returns_when_idle ? ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted
+                              : ThreadFromGlobalPoolScheduleMode::ReserveSlot,
             &ThreadFromThreadPool::worker,
             this);
     }
@@ -1341,6 +1354,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
                 && !initial_job
+                && !returns_when_idle
                 && !parent_pool.finished
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {

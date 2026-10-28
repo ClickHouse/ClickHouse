@@ -1709,6 +1709,54 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindOrdinaryGlobalJobs)
     t.loader.wait();
 }
 
+// The workers of an ordinary local pool that keeps no free threads, such as most of the shared pools,
+// run finite jobs, so they must not use up the slots that a mandatory spawn of a loader worker needs.
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkers)
+{
+    GlobalThreadPoolLimits limits;
+    static constexpr size_t capacity = 2;
+    limits.pool.setMaxThreads(capacity);
+    limits.pool.setMaxFreeThreads(0);
+    limits.pool.setQueueSize(1000);
+
+    AsyncLoaderTest t(16);
+    t.loader.unpause(); // Idle: the pool has no worker, so the next enqueue requires a spawn
+
+    std::atomic<size_t> started{0};
+    std::atomic<bool> release{false};
+    ThreadPool local_pool(
+        CurrentMetrics::TablesLoaderBackgroundThreads,
+        CurrentMetrics::TablesLoaderBackgroundThreadsActive,
+        CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
+        /* max_threads = */ capacity,
+        /* max_free_threads = */ 0,
+        /* queue_size = */ 0);
+    for (size_t i = 0; i < capacity; i++)
+    {
+        local_pool.scheduleOrThrowOnError([&]
+        {
+            started++;
+            while (!release.load())
+                std::this_thread::yield();
+        });
+    }
+    while (started != capacity)
+        std::this_thread::yield();
+
+    std::atomic<size_t> jobs_done{0};
+    auto task = t.schedule({makeLoadJob({}, "job", [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; })});
+    const size_t jobs_done_while_busy = jobs_done;
+
+    release = true;
+    waitLoad(task);
+    local_pool.wait();
+    t.loader.wait();
+    limits.restore();
+
+    ASSERT_EQ(jobs_done_while_busy, 0);
+    ASSERT_EQ(jobs_done, 1);
+}
+
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits
 // for a job of another pool, a case that priority inheritance does not convert into a same-pool wait.
 // Treating it as a drainer leaves that pool's queue with nobody to run it.

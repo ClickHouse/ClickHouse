@@ -97,6 +97,12 @@ public:
         /// whose function has not started.
         std::unique_ptr<JobWithPriority> initial_job;
 
+        /// Set for a worker of a local pool that keeps no free threads when the worker is created. Such a
+        /// worker takes no slot of the global pool (see `ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted`),
+        /// so it leaves as soon as it finds no job instead of waiting in the idle stack, even if
+        /// `max_free_threads` was increased since.
+        bool returns_when_idle = false;
+
         /// Per-thread condition variable for LIFO idle scheduling.
         /// Each idle thread waits on its own CV, so the scheduler can wake the
         /// LIFO-selected thread directly without disturbing other idle threads.
@@ -192,12 +198,6 @@ public:
     /// Otherwise it waits in the queue for any number of such threads scheduled at the same time.
     void scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
-    /// Declares that every job of this local pool returns after a finite time, and the pool keeps no
-    /// free threads (`max_free_threads` is zero), so its workers do not hold threads of the global pool
-    /// for long. They are then scheduled through `scheduleReturningThreadOrQueueOrThrow` instead of
-    /// `scheduleThreadOrQueueOrThrow`. Must be called before the first job is scheduled.
-    void setWorkersReturn() { workers_return = true; }
-
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread has thrown an exception, the first exception will be rethrown from this method,
@@ -289,8 +289,11 @@ private:
 
     bool finished = false;
     bool threads_remove_themselves = true;
-    /// See `setWorkersReturn`.
-    bool workers_return = false;
+    /// Whether `max_free_threads` is zero. Then the workers of a local pool do not hold threads of the
+    /// global pool for long, so they are scheduled through `scheduleReturningThreadOrQueueOrThrow` instead
+    /// of `scheduleThreadOrQueueOrThrow`. The jobs of such pools must return after a finite time. A copy
+    /// of `max_free_threads == 0` that can be read without `mutex`, when a worker is created.
+    std::atomic<bool> workers_return = false;
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;

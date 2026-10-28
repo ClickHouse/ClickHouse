@@ -59,14 +59,9 @@ AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
           init.metric_active_threads,
           init.metric_scheduled_threads,
           /* max_threads = */ ThreadPool::MAX_THEORETICAL_THREAD_COUNT, // Unlimited number of threads, we do worker management ourselves
-          /* max_free_threads = */ 0, // We do not require free threads
+          /* max_free_threads = */ 0, // We do not require free threads, and then a worker takes no slot of the global pool (see `ThreadPoolImpl::workers_return`)
           /* queue_size = */ 0)) // Unlimited queue to avoid blocking during worker spawning
-{
-    // A worker returns when the ready queue of its pool is empty, and no free threads are kept, so a
-    // worker does not hold a thread of the global pool for long. A mandatory spawn must not fail while
-    // the global pool is only transiently busy: it is not allowed to fail (see `spawn`).
-    thread_pool->setWorkersReturn();
-}
+{}
 
 AsyncLoader::Pool::Pool(Pool&& o) noexcept
     : name(o.name)

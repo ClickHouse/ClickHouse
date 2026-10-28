@@ -87,8 +87,8 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
         std::vector<std::unique_ptr<ThreadPool>> local_pools;
         for (size_t i = 0; i < local_pools_count; ++i)
         {
-            /// Like the pools of `AsyncLoader`: the jobs return and no free threads are kept, so an idle
-            /// worker leaves and frees its global-pool thread.
+            /// Like the pools of `AsyncLoader` and many others: the jobs return and no free threads are
+            /// kept, so an idle worker leaves and frees its global-pool thread.
             local_pools.push_back(std::make_unique<ThreadPool>(
                 CurrentMetrics::LocalThread,
                 CurrentMetrics::LocalThreadActive,
@@ -96,7 +96,6 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
                 /* max_threads = */ 1,
                 /* max_free_threads = */ 0,
                 /* queue_size = */ 0));
-            local_pools.back()->setWorkersReturn();
             try
             {
                 local_pools.back()->scheduleOrThrowOnError([&] { ++local_jobs_ran; });
@@ -121,6 +120,56 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
 
     /// Now no job of this test is left in the global pool.
     global_pool.wait();
+}
+
+/// A worker that takes no slot of the global pool is accepted only while a slot is left. Once it is
+/// accepted, a worker that takes the last slot and never returns must not overtake it in the queue,
+/// otherwise the first one would never start.
+TEST(ThreadPool, ReturningWorkerIsNotOvertakenByLongLivedWorker)
+{
+    GlobalThreadPool & global_pool = GlobalThreadPool::instance();
+
+    SCOPE_EXIT({
+        global_pool.setMaxThreads(10000);
+        global_pool.setMaxFreeThreads(1000);
+        global_pool.setQueueSize(10000);
+    });
+
+    global_pool.setMaxThreads(1);
+    global_pool.setMaxFreeThreads(0);
+    global_pool.setQueueSize(1000);
+    global_pool.wait();
+
+    std::atomic<bool> ordinary_started = false;
+    std::atomic<bool> release_ordinary = false;
+    global_pool.scheduleOrThrow([&] { ordinary_started = true; while (!release_ordinary.load()) {} });
+    while (!ordinary_started)
+        ;
+
+    /// Keeps no free threads, so its worker takes no slot and waits in the queue behind the ordinary job.
+    std::atomic<bool> returning_job_ran = false;
+    ThreadPool returning_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
+    returning_pool.scheduleOrThrowOnError([&] { returning_job_ran = true; });
+
+    /// Keeps a free thread, so its worker takes the last slot, and it does not return until released.
+    std::atomic<bool> long_lived_started = false;
+    std::atomic<bool> release_long_lived = false;
+    ThreadPool long_lived_pool(
+        CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
+        /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    long_lived_pool.scheduleOrThrowOnError([&] { long_lived_started = true; while (!release_long_lived.load()) {} });
+
+    release_ordinary = true;
+
+    /// The returning worker was accepted first, so it runs first, while the long-lived one still waits.
+    returning_pool.wait();
+    EXPECT_TRUE(returning_job_ran);
+
+    release_long_lived = true;
+    long_lived_pool.wait();
+    EXPECT_TRUE(long_lived_started);
 }
 
 TEST(ThreadPool, GlobalThreadCanWaitBehindOrdinaryJobs)
