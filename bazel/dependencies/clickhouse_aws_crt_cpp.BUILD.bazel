@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:source_header_directories.bzl", "source_header_directories")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -63,6 +64,7 @@ ch_cc_library(
         "config/contrib/aws-cmake/include",
     ],
     local_defines = AWS_CRT_DEFINES,
+    source_header_directories = source_header_directories(["include/aws/crt/io"]),
     deps = [
         "@clickhouse_aws_c_auth//:aws_c_auth",
         "@clickhouse_aws_c_cal//:aws_c_cal",

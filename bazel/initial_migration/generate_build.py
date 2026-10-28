@@ -71,6 +71,9 @@ FIRST_PARTY_HEADER_DEPS = {
     ("src", "clickhouse_common_io__compile_0", "implementation_deps"): [
         "//src/Parsers:parser_api", "//src/Parsers:clickhouse_parsers",
     ],
+    ("src", "dbms__compile_0", "implementation_deps"): [
+        ("@clickhouse_grpc//:grpc_c_api", "@clickhouse_flatbuffers//:_flatbuffers"),
+    ],
     ("src", "dbms__compile_0", "deps"): [
         "@clickhouse_sqlite_amalgamation//:_sqlite", "//contrib/cityhash102:_cityhash",
         "//src/Access/Common:headers", "@clickhouse_google_protobuf//:_libprotobuf",

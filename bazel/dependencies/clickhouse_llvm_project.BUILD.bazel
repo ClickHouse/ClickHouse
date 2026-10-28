@@ -1126,6 +1126,7 @@ cc_library(
     source_header_directories = source_header_directories([
         "llvm/include/llvm-c",
         "llvm/include/llvm/ADT",
+        "llvm/include/llvm/BinaryFormat/ELFRelocs",
         "llvm/include/llvm/CAS",
         "llvm/include/llvm/DWARFLinker",
         "llvm/include/llvm/DebugInfo/GSYM",
@@ -1133,6 +1134,7 @@ cc_library(
         "llvm/include/llvm/DebugInfo/PDB/Native",
         "llvm/include/llvm/MCA",
         "llvm/include/llvm/ObjCopy",
+        "llvm/include/llvm/SandboxIR",
     ]),
     textual_hdrs = [
         ":llvm_generated_headers",

@@ -118,19 +118,6 @@ _GRPC_GENERATED_PUBLIC_HEADERS = [
 ])
 
 _GRPC_CORE_PUBLIC_HEADERS = [
-    "include/grpc/byte_buffer_reader.h",
-    "include/grpc/compression.h",
-    "include/grpc/create_channel_from_endpoint.h",
-    "include/grpc/credentials.h",
-    "include/grpc/grpc_crl_provider.h",
-    "include/grpc/grpc_posix.h",
-    "include/grpc/grpc_security.h",
-    "include/grpc/grpc_security_constants.h",
-    "include/grpc/impl/call.h",
-    "include/grpc/passive_listener.h",
-    "include/grpc/private_key_signer.h",
-    "include/grpc/support/json.h",
-    "include/grpc/support/metrics.h",
     "src/core/call/call_arena_allocator.h",
     "src/core/call/call_destination.h",
     "src/core/call/call_filters.h",
@@ -738,6 +725,64 @@ _GENERATED_COPTS_1 = [
     "-std=c++17",
 ]
 
+cc_library(
+    name = "grpc_c_api",
+    hdrs = [
+        "include/grpc/byte_buffer.h",
+        "include/grpc/byte_buffer_reader.h",
+        "include/grpc/compression.h",
+        "include/grpc/create_channel_from_endpoint.h",
+        "include/grpc/credentials.h",
+        "include/grpc/grpc.h",
+        "include/grpc/grpc_crl_provider.h",
+        "include/grpc/grpc_posix.h",
+        "include/grpc/grpc_security.h",
+        "include/grpc/grpc_security_constants.h",
+        "include/grpc/impl/call.h",
+        "include/grpc/impl/channel_arg_names.h",
+        "include/grpc/impl/codegen/slice.h",
+        "include/grpc/impl/compression_types.h",
+        "include/grpc/impl/connectivity_state.h",
+        "include/grpc/impl/grpc_types.h",
+        "include/grpc/impl/propagation_bits.h",
+        "include/grpc/impl/slice_type.h",
+        "include/grpc/passive_listener.h",
+        "include/grpc/private_key_signer.h",
+        "include/grpc/slice.h",
+        "include/grpc/slice_buffer.h",
+        "include/grpc/status.h",
+        "include/grpc/support/alloc.h",
+        "include/grpc/support/atm.h",
+        "include/grpc/support/atm_gcc_atomic.h",
+        "include/grpc/support/atm_gcc_sync.h",
+        "include/grpc/support/atm_windows.h",
+        "include/grpc/support/cpu.h",
+        "include/grpc/support/json.h",
+        "include/grpc/support/log.h",
+        "include/grpc/support/log_windows.h",
+        "include/grpc/support/metrics.h",
+        "include/grpc/support/port_platform.h",
+        "include/grpc/support/string_util.h",
+        "include/grpc/support/sync.h",
+        "include/grpc/support/sync_abseil.h",
+        "include/grpc/support/sync_custom.h",
+        "include/grpc/support/sync_generic.h",
+        "include/grpc/support/sync_posix.h",
+        "include/grpc/support/sync_windows.h",
+        "include/grpc/support/thd_id.h",
+        "include/grpc/support/time.h",
+    ] + glob(["include/grpc/event_engine/**/*.h"]),
+    includes = ["include"],
+    deps = [
+        "@clickhouse_abseil_cpp//:absl_function_ref",
+        "@clickhouse_abseil_cpp//:absl_span",
+        "@clickhouse_abseil_cpp//:absl_status",
+        "@clickhouse_abseil_cpp//:absl_statusor",
+        "@clickhouse_abseil_cpp//:absl_strings",
+        "@clickhouse_abseil_cpp//:absl_utility",
+    ],
+)
+
 ch_cc_library(
     name = "gpr",
     srcs = [
@@ -785,36 +830,6 @@ ch_cc_library(
         "src/core/util/tmpfile.h",
     ],
     hdrs = [
-        "include/grpc/byte_buffer.h",
-        "include/grpc/grpc.h",
-        "include/grpc/impl/channel_arg_names.h",
-        "include/grpc/impl/codegen/slice.h",
-        "include/grpc/impl/compression_types.h",
-        "include/grpc/impl/connectivity_state.h",
-        "include/grpc/impl/grpc_types.h",
-        "include/grpc/impl/propagation_bits.h",
-        "include/grpc/impl/slice_type.h",
-        "include/grpc/slice.h",
-        "include/grpc/slice_buffer.h",
-        "include/grpc/status.h",
-        "include/grpc/support/alloc.h",
-        "include/grpc/support/atm.h",
-        "include/grpc/support/atm_gcc_atomic.h",
-        "include/grpc/support/atm_gcc_sync.h",
-        "include/grpc/support/atm_windows.h",
-        "include/grpc/support/cpu.h",
-        "include/grpc/support/log.h",
-        "include/grpc/support/log_windows.h",
-        "include/grpc/support/port_platform.h",
-        "include/grpc/support/string_util.h",
-        "include/grpc/support/sync.h",
-        "include/grpc/support/sync_abseil.h",
-        "include/grpc/support/sync_custom.h",
-        "include/grpc/support/sync_generic.h",
-        "include/grpc/support/sync_posix.h",
-        "include/grpc/support/sync_windows.h",
-        "include/grpc/support/thd_id.h",
-        "include/grpc/support/time.h",
         "src/core/config/config_vars.h",
         "src/core/lib/event_engine/thread_local.h",
         "src/core/util/construct_destruct.h",
@@ -838,7 +853,7 @@ ch_cc_library(
         "src/core/util/time_precise.h",
         "src/core/util/time_util.h",
         "src/core/util/useful.h",
-    ] + glob(["include/grpc/event_engine/**/*.h"]),
+    ],
     copts = _GENERATED_COPTS_1,
     implementation_deps = [
         "@clickhouse_abseil_cpp//:absl_log_globals",
@@ -851,6 +866,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = _GRPC_LOCAL_INCLUDES,
     deps = [
+        ":grpc_c_api",
         "@clickhouse_abseil_cpp//:absl_status",
         "@clickhouse_abseil_cpp//:absl_log_internal_check_impl",
         "@clickhouse_abseil_cpp//:absl_statusor",
@@ -1321,6 +1337,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GRPC_LOCAL_INCLUDES,
     deps = [
+        ":grpc_c_api",
         "@clickhouse_openssl//:ssl",
         ":gpr",
         ":grpc__compile_1",
@@ -1669,10 +1686,7 @@ ch_cc_library(
 
 cc_library(
     name = "grpc",
-    includes = [
-        "include",
-    ],
-    deps = [
+    implementation_deps = [
         "@clickhouse_zlib_ng//:_zlib",
         ":address_sorting",
         ":gpr",
@@ -1681,6 +1695,7 @@ cc_library(
         ":grpc__compile_0",
         ":grpc__compile_1",
     ],
+    deps = [":grpc_c_api"],
 )
 
 # grpc_cpp_plugin emits ports_def.inc and ports_undef.inc in generated
@@ -1750,6 +1765,9 @@ ch_cc_library(
     hdrs = _GRPC_CPP_PUBLIC_HEADERS,
     copts = _GENERATED_COPTS_2,
     implementation_deps = [
+        ":grpc",
+        ":gpr",
+        ":grpc__compile_0",
         ":upb_mini_table_lib",
         "@clickhouse_abseil_cpp//:absl_base_config",
         "@clickhouse_abseil_cpp//:absl_statusor",
@@ -1768,9 +1786,7 @@ ch_cc_library(
     textual_hdrs = glob(["include/grpcpp/*.inc"]),
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
-        ":grpc",
-        ":gpr",
-        ":grpc__compile_0",
+        ":grpc_c_api",
         "@clickhouse_abseil_cpp//:absl_cord",
         "@clickhouse_abseil_cpp//:absl_die_if_null",
         "@clickhouse_abseil_cpp//:absl_function_ref",
@@ -1837,6 +1853,9 @@ ch_cc_library(
     hdrs = _GRPC_CPP_PUBLIC_HEADERS,
     copts = _GENERATED_COPTS_1,
     implementation_deps = [
+        ":grpc_unsecure",
+        ":gpr",
+        ":grpc_unsecure__compile_0",
         ":upb_mini_table_lib",
         "@clickhouse_abseil_cpp//:absl_base_config",
         "@clickhouse_abseil_cpp//:absl_statusor",
@@ -1847,9 +1866,7 @@ ch_cc_library(
     textual_hdrs = glob(["include/grpcpp/*.inc"]),
     deps = [
         "@clickhouse_google_protobuf//:_libprotobuf",
-        ":grpc_unsecure",
-        ":gpr",
-        ":grpc_unsecure__compile_0",
+        ":grpc_c_api",
         "@clickhouse_abseil_cpp//:absl_cord",
         "@clickhouse_abseil_cpp//:absl_die_if_null",
         "@clickhouse_abseil_cpp//:absl_function_ref",
@@ -2212,6 +2229,7 @@ ch_cc_library(
     local_defines = _GENERATED_LOCAL_DEFINES_1,
     local_includes = _GRPC_LOCAL_INCLUDES,
     deps = [
+        ":grpc_c_api",
         ":gpr",
         ":grpc_unsecure__compile_1",
         ":upb_message_lib",
@@ -2279,10 +2297,7 @@ ch_cc_library(
 
 cc_library(
     name = "grpc_unsecure",
-    includes = [
-        "include",
-    ],
-    deps = [
+    implementation_deps = [
         "@clickhouse_zlib_ng//:_zlib",
         ":address_sorting",
         ":gpr",
@@ -2290,6 +2305,7 @@ cc_library(
         ":grpc_unsecure__compile_0",
         ":grpc_unsecure__compile_1",
     ],
+    deps = [":grpc_c_api"],
 )
 
 ch_cc_library(

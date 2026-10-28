@@ -423,7 +423,7 @@ cc_library(
         "//conditions:default": _WINAPI_HEADERS + _NON_LINUX_HEADERS,
     }),
     features = ["external_include_paths"],
-    source_header_directories = boost_source_header_directories(_BOOST_PUBLIC_HEADERS, _BOOST_TEXTUAL_HEADERS),
+    source_header_directories = boost_source_header_directories(_BOOST_PUBLIC_HEADERS, _BOOST_TEXTUAL_HEADERS, _BOOST_IMPLEMENTATIONS),
     textual_hdrs = _BOOST_TEXTUAL_HEADERS,
     deps = [
         ":boost_asio_options",

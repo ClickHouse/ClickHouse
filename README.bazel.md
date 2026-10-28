@@ -63,6 +63,19 @@ Wasmtime and pcodec. Its command line still names each original source file.
 cbindgen stages the vendored crates and Delta Kernel by directory, while keeping
 files it names separately, such as Delta Kernel's `ffi/Cargo.toml`, as individual inputs.
 
+MongoDB and LLVM stage complete directories of public and textual
+headers. Boost, AWS, and simdjson can also stage complete directories
+containing their own private headers; direct header visibility stays
+unchanged. gRPC keeps its implementation headers out of consumer
+compile actions. Its secure and insecure libraries share the public C
+headers. `//src:dbms__compile_0` no longer exports the Prometheus
+grammar.
+Compared with `a1b2c5e82`, the complete change gave these declared input
+counts for local configured compile actions:
+
+- `src/Functions/area.cpp` (x86_64, normal): 15,752 to 13,452 inputs.
+- `src/Functions/area.cpp` (aarch64, normal): 15,693 to 13,393 inputs.
+
 These x86-64 timing profiles predate the source directory changes.
 They used a local Bazel client with `--jobs=2000`
 and a warm repository cache. Each run set a fresh target `--action_env` cache

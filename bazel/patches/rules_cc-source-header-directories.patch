@@ -47,15 +47,19 @@ diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/c
  load(
      "//cc/common:cc_helper_internal.bzl",
      "extensions",
-@@ -411,6 +412,45 @@
+@@ -411,6 +412,50 @@
  
      actions.write(module_map.file, content = content, is_executable = True, mnemonic = "CppModuleMap")
  
 +def _stage_header_directories(public_headers, textual_headers, private_headers, directories, repo_path, include_dirs):
 +    include_prefixes = tuple([d.rstrip("/") + "/" for d in include_dirs if d and d != "."])
 +    public = set(public_headers)
-+    declared = public.union(textual_headers)
-+    individual_only = public.intersection(textual_headers).union(private_headers)
++    textual = set(textual_headers)
++    private = set(private_headers)
++    # .cpp and header-like inputs supplied through additional_inputs stay individual.
++    packable_private = [f for f in private_headers if f.extension in ("h", "hh", "hpp", "hxx", "inl", "ipp", "tcc", "tpp")]
++    declared = public.union(textual).union(packable_private)
++    individual_only = public.intersection(textual).union(private.intersection(public.union(textual)))
 +    covered = set()
 +    roots = []
 +    prefixes = []
@@ -73,7 +77,7 @@ diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/c
 +        if not members or not all([f.is_source and f.path.startswith(prefix) for f in members]):
 +            fail("{} must enumerate the source files under {}".format(target.label, info.path))
 +        if not declared.issuperset(members) or not individual_only.isdisjoint(members):
-+            # Only group directories with a public or textual declaration for every file.
++            # Only group complete directories of singly classified headers owned by this target.
 +            continue
 +        if not covered.isdisjoint(members):
 +            fail("overlapping source_header_directories at {}".format(info.path))
@@ -81,19 +85,20 @@ diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/c
 +        roots.append(files[0])
 +        prefixes.append(prefix)
 +    if not roots:
-+        return public_headers + textual_headers
++        return public_headers + textual_headers + private_headers
 +    individual_public = [f for f in public_headers if f not in covered]
 +    individual_textual = [f for f in textual_headers if f not in covered]
 +    directory_prefixes = tuple(prefixes)
-+    for f in individual_public + individual_textual + private_headers:
++    individual_private = [f for f in private_headers if f not in covered]
++    for f in individual_public + individual_textual + individual_private:
 +        if f.path.startswith(directory_prefixes):
 +            fail("source_header_directories did not enumerate {}".format(f.path))
-+    return individual_public + roots + individual_textual
++    return individual_public + roots + individual_textual + individual_private
 +
  def _init_cc_compilation_context(
          # DO NOT use ctx, this is a temporary placeholder
          # to avoid adding a new field to CcCompilationHelper.
-@@ -427,6 +467,7 @@
+@@ -427,6 +472,7 @@
          local_includes,
          feature_configuration,
          public_headers_artifacts,
@@ -101,12 +106,13 @@ diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/c
          include_prefix,
          strip_include_prefix,
          non_module_map_headers,
-@@ -537,7 +578,22 @@
+@@ -537,7 +583,22 @@
      else:
          virtual_to_original_headers = []
  
 -    declared_include_srcs.extend(public_headers.headers)
 -    declared_include_srcs.extend(textual_headers.headers)
+-    declared_include_srcs.extend(private_headers_artifacts)
 +    # Keep individual headers in HeaderInfo and module maps. Bazel checks .d
 +    # entries against individual inputs outside system and external include dirs.
 +    if (source_header_directories and repo_name and not include_prefix and not strip_include_prefix and
@@ -124,7 +130,7 @@ diff --git a/cc/private/compile/cc_compilation_helper.bzl b/cc/private/compile/c
 +    else:
 +        declared_include_srcs.extend(public_headers.headers)
 +        declared_include_srcs.extend(textual_headers.headers)
-     declared_include_srcs.extend(private_headers_artifacts)
++        declared_include_srcs.extend(private_headers_artifacts)
      declared_include_srcs.extend(additional_inputs)
 diff --git a/cc/private/compile/compile.bzl b/cc/private/compile/compile.bzl
 --- a/cc/private/compile/compile.bzl
@@ -141,7 +147,7 @@ diff --git a/cc/private/compile/compile.bzl b/cc/private/compile/compile.bzl
          srcs: The list of source files to be compiled.",
          public_hdrs: List of headers needed for compilation of srcs and may be included by
              dependent rules transitively.
-+        source_header_directories: Targets whose source directory contains only declared public or textual headers.
++        source_header_directories: Targets whose source directory contains only declared public, textual, or private headers.
          private_hdrs: List of headers needed for compilation of srcs and NOT to be included by
              dependent rules. May be a list of File objects or a list of (File, Label) tuples.
              The latter option exists for the method collectPerFileCopts() which in turn supports
@@ -182,7 +188,7 @@ diff --git a/cc/private/rules_impl/cc_library.bzl b/cc/private/rules_impl/cc_lib
 +        "source_header_directories": attr.label_list(
 +            providers = [DirectoryInfo],
 +            doc = """
-+Source directories whose contents are already declared in <code>hdrs</code> or <code>textual_hdrs</code>.
++Source directories whose contents are already declared as public, textual, or private headers by this target.
 +Each target must provide the complete directory in <code>DefaultInfo.files</code>
 +and enumerate its files in <code>DirectoryInfo</code>. With external include
 +paths, these directories replace individual compile inputs. Header declarations

@@ -196,6 +196,7 @@ DEPENDENCIES = {
         '@clickhouse_grpc//:address_sorting', '@clickhouse_mongo_c_driver//:_libbson',
     ], [
         '//bazel:arrow_flatbuffer_headers',
+        '//src/Parsers/Prometheus/grammar:clickhouse_antlr4_grammars',
         '//contrib/librdkafka-cmake:rdhttp_poco_transport',
         '@clickhouse_abseil_cpp//:absl_function_ref', '@clickhouse_azure//:_azure_sdk',
         '@clickhouse_flatbuffers//:_flatbuffers',

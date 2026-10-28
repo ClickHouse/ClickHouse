@@ -2,16 +2,19 @@
 
 load(":source_header_directories.bzl", "source_header_directories")
 
-def boost_source_header_directories(public_headers, textual_headers):
-    """Group maximal boost/ directories with at least 16 unconditional public or textual headers."""
-    published = set(public_headers).symmetric_difference(textual_headers)
+def boost_source_header_directories(public_headers, textual_headers, private_headers):
+    """Group maximal boost/ directories with at least 16 unconditional headers owned by this target."""
+    public = set(public_headers)
+    private = set(private_headers)
+    ambiguous = private.intersection(public.union(textual_headers))
+    declared = public.symmetric_difference(textual_headers).union(private).difference(ambiguous)
     entries = native.glob(["boost/**"], exclude_directories = 0)
     counts = {path.rpartition("/")[0]: 0 for path in entries if path != "boost"}
     for path in entries:
         if path == "boost" or path in counts:
             continue
         parent = path.rpartition("/")[0]
-        if path not in published:
+        if path not in declared:
             # This also excludes empty directories, which have no headers.
             counts[parent] = -1
         elif counts[parent] >= 0:
