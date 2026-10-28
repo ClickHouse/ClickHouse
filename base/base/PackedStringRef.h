@@ -181,7 +181,7 @@ public:
 
     /// The out-of-line bytes of a medium or large string, `heapSize` of them: both encodings
     /// keep the pointer in the same low 56 bits.
-    ALWAYS_INLINE const char * getHeapPtr() const
+    [[nodiscard]] ALWAYS_INLINE const char * getHeapPtr() const
     {
         return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }

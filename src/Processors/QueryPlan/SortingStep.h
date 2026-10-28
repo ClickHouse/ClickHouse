@@ -127,7 +127,7 @@ public:
     [[nodiscard]] bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
 
-    bool hasLimitByHint() const { return !limit_by_columns.empty(); }
+    [[nodiscard]] bool hasLimitByHint() const { return !limit_by_columns.empty(); }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
