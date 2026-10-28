@@ -4,6 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/SilkFiberScheduler.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
@@ -70,6 +71,8 @@ void Throttler::sleep(UInt64 nanoseconds)
         return;
     }
 #endif
+    /// Park the CPU lease while sleeping
+    CPULeaseParkGuard park_guard;
     sleepForNanoseconds(nanoseconds);
 }
 
@@ -119,6 +122,17 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
         parent_block = parent->throttle(amount, max_block_ns);
 
     return block || parent_block;
+}
+
+bool Throttler::throttleOSPageCacheRead(size_t amount, size_t max_block_ns)
+{
+    if (!limits_block_device_bandwidth)
+        return throttle(amount, max_block_ns);
+
+    /// This throttler does not account the read, but a parent still can.
+    if (parent)
+        return parent->throttleOSPageCacheRead(amount, max_block_ns);
+    return false;
 }
 
 void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)

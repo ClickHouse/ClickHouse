@@ -38,11 +38,11 @@ TABLE_DEL2="t_del2_${CLICKHOUSE_DATABASE}_${RANDOM}"
 # 1) `_row_number` under PREWHERE must be the physical row position of each
 #    surviving row, not the compacted post-filter index. This is the exact value
 #    the mutation path records into the positional-delete file.
-# `optimize_move_to_prewhere=1` + `query_plan_optimize_prewhere=1` are pinned on the discriminating
-# statements below: the bug only fires when the predicate is pushed to PREWHERE (the runner
-# randomizes both off, and with either off the pre-fix result is already correct, so the test would
-# not exercise the fix). Both must be on to reach the stripped-PREWHERE fallback path.
-PREWHERE_SETTINGS="--optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1"
+# `optimize_move_to_prewhere=1` is pinned on the discriminating statements below: the bug only
+# fires when the predicate is pushed to PREWHERE (the runner randomizes it off, and with it off the
+# pre-fix result is already correct, so the test would not exercise the fix). It must be on to
+# reach the stripped-PREWHERE fallback path.
+PREWHERE_SETTINGS="--optimize_move_to_prewhere=1"
 
 create_mixed_schema_table "${TABLE_RN}"
 echo "--- _row_number under PREWHERE (physical positions) ---"

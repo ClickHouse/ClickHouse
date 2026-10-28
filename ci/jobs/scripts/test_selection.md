@@ -23,6 +23,8 @@ snapshots and exercises the production query and scorer against it.
 The query admits regions no wider than 40 lines with at most 150 distinct test
 owners. These are conservative initial limits, not a validated recall claim.
 The final ceiling is 250 tests and the operational target remains below 100.
+
+The exported regions omit straight-line code between branches: `src/Common/CoverageRegions.cpp` keeps one region per LLVM counter, and code after a loop or `if` has no counter of its own. A statement there is in no region even when every test runs it, so a change to it matches only its context lines. With `bracket_gap_lines` set (integration only, 40 lines), a hunk that overlaps no region is attributed to the tests that own both the nearest region before it and the nearest region after it within that distance, since a run that reached both ran the code between them. The two regions are paired within one snapshot, because the snapshots come from different commits whose lines can shift, and a test counts only if it owns both regions of a pair in that snapshot. Like a precise region, a pair of regions is one piece of evidence however many hunks it brackets: it is scored once, like hunk context over the lines between its two regions, and it is dropped when more than `max_precise_region_owners` tests own it. On 109 pull requests that change sources and an existing covered integration test module, this raised the share of those modules selected by coverage from 88.4% to 92.1% and left one pull request instead of four with no selection, for 19% more selected modules.
 `SelectionConfig` is shared by queries, scoring, diagnostics, and monitoring. Change the selector version when changing the persisted contract.
 
 Each targeted job attaches its selection as `stateless-selection.json` to its
@@ -61,6 +63,8 @@ workflow runs directly in CIDB remains dependent on that schema migration.
 Snapshots are found by listing the distinct `check_start_time` values in the window and counting exported tests only for the newest five timestamps at a time, because counting over the whole window reads tens of GB of `test_name` and times out when CIDB is busy. These queries use a 180 s timeout and the query cache, as they only read settled exports and return the same result for every job and pull request.
 
 If a CIDB request of the selection still times out on every attempt, the targeted job is `SKIPPED` instead of failing, so it does not skip the jobs that wait for it. It adds a workflow warning and a comment that is shown in the summary table of the pull request comment, and it is not cached, so a rerun or the next commit selects again. Any other selection failure is still an `ERROR`.
+
+A GitHub API request of the selection (the pull request, its diff, and the start of a rerun attempt) is retried for 3 minutes when it gets a server error, a network error, or the answer that the diff is still being generated. A rate limit is not retried. If it still fails, the targeted job is skipped in the same way.
 
 ## Validation and rollout
 

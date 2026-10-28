@@ -18,6 +18,7 @@ public:
     ParserRolesOrUsersSet & allowCurrentUser(bool allow_current_user_ = true) { allow_current_user = allow_current_user_; return *this; }
     ParserRolesOrUsersSet & allowRoles(bool allow_roles_ = true) { allow_roles = allow_roles_; return *this; }
     ParserRolesOrUsersSet & useIDMode(bool id_mode_ = true) { id_mode = id_mode_; return *this; }
+    ParserRolesOrUsersSet & allowQueryParameters(bool allow_query_parameter_ = true) { allow_query_parameter = allow_query_parameter_; return *this; }
 
 protected:
     const char * getName() const override { return "RolesOrUsersSet"; }
@@ -30,6 +31,7 @@ private:
     bool allow_current_user = false;
     bool allow_roles = false;
     bool id_mode = false;
+    bool allow_query_parameter = false;
 };
 
 }

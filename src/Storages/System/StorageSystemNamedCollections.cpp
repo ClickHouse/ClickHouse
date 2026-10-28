@@ -13,6 +13,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
+#include <Common/HiddenSecret.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
@@ -65,7 +66,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
             if (access_secrets)
                 value_column.insert(collection->get<String>(key));
             else
-                value_column.insert("[HIDDEN]");
+                value_column.insert(String(HIDDEN_SECRET));
             size++;
         }
 

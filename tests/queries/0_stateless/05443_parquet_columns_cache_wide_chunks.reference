@@ -1,0 +1,7 @@
+--- a chunk of 128 MiB, under a memory limit of 160 MiB: read in small blocks, not cached
+1	65536
+65536	134217728
+65536	134217728
+--- a chunk larger than the cache of 100 MiB, and a short one: neither is kept
+1	66536
+66536	113111200

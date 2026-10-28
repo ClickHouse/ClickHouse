@@ -1,0 +1,6 @@
+= plain read, non-deterministic folded lambda body: not cached =
+0
+= TopK read, non-deterministic folded lambda body: not cached =
+0
+= plain read, deterministic folded lambda body: cached =
+1

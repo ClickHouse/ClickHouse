@@ -2,33 +2,22 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <fmt/format.h>
 
 using namespace DB;
+using namespace DB::Runtime::V1;
 
 /// Regression test for the diagnostics of `ExecutingGraph::addEdge` when a connected peer is
-/// missing from the list of processors. The thrown `LOGICAL_ERROR` must identify both endpoints
-/// of the broken edge unambiguously, so that repeated processor classes remain distinguishable.
-/// Previously the message used `getName`, which is ambiguous, and the numeric suffix was only
-/// recoverable from the out-of-set node rendering in `printPipeline` that was removed in #110955.
-///
-/// The identification must not depend on the execution context: `getUniqID` alone degrades to the
-/// `_0` suffix for every processor when `CurrentThread` is not initialized, which is why the
-/// message also carries the processor address. This test deliberately does not set up a thread
-/// status, so it exercises exactly that degraded context.
+/// missing from the list of processors. The thrown `LOGICAL_ERROR` must name both endpoints of the
+/// broken edge, and refer to the node id of the processor in the list, which is the id the appended
+/// pipeline dump uses. The message must not contain processor addresses.
 
 namespace
 {
-
-/// Must match the format used by `describeProcessor` in `ExecutingGraph.cpp`.
-String describeProcessor(const IProcessor & processor)
-{
-    return fmt::format("{} at {}", processor.getUniqID(), static_cast<const void *>(&processor));
-}
 
 struct MalformedGraph
 {
@@ -56,10 +45,11 @@ MalformedGraph makeGraphWithOmittedSink()
     connect(source->getPort(), sink->getPort());
 
     MalformedGraph graph;
-    graph.source_description = describeProcessor(*source);
-    graph.sink_description = describeProcessor(*sink);
+    graph.source_description = source->getUniqID();
+    graph.sink_description = sink->getUniqID();
     graph.expected_message = fmt::format(
-        "Processor {} was found as output for processor {}, but not found in list of processors",
+        "Processor {} is connected to an output port of processor n0 {}, but it is not in the list of processors. "
+        "See n0 in the pipeline dump",
         graph.sink_description,
         graph.source_description);
 
@@ -82,22 +72,12 @@ TEST(ExecutingGraphDeathTest, AddEdgeMissingPeerIdentifiesBothEndpoints)
     auto graph = makeGraphWithOmittedSink();
     ASSERT_NE(graph.source_description, graph.sink_description);
 
-    /// The `threadsafe` style re-executes the test binary, so the child rebuilds the graph at its
-    /// own addresses: match the shape of the message rather than the parent's exact addresses.
-    /// That the two endpoints really differ is asserted above, on the in-process descriptions.
-    /// Only `.` and `*` are used here: depending on the platform, gtest matches death-test
-    /// patterns either with POSIX extended regular expressions or with its own simple engine,
-    /// and the latter supports neither character classes nor `\d`.
-    const String expected_pattern
-        = "Processor NullSink_.* at 0x.* was found as output for processor "
-          "SourceFromSingleChunk_.* at 0x.*, but not found in list of processors";
-
     EXPECT_DEATH(
         {
             QueryStatusPtr element;
             PipelineExecutor executor(graph.processors, element);
         },
-        expected_pattern);
+        graph.expected_message);
 }
 
 #else
@@ -120,14 +100,13 @@ TEST(ExecutingGraph, AddEdgeMissingPeerIdentifiesBothEndpoints)
         ASSERT_NE(exception_pos, std::string::npos)
             << "Expected '" << graph.expected_message << "', got: " << message;
 
-        /// `PipelineExecutor` appends a `printPipeline` dump to the exception, labelled with the
-        /// same `{uniqID} at {address}` format, so the endpoints named by the exception can be
-        /// matched against the nodes of the dump even in this degraded no-`CurrentThread`
-        /// context. The source is the only processor in the list, so its description must
-        /// reappear verbatim in the dump after the exception message.
+        /// `PipelineExecutor` appends a `printPipeline` dump to the exception. The source is the
+        /// only processor in the list, so the dump must label it as node `n0`.
         ASSERT_NE(message.find("Query pipeline:"), std::string::npos) << "Expected a pipeline dump, got: " << message;
-        ASSERT_NE(message.find(graph.source_description, exception_pos + graph.expected_message.size()), std::string::npos)
-            << "Expected the pipeline dump to repeat '" << graph.source_description << "', got: " << message;
+        const String dump_node = fmt::format("n0[label=\"{}", graph.source_description);
+        ASSERT_NE(message.find(dump_node, exception_pos + graph.expected_message.size()), std::string::npos)
+            << "Expected the pipeline dump to contain '" << dump_node << "', got: " << message;
+        ASSERT_EQ(message.find("0x"), std::string::npos) << "Expected no addresses, got: " << message;
     }
 }
 

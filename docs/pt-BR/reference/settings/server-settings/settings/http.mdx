@@ -12,25 +12,23 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="http_allow_path_requests">
-  ## http_allow_path_requests
-</div>
+## http_allow_path_requests {#http_allow_path_requests}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
 Permite que a interface HTTP encaminhe requisições no formato de caminho (como `/my_db/my_table.csv`) ao handler de consultas.
 
 Esta flag controla apenas a decisão de roteamento, tomada antes da autenticação da requisição; portanto, não pode depender de uma configuração por usuário. Após o roteamento, as configurações por usuário [`http_allow_database_as_path`](/pt-BR/reference/settings/session-settings#http_allow_database_as_path), [`http_allow_table_as_file`](/pt-BR/reference/settings/session-settings#http_allow_table_as_file) e [`http_allow_filters_as_path`](/pt-BR/reference/settings/session-settings#http_allow_filters_as_path) controlam se o caminho roteado é realmente interpretado para o usuário autenticado. Quando esta flag está desativada, caminhos desconhecidos retornam um `404` simples.
 
+Habilitada por padrão. Defina como `0` para restaurar o comportamento anterior, em que todo caminho que não corresponda a um handler configurado retorna `404`.
+
 **Exemplo**
 
 ```xml
-<http_allow_path_requests>1</http_allow_path_requests>
+<http_allow_path_requests>0</http_allow_path_requests>
 ```
 
-<div id="http_handlers">
-  ## http_handlers
-</div>
+## http_handlers {#http_handlers}
 
 Permite usar handlers HTTP personalizados.
 Para adicionar um novo handler HTTP, basta adicionar uma nova `<rule>`.
@@ -95,9 +93,7 @@ Exemplo:
 </http_handlers>
 ```
 
-<div id="http_options_response">
-  ## http_options_response
-</div>
+## http_options_response {#http_options_response}
 
 Usado para adicionar cabeçalhos à resposta de uma `requisição HTTP` `OPTIONS`.
 O método `OPTIONS` é usado ao fazer requisições de preflight de CORS.
@@ -127,9 +123,7 @@ Exemplo:
 </http_options_response>
 ```
 
-<div id="http_server_default_response">
-  ## http_server_default_response
-</div>
+## http_server_default_response {#http_server_default_response}
 
 A página exibida por padrão quando você acessa o servidor HTTP(s) do ClickHouse.
 O valor padrão é &quot;Ok.&quot; (com uma quebra de linha ao final)
