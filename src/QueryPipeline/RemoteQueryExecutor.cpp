@@ -182,8 +182,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             {
                 // consider only replicas with support of stream id, otherwise we can get incorrect result
                 // replicas with older version considered as unavailable
+                const UInt64 required_parallel_replicas_version = std::max<UInt64>(
+                    DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
+                    extension_->parallel_reading_coordinator->getRequiredReplicaProtocolVersion());
                 if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
-                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
+                    && parallel_replicas_version >= required_parallel_replicas_version
                     && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
                 {
                     ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
@@ -196,13 +199,13 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                         log,
                         "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}, "
                         "query_plan_serialization_version={}): "
-                        "remote replica doesn't support stream id (requires parallel_replicas_version >= {}) or query plan serialization "
-                        "for parallel replicas (requires query_plan_serialization_version >= {})",
+                        "remote replica doesn't support the features the query needs (requires parallel_replicas_version >= {}) "
+                        "or query plan serialization for parallel replicas (requires query_plan_serialization_version >= {})",
                         result.entry->getDescription(),
                         protocol_version,
                         parallel_replicas_version,
                         query_plan_serialization_version,
-                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
+                        required_parallel_replicas_version,
                         DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
                     result.entry->disconnect();
                 }

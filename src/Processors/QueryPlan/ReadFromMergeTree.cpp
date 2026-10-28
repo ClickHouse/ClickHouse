@@ -4257,6 +4257,15 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
         && context->canUseParallelReplicasOnFollower();
 }
 
+bool ReadFromMergeTree::canReadInOrderThroughJoinWithParallelReplicas() const
+{
+    if (isParallelReplicasLocalPlanForInitiator())
+        return true;
+    return isParallelReplicasLocalPlanForFollower()
+        && context->getClientInfo().connection_parallel_replicas_protocol_version
+            >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_IN_ORDER_THROUGH_JOIN;
+}
+
 bool ReadFromMergeTree::canReadInReverseOrder() const
 {
     /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the

@@ -11,10 +11,14 @@ namespace ErrorCodes
 }
 
 ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
-    QueryPlanPtr query_plan_, ContextPtr subquery_context_, LeftOutConjuncts left_out_conjuncts_)
+    QueryPlanPtr query_plan_,
+    ContextPtr subquery_context_,
+    ParallelReplicasReadingCoordinatorPtr coordinator_,
+    LeftOutConjuncts left_out_conjuncts_)
     : ISourceStep(query_plan_->getCurrentHeader())
     , query_plan(std::move(query_plan_))
     , context(std::move(subquery_context_))
+    , coordinator(std::move(coordinator_))
     , left_out_conjuncts(std::move(left_out_conjuncts_))
 {
 }

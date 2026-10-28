@@ -1406,6 +1406,11 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Replicas that disagree on reading in order make the coordinator see conflicting modes.
+        if (!find_reading_ctx.joins_to_keep_in_order.empty() && reading->isParallelReadingFromReplicas()
+            && !reading->canReadInOrderThroughJoinWithParallelReplicas())
+            return nullptr;
+
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -1531,6 +1536,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: replicas that disagree on reading in order make the coordinator see conflicting modes.
+        if (!find_reading_ctx.joins_to_keep_in_order.empty() && reading->isParallelReadingFromReplicas()
+            && !reading->canReadInOrderThroughJoinWithParallelReplicas())
+            return {};
+
         /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
         if (reading->isParallelReadingFromReplicas() && aggregating.getParams().only_merge)
             return {};
@@ -1670,6 +1680,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: replicas that disagree on reading in order make the coordinator see conflicting modes.
+        if (!find_reading_ctx.joins_to_keep_in_order.empty() && reading->isParallelReadingFromReplicas()
+            && !reading->canReadInOrderThroughJoinWithParallelReplicas())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,

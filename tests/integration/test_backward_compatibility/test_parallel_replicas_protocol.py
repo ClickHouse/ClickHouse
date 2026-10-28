@@ -253,3 +253,76 @@ def test_split_topology_rolling_upgrade(start_cluster):
 
     for node in split_topology_nodes:
         node.query("drop table ts sync")
+
+
+def test_read_in_order_through_join_rolling_upgrade(start_cluster):
+    # The version under test reads in order through a `LEFT JOIN` with parallel replicas, while 26.5
+    # reads such a stream in `Default` mode. Whichever node is the initiator, the replicas taking part
+    # must announce the same coordination mode: a newer initiator does not use the older replicas, and
+    # a newer follower of an older initiator does not read in order through the join.
+    for num in range(len(split_topology_nodes)):
+        node = split_topology_nodes[num]
+        node.query("drop table if exists tj sync")
+        node.query("drop table if exists rj sync")
+        node.query(
+            f"""
+            create table tj(k UInt64, v UInt64)
+            engine = ReplicatedMergeTree('/test_backward_compatability/test_parallel_replicas_protocol/split_topology/shard0/tj', '{num}')
+            order by (k, v)
+        """
+        )
+        node.query("create table rj(k UInt64, s String) engine = MergeTree order by k")
+        node.query("insert into rj select number * 2, toString(number) from numbers(1000)")
+    split_topology_nodes[0].query(
+        "insert into tj select number % 100000, number from numbers_mt(1000000)"
+    )
+    for node in split_topology_nodes:
+        node.query("system sync replica tj")
+
+    queries = [
+        (
+            "select tj.k, tj.v, rj.s from tj left join rj on tj.k = rj.k order by tj.k, tj.v limit 3",
+            "0\t0\t0\n0\t100000\t0\n0\t200000\t0\n",
+        ),
+        (
+            "select tj.k, count(), any(rj.s) from tj left join rj on tj.k = rj.k group by tj.k order by tj.k limit 3",
+            "0\t10\t0\n1\t10\t\n2\t10\t1\n",
+        ),
+        (
+            "select distinct tj.k, rj.s from tj left join rj on tj.k = rj.k order by tj.k limit 3",
+            "0\t0\n1\t\n2\t1\n",
+        ),
+    ]
+
+    for local_plan in (1, 0):
+        settings = {
+            "enable_analyzer": 1,
+            "cluster_for_parallel_replicas": "parallel_replicas",
+            "max_parallel_replicas": 3,
+            "enable_parallel_replicas": 1,
+            "parallel_replicas_for_non_replicated_merge_tree": 1,
+            "parallel_replicas_local_plan": local_plan,
+            "optimize_read_in_order": 1,
+            "optimize_aggregation_in_order": 1,
+            "optimize_distinct_in_order": 1,
+            "query_plan_read_in_order_through_join": 1,
+            "query_plan_join_swap_table": 0,
+            "join_algorithm": "hash",
+            # A spilling join does not keep the order of its left input.
+            "max_bytes_before_external_join": 0,
+            "max_bytes_ratio_before_external_join": 0,
+        }
+        for node in split_topology_nodes:
+            for query, expected in queries:
+                # Make every replica take part instead of letting the initiator finish alone.
+                node.query("system enable failpoint parallel_replicas_wait_for_unused_replicas")
+                assert node.query(query, settings=settings) == expected, (
+                    node.name,
+                    local_plan,
+                    query,
+                )
+
+    for node in split_topology_nodes:
+        node.query("system disable failpoint parallel_replicas_wait_for_unused_replicas")
+        node.query("drop table tj sync")
+        node.query("drop table rj sync")

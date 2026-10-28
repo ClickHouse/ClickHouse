@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
@@ -14,7 +15,11 @@ public:
     /// The conjuncts of a condition that the replicas would not get. See `conjunctsTheReplicasMiss`.
     using LeftOutConjuncts = std::function<ActionsDAG::NodeRawConstPtrs(const ActionsDAG::Node & condition)>;
 
-    explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_, LeftOutConjuncts left_out_conjuncts_ = {});
+    ReadFromLocalParallelReplicaStep(
+        QueryPlanPtr query_plan_,
+        ContextPtr context_,
+        ParallelReplicasReadingCoordinatorPtr coordinator_,
+        LeftOutConjuncts left_out_conjuncts_ = {});
 
     String getName() const override { return "ReadFromLocalReplica"; }
 
@@ -30,6 +35,9 @@ public:
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }
 
+    /// The coordinator shared by this local plan and the remote replicas.
+    const ParallelReplicasReadingCoordinatorPtr & getCoordinator() const { return coordinator; }
+
     void addFilter(FilterDAGInfo filter);
 
     /// The conjuncts (`ActionsDAG::extractConjunctionAtoms`) of a condition pushed down onto this step that
@@ -40,6 +48,7 @@ public:
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
+    ParallelReplicasReadingCoordinatorPtr coordinator;
     LeftOutConjuncts left_out_conjuncts;
 };
 

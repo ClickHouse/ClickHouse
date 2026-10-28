@@ -542,6 +542,11 @@ public:
     bool isParallelReplicasLocalPlanForInitiator() const;
     bool isParallelReplicasLocalPlanForFollower() const;
 
+    /// Whether a parallel replicas read may be read in order through a `JOIN`. All replicas must decide alike:
+    /// the initiator does it only with a local plan and then does not use older remote replicas, and a follower
+    /// only when its initiator is new enough to do that.
+    bool canReadInOrderThroughJoinWithParallelReplicas() const;
+
     /// A non-storage filter above this read, such as a join runtime `__applyFilter`, can affect the
     /// dynamic TopK threshold without participating in the PREWHERE query condition cache key.
     /// Keep the regular query condition cache enabled, but do not read or write TopK PREWHERE entries.

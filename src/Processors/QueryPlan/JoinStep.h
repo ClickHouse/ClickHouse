@@ -88,6 +88,7 @@ public:
     /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
     void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
+    bool keepsLeftPipelineInOrder() const { return keep_left_read_in_order; }
 
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }

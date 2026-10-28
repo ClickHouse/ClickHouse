@@ -49,6 +49,11 @@ public:
 
     void setReadCompletedCallback(ReadCompletedCallback callback);
 
+    /// Remote replicas with an older parallel replicas protocol version are not used.
+    /// Must be called before the connections to the replicas are established.
+    void requireReplicaProtocolVersion(UInt64 version);
+    UInt64 getRequiredReplicaProtocolVersion() const { return required_replica_protocol_version; }
+
 private:
     bool isReadingCompleted() const;
     std::shared_ptr<ImplInterface> getCoordinator(const String & stream_id) const;
@@ -61,6 +66,7 @@ private:
     std::optional<size_t> snapshot_replica_num;
     std::optional<ReadCompletedCallback> read_completed_callback;
     std::atomic_bool is_reading_completed{false};
+    std::atomic<UInt64> required_replica_protocol_version{0};
 
     /// `markReplicaAsUnavailable` might be called before any coordinator is created.
     /// In this case we remember the unavailable replicas and apply when coordinators are created.

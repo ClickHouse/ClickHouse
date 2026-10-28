@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -6,6 +7,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -102,6 +104,14 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_lazy_columns_replication,
         optimization_settings.filter_push_down_below_limit_by,
     };
+}
+
+/// Whether a join in the plan keeps its left input in order, i.e. a read is done in order through it.
+static bool hasJoinKeepingLeftInOrder(const QueryPlan::Node * node)
+{
+    if (const auto * join = typeid_cast<const JoinStep *>(node->step.get()); join && join->keepsLeftPipelineInOrder())
+        return true;
+    return std::ranges::any_of(node->children, [](const QueryPlan::Node * child) { return hasJoinKeepingLeftInOrder(child); });
 }
 
 static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
@@ -755,6 +765,12 @@ void optimizeTreeSecondPass(
 
             auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(local_optimization_settings);
+
+            /// An older remote replica would not read in order through the join and would announce another
+            /// coordination mode.
+            if (const auto & coordinator = read_from_local->getCoordinator();
+                coordinator && hasJoinKeepingLeftInOrder(local_plan->getRootNode()))
+                coordinator->requireReplicaProtocolVersion(DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_READ_IN_ORDER_THROUGH_JOIN);
 
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));

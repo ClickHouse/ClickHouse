@@ -1208,7 +1208,7 @@ void executeQueryWithParallelReplicas(
             };
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
-            std::move(local_plan), local_context, std::move(left_out_conjuncts));
+            std::move(local_plan), local_context, coordinator, std::move(left_out_conjuncts));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 

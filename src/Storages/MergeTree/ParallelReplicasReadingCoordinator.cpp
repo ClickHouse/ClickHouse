@@ -1602,6 +1602,14 @@ void ParallelReplicasReadingCoordinator::setReadCompletedCallback(ReadCompletedC
     read_completed_callback = std::move(callback);
 }
 
+void ParallelReplicasReadingCoordinator::requireReplicaProtocolVersion(UInt64 version)
+{
+    UInt64 current = required_replica_protocol_version.load();
+    while (current < version && !required_replica_protocol_version.compare_exchange_weak(current, version))
+    {
+    }
+}
+
 bool ParallelReplicasReadingCoordinator::isReadingCompleted() const
 {
     chassert(!stream_to_coordinator.empty());
