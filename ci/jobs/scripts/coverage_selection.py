@@ -326,6 +326,58 @@ def build_bracket_owners_query(brackets, snapshots, config=SELECTION_CONFIG):
     """
 
 
+def split_by_file(groups, build, max_bytes):
+    """`build(part)` for consecutive parts of `groups` (`{path: items}`), each as large as fits
+    in `max_bytes`. A file is never split, and the queries order their rows by file first, so
+    their rows one after another are the rows of `build(groups)`."""
+    queries = []
+    part = {}
+    for path in sorted(groups):
+        if part and len(build({**part, path: groups[path]}).encode()) > max_bytes:
+            queries.append(build(part))
+            part = {}
+        part[path] = groups[path]
+    queries.append(build(part))
+    return queries
+
+
+def build_candidate_queries(changed_lines, hunk_ranges, snapshots, config=SELECTION_CONFIG):
+    lines = defaultdict(list)
+    for path, line in changed_lines:
+        lines[canonical_coverage_path(path)].append((path, line))
+    return split_by_file(
+        lines,
+        lambda part: build_candidate_query(
+            [line for path in part for line in part[path]],
+            {path: hunk_ranges.get(path, []) for path in part},
+            snapshots,
+            config,
+        ),
+        config.coverage_query_max_bytes,
+    )
+
+
+def build_bracket_spans_queries(hunk_ranges, snapshots, config=SELECTION_CONFIG):
+    return split_by_file(
+        hunk_ranges,
+        lambda part: build_bracket_spans_query(part, snapshots, config),
+        config.coverage_query_max_bytes,
+    )
+
+
+def build_bracket_owners_queries(brackets, snapshots, config=SELECTION_CONFIG):
+    by_file = defaultdict(list)
+    for bracket in brackets:
+        by_file[bracket["file"]].append(bracket)
+    return split_by_file(
+        by_file,
+        lambda part: build_bracket_owners_query(
+            [bracket for path in sorted(part) for bracket in part[path]], snapshots, config
+        ),
+        config.coverage_query_max_bytes,
+    )
+
+
 def attach_bracket_owners(brackets, rows):
     """Set `owners` of every bracket to the tests that own both of its regions in one
     of the snapshots where they are paired."""
