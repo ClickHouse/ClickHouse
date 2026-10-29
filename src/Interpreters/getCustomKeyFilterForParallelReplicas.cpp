@@ -101,12 +101,13 @@ bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescripti
     return false;
 }
 
-/// Drop the table qualifier (`t.a`) or the database and table qualifiers (`db.t.a`) from identifiers
-/// that name an `ALIAS` column of the table, so that `ReplaceAliasByExpressionMatcher`, which matches
-/// the identifier as written, expands them too. The planner resolves such an identifier to the alias
-/// expression regardless of the qualifier. An identifier rooted at an argument of an enclosing lambda,
-/// e.g. `z.a` in `arrayMap(z -> z.a, arrs)`, is a field of that argument, not a qualified column, so
-/// it is left as is.
+/// Replace identifiers that name an `ALIAS` column of the table with the plain name of that column, so
+/// that `ReplaceAliasByExpressionMatcher`, which matches the identifier as written, expands them too.
+/// This covers the table qualifier (`t.a`), the database and table qualifiers (`db.t.a`), and a subcolumn
+/// of the alias (`a.v`, `t.a.v`): the planner resolves all of them through the alias expression. The
+/// result is used only for validation, so replacing a subcolumn with its whole parent column is fine.
+/// An identifier rooted at an argument of an enclosing lambda, e.g. `z.a` in `arrayMap(z -> z.a, arrs)`,
+/// is a field of that argument, not a qualified column, so it is left as is.
 void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescription & columns, NameSet & lambda_arguments)
 {
     checkStackSize();
@@ -114,19 +115,23 @@ void removeQualifiersFromAliasColumnIdentifiers(ASTPtr & ast, const ColumnsDescr
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
         const auto & parts = identifier->name_parts;
-        if (parts.size() < 2 || lambda_arguments.contains(parts.front())
-            || columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier->name()))
+        if (parts.size() < 2 || lambda_arguments.contains(parts.front()) || columns.hasAlias(identifier->name()))
             return;
 
-        for (size_t num_qualifiers = 1; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
+        /// Try the longest column name first, so an `ALIAS` column whose name contains a dot is preferred
+        /// over an `ALIAS` column named by its prefix.
+        for (size_t num_qualifiers = 0; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
         {
-            String unqualified_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.end(), "."));
-            if (columns.hasAlias(unqualified_name))
+            for (size_t name_end = parts.size(); name_end > num_qualifiers; --name_end)
             {
-                auto unqualified_identifier = make_intrusive<ASTIdentifier>(unqualified_name);
-                unqualified_identifier->setAlias(identifier->tryGetAlias());
-                ast = std::move(unqualified_identifier);
-                return;
+                String alias_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.begin() + name_end, "."));
+                if (columns.hasAlias(alias_name))
+                {
+                    auto alias_identifier = make_intrusive<ASTIdentifier>(alias_name);
+                    alias_identifier->setAlias(identifier->tryGetAlias());
+                    ast = std::move(alias_identifier);
+                    return;
+                }
             }
         }
         return;
