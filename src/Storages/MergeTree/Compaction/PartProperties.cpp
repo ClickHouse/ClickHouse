@@ -34,7 +34,6 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .part_max_ttl = part->ttl_infos.part_max_ttl,
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
         .group_by_min_ttl = group_by_min_ttl,
-        .rows_ttl_has_epoch_timestamps = part->ttl_infos.table_ttl.has_epoch_timestamps,
     };
 }
 

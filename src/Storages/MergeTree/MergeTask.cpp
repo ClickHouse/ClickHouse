@@ -563,7 +563,9 @@ String MergeTask::buildTempPartBasename(const String & prefix, const String & pa
 
 bool MergeTask::isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time)
 {
-    return part.ttl_infos.table_ttl.min != 0 && part.ttl_infos.table_ttl.max <= time;
+    /// A part that may hold rows whose TTL computed to exactly the epoch is not summarized by its bounds
+    /// (see `MergeTreeDataPartTTLInfo::has_epoch_timestamps`), so it has to be read to tell which rows remain.
+    return part.ttl_infos.table_ttl.min != 0 && part.ttl_infos.table_ttl.max <= time && !part.ttl_infos.table_ttl.has_epoch_timestamps;
 }
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const

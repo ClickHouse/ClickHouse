@@ -102,9 +102,6 @@ struct PartProperties
         /// unfinished again (see `MergeTreeDataPartTTLInfos::update`), so they are not in `part_min_ttl` of the
         /// part but are in that of the merged part.
         const time_t group_by_min_ttl;
-        /// The part holds rows whose rows TTL computed to exactly 0 (the epoch), which the stored
-        /// bounds do not describe - see `MergeTreeDataPartTTLInfo::has_epoch_timestamps`.
-        const bool rows_ttl_has_epoch_timestamps = false;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 
