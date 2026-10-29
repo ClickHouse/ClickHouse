@@ -183,6 +183,7 @@ static std::optional<size_t> tryGetIndexedFixedStringSize(const Block & header)
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
+    StorageMetadataPtr metadata_snapshot_,
     const Block & index_sample_block,
     const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
@@ -192,6 +193,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     NameSet columns_shadowing_map_subcolumns_,
     JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , header(index_sample_block)
     , json_argument_types(std::move(json_argument_types_))
     , indexed_column_is_array(isIndexedColumnArray(header))
@@ -1231,7 +1233,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
+    else if (tryMatchNodeToJSONIndex(
+            index_column_node, header, "JSONAllValues", json_argument_types, getColumnsToMatchJSONSubcolumn(metadata_snapshot)))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -2283,7 +2286,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     const auto & required_column = required_columns.front();
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
-    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths", json_argument_types);
+    auto json_info = tryMatchJSONSubcolumnToIndex(
+        required_column.name, header, "JSONAllPaths", json_argument_types, getColumnsToMatchJSONSubcolumn(metadata_snapshot));
     if (!json_info)
         return false;
 
@@ -2332,7 +2336,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return true;
         }
         return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
+            || tryMatchNodeToJSONIndex(
+                    node, header, "JSONAllValues", json_argument_types, getColumnsToMatchJSONSubcolumn(metadata_snapshot));
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
