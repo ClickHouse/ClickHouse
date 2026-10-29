@@ -14,7 +14,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # measures. The last cell keeps them on and runs the same query four times in one process: the first run thaws and
 # records the verdict, the second is refused the adaptive aggregator, the third, with the thaw disabled, freezes its
 # tables anyway, and the fourth is refused again, because a run that may not thaw records no verdict. Each cell runs
-# in its own clickhouse-local process, so the counters in `system.events` belong to it alone.
+# in its own clickhouse-local process, so the counters in `system.events` belong to it alone. The last cell runs on two
+# threads: the verdict needs half of the threads whose tables froze to be repeat-dominated, and the thread that reads
+# at least half of the input always is, however `numbers_mt` splits it.
 
 SETTINGS="SET max_threads = 4, max_block_size = 8192, adaptive_aggregator_freeze_threshold = 128, enable_adaptive_aggregator = 1;
 SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, optimize_injective_functions_in_group_by = 0;"
@@ -46,7 +48,7 @@ COUNTERS="SELECT groupArray(value) FROM (SELECT event, coalesce(sum(value), 0) A
     WHERE event IN ('AdaptiveAggregationLocalFreezes', 'AdaptiveAggregationThaws') GROUP BY event ORDER BY event)"
 $CLICKHOUSE_LOCAL --query "
 $SETTINGS
-SET collect_hash_table_stats_during_aggregation = 1;
+SET collect_hash_table_stats_during_aggregation = 1, max_threads = 2;
 
 $QUERY FORMAT Null;
 CREATE TEMPORARY TABLE after_first ENGINE = Memory AS $COUNTERS;
