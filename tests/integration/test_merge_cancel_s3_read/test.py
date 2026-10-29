@@ -23,6 +23,12 @@ SETTLED_WINDOW_SECONDS = 15
 # the stop as not graceful, which is what the shutdown arm keys on.
 SHUTDOWN_BUDGET_SECONDS = 60
 
+# A failed merge whose other reads stop leaves `system.merges` within one retry backoff of its failure.
+FAILED_MERGE_MAX_AGE_SECONDS = 20
+
+# How long after the failure the failed-merge oracle keeps sampling, longer than the age it bounds.
+FAILED_MERGE_WINDOW_SECONDS = 30
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -579,3 +585,183 @@ def test_shutdown_cancels_s3_read(cluster, broken_s3):
         node.stop_clickhouse()
         node.start_clickhouse()
         drop_table_stopping_any_merge(node, table)
+
+
+# 429 and 503 answers to GET and HEAD only, so unlike `ATTEMPTS_QUERY` it moves only on the reads
+# the mock answers with `slow_down`.
+THROTTLED_QUERY = (
+    "SELECT sumIf(value, event = 'DiskS3ReadRequestsThrottling') FROM system.events"
+)
+
+
+def get_throttled(node):
+    return int(node.query(THROTTLED_QUERY).strip() or 0)
+
+
+@pytest.mark.parametrize("via_optimize", [False, True], ids=["background", "optimize"])
+def test_failed_merge_stops_its_other_s3_reads(cluster, broken_s3, via_optimize):
+    """A merge that fails on one S3 read must stop its other reads that are still in flight.
+
+    A vertical merge on a remote disk prefetches the next column from every part before it
+    gathers the current one, so while `a` is gathered the reads of `b` are in flight on other
+    threads. They stop retrying only once the merge's cancellation predicates answer true, so a
+    failure that sets nothing they read leaves them retrying to their budget, and the failed task,
+    which waits for them in its destructor, keeps its `system.merges` entry, its source parts and
+    the table.
+
+    `background` is the executor's merge. `optimize` is the merge that `OPTIMIZE` runs in its own
+    thread, which destroys a failed task without cancelling it.
+    """
+    node = cluster.instances["node"]
+    table = "t_failed_read_opt" if via_optimize else "t_failed_read_bg"
+    # The assignee needs `min_age_to_force_merge_seconds` to pick two parts of this size, see
+    # `test_shutdown_cancels_s3_read`.
+    assignee_settings = (
+        ""
+        if via_optimize
+        else ", min_age_to_force_merge_seconds = 1, merge_selecting_sleep_ms = 1000"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (id UInt64, a String, b String) ENGINE = MergeTree ORDER BY id
+        SETTINGS storage_policy = 'broken_s3', min_bytes_for_wide_part = 0,
+                 vertical_merge_algorithm_min_rows_to_activate = 1,
+                 vertical_merge_algorithm_min_columns_to_activate = 1,
+                 vertical_merge_remote_filesystem_prefetch = 1{assignee_settings}
+        """
+    )
+    optimize = None
+    try:
+        node.query(f"SYSTEM STOP MERGES {table}")
+        for part in range(2):
+            node.query(
+                f"INSERT INTO {table} SELECT number + {part} * 200000, "
+                f"repeat('x', 100), repeat('y', 100) FROM numbers(200000)"
+            )
+
+        parts = node.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active ORDER BY name"
+        ).split()
+        assert len(parts) == 2, parts
+        uuid = node.query(
+            f"SELECT uuid FROM system.tables WHERE database = currentDatabase() "
+            f"AND name = '{table}'"
+        ).strip()
+
+        def object_key(part, file):
+            keys = node.query(
+                f"SELECT remote_path FROM system.remote_data_paths WHERE disk_name = 'broken_s3' "
+                f"AND endsWith(local_path, '{uuid}/{part}/{file}')"
+            ).split()
+            assert len(keys) == 1, (part, file, keys)
+            return keys[0]
+
+        a_key = object_key(parts[0], "a.bin")
+        b_keys = [object_key(part, "b.bin") for part in parts]
+
+        # The merge must read the parts from the mock, not out of memory.
+        node.query("SYSTEM DROP MARK CACHE")
+        node.query("SYSTEM DROP UNCOMPRESSED CACHE")
+
+        # Not retryable, so the merge fails on this read. `NoSuchUpload` rather than
+        # `AccessDenied`, which may be retried after refreshing the credentials.
+        broken_s3.setup_at_object_get(action="no_such_upload", key=a_key)
+        # Retryable, so the reads of `b` spin in the retry loop, as in the arms above.
+        for key in b_keys:
+            broken_s3.setup_at_object_get(count=1000000, action="slow_down", key=key)
+
+        throttled_before = get_throttled(node)
+        node.query(f"SYSTEM START MERGES {table}")
+        if via_optimize:
+            # Not `node.query`, for the same reason as in `test_stop_merges_cancels_s3_read`.
+            optimize = node.get_query_request(
+                f"OPTIMIZE TABLE {table} FINAL SETTINGS optimize_throw_if_noop = 0"
+            )
+
+        # Vacuity guard: the merge was vertical and failed on the injected read. The task writes
+        # this row before it is destroyed, so it appears whether or not the other reads stop.
+        failed_query = (
+            f"SELECT count() FROM system.part_log WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND event_type = 'MergeParts' AND error != 0 "
+            f"AND merge_algorithm = 'Vertical' AND exception LIKE '%upload does not exist%'"
+        )
+        failed_at = None
+        for _ in range(120):
+            node.query("SYSTEM FLUSH LOGS part_log")
+            if int(node.query(failed_query)) >= 1:
+                failed_at = time.monotonic()
+                break
+            time.sleep(1)
+        assert (
+            failed_at is not None
+        ), "no vertical merge failed on the injected read, so the assertions below would be vacuous"
+
+        # Vacuity guard: a read of `b` reached the mock, so there was another read to stop.
+        assert wait_for(
+            node,
+            THROTTLED_QUERY,
+            lambda v: int(v or 0) - throttled_before >= 1,
+            attempts=60,
+            sleep_time=1,
+        ), "no read of `b` reached S3, so the assertions below would be vacuous"
+
+        # The oracle: the failed task leaves `system.merges` only after every read it still had in
+        # flight returned, so no entry may grow old. Not "no entry": the assignee keeps retrying the
+        # merge, and each new attempt fails the same way.
+        age_query = (
+            f"SELECT max(elapsed) FROM system.merges "
+            f"WHERE database = currentDatabase() AND table = '{table}'"
+        )
+        optimize_running_query = (
+            "SELECT count() FROM system.processes "
+            f"WHERE query LIKE '%OPTIMIZE TABLE {table}%' AND query NOT LIKE '%system.processes%'"
+        )
+        optimize_returned = not via_optimize
+        while time.monotonic() - failed_at < FAILED_MERGE_WINDOW_SECONDS:
+            age = float(node.query(age_query).strip() or 0)
+            assert age < FAILED_MERGE_MAX_AGE_SECONDS, (
+                f"the failed merge is still in system.merges {age:.0f}s after it started: "
+                f"its other in-flight reads kept retrying"
+            )
+            if not optimize_returned:
+                optimize_returned = int(node.query(optimize_running_query)) == 0
+                assert (
+                    optimize_returned
+                    or time.monotonic() - failed_at < FAILED_MERGE_MAX_AGE_SECONDS
+                ), "the failed OPTIMIZE did not return: its merge's other reads kept retrying"
+            time.sleep(1)
+
+        if via_optimize:
+            _, error = optimize.get_answer_and_error()
+            optimize = None
+            assert "upload does not exist" in error, error
+
+            # And the reads of `b` stopped with the task, rather than outliving it.
+            settled = get_throttled(node)
+            for _ in range(SETTLED_WINDOW_SECONDS):
+                time.sleep(1)
+                throttled = get_throttled(node)
+                assert throttled - settled <= 2, (
+                    f"the reads of `b` kept retrying after the OPTIMIZE returned "
+                    f"({throttled - settled} throttled requests since)"
+                )
+
+        # A failed merge keeps its source parts, so no data is lost.
+        assert int(node.query(f"SELECT count() FROM {table}")) == 400000
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.parts "
+                    f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+                )
+            )
+            == 2
+        )
+    finally:
+        broken_s3.reset()
+        drop_table_stopping_any_merge(node, table)
+        if optimize is not None:
+            optimize.get_answer_and_error()

@@ -2852,6 +2852,8 @@ try
 }
 catch (...)
 {
+    /// Stops the other in-flight reads of this merge: the thread group's cancellation predicates read this flag.
+    (*global_ctx->merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
     DimensionalMetrics::add(
         DimensionalMetrics::MergeFailures,
         {String(ErrorCodes::getName(getCurrentExceptionCode()))});
