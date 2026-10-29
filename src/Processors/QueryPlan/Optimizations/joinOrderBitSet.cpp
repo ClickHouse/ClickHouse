@@ -134,7 +134,6 @@ SelectivityEstimate computeSelectivity(
                 continue;
             if (query_graph.equivalence_class_ndv_bound)
             {
-                /// Over the whole class, not only the two sides, see `applyEquivalenceClassBound`.
                 UInt64 member_size
                     = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).upper_bound;
                 if (member_size > 0)

@@ -84,8 +84,7 @@ inline void applyEquiKeyDistinctValues(SelectivityEstimate & estimate, UInt64 ma
         estimate.reported_value = std::min(estimate.reported_value, 1.0 / static_cast<double>(max_ndv_upper_bound));
 }
 
-/// Accounts for one key class with members on both sides; `class_min_size` is the smallest known row count
-/// (or NDV) over all its members, including relations on neither side.
+/// `class_min_size` is taken over all members of the class, including relations on neither side.
 inline void applyEquivalenceClassBound(SelectivityEstimate & estimate, UInt64 class_min_size)
 {
     ++estimate.connecting_keys;
@@ -94,7 +93,6 @@ inline void applyEquivalenceClassBound(SelectivityEstimate & estimate, UInt64 cl
 }
 
 /// Counts an equi condition between the two sides whose operands are not in one key class as another join key.
-/// `connects(edge)` tells whether the edge has sources on both sides.
 template <typename Connects>
 void countUnclassifiedEquiKeys(
     const QueryGraph & query_graph, SelectivityEstimate & estimate, const std::vector<JoinActionRef *> & edges, Connects && connects)

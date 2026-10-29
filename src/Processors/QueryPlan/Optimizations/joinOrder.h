@@ -164,7 +164,6 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
-    /// `query_plan_join_order_equivalence_class_ndv_bound`, see `SelectivityEstimate::class_bound_value`.
     bool equivalence_class_ndv_bound = false;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
