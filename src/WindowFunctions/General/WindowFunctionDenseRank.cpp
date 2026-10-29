@@ -1,9 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Transforms/WindowTransform.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -22,21 +23,24 @@ namespace ErrorCodes
 namespace
 {
 
-struct WindowFunctionDenseRank final : public StatelessWindowFunction
+class WindowFunctionDenseRank final : public IGeneralWindowFunction
 {
-    WindowFunctionDenseRank(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
-    {}
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
+public:
+    WindowFunctionDenseRank(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
-        IColumn & to = *transform->blocks.blockAt(transform->peers.current().location.block)
-            .result_columns[function_index];
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peers.current().peer_group_index_in_partition + 1);
+    }
+
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.peers = true};
+    }
+
+    void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override
+    {
+        auto & data = assert_cast<ColumnUInt64 &>(result).getData();
+        for (size_t i = 0; i < bounds.rows; ++i)
+            data.push_back(bounds.peer_group_index[i] + 1);
     }
 };
 
@@ -55,8 +59,7 @@ void registerWindowFunctionDenseRank(AggregateFunctionFactory & factory, const A
                     "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
                     "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
                     name, argument_types.size());
-            return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
-                parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionDenseRank>(name, argument_types, parameters));
         }, {.description = R"DOCS_MD(
 Ranks the current row within its partition without gaps. In other words, if the value of any new row encountered is equal to the value of one of the previous rows then it will receive the next successive rank without any gaps in ranking.
 
