@@ -703,6 +703,21 @@ public:
     bool isPrewhereDeferredAfterFinal() const;
     bool canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const;
 
+    /// The deterministic conditions of the `WHERE` above a `FINAL` read, which it applies as PREWHERE to the key ranges
+    /// it reads without merging (see `optimize_move_to_prewhere_if_final_non_intersecting`). The conditions stay in the `WHERE`.
+    void setNonIntersectingFinalFilter(FilterDAGInfoPtr filter);
+
+    /// The row-level filter and PREWHERE for reading `columns_to_read` of the key ranges that this `FINAL` read reads without
+    /// merging, or nullopt if they are the same as for the other ranges. The row-level filter drops the rows that `FINAL` hides
+    /// (see `createNonIntersectingFinalEngineFilter`) after the row policy, and PREWHERE adds the non-intersecting `FINAL` filter.
+    /// They give the same columns as the filters of the other ranges.
+    struct NonIntersectingFinalFilters
+    {
+        FilterDAGInfoPtr row_level_filter;
+        PrewhereInfoPtr prewhere_info;
+    };
+    std::optional<NonIntersectingFinalFilters> makeNonIntersectingFinalFilters(const Names & columns_to_read) const;
+
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
@@ -797,6 +812,9 @@ private:
     /// what still happens with `make_distributed_plan`, and is pinned by
     /// `05153_join_runtime_filters_index_analysis_modes`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
+
+    /// See `setNonIntersectingFinalFilter`
+    FilterDAGInfoPtr non_intersecting_final_filter;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
@@ -901,6 +919,9 @@ private:
         const InputOrderInfoPtr & input_order_info);
 
     bool isRowPolicyDeferredAfterFinal() const;
+
+    /// Whether the non-intersecting `FINAL` filter is set and can be used by this read.
+    bool canUseNonIntersectingFinalFilter() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,

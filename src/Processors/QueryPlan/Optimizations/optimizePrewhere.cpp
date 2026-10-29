@@ -26,6 +26,7 @@ namespace Setting
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool optimize_move_to_prewhere_if_final_non_intersecting;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool vector_search_with_rescoring;
@@ -170,6 +171,50 @@ ActionsDAG splitAndFillPrewhereInfo(
     }
 
     return std::move(split_result.second);
+}
+
+/// The filter that a `FINAL` read applies as PREWHERE to the key ranges it reads without merging: the conjunction of
+/// `conditions` except the ones in `moved_to_prewhere`, which the PREWHERE of all ranges already has.
+/// The filter keeps all its inputs in the output, so it only drops rows and does not change the header of the read.
+/// Returns nullptr if there is nothing left to apply.
+static FilterDAGInfoPtr buildNonIntersectingFinalFilter(
+    const std::list<const ActionsDAG::Node *> & conditions,
+    const std::unordered_set<const ActionsDAG::Node *> & moved_to_prewhere)
+{
+    ActionsDAG::NodeRawConstPtrs remaining;
+    for (const auto * condition : conditions)
+        if (!moved_to_prewhere.contains(condition))
+            remaining.push_back(condition);
+
+    if (remaining.empty())
+        return nullptr;
+
+    auto dag = ActionsDAG::cloneSubDAG(remaining, /*remove_aliases=*/ false);
+    const ActionsDAG::Node * filter_node = nullptr;
+    if (dag.getOutputs().size() == 1)
+    {
+        filter_node = dag.getOutputs().front();
+    }
+    else
+    {
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        filter_node = &dag.addFunction(func_builder_and, dag.getOutputs(), {});
+    }
+
+    auto filter = std::make_shared<FilterDAGInfo>();
+    filter->column_name = filter_node->result_name;
+    /// A filter that is a column itself (`WHERE flag`) has to stay in the output.
+    filter->do_remove_column = filter_node->type != ActionsDAG::ActionType::INPUT;
+
+    auto & outputs = dag.getOutputs();
+    outputs.clear();
+    if (filter->do_remove_column)
+        outputs.push_back(filter_node);
+    for (const auto * input : dag.getInputs())
+        outputs.push_back(input);
+
+    filter->actions = std::move(dag);
+    return filter;
 }
 
 /// Hash of `node` that does not depend on the names the node reads through.
@@ -342,11 +387,30 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
         columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
 
+    /// The conditions that a `FINAL` read can apply as PREWHERE to the key ranges it reads without merging. A row of such a range
+    /// has no other version, so any deterministic condition gives the same result before and after `FINAL`. They are collected
+    /// before the conditions on the sorting key are moved out of the filter below, and stay in the filter.
+    std::list<const ActionsDAG::Node *> non_intersecting_final_conditions;
+    if (is_final && read_from_merge_tree_step && settings[Setting::optimize_move_to_prewhere_if_final_non_intersecting])
+        non_intersecting_final_conditions = where_optimizer.optimize(filter_step->getExpression(),
+            filter_step->getFilterColumnName(),
+            source_step_with_filter->getContext(),
+            MergeTreeWhereOptimizer::FinalMode::NonIntersecting,
+            columns_read_before_filter).prewhere_nodes_list;
+
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
-        is_final,
+        is_final ? MergeTreeWhereOptimizer::FinalMode::SortingKeyOnly : MergeTreeWhereOptimizer::FinalMode::None,
         columns_read_before_filter);
+
+    /// The filter stays above the read, so a filter built by an earlier call is replaced only by a filter
+    /// built from the same or more conditions (see `optimize_prewhere_after_pushdown`).
+    if (!non_intersecting_final_conditions.empty())
+    {
+        if (auto filter = buildNonIntersectingFinalFilter(non_intersecting_final_conditions, optimize_result.prewhere_nodes))
+            read_from_merge_tree_step->setNonIntersectingFinalFilter(std::move(filter));
+    }
 
     if (optimize_result.prewhere_nodes.empty())
         return;

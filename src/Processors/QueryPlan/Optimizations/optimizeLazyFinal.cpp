@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
+#include <Processors/QueryPlan/ConvertingActions.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -163,14 +164,22 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     auto columns = reading_step->getAllColumnNames();
     bool is_deleted_added = false;
+    if (!merging_params.is_deleted_column.empty() && std::ranges::find(columns, merging_params.is_deleted_column) == columns.end())
+    {
+        columns.push_back(merging_params.is_deleted_column);
+        is_deleted_added = true;
+    }
+
+    /// No row of these parts has another version, so all deterministic conditions of the `WHERE` can be applied as PREWHERE
+    /// (see `optimize_move_to_prewhere_if_final_non_intersecting`). The filters are new objects, so they can be changed below.
+    if (auto filters = reading_step->makeNonIntersectingFinalFilters(columns))
+    {
+        non_final_query_info.row_level_filter = std::move(filters->row_level_filter);
+        non_final_query_info.prewhere_info = std::move(filters->prewhere_info);
+    }
+
     if (!merging_params.is_deleted_column.empty())
     {
-        if (std::ranges::find(columns, merging_params.is_deleted_column) == columns.end())
-        {
-            columns.push_back(merging_params.is_deleted_column);
-            is_deleted_added = true;
-        }
-
         /// If the prewhere or row-level filter on the ORIGINAL (FINAL) reading step
         /// consumed `is_deleted` as an input but did not expose it as an output,
         /// the column is missing from the read step's output header. Two consequences
@@ -198,11 +207,7 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
             }
             if (non_final_query_info.row_level_filter)
             {
-                const auto & original = *non_final_query_info.row_level_filter;
-                auto cloned_row_level = std::make_shared<FilterDAGInfo>();
-                cloned_row_level->actions = original.actions.clone();
-                cloned_row_level->column_name = original.column_name;
-                cloned_row_level->do_remove_column = original.do_remove_column;
+                auto cloned_row_level = std::make_shared<FilterDAGInfo>(non_final_query_info.row_level_filter->clone());
                 exposed |= exposeInputAsDAGOutput(cloned_row_level->actions, merging_params.is_deleted_column);
                 non_final_query_info.row_level_filter = std::move(cloned_row_level);
             }
@@ -254,6 +259,10 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     if (!merging_params.is_deleted_column.empty())
         addIsDeletedFilter(plan, merging_params.is_deleted_column, context, is_deleted_added);
+
+    /// The filters of the non-intersecting ranges read more columns before the others, which changes their order.
+    /// The plan is united with the FINAL read, so restore the order of its columns.
+    addConvertingActions(plan, *reading_step->getOutputHeader(), context);
 
     return plan;
 }

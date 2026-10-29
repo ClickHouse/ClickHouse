@@ -176,7 +176,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
-    bool is_final,
+    FinalMode final_mode,
     const NameSet & columns_read_before_filter)
 {
     const auto & settings = context->getSettingsRef();
@@ -187,7 +187,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
         = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
-    where_optimizer_context.is_final = is_final;
+    where_optimizer_context.final_mode = final_mode;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
     /// The reader does not apply string value filters when it may write the columns to the columns cache.
     where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
@@ -221,7 +221,7 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
 
             /// FINAL merges by physical name, so unwrap an analyzer alias to its input column
             /// before moving it to PREWHERE (otherwise the alias reaches the merge as a measure).
-            if (is_final)
+            if (final_mode == FinalMode::SortingKeyOnly)
             {
                 const ActionsDAG::Node * unwrapped = condition_node;
                 while (unwrapped->type == ActionsDAG::ActionType::ALIAS)
@@ -455,9 +455,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// Condition depends on some column. Constant expressions are not moved.
             && !info.columns.empty()
             && !cannotBeMoved(conjunct, where_optimizer_context)
-            /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
-            /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            /// With FINAL, only conditions that give the same result for all versions of a key can be applied before the merge.
+            && canBeAppliedBeforeFinal(conjunct, where_optimizer_context)
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns,
@@ -633,7 +632,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && canBeAppliedBeforeFinal(conjunct, where_optimizer_context)
                 && columnsSupportPrewhere(columns)
                 && (columns.size() < queried_columns.size()
                     || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
@@ -952,7 +951,20 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
     return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
 }
 
-bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
+bool MergeTreeWhereOptimizer::canBeAppliedBeforeFinal(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
+{
+    switch (where_optimizer_context.final_mode)
+    {
+        case FinalMode::None:
+            return true;
+        case FinalMode::SortingKeyOnly:
+            return isDeterministicExpression(node, where_optimizer_context.context, /*only_sorting_key=*/ true);
+        case FinalMode::NonIntersecting:
+            return isDeterministicExpression(node, where_optimizer_context.context, /*only_sorting_key=*/ false);
+    }
+}
+
+bool MergeTreeWhereOptimizer::isDeterministicExpression(const RPNBuilderTreeNode & node, const ContextPtr & context, bool only_sorting_key) const
 {
     if (node.isFunction())
     {
@@ -981,14 +993,14 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
             if (sorting_key_names.contains(argument_column_name))
                 continue;
 
-            if (!isDeterministicExpressionOverSortingKey(argument, context))
+            if (!isDeterministicExpression(argument, context, only_sorting_key))
                 return false;
         }
 
         return true;
     }
 
-    return node.isConstant() || sorting_key_names.contains(node.getColumnName());
+    return node.isConstant() || !only_sorting_key || sorting_key_names.contains(node.getColumnName());
 }
 
 bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
@@ -1038,7 +1050,8 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (where_optimizer_context.array_joined_names.contains(column_name) ||
             where_optimizer_context.array_joined_names.contains(Nested::extractTableName(column_name)) ||
-            (table_columns.contains(column_name) && where_optimizer_context.is_final && !isSortingKey(column_name)))
+            (table_columns.contains(column_name) && where_optimizer_context.final_mode == FinalMode::SortingKeyOnly
+                && !isSortingKey(column_name)))
             return true;
     }
 

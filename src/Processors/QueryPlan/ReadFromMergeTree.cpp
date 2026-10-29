@@ -16,8 +16,10 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -80,6 +82,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
@@ -268,6 +271,9 @@ namespace ProfileEvents
     extern const Event DistributedPlanWorkerPartsReceived;
     extern const Event DistributedPlanWorkerPartsScanned;
     extern const Event DistributedPlanWorkerPartsPruned;
+    extern const Event SelectedMarksFinalMerged;
+    extern const Event SelectedMarksFinalNonIntersecting;
+    extern const Event SelectedMarksFinalNonIntersectingWholeParts;
 }
 
 namespace DB
@@ -354,6 +360,7 @@ namespace Setting
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
     extern const SettingsBool apply_string_filters_during_scan;
+    extern const SettingsBool optimize_move_to_prewhere_if_final_non_intersecting;
     extern const SettingsBool defer_partition_pruning_after_final;
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
@@ -2549,6 +2556,148 @@ std::optional<FilterDAGInfo> ReadFromMergeTree::getSamplingFilter() const
     return FilterDAGInfo{sampling.filter_expression->clone(), sampling.filter_function->getColumnName(), /*do_remove_column=*/false};
 }
 
+void ReadFromMergeTree::setNonIntersectingFinalFilter(FilterDAGInfoPtr filter)
+{
+    non_intersecting_final_filter = std::move(filter);
+
+    /// The filter is evaluated during reading, like PREWHERE, so its sets are built the same way (see `updatePrewhereInfo`).
+    if (non_intersecting_final_filter && indexes.has_value())
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(non_intersecting_final_filter->actions, context);
+}
+
+bool ReadFromMergeTree::canUseNonIntersectingFinalFilter() const
+{
+    /// Set only for a `FINAL` read with `optimize_move_to_prewhere_if_final_non_intersecting`.
+    if (!non_intersecting_final_filter)
+        return false;
+
+    /// A row policy runs before the conditions of the query, so they cannot be applied before a deferred one.
+    if (deferred_row_level_filter || deferred_prewhere_info || isPrewhereDeferredAfterFinal())
+        return false;
+
+    /// `Graphite` rolls up rows of different keys, so its FINAL is not a filter even on the ranges without other versions.
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+        return false;
+
+    /// These compose their own filters into PREWHERE, or read with filters that only they can reproduce.
+    if (is_parallel_reading_from_replicas || top_k_filter_info || vector_search_parameters || !index_read_tasks.empty())
+        return false;
+
+    return true;
+}
+
+/// The conjunction of two filters over the same block, with the outputs of both except the filter columns they remove.
+static FilterDAGInfo combineFilters(FilterDAGInfo first, const FilterDAGInfo & second)
+{
+    FilterDAGInfo result;
+    result.actions = std::move(first.actions);
+    const auto * first_node = &result.actions.findInOutputs(first.column_name);
+
+    ActionsDAG::NodeRawConstPtrs second_outputs;
+    result.actions.mergeNodes(second.actions.clone(), &second_outputs);
+    const auto second_it = std::ranges::find_if(second_outputs, [&](const auto * node) { return node->result_name == second.column_name; });
+    if (second_it == second_outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filter column {} is not in the outputs of its actions", second.column_name);
+    const auto * second_node = *second_it;
+
+    auto & outputs = result.actions.getOutputs();
+    for (const auto * node : second_outputs)
+        if (std::ranges::find(outputs, node) == outputs.end())
+            outputs.push_back(node);
+
+    const bool same_node = first_node == second_node;
+    if (first.do_remove_column && !(same_node && !second.do_remove_column))
+        std::erase(outputs, first_node);
+    if (second.do_remove_column && !(same_node && !first.do_remove_column))
+        std::erase(outputs, second_node);
+
+    FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    const auto * and_node = &result.actions.addFunction(func_builder_and, {first_node, second_node}, {});
+    outputs.push_back(and_node);
+
+    result.column_name = and_node->result_name;
+    result.do_remove_column = true;
+    return result;
+}
+
+/// Whether the blocks have the same columns, possibly in a different order.
+static bool haveSameColumns(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+
+    for (const auto & column : lhs)
+    {
+        const auto * other = rhs.findByName(column.name);
+        if (!other || !other->type->equals(*column.type))
+            return false;
+    }
+    return true;
+}
+
+std::optional<ReadFromMergeTree::NonIntersectingFinalFilters> ReadFromMergeTree::makeNonIntersectingFinalFilters(const Names & columns_to_read) const
+{
+    if (!canUseNonIntersectingFinalFilter())
+        return std::nullopt;
+
+    /// The filter can read only the columns of the read: after the plan optimizations a condition may use columns that are
+    /// not read anymore (e.g. a condition rewritten to use an index), then the WHERE above the read no longer needs them either.
+    const Block sample_block = storage_snapshot->getSampleBlockForColumns(columns_to_read);
+    for (const auto & column_name : non_intersecting_final_filter->actions.getRequiredColumnsNames())
+        if (!sample_block.has(column_name))
+            return std::nullopt;
+
+    NonIntersectingFinalFilters filters;
+
+    /// The rows that FINAL hides on these ranges are filtered out first, so that the conditions of the query see only
+    /// the rows they see after FINAL. The row policy keeps running before all other filters.
+    filters.row_level_filter = query_info.row_level_filter;
+    if (auto engine_filter = createNonIntersectingFinalEngineFilter(data.merging_params, sample_block, context))
+    {
+        filters.row_level_filter = std::make_shared<FilterDAGInfo>(query_info.row_level_filter
+            ? combineFilters(query_info.row_level_filter->clone(), *engine_filter)
+            : std::move(*engine_filter));
+    }
+
+    FilterDAGInfo prewhere_filter;
+    if (query_info.prewhere_info)
+    {
+        FilterDAGInfo key_filter;
+        key_filter.actions = query_info.prewhere_info->prewhere_actions.clone();
+        key_filter.column_name = query_info.prewhere_info->prewhere_column_name;
+        key_filter.do_remove_column = query_info.prewhere_info->remove_prewhere_column;
+        prewhere_filter = combineFilters(std::move(key_filter), *non_intersecting_final_filter);
+    }
+    else
+    {
+        prewhere_filter = non_intersecting_final_filter->clone();
+    }
+
+    filters.prewhere_info = std::make_shared<PrewhereInfo>(std::move(prewhere_filter.actions), std::move(prewhere_filter.column_name));
+    filters.prewhere_info->remove_prewhere_column = prewhere_filter.do_remove_column;
+    filters.prewhere_info->need_filter = true;
+
+    /// The filters must not change the columns of the read: these ranges are united with the merged ones.
+    /// A filter column that the query no longer reads (e.g. a condition rewritten to use an index) is consumed and dropped.
+    const Block expected_header = MergeTreeSelectProcessor::transformHeader(sample_block, query_info.row_level_filter, query_info.prewhere_info);
+    auto & prewhere_outputs = filters.prewhere_info->prewhere_actions.getOutputs();
+    std::erase_if(prewhere_outputs, [&](const auto * node)
+    {
+        return node->type == ActionsDAG::ActionType::INPUT && !expected_header.has(node->result_name)
+            && node->result_name != filters.prewhere_info->prewhere_column_name;
+    });
+
+    const Block header = MergeTreeSelectProcessor::transformHeader(sample_block, filters.row_level_filter, filters.prewhere_info);
+    if (!haveSameColumns(header, expected_header))
+    {
+        LOG_TEST(log, "Not applying the filter of non-intersecting FINAL ranges: it changes the columns of the read from {} to {}",
+            expected_header.dumpNames(), header.dumpNames());
+        return std::nullopt;
+    }
+
+    return filters;
+}
+
 Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
     RangesInDataParts && parts,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -2558,7 +2707,33 @@ Pipe ReadFromMergeTree::readNonIntersectingWithEngineFilter(
     return readNonIntersectingFinalWithEngineFilter(
         data.merging_params, origin_column_names, context,
         [&](const Names & columns)
-        { return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns); });
+        {
+            auto filters = makeNonIntersectingFinalFilters(columns);
+            if (!filters)
+                return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns);
+
+            MergeTreeReaderSettings non_intersecting_reader_settings = reader_settings;
+            /// FINAL never consults the query condition cache, and the filter of these ranges is not the filter of the whole read.
+            non_intersecting_reader_settings.use_query_condition_cache = false;
+            non_intersecting_reader_settings.string_value_filters = {};
+            if (context->getSettingsRef()[Setting::apply_string_filters_during_scan])
+                non_intersecting_reader_settings.string_value_filters = extractStringValueFilters(
+                    filters->prewhere_info->prewhere_actions,
+                    filters->prewhere_info->prewhere_column_name,
+                    filters->row_level_filter ? &filters->row_level_filter->actions : nullptr);
+
+            /// The read pools take the filters and the reader settings when they are created.
+            auto saved_row_level_filter = std::exchange(query_info.row_level_filter, filters->row_level_filter);
+            auto saved_prewhere_info = std::exchange(query_info.prewhere_info, filters->prewhere_info);
+            auto saved_reader_settings = std::exchange(reader_settings, std::move(non_intersecting_reader_settings));
+            SCOPE_EXIT({
+                query_info.row_level_filter = std::move(saved_row_level_filter);
+                query_info.prewhere_info = std::move(saved_prewhere_info);
+                reader_settings = std::move(saved_reader_settings);
+            });
+
+            return spreadMarkRangesAmongStreams(std::move(parts), index_build_context, num_streams, columns);
+        });
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
@@ -2688,6 +2863,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             block_size.max_block_size_rows, enable_vertical_final, context, out_projection,
             read_lane_in_order, read_non_intersecting);
     }
+
+    /// Selected marks of each part, to tell how many of the marks read without merging belong to whole parts.
+    std::unordered_map<const IMergeTreeDataPart *, size_t> selected_marks_by_part;
+    for (const auto & part : parts_with_ranges)
+        selected_marks_by_part[part.data_part.get()] += part.getMarksCount();
 
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
@@ -2925,6 +3105,26 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         }
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
+    }
+
+    {
+        std::unordered_map<const IMergeTreeDataPart *, size_t> non_intersecting_marks_by_part;
+        size_t non_intersecting_marks = 0;
+        for (const auto & part : non_intersecting_parts_by_primary_key)
+        {
+            const size_t marks = part.getMarksCount();
+            non_intersecting_marks += marks;
+            non_intersecting_marks_by_part[part.data_part.get()] += marks;
+        }
+
+        size_t non_intersecting_whole_parts_marks = 0;
+        for (const auto & [part, marks] : non_intersecting_marks_by_part)
+            if (part->info.level > 0 && marks == selected_marks_by_part.at(part))
+                non_intersecting_whole_parts_marks += marks;
+
+        ProfileEvents::increment(ProfileEvents::SelectedMarksFinalMerged, total_marks_to_read - non_intersecting_marks);
+        ProfileEvents::increment(ProfileEvents::SelectedMarksFinalNonIntersecting, non_intersecting_marks);
+        ProfileEvents::increment(ProfileEvents::SelectedMarksFinalNonIntersectingWholeParts, non_intersecting_whole_parts_marks);
     }
 
     if (!non_intersecting_parts_by_primary_key.empty())
@@ -3625,6 +3825,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
         if (query_info.row_level_filter)
             VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
+        if (non_intersecting_final_filter)
+            VirtualColumnUtils::buildSetsForDAG(non_intersecting_final_filter->actions, context);
     }
 }
 
@@ -4921,13 +5123,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     if (query_info_copy.prewhere_info)
         query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>(query_info_copy.prewhere_info->clone());
     if (query_info_copy.row_level_filter)
-    {
-        auto row_level_filter_copy = std::make_shared<FilterDAGInfo>();
-        row_level_filter_copy->actions = query_info_copy.row_level_filter->actions.clone();
-        row_level_filter_copy->column_name = query_info_copy.row_level_filter->column_name;
-        row_level_filter_copy->do_remove_column = query_info_copy.row_level_filter->do_remove_column;
-        query_info_copy.row_level_filter = std::move(row_level_filter_copy);
-    }
+        query_info_copy.row_level_filter = std::make_shared<FilterDAGInfo>(query_info_copy.row_level_filter->clone());
 
     auto cloned_step = std::make_unique<ReadFromMergeTree>(
         prepared_parts,
@@ -4959,14 +5155,10 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
     if (deferred_row_level_filter)
-    {
-        auto deferred_row_level_filter_copy = std::make_shared<FilterDAGInfo>();
-        deferred_row_level_filter_copy->actions = deferred_row_level_filter->actions.clone();
-        deferred_row_level_filter_copy->column_name = deferred_row_level_filter->column_name;
-        deferred_row_level_filter_copy->do_remove_column = deferred_row_level_filter->do_remove_column;
-        cloned_step->deferred_row_level_filter = std::move(deferred_row_level_filter_copy);
-    }
+        cloned_step->deferred_row_level_filter = std::make_shared<FilterDAGInfo>(deferred_row_level_filter->clone());
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
+    if (non_intersecting_final_filter)
+        cloned_step->non_intersecting_final_filter = std::make_shared<FilterDAGInfo>(non_intersecting_final_filter->clone());
     /// Carry over the TopK marker: without it the clone would use the unsalted query condition cache key.
     /// It is copied rather than set with `setTopKColumn`, which would fold the part-set salt into `condition_hash` again.
     cloned_step->top_k_filter_info = top_k_filter_info;
@@ -6335,6 +6527,18 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         }
     }
 
+    if (canUseNonIntersectingFinalFilter())
+    {
+        format_settings.out << prefix << "Filter of non-intersecting FINAL ranges column: "
+                            << QueryPlanFormat::formatColumnPretty(non_intersecting_final_filter->column_name, format_settings.pretty_names)
+                            << '\n';
+        if (!format_settings.compact)
+        {
+            auto expression = std::make_shared<ExpressionActions>(non_intersecting_final_filter->actions.clone());
+            expression->describeActions(format_settings.out, prefix);
+        }
+    }
+
     if (virtual_row_conversion)
     {
         format_settings.out << prefix << "Virtual row conversions" << '\n';
@@ -6399,6 +6603,9 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
             deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_column_name);
         map.add("Deferred filters (applied after FINAL)", std::move(deferred_map));
     }
+
+    if (canUseNonIntersectingFinalFilter())
+        map.add("Filter of non-intersecting FINAL ranges column", non_intersecting_final_filter->column_name);
 
     if (virtual_row_conversion)
         map.add("Virtual row conversions", virtual_row_conversion->toTree());

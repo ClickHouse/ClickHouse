@@ -582,6 +582,9 @@
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.", ValueType::Number) \
+    M(SelectedMarksFinalMerged, "Number of marks (index granules) that a `FINAL` read from a MergeTree table merges with other parts.", ValueType::Number) \
+    M(SelectedMarksFinalNonIntersecting, "Number of marks (index granules) that a `FINAL` read from a MergeTree table reads without merging, because no other part has rows with the same key.", ValueType::Number) \
+    M(SelectedMarksFinalNonIntersectingWholeParts, "Number of marks (index granules) of `SelectedMarksFinalNonIntersecting` in merged parts, all selected marks of which are read without merging.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
