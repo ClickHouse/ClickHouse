@@ -26,6 +26,7 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
+#include <Analyzer/Passes/CorrelatedScalarAggregateToWindowPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
@@ -279,6 +280,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+    /// After `FunctionToSubcolumnsPass`, so the derived table reads the subcolumns instead of the whole columns.
+    manager.addPass(std::make_unique<CorrelatedScalarAggregateToWindowPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
