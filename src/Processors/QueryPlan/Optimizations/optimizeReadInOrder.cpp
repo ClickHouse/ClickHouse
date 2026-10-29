@@ -2034,7 +2034,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
 void disableSpreadingSmallReadUnderFullSorting(QueryPlan::Node & node)
 {
     const auto * sorting = typeid_cast<const SortingStep *>(node.step.get());
-    if (!sorting || sorting->getType() != SortingStep::Type::Full || sorting->getLimit() != 0 || node.children.size() != 1)
+    if (!sorting || sorting->getType() != SortingStep::Type::Full || sorting->getLimit() != 0 || sorting->hasPartitions()
+        || node.children.size() != 1)
         return;
 
     QueryPlan::Node * child = node.children.front();

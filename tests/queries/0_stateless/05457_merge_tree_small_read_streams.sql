@@ -22,5 +22,8 @@ SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT sum(k) FROM t_small_read 
 -- A full sort without LIMIT keeps the default streams, with LIMIT the read is spread.
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k FROM t_small_read ORDER BY k % 7) WHERE explain ILIKE '%MergeTreeSelect%';
 SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k FROM t_small_read ORDER BY k % 7 LIMIT 10) WHERE explain ILIKE '%MergeTreeSelect%';
+-- A window sort by partition does not merge its streams.
+SELECT trimBoth(explain) FROM (EXPLAIN PIPELINE SELECT k, row_number() OVER (PARTITION BY k % 3 ORDER BY k) FROM t_small_read
+    SETTINGS query_plan_enable_multithreading_after_window_functions = 1) WHERE explain ILIKE '%MergeTreeSelect%';
 
 DROP TABLE t_small_read;
