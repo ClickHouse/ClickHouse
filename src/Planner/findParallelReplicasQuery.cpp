@@ -689,40 +689,6 @@ StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_exp
     return table_function_node->getStorageID();
 }
 
-namespace
-{
-
-class CollectTableFunctionNodesVisitor : public InDepthQueryTreeVisitor<CollectTableFunctionNodesVisitor>
-{
-public:
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto * table_function_node = node->as<TableFunctionNode>())
-            table_function_nodes.push_back(table_function_node);
-    }
-
-    /// The arguments of a table function are not entered: whose current database a table function nested
-    /// there resolves against depends on the outer one - `remote` evaluates its arguments on the servers it
-    /// names. Left as written, such a call resolves the way it does without parallel replicas.
-    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
-    {
-        return !parent->as<TableFunctionNode>();
-    }
-
-    std::vector<TableFunctionNode *> table_function_nodes;
-};
-
-}
-
-void qualifyTableFunctionArguments(QueryTreeNodePtr & query_tree_node)
-{
-    /// Collected first: the traversal relies on the argument lists it walks staying as they are.
-    CollectTableFunctionNodesVisitor visitor;
-    visitor.visit(query_tree_node);
-    for (auto * table_function_node : visitor.table_function_nodes)
-        table_function_node->qualifyTableArgument();
-}
-
 const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
@@ -843,7 +809,6 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
-    qualifyTableFunctionArguments(modified_query_tree);
 
     auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());

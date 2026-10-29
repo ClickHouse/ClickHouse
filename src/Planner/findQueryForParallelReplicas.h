@@ -35,11 +35,6 @@ const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr
 /// table a replica may not have costs parallelism; skipping the check costs correctness.
 StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_expression_node);
 
-/// Rewrites every table function call in the tree that names a table in its arguments to name it as
-/// `'database', 'table'` (`ITableFunction::getTableArgument`), so the query sent to the replicas resolves
-/// the call to the same table there. The replicas do not get the initiator's current database.
-void qualifyTableFunctionArguments(QueryTreeNodePtr & query_tree_node);
-
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 class Context;
