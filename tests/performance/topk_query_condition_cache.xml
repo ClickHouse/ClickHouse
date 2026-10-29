@@ -7,7 +7,7 @@
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10</query>
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10</query>
     <query>SELECT SearchPhrase FROM hits_100m_single ORDER BY EventTime LIMIT 10</query>
-    <!-- With `max_threads = 4` the few marks left after the cache are read by all four streams. -->
+    <!-- With `max_threads = 4` the few marks left after the cache are spread over more streams. -->
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10 SETTINGS max_threads = 4</query>
     <query>SELECT SearchPhrase FROM hits_100m_single WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10 SETTINGS max_threads = 4</query>
     <query>SELECT * FROM hits_100m_single WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 SETTINGS max_threads = 4</query>

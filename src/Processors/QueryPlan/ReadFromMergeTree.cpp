@@ -1976,7 +1976,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         /// (adaptive granularity, no columns cache, local prefetched pool not allowed).
         if (is_local_unordered_read && data.canUseAdaptiveGranularity() && !info.use_columns_cache
             && !settings[Setting::allow_prefetched_read_pool_for_local_filesystem]
-            && initial_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
+            && requested_num_streams <= MIN_STREAMS_TO_CAP_BY_READ_BYTES && num_streams > 1 && num_streams < initial_num_streams)
         {
             static constexpr size_t tasks_per_stream = 3;
             const size_t min_task_marks = settings[Setting::merge_tree_min_read_task_size];
