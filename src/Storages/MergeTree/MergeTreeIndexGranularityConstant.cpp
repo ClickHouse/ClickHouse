@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -116,10 +117,11 @@ size_t MergeTreeIndexGranularityConstant::getRowsCountInRange(size_t begin, size
 
 size_t MergeTreeIndexGranularityConstant::getMarkUpperBoundForRow(size_t row_index) const
 {
-    size_t num_rows_with_constant_granularity = (num_marks_without_final - 1) * constant_granularity;
-
     if (row_index >= getTotalRows())
         return getMarksCount();
+
+    /// Not empty here, so `num_marks_without_final - 1` does not wrap.
+    size_t num_rows_with_constant_granularity = (num_marks_without_final - 1) * constant_granularity;
 
     if (row_index >= num_rows_with_constant_granularity)
         return num_marks_without_final - 1;
@@ -127,18 +129,30 @@ size_t MergeTreeIndexGranularityConstant::getMarkUpperBoundForRow(size_t row_ind
     return row_index / constant_granularity;
 }
 
+namespace
+{
+
+size_t saturatingAdd(size_t a, size_t b)
+{
+    size_t res;
+    if (__builtin_add_overflow(a, b, &res))
+        return std::numeric_limits<size_t>::max();
+    return res;
+}
+
+}
+
 size_t MergeTreeIndexGranularityConstant::countMarksForRows(size_t from_mark, size_t number_of_rows) const
 {
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + number_of_rows;
+    /// Saturate: a caller asking for more rows than remain gets the marks up to the end of the part.
+    size_t last_row_pos = saturatingAdd(getMarkStartingRow(from_mark), number_of_rows);
 
     return getMarkUpperBoundForRow(last_row_pos) - from_mark;
 }
 
 size_t MergeTreeIndexGranularityConstant::countRowsForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows) const
 {
-    size_t rows_before_mark = getMarkStartingRow(from_mark);
-    size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
+    size_t last_row_pos = saturatingAdd(saturatingAdd(getMarkStartingRow(from_mark), offset_in_rows), number_of_rows);
 
     return getRowsCountInRange(from_mark, std::max(1UL, getMarkUpperBoundForRow(last_row_pos))) - offset_in_rows;
 }
