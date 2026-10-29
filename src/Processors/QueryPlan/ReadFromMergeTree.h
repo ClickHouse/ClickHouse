@@ -518,6 +518,8 @@ public:
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
+    /// Whether the read goes through a table function (`timeSeriesSamples`) rather than a table.
+    bool readsThroughTableFunction() const;
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.

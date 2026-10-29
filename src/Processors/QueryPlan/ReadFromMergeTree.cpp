@@ -4091,6 +4091,11 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
+bool ReadFromMergeTree::readsThroughTableFunction() const
+{
+    return query_info.table_expression && query_info.table_expression->as<TableFunctionNode>();
+}
+
 String ReadFromMergeTree::getParallelReplicasStreamId() const
 {
     /// A read through a table function may read a storage whose name is local to each server: the target of
