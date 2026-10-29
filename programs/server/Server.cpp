@@ -1111,7 +1111,7 @@ try
         getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
     );
 
-#if defined(__x86_64__)
+    /// Log the CPU instruction sets detected at runtime.
     String cpu_info;
 #define COLLECT_FLAG(X) \
     if (CPU::have##X()) \
@@ -1124,8 +1124,7 @@ try
     CPU_ID_ENUMERATE(COLLECT_FLAG)
 #undef COLLECT_FLAG
 
-    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
-#endif
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info.empty() ? "none detected" : cpu_info);
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
