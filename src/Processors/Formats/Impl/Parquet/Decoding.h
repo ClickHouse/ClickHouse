@@ -479,6 +479,7 @@ struct GeoConverter : public StringConverter
     GeoConverter(const GeoColumnMetadata & geo_metadata_, bool precise_float_parsing_)
         : geo_metadata(geo_metadata_), precise_float_parsing(precise_float_parsing_) {}
 
+    bool canRejectValues() const override { return true; }
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };
 

@@ -48,3 +48,5 @@ nullable columns only
 2536	5274141000586290999
 a value the read type cannot hold, only in rows filtered out
 2500	2000-01-01	2006-11-04
+a geometry the read type cannot hold, only in rows filtered out
+2500	6247500	2500

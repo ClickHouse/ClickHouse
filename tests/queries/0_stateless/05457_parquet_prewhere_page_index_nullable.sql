@@ -110,6 +110,14 @@ FROM numbers(5000)
 SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 1024;
 SELECT count(), min(d), max(d) FROM file(currentDatabase() || '_05457_dates.parquet', Parquet, 'k UInt64, d Date') PREWHERE k % 2 = 0;
 
+SELECT 'a geometry the read type cannot hold, only in rows filtered out';
+INSERT INTO FUNCTION file(currentDatabase() || '_05457_geo.parquet')
+SELECT number AS k, if(number % 2 = 0, ((number, 1)::Point)::Geometry, ([(0, 0), (number, 1)]::LineString)::Geometry) AS g
+FROM numbers(5000)
+SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 1024,
+    output_format_parquet_geometry_logical_type = 1, allow_suspicious_variant_types = 1;
+SELECT count(), sum(tupleElement(g, 1)), sum(tupleElement(g, 2)) FROM file(currentDatabase() || '_05457_geo.parquet', Parquet, 'k UInt64, g Point') PREWHERE k % 2 = 0;
+
 DROP TABLE pq_idx;
 DROP TABLE pq_noidx;
 DROP TABLE src;
