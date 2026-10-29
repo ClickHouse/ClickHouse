@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+from scipy import stats
+
+CURDIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+
+from pure_http_client import ClickHouseClient
+
+# Degrees of freedom worth covering: below one, the Cauchy case, small integers, the fractional
+# values a weighted test produces, and large ones where the distribution is close to normal.
+DEGREES_OF_FREEDOM = [0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 12.75, 37.5, 100.0, 399.0, 1e6]
+
+# Reaching far into the tail matters: that is where a normal approximation to this distribution
+# goes wrong, and where cancellation would show up.
+POINTS = [-40.0, -25.0, -12.0, -6.0, -4.0, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5,
+          0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 12.0, 25.0, 40.0]
+
+TOLERANCE = 1e-11
+
+
+def check(expression, cases, expected):
+    """Evaluate `expression` over `cases` in ClickHouse and compare against `expected`."""
+    client = ClickHouseClient()
+    values = ", ".join("({!r}, {!r})".format(float(a), float(b)) for a, b in cases)
+    query = "SELECT {} FROM values('x Float64, df Float64', {}) FORMAT TSV;".format(
+        expression, values
+    )
+    # Parsed with float() rather than through a dataframe: ClickHouse writes the full decimal
+    # expansion, and pandas' default CSV float parser silently drops about five significant digits
+    # of it, which is more than the tolerance below allows.
+    actual = [float(line) for line in client.query(query).splitlines() if line]
+
+    for (a, b), got in zip(cases, actual):
+        want = expected(a, b)
+        # Relative, so that a tail value of 1e-138 is held to the same standard as one of 0.5.
+        allowed = TOLERANCE * max(abs(want), 1e-300) + 1e-300
+        assert abs(got - want) <= allowed, (
+            "{} at ({}, {}): clickhouse {!r}, scipy {!r}".format(expression, a, b, got, want)
+        )
+
+
+def test_cdf():
+    cases = [(x, df) for df in DEGREES_OF_FREEDOM for x in POINTS]
+    check("studentTCDF(x, df)", cases, lambda x, df: stats.t.cdf(x, df))
+
+
+def test_two_tailed_p_value():
+    """The reason the function exists: a p-value for a statistic computed elsewhere, at degrees of
+    freedom that are not a whole number."""
+    cases = [(t, df) for df in [10.5, 37.5, 398.25]
+             for t in [0.25, 1.1, 1.96, 2.5, 4.0, 7.5]]
+    check("2 * studentTCDF(-abs(x), df)", cases, lambda t, df: 2 * stats.t.sf(abs(t), df))
+
+
+if __name__ == "__main__":
+    test_cdf()
+    test_two_tailed_p_value()
+    print("Ok.")
