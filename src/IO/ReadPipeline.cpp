@@ -233,8 +233,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    const std::string query_id(CurrentThread::getQueryId());
-
     /// Only local files and object storage are supported; other sources fall back.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
     /// Read-through cache chain (front = fastest); populated below, once the source is chosen.
@@ -322,7 +320,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     {
         chassert(it->cache);
         cache_chain.push_back(std::make_shared<DiskCacheProvider>(
-            it->cache, it->cache_settings, query_id, settings.local_throttler,
+            it->cache, it->cache_settings, settings.local_throttler,
             it->custom_cache_key, it->custom_origin));
     }
 
