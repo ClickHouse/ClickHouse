@@ -6495,26 +6495,69 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         /// (`a.d` next to a `JSON` column `a`), or a subcolumn of such a column (`a.x.y` of a column `a.x` next to a `JSON`
         /// column `a`), while some part misses that column: the reader keeps the old meaning of a name that a TTL expression
         /// reads for such a part, so adding the TTL would change what the part returns. A part that records the column as
-        /// missing (`skip_empty_columns_on_insert`) reads its default either way, as the reader does.
+        /// missing (`skip_empty_columns_on_insert`) reads its default either way, as the reader does. The reader looks the
+        /// column up in the part under its name in the part, so the name is translated back through the renames of this
+        /// `ALTER` and through the renames not yet applied to the part: a column `a.size0` renamed to `a.sz` is still read
+        /// as `a.size0` from a part that misses it.
         if (is_initial_alter && new_metadata.hasAnyTTL())
         {
             const auto & new_columns = new_metadata.getColumns();
             auto old_ttl_columns = getColumnsRequiredForTTL(old_metadata);
 
             std::optional<DataPartsVector> parts;
+            std::vector<AlterConversionsPtr> parts_alter_conversions;
             for (const auto & ttl_column : getColumnsRequiredForTTL(new_metadata))
             {
-                if (std::ranges::find(old_ttl_columns, ttl_column) != old_ttl_columns.end())
+                auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, ttl_column);
+                if (!column)
                     continue;
-                auto shadowing_column = getColumnShadowingSubcolumn(new_columns, ttl_column);
-                if (!shadowing_column)
+
+                String name_in_storage = column->getNameInStorage();
+                for (const auto & command : commands | std::views::reverse)
+                {
+                    if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore && command.rename_to == name_in_storage)
+                        name_in_storage = command.column_name;
+                }
+                const String subcolumn_name = column->getSubcolumnName();
+
+                if (std::ranges::find(old_ttl_columns, Nested::concatenateName(name_in_storage, subcolumn_name)) != old_ttl_columns.end())
                     continue;
 
                 if (!parts)
-                    parts = getDataPartsVectorForInternalUsage();
-                for (const auto & part : *parts)
                 {
-                    if (partReadsColumnAsSubcolumnOfAnother(*part, ttl_column, *shadowing_column, new_columns))
+                    parts = getDataPartsVectorForInternalUsage();
+                    auto parts_info = getPartsSnapshotInfo(*parts);
+                    IMutationsSnapshot::Params params
+                    {
+                        .metadata_version = old_metadata.getMetadataVersion(),
+                        .min_part_metadata_version = parts_info.min_metadata_version,
+                        .min_part_data_versions = nullptr,
+                        .max_mutation_versions = nullptr,
+                        .need_data_mutations = false,
+                        .need_alter_mutations = true,
+                        .need_patch_parts = false,
+                        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+                    };
+                    auto mutations_snapshot = getMutationsSnapshot(params);
+                    for (const auto & part : *parts)
+                        parts_alter_conversions.push_back(getAlterConversionsForPart(part, mutations_snapshot, local_context
+#if CLICKHOUSE_CLOUD
+                            , nullptr
+#endif
+                            ));
+                }
+
+                for (size_t i = 0; i < parts->size(); ++i)
+                {
+                    const auto & part = (*parts)[i];
+                    const auto & alter_conversions = parts_alter_conversions[i];
+                    String name_in_part_storage = alter_conversions->isColumnRenamed(name_in_storage)
+                        ? alter_conversions->getColumnOldName(name_in_storage)
+                        : name_in_storage;
+
+                    if (!part->getColumnsDescription().hasPhysical(name_in_part_storage)
+                        && part->tryGetColumn(Nested::concatenateName(name_in_part_storage, subcolumn_name))
+                        && !part->getSerializationInfos().getMissingColumnInfo(name_in_part_storage))
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "Cannot use column {} in a TTL expression: part {} does not hold it and reads its name as a subcolumn "
