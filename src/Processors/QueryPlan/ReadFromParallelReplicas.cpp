@@ -128,6 +128,13 @@ ReadFromParallelReplicasStep::ReadFromParallelReplicasStep(
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
+void ReadFromParallelReplicasStep::enableGroupByTopK(size_t top_k_limit)
+{
+    auto new_context = Context::createCopy(context);
+    new_context->setSetting("distributed_group_by_top_k", top_k_limit);
+    context = std::move(new_context);
+}
+
 void ReadFromParallelReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes = addPipes(output_header);

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
@@ -721,8 +722,13 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         if (served_columns)
         {
             for (size_t i = run_begin; i < run_end; ++i)
+            {
                 if (segments[i].offset + segments[i].rows == segments[i].granule_rows)
                     ProfileEvents::increment(ProfileEvents::ColumnsCacheHits, served_columns);
+                /// Counted on the first piece of the granule: when rows are skipped, it may never be served to its end.
+                if (counted_compressed_blocks)
+                    addGranuleServedFromColumnsCache(segments[i].mark, from_disk);
+            }
         }
 
         read_rows += rows;
@@ -1043,6 +1049,95 @@ std::vector<MergeTreeReaderStream *> MergeTreeReaderWide::FileStreams::getAll() 
     return result;
 }
 
+void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(const String & stream_name, MergeTreeReaderStream & stream)> & callback) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & [stream_name, stream] : streams)
+        callback(stream_name, *stream);
+}
+
+CompressedBlockRanges & MergeTreeReaderWide::getRangesRead(const String & stream_name)
+{
+    std::lock_guard lock(ranges_read_mutex);
+    return ranges_read[stream_name];
+}
+
+void MergeTreeReaderWide::countCompressedBytesRead(CountedCompressedBlocksPtr counted)
+{
+    IMergeTreeReader::countCompressedBytesRead(std::move(counted));
+    /// The streams created later get their sink in `getOrAddStream`.
+    streams.forEach([&](const String & stream_name, MergeTreeReaderStream & stream) { stream.setBlocksReadSink(&getRangesRead(stream_name)); });
+}
+
+std::optional<size_t> MergeTreeReaderWide::takeCompressedBytesRead()
+{
+    if (!counted_compressed_blocks)
+        return std::nullopt;
+
+    std::lock_guard lock(ranges_read_mutex);
+    if (served_from_cache_without_known_streams)
+    {
+        /// Not measured, but the buffers of the streams keep appending the blocks they load: drop them.
+        for (auto & [_, ranges] : ranges_read)
+            ranges.clear();
+        return std::nullopt;
+    }
+
+    const auto part_path = data_part_info_for_read->getDataPartStorage()->getFullPath() + "/";
+    size_t bytes = 0;
+    for (auto & [stream_name, ranges] : ranges_read)
+    {
+        if (!ranges.empty())
+            bytes += counted_compressed_blocks->take(part_path + stream_name, ranges);
+    }
+    return bytes;
+}
+
+void MergeTreeReaderWide::addGranuleServedFromColumnsCache(size_t mark, const std::vector<bool> & from_disk)
+{
+    if (served_from_cache_without_known_streams)
+        return;
+
+    for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+    {
+        if (isColumnSkipped(pos) || isColumnFilledAfterReading(pos) || from_disk[pos])
+            continue;
+
+        const auto & name_and_type = columns_to_read[pos];
+        /// The streams are enumerated without a deserialization state, so those listed in the prefixes are missed: the
+        /// structure of dynamic types, and the buckets of a `Map`, whose info stream is enumerated in their place.
+        /// A `Quantized` column enumerates its codes and codebook, which reading the vectors skips, and the single value
+        /// of the codebook is read from the beginning of its file for any granule, not from the granule's mark.
+        const auto & type_in_storage = name_and_type.getTypeInStorage();
+        const auto * custom_serialization = type_in_storage->getCustomSerialization();
+        if (type_in_storage->hasDynamicStructure()
+            || (custom_serialization && typeid(*custom_serialization) == typeid(SerializationQuantizedVector)))
+        {
+            served_from_cache_without_known_streams = true;
+            return;
+        }
+
+        serializations[pos]->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        {
+            /// The null map of a sparse `Nullable` is derived from the sparse offsets, which are not enumerated here.
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size())
+                || substream_path.back().type == ISerialization::Substream::MapBucketsInfo)
+            {
+                served_from_cache_without_known_streams = true;
+                return;
+            }
+            const auto & stream_name = getStreamName(name_and_type, substream_path);
+            auto * stream = stream_name ? streams.find(*stream_name) : nullptr;
+            if (!stream)
+                return;
+
+            /// A block that holds the granule is counted once for the reader by `takeCompressedBytesRead`, also when it is read,
+            /// or holds other granules or columns served from the cache.
+            stream->addRangeOfMark(mark, getRangesRead(*stream_name));
+        });
+    }
+}
+
 bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
 {
     std::lock_guard lock(mutex);
@@ -1103,6 +1198,8 @@ MergeTreeReaderStream & MergeTreeReaderWide::getOrAddStream(const ISerialization
                 std::move(marks_loader), profile_callback, clock_type);
             /// Streams of `Dynamic` subcolumns are created while a task reads, after the map was announced.
             stream->updateReadRequestMap(read_request_map);
+            if (counted_compressed_blocks)
+                stream->setBlocksReadSink(&getRangesRead(stream_name));
             return stream;
         };
 

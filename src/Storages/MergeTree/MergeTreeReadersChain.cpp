@@ -273,28 +273,6 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
-/// Builds `ColumnsWithTypeAndName` using the on-disk column descriptions (from `IMergeTreeReader::getColumnsToRead`).
-/// This is important when columns have not yet been converted, i.e. their types with differ those contained in `getReadSampleBlock`.
-static ColumnsWithTypeAndName toColumnsWithTypeAndName(const Columns & columns, const NamesAndTypes & on_disk_columns)
-{
-    if (columns.size() != on_disk_columns.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Number of columns doesn't match number of on-disk columns, columns size: {}, on_disk_columns size: {}",
-            columns.size(),
-            on_disk_columns.size());
-
-    ColumnsWithTypeAndName res;
-    res.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        /// Columns might be null, e.g. not yet filled by `fillMissingColumns`.
-        if (columns[i])
-            res.emplace_back(columns[i], on_disk_columns[i].type, on_disk_columns[i].name);
-    }
-    return res;
-}
-
 MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
@@ -329,18 +307,13 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         throw;
     }
 
-    std::optional<bool> should_continue_sampling;
+    /// Taken after every step, whether it returned rows or not: what a reader loaded is read all the same.
+    if (dataflow_cache_update_cb)
+        dataflow_cache_update_cb(first_reader.getReader()->takeCompressedBytesRead());
+
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
-
-        /// Record the statistics before `readPatches`, which fills the columns missing on disk.
-        if (dataflow_cache_update_cb)
-            dataflow_cache_update_cb(
-                toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
-                first_reader.getReader()->getPartiallyReadColumns(),
-                read_result.num_bytes_read,
-                should_continue_sampling);
 
         readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, previous_steps_columns.front(), read_result.num_rows);
@@ -354,9 +327,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     for (size_t i = 1; i < range_readers.size(); ++i)
     {
-        const size_t num_bytes_read_so_far = read_result.num_bytes_read;
         size_t num_read_rows = 0;
         auto columns = range_readers[i].continueReadingChain(read_result, num_read_rows);
+        if (dataflow_cache_update_cb)
+            dataflow_cache_update_cb(range_readers[i].getReader()->takeCompressedBytesRead());
 
         /// Even if number of read rows is 0 we need to apply all steps to produce a block with correct structure.
         /// It's also needed to properly advancing streams in later steps.
@@ -372,18 +346,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             /// In this case we need to use number of rows in the result to fill the default values and don't filter block.
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
-
-            if (dataflow_cache_update_cb)
-            {
-                chassert(read_result.num_bytes_read >= num_bytes_read_so_far);
-                // It is important that we call `recordInputColumns` here even if `should_continue_sampling`
-                // is already set to false, because we still need to update the total bytes seen.
-                dataflow_cache_update_cb(
-                    toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
-                    range_readers[i].getReader()->getPartiallyReadColumns(),
-                    read_result.num_bytes_read - num_bytes_read_so_far,
-                    should_continue_sampling);
-            }
 
             executeActionsBeforePrewhere(read_result, columns, range_readers[i], previous_header, previous_steps_columns[i], num_read_rows);
             read_result.columns.insert(read_result.columns.end(), columns.begin(), columns.end());

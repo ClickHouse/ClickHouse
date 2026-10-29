@@ -100,6 +100,17 @@ public:
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
     const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
+    /// Returns the compressed size of the blocks the reader loaded from the part since the previous call, the blocks
+    /// served from the uncompressed cache included, but not those counted already in the `CountedCompressedBlocks` given
+    /// to `countCompressedBytesRead`. `nullopt` if the reader cannot tell.
+    virtual std::optional<size_t> takeCompressedBytesRead() { return std::nullopt; }
+
+    /// For a caller that takes `takeCompressedBytesRead`: makes it count the granules served from the columns cache as well,
+    /// as the compressed size of the data reading them from the part would load. Costs loading the marks of the columns
+    /// served, and keeping the granules until they are taken, so a reader whose caller does not take them does not count them.
+    /// The readers of a read share `counted`, so a block that several of them load is counted once, as it is one replica's.
+    virtual void countCompressedBytesRead(CountedCompressedBlocksPtr counted) { counted_compressed_blocks = std::move(counted); }
+
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
@@ -160,6 +171,9 @@ protected:
     StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
+    /// See `countCompressedBytesRead`.
+    CountedCompressedBlocksPtr counted_compressed_blocks;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
