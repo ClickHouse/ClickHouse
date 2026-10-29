@@ -1223,6 +1223,13 @@ std::optional<UInt64> StorageMaterializedView::totalBytesUncompressed(const Sett
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
+    StoragePtr locked_target;
+    return getActionLock(type, locked_target);
+}
+
+ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type, StoragePtr & locked_target)
+{
+    locked_target.reset();
     if (type == ActionLocks::ViewRefresh && refresher)
         refresher->stop();
     /// `SYSTEM PAUSE VIEW` prevents future refreshes but does not interrupt the currently running
@@ -1232,7 +1239,11 @@ ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
     if (has_inner_table)
     {
         if (auto target_table = tryGetTargetTable())
-            return target_table->getActionLock(type);
+        {
+            auto action_lock = target_table->getActionLock(type);
+            locked_target = std::move(target_table);
+            return action_lock;
+        }
     }
     return ActionLock{};
 }

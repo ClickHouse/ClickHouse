@@ -89,20 +89,25 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
     /// separately could pair the lock with another storage: if `EXCHANGE TABLES t AND oldt` lands between
     /// the two lookups for an alias to `t`, the lock is taken on the storage now named `oldt` while the
     /// storage now named `t` is recorded as its owner, and `SYSTEM START MERGES oldt` does not release it.
-    /// The inner table of a materialized view is bound to the view by its UUID, so the view itself is asked:
-    /// it also stops or pauses its refresher for the corresponding lock types.
+    /// A materialized view is asked for the lock itself, because it also stops or pauses its refresher for
+    /// the corresponding lock types, and it reports the inner table it took the lock on: the inner table of a
+    /// non-`APPEND` refreshable view is bound by name, so resolving it again could see another storage.
     const auto lock_source = resolveAliases(table);
     if (!lock_source)
         return;
 
-    ActionLock action_lock = lock_source->getActionLock(action_type);
+    ActionLock action_lock;
+    StoragePtr owner;
+    if (auto * view = typeid_cast<StorageMaterializedView *>(lock_source.get()))
+        action_lock = view->getActionLock(action_type, owner);
+    else
+        action_lock = lock_source->getActionLock(action_type);
 
     if (action_lock.expired())
         return;
 
-    auto owner = resolveActionLockOwner(lock_source);
     if (!owner)
-        owner = table;
+        owner = lock_source;
 
     std::lock_guard lock(mutex);
 
