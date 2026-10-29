@@ -1,5 +1,9 @@
 common --check_direct_dependencies=error
 
+# ClickHouse embeds Bazel output directories in system.build_options.
+# Keep Bazel 9.3 target directory names for the Linux platforms.
+common --incompatible_limit_platforms_in_output_dir_to=@platforms//host:host
+
 common --incompatible_strict_action_env
 common --compilation_mode=opt
 common --@llvm//config:linux_opt_optimization_mode=O3
