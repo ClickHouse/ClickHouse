@@ -1,256 +1,193 @@
 ---
-description: 'Documentation for clickhousectl, the CLI for ClickHouse: local and cloud'
+description: 'Reference for clickhousectl, the CLI for ClickHouse and Postgres, from local development to ClickHouse Cloud'
+keywords: ['clickhousectl', 'chctl', 'CLI', 'ClickHouse Cloud', 'Managed Postgres', 'ClickPipes', 'ClickStack', 'command line']
 sidebarTitle: 'clickhousectl'
 slug: /interfaces/cli
 title: 'clickhousectl'
 doc_type: 'reference'
 ---
 
-`clickhousectl` is the CLI for ClickHouse: local and cloud.
+`clickhousectl` (alias `chctl`) is the official CLI for ClickHouse, from local development to ClickHouse Cloud. It works for people at a terminal, for scripts, and for coding agents.
 
 With `clickhousectl` you can:
-- Install and manage local ClickHouse versions
-- Launch and manage local ClickHouse servers
-- Run and manage local Postgres instances
-- Execute queries against ClickHouse servers
-- Set up ClickHouse Cloud and create cloud-managed ClickHouse clusters
-- Create and manage ClickHouse Cloud Postgres services
-- Manage ClickHouse Cloud resources
-- Create and manage ClickPipes for data ingestion (S3, Kafka, Kinesis, Postgres, MySQL, MongoDB, BigQuery)
-- Install the official ClickHouse agent skills into supported coding agents
-- Push your local ClickHouse development to cloud
 
-`clickhousectl` helps humans and AI-agents to develop with ClickHouse.
+- Install and switch local ClickHouse versions, run isolated local servers, and execute SQL
+- Run Docker-backed Postgres locally
+- Create, configure, scale, back up and query ClickHouse Cloud services
+- Create, monitor, configure and restore [ClickHouse Managed Postgres](/products/managed-postgres/overview) services
+- Create and operate ClickPipes from object storage, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB and BigQuery
+- Manage sources, dashboards, alerts, webhooks, saved searches and roles on a [Managed ClickStack](/clickstack/deployment/managed) service
+- Develop executable UDFs locally and deploy them to ClickHouse Cloud
+- Manage organization members, invitations, API keys and roles
+- Install the official ClickHouse agent skills into coding agents
+
+This page shows representative examples. `clickhousectl <command> --help` is the authoritative reference for every command and flag. Most commands' help ends with a `CONTEXT FOR AGENTS` block; for Cloud commands it also lists the API-key permissions they need. For task walkthroughs, follow the guide links in each section. For a Cloud-focused overview, see [ClickHouse CLI](/products/cloud/features/cli).
 
 ## Installation {#installation}
 
-### Quick install {#quick-install}
+`clickhousectl` runs on macOS and Linux, on ARM64 and x86_64.
 
 ```bash
-curl https://clickhouse.com/cli | sh
+curl -fsSL https://clickhouse.com/cli | sh
 ```
 
-The install script downloads the correct version for your OS and installs to `~/.local/bin/clickhousectl`. A `chctl` alias is also created automatically for convenience.
+The script installs `~/.local/bin/clickhousectl` and creates the `chctl` alias. Make sure `~/.local/bin` is on your `PATH`.
+
+You can also install it with a package manager:
+
+| Tool | Command |
+| --- | --- |
+| npm | `npm install -g clickhousectl` |
+| uv | `uv tool install clickhousectl` |
+| pipx | `pipx install clickhousectl` |
+| pip | `pip install clickhousectl` |
+| cargo-binstall | `cargo binstall clickhousectl` |
+| Cargo, from source (Rust 1.94+) | `cargo install clickhousectl` |
+
+Only the install script and npm create the `chctl` alias. To update an existing install, run `clickhousectl update` (see [Self-update](#self-update)).
 
 ## Requirements {#requirements}
 
-- macOS (aarch64, x86_64) or Linux (aarch64, x86_64)
-- Cloud commands require a [ClickHouse Cloud API key](/products/cloud/features/admin-features/api/api-overview)
+- Docker, for local Postgres only
+- For Cloud commands, a [ClickHouse Cloud](https://clickhouse.com/cloud) account. Read commands work with browser OAuth (`cloud auth login`). Creating or changing resources needs an [API key](/products/cloud/features/admin-features/api/openapi). See [Authentication](#authentication).
 
 ## Local {#local}
 
-### Installing and managing ClickHouse versions {#installing-versions}
+Local commands work in the current directory. Each project keeps its server data in `.clickhouse/`, while ClickHouse binaries are shared globally in `~/.clickhouse/`. The CLI does not search parent directories, so run local commands from your project root. See the [local development guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/local-development.md) for the full workflow.
 
-`clickhousectl` downloads ClickHouse binaries from `builds.clickhouse.com`, falling back to `packages.clickhouse.com` (Linux) or [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases) (macOS) when a build isn't available there.
+### Install and select versions {#installing-versions}
 
 ```bash
-# Install a version
-clickhousectl local install latest          # Latest release (recommended)
-clickhousectl local install 26.5            # Latest 26.5.x.x
-clickhousectl local install 26.5.2.39       # Exact version
-
-# List versions
+clickhousectl local use latest              # Install the latest ClickHouse and make it the default (recommended)
+clickhousectl local install lts             # Install the latest LTS release
+clickhousectl local install 26.8            # Latest 26.8.x.x release
 clickhousectl local list                    # Installed versions
-clickhousectl local list --remote           # Available for download
-
-# Manage default version
-clickhousectl local use latest              # Latest release (installs if needed, recommended)
-clickhousectl local use 26.5                # Latest 26.5.x.x (installs if needed)
-clickhousectl local use 26.5.2.39           # Exact version
-clickhousectl local use latest --no-global  # Set default but don't touch ~/.local/bin/clickhouse
-clickhousectl local which                   # Show current default
-
-# Remove a version
-clickhousectl local remove 26.5.2.39
+clickhousectl local list --remote           # Versions available for download
+clickhousectl local which                   # Current default
+clickhousectl local remove 26.8.1.1760      # Remove an exact installed version
 ```
 
-`local use` also creates a symlink at `~/.local/bin/clickhouse` pointing to the selected version's binary, so the plain `clickhouse` command (e.g. `clickhouse local`, `clickhouse client`) is on `PATH`. Pass `--no-global` to skip. If a regular file already exists at that path it is left alone with a warning. `local remove` of the active default version also clears the symlink.
+| Selector | Meaning |
+| --- | --- |
+| `latest` | Latest ClickHouse build, checked remotely on each install, use or start (recommended) |
+| `stable` | Latest stable release |
+| `lts` | Latest long-term support release |
+| `26.8` | Latest matching release |
+| `26.8.1.1760` | Exact version |
 
-#### ClickHouse binary storage {#binary-storage}
+`local use` installs the version if needed, sets it as the default for future server starts, and symlinks it to `~/.local/bin/clickhouse`, so `clickhouse client` and `clickhouse local` are on your `PATH`. Pass `--no-global` to skip the symlink. If a regular file already exists at that path, it is left alone.
 
-ClickHouse binaries are stored in a global repository, so they can be used by multiple projects without duplicating storage. Binaries are stored in `~/.clickhouse/`:
+`local remove` refuses the default version or one used by a running server in any project. `--force` stops those servers and removes the version, clearing the default and the symlink.
 
-```bash
-~/.clickhouse/
-├── versions/
-│   └── 26.5.2.39/
-│       └── clickhouse
-└── default              # tracks the active version
-```
-
-### Initializing a project {#initializing-project}
+### Initialize a project {#initializing-project}
 
 ```bash
 clickhousectl local init
 ```
 
-`init` bootstraps your current working directory with a standard folder structure for your ClickHouse and Postgres project files. It is optional; you are welcome to use your own folder structure if preferred.
+`init` is optional. It creates a git-ignored `.clickhouse/` directory for runtime data, plus SQL scaffolds you can commit: `clickhouse/` (`tables/`, `materialized_views/`, `queries/`, `seed/`, `udfs/`) and `postgres/` (`tables/`, `views/`, `functions/`, `queries/`, `seed/`). Re-running it only creates what is missing.
 
-It creates the following structure:
-
-```bash
-clickhouse/
-├── tables/                 # Table definitions (CREATE TABLE ...)
-├── materialized_views/     # Materialized view definitions
-├── queries/                # Saved queries
-└── seed/                   # Seed data / INSERT statements
-
-postgres/
-├── tables/                 # Table definitions (CREATE TABLE ...)
-├── views/                  # View definitions
-├── functions/              # Function definitions
-├── queries/                # Saved queries
-└── seed/                   # Seed data / INSERT statements
-```
-
-### Running queries {#running-queries}
+### Run local servers {#managing-servers}
 
 ```bash
-# Connect to a running server with clickhouse-client
-clickhousectl local client                           # Connects to "default" server
-clickhousectl local client --name dev                # Connects to "dev" server
-clickhousectl local client --query "SHOW DATABASES"  # Run a query
-clickhousectl local client --queries-file schema.sql # Run queries from a file
-clickhousectl local client --host remote-host --port 9000  # Connect to a specific host/port
+clickhousectl local server start dev --version latest   # Background start; waits for readiness
+clickhousectl local server start dev --no-wait          # Return after spawning
+clickhousectl local server start dev --foreground       # Run in the foreground
+clickhousectl local server start dev --http-port 8124 --tcp-port 9001
+clickhousectl local server list                         # Servers in this project
+clickhousectl local server list --global                # Servers across all projects
+clickhousectl local server stop dev
+clickhousectl local server stop-all                     # Stop all ClickHouse and Postgres servers in this project
+clickhousectl local server remove dev                   # Permanently delete a stopped server's data
 ```
 
-### Creating and managing ClickHouse servers {#managing-servers}
+Each named server has its own data in `.clickhouse/servers/<name>/data/`, and stopping a server keeps it for the next start. Without a name, the first server is `default`; if `default` is already running, a new name is generated. Default ports are HTTP 8123 and TCP 9000, with free ports assigned when those are taken.
 
-Start and manage ClickHouse server instances. Each server gets its own isolated data directory at `.clickhouse/servers/<name>/data/`.
+`--version` chooses a version for that start without changing the default. A bare start with no version and no default installs `latest` without making it the default; run `local use latest` first to make it the default.
+
+### Run SQL with the local client {#running-queries}
 
 ```bash
-# Start a server (runs in background by default)
-clickhousectl local server start                          # Named "default"
-clickhousectl local server start --name dev               # Named "dev"
-clickhousectl local server start --version stable         # Use a specific version (installs if needed, doesn't change default)
-clickhousectl local server start --foreground             # Run in foreground (-F / --fg)
-clickhousectl local server start --http-port 8124 --tcp-port 9001  # Explicit ports
-clickhousectl local server start --config-file querylog          # Apply a named custom config
-
-# List all servers (running and stopped)
-clickhousectl local server list
-clickhousectl local server list --global                  # List servers across all projects
-
-# Stop servers
-clickhousectl local server stop default                   # Stop by name
-clickhousectl local server stop default --global          # Stop from any project
-clickhousectl local server stop-all                       # Stop all running servers
-
-# Remove a stopped server and its data
-clickhousectl local server remove test
-
-# Write connection env vars to a .env file
-clickhousectl local server dotenv                         # From "default" server → .env
-clickhousectl local server dotenv --name dev              # From "dev" server → .env
-clickhousectl local server dotenv --local                 # Write to .env.local instead
+clickhousectl local client dev                                   # Interactive session
+clickhousectl local client dev --query "SELECT 1" --query "SELECT 2"
+clickhousectl local client dev --queries-file schema.sql seed.sql
+clickhousectl local client dev --query "SELECT version()" -- --format JSONEachRow
+clickhousectl local client --host localhost --port 9000          # Connect by address
 ```
 
-**Server naming:** Without `--name`, the first server is called "default". If "default" is already running, a random name is generated (e.g. "bold-crane"). Use `--name` for stable identities you can start/stop repeatedly.
+`local client` connects to a named server with the same ClickHouse binary that runs it (default name: `default`). Arguments after `--` go to `clickhouse client` unchanged. Output and exit status come from `clickhouse client`, even in JSON mode, so set the SQL output format yourself when scripting.
 
-**Ports:** Defaults are HTTP 8123 and TCP 9000. If these are already in use, free ports are automatically assigned and shown in the output. Use `--http-port` and `--tcp-port` to set explicit ports.
+### Custom server configuration {#custom-config-files}
 
-**Global server management:** Use `--global` with `list`, `stop`, and `stop-all` to operate across all projects system-wide. `server list --global` shows all running ClickHouse servers with a Project column indicating which directory each belongs to.
-
-#### Custom config files for local servers {#custom-config-files}
-
-Local servers start with sensible defaults, but sometimes you need to flip a setting. Drop a config file into `~/.clickhouse/configs/` and apply it by name when starting a server:
+Put a partial XML or YAML config in `~/.clickhouse/configs/` and select it by name when starting a server:
 
 ```bash
 mkdir -p ~/.clickhouse/configs
-cat > ~/.clickhouse/configs/querylog.yaml <<'EOF'
-query_log:
-    database: system
-    table: query_log
-EOF
-
-# See which configs are available
+cat > ~/.clickhouse/configs/analytics.xml <<'XML'
+<clickhouse>
+    <profiles>
+        <default><max_threads>4</max_threads></default>
+    </profiles>
+</clickhouse>
+XML
 clickhousectl local server configs
-
-# Start a server with one applied
-clickhousectl local server start --config-file querylog
+clickhousectl local server stop dev
+clickhousectl local server start dev --config analytics
 ```
 
-The named file is **overlaid on top of ClickHouse's built-in defaults** (via `config.d`), so it only needs to contain the settings you want to change, and there's no need to reproduce a full config. Files can be `.xml`, `.yaml`, or `.yml`, and you can reference them by name with or without the extension.
+The file is overlaid on the built-in defaults, so it only needs the settings you change. The selection is not remembered: a later start without `--config` removes the overlay. Managed data paths and ports always win over config values.
 
-#### Project-local data directory {#project-local-data}
-
-All server data lives inside `.clickhouse/` in your project directory:
+### Write connection details to a dotenv file {#dotenv}
 
 ```bash
-.clickhouse/
-├── .gitignore              # auto-created, ignores everything
-├── credentials.json        # cloud API credentials (if configured)
-└── servers/
-    ├── default/
-    │   └── data/           # ClickHouse data files for "default" server
-    └── dev/
-        └── data/           # ClickHouse data files for "dev" server
+clickhousectl local server dotenv dev                                     # Writes .env
+clickhousectl local server dotenv dev --local --user default --database analytics   # Writes .env.local
 ```
 
-Each named server has its own data directory, so servers are fully isolated from each other. Data persists between restarts. Stop and start a server by name to pick up where you left off. Use `clickhousectl local server remove <name>` to permanently delete a server's data.
+`dotenv` reads the running server's actual ports and writes `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT` and `CLICKHOUSE_HTTP_PORT`, plus the user, password and database when you pass them. Other lines in an existing file are kept. Load the file with your application's dotenv loader; never `eval` the printed preview.
 
-### Running local Postgres {#local-postgres}
+### Local Postgres {#local-postgres}
 
-In addition to ClickHouse, `clickhousectl` can run and manage local Postgres instances. Local Postgres is Docker-backed, so Docker must be installed and running. Each instance is identified by its name and major version, so multiple Postgres versions can run side by side with separate data directories.
+Local Postgres runs in Docker, so Docker must be running. Postgres 17 and 18 are supported, including image tags such as `18-alpine`; new instances default to 18.
 
 ```bash
-# Optionally pre-pull a Postgres image (supports 17, 18 and tags like 18-alpine)
-clickhousectl local install postgres@18
-
-# Start an instance (defaults to postgres:18 on port 5432)
-clickhousectl local postgres start
-clickhousectl local postgres start --name dev --version 17 --port 5433
-clickhousectl local postgres start --user app --password s3cret --database myapp
-clickhousectl local postgres start -e POSTGRES_INITDB_ARGS=--data-checksums
-
-# Connect with psql
-clickhousectl local postgres client --name dev
-clickhousectl local postgres client --name dev --query "SELECT 1"
-
-# Export connection variables to a .env file
-clickhousectl local postgres dotenv --name dev
-
-# Stop (preserves data) and remove (deletes data)
-clickhousectl local postgres stop dev
-clickhousectl local postgres remove dev
+clickhousectl local install postgres@18                 # Optional: pre-pull the image
+clickhousectl local postgres start app --version 18
+clickhousectl local postgres start app --wait-timeout 120
+clickhousectl local postgres client app --query "SELECT version()"
+clickhousectl local postgres client app --queries-file pg-schema.sql
+clickhousectl local postgres dotenv app --local
+clickhousectl local postgres stop app
+clickhousectl local postgres remove app                 # Permanently delete the instance and its data
 ```
+
+An instance is identified by its name and major version. Resuming a stopped instance reuses its original port, user, password and database, so creation flags have no effect on a resume. A random password is generated unless you pass one. `.env.local` contains the password, so keep it out of version control.
+
+### Local UDFs {#local-udfs}
+
+`local udf` deploys [executable UDFs](/reference/functions/regular-functions/udf#executable-user-defined-functions) from `clickhouse/udfs/<name>/` to a local server. `cloud udf` uploads the same directory to Cloud (see [UDFs in Cloud](#cloud-udfs)).
+
+```bash
+clickhousectl local udf init my_udf            # udf.json and main.py (python3.11 runtime)
+clickhousectl local server start
+clickhousectl local udf deploy my_udf
+clickhousectl local client --query "SELECT my_udf(1)"
+clickhousectl local udf list
+clickhousectl local udf remove my_udf
+```
+
+Every command except `init` takes `--server <name>` (default `default`). `deploy` validates `udf.json` the same way Cloud does. On a running server, it reloads functions and confirms the function loaded. The `native` runtime deploys locally only on Linux amd64 or arm64 hosts. See the [user-defined functions guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md).
 
 ## Authentication {#authentication}
 
-Authenticate to ClickHouse Cloud using API keys (recommended) or OAuth (browser-based).
+Cloud commands use one of two credential types:
+
+| Credential | Capabilities | Storage |
+| --- | --- | --- |
+| Browser OAuth | Your user identity: read-only Cloud operations and read-only SQL, across every organization you belong to | `~/.clickhouse/tokens.json`, global and shared across projects |
+| API key | Scoped to one organization; reads and writes depend on the key's roles | `.clickhouse/credentials.json` when saved, local to the project |
 
 If you don't have a ClickHouse Cloud account yet, `clickhousectl cloud auth signup` opens the sign-up page in your browser.
-
-### API key/secret (recommended) {#api-key}
-
-API keys are the recommended way to authenticate, especially when driving the CLI from an AI agent. You can [create scoped API keys](/products/cloud/features/admin-features/api/openapi) that grant only the permissions you choose (read-only or read/write), and each key is tied to a single organization. This makes it a safe, least-privilege way to give the CLI access.
-
-```bash
-# Non-interactive (CI-friendly)
-clickhousectl cloud auth login --api-key YOUR_KEY --api-secret YOUR_SECRET
-
-# Interactive prompt
-clickhousectl cloud auth login --interactive
-```
-
-Credentials are saved to `.clickhouse/credentials.json` (project-local).
-
-You can also use environment variables, either exported in your session:
-```bash
-export CLICKHOUSE_CLOUD_API_KEY=your-key
-export CLICKHOUSE_CLOUD_API_SECRET=your-secret
-```
-
-Or placed in a `.env` file in your current working directory:
-```env
-CLICKHOUSE_CLOUD_API_KEY=your-key
-CLICKHOUSE_CLOUD_API_SECRET=your-secret
-```
-
-Or pass credentials directly via flags on any command:
-```bash
-clickhousectl cloud --api-key KEY --api-secret SECRET ...
-```
 
 ### OAuth login {#oauth-login}
 
@@ -258,493 +195,381 @@ clickhousectl cloud --api-key KEY --api-secret SECRET ...
 clickhousectl cloud auth login
 ```
 
-This opens your browser for authentication via the OAuth device flow. Tokens are saved to `.clickhouse/tokens.json` (project-local).
+This opens your browser for the OAuth device flow. Tokens are saved globally to `~/.clickhouse/tokens.json` and refreshed automatically.
 
 <Note>
-OAuth access is currently **read-only** and grants access to **all organizations you belong to**. For write access, or to scope the CLI to a single organization, [create a scoped API key](#api-key) instead.
+OAuth is **read-only**. To create or change resources, log in with an [API key](#api-key).
 </Note>
 
-### Auth status and logout {#auth-status}
+### API key {#api-key}
+
+[Create an API key](/products/cloud/features/admin-features/api/openapi) with the roles your commands need, then save it. The interactive prompt keeps the secret out of your shell history:
 
 ```bash
-clickhousectl cloud auth status    # Show current auth state
-clickhousectl cloud auth logout    # Clear all saved credentials (credentials.json & tokens.json)
+clickhousectl cloud auth login --interactive
+clickhousectl cloud auth login --api-key "$KEY_ID" --api-secret "$KEY_SECRET"   # Alternative
 ```
 
-Credential resolution order: CLI flags > `.clickhouse/credentials.json` > exported environment variables > `.env` file > OAuth tokens.
+Login verifies the key and prints the identity it belongs to. A key the API rejects is not saved, and the command exits 4. If the API is unreachable, the key is saved with a warning.
 
-### Debugging which credential source was used {#debug-credentials}
-
-Pass `--debug` to any `cloud` command to print the resolved credential source (and the API URL) to stderr before the command runs.
+For CI and other automation, inject the key through your secret manager instead of saving it:
 
 ```bash
-clickhousectl cloud --debug service list
-# [debug] auth source: credentials file (.clickhouse/credentials.json)
-# [debug] api url: https://api.clickhouse.cloud/v1
-# ... normal output ...
+export CLICKHOUSE_CLOUD_API_KEY=your-api-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-api-secret
 ```
+
+For development, the CLI also reads these variables from a `.env` file in the current directory. Keep `.env` out of version control.
+
+### Check and clear credentials {#auth-status}
+
+```bash
+clickhousectl cloud auth whoami          # Verify the active credentials and show the orgs they reach
+clickhousectl cloud auth status          # Show configured sources and which one is active
+clickhousectl cloud auth logout --oauth  # Clear OAuth tokens only
+clickhousectl cloud auth logout --api-keys
+clickhousectl cloud auth logout          # Clear both
+```
+
+`whoami` works with either credential type and exits 4 if the credentials are rejected. `status` can exit 0 even when no credentials work, so use `whoami` to test access. Logout does not unset environment variables or edit `.env`.
+
+### Credential precedence {#credential-precedence}
+
+The first available source wins:
+
+1. `--api-key` and `--api-secret` flags
+2. `.clickhouse/credentials.json`
+3. Exported environment variables
+4. Variables from `.env` in the current directory
+5. Global OAuth tokens
+
+Pass `--debug` to any `cloud` command to print the selected credential source and API URL to stderr:
+
+```bash
+clickhousectl cloud service list --debug
+```
+
+### Select an organization {#organizations}
+
+Organization-scoped commands pick the organization automatically only when your credentials reach exactly one. Otherwise pass `--org-id`, or `--org-name` with the exact name:
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud service list --org-id <org-id>
+clickhousectl cloud service list --org-name "My Org"
+```
+
+Most resource commands take a positional ID or an exact `--name`. See [authentication and access](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md) for permissions, restricted keys and logout cleanup.
 
 ## Cloud {#cloud}
 
-Manage ClickHouse Cloud services via the API.
-
-### Organizations {#organizations}
-
-```bash
-clickhousectl cloud org list              # List organizations
-clickhousectl cloud org get <org-id>      # Get organization details
-clickhousectl cloud org update <org-id> --name "Renamed Org"
-clickhousectl cloud org update <org-id> \
-  --remove-private-endpoint pe-1,cloud-provider=aws,region=us-east-1 \
-  --enable-core-dumps false
-clickhousectl cloud org prometheus <org-id> --filtered-metrics true
-clickhousectl cloud org usage <org-id> \
-  --from-date 2024-01-01 \
-  --to-date 2024-01-31
-```
+Cloud commands call the [ClickHouse Cloud API](/products/cloud/features/admin-features/api/api-overview). Create and update requests return once the API accepts them, so poll `get` until a resource reaches the state you need.
 
 ### Services {#services}
 
 ```bash
-# List services
+clickhousectl cloud service create --name analytics \
+  --provider aws --region us-east-1 --ip-allow '203.0.113.10/32=Office'
 clickhousectl cloud service list
-
-# Get service details
 clickhousectl cloud service get <service-id>
-
-# Create a service (minimal)
-clickhousectl cloud service create --name my-service
-
-# Create with scaling options
-clickhousectl cloud service create --name my-service \
-  --provider aws \
-  --region us-east-1 \
-  --min-replica-memory-gb 8 \
-  --max-replica-memory-gb 32 \
-  --num-replicas 2
-
-# Create with specific IP allowlist
-clickhousectl cloud service create --name my-service \
-  --ip-allow 10.0.0.0/8 \
-  --ip-allow 192.168.1.0/24
-
-# Create from backup
-clickhousectl cloud service create --name restored-service --backup-id <backup-uuid>
-
-# Create with release channel
-clickhousectl cloud service create --name my-service --release-channel fast
-
-# Create with GA request-only extras
-clickhousectl cloud service create --name my-service \
-  --tag env=prod \
-  --enable-endpoint mysql \
-  --private-preview-terms-checked \
-  --enable-core-dumps true
-
-# Start/stop a service
 clickhousectl cloud service start <service-id>
 clickhousectl cloud service stop <service-id>
-
-# Run SQL over HTTP via the Query API (no local clickhouse binary needed)
-clickhousectl cloud service query --name my-service --query "SELECT 1"
-clickhousectl cloud service query --id <service-id> --query "SELECT count() FROM system.tables" --format JSONEachRow
-clickhousectl cloud service query --name my-service --queries-file schema.sql   # "-" reads from stdin
-clickhousectl cloud service query --name my-service --database mydb --query "SHOW TABLES"
-echo "SELECT 1+1" | clickhousectl cloud service query --name my-service
-
-# Update service metadata and patches
-clickhousectl cloud service update <service-id> \
-  --name my-renamed-service \
-  --add-ip-allow 10.0.0.0/8 \
-  --remove-ip-allow 0.0.0.0/0 \
-  --add-private-endpoint-id pe-1 \
-  --release-channel fast \
-  --enable-endpoint mysql \
-  --add-tag env=staging \
-  --transparent-data-encryption-key-id tde-key-1 \
-  --enable-core-dumps false
-
-# Update replica scaling
-clickhousectl cloud service scale <service-id> \
-  --min-replica-memory-gb 24 \
-  --max-replica-memory-gb 48 \
-  --num-replicas 3 \
-  --idle-scaling true \
-  --idle-timeout-minutes 10
-
-# Reset password with generated credentials
+clickhousectl cloud service wake <service-id>             # Wake an idle service
 clickhousectl cloud service reset-password <service-id>
-
-# Delete a service (must be stopped first)
-clickhousectl cloud service delete <service-id>
-
-# Force delete: stops a running service then deletes
-clickhousectl cloud service delete <service-id> --force
+clickhousectl cloud service delete <service-id>           # Must be stopped; --force stops it first
 ```
 
-#### Service create options {#service-create-options}
+Save the initial password shown at creation; it is returned only once. Creation returns before provisioning finishes, so repeat `get` until the state is `running`. **Omitting `--ip-allow` allows all IPs (`0.0.0.0/0`).** Entries accept `IP_OR_CIDR=DESCRIPTION`. Restore a backup into a new service with `--backup-id`, or place a service in BYOC infrastructure with `--byoc-id`.
 
-| Option | Description |
-|--------|-------------|
-| `--name` | Service name (required) |
-| `--provider` | Cloud provider: `aws`, `gcp`, `azure` (default: `aws`) |
-| `--region` | Region (default: `us-east-1`) |
-| `--min-replica-memory-gb` | Min memory per replica in GB (8-356, multiple of 4) |
-| `--max-replica-memory-gb` | Max memory per replica in GB (8-356, multiple of 4) |
-| `--num-replicas` | Number of replicas (1-20) |
-| `--idle-scaling` | Allow scale to zero (default: `true`) |
-| `--idle-timeout-minutes` | Min idle timeout in minutes (>= 5) |
-| `--ip-allow` | IP CIDR to allow (repeatable, default: `0.0.0.0/0`) |
-| `--backup-id` | Backup ID to restore from |
-| `--release-channel` | Release channel: `slow`, `default`, `fast` |
-| `--data-warehouse-id` | Data warehouse ID (for read replicas) |
-| `--readonly` | Make service read-only |
-| `--encryption-key` | Customer disk encryption key |
-| `--encryption-role` | Role ARN for disk encryption |
-| `--enable-tde` | Enable Transparent Data Encryption |
-| `--compliance-type` | Compliance: `hipaa`, `pci` |
-| `--profile` | Instance profile (enterprise) |
-| `--tag` | Attach a GA service tag (`key` or `key=value`) |
-| `--enable-endpoint` / `--disable-endpoint` | Toggle GA service endpoints (currently `mysql`) |
-| `--private-preview-terms-checked` | Accept private preview terms when required |
-| `--enable-core-dumps` | Enable or disable service core dump collection |
+Update, scale and configure a service:
 
-#### Query API auth modes {#query-api-auth-modes}
+```bash
+clickhousectl cloud service update <service-id> --new-name analytics-prod \
+  --add-ip-allow '198.51.100.0/24=VPN' --remove-ip-allow 0.0.0.0/0 --add-tag env=prod
+clickhousectl cloud service profile list --region us-east-1
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 8 --max-replica-memory-gb 32 --num-replicas 2
+clickhousectl cloud service scale <service-id> --autoscaling-mode horizontal \
+  --min-replica-memory-gb 16 --max-replica-memory-gb 16 --min-replicas 2 --max-replicas 6
+clickhousectl cloud service settings set <service-id> --setting 'enable_analyzer=1'
+clickhousectl cloud service upgrade-window set <service-id> --weekday 0 --start-hour 6
+```
 
-`cloud service query` is the canonical way to run SQL against a cloud service over HTTP, with no `clickhouse` binary and no service password required. It works with both credential modes:
+Memory per replica is a multiple of 4 GB, at most 120 GB on unpaid and 356 GB on paid services, with up to 50 replicas. Organization and warehouse limits can lower these. Horizontal autoscaling needs its organization feature. `update` changes only the flags you pass.
 
-- **API key auth** (read + write SQL): the first time `cloud service query` runs against a service without a stored key, it provisions a Query API endpoint for that service and creates a dedicated API key bound to it. The key (`keyId`, `keySecret`, and `endpointId`) is stored in `.clickhouse/credentials.json` under `service_query_keys.<service-id>`. The key is scoped to a single service, so it can read and write (SELECT, INSERT, DDL) against that service but cannot reach any other service in the org. Pass `--no-auto-enable` to fail instead of provisioning.
-- **OAuth** (`cloud auth login`): the query runs as your own identity, just like the web SQL-console. Your SQL permissions on the service are **read-only** when using OAuth. No Query API key is provisioned or stored. `--no-auto-enable` has no effect in this mode.
+Other service command groups are `settings` (list, get, schema, set, unset), `scaling-schedule`, `upgrade-window`, `replica-aware-routing` (Beta), `snapshot` (Beta), `private-endpoint`, `backup-config` and `prometheus`. See [create and operate a Cloud service](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md).
 
-Querying an **idled** service wakes it automatically in both auth modes (the first query may take a minute). A **stopped** service is never woken: the query fails with a hint to run `cloud service start`. Set `CLICKHOUSE_CLOUD_QUERY_HOST` to override the derived Query API host.
+### Query API {#query-api}
 
-#### Query endpoint management {#query-endpoints}
+`cloud service query` runs one SQL statement over HTTP, with no local `clickhouse` binary and no service password:
+
+```bash
+clickhousectl cloud service query <service-id> --query "SELECT version()"
+clickhousectl cloud service query <service-id> --queries-file query.sql --format TabSeparated
+printf 'INSERT INTO trips FORMAT CSV\n' | cat - data.csv | \
+  clickhousectl cloud service query <service-id>
+```
+
+- **OAuth** runs the query as your identity, with read-only SQL access. Nothing is bound to the service.
+- **API key:** on the first call, clickhousectl adds your API key to the service's Query API endpoint, creating the endpoint with `sql_console_admin` roles if needed. Existing roles, origins and other key bindings are kept, and no new key is created. When the CLI changes the endpoint, it prints `Binding the authenticated API key to the Query API endpoint for service '<name>'...` to stderr. Pass `--no-auto-enable` to fail instead.
+
+A per-service key saved by an earlier CLI version still takes precedence for that service. If the API rejects it, `cloud service repair-query-key <service-id>` deliberately replaces it.
+
+The Query API accepts one statement per request. It can time out after about 30 seconds while the SQL keeps running, so check the result before retrying a write. Use `clickhouse client` for multi-statement scripts, bulk loads and long queries. The service IP allowlist restricts direct connections, not the proxied Query API route. Querying an idle service wakes it; a stopped service must be started with `cloud service start`.
+
+Manage the service's Query API endpoint, named SQL endpoints and saved queries:
 
 ```bash
 clickhousectl cloud service query-endpoint get <service-id>
 clickhousectl cloud service query-endpoint create <service-id> \
-  --role admin \
-  --open-api-key key-1 \
-  --allowed-origins https://app.example.com
-clickhousectl cloud service query-endpoint delete <service-id>
+  --role sql_console_read_only --allowed-origins '*'
+clickhousectl cloud query-api-endpoint create <service-id> --file endpoint.json
+clickhousectl cloud saved-query create <service-id> --name "Order count" \
+  --sql 'SELECT count() FROM orders' --database default
 ```
 
-#### Private endpoint management {#private-endpoints}
+`query-endpoint create` replaces the roles for every key bound to the endpoint. See [SQL and Query API behavior](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md).
+
+### Managed Postgres {#postgres-services}
+
+`cloud postgres` manages [ClickHouse Managed Postgres](/products/managed-postgres/overview). These commands are Beta, and GCP is in private preview.
 
 ```bash
-clickhousectl cloud service private-endpoint create <service-id> --endpoint-id vpce-123
-clickhousectl cloud service private-endpoint get-config <service-id>
+clickhousectl cloud postgres create --name app-db \
+  --provider aws --region us-east-1 --size c6gd.xlarge --pg-version 18 \
+  --ip-allow '203.0.113.0/24:5432..6432=office'
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
+clickhousectl cloud postgres update <postgres-id> --size c6gd.2xlarge
+clickhousectl cloud postgres update <postgres-id> \
+  --remove-ip-allow <rule-id> --add-ip-allow '198.51.100.7:5432'
+clickhousectl cloud postgres config patch <postgres-id> --set log_min_duration_statement=1000
+clickhousectl cloud postgres reset-password <postgres-id> --generate
+clickhousectl cloud postgres delete <postgres-id>       # Deletes a running service too
 ```
 
-#### Backup configuration {#backup-config}
+AWS sizes include `m6gd.large`, `c6gd.xlarge` and `r6gd.xlarge`. On GCP, pass `--provider gcp` with a GCP region and a size such as `c4-standard-lssd-4`.
+
+Save the password and connection string from `create`. Later `get` responses never return credentials, and `reset-password` is the only way to get new ones. Connect with `psql` using `sslmode=verify-full` and the CA file.
+
+**Omitting access flags on create allows all IPv4 and IPv6 addresses on Postgres (5432) and PgBouncer (6432).** Pass one `--ip-allow IP_OR_CIDR:PORTS[=DESCRIPTION]` per rule, or `--block-public-access` for no rules. Once you pass a rule, only the listed rules apply.
+
+Monitor and recover:
 
 ```bash
-clickhousectl cloud service backup-config get <service-id>
-clickhousectl cloud service backup-config update <service-id> \
-  --backup-period-hours 24 \
-  --backup-retention-period-hours 720 \
-  --backup-start-time 02:00
+clickhousectl cloud postgres query <postgres-id> --query "SELECT version()"   # OAuth only, read-only
+clickhousectl cloud postgres logs <postgres-id> \
+  --from-date 2026-10-01T00:00:00Z --to-date 2026-10-02T00:00:00Z
+clickhousectl cloud postgres backup list <postgres-id>
+clickhousectl cloud postgres restore <postgres-id> \
+  --name restored-app --restore-target 2026-10-01T12:00:00Z
+clickhousectl cloud postgres read-replica create <postgres-id> --name app-db-replica
+clickhousectl cloud postgres promote <replica-id>
 ```
 
-### Postgres services {#postgres-services}
+`cloud postgres query` accepts only OAuth, so it fails while a higher-priority API key source is active. `metrics`, `slow-queries` and `prometheus` cover monitoring. `restore` copies the source's current IPv4 access rules onto the restored service unless you pass `--ip-allow` or `--block-public-access`. Restores and replicas return without a password. `promote` and `switchover` return once accepted; after a promote, poll `postgres get --json` until the replica reports `isPrimary: true`. See the [Managed Postgres guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/managed-postgres.md).
 
-`clickhousectl` can also create and manage [ClickHouse Cloud Postgres](/products/managed-postgres/overview) services, mirroring the ClickHouse service commands above. GCP is in [private preview](https://clickhouse.com/cloud/postgres#gcp-waitlist); pass `--provider gcp` with a GCP region and instance size.
+### ClickPipes {#clickpipes}
+
+`cloud clickpipe` ingests data from object storage, Kafka, Kinesis, Pub/Sub, Postgres, MySQL, MongoDB and BigQuery. Creation and schema discovery need an API key and a running destination service. Each source has its own `clickpipe create <source>` subcommand; run it with `--help` for its flags.
+
+Load files from S3 with an IAM role. Discover the schema first, then choose the columns:
 
 ```bash
-# List and inspect
-clickhousectl cloud postgres list
-clickhousectl cloud postgres list --filter state=running
-clickhousectl cloud postgres get <pg-id>
-
-# Create a service on AWS (the default provider)
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --region us-east-1 \
-  --size m7i.2xlarge \
-  --pg-version 17 \
-  --ha-type sync
-
-# Create a service on GCP (private preview); region and size use GCP names
-clickhousectl cloud postgres create \
-  --name my-pg \
-  --provider gcp \
-  --region us-central1 \
-  --size c4-standard-4 \
-  --pg-version 18
-
-# Update and delete
-clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
-clickhousectl cloud postgres update <pg-id> --add-tag env=prod --remove-tag legacy
-clickhousectl cloud postgres delete <pg-id>
-
-# Connection certificates
-clickhousectl cloud postgres certs get <pg-id>                   # raw PEM to stdout
-clickhousectl cloud postgres certs get <pg-id> --output ca.pem   # write to a file
-
-# Configuration
-clickhousectl cloud postgres config get <pg-id>
-clickhousectl cloud postgres config replace <pg-id> --file cfg.json
-clickhousectl cloud postgres config patch <pg-id> --set max_connections=500
-
-# Reset the password
-clickhousectl cloud postgres reset-password <pg-id> --generate
-
-# Lifecycle: restart and high-availability promotion/switchover
-clickhousectl cloud postgres restart <pg-id>
-clickhousectl cloud postgres promote <pg-id>
-clickhousectl cloud postgres switchover <pg-id>
-
-# Read replicas and point-in-time restore
-clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
-clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+clickhousectl cloud clickpipe schema-discover object-storage <service-id> \
+  --storage-type s3 --source-url 'https://example-bucket.s3.amazonaws.com/events/**' \
+  --format JSONEachRow --iam-role "$S3_IAM_ROLE_ARN"
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name s3-events --storage-type s3 \
+  --source-url 'https://example-bucket.s3.amazonaws.com/events/**' \
+  --format JSONEachRow --iam-role "$S3_IAM_ROLE_ARN" \
+  --database default --table s3_events \
+  --column 'event_id:Int64' --column 'event_type:String'
 ```
 
-#### Postgres service create options {#postgres-create-options}
+Replicate Postgres with CDC. TLS is verified by default; for a Managed Postgres source, export its CA and pass it:
 
-| Option | Description |
-|--------|-------------|
-| `--name` | Service name (required) |
-| `--region` | Region, e.g. `us-east-1` on AWS or `us-central1` on GCP (required) |
-| `--size` | Instance size, e.g. `m7i.2xlarge` on AWS or `c4-standard-4` on GCP (required) |
-| `--provider` | Cloud provider: `aws`, `gcp` (default: `aws`) |
-| `--pg-version` | Major version: `18`, `17` |
-| `--ha-type` | High availability: `none`, `async`, `sync` |
-| `--tag` | Resource tag `key` or `key=value` (repeatable) |
-| `--pg-config-file` | Path to a JSON file with a `PgConfig` object |
-| `--pg-bouncer-config-file` | Path to a JSON file with a `PgBouncerConfig` object |
+```bash
+clickhousectl cloud postgres certs get <postgres-id> --output pg-ca.pem
+clickhousectl cloud clickpipe create postgres <service-id> \
+  --name orders-cdc --host "$POSTGRES_HOST" --pg-database postgres \
+  --username "$POSTGRES_USERNAME" --password "$POSTGRES_PASSWORD" \
+  --ca-certificate pg-ca.pem \
+  --replication-mode cdc --destination-database default \
+  --table-mapping public.orders:orders
+clickhousectl cloud service query <service-id> \
+  --query "SELECT id, status FROM default.orders FINAL WHERE _peerdb_is_deleted = 0"
+```
+
+`--table-mapping` creates `ReplacingMergeTree` tables, so read current state with `FINAL WHERE _peerdb_is_deleted = 0`. A Kafka pipe follows the same pattern: run `clickpipe schema-discover kafka` with the same source flags, then pass the columns:
+
+```bash
+clickhousectl cloud clickpipe create kafka <service-id> \
+  --name kafka-events --brokers 'broker-1.example.com:9092' --topics events \
+  --format JSONEachRow --auth SCRAM-SHA-256 \
+  --username "$KAFKA_USERNAME" --password "$KAFKA_PASSWORD" \
+  --database default --table kafka_events \
+  --column 'event_id:Int64' --column 'event_type:String' --start-paused
+```
+
+BigQuery pipes run a snapshot by default. For CDC, pass `--replication-mode cdc`, a `--replication-method`, and a per-table watermark column or events function in `--table-mapping-json`; schedule syncs with `--sync-cron` or `--sync-interval-seconds`. Operate existing pipes:
+
+```bash
+clickhousectl cloud clickpipe list <service-id>
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe update <service-id> <clickpipe-id> --file patch.json
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> --replicas 2
+clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
+  --streaming-max-insert-wait-ms 5000
+clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # Postgres and MySQL pipes; re-ingests data
+```
+
+CDC pipes must be `Paused` before `update`: stop the pipe, poll `get` until it is `Paused`, then update it. The service can resume the pipe as part of the update, so run `start` only if `get` still shows `Paused`. `--start-paused` is available for object storage, Kafka, Kinesis and Pub/Sub. Other command groups are `cdc-scaling`, `context get` (GCP workload-identity readiness and principal) and `reverse-private-endpoint`. See the [ClickPipes guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md) and the [ClickPipe configuration reference](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md).
+
+### ClickStack {#clickstack}
+
+`cloud clickstack` manages sources, dashboards, alerts, webhooks, saved searches and roles on an existing [Managed ClickStack](/clickstack/deployment/managed) service. Resources are JSON files (`--file`, or `-` for stdin). Reads support OAuth; writes need an API key.
+
+```bash
+clickhousectl cloud clickstack source list <service-id>
+clickhousectl cloud clickstack dashboard validate <service-id> --file dashboard.json
+clickhousectl cloud clickstack dashboard create <service-id> --file dashboard.json
+clickhousectl cloud clickstack webhook validate <service-id> --file webhook.json
+clickhousectl cloud clickstack alert create <service-id> --file alert.json
+clickhousectl cloud clickstack dashboard get <service-id> <dashboard-id> --json > dashboard-before.json
+```
+
+**Every ClickStack update replaces the complete resource.** Save the current state with `get --json` and send the full definition, not only the changed fields. See the [ClickStack guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md).
+
+### UDFs in Cloud {#cloud-udfs}
+
+`cloud udf` manages organization-scoped executable UDFs, their versions and their service attachments. `deploy` uploads the directory you tested with `local udf`, waits for the build, attaches that version and waits until it is deployed:
+
+```bash
+clickhousectl cloud udf deploy my_udf --service <service-id>
+clickhousectl cloud service query <service-id> --query "SELECT my_udf(1)"
+```
+
+To run each step yourself, use `udf create`, `udf version create`, `udf attach` (with `--wake` for an idle service), `udf detach` and `udf delete`. These return once accepted; poll `udf get` and `udf attachment get`. Reads support OAuth; writes need an API key. See the [user-defined functions guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md).
+
+### Organizations and access {#org-and-access}
+
+```bash
+clickhousectl cloud org get --org-id <org-id>
+clickhousectl cloud org update --org-id <org-id> --new-name "Renamed Org"
+clickhousectl cloud org usage --org-id <org-id> --from-date 2026-09-01 --to-date 2026-09-30
+clickhousectl cloud org prometheus discovery --org-id <org-id>
+clickhousectl cloud org notifications --org-id <org-id> --severity warning
+clickhousectl cloud activity list --from-date 2026-09-01 --to-date 2026-09-30
+```
+
+`cloud org` subcommands take `--org-id`, never a positional ID. `org usage` covers at most 31 days. `org` also has `quota`, `balance`, `notification-types`, `role` (custom organization roles) and `byoc` (BYOC infrastructure). Notifications are Beta.
+
+Manage members, invitations and API keys:
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud member update <user-id> --role-id <role-id>
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud org role list --org-id <org-id>
+clickhousectl cloud key create --name ci-key --role-id <role-id> \
+  --expires-at 2027-12-31T00:00:00Z --ip-allow '203.0.113.10/32=CI runner'
+clickhousectl cloud key list --all
+clickhousectl cloud key update <key-id> --new-name ci-key-old --state disabled
+```
+
+**Omitting `--ip-allow` on `key create` denies all network access**, unlike service creation. The secret is shown only once. `key list` returns one page unless you pass `--all`. On `key update`, omitted flags keep their settings, while `--clear-expiry`, `--clear-roles` and `--clear-ip-allow` remove them.
 
 ### Backups {#backups}
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
+clickhousectl cloud service create --name restored-analytics \
+  --provider aws --region us-east-1 --ip-allow 203.0.113.10/32 --backup-id <backup-id>
+clickhousectl cloud service backup-config update <service-id> \
+  --backup-period-hours 24 --backup-retention-period-hours 720
+clickhousectl cloud backup bucket get <service-id>
 ```
 
-### ClickPipes {#clickpipes}
+Restoring always creates a new service. `cloud backup bucket` (get, create, update, delete) configures a bring-your-own backup bucket from a provider-specific JSON file. See the backup section of the [Cloud service guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/cloud-service.md#back-up-and-restore).
 
-Manage ClickPipes for ingesting data into ClickHouse Cloud from external sources.
+## JSON output {#json-output}
+
+Commands that return structured data accept `--json`, including local, Cloud, `skills`, `update` and `telemetry` commands:
 
 ```bash
-# List ClickPipes for a service
-clickhousectl cloud clickpipe list <service-id>
-
-# Get ClickPipe details
-clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
-
-# Start/stop/resync a ClickPipe
-clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
-clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
-clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # CDC pipes only
-
-# Delete a ClickPipe
-clickhousectl cloud clickpipe delete <service-id> <clickpipe-id>
-
-# Update scaling
-clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> \
-  --replicas 2 --cpu-millicores 250 --memory-gb 1
-
-# Get/update settings
-clickhousectl cloud clickpipe settings get <service-id> <clickpipe-id>
-clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
-  --streaming-max-insert-wait-ms 10000
+clickhousectl cloud service list --json
+clickhousectl cloud key list --all --json
+clickhousectl local server list --json
 ```
 
-#### Creating ClickPipes {#creating-clickpipes}
+When the CLI detects a coding agent (such as Claude Code, Cursor, Codex, Gemini CLI, Goose or Devin, or any tool that sets `AI_AGENT`), it selects JSON automatically. SQL and native clients keep their own formats: `cloud service query` returns `JSONEachRow` in JSON mode, and `local client` output is always native. Scripts that parse query output should pass `--format` explicitly.
 
-Each source type has its own subcommand under `clickpipe create`:
+In JSON mode, runtime errors go to stderr as an object with a stable `code` and a `message`:
 
-```bash
-# From S3 / object storage
-clickhousectl cloud clickpipe create object-storage <service-id> \
-  --name my-s3-pipe \
-  --source-url 'https://bucket.s3.us-east-1.amazonaws.com/data/**' \
-  --format JSONEachRow \
-  --database default --table events \
-  --column "event_id:Int64" --column "name:String"
-
-# From Google Cloud Storage (object storage)
-clickhousectl cloud clickpipe create object-storage <service-id> \
-  --name my-gcs-pipe \
-  --storage-type gcs \
-  --source-url 'https://storage.googleapis.com/bucket/data/**' \
-  --format JSONEachRow \
-  --service-account-file ./sa-key.json \
-  --database default --table events \
-  --column "event_id:Int64" --column "name:String"
-
-# From Kafka / Redpanda / Confluent / MSK
-clickhousectl cloud clickpipe create kafka <service-id> \
-  --name my-kafka-pipe \
-  --brokers 'broker:9092' --topics events \
-  --format JSONEachRow \
-  --kafka-type redpanda \
-  --auth SCRAM-SHA-256 --username user --password pass \
-  --ca-certificate ./ca.crt \
-  --database default --table events \
-  --column "event_id:Int64" --column "name:String"
-
-# From Amazon Kinesis
-clickhousectl cloud clickpipe create kinesis <service-id> \
-  --name my-kinesis-pipe \
-  --stream-name events --region us-east-1 \
-  --format JSONEachRow \
-  --auth IAM_USER --access-key-id AKIA... --secret-key ... \
-  --database default --table events \
-  --column "event_id:Int64" --column "name:String"
-
-# From PostgreSQL (CDC)
-clickhousectl cloud clickpipe create postgres <service-id> \
-  --name my-pg-pipe \
-  --host db.example.com --pg-database mydb \
-  --username pguser --password pgpass \
-  --table-mapping "public.users:public_users" \
-  --table-mapping "public.orders:public_orders"
-
-# From MySQL (CDC)
-clickhousectl cloud clickpipe create mysql <service-id> \
-  --name my-mysql-pipe \
-  --host mysql.example.com \
-  --username root --password pass \
-  --table-mapping "mydb.users:mydb_users"
-
-# From MongoDB (CDC)
-clickhousectl cloud clickpipe create mongodb <service-id> \
-  --name my-mongo-pipe \
-  --uri 'mongodb+srv://cluster.example.net/mydb' \
-  --username mongouser --password mongopass \
-  --table-mapping "mydb.users:mydb_users"
-
-# From BigQuery (snapshot)
-clickhousectl cloud clickpipe create bigquery <service-id> \
-  --name my-bq-pipe \
-  --service-account-file ./sa-key.json \
-  --staging-path gs://bucket/staging \
-  --table-mapping "dataset.table:target_table"
+```json
+{"error":{"code":"server_not_found","message":"The selected server was not found"}}
 ```
 
-Use `clickhousectl cloud clickpipe create <source> --help` for the full list of options per source type.
+Branch on `error.code`, not on the message. Usage errors stay as text, with exit code 2. See [automation and output contracts](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/automation.md) for output shapes and error codes.
 
-### Members {#members}
-
-```bash
-clickhousectl cloud member list
-clickhousectl cloud member get <user-id>
-clickhousectl cloud member update <user-id> --role-id <role-id>
-clickhousectl cloud member remove <user-id>
-```
-
-### Invitations {#invitations}
-
-```bash
-clickhousectl cloud invitation list
-clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
-clickhousectl cloud invitation get <invitation-id>
-clickhousectl cloud invitation delete <invitation-id>
-```
-
-### Keys {#keys}
-
-```bash
-clickhousectl cloud key list
-clickhousectl cloud key get <key-id>
-clickhousectl cloud key create --name ci-key --role-id <role-id> --ip-allow 10.0.0.0/8
-clickhousectl cloud key update <key-id> \
-  --name renamed-key \
-  --expires-at 2025-12-31T00:00:00Z \
-  --state disabled \
-  --ip-allow 0.0.0.0/0
-clickhousectl cloud key delete <key-id>
-```
-
-### Activity {#activity}
-
-```bash
-clickhousectl cloud activity list --from-date 2024-01-01 --to-date 2024-12-31
-clickhousectl cloud activity get <activity-id>
-```
-
-### JSON output {#json-output}
-
-Use the `--json` flag to print JSON-formatted responses.
-
-```bash
-clickhousectl cloud --json service list
-clickhousectl cloud --json service get <service-id>
-```
-
-`clickhousectl` auto-detects coding-agent contexts (Claude Code, Cursor, Codex, Gemini CLI, Goose, Devin, and any tool that sets the standard `AGENT` env var) and emits JSON to stdout automatically without setting `--json`.
-
-### Exit codes {#exit-codes}
-
-Exit codes follow the `gh` CLI conventions:
+## Exit codes {#exit-codes}
 
 | Code | Meaning |
 | ---- | ------- |
-| `0` | Success |
-| `1` | Error (anything not classified below) |
-| `2` | Cancelled (user aborted) |
-| `4` | Auth required (no credentials, 401/403, OAuth-only writes) |
+| `0` | Success. For asynchronous Cloud operations, the request was accepted, not completed |
+| `1` | Error |
+| `2` | Usage error, including invalid flag values |
+| `3` | Cancelled |
+| `4` | Authentication required or rejected, including writes attempted with OAuth |
 
-## Skills {#skills}
+`local client`, `local postgres client` and other native-client handoffs pass the client's own exit status through.
 
-Install the official ClickHouse Agent Skills from [ClickHouse/agent-skills](https://github.com/ClickHouse/agent-skills).
+## Agent skills {#skills}
+
+Install the [official ClickHouse agent skills](https://github.com/ClickHouse/agent-skills) into your coding agents:
 
 ```bash
-# Default: interactive mode for humans, choose scope, then choose agents
-clickhousectl skills
-
-# Non-interactive: install into every supported project-local agent folder
+clickhousectl skills                                  # Interactive: choose scope and agents
+clickhousectl skills --agent claude --agent codex     # Current project
+clickhousectl skills --detected-only --global         # Agents detected in your home directory
 clickhousectl skills --all
-
-# Non-interactive: install only into detected agents
-clickhousectl skills --detected-only
-
-# Non-interactive: install into every supported global agent folder
-clickhousectl skills --global --all
-
-# Non-interactive: install into specific project-local agents
-clickhousectl skills --agent claude --agent codex
 ```
 
-### Non-interactive flags {#non-interactive-flags}
-
-| Flag | Description |
-|------|-------------|
-| `--agent <name>` | Install Skills for a specific agent (can be repeated) |
-| `--global` | Use global scope; if omitted, project scope is used |
-| `--all` | Install Skills for all supported agents |
-| `--detected-only` | Install Skills for supported agents that were detected on the system |
+Skills install into the current project by default, or into your home directory with `--global`. The shared `.agents/skills/` directory is always included. Without a terminal, you must pass `--agent`, `--all` or `--detected-only`. Run `clickhousectl skills --help` for the supported agent names.
 
 ## Self-update {#self-update}
 
-`clickhousectl` can update itself to the latest release:
-
 ```bash
-# Update to the latest version
-clickhousectl update
-
-# Check for updates without installing
-clickhousectl update --check
+clickhousectl update --check     # Check without installing
+clickhousectl update             # Install the latest release
 ```
 
-The CLI also checks for updates in the background (at most once per 24 hours) and displays a notice when a newer version is available.
+The CLI also checks for updates in the background, at most once every 24 hours, and prints a notice when a newer version is available.
 
 ## Telemetry {#telemetry}
 
-`clickhousectl` collects anonymous usage telemetry to help us understand how the CLI is used. It is enabled by default, but nothing is ever sent before you have been notified: on the first run, the CLI prints a notice explaining what is collected and how to turn it off, and sends nothing. Collection only starts on subsequent runs, so you always have the opportunity to opt out before anything is collected.
+`clickhousectl` collects anonymous usage data to guide development. The first run shows a notice and sends nothing; collection starts on a following run unless you disable it.
 
-Each event contains only:
+Each event contains:
 
-- The command that was run (e.g. `local start`) and the names of the flags that were used — never flag values, positional arguments, or any other user-supplied input, so queries, table names, credentials, and file paths are never collected
-- The exit code (e.g. `0`, `1`, `2`, `4`) and the outcome (e.g. `ok`, `error`, `cancelled`)
-- For mistyped commands, the "did you mean" suggestion the CLI showed — recorded only when it exactly matches a real command or flag name, so it can never contain what you typed
-- The `clickhousectl` version, OS, architecture, and whether the CLI was invoked by an AI agent (and which agent) or in CI
+- The command path and the **names** of explicitly passed flags and arguments, never their values
+- The outcome and exit code
+- For a mistyped command, the command or flag name the CLI suggested, never what you typed
+- For runtime failures, bounded categories: failure stage and kind, an allowlisted HTTP status, and retry, provisioning-state and duration categories
+- The CLI version, OS and architecture, whether it runs in CI, and the detected coding agent
 
-Telemetry is fully anonymous: no personal data is collected, and there are no device or installation identifiers.
+Argument values, SQL, credentials, resource identifiers, arguments after `--` and error messages are never recorded. There is no installation or device ID.
 
-To turn telemetry off, either:
+To opt out:
 
-- Run `clickhousectl telemetry disable` (re-enable with `enable`, check with `status`)
-- Set the `DO_NOT_TRACK=1` environment variable
+```bash
+clickhousectl telemetry disable     # Persist the preference on this machine
+clickhousectl telemetry status
+export DO_NOT_TRACK=1               # Disable for an environment, overriding the saved preference
+```
 
-Set `CHCTL_TELEMETRY_DEBUG=1` to print the exact payload to stderr without sending anything.
+Set `CHCTL_TELEMETRY_DEBUG=1` to print the payload to stderr without sending anything. See [telemetry details](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/telemetry.md).
