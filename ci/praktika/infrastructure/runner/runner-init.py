@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 79
+    version: int = 80
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -356,6 +356,11 @@ class Runner:
             # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
             run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
+            # M2 Pro, M4 and M4 Pro test hosts
+            if self.ec2._instance_id in ("i-04af1537ae54658c2", "i-026bcc3b5264aa319", "i-007ee22c1c365d7ef"):
+                log("Test host: the GitHub runner is not started")
+                while True:
+                    time.sleep(3600)
         else:
             Runner.configure_linux()
 
