@@ -47,6 +47,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
@@ -293,6 +294,7 @@ ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) 
         /// Lock `*this` only; `other` is moved-from and has no concurrent users by contract.
         std::lock_guard lock(get_cache_mutex);
         get_cache = std::move(other.get_cache);
+        hash_cache = std::exchange(other.hash_cache, std::nullopt);
     }
     return *this;
 }
@@ -310,6 +312,7 @@ void ColumnsDescription::invalidateGetCache() const
 {
     std::lock_guard lock(get_cache_mutex);
     get_cache.clear();
+    hash_cache.reset();
 }
 
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
@@ -1137,6 +1140,21 @@ String ColumnsDescription::toString(bool include_comments, bool include_codecs) 
     }
 
     return buf.str();
+}
+
+UInt64 ColumnsDescription::getHash() const
+{
+    {
+        std::shared_lock lock(get_cache_mutex);
+        if (hash_cache)
+            return *hash_cache;
+    }
+    SipHash hash;
+    hash.update(toString(/*include_comments=*/ false));
+    const UInt64 res = hash.get64();
+    std::lock_guard lock(get_cache_mutex);
+    hash_cache = res;
+    return res;
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)

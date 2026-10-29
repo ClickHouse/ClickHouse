@@ -1765,6 +1765,11 @@ static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::
     return node;
 }
 
+bool MergeTreeDataSelectExecutor::hasPendingMetadataMutations(const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    return mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
@@ -1774,6 +1779,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     bool use_sampling,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ReadFromMergeTree::Indexes & indexes,
+    UInt64 query_condition_cache_salt,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1801,7 +1807,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+            || hasPendingMetadataMutations(mutations_snapshot))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
@@ -1840,8 +1847,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    const UInt64 settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
-
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt, bool prewhere_top_k_salt)
     {
         /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
@@ -1873,7 +1878,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = queryConditionCacheHash(derived ? derived->hash : dag->getHash(), settings_salt);
+        size_t condition_hash = queryConditionCacheHash(derived ? derived->hash : dag->getHash(), query_condition_cache_salt);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
         /// The same applies to a TopK-salted PREWHERE: `buildTopKDynamicFilterPrewhere` rewrites an explicit
@@ -1890,7 +1895,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 /// Key the stripped predicate the same way a plain `SELECT ... WHERE` would: through
                 /// the derived deterministic condition when it involves the current time.
                 auto stripped_derived = derive(stripped);
-                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), settings_salt);
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), query_condition_cache_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }
         }

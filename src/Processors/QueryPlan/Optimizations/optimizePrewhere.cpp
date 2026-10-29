@@ -227,7 +227,8 @@ static void setQueryConditionCacheAttribution(
         return;
 
     prewhere_info.query_condition_cache_attribution = PrewhereInfo::QueryConditionCacheAttribution{
-        .key = queryConditionCacheHash(outputs.front()->getHash(), queryConditionCacheSettingsSalt(settings)),
+        /// The same salt as the consult in `filterPartsByQueryConditionCache` and the other writers: it covers the schema too.
+        .key = queryConditionCacheHash(outputs.front()->getHash(), read_from_merge_tree_step.getReaderSettings().query_condition_cache_salt),
         .condition = filter_actions_dag->getNames()[0],
         .conjunct_hashes = std::move(conjunct_hashes),
     };

@@ -136,7 +136,7 @@ public:
     /// because the cache content is consistent with the columns being transferred.
     ColumnsDescription(const ColumnsDescription & other) : IHints<>(other), columns(other.columns), subcolumns(other.subcolumns) {}
     ColumnsDescription(ColumnsDescription && other) noexcept
-        : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)) {}
+        : columns(std::move(other.columns)), subcolumns(std::move(other.subcolumns)), get_cache(std::move(other.get_cache)), hash_cache(std::exchange(other.hash_cache, std::nullopt)) {}
     ColumnsDescription & operator=(const ColumnsDescription & other);
     ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
@@ -267,6 +267,8 @@ public:
     /// Subcolumn codecs are written as `CODEC name (...)` lines after the columns.
     /// `include_codecs = false` is for readers that need only names, types and defaults, such as older clients.
     String toString(bool include_comments, bool include_codecs = true) const;
+    /// SipHash of `toString(false)`, so descriptions equal by `operator==` hash equally. Memoized like `get`.
+    UInt64 getHash() const;
     static ColumnsDescription parse(const String & str);
 
     size_t size() const
@@ -337,6 +339,8 @@ private:
     /// are bounded by a handful in practice, and a contiguous linear scan over a 4-byte
     /// trivially-comparable key beats hashing + bucket indirection at this size.
     mutable std::vector<std::pair<GetCacheKey, std::shared_ptr<const NamesAndTypesList>>> get_cache;
+    /// `getHash`, guarded by `get_cache_mutex` and reset by `invalidateGetCache`.
+    mutable std::optional<UInt64> hash_cache;
 };
 
 class ASTColumnDeclaration;

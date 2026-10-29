@@ -198,7 +198,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
     size_t condition_hash = queryConditionCacheHash(
         derived ? derived->hash : filter_actions_dag->getOutputs()[0]->getHash(),
-        queryConditionCacheSettingsSalt(read_from_merge_tree->getContext()->getSettingsRef()));
+        read_from_merge_tree->getReaderSettings().query_condition_cache_salt);
 
     /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
     /// filter is no longer "applies to every granule of every part" — it applies only to

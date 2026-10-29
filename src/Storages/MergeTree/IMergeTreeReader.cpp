@@ -11,6 +11,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #endif
+#include <Storages/VirtualColumnUtils.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
@@ -42,6 +43,13 @@ namespace MergeTreeSetting
 namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
+
+    bool readsAnyOf(const ActionsDAG::Node & node, const NameSet & columns)
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT)
+            return columns.contains(node.result_name);
+        return std::ranges::any_of(node.children, [&](const auto * child) { return readsAnyOf(*child, columns); });
+    }
 }
 namespace ErrorCodes
 {
@@ -418,8 +426,14 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             combined_columns,
             context_copy);
 
+        NameSet non_deterministic_outputs;
         if (dag)
         {
+            /// An input converted by `performRequiredConversions` may already hold a non-deterministic default.
+            for (const auto * output : dag->getOutputs())
+                if (!VirtualColumnUtils::isDeterministic(output) || readsAnyOf(*output, non_deterministic_default_columns))
+                    non_deterministic_outputs.insert(output->result_name);
+
             dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
             auto actions = std::make_shared<ExpressionActions>(
                 std::move(*dag),
@@ -430,6 +444,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
+            if (non_deterministic_outputs.contains(it->name) || non_deterministic_outputs.contains(it->getNameInStorage()))
+                non_deterministic_default_columns.insert(it->name);
+
             if (additional_columns.has(it->name))
             {
                 res_columns[pos] = additional_columns.getByName(it->name).column;
@@ -461,6 +478,14 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
+}
+
+bool IMergeTreeReader::hasEvaluatedNonDeterministicDefaults(const NameSet * columns) const
+{
+    if (!columns)
+        return !non_deterministic_default_columns.empty();
+
+    return std::ranges::any_of(non_deterministic_default_columns, [&](const String & name) { return columns->contains(name); });
 }
 
 bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
@@ -898,9 +923,18 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
-        DB::performRequiredConversions(copy_block, getColumns(),
-            data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+        const auto context = data_part_info_for_read->getContext();
+        auto dag = DB::requiredConversionsActions(
+            copy_block, getColumns(), context, storage_snapshot->metadata->getColumns().getDefaults());
+        if (dag)
+        {
+            for (const auto * output : dag->getOutputs())
+                if (!VirtualColumnUtils::isDeterministic(output))
+                    non_deterministic_default_columns.insert(output->result_name);
+
+            auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
+            expression->execute(copy_block);
+        }
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

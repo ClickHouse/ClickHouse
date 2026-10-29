@@ -290,13 +290,19 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+std::optional<ActionsDAG> requiredConversionsActions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
+    const ColumnDefaults & column_defaults, bool forbid_default_defaults)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
-        return;
+        return {};
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    return createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+}
+
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+{
+    std::optional<ActionsDAG> dag = requiredConversionsActions(block, required_columns, context, column_defaults, forbid_default_defaults);
 
     if (dag)
     {

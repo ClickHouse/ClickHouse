@@ -631,7 +631,8 @@ public:
     void setHypotheticalProjection(std::shared_ptr<HypotheticalProjection> projection) { hypothetical_projection = std::move(projection); }
     const std::shared_ptr<HypotheticalProjection> & getHypotheticalProjection() const { return hypothetical_projection; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
-    bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
+    /// Also false while a metadata mutation is pending, which projection analysis does not check on its own.
+    bool isQueryConditionCacheAllowed() const;
 
     bool hasPendingTopKDynamicFilter() const
     {

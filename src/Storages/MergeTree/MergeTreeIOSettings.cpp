@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/ColumnsDescription.h>
+#include <Common/SipHash.h>
 
 #include <Interpreters/Context.h>
 
@@ -144,7 +146,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
     result.use_query_condition_cache_for_time_conditions = settings[Setting::use_query_condition_cache_for_time_conditions];
     result.query_condition_cache_time_condition_grid_factor = static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]);
-    result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
+    result.query_condition_cache_salt = queryConditionCacheSettingsSalt(settings);
     result.enable_columns_cache_reads = settings[Setting::enable_reads_from_columns_cache];
     result.enable_columns_cache_writes = settings[Setting::enable_writes_to_columns_cache];
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
@@ -162,10 +164,16 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     return result;
 }
 
-MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info)
+MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(
+    const ContextPtr & context, const MergeTreeSettings & /*storage_settings*/, const SelectQueryInfo & query_info, const ColumnsDescription & columns)
 {
     auto result = createFromContext(context);
     result.read_in_order = query_info.input_order_info != nullptr;
+
+    SipHash salt;
+    salt.update(result.query_condition_cache_salt);
+    salt.update(columns.getHash());
+    result.query_condition_cache_salt = salt.get64();
     return result;
 }
 

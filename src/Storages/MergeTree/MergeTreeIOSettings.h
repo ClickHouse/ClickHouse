@@ -5,6 +5,7 @@
 #include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/Names.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -24,6 +25,7 @@ class MMappedFileCache;
 using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
 struct SelectQueryInfo;
+class ColumnsDescription;
 
 class PackedFilesWriter;
 
@@ -77,8 +79,10 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache_for_time_conditions = false;
     /// Grid step for the above, as a fraction of the distance between the constant and the current time.
     double query_condition_cache_time_condition_grid_factor = 1.0;
-    /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
-    UInt64 query_condition_cache_settings_salt = 0;
+    /// Folded into every query condition cache key: settings salt plus schema hash (an `ALTER` changes what a part returns, not its name).
+    UInt64 query_condition_cache_salt = 0;
+    /// Inputs of the WHERE condition the query condition cache key is built from; null if unknown.
+    std::shared_ptr<const NameSet> query_condition_cache_where_columns;
     bool enable_columns_cache_reads = false;
     bool enable_columns_cache_writes = false;
     /// Identity of the schema the read runs with: a hash of the column list of the metadata
@@ -140,7 +144,8 @@ struct MergeTreeReaderSettings
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
-    static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);
+    static MergeTreeReaderSettings createForQuery(
+        const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info, const ColumnsDescription & columns);
     static MergeTreeReaderSettings createForMergeMutation(ReadSettings read_settings);
     static MergeTreeReaderSettings createFromSettings(ReadSettings read_settings = {});
 
