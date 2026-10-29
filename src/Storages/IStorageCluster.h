@@ -54,6 +54,9 @@ public:
 
     const String & getClusterName() const { return cluster_name; }
 
+    /// The existing table that the replicas read by its name, if this storage reads such a table.
+    virtual std::optional<QualifiedTableName> getTableReadOnReplicas() const { return {}; }
+
     /// Prepare the `SELECT ... FROM f(...)` query (`f` is a table function) for the other nodes of the cluster: add the
     /// structure and format arguments so that the nodes do not infer the schema again, and turn a plain table
     /// function (`url`, `s3`, ...) that `parallel_replicas_for_cluster_engines` converted into this cluster
@@ -75,11 +78,20 @@ public:
     /// cluster has no name anywhere to begin with. A function the user already wrote as `*Cluster` then
     /// keeps the name it carries, which is what it did before the destination's cluster started being
     /// named here.
+    ///
+    /// `add_structure_and_format` tells whether to add the structure and format arguments. A `SELECT` needs them:
+    /// the initiator merges the streams of the nodes, so they must all produce its header. A forwarded
+    /// `INSERT ... SELECT` keeps the arguments as written: every node inserts on its own, and with an omitted or
+    /// `'auto'` structure it takes the structure from the insertion table
+    /// (`use_structure_from_insertion_table_in_table_functions`), which carries the `DEFAULT` expressions for the
+    /// fields missing in the files. The structure of the storage has names and types only, so adding it would make
+    /// the nodes fill those fields with the default values of their types.
     virtual void updateQueryToSendIfNeeded(
         ASTPtr & /*query*/,
         const StorageSnapshotPtr & /*storage_snapshot*/,
         const ContextPtr & /*context*/,
-        const String & /*target_cluster_name*/) {}
+        const String & /*target_cluster_name*/,
+        bool /*add_structure_and_format*/) {}
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}

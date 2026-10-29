@@ -84,7 +84,7 @@ perimeterSpherical(geom)
 - `geom` — Geometry object. [Geometry](/reference/data-types/geo).
 
 **Returned values**
-- Number — Perimeter. [Float64](/reference/data-types/float).
+- Number — Perimeter on a sphere of radius 1, in radians (coordinates are longitude and latitude in degrees). Multiply by the radius of the sphere to get a length, for example by 6371 for kilometers on the Earth. [Float64](/reference/data-types/float).
 
 **Example**
 
@@ -96,7 +96,7 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
@@ -114,7 +114,7 @@ areaSpherical(geom)
 - `geom` — Geometry. [Geometry](/reference/data-types/geo).
 
 **Returned values**
-- Number — Area. [Float64](/reference/data-types/float).
+- Number — Area on a sphere of radius 1, in steradians (coordinates are longitude and latitude in degrees). Multiply by the square of the radius of the sphere to get an area. [Float64](/reference/data-types/float).
 
 **Example**
 

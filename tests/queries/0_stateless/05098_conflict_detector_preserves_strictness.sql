@@ -13,8 +13,6 @@ CREATE TABLE r (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO l SELECT number FROM numbers(4);      -- 0, 1, 2, 3
 INSERT INTO r SELECT 1 FROM numbers(3);           -- key 1, three times
 
-SET enable_analyzer = 1;
-
 -- ANY LEFT: one row per left row regardless of how many right rows match -> 4.
 SELECT 'ANY  greedy cd_a', count() FROM l ANY LEFT JOIN r ON l.k = r.k
     SETTINGS query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_conflict_detector = 'a';

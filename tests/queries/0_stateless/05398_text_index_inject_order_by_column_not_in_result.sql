@@ -1,7 +1,6 @@
 -- Rewriting a text-search function in the SELECT list above a sorting step does not add the ORDER BY column to the result.
 -- https://github.com/ClickHouse/ClickHouse/issues/125836
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 SET query_plan_execute_functions_after_sorting = 1;

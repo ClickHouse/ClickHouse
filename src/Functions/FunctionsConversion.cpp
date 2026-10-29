@@ -2042,6 +2042,11 @@ FunctionCast::WrapperType FunctionCast::createMapWrapper(const DataTypePtr & fro
 
 FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
 {
+    /// Types that differ only in SHARED marks of typed paths have identical columns, no conversion is needed.
+    if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get());
+        from_object && from_object->equalsIgnoringSharedTypedPaths(*to_object))
+        return createIdentityWrapper(from_type);
+
     if (checkAndGetDataType<DataTypeString>(from_type.get()))
     {
         return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
@@ -2231,15 +2236,11 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             /// Create wrapper only if we support conversion from variant to the resulting type.
             wrapper = createWrapperIfCanConvert(variant_type, to_type);
         }
-        else
-        {
-            wrapper = prepareUnpackDictionaries(variant_type, to_type);
-        }
         variant_wrappers.push_back(wrapper);
     }
 
     bool keep_nullable = settings.cast_keep_nullable;
-    return [variant_wrappers, variant_types, to_type, keep_nullable]
+    return [this, variant_wrappers, variant_types, to_type, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -2257,7 +2258,15 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             ColumnPtr cast_variant;
             /// Check if we have wrapper for this variant.
             if (variant_wrapper)
+            {
                 cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
+            }
+            else if (cast_type != CastType::accurateOrNull && !variant_col->empty())
+            {
+                /// The conversion is prepared only for a variant with values, so a variant that cannot be
+                /// converted fails the conversion only if the column contains values of it.
+                cast_variant = prepareUnpackDictionaries(variant_types[i], to_type)(variant, result_type, nullptr, variant_col->size());
+            }
             cast_variant_columns.push_back(std::move(cast_variant));
         }
 
@@ -2492,6 +2501,9 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         }
         else
         {
+            /// Types without values are not converted, so they cannot fail the conversion.
+            if (args[0].column->empty())
+                return nullptr;
             wrapper = prepareUnpackDictionaries(args[0].type, result_type);
         }
 

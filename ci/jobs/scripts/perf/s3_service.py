@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ci.jobs.scripts import seaweedfs_service
 from ci.jobs.scripts.dataset_download import ICEBERG_DATASETS
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
@@ -24,6 +24,15 @@ S3_PORT = seaweedfs_service.S3_PORT
 S3_BUCKET = seaweedfs_service.BUCKET
 S3_ACCESS_KEY = "clickhouse"
 S3_SECRET_KEY = "clickhouse"
+AWS_CLI = (
+    f"AWS_ACCESS_KEY_ID={S3_ACCESS_KEY} AWS_SECRET_ACCESS_KEY={S3_SECRET_KEY} AWS_DEFAULT_REGION=us-east-1"
+    f" aws --endpoint-url http://localhost:{S3_PORT}"
+)
+PUBLIC_BUCKET = "clickhouse-public-datasets"
+PUBLIC_PREFIXES = ("lakes/uk_price_paid_iceberg/", "lakes/uk_price_paid_delta/", "lakes/uk_price_paid_hudi/")
+CATALOG_PORT = 8181  # `weed server` default
+CATALOG_BUCKET = "perf-catalog"
+CATALOG_TABLES = 200
 
 
 def endpoint_url(namespace):
@@ -31,20 +40,16 @@ def endpoint_url(namespace):
     return f"http://localhost:{S3_PORT}/{S3_BUCKET}/perf/{namespace}/"
 
 
-def iceberg_s3_database_ddl_commands(server_path):
-    """Attach the performance job's shared S3 fixture on one server."""
-    metadata = f"{server_path}/db/metadata"
+def iceberg_s3_database_queries():
+    """Queries that create the performance job's shared S3 fixture as a database on one running server. Idempotent."""
     directory, tables = ICEBERG_DATASETS[READ_DATASET]
-    commands = [
-        f"mkdir -p {metadata}/{READ_DATASET_DATABASE}",
-        f'echo "ATTACH DATABASE {READ_DATASET_DATABASE} ENGINE=Ordinary" > {metadata}/{READ_DATASET_DATABASE}.sql',
-    ]
+    queries = [f"CREATE DATABASE IF NOT EXISTS {READ_DATASET_DATABASE}"]
     for table in tables:
-        commands.append(
-            f'echo "ATTACH TABLE {table} ENGINE = IcebergS3(perf_s3_data, filename = '
-            f"'{directory}/{table}/')\" > {metadata}/{READ_DATASET_DATABASE}/{table}.sql"
+        queries.append(
+            f"CREATE TABLE IF NOT EXISTS {READ_DATASET_DATABASE}.{table} "
+            f"ENGINE = IcebergS3(perf_s3_data, filename = '{directory}/{table}/')"
         )
-    return commands
+    return queries
 
 
 def _client():
@@ -92,6 +97,56 @@ def seed_read_dataset(dataset_dir):
     return True
 
 
+def seed_public_data(local_dir):
+    """Copy the public prefixes under their keys into `perf/data/` for `requires_s3_public_data="1"`; `sync` skips what is there."""
+    copies = (
+        f"aws s3 sync --no-sign-request --region us-east-1 --only-show-errors --exclude '*.crc' s3://{PUBLIC_BUCKET}/{p} {local_dir}/{p}"
+        f" && {AWS_CLI} s3 sync --only-show-errors {local_dir}/{p} s3://{S3_BUCKET}/perf/data/{p}"
+        for p in PUBLIC_PREFIXES
+    )
+    return Shell.check(" && ".join(copies) + f" && rm -rf {local_dir}", verbose=True)
+
+
+def seed_catalog(clickhouse):
+    """For `requires_s3_catalog="1"`: table bucket `perf-catalog`, namespace `many`, tables t1..t200 with one row (id = n); idempotent."""
+    catalog = f"http://localhost:{CATALOG_PORT}/v1"
+    queries = [
+        "SET allow_database_iceberg = 1, allow_insert_into_iceberg = 1, write_full_path_in_iceberg_metadata = 1;",
+        f"CREATE DATABASE c ENGINE = DataLakeCatalog('{catalog}', '{S3_ACCESS_KEY}', '{S3_SECRET_KEY}') SETTINGS catalog_type = 'rest',"
+        f" warehouse = 's3://{CATALOG_BUCKET}', storage_endpoint = 'http://localhost:{S3_PORT}/{CATALOG_BUCKET}',"
+        f" catalog_credential = '{S3_ACCESS_KEY}:{S3_SECRET_KEY}', oauth_server_uri = '{catalog}/oauth/tokens';",
+    ]
+    for n in range(1, CATALOG_TABLES + 1):
+        queries.append(
+            f"CREATE TABLE IF NOT EXISTS c.`many.t{n}` (id Int64, s String) ENGINE = IcebergS3("
+            f"'http://localhost:{S3_PORT}/{CATALOG_BUCKET}/many/t{n}/', '{S3_ACCESS_KEY}', '{S3_SECRET_KEY}');"
+        )
+        queries.append(f"INSERT INTO c.`many.t{n}` SELECT {n}, 'x' WHERE (SELECT count() FROM c.`many.t{n}`) = 0;")
+    queries.append(
+        f"SELECT throwIf(count() != {CATALOG_TABLES} OR sum(id) != {CATALOG_TABLES * (CATALOG_TABLES + 1) // 2})"
+        f" FROM merge('c', '^many\\.t');"
+    )
+    Path(f"{temp_dir}/perf_catalog_seed.sql").write_text("\n".join(queries))
+    shell = f"PATH=/:{temp_dir}:$PATH weed shell -master localhost:{S3_PORT + 1}"  # the image unpacks weed to /
+    return Shell.check(
+        f"timeout 60 sh -c 'until curl -sf -o /dev/null {catalog}/config; do sleep 1; done'"
+        f" && (echo 's3tables.bucket -list -account {S3_ACCESS_KEY}' | {shell} | grep -q '{CATALOG_BUCKET}'"
+        f" || echo 's3tables.bucket -create -name {CATALOG_BUCKET} -account {S3_ACCESS_KEY}' | {shell})"
+        f" && {clickhouse} local --queries-file {temp_dir}/perf_catalog_seed.sql",
+        verbose=True,
+    )
+
+
+def clear_write_namespaces():
+    """Delete what a test wrote, so that every test starts with empty `perf/left/` and `perf/right/`; log the store size."""
+    ok = Shell.check(
+        " && ".join(f"{AWS_CLI} s3 rm --recursive --only-show-errors s3://{S3_BUCKET}/perf/{side}/" for side in ("left", "right")),
+        verbose=True,
+    )
+    Shell.check(f"du -sh {temp_dir}/seaweedfs_data", verbose=True)
+    return ok
+
+
 def _port_occupied():
     try:
         with socket.create_connection(("localhost", S3_PORT), timeout=1):
@@ -120,7 +175,7 @@ def ensure(log_path):
             print(f"s3_service: port {S3_PORT} has a healthy but unowned S3 endpoint")
             return False
         # Reuse keeps stage re-entry (praktika --param) working without re-provisioning.
-        # The shared read dataset is seeded again by the caller; write suites use unique paths.
+        # The caller seeds the shared read dataset again if tests follow; write suites use unique paths.
         print(f"s3_service: reusing the healthy S3 endpoint on localhost:{S3_PORT}")
         return True
     if _owned_pid() is not None:

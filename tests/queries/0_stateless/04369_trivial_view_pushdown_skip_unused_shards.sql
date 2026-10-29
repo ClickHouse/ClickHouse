@@ -10,7 +10,6 @@
 --
 -- Tags: distributed, no-parallel
 
-SET enable_analyzer = 1;
 SET prefer_localhost_replica = 0;
 
 CREATE DATABASE IF NOT EXISTS shard_0;

@@ -688,6 +688,16 @@ void generateManifestFile(
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
 
+        if (per_file_fresh_statistics && effective_statistics && !effective_statistics->getSplitOffsets().empty()
+            && data_file.hasField(Iceberg::f_split_offsets))
+        {
+            auto & split_offsets_field = data_file.field(Iceberg::f_split_offsets);
+            split_offsets_field.selectBranch(1);
+            auto & split_offsets_array = split_offsets_field.value<avro::GenericArray>().value();
+            for (UInt64 offset : effective_statistics->getSplitOffsets())
+                split_offsets_array.push_back(avro::GenericDatum(static_cast<Int64>(offset)));
+        }
+
         /// Preserve the source file's sort_order_id.
         if (!data_file_sort_order_ids.empty() && data_file_sort_order_ids[file_idx].has_value())
         {
@@ -1195,7 +1205,7 @@ IcebergStorageSink::IcebergStorageSink(
         catalog,
         table_id.getTableName(),
         persistent_table_components.table_path,
-        data_lake_settings,
+        *data_lake_settings,
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
@@ -1260,6 +1270,9 @@ IcebergStorageSink::IcebergStorageSink(
 IcebergStorageSink::~IcebergStorageSink()
 {
     cancelBuffers();
+    /// Covers every way an insert can stop without committing, including cancellation, which skips `onException`.
+    if (!committed)
+        removeDataFilesAndManifests();
 }
 
 void IcebergStorageSink::consume(Chunk & chunk)
@@ -1401,6 +1414,7 @@ void IcebergStorageSink::finalizeBuffers()
         if (initializeMetadata())
         {
             successed_write = true;
+            committed = true;
             break;
         }
         ++i;
@@ -1524,7 +1538,7 @@ bool IcebergStorageSink::initializeMetadata()
                 catalog,
                 table_id.getTableName(),
                 persistent_table_components.table_path,
-                data_lake_settings,
+                *data_lake_settings,
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
@@ -1692,7 +1706,7 @@ bool IcebergStorageSink::initializeMetadata()
                         hint_path,
                         object_storage,
                         context,
-                        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
                 {
                     LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
                     cleanup(true);

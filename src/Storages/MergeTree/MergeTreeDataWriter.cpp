@@ -610,6 +610,11 @@ Block MergeTreeDataWriter::mergeBlock(
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
 
+    /// The block can lose all its rows before this point, e.g. when insert deduplication removes
+    /// duplicate rows of a materialized view block. Merging algorithms do not expect an empty input.
+    if (block_size == 0)
+        return *header;
+
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
         switch (merging_params.mode)
@@ -1129,7 +1134,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
     /// recompression should happen during merges, not on the initial write path.
-    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
+    /// The size of the part is not known before it is written, so the uncompressed size of the block is
+    /// used as an estimate: a large insert gets the better compression right away, instead of writing
+    /// the data with `LZ4` and rewriting it with the default codec on the first merge.
+    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, block.bytes(), {}, time(nullptr)).codec;
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block,
