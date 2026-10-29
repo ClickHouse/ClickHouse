@@ -211,17 +211,17 @@ ORDER BY id;
 
 INSERT INTO tab VALUES (1, 'far'), (2, 'skip'), (3, 'bar');
 
-SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(s, 'far');
-SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(s, 'far') SETTINGS use_skip_indexes = 0;
+-- The input is Nullable so that the function returns Nullable(UInt8): the rewrite to the index preprocessor casts the
+-- result back to the original type, and a NULL cannot pass a cast to UInt8 (the same holds for hasAnyTokens).
 SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(toNullable(s), 'far');
 SELECT groupArray(id) FROM tab WHERE NOT hasTokenStartingWith(toNullable(s), 'far') SETTINGS use_skip_indexes = 0;
-SELECT groupArray(id) FROM tab PREWHERE NOT hasTokenStartingWith(s, 'far');
-SELECT groupArray(id) FROM tab PREWHERE NOT hasTokenStartingWith(s, 'far') SETTINGS use_skip_indexes = 0;
-SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(s, 'far');
-SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(s, 'far') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab PREWHERE NOT hasTokenStartingWith(toNullable(s), 'far');
+SELECT groupArray(id) FROM tab PREWHERE NOT hasTokenStartingWith(toNullable(s), 'far') SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(toNullable(s), 'far');
+SELECT groupArray(id) FROM tab WHERE hasTokenStartingWith(toNullable(s), 'far') SETTINGS use_skip_indexes = 0;
 
 SELECT 'nullable preprocessor', countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasTokenStartingWith(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasTokenStartingWith(s, 'far'));
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasTokenStartingWith(toNullable(s), 'far'));
 
 SELECT 'A two-character prefix seeks the dictionary to its key range instead of scanning every block';
 
