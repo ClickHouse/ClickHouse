@@ -126,7 +126,11 @@ void read(Error & x, ReadBuffer & in)
 {
     int32_t code = 0;
     read(code, in);
-    x = Coordination::Error(code);
+    /// A code this client does not know (e.g. QUOTAEXCEEDED from a newer ZooKeeper) becomes the generic error of its range.
+    if (magic_enum::enum_contains<Error>(code))
+        x = static_cast<Error>(code);
+    else
+        x = code < static_cast<int32_t>(Error::ZAPIERROR) ? Error::ZAPIERROR : Error::ZSYSTEMERROR;
 }
 
 }
