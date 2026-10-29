@@ -1,0 +1,18 @@
+delete	r1	3
+delete	r2	3
+update	r1	4
+update	r2	4
+delete then update	r1	3
+delete then update	r1	2
+delete then update	r2	3
+delete then update	r2	2
+batch delete then update	r1	3
+batch delete then update	r1	2
+batch delete then update	r1	0
+batch delete then update	r2	3
+batch delete then update	r2	2
+batch delete then update	r2	0
+fetched part	r1	3
+fetched part	r2	0
+reloaded table	r1	0
+reloaded table	r2	3

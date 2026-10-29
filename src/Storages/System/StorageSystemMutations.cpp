@@ -116,6 +116,11 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "latest_fail_time",             std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
         { "latest_fail_reason",           std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
         { "latest_fail_error_code_name",  std::make_shared<DataTypeString>(), "The error code of the exception that caused the most recent part mutation failure."},
+        { "affected_rows",                std::make_shared<DataTypeUInt64>(),
+            "The number of rows affected by the command in the parts mutated so far for merge tree and replicated merge tree tables: deleted by a `DELETE` command or updated by an `UPDATE` command. A row is counted for the first command that deletes it, "
+            "and for each command that updates it, even if its values do not change. For `ReplicatedMergeTree`, only the parts mutated by this replica are counted, not the parts fetched from other replicas. "
+            "The value is tracked in memory and is reset when the table is reloaded (e.g. on server restart)."
+        },
     };
 }
 
@@ -280,6 +285,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
                 res_columns[res_index++]->insert(status.latest_fail_reason);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(status.latest_fail_error_code_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(status.affected_rows);
         }
     }
 }
