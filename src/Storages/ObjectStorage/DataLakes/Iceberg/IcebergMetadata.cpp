@@ -80,7 +80,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ParallelManifestDecode.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestListPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
@@ -96,7 +95,6 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
 
-#include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -143,7 +141,6 @@ extern const SettingsInt64 iceberg_timestamp_ms;
 extern const SettingsInt64 iceberg_snapshot_id;
 extern const SettingsBool use_iceberg_metadata_files_cache;
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsBool write_full_path_in_iceberg_metadata;
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
@@ -1611,7 +1608,7 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
 
     /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
     /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
-    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
+    /// all data files are Parquet or Vortex, none needs schema evolution, and there are no equality deletes.
     /// The manifest files are cached, and the read itself traverses them anyway.
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
@@ -1669,80 +1666,65 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
             manifests_to_decode.push_back(manifest_list_entry);
     }
 
-    /// Decoded in parallel as in `totalRows`, consumed in order on this thread.
-    size_t next_manifest = 0;
-    bool has_negative_record_count = false;
+    /// Read ahead on the IO thread pool as in `totalRows`, parsed in order on this thread.
     const auto query_status = context->getProcessListElement();
-    Iceberg::decodeManifestsInOrder(
-        manifests_to_decode,
-        settings[Setting::iceberg_manifest_decode_concurrency],
-        getIcebergManifestDecodeThreadPool().get(),
-        DB::ThreadName::ICEBERG_ITERATOR,
-        [this, &context, &table_state_snapshot](const ManifestFileCacheKey & manifest_list_entry)
-        {
-            return getManifestFileEntriesHandle(
-                object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
-        },
-        [&](const ManifestFileIterator::ManifestFileEntriesHandle & files_handle)
-        {
-            /// The walk runs during planning, before any pipeline, so it checks `KILL QUERY` and the time limit itself.
-            if (query_status)
-                query_status->checkTimeLimit();
-
-            const auto & manifest_list_entry = manifests_to_decode[next_manifest++];
-
-            if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
-                || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
-                estimate.has_delete_files = true;
-
-            /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
-            std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
-            for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
-            {
-                if (pruning_filter)
-                {
-                    /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
-                    auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
-                    if (!pruner)
-                        pruner = std::make_unique<ManifestFilesPruner>(
-                            *persistent_components.schema_processor,
-                            table_state_snapshot->schema_id,
-                            data_file->resolved_schema_id,
-                            pruning_filter,
-                            files_handle.getPartitionKeyDescription(),
-                            context,
-                            /* require_ready_sets */ true);
-
-                    const auto hyperrectangles
-                        = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
-                    if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
-                    {
-                        estimate.pruned_data_files = true;
-                        continue;
-                    }
-                }
-
-                /// A negative count comes from a corrupted manifest, as in `totalRows`.
-                if (data_file->parsed_entry->record_count < 0)
-                {
-                    LOG_WARNING(
-                        log,
-                        "Data file '{}' of manifest '{}' has a negative record count {}, so the read gets no row estimate",
-                        data_file->parsed_entry->file_path_key.serialize(),
-                        manifest_list_entry.manifest_file_path,
-                        data_file->parsed_entry->record_count);
-                    has_negative_record_count = true;
-                    return false;
-                }
-                /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
-                *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
-            }
-            return true;
-        });
-    if (has_negative_record_count)
+    Iceberg::ManifestFilesPrefetcher manifests(object_storage, persistent_components, context, log, std::move(manifests_to_decode));
+    while (auto fetch = manifests.take())
     {
-        estimate.rows.reset();
-        return estimate;
+        /// The walk runs during planning, before any pipeline, so it checks `KILL QUERY` and the time limit itself.
+        if (query_status)
+            query_status->checkTimeLimit();
+
+        const auto & manifest_list_entry = fetch->key();
+        const auto files_handle = getManifestFileEntriesHandle(
+            fetch->get(), persistent_components, context, manifest_list_entry, table_state_snapshot->schema_id);
+
+        if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
+            || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            estimate.has_delete_files = true;
+
+        /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
+        std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
+        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+        {
+            if (pruning_filter)
+            {
+                /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
+                auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
+                if (!pruner)
+                    pruner = std::make_unique<ManifestFilesPruner>(
+                        *persistent_components.schema_processor,
+                        table_state_snapshot->schema_id,
+                        data_file->resolved_schema_id,
+                        pruning_filter,
+                        files_handle.getPartitionKeyDescription(),
+                        context,
+                        /* require_ready_sets */ true);
+
+                const auto hyperrectangles
+                    = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
+                if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
+                {
+                    estimate.pruned_data_files = true;
+                    continue;
+                }
+            }
+
+            /// A negative count comes from a corrupted manifest, as in `totalRows`.
+            if (data_file->parsed_entry->record_count < 0)
+            {
+                LOG_WARNING(
+                    log,
+                    "Data file '{}' of manifest '{}' has a negative record count {}, so the read gets no row estimate",
+                    data_file->parsed_entry->file_path_key.serialize(),
+                    manifest_list_entry.manifest_file_path,
+                    data_file->parsed_entry->record_count);
+                estimate.rows.reset();
+                return estimate;
+            }
+            /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
+            *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
+        }
     }
     return estimate;
 }
@@ -1775,36 +1757,21 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context, const
     const Int32 schema_id = actual_table_state_snapshot.schema_id;
 
     UInt64 result = 0;
-    bool exact = true;
-    Iceberg::decodeManifestsInOrder(
-        actual_data_snapshot->manifest_list_entries,
-        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
-        getIcebergManifestDecodeThreadPool().get(),
-        DB::ThreadName::ICEBERG_ITERATOR,
-        [this, &local_context, schema_id](const ManifestFileCacheKey & manifest_list_entry) -> std::optional<UInt64>
-        {
-            auto manifest_file_ptr = getManifestFileEntriesHandle(
-                object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id);
+    Iceberg::ManifestFilesPrefetcher manifests(
+        object_storage, persistent_components, local_context, log, actual_data_snapshot->manifest_list_entries);
+    while (auto fetch = manifests.take())
+    {
+        auto manifest_file_ptr = getManifestFileEntriesHandle(fetch->get(), persistent_components, local_context, fetch->key(), schema_id);
 
-            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
-                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
-                return std::nullopt;
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+            return {};
 
-            return manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        },
-        [&result, &exact](std::optional<UInt64> manifest_rows)
-        {
-            if (!manifest_rows.has_value())
-            {
-                exact = false;
-                return false;
-            }
-            result += *manifest_rows;
-            return true;
-        });
-
-    if (!exact)
-        return {};
+        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        if (!manifest_rows.has_value())
+            return {};
+        result += *manifest_rows;
+    }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
@@ -1927,6 +1894,8 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
+    /// `vortex.preserve_order` is not forced as well: position deletes are only supported for
+    /// Parquet data and delete files, so a Vortex data file never reaches the streaming transform.
     if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
         /// data reader and the deletes reader.
@@ -2131,7 +2100,9 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (!iceberg_object_info)
         return nullptr;
     chassert(object_info->getFileFormat().has_value());
-    if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
+    /// Only these readers resolve columns through a mapper: `Parquet` for the columns it reads
+    /// and for its filters, `Vortex` for the filters it pushes into the scan.
+    if (const auto format = Poco::toLower(*object_info->getFileFormat()); format != "parquet" && format != "vortex")
         return nullptr;
 
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
@@ -2140,8 +2111,13 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
 // (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occurred during supporting concurrent SELECTs).
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
-    if (Poco::toLower(write_format) != "parquet")
+    if (const auto format = Poco::toLower(write_format); format != "parquet" && format != "vortex")
         return nullptr;
+    return getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+}
+
+ColumnMapperPtr IcebergMetadata::getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     // This is a temporary cludge for cluster functions because now the state on replicas is not synchronized with the primary state on the coordinator
     if (!iceberg_table_state)
