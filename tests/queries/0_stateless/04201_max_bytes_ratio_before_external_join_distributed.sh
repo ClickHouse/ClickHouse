@@ -74,7 +74,6 @@ $CLICKHOUSE_CLIENT --user "${USER}" -q "
     FROM cluster('test_cluster_two_shards', currentDatabase(), t_left_04201) AS t1
     INNER JOIN cluster('test_cluster_two_shards', currentDatabase(), t_right_04201) AS t2 ON t1.k = t2.k
     SETTINGS
-        enable_analyzer = 1,
         serialize_query_plan = 1,
         join_algorithm = 'hash',
         max_threads = 1,

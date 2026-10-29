@@ -58,6 +58,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
 
@@ -547,6 +548,9 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
         QueryTreePassManager pass_manager(context);
         addQueryTreePasses(pass_manager);
         pass_manager.runOnlyResolve(inner_query_tree);
+        /// Each replica would expand the body itself, and a decorrelated subquery reads the table again.
+        if (containsCorrelatedSubquery(inner_query_tree))
+            return nullptr;
     }
     catch (const Exception &)
     {
