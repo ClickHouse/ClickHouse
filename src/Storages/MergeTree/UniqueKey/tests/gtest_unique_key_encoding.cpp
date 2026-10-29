@@ -1174,11 +1174,12 @@ TEST(UniqueKeyEncoding, DISABLED_MicrobenchCompoundUInt64String1M)
 }
 
 /// ---------- unsupported-type rejection ----------
-/// `UniqueKeyEncoding` does not yet implement Array / Tuple. The DDL
-/// surface accepts bare column identifiers without filtering by data
-/// type, so the encoder is the contract that rejects these —
-/// `encodeBlock` throws `NOT_IMPLEMENTED`. Pin the specific error code
-/// here so a future encoder addition is forced to update this test.
+/// `UniqueKeyEncoding` does not yet implement Array / Tuple.
+/// The DDL surface accepts bare column identifiers
+/// without filtering by data type, so the encoder is the contract that
+/// rejects these — `encodeBlock` throws `NOT_IMPLEMENTED`. Pin the
+/// specific error code here so a future encoder addition is forced to
+/// update this test.
 
 namespace DB
 {
@@ -1228,11 +1229,6 @@ TEST(UniqueKeyEncoding, TupleThrowsNotImplemented)
     expectEncodeRowThrowsNotImplemented(cols, "Tuple(UInt64,UInt64)");
 }
 
-/// LowCardinality: the encoder delegates to the dictionary's nested column, so
-/// an LC column must encode byte-identically to its expanded full-column form
-/// (with the dictionary shared, rows repeat dictionary entries). The nullable
-/// variant additionally pins that the dictionary NULL slot encodes exactly as
-/// a NULL row of the full Nullable column.
 TEST(UniqueKeyEncoding, LowCardinalityMatchesFullColumn)
 {
     auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -1284,8 +1280,6 @@ TEST(UniqueKeyEncoding, LowCardinalityNullableMatchesFullColumn)
     for (size_t r = 0; r < 5u; ++r)
         EXPECT_EQ(lc_out[r], full_out[r]) << "LC(Nullable) row " << r << " must match full-column encoding";
 
-    /// NULL rows (2 and 4) must encode as just the NULL flag and sort after
-    /// any non-NULL row, matching compareAt with null_direction_hint = 1.
     EXPECT_EQ(lc_out[2], String("\x01", 1));
     EXPECT_EQ(lc_out[2], lc_out[4]);
     EXPECT_TRUE(agrees(lc_cols, 0, 2));
