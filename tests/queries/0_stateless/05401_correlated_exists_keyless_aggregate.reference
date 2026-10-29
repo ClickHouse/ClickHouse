@@ -1,0 +1,101 @@
+-- a set in the subquery
+0	1
+1	1
+0	0
+1	0
+-- dictGet with and without the rewrite into a set
+0	1
+1	1
+0	1
+1	1
+-- a step above the aggregate
+0	1
+1	0
+0	1
+1	0
+0	1
+1	1
+0	1
+1	1
+0	0
+1	0
+-- no row over an empty input
+0	0
+1	1
+0	0
+1	1
+-- a HAVING that rejects a group without rows keeps the plan without restored groups
+0	0
+1	1
+0
+1
+-- LATERAL restores the groups even when its HAVING rejects count() = 0
+1
+-- a HAVING that cannot be decided at planning restores the groups
+0	1
+1	0
+0	1
+1	0
+0	0
+1	1
+-- the HAVING sees count() of a group without rows as at runtime
+0	0
+1	1
+0	1
+1	1
+-- an always-NULL condition of an -If aggregate
+0	1
+1	1
+0	0	0
+1	0	1
+-- a parametric aggregate over a NULL argument
+0	1
+1	1
+0	0	0
+1	0	1
+0	1
+1	1
+0	1
+1	1
+-- layouts of the decorrelated plan
+0	1	0
+1	1	0
+2	1	1
+0	1	0
+1	1	0
+2	1	1
+0	1	0
+1	1	0
+2	1	1
+-- the restored groups do not count against max_rows_to_group_by
+0	1
+1	1
+2	1
+-- two UNION arms that read the outer rows
+0	1
+1	1
+2	0
+-- outer keys that differ between evaluations of the outer plan
+0	1
+1	1
+2	1
+3	1
+4	1
+0	1
+1	1
+2	1
+3	1
+4	1
+0	1
+1	1
+2	1
+3	1
+4	1
+-- an aggregate state over a Nullable argument
+0	1
+1	0
+-- a join_algorithm that cannot execute the restoring join
+0	1
+1	0
+0	1
+1	0
