@@ -38,6 +38,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -79,6 +80,62 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
         for (size_t i = 0; i < projection_columns_value.size(); ++i)
             projection_columns_value[i].name = this->projection_aliases_to_override[i];
     }
+
+    bool validate_pivot_names = is_pivot_rewrite;
+    if (!validate_pivot_names)
+    {
+        /// Preserve the AST fallback for PIVOT rewrites entering through nested table expressions.
+        const IAST * pivot_ast = getOriginalAST().get();
+        if (const auto * subquery = pivot_ast ? pivot_ast->as<ASTSubquery>() : nullptr)
+        {
+            if (!subquery->children.empty())
+                pivot_ast = subquery->children[0].get();
+        }
+        if (const auto * union_query = pivot_ast ? pivot_ast->as<ASTSelectWithUnionQuery>() : nullptr)
+        {
+            if (union_query->list_of_selects && union_query->list_of_selects->children.size() == 1)
+                pivot_ast = union_query->list_of_selects->children[0].get();
+        }
+        validate_pivot_names = pivot_ast && pivot_ast->as<ASTSelectQuery>()
+            && pivot_ast->as<ASTSelectQuery>()->is_pivot_rewrite;
+    }
+
+    if (validate_pivot_names)
+    {
+        /// Validate the visible names after AS alias(col1, col2, ...) has been applied.
+        std::unordered_set<String> output_names;
+        output_names.reserve(projection_columns_value.size());
+        for (const auto & column : projection_columns_value)
+        {
+            if (!output_names.emplace(column.name).second)
+                throw Exception(
+                    ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                    "PIVOT produces duplicate output column '{}'. Choose a different PIVOT value or aggregate alias",
+                    column.name);
+        }
+
+        const auto & projection_nodes = getProjection().getNodes();
+        if (projection_aliases_to_override.empty() && projection_nodes.size() == projection_columns_value.size())
+        {
+            /// The analyzer has removed expression aliases by this point. PIVOT grouping keys
+            /// are columns and its measures are expressions. Preserve the grouping-name check
+            /// even when a grouping column's projection name was qualified during resolution.
+            std::unordered_set<String> grouping_names;
+            for (const auto & node : projection_nodes)
+                if (const auto * column = node->as<ColumnNode>())
+                    grouping_names.emplace(column->getColumnName());
+
+            for (size_t i = 0; i < projection_columns_value.size(); ++i)
+            {
+                if (!projection_nodes[i]->as<ColumnNode>() && grouping_names.contains(projection_columns_value[i].name))
+                    throw Exception(
+                        ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                        "PIVOT produces duplicate output column '{}'. Choose a different PIVOT value or aggregate alias",
+                        projection_columns_value[i].name);
+            }
+        }
+    }
+
     projection_columns = std::move(projection_columns_value);
 }
 
@@ -486,6 +543,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
+    result_query_node->is_pivot_rewrite = is_pivot_rewrite;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->is_limit_after_all = is_limit_after_all;
@@ -511,6 +569,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_cube = is_group_by_with_cube;
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
+    select_query->is_pivot_rewrite = is_pivot_rewrite;
     select_query->order_by_all = is_order_by_all;
     select_query->limit_by_all = is_limit_by_all;
     select_query->limit_after_all = is_limit_after_all;
