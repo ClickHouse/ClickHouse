@@ -120,6 +120,28 @@ void checkIfNotCancelledAtRow(size_t row)
         CurrentThread::checkIfNotCancelled();
 }
 
+/// A row of a string column can be arbitrarily long, so the loops over strings count the bytes
+/// they process instead of the rows, and long values are processed in pieces of this size.
+constexpr size_t BYTES_BETWEEN_CANCELLATION_CHECKS = 1 << 20;
+
+class StringCancellationChecker
+{
+public:
+    /// Every row counts as at least one byte, so a column of many empty strings is checked as well.
+    void advance(size_t bytes)
+    {
+        bytes_since_check += bytes + 1;
+        if (bytes_since_check >= BYTES_BETWEEN_CANCELLATION_CHECKS)
+        {
+            bytes_since_check = 0;
+            CurrentThread::checkIfNotCancelled();
+        }
+    }
+
+private:
+    size_t bytes_since_check = BYTES_BETWEEN_CANCELLATION_CHECKS;
+};
+
 template <typename T>
 void writeBigEndian(WriteBuffer & out, T value)
 {
@@ -438,10 +460,11 @@ String chooseStringFillValue(const std::bitset<256> & taken_bytes)
 void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * null_map, UInt64 string_length, const String & fill_value)
 {
     static constexpr char zeros[64] = {};
+    StringCancellationChecker cancellation_checker;
 
     for (size_t i = 0; i < column.size(); ++i)
     {
-        checkIfNotCancelledAtRow(i);
+        cancellation_checker.advance(0);
 
         /// A NULL is written as the `_FillValue` of the variable, which is a string that the data
         /// of the column does not contain. The column under a `ColumnNullable` is allowed to hold
@@ -452,7 +475,13 @@ void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * 
         else
             value = fill_value;
         UInt64 to_write = std::min<UInt64>(value.size(), string_length);
-        writeString(value.substr(0, to_write), out);
+        for (UInt64 pos = 0; pos < to_write;)
+        {
+            UInt64 piece = std::min<UInt64>(to_write - pos, BYTES_BETWEEN_CANCELLATION_CHECKS);
+            out.write(value.data() + pos, piece);
+            pos += piece;
+            cancellation_checker.advance(piece);
+        }
 
         /// A string shorter than the dimension of the variable is padded with zero bytes.
         for (UInt64 rest = string_length - to_write; rest != 0;)
@@ -460,6 +489,7 @@ void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * 
             UInt64 zeros_to_write = std::min<UInt64>(rest, sizeof(zeros));
             out.write(zeros, zeros_to_write);
             rest -= zeros_to_write;
+            cancellation_checker.advance(zeros_to_write);
         }
     }
 }
@@ -583,9 +613,10 @@ void NetCDFOutputFormat::finalizeImpl()
             /// library masks every single character that is equal to it, not only a whole string
             /// that consists of it.
             std::bitset<256> taken_bytes;
+            StringCancellationChecker cancellation_checker;
             for (size_t i = 0; i < variable.data->size(); ++i)
             {
-                checkIfNotCancelledAtRow(i);
+                cancellation_checker.advance(0);
 
                 if (null_map && null_map[i])
                 {
@@ -595,8 +626,14 @@ void NetCDFOutputFormat::finalizeImpl()
 
                 std::string_view value = variable.data->getDataAt(i);
 
-                for (char c : value)
-                    taken_bytes.set(static_cast<UInt8>(c));
+                for (size_t pos = 0; pos < value.size();)
+                {
+                    size_t piece = std::min<size_t>(value.size() - pos, BYTES_BETWEEN_CANCELLATION_CHECKS);
+                    for (char c : value.substr(pos, piece))
+                        taken_bytes.set(static_cast<UInt8>(c));
+                    pos += piece;
+                    cancellation_checker.advance(piece);
+                }
 
                 /// A string shorter than the dimension of the variable is padded with zero bytes,
                 /// so a value that itself ends in a zero byte cannot be read back intact: every
