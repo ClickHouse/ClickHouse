@@ -34,6 +34,9 @@
     <!-- join_fact_dim_iceberg: same join with both sides on Iceberg, so the diff vs the MergeTree variant isolates the data-lake read path. -->
     <query><![CDATA[SELECT count() FROM {database}.lineitem AS l INNER JOIN {database}.orders AS o ON l.l_orderkey = o.o_orderkey WHERE o.o_orderdate < toDate('1992-06-01')]]></query>
 
+    <!-- join_runtime_filter_prune: the build side holds a few days, so the JOIN runtime filter skips the data files whose l_shipdate bounds cannot contain them; signal IcebergRuntimeFilterPrunedFiles ~ 83. -->
+    <query><![CDATA[SELECT count(), sum(l_quantity) FROM {database}.lineitem AS l INNER JOIN (SELECT toDate('1995-01-01') + number AS d FROM numbers(31) WHERE toDayOfWeek(d) = 1) AS w ON l.l_shipdate = w.d]]></query>
+
     <!-- columns_narrow: full scan decoding 2 of 16 columns; Parquet column pruning on the revenue expression. -->
     <query>SELECT sum(l_extendedprice * (1 - l_discount)) FROM {database}.lineitem</query>
 

@@ -22,6 +22,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/Progress.h>
@@ -64,6 +65,7 @@ extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergPartitionPrunedManifestFiles;
+extern const Event IcebergRuntimeFilterPrunedFiles;
 };
 
 
@@ -78,7 +80,102 @@ namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
 extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
+extern const SettingsBool enable_join_runtime_filters_index_analysis;
+extern const SettingsBool use_join_runtime_filters_for_iceberg_pruning;
 };
+
+namespace Iceberg
+{
+
+/// Prunes data files by the JOIN runtime filters every row of the read passes. Once the filters are built,
+/// their exact key values, or the [min, max] range of the keys when the exact set was too large, become a
+/// predicate on the key column, checked against the bounds of each data file in its manifest like a query
+/// filter: a file whose bounds cannot contain any key holds no row the join can match. Files requested
+/// before every filter is finished are not pruned.
+class RuntimeFilterFilePruning
+{
+public:
+    RuntimeFilterFilePruning(
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> descriptors_,
+        RuntimeFilterLookupPtr lookup_,
+        ContextPtr context_,
+        const IcebergSchemaProcessor & schema_processor_,
+        Int32 table_schema_id_)
+        : descriptors(std::move(descriptors_))
+        , lookup(std::move(lookup_))
+        , context(std::move(context_))
+        , schema_processor(schema_processor_)
+        , table_schema_id(table_schema_id_)
+    {
+    }
+
+    bool canBePruned(const ProcessedManifestFileEntryPtr & entry)
+    {
+        if (entry->parsed_entry->content_type != FileContentType::DATA)
+            return false;
+        const ManifestFilesPruner * pruner = getPruner(entry->resolved_schema_id);
+        if (!pruner)
+            return false;
+        const auto hyperrectangles = getDataFileHyperrectangles(
+            *entry, pruner->getMinMaxColumnTypes(), IcebergPathFromMetadata::deserialize(entry->manifest_file_path));
+        return pruner->canBePruned(entry, hyperrectangles) != PruningReturnStatus::NOT_PRUNED;
+    }
+
+private:
+    /// The pruner for the data files written with `schema_id`, or nullptr until every filter is built or when the
+    /// filters recorded nothing usable.
+    const ManifestFilesPruner * getPruner(Int32 schema_id)
+    {
+        std::lock_guard lock(mutex);
+        if (unusable)
+            return nullptr;
+
+        if (!predicate_dag)
+        {
+            for (const auto & descriptor : descriptors)
+            {
+                auto filter = lookup->find(descriptor.filter_id);
+                if (!filter)
+                    return nullptr;
+                if (!filter->isReady())
+                    return nullptr;
+            }
+
+            auto dag = std::make_shared<ActionsDAG>();
+            const auto * predicate = buildRuntimeRangePredicate(*lookup, descriptors, *dag, context);
+            if (!predicate)
+            {
+                unusable = true;
+                return nullptr;
+            }
+            dag->getOutputs() = {predicate};
+            predicate_dag = std::move(dag);
+        }
+
+        auto it = pruners.find(schema_id);
+        if (it == pruners.end())
+            it = pruners
+                     .emplace(
+                         schema_id,
+                         std::make_unique<ManifestFilesPruner>(
+                             schema_processor, table_schema_id, schema_id, predicate_dag.get(), /*partition_key_=*/nullptr, context))
+                     .first;
+        return it->second.get();
+    }
+
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> descriptors;
+    const RuntimeFilterLookupPtr lookup;
+    const ContextPtr context;
+    const IcebergSchemaProcessor & schema_processor;
+    const Int32 table_schema_id;
+
+    std::mutex mutex;
+    bool unusable = false;
+    std::shared_ptr<const ActionsDAG> predicate_dag;
+    std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> pruners;
+};
+
+}
 
 
 using namespace Iceberg;
@@ -248,6 +345,18 @@ IcebergIterator::IcebergIterator(
         manifest_keys.end(), std::make_move_iterator(data_manifest_keys.begin()), std::make_move_iterator(data_manifest_keys.end()));
     manifests = std::make_unique<Iceberg::ManifestFilesPrefetcher>(
         object_storage, persistent_components, local_context, logger, std::move(manifest_keys));
+}
+
+void IcebergIterator::setJoinRuntimeFilters(const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors, RuntimeFilterLookupPtr lookup)
+{
+    const auto & settings = local_context->getSettingsRef();
+    if (descriptors.empty() || !lookup || !table_state_snapshot || !settings[Setting::use_join_runtime_filters_for_iceberg_pruning]
+        || !settings[Setting::enable_join_runtime_filters_index_analysis] || !settings[Setting::use_iceberg_partition_pruning])
+        return;
+
+    LOG_DEBUG(logger, "Data files are pruned by {} JOIN runtime filter(s) once they are built", descriptors.size());
+    runtime_filter_pruning = std::make_unique<Iceberg::RuntimeFilterFilePruning>(
+        descriptors, std::move(lookup), local_context, *persistent_components.schema_processor, table_state_snapshot->schema_id);
 }
 
 void IcebergIterator::ensureDeletesReady()
@@ -455,8 +564,13 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergMetadataReadWaitTimeMicroseconds);
     ensureDeletesReady();
-    if (auto manifest_file_entry = nextDataFileEntry())
+    while (auto manifest_file_entry = nextDataFileEntry())
     {
+        if (runtime_filter_pruning && runtime_filter_pruning->canBePruned(manifest_file_entry))
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergRuntimeFilterPrunedFiles);
+            continue;
+        }
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(
                 manifest_file_entry,

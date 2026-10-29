@@ -34,6 +34,7 @@ namespace DB
 namespace Iceberg
 {
 class ManifestFilesPrefetcher;
+class RuntimeFilterFilePruning;
 }
 
 class IcebergIterator : public IObjectIterator
@@ -51,6 +52,9 @@ public:
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override;
+
+    void setJoinRuntimeFilters(const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors, RuntimeFilterLookupPtr lookup) override;
+
     ~IcebergIterator() override;
 
 private:
@@ -89,6 +93,9 @@ private:
     std::vector<Iceberg::ManifestIteratorPtr> idle_data_manifests TSA_GUARDED_BY(data_files_mutex);
     size_t data_manifests_in_use TSA_GUARDED_BY(data_files_mutex) = 0;
     std::exception_ptr data_files_exception TSA_GUARDED_BY(data_files_mutex);
+
+    /// Skips the data files that cannot match the JOIN runtime filters applied to this read.
+    std::unique_ptr<Iceberg::RuntimeFilterFilePruning> runtime_filter_pruning;
 };
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -91,6 +92,10 @@ public:
 
     LazyObjectStorageFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
+    /// Registers a JOIN runtime filter on `column_name` that every row of this read passes; the file iterator
+    /// may skip the objects that cannot contain any of its keys.
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+
 private:
     /// What the main read keeps besides `required_names` when columns are split off.
     NameSet getNamesToKeepInMainRead(const NameSet & required_names) const;
@@ -99,6 +104,8 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
+
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_file_pruning;
 
     /// Memoized `estimateReadFromDataLakeMetadata`, which walks the manifests; reset when the filter changes.
     /// A storage without an estimate returns nullopt without any work, so nullopt is not memoized.

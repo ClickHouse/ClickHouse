@@ -893,11 +893,16 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
         /// (composing the filter through expression steps turns a renamed key into an alias
         /// of the physical column - looking through it reports the physical name).
         const auto * key_arg = node->children[1];
+        size_t casts = 0;
         while ((key_arg->type == ActionsDAG::ActionType::ALIAS
                 || (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
                     && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")))
                && !key_arg->children.empty())
+        {
+            if (key_arg->type == ActionsDAG::ActionType::FUNCTION)
+                ++casts;
             key_arg = key_arg->children.front();
+        }
 
         /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
         /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
@@ -908,7 +913,7 @@ std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(cons
         if (key_arg->type != ActionsDAG::ActionType::INPUT)
             continue;
 
-        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type, /*key_under_nested_casts=*/casts > 1});
     }
 
     return res;
