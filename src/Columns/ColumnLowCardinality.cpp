@@ -477,13 +477,17 @@ void ColumnLowCardinality::batchSerializeAsComparable(
     switch (getSizeOfIndexType())
     {
         case sizeof(UInt8):
-            return batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt8 &>(indexes), num_rows, out, permutation, null_map);
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt8 &>(indexes), num_rows, out, permutation, null_map);
+            return;
         case sizeof(UInt16):
-            return batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt16 &>(indexes), num_rows, out, permutation, null_map);
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt16 &>(indexes), num_rows, out, permutation, null_map);
+            return;
         case sizeof(UInt32):
-            return batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt32 &>(indexes), num_rows, out, permutation, null_map);
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt32 &>(indexes), num_rows, out, permutation, null_map);
+            return;
         case sizeof(UInt64):
-            return batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt64 &>(indexes), num_rows, out, permutation, null_map);
+            batchSerializeAsComparableLowCardinality(nested_dict, assert_cast<const ColumnUInt64 &>(indexes), num_rows, out, permutation, null_map);
+            return;
         default:
             throwUnexpectedLowCardinalityIndexType(getSizeOfIndexType());
     }
