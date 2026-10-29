@@ -887,7 +887,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     size_t min_marks_per_part_to_use_statistics,
     const ContextPtr & context,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    RangesInDataParts * deferred_parts)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -971,6 +972,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     if (!load_statistics)
         LOG_TRACE(log, "Not pruning {} parts without statistics in memory, because fewer than {} marks are left to read in them by the primary key",
             parts_to_load_statistics.size(), min_marks_to_use_statistics);
+
+    if (!load_statistics && deferred_parts)
+        *deferred_parts = parts_to_load_statistics;
 
     /// A part needs its statistics loaded only if they are not in memory and the read is large enough to load them.
     auto needs_loading = [&](size_t part_index) { return load_statistics && !estimates_in_memory[part_index]; };

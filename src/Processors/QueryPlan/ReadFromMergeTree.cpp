@@ -6862,9 +6862,10 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
 
     /// Pruning parts decides by itself whether the read is large enough to load statistics.
     /// It prunes the parts whose statistics are in memory regardless, before the primary key is probed below.
+    RangesInDataParts parts_with_deferred_statistics;
     res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res.parts, getStorageMetadata(), query_info, mutations_snapshot, indexes->key_condition,
-        min_marks_per_part_to_use_statistics, getContext(), log, unused_stats);
+        min_marks_per_part_to_use_statistics, getContext(), log, unused_stats, &parts_with_deferred_statistics);
 
     if (!selectivity_estimator_columns || !settings[Setting::use_statistics] || !getStorageMetadata()->hasStatistics())
     {
@@ -6877,11 +6878,25 @@ ReadFromMergeTree::PartsForPrewhere ReadFromMergeTree::getPartsForPrewhere(const
     res.use_statistics = !MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
         res.parts, getStorageMetadata(), indexes->key_condition, min_marks_to_use_statistics(res.parts), settings, log);
 
-    /// The statistics are loaded for ordering the conditions anyway, so prune the parts skipped above as well.
-    if (res.use_statistics)
-        res.parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
-            res.parts, getStorageMetadata(), query_info, mutations_snapshot, /*key_condition=*/nullptr,
+    /// The statistics are loaded for ordering the conditions anyway, so prune the parts whose statistics
+    /// were not loaded above as well. The other parts were already checked and are not checked again.
+    if (res.use_statistics && !parts_with_deferred_statistics.empty())
+    {
+        const auto kept_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
+            parts_with_deferred_statistics, getStorageMetadata(), query_info, mutations_snapshot, /*key_condition=*/nullptr,
             /*min_marks_per_part_to_use_statistics=*/0, getContext(), log, unused_stats);
+
+        if (kept_parts.size() < parts_with_deferred_statistics.size())
+        {
+            std::unordered_set<const IMergeTreeDataPart *> pruned;
+            for (const auto & part : parts_with_deferred_statistics)
+                pruned.insert(part.data_part.get());
+            for (const auto & part : kept_parts)
+                pruned.erase(part.data_part.get());
+
+            std::erase_if(res.parts, [&](const RangesInDataPart & part) { return pruned.contains(part.data_part.get()); });
+        }
+    }
 
     return res;
 }

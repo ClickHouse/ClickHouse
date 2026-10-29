@@ -266,6 +266,7 @@ public:
     /// Parts whose statistics are in memory are always pruned. Loading statistics costs a few reads per part,
     /// so the other parts are not pruned if `key_condition` leaves fewer than `min_marks_per_part_to_use_statistics`
     /// marks to read in them per part (see `getMinMarksToUseStatistics` and `hasFewerMarksToReadThan`).
+    /// If `deferred_parts` is not nullptr, the parts left unpruned for that reason are written to it.
     static RangesInDataParts filterPartsByStatistics(
         const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,
@@ -275,7 +276,8 @@ public:
         size_t min_marks_per_part_to_use_statistics,
         const ContextPtr & context,
         LoggerPtr log,
-        ReadFromMergeTree::IndexStats & index_stats);
+        ReadFromMergeTree::IndexStats & index_stats,
+        RangesInDataParts * deferred_parts = nullptr);
 
     struct IndexAnalysisContext
     {
