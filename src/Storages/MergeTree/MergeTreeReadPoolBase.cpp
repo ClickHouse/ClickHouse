@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
@@ -173,6 +174,25 @@ static MergeTreeReaderSettings setColumnsCacheSchemaIdentity(
 }
 
 
+static PrewhereExprInfo buildPrewhereActions(
+    const FilterDAGInfoPtr & row_level_filter,
+    const PrewhereInfoPtr & prewhere_info,
+    const IndexReadTasks & index_read_tasks,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
+    const StorageSnapshotPtr & storage_snapshot)
+{
+    return MergeTreeSelectProcessor::getPrewhereActions(
+        row_level_filter,
+        prewhere_info,
+        index_read_tasks,
+        actions_settings,
+        reader_settings.enable_multiple_prewhere_read_steps,
+        reader_settings.force_short_circuit_execution,
+        reader_settings.read_ahead_prewhere_columns,
+        &storage_snapshot->metadata->getColumns());
+}
+
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
@@ -193,9 +213,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
     , index_read_tasks(index_read_tasks_)
-    , row_level_filter(row_level_filter_)
-    , prewhere_info(prewhere_info_)
-    , actions_settings(actions_settings_)
     , reader_settings(setColumnsCacheSchemaIdentity(
           adjustReaderSettingsForColumnsCacheWrites(
               reader_settings_,
@@ -204,6 +221,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
               pool_settings_.use_columns_cache),
           storage_snapshot_,
           getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
+    , prewhere_actions(buildPrewhereActions(
+          row_level_filter_, prewhere_info_, index_read_tasks_, actions_settings_, reader_settings_, storage_snapshot_))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
@@ -237,8 +256,6 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     : WithContext(context_)
     , storage_snapshot(storage_snapshot_)
     , mutations_snapshot(std::move(mutations_snapshot_))
-    , prewhere_info(prewhere_info_)
-    , actions_settings(actions_settings_)
     , reader_settings(setColumnsCacheSchemaIdentity(
           adjustReaderSettingsForColumnsCacheWrites(
               reader_settings_,
@@ -247,6 +264,9 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
               pool_settings_.use_columns_cache),
           storage_snapshot_,
           getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache)))
+    , prewhere_actions(buildPrewhereActions(
+          /*row_level_filter=*/ nullptr, prewhere_info_, /*index_read_tasks=*/ {},
+          actions_settings_, reader_settings_, storage_snapshot_))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
@@ -496,12 +516,8 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         part_info,
         storage_snapshot,
         column_names,
-        row_level_filter,
-        prewhere_info,
         read_task_info.mutation_steps,
-        index_read_tasks,
-        actions_settings,
-        reader_settings,
+        prewhere_actions,
         /*with_subcolumns=*/ true);
 
     if (read_task_info.alter_conversions->hasPatches())
