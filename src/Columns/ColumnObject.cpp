@@ -14,6 +14,8 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -60,6 +62,10 @@ const SerializationPtr & getDynamicSerialization()
     static thread_local const SerializationPtr dynamic_serialization = DataTypeDynamic().getDefaultSerialization();
     return dynamic_serialization;
 }
+
+/// Mappings for sources that don't exist anymore are never used again, so the cache is cleared when it reaches this size.
+/// A merge inserts from one block of each merged part at a time and the resulting column is recreated for every block.
+constexpr size_t MAX_CACHED_INSERT_FROM_MAPPINGS = 256;
 
 struct ColumnObjectCheckpoint : public ColumnCheckpoint
 {
@@ -523,6 +529,7 @@ ColumnDynamic * ColumnObject::tryToAddNewDynamicPath(std::string_view path)
     auto it = dynamic_paths.emplace(path, std::move(new_dynamic_column)).first;
     auto it_ptr = dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get())).first;
     sorted_dynamic_paths.insert(it->first);
+    updateDynamicStructureVersion();
     /// Invalidate statistics because they refer to the old set of dynamic paths.
     statistics.reset();
     return it_ptr->second;
@@ -539,6 +546,89 @@ void ColumnObject::addNewDynamicPath(std::string_view path, MutableColumnPtr col
     auto it = dynamic_paths.emplace(path, std::move(column)).first;
     dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
     sorted_dynamic_paths.insert(it->first);
+    updateDynamicStructureVersion();
+}
+
+UInt64 ColumnObject::generateDynamicStructureVersion()
+{
+    /// Every thread takes ranges of values from the global counter, so the version can be updated often without contention.
+    static constexpr UInt64 range_size = 1ULL << 16;
+    static std::atomic<UInt64> next_range_start = 0;
+    static thread_local UInt64 next_version = 0;
+    static thread_local UInt64 range_end = 0;
+
+    if (next_version == range_end)
+    {
+        next_version = next_range_start.fetch_add(range_size, std::memory_order_relaxed);
+        range_end = next_version + range_size;
+    }
+
+    return next_version++;
+}
+
+const ColumnObject::InsertFromMapping & ColumnObject::getInsertFromMapping(const ColumnObject & src_object_column)
+{
+    if (auto it = insert_from_mappings.find(src_object_column.dynamic_structure_version);
+        it != insert_from_mappings.end() && it->second.version == dynamic_structure_version)
+    {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Check that the dynamic structure of both columns didn't change without updating its version.
+        InsertFromMapping expected_mapping;
+        fillInsertFromMapping(src_object_column, expected_mapping);
+        if (expected_mapping != it->second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cached mapping of dynamic paths for insertion into Object column doesn't match the current dynamic structure");
+#endif
+        return it->second;
+    }
+
+    /// Add new dynamic paths from the source while the limit allows it.
+    /// The rest of the source dynamic paths will be inserted into shared data.
+    for (const auto & [path, _] : src_object_column.dynamic_paths)
+    {
+        if (!canAddNewDynamicPath())
+            break;
+
+        if (!dynamic_paths_ptrs.contains(path))
+            tryToAddNewDynamicPath(path);
+    }
+
+    if (insert_from_mappings.size() >= MAX_CACHED_INSERT_FROM_MAPPINGS)
+        insert_from_mappings.clear();
+
+    auto & mapping = insert_from_mappings[src_object_column.dynamic_structure_version];
+    fillInsertFromMapping(src_object_column, mapping);
+    return mapping;
+}
+
+void ColumnObject::fillInsertFromMapping(const ColumnObject & src_object_column, InsertFromMapping & mapping) const
+{
+    mapping.version = dynamic_structure_version;
+
+    mapping.dynamic_paths.clear();
+    mapping.src_dynamic_paths_for_shared_data.clear();
+    mapping.dynamic_paths.reserve(src_object_column.dynamic_paths_ptrs.size());
+    for (const auto & [path, src_column] : src_object_column.dynamic_paths_ptrs)
+    {
+        if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
+            mapping.dynamic_paths.emplace_back(src_column, it->second);
+        else
+            mapping.src_dynamic_paths_for_shared_data.emplace_back(path, src_column);
+    }
+
+    /// Paths in shared data are sorted, so source dynamic paths should be inserted into it in sorted order.
+    std::sort(
+        mapping.src_dynamic_paths_for_shared_data.begin(),
+        mapping.src_dynamic_paths_for_shared_data.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+
+    mapping.dynamic_paths_missing_in_src.clear();
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        if (!src_object_column.dynamic_paths_ptrs.contains(path))
+            mapping.dynamic_paths_missing_in_src.push_back(column);
+    }
+
+    mapping.insert_shared_data_directly = !canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths;
 }
 
 void ColumnObject::addNewDynamicPath(std::string_view path)
@@ -553,6 +643,7 @@ void ColumnObject::setMaxDynamicPaths(size_t max_dynamic_paths_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific max_dynamic_paths parameter is allowed only for empty object column");
 
     max_dynamic_paths = max_dynamic_paths_;
+    updateDynamicStructureVersion();
 }
 
 void ColumnObject::setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_bound_)
@@ -576,6 +667,7 @@ void ColumnObject::setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_b
 
     max_dynamic_paths_upper_bound = max_dynamic_paths_upper_bound_;
     max_dynamic_paths = std::min(max_dynamic_paths, max_dynamic_paths_upper_bound);
+    updateDynamicStructureVersion();
 }
 
 void ColumnObject::takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src)
@@ -587,6 +679,7 @@ void ColumnObject::takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src)
 
     max_dynamic_paths_upper_bound = new_upper_bound;
     max_dynamic_paths = std::min(max_dynamic_paths, new_upper_bound);
+    updateDynamicStructureVersion();
 }
 
 void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<String> & paths)
@@ -612,6 +705,8 @@ void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<String> & path
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
+
+    updateDynamicStructureVersion();
 }
 
 void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<String, ColumnPtr>> & paths)
@@ -625,6 +720,8 @@ void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<Stri
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
+
+    updateDynamicStructureVersion();
 
     /// Invalidate statistics because they refer to the old set of dynamic paths.
     if (!paths.empty())
@@ -711,6 +808,9 @@ bool ColumnObject::tryInsert(const Field & x)
             sorted_dynamic_paths.erase(path);
             dynamic_paths.erase(path);
         }
+
+        if (!new_dynamic_paths.empty())
+            updateDynamicStructureVersion();
 
         for (auto & [_, column] : dynamic_paths_ptrs)
         {
@@ -800,28 +900,18 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
     /// Second, insert dynamic paths and extend them if needed.
     /// We can reach the limit of dynamic paths, and in this case
     /// the rest of dynamic paths will be inserted into shared data.
-    VectorWithMemoryTracking<std::string_view> src_dynamic_paths_for_shared_data;
-    for (const auto & [path, column] : src_object_column.dynamic_paths)
-    {
-        /// Check if we already have such dynamic path.
-        if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
-            it->second->insertFrom(*column, n);
-        /// Try to add a new dynamic path.
-        else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
-            dynamic_path_column->insertFrom(*column, n);
-        /// Limit on dynamic paths is reached, add path to shared data later.
-        else
-            src_dynamic_paths_for_shared_data.push_back(path);
-    }
+    const auto & mapping = getInsertFromMapping(src_object_column);
+    for (const auto & [src_column, column] : mapping.dynamic_paths)
+        column->insertFrom(*src_column, n);
 
     /// Finally, insert paths from shared data.
     /// If limit on dynamic paths is reached and set of dynamic paths is the same for both source
     /// and destination columns, we can insert into shared data from source shared data directly.
-    if (!canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths)
+    if (mapping.insert_shared_data_directly)
         shared_data->insertFrom(*src_object_column.shared_data, n);
     /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
     else
-        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
+        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, mapping, n, 1);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -849,35 +939,42 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     /// Second, insert dynamic paths and extend them if needed.
     /// We can reach the limit of dynamic paths, and in this case
     /// the rest of dynamic paths will be inserted into shared data.
-    VectorWithMemoryTracking<std::string_view> src_dynamic_paths_for_shared_data;
-    for (const auto & [path, column] : src_object_column.dynamic_paths)
-    {
-        /// Check if we already have such dynamic path.
-        if (auto it = dynamic_paths_ptrs.find(path); it != dynamic_paths_ptrs.end())
-            it->second->insertRangeFrom(*column, start, length);
-        /// Try to add a new dynamic path.
-        else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
-            dynamic_path_column->insertRangeFrom(*column, start, length);
-        /// Limit on dynamic paths is reached, add path to shared data later.
-        else
-            src_dynamic_paths_for_shared_data.push_back(path);
-    }
+    const auto & mapping = getInsertFromMapping(src_object_column);
+    for (const auto & [src_column, column] : mapping.dynamic_paths)
+        column->insertRangeFrom(*src_column, start, length);
 
     /// Finally, insert paths from shared data.
     /// If limit on dynamic paths is reached and set of dynamic paths is the same for both source
     /// and destination columns, we can insert into shared data from source shared data directly.
-    if (!canAddNewDynamicPath() && sorted_dynamic_paths == src_object_column.sorted_dynamic_paths)
+    if (mapping.insert_shared_data_directly)
         shared_data->insertRangeFrom(*src_object_column.shared_data, start, length);
     /// Otherwise we might need to insert dynamic paths into shared data and vice versa.
     else
-        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
+        insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, mapping, start, length);
 }
 
-void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
+void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, const InsertFromMapping & mapping, size_t start, size_t length)
 {
     /// Paths in shared data are sorted, so paths from src_dynamic_paths_for_shared_data should be inserted properly
-    /// to keep paths sorted. Let's sort them in advance.
-    std::sort(src_dynamic_paths_for_shared_data.begin(), src_dynamic_paths_for_shared_data.end());
+    /// to keep paths sorted. They are sorted in advance in the mapping.
+    const auto & src_dynamic_paths_for_shared_data = mapping.src_dynamic_paths_for_shared_data;
+
+    /// Our dynamic paths that are dynamic paths in the source are already filled, so only the rest of them should be filled with
+    /// defaults. But if we can add new dynamic paths, they can be added from the source shared data below and they are not in the mapping.
+    const bool can_add_new_dynamic_paths = canAddNewDynamicPath();
+    auto for_each_dynamic_path_to_fill = [&](const auto & callback)
+    {
+        if (can_add_new_dynamic_paths)
+        {
+            for (auto & [_, column] : dynamic_paths_ptrs)
+                callback(*column);
+        }
+        else
+        {
+            for (auto * column : mapping.dynamic_paths_missing_in_src)
+                callback(*column);
+        }
+    };
 
     /// Check if src object doesn't have any paths in shared data in specified range.
     const auto & src_shared_data_offsets = src_object_column.getSharedDataOffsets();
@@ -898,18 +995,18 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
             for (size_t i = start; i != start + length; ++i)
             {
                 /// Paths in src_dynamic_paths_for_shared_data are already sorted.
-                for (const auto path : src_dynamic_paths_for_shared_data)
-                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *src_object_column.dynamic_paths_ptrs.find(path)->second, i);
+                for (const auto & [path, src_column] : src_dynamic_paths_for_shared_data)
+                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *src_column, i);
                 shared_data_offsets.push_back(shared_data_paths->size());
             }
         }
 
         /// Insert default values in all remaining dynamic paths.
-        for (auto & [_, column] : dynamic_paths_ptrs)
+        for_each_dynamic_path_to_fill([&](ColumnDynamic & column)
         {
-            if (column->size() == current_size)
-                column->insertManyDefaults(length);
-        }
+            if (column.size() == current_size)
+                column.insertManyDefaults(length);
+        });
         return;
     }
 
@@ -946,10 +1043,10 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                 /// Before inserting this path into shared data check if we need to
                 /// insert dynamic paths from src_dynamic_paths_for_shared_data before.
                 while (src_dynamic_paths_for_shared_data_index < src_dynamic_paths_for_shared_data.size()
-                       && src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index] < path)
+                       && src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index].first < path)
                 {
-                    const auto dynamic_path = src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index];
-                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_object_column.dynamic_paths_ptrs.find(dynamic_path)->second, row);
+                    const auto & [dynamic_path, src_column] = src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index];
+                    serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_column, row);
                     ++src_dynamic_paths_for_shared_data_index;
                 }
 
@@ -962,18 +1059,18 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
         /// Insert remaining dynamic paths from src_dynamic_paths_for_shared_data.
         for (; src_dynamic_paths_for_shared_data_index != src_dynamic_paths_for_shared_data.size(); ++src_dynamic_paths_for_shared_data_index)
         {
-            const auto dynamic_path = src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index];
-            serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_object_column.dynamic_paths_ptrs.find(dynamic_path)->second, row);
+            const auto & [dynamic_path, src_column] = src_dynamic_paths_for_shared_data[src_dynamic_paths_for_shared_data_index];
+            serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, dynamic_path, *src_column, row);
         }
 
         shared_data_offsets.push_back(shared_data_paths->size());
 
         /// Insert default value in all remaining dynamic paths.
-        for (auto & [_, column] : dynamic_paths_ptrs)
+        for_each_dynamic_path_to_fill([&](ColumnDynamic & column)
         {
-            if (column->size() == current_size)
-                column->insertDefault();
-        }
+            if (column.size() == current_size)
+                column.insertDefault();
+        });
     }
 }
 
@@ -1131,6 +1228,7 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
     rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
     rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
     shared_data->rollback(*object_checkpoint.shared_data);
+    updateDynamicStructureVersion();
 }
 
 std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings * settings) const
@@ -1690,6 +1788,7 @@ void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback ca
         callback(it->second);
         dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
+    updateDynamicStructureVersion();
     callback(shared_data);
 }
 
@@ -1711,6 +1810,7 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
         it->second->forEachMutableSubcolumnRecursively(callback);
         dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
+    updateDynamicStructureVersion();
     callback(*shared_data);
     shared_data->forEachMutableSubcolumnRecursively(callback);
 }
@@ -1889,7 +1989,10 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     /// Raising the limit is only safe while nothing has been spilled yet: otherwise a path could be
     /// promoted to a dynamic path while the earlier rows still keep it in shared data.
     if (getSharedDataPathsAndValues().first->empty())
+    {
         max_dynamic_paths = max_dynamic_paths_upper_bound;
+        updateDynamicStructureVersion();
+    }
 
     /// Check if the number of all dynamic paths exceeds the limit.
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
@@ -2098,6 +2201,7 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     /// Set max_dynamic_paths to the number of selected dynamic paths.
     /// It's needed to avoid adding new unexpected dynamic paths during inserts into this column during merge.
     max_dynamic_paths = dynamic_paths.size();
+    updateDynamicStructureVersion();
 
     /// Now we have the resulting set of dynamic paths that will be used in all merged columns.
     /// As we use Dynamic column for dynamic paths, we should call `chooseDynamicStructureForMerge`
@@ -2152,6 +2256,7 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     /// max_dynamic_paths_upper_bound is deliberately left alone: lowering it to the same value would
     /// make `prepareForSquashing` restore max_dynamic_paths to it and so undo this freeze.
     max_dynamic_paths = dynamic_paths.size();
+    updateDynamicStructureVersion();
 }
 
 void ColumnObject::fixDynamicStructure()
@@ -2159,6 +2264,7 @@ void ColumnObject::fixDynamicStructure()
     /// Set max_dynamic_paths to the number of dynamic paths.
     /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
     max_dynamic_paths = dynamic_paths.size();
+    updateDynamicStructureVersion();
 }
 
 ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
@@ -2673,6 +2779,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
         dynamic_paths[path] = std::move(column);
     }
+    updateDynamicStructureVersion();
 
     if (new_shared_data->size() != size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of new shared data: {} != {}", new_shared_data->size(), size);

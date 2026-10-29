@@ -218,10 +218,19 @@ public:
     const VectorWithMemoryTracking<IColumn *> & getSortedTypedPathColumns() const { return sorted_typed_path_columns; }
 
     const PathToColumnMap & getDynamicPaths() const { return dynamic_paths; }
-    PathToColumnMap & getDynamicPaths() { return dynamic_paths; }
+    /// Mutable access allows to change the set of dynamic paths and their columns, so it updates the dynamic structure version.
+    PathToColumnMap & getDynamicPaths()
+    {
+        updateDynamicStructureVersion();
+        return dynamic_paths;
+    }
 
     const PathToDynamicColumnPtrMap & getDynamicPathsPtrs() const { return dynamic_paths_ptrs; }
-    PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
+    PathToDynamicColumnPtrMap & getDynamicPathsPtrs()
+    {
+        updateDynamicStructureVersion();
+        return dynamic_paths_ptrs;
+    }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     StatisticsPtr getOrCalculateStatistics() const;
@@ -382,7 +391,36 @@ public:
 
 private:
 
-    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    /// Correspondence between dynamic paths of a source column and of this column used in `insertFrom` and `insertRangeFrom`.
+    /// Building it requires looking up every source dynamic path by name, so it's cached and reused while the dynamic structure
+    /// of both columns stays the same. It matters for merges, they insert from the same source columns row by row.
+    struct InsertFromMapping
+    {
+        /// Dynamic structure version of this column the mapping was built for.
+        UInt64 version = 0;
+        /// Pairs (source dynamic path column, our dynamic path column) for source dynamic paths that are our dynamic paths too.
+        VectorWithMemoryTracking<std::pair<const ColumnDynamic *, ColumnDynamic *>> dynamic_paths;
+        /// Source dynamic paths that should be inserted into our shared data, sorted by path.
+        VectorWithMemoryTracking<std::pair<std::string_view, const ColumnDynamic *>> src_dynamic_paths_for_shared_data;
+        /// Our dynamic paths that are not dynamic paths in the source column.
+        VectorWithMemoryTracking<ColumnDynamic *> dynamic_paths_missing_in_src;
+        /// True if the limit on dynamic paths is reached and the set of dynamic paths is the same for both columns,
+        /// so we can insert into shared data from the source shared data directly.
+        bool insert_shared_data_directly = false;
+
+        bool operator==(const InsertFromMapping &) const = default;
+    };
+
+    /// Returns the mapping for inserting from the source column. Adds new dynamic paths from the source if the limit allows.
+    const InsertFromMapping & getInsertFromMapping(const ColumnObject & src_object_column);
+    void fillInsertFromMapping(const ColumnObject & src_object_column, InsertFromMapping & mapping) const;
+
+    /// Returns a value that was never returned before.
+    static UInt64 generateDynamicStructureVersion();
+    /// Must be called after any change of the set of dynamic paths, their columns or the limit on their number.
+    void updateDynamicStructureVersion() { dynamic_structure_version = generateDynamicStructureVersion(); }
+
+    void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, const InsertFromMapping & mapping, size_t start, size_t length);
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
@@ -433,6 +471,13 @@ private:
     /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
     /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
     StatisticsPtr statistics;
+
+    /// Identifies the current dynamic structure of this column: the set of dynamic paths, their columns and the limit on their number.
+    /// Every change of the structure sets a value that was never used before (copies get a new value too), so the same version
+    /// can't belong to another column or to another structure of this column, even if the column is allocated at the same address.
+    UInt64 dynamic_structure_version = generateDynamicStructureVersion();
+    /// Cached mappings for inserts from other columns: (source dynamic structure version) -> mapping. Not copied with the column.
+    UnorderedMapWithMemoryTracking<UInt64, InsertFromMapping> insert_from_mappings;
 };
 
 }
