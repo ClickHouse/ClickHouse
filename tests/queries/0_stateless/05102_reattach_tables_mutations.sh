@@ -132,6 +132,21 @@ check_if_detached "UPDATE t_reattach_mut_lw SET b = 1 IN PARTITION ID 'all' WHER
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_lw"
 
+# The same validation rejects an update of a column that a MATERIALIZED column depends on when a subcolumn
+# of that MATERIALIZED column is a key column (`key_storage_columns` in `validateUpdateColumns`).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_key_subcolumn"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_key_subcolumn (a UInt64, m Tuple(x UInt64) MATERIALIZED tuple(a + 1)) ENGINE = MergeTree ORDER BY m.x"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_mut_key_subcolumn (a) VALUES (1)"
+
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_key_subcolumn UPDATE a = 200 - a WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN"
+if echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_key_subcolumn"; then
+    echo "FAIL (target detached for a query failing on its target)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_key_subcolumn"
+
 RECURSIVE_MUT_UDF="reattach_recursive_mut_udf_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${RECURSIVE_MUT_UDF}"
 ${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION ${RECURSIVE_MUT_UDF} AS x -> ${RECURSIVE_MUT_UDF}(x)"
