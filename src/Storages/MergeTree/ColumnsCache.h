@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -71,6 +72,18 @@ struct ColumnsCacheKeyHash
 /// reads find their entries.
 UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
 
+/// Whether the columns cache can hold the columns of a part: entries are keyed by the table's UUID, which only
+/// the tables of `Atomic` and `Replicated` databases have.
+inline bool canUseColumnsCacheForPart(const UUID & table_uuid)
+{
+    return table_uuid != UUIDHelpers::Nil;
+}
+
+/// The name a part is known by in the columns cache: the name of the part, or for a projection part,
+/// whose own name (the name of the projection) is not unique across its parent parts, the name of
+/// the parent part and the projection, as `parent:projection`. Unique within a table.
+String getColumnsCachePartName(const String & part_name, const String & parent_part_name);
+
 /// The table that owns the columns cache entries of an external file (such as a `Parquet` file
 /// in an object storage) read by the storage `storage_id`. `system.columns_cache` shows the entries
 /// of a table only to a user who may see the table, and the entries of a table function (the nil
@@ -130,8 +143,23 @@ struct ColumnsCacheEntry
     /// Whether a read has found the entry since it was written, see `ColumnsCache::shouldAdmit`.
     mutable std::atomic<bool> used{false};
 
+    /// Whether the memory of `column` is the server's rather than the query's that read it: set when the
+    /// cache admits the entry and takes the memory off the query, see `ColumnsCache::setMany`, or from the
+    /// start for an entry the cache builds itself. Such a column is released under
+    /// `MemoryTrackerBlockerInThread`, so that the query or the user that happens to release it is not
+    /// credited with memory it was never charged for. The rest of the entry is the server's from the
+    /// start, see `makeColumnsCacheEntry`.
+    std::atomic<bool> owned_by_server{false};
+
+    ColumnsCacheEntry() = default;
+    ~ColumnsCacheEntry();
+
     bool coversMarks(size_t from_mark, size_t to_mark) const { return first_mark <= from_mark && to_mark <= end_mark; }
 };
+
+/// A new entry, whose own memory is the server's: allocated and released under
+/// `MemoryTrackerBlockerInThread`, like the strings in it, which have to be assigned under it as well.
+std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry();
 
 struct ColumnsCacheWeightFunction
 {
@@ -212,7 +240,20 @@ public:
     /// The expected generation is captured through getInvalidationGeneration
     /// when the reader starts. A mismatch means the table or the whole cache
     /// was invalidated after the read began, so the deferred write is dropped.
-    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation);
+    ///
+    /// If `entries_resident` is given, it is set to whether the cache holds each of the entries right after
+    /// the call: the entry was admitted, or the cache already held all its granules.
+    size_t setMany(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, std::vector<bool> * entries_resident = nullptr);
+
+    /// Take back entries a reader has written with `setMany`, when what it wrote turns out to be of no
+    /// use, e.g. some chunks of a column of a `Parquet` row group that is served from the cache only
+    /// with all its chunks. Only the very entries are removed: an entry the cache has meanwhile
+    /// replaced or merged with another write of the same stripe is left alone.
+    void removeEntries(const std::vector<MappedPtr> & entries);
+
+    /// Whether the cache holds an entry under every one of the keys. Unlike `getMany`, it neither touches the
+    /// priorities of the entries nor marks them as used, so a writer can check what of its write survived.
+    bool containsAll(const std::vector<Key> & keys) const;
 
     /// Whether a stripe that is not in the cache should be written to it. Nothing is written
     /// while the cache is shrunk to nothing by `autoResize`: the copy would be rejected anyway.
@@ -463,6 +504,10 @@ private:
     /// the union of the two when they overlap or touch, or nothing when the new entry adds no
     /// granule. See `setMany`.
     static MappedPtr mergeEntries(const MappedPtr & existing, const MappedPtr & incoming);
+
+    /// `setMany` under `MemoryTrackerBlockerInThread`. Adds the memory of the admitted columns the
+    /// query read to `bytes_to_hand_over`.
+    size_t setManyImpl(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over, std::vector<bool> * entries_resident);
 };
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;

@@ -3,7 +3,6 @@
 -- the one the inner join reads - so that column stays in the main read rather than being read lazily. The results are
 -- compared with the optimization disabled.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 -- Pinned so that the joins keep the order they are written in, and the comma join stays a cross join.
