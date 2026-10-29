@@ -223,32 +223,37 @@ def test_lance_s3_cluster_virtual_column_filters(started_cluster):
     remote_prefix = "data/lance/multi_frag.lance"
     upload_lance_dataset_to_minio(started_cluster, remote_prefix)
 
-    # The initiator prunes the tasks by `_file` and `_path`, which must be the values of the rows.
-    for condition in [
-        "_file = 'multi_frag.lance'",
-        "_path LIKE '%/multi_frag.lance'",
-        "_file != 'multi_frag.lance'",
-    ]:
-        single = node.query(
-            f"""
-            SELECT count(), sum(id)
-            FROM lanceS3(nc_s3, filename = 'lance/multi_frag.lance')
-            WHERE {condition}
-            """
-        )
-        clustered = node.query(
-            f"""
-            SELECT count(), sum(id)
-            FROM lanceS3Cluster(
-                'cluster_simple',
-                nc_s3,
-                filename = 'lance/multi_frag.lance')
-            WHERE {condition}
-            SETTINGS lance_max_fragment_packs = 8
-            """
-        )
-        assert clustered == single, condition
-    assert single == "0\t0\n"
+    # The initiator prunes the tasks by `_file` and `_path`, which must be the values of the rows,
+    # also for a dataset URL with a trailing slash.
+    for filename in ["lance/multi_frag.lance", "lance/multi_frag.lance/"]:
+        for condition in [
+            "_file = 'multi_frag.lance'",
+            "_path LIKE '%/multi_frag.lance'",
+            "_file != 'multi_frag.lance'",
+        ]:
+            single = node.query(
+                f"""
+                SELECT count(), sum(id)
+                FROM lanceS3(nc_s3, filename = '{filename}')
+                WHERE {condition}
+                """
+            )
+            clustered = node.query(
+                f"""
+                SELECT count(), sum(id)
+                FROM lanceS3Cluster(
+                    'cluster_simple',
+                    nc_s3,
+                    filename = '{filename}')
+                WHERE {condition}
+                SETTINGS lance_max_fragment_packs = 8
+                """
+            )
+            assert clustered == single, (filename, condition)
+            if condition.startswith("_file !="):
+                assert single == "0\t0\n", filename
+            else:
+                assert single != "0\t0\n", (filename, condition)
 
     # A conjunct on both a physical and a virtual column is not passed to the worker's reader,
     # so the reader must not stop at the `LIMIT` before it is evaluated.

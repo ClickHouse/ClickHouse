@@ -1060,8 +1060,9 @@ ObjectIterator LanceMetadata::iterate(
 
     ProfileEvents::increment(ProfileEvents::LanceFragmentPacks, packs.size());
 
+    /// The task paths carry the dataset path for the virtual columns, which must match `readDataset`.
     return std::make_shared<LanceDatasetIterator>(
-        options.uri, snapshot, std::move(dataset), std::move(packs), std::move(callback));
+        lanceDatasetVirtualPath(options.uri), snapshot, std::move(dataset), std::move(packs), std::move(callback));
 }
 
 std::optional<Pipe> LanceMetadata::read(
