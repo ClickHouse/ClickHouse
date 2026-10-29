@@ -141,7 +141,7 @@ MergeTreeSource::MergeTreeSource(
     MergeTreeSelectProcessorPtr processor_,
     const std::string & log_name_,
     PartialAggregateInfoPtr partial_aggregate_identity_from_plan_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader()))
+    : ISource(std::make_shared<const Block>(processor_->getHeader()), /*enable_auto_progress=*/ false)
     , processor(std::move(processor_))
     , span_name(fmt::format("MergeTreeSource({})::tryGenerate", log_name_))
     , partial_aggregate_identity_from_plan(std::move(partial_aggregate_identity_from_plan_))
@@ -162,6 +162,14 @@ std::span<ISpillable * const> MergeTreeSource::getSpillables()
 std::string MergeTreeSource::getName() const
 {
     return processor->getName();
+}
+
+void MergeTreeSource::cancel(CancelReason reason) noexcept
+{
+    if (reason == CancelReason::PartialResult && keep_reading_on_partial_result)
+        return;
+
+    ISource::cancel(reason);
 }
 
 void MergeTreeSource::onCancel() noexcept
