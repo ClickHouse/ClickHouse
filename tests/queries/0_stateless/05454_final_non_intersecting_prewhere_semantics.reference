@@ -43,3 +43,5 @@ A condition that can throw is not applied early before another condition, which 
 5	20
 5	20
 8	41
+A column with the name of the filter of the conditions applied early
+1250

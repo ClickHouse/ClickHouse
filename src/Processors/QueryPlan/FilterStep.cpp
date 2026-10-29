@@ -532,9 +532,9 @@ struct PrefilteredConditionsSplit
     ActionsDAG skipped_conditions;
     /// The actions of the filter, with the conjunction of the other atoms as the filter column.
     ActionsDAG rest;
+    /// The filter column of `conditions` and `skipped_conditions`, which is not a column of the input.
+    String conditions_column_name;
 };
-
-static constexpr auto prefiltered_conditions_column_name = "__prefiltered_conditions";
 
 /// Conjunction of `atoms` in `dag` as a new node: `and` also converts a single atom to the truth value of a conjunction.
 static const ActionsDAG::Node & addConjunction(ActionsDAG & dag, ActionsDAG::NodeRawConstPtrs atoms)
@@ -598,17 +598,21 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
                 if (prefiltered_set.contains(child))
                     return std::nullopt;
 
+    String conditions_column_name = "__prefiltered_conditions";
+    while (input_header.has(conditions_column_name))
+        conditions_column_name += "_";
+
     /// The conditions, with all input columns passed through in the order of the header.
     ActionsDAG conditions(input_header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs condition_nodes;
     conditions.mergeNodes(ActionsDAG::cloneSubDAG(prefiltered_atoms, /*remove_aliases=*/ false), &condition_nodes);
     conditions.getOutputs().insert(
-        conditions.getOutputs().begin(), &conditions.addAlias(addConjunction(conditions, condition_nodes), prefiltered_conditions_column_name));
+        conditions.getOutputs().begin(), &conditions.addAlias(addConjunction(conditions, condition_nodes), conditions_column_name));
     conditions.removeUnusedActions(false, false);
 
     ActionsDAG skipped_conditions(input_header.getColumnsWithTypeAndName());
     skipped_conditions.getOutputs().insert(
-        skipped_conditions.getOutputs().begin(), &skipped_conditions.addAlias(addConjunction(skipped_conditions, {}), prefiltered_conditions_column_name));
+        skipped_conditions.getOutputs().begin(), &skipped_conditions.addAlias(addConjunction(skipped_conditions, {}), conditions_column_name));
 
     /// The filter column keeps its name and its position among the outputs: `FilterTransform` finds it by position.
     ActionsDAG::NodeMapping copy_map;
@@ -622,16 +626,16 @@ static std::optional<PrefilteredConditionsSplit> splitPrefilteredConditions(
     rest.removeUnusedActions(false, false);
 
     /// The two filters one after the other must give the same columns as the filter.
-    const Block conditions_header = FilterTransform::transformHeader(input_header, &conditions, prefiltered_conditions_column_name, true);
+    const Block conditions_header = FilterTransform::transformHeader(input_header, &conditions, conditions_column_name, true);
     if (!haveSameStructureAndConstness(conditions_header, input_header)
         || !haveSameStructureAndConstness(
-            FilterTransform::transformHeader(input_header, &skipped_conditions, prefiltered_conditions_column_name, true), input_header)
+            FilterTransform::transformHeader(input_header, &skipped_conditions, conditions_column_name, true), input_header)
         || !haveSameStructureAndConstness(
             FilterTransform::transformHeader(conditions_header, &rest, filter_column_name, remove_filter_column),
             FilterTransform::transformHeader(input_header, &dag, filter_column_name, remove_filter_column)))
         return std::nullopt;
 
-    return PrefilteredConditionsSplit{std::move(conditions), std::move(skipped_conditions), std::move(rest)};
+    return PrefilteredConditionsSplit{std::move(conditions), std::move(skipped_conditions), std::move(rest), std::move(conditions_column_name)};
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -651,7 +655,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             {
                 bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
                 auto transform = std::make_shared<FilterTransform>(
-                    header, transformed_header, expression, prefiltered_conditions_column_name, true, on_totals, nullptr, condition);
+                    header, transformed_header, expression, split->conditions_column_name, true, on_totals, nullptr, condition);
                 transform->setPrefilteredExpression(skipped_expression, prefiltered_conditions->token);
                 return transform;
             });

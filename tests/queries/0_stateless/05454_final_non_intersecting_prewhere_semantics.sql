@@ -185,3 +185,11 @@ OPTIMIZE TABLE t_final_prewhere_reorder_merged FINAL;
 SELECT count(), sum(key) FROM t_final_prewhere_reorder_merged FINAL WHERE toUInt64(s) > 0 AND key != length(s)
 SETTINGS query_plan_merge_filters = 0, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0, query_plan_optimize_lazy_final = 0;
 DROP TABLE t_final_prewhere_reorder_merged;
+
+SELECT 'A column with the name of the filter of the conditions applied early';
+DROP TABLE IF EXISTS t_final_prewhere_column_name;
+CREATE TABLE t_final_prewhere_column_name (key UInt64, v UInt8, __prefiltered_conditions UInt64) ENGINE = ReplacingMergeTree ORDER BY key;
+INSERT INTO t_final_prewhere_column_name SELECT number, number % 4, number FROM numbers(100);
+OPTIMIZE TABLE t_final_prewhere_column_name FINAL;
+SELECT sum(__prefiltered_conditions) FROM t_final_prewhere_column_name FINAL WHERE v = 2 SETTINGS query_plan_optimize_lazy_final = 0;
+DROP TABLE t_final_prewhere_column_name;
