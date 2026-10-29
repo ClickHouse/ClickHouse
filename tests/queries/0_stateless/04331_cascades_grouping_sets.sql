@@ -4,7 +4,6 @@
 -- so shuffling by the union splits the rows of one grouping-set group across
 -- nodes and each node emits its own copy of the group.
 
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;

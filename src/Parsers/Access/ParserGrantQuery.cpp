@@ -854,6 +854,7 @@ Possible parameters:
 - `AZURE`
 - `BIGQUERY`
 - `DISK`
+- `ELASTICSEARCH`
 - `FILE`
 - `HDFS`
 - `HIVE`
@@ -1044,13 +1045,13 @@ Revokes privileges from users or roles.
 
 ## Syntax {#syntax}
 
-**Revoking privileges from users**
+**Revoking privileges**
 
 ```sql
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 ```
 
-**Revoking roles from users**
+**Revoking roles**
 
 ```sql
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
@@ -1083,7 +1084,7 @@ REVOKE SELECT(wage) ON accounts.staff FROM mira;
 [Original article](/reference/settings/session-settings)
 )DOCS_MD",
         .syntax = R"(
-REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | role | CURRENT_USER} [,...]
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 )",
         .related = {"GRANT", "CHECK GRANT", "SHOW"},
