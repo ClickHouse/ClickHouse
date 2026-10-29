@@ -15,11 +15,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# enable_analyzer = 1: the query condition cache only works with the analyzer (query_info has no
-# filter DAG without it), like in the other query_condition_cache tests.
 # query_plan_max_limit_for_top_k_optimization = 1000: `clickhouse-test` randomizes it, and a value below the
 # `LIMIT` disables TopK dynamic filtering, turning the TopK reads into plain reads.
-settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, use_query_condition_cache_for_top_k = true, use_top_k_dynamic_filtering = true, query_plan_max_limit_for_top_k_optimization = 1000, enable_analyzer = 1"
+settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true, use_query_condition_cache_for_top_k = true, use_top_k_dynamic_filtering = true, query_plan_max_limit_for_top_k_optimization = 1000"
 
 # The same shape as in 04931: a single part mixing 'old' rows (matched by no current-time condition)
 # with recent rows, with the old rows filling whole granules of their own so that they can be pruned
@@ -128,7 +126,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CONDITION CACHE"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT x FROM tab WHERE time >= today() - 100 ORDER BY time DESC LIMIT 5
     SETTINGS use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = false,
-        use_top_k_dynamic_filtering = true, query_plan_max_limit_for_top_k_optimization = 1000, enable_analyzer = 1, optimize_move_to_prewhere = false FORMAT Null"
+        use_top_k_dynamic_filtering = true, query_plan_max_limit_for_top_k_optimization = 1000, optimize_move_to_prewhere = false FORMAT Null"
 echo -n "disabled, entries cached: "
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.query_condition_cache"
 

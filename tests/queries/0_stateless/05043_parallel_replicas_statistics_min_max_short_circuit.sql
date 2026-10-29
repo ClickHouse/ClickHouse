@@ -29,7 +29,6 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_f
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_local_plan = 1;
 -- Pin every setting the short-circuit eligibility depends on (see the comments in test 04545).
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;

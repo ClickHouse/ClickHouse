@@ -15,7 +15,7 @@ SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, ratio_of_default
 INSERT INTO t_drift_probe SELECT number, number FROM numbers(200000);
 INSERT INTO t_drift_build SELECT number, number FROM numbers(200000);
 
-SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
+SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
     automatic_parallel_replicas_mode = 1;
