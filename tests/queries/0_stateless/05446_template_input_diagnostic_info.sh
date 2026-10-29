@@ -33,7 +33,8 @@ OPTS=(--structure "id UInt64, name String" --input-format Template --input_forma
 
 # Each fragment is written either by parseRowAndPrintDiagnosticInfo itself or by the delimiter / field
 # helper it calls. The diagnostics run twice per failure (previous row, then the failing row), so the
-# matches are sorted and deduplicated. The quoted texts are fully determined by the pinned input.
+# matches are sorted and deduplicated. The sort uses the `C` locale so that the order does not depend
+# on the collation of the environment. The quoted texts are fully determined by the pinned input.
 DIAG_RE='Suffix does not match'
 DIAG_RE=$DIAG_RE'|There is some data after suffix'
 DIAG_RE=$DIAG_RE'|Using format string \(from format_schema_rows\)'
@@ -50,7 +51,7 @@ check() {
     local text
     text=$(cat)
     printf '%s\n' "$text" | grep -oE '\([A-Z_]+\)$' | tail -n 1 | tr -d '()'
-    printf '%s\n' "$text" | grep -oE "$DIAG_RE" | sort -u
+    printf '%s\n' "$text" | grep -oE "$DIAG_RE" | LC_ALL=C sort -u
 }
 
 # 1. Well-formed stream: two rows, no delimiter between them, then the resultset suffix "END".

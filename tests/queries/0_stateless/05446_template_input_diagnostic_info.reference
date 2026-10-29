@@ -22,7 +22,7 @@ Trying to parse next row
 Using format string (from format_schema_rows)
 --- bad skipped column
 INCORRECT_DATA
-name: <SKIPPED COLUMN>
 Suffix does not match
 Trying to parse next row
 Using format string (from format_schema_rows)
+name: <SKIPPED COLUMN>
