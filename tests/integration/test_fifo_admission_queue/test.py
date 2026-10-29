@@ -68,6 +68,18 @@ node_slow_liveness_poll = cluster.add_instance(
     main_configs=["configs/slow_liveness_poll.xml"],
 )
 
+# `worker_coordinator` dispatches the fragments of `make_distributed_plan` queries to
+# `stateless_worker`, which has a single query slot and the admission queue enabled
+# (see `test_stateless_task_cancel_while_waiting_in_queue`).
+worker_coordinator = cluster.add_instance(
+    "worker_coordinator",
+    main_configs=["configs/stateless_worker.xml"],
+)
+stateless_worker = cluster.add_instance(
+    "stateless_worker",
+    main_configs=["configs/stateless_worker.xml", "configs/stateless_worker_admission_queue.xml"],
+)
+
 # main_configs are mounted under /etc/clickhouse-server/config.d/.
 SERVER_CONFIG_PATH = "/etc/clickhouse-server/config.d/server.xml"
 
@@ -2505,3 +2517,82 @@ def test_async_backup_keeps_admission_slot(started_cluster):
         pool.join()
         wait_for_queue_length(node, 0)
         node.query(f"DROP TABLE IF EXISTS default.{table}")
+
+
+def test_stateless_task_cancel_while_waiting_in_queue(started_cluster):
+    """
+    A fragment of a `make_distributed_plan` query is inserted into the worker's
+    process list by `StatelessTaskExecutor` without a client connection. When the
+    coordinator cancels the query, `cancelTask` only sets the task's cancellation
+    flag, so the admission wait must observe that flag: otherwise the cancelled
+    fragment keeps its worker thread and queue entry until it is admitted.
+
+    The worker has a single query slot, occupied by a blocker; the fragments of
+    the distributed query queue behind it. After `KILL QUERY` on the coordinator
+    the queue must drain while the blocker is still running.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    table = f"stateless_task_{prefix}"
+    blocker_id = f"stateless_task_blocker_{prefix}"
+    initiator_id = f"stateless_task_initiator_{prefix}"
+
+    # Worker tasks resolve the table in the worker's own catalog.
+    for n in [worker_coordinator, stateless_worker]:
+        n.query(f"CREATE TABLE default.{table} (id UInt64) ENGINE = MergeTree ORDER BY id")
+        n.query(f"INSERT INTO default.{table} SELECT number FROM numbers(100000)")
+
+    pool = Pool(4)
+    try:
+        pool.apply_async(
+            stateless_worker.query,
+            ("SELECT sleep(30) FORMAT Null",),
+            {
+                "query_id": blocker_id,
+                "settings": {
+                    "function_sleep_max_microseconds_per_block": 0,
+                    "queue_max_wait_ms": 60000,
+                },
+            },
+        )
+        wait_for_query_start(stateless_worker, blocker_id)
+
+        initiator = pool.apply_async(
+            worker_coordinator.query,
+            (f"SELECT sum(id) FROM default.{table} FORMAT Null",),
+            {
+                "query_id": initiator_id,
+                "settings": {
+                    "make_distributed_plan": 1,
+                    "enable_parallel_replicas": 0,
+                    "distributed_plan_default_reader_bucket_count": 2,
+                    "distributed_plan_max_rows_to_broadcast": 0,
+                    "queue_max_wait_ms": 60000,
+                    "max_execution_time": 0,
+                },
+            },
+        )
+
+        # Wait until at least one fragment is parked in the worker's admission queue.
+        start = time.monotonic()
+        while get_prometheus_metric(stateless_worker, "QueryAdmissionQueueLength") == 0:
+            assert time.monotonic() - start < 30, "no fragment entered the admission queue of the worker"
+            assert not initiator.ready(), "the distributed query finished without queueing on the worker"
+            time.sleep(0.1)
+
+        worker_coordinator.query(
+            f"KILL QUERY WHERE query_id = '{initiator_id}' ASYNC SETTINGS kill_throw_if_noop = false"
+        )
+
+        # The cancelled fragments must leave the queue while the blocker still holds the slot.
+        wait_for_queue_length(stateless_worker, 0, timeout=DISCONNECT_DETECTION_TIMEOUT)
+        assert stateless_worker.query(
+            f"SELECT count() FROM system.processes WHERE query_id = '{blocker_id}'"
+        ).strip() == "1", "the blocker finished before the queue drained, so the fragments may have been admitted"
+    finally:
+        stateless_worker.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC SETTINGS kill_throw_if_noop = false")
+        worker_coordinator.query(f"KILL QUERY WHERE query_id = '{initiator_id}' SYNC SETTINGS kill_throw_if_noop = false")
+        pool.close()
+        pool.join()
+        wait_for_queue_length(stateless_worker, 0)
+        for n in [worker_coordinator, stateless_worker]:
+            n.query(f"DROP TABLE IF EXISTS default.{table}")

@@ -160,6 +160,14 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         return *cancelled;
     };
 
+    /// Let `ProcessList::insert` notice `cancelTask` while the task waits in the admission queue
+    /// (or in the `replace_running_query` wait); otherwise a cancelled task keeps its worker thread
+    /// and queue entry until it is admitted or the admission deadline expires.
+    query_context->setConnectionAliveCheck([cancelled = task_state->cancelled]() -> bool
+    {
+        return !*cancelled;
+    });
+
     auto update_progress = [task_progress = task_state->progress](const Progress & progress)
     {
         task_progress->incrementPiecewiseAtomically(progress);
