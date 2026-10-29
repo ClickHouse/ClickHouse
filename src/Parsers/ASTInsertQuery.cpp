@@ -341,12 +341,12 @@ void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
 }
 
 
-static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function)
+void ASTInsertQuery::tryFindInputFunction(const ASTPtr & ast, ASTPtr & input_function)
 {
     if (!ast)
         return;
     for (const auto & child : ast->children)
-        tryFindInputFunctionImpl(child, input_function);
+        tryFindInputFunction(child, input_function);
 
     if (const auto * table_function_ast = ast->as<ASTFunction>())
     {
@@ -362,7 +362,7 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
 
 void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
 {
-    tryFindInputFunctionImpl(select, input_function);
+    tryFindInputFunction(select, input_function);
 }
 
 }

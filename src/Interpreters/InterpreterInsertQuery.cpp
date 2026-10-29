@@ -140,6 +140,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_USAGE_OF_INPUT;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -1525,6 +1526,11 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (no_destination || async_insert)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RETURNING is not supported for this kind of INSERT");
+
+        ASTPtr returning_input_function;
+        ASTInsertQuery::tryFindInputFunction(query.returning, returning_input_function);
+        if (returning_input_function)
+            throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "The `input` table function is not supported in RETURNING");
 
         if (query.select)
         {
