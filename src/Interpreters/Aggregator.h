@@ -530,6 +530,8 @@ public:
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
+        /// The result of the function depends on the order of rows, so a sparse argument must be added in order.
+        bool is_order_dependent = true;
         bool can_optimize_equal_keys_ranges = true;
     };
 
@@ -724,6 +726,9 @@ private:
     HashMethodContextPtr aggregation_state_cache;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
+
+    /// Whether the result of the n-th aggregate function depends on the order of rows (`is_order_dependent`).
+    std::vector<bool> is_aggregate_function_order_dependent;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
     using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
