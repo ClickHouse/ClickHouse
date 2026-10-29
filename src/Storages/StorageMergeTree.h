@@ -359,7 +359,10 @@ private:
     /// was rejected: another server's `ATTACH PARTITION` only consults its OWN `temporary_parts`
     /// set, so a copy visible there before the commit could be attached by a new leader after a
     /// failover, duplicating rows that are still live.
-    void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context);
+    /// `admission_epoch` is the leadership epoch captured at the DDL's admission gate; it is
+    /// re-checked before each clone, so a node that lost leadership after the commit does not keep
+    /// writing into the shared `detached/` namespace as a follower.
+    void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context, UInt64 admission_epoch);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
@@ -478,7 +481,7 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr context);
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr context, UInt64 admission_epoch);
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;

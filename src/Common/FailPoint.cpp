@@ -88,6 +88,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(mt_lightweight_update_pause_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
     REGULAR(merge_tree_leader_election_stale_epoch_before_commit) \
+    REGULAR(merge_tree_leader_election_stale_epoch_before_detached_clone) \
     REGULAR(merge_tree_leader_election_stale_lease_cleanup) \
     REGULAR(merge_tree_leader_election_stale_lease_before_clear_empty) \
     REGULAR(merge_tree_leader_election_stale_lease_during_takeover_scan) \

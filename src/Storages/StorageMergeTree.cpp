@@ -128,6 +128,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_durable_rollback[];
     extern const char mt_lightweight_update_pause_after_block_allocation[];
     extern const char merge_tree_leader_election_stale_epoch_before_commit[];
+    extern const char merge_tree_leader_election_stale_epoch_before_detached_clone[];
     extern const char merge_tree_leader_election_stale_lease_cleanup[];
     extern const char merge_tree_leader_election_stale_lease_before_clear_empty[];
     extern const char merge_tree_leader_election_stale_lease_between_move_publishes[];
@@ -4657,12 +4658,32 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
     return removed_parts;
 }
 
-void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context)
+void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context, UInt64 admission_epoch)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
 
     for (const auto & part : parts)
     {
+        /// The clone writes into the shared `detached/` namespace, so it is fenced like any other
+        /// shared write. The removal is already committed at this point; a node that lost
+        /// leadership since the admission must stop here instead of writing next to the names the
+        /// new leader may concurrently `ATTACH` or `DROP DETACHED`.
+        UInt64 epoch_to_check = admission_epoch;
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_detached_clone,
+        {
+            if (leader_election_ptr)
+                epoch_to_check = admission_epoch >= 1 ? admission_epoch - 1 : admission_epoch + 1;
+        });
+        try
+        {
+            assertWritableLeaderAtEpoch(epoch_to_check);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("The parts are already removed from the table; part {} and the parts after it were not copied to `detached/`", part->name);
+            throw;
+        }
+
         String part_dir = part->getDataPartStorage().getPartDirectory();
         LOG_INFO(log, "Detaching {}", part_dir);
         auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -4761,7 +4782,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         if (txn)
         {
             if (auto part = outdatePart(txn.get(), part_name, /*force=*/ true))
-                dropPartsImpl({part}, detach, query_context);
+                dropPartsImpl({part}, detach, query_context, admission_epoch);
         }
         else
         {
@@ -4790,7 +4811,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
                 if (detach)
-                    clonePartsToDetached(removed_parts, query_context);
+                    clonePartsToDetached(removed_parts, query_context, admission_epoch);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -4872,7 +4893,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 }
                 removePartsFromWorkingSet(txn.get(), parts_to_remove, true, data_parts_lock);
             }
-            dropPartsImpl(std::move(parts_to_remove), detach, query_context);
+            dropPartsImpl(std::move(parts_to_remove), detach, query_context, admission_epoch);
         }
         else
         {
@@ -4907,7 +4928,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
             if (detach)
-                clonePartsToDetached(removed_parts, query_context);
+                clonePartsToDetached(removed_parts, query_context, admission_epoch);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -4921,13 +4942,13 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
     clearDataAfterPartitionDDL("DROP/DETACH PARTITION", /*with_mutations=*/ false);
 }
 
-void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
+void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context, UInt64 admission_epoch)
 {
     if (detach)
     {
         /// If DETACH clone parts to detached/ directory
         /// NOTE: no race with background cleanup until we hold pointers to parts
-        clonePartsToDetached(parts_to_remove, query_context);
+        clonePartsToDetached(parts_to_remove, query_context, admission_epoch);
     }
 
     dropDeduplicationLogParts(parts_to_remove);

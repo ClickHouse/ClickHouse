@@ -1565,9 +1565,14 @@ def test_detach_rejected_before_writing_detached_copy(started_cluster):
 
     The `merge_tree_leader_election_stale_epoch_before_commit` failpoint presents a stale
     admission epoch, so the `DETACH` must fail with no detached copy created.
+
+    The `merge_tree_leader_election_stale_epoch_before_detached_clone` failpoint presents a stale
+    epoch only after the covering parts are committed, i.e. to `clonePartsToDetached`: the removal
+    stands, but no copy may be written into the shared `detached/` namespace.
     """
     ensure_node_up(node1)
     failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    clone_failpoint = "merge_tree_leader_election_stale_epoch_before_detached_clone"
     table = "test_detach_epoch_fence"
     try:
         node1.query(
@@ -1611,11 +1616,31 @@ def test_detach_rejected_before_writing_detached_copy(started_cluster):
             ).strip()
         )
         assert detached > 0
-    finally:
+
+        # Leadership lost after the covering parts were committed: the removal stands, but the
+        # node must not write into the shared `detached/` namespace as a follower anymore.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {clone_failpoint}")
         try:
-            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-        except Exception:
-            pass
+            with pytest.raises(Exception, match="not copied to `detached/`"):
+                node1.query(f"ALTER TABLE {table} DETACH PARTITION 0")
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {clone_failpoint}")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+        detached_after = int(
+            node1.query(
+                f"SELECT count() FROM system.detached_parts"
+                f" WHERE database = currentDatabase() AND table = '{table}'"
+            ).strip()
+        )
+        assert detached_after == detached, (
+            "A node that lost leadership after the commit still wrote a detached copy"
+        )
+    finally:
+        for fp in (failpoint, clone_failpoint):
+            try:
+                node1.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+            except Exception:
+                pass
         try:
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
