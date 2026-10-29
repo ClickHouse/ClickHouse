@@ -37,6 +37,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
@@ -44,6 +45,7 @@
 #include <algorithm>
 #include <boost/algorithm/string/predicate.hpp>
 #include <cstdlib>
+#include <functional>
 #include <map>
 #include <optional>
 
@@ -220,6 +222,23 @@ struct CandidateMatch
 /// The subcolumn of a `Dynamic` value that holds an array of JSON objects, as used by
 /// `FunctionToSubcolumnsPass::optimizeJSONArrayElement`.
 constexpr std::string_view JSON_ARRAY_SUBCOLUMN = ":`Array(JSON)`";
+
+/// Whether the element name contains a dot after a prefix that names another element of the tuple, so the
+/// flattened name `<element>` is resolved by `getSubcolumn` as a nested path rather than as this element
+/// (`Tuple(a Tuple(b UInt32), `a.b` UInt32)`: `getSubcolumn(c, 'a.b')` reads `a`.`b`).
+bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
+{
+    std::string_view name = element_name;
+    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.', dot + 1))
+    {
+        auto head = name.substr(0, dot);
+        auto tail = name.substr(dot + 1);
+        if (!head.empty() && !tail.empty()
+            && (tuple.tryGetPositionByName(head) || tuple.tryGetPositionByName(head, /*case_insensitive=*/true)))
+            return true;
+    }
+    return false;
+}
 
 /// Match a function that can be expressed as reading a subcolumn where the column comes from a query or union node.
 std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
@@ -432,6 +451,11 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         subcolumn_path = element_names[*position];
         requires_tuple_element_guards = true;
 
+        /// Every form of the pushdown names the element by its flattened name (a direct subcolumn read,
+        /// or `getSubcolumn` over a deeper subquery), which can select another element than the original.
+        if (tupleElementNameIsAmbiguousWhenFlattened(tuple_type, subcolumn_path))
+            return {};
+
         if (column_node->getColumnType()->isNullable())
         {
             /// Like in `FunctionToSubcolumnsPass`, `tupleElement` over `Nullable(Tuple(...))` fills
@@ -625,20 +649,6 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         replacement_kind,
         requires_tuple_element_guards,
         /*via_function_carrier=*/function_name != "getSubcolumn"};
-}
-
-bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
-{
-    std::string_view name = element_name;
-    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.', dot + 1))
-    {
-        auto head = name.substr(0, dot);
-        auto tail = name.substr(dot + 1);
-        if (!head.empty() && !tail.empty()
-            && (tuple.tryGetPositionByName(head) || tuple.tryGetPositionByName(head, /*case_insensitive=*/true)))
-            return true;
-    }
-    return false;
 }
 
 bool sourceHasColumnCaseInsensitive(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
@@ -930,6 +940,45 @@ bool composedSubcolumnPreservesStructure(const DataTypePtr & argument_type, cons
     return std::ranges::equal(composed_info->substreams_path, expected_path, isSameSubstream);
 }
 
+/// Whether a data part of the table still stores the column `column_name` (or the column it is a subcolumn
+/// of) with a type with dynamic subcolumns other than the type in the metadata, e.g. after a lazy (metadata
+/// only) `ALTER MODIFY COLUMN` of `JSON` type hints. The reader resolves a subcolumn of such a column against
+/// the type of the part, where any name is a valid dynamic path, and returns defaults instead of the values
+/// (https://github.com/ClickHouse/ClickHouse/issues/123339), while a read of the whole column converts it,
+/// so the subcolumn is extracted from the whole column there.
+bool hasPartsWithDifferentDynamicColumnType(const StorageSnapshotPtr & storage_snapshot, const String & column_name)
+{
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage);
+    if (!merge_tree)
+        return false;
+
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    auto part_has_different_type = [&](const MergeTreeData::DataPartPtr & part)
+    {
+        for (const auto & part_column : part->getColumns())
+        {
+            const auto & name = part_column.name;
+            bool contains = column_name == name
+                || (column_name.size() > name.size() && column_name.starts_with(name) && column_name[name.size()] == '.');
+            if (!contains || !part_column.type->hasDynamicSubcolumns())
+                continue;
+
+            auto metadata_column = columns.tryGetPhysical(name);
+            if (metadata_column && !metadata_column->type->equals(*part_column.type))
+                return true;
+        }
+        return false;
+    };
+
+    if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+        snapshot_data && snapshot_data->parts)
+    {
+        return std::ranges::any_of(*snapshot_data->parts, [&](const auto & part) { return part_has_different_type(part.data_part); });
+    }
+
+    return std::ranges::any_of(merge_tree->getDataPartsVectorForInternalUsage(), part_has_different_type);
+}
+
 /// Build the expression that reads the subcolumn inside the subquery, or nullptr if it cannot be built.
 /// For a column read from a table, it is a direct reference to the subcolumn. For a column exported
 /// by a deeper subquery, it is a `getSubcolumn` function that is pushed down further when that
@@ -1197,6 +1246,9 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(
             return nullptr;
 
         if (storage_snapshot->metadata->isVirtualColumn(inner_column->getColumnName()))
+            return nullptr;
+
+        if (hasPartsWithDifferentDynamicColumnType(storage_snapshot, inner_column->getColumnName()))
             return nullptr;
 
         auto subcolumn_full_name = inner_column->getColumnName() + "." + subcolumn_path;
@@ -1639,11 +1691,18 @@ bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * s
 bool hiddenFilterReadsContainingColumn(const IQueryTreeNode * source, const String & name, const ContextPtr & context)
 {
     StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
     if (const auto * table_node = source->as<TableNode>())
+    {
         storage = table_node->getStorage();
+        storage_snapshot = table_node->getStorageSnapshot();
+    }
     else if (const auto * table_function_node = source->as<TableFunctionNode>())
+    {
         storage = table_function_node->getStorage();
-    if (!storage)
+        storage_snapshot = table_function_node->getStorageSnapshot();
+    }
+    if (!storage || !storage_snapshot)
         return false;
 
     ASTs filters;
@@ -1680,24 +1739,45 @@ bool hiddenFilterReadsContainingColumn(const IQueryTreeNode * source, const Stri
         }
     }
 
-    for (const auto & filter : filters)
-    {
-        if (!filter)
-            continue;
+    /// The planner expands an `ALIAS` column of the table (or a subcolumn of it) into the expression of
+    /// the alias, so the columns read by that expression are read by the filter as well.
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    std::unordered_set<String> expanded_aliases;
 
+    std::function<bool(const IAST &)> expression_reads_containing_column = [&](const IAST & expression)
+    {
         IdentifierNameSet identifiers;
-        filter->collectIdentifierNames(identifiers);
+        expression.collectIdentifierNames(identifiers);
         for (const auto & identifier : identifiers)
         {
             for (size_t start = 0; start != String::npos;)
             {
-                std::string_view suffix = std::string_view(identifier).substr(start);
-                if (suffix != name && isSameOrAncestorColumn(String(suffix), name))
+                String suffix = identifier.substr(start);
+                if (suffix != name && isSameOrAncestorColumn(suffix, name))
                     return true;
+
+                for (size_t end = 0; end != String::npos;)
+                {
+                    end = suffix.find('.', end + 1);
+                    String prefix = suffix.substr(0, end);
+                    const auto * column = columns.tryGet(prefix);
+                    if (column && column->default_desc.kind == ColumnDefaultKind::Alias && column->default_desc.expression
+                        && expanded_aliases.insert(prefix).second
+                        && expression_reads_containing_column(*column->default_desc.expression))
+                        return true;
+                }
+
                 size_t dot = identifier.find('.', start);
                 start = dot == String::npos ? String::npos : dot + 1;
             }
         }
+        return false;
+    };
+
+    for (const auto & filter : filters)
+    {
+        if (filter && expression_reads_containing_column(*filter))
+            return true;
     }
 
     return false;
