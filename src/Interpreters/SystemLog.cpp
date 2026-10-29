@@ -368,7 +368,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     readSystemLogQueueSettingsFromConfig<TSystemLog>(log_settings.queue_settings, config, config_prefix);
 
     log_settings.flush_overcommit_wait_time_microseconds
-        = config.getUInt64(config_prefix + ".flush_overcommit_wait_time_microseconds", 5'000'000);
+        = getSystemTableOption<size_t>("flush_overcommit_wait_time_microseconds", config, config_prefix).value_or(5'000'000);
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
