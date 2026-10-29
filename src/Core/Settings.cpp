@@ -1182,7 +1182,7 @@ like the same query without `FINAL` does.
 
 The conditions are applied in the order of `WHERE`, and only the conditions before the first one that cannot be applied early,
 so a condition is still evaluated only on the rows that passed the conditions before it. A condition that can throw an exception,
-like `toUInt64(s) > 0`, is applied early only if it is the first condition and there is no other `PREWHERE`.
+like `toUInt64(s) > 0`, is applied early only if it is the only condition and there is no other `PREWHERE`.
 Not applied with stateful functions in `WHERE` or `PREWHERE`.
 
 Requires [optimize_move_to_prewhere](#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](#optimize_move_to_prewhere_if_final).

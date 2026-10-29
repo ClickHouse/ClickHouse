@@ -165,3 +165,23 @@ SETTINGS max_threads = 1, apply_prewhere_after_final = 0, query_plan_optimize_la
 SELECT count(), sum(key) FROM t_final_prewhere_stateful_prewhere FINAL PREWHERE rowNumberInAllBlocks() % 2 = 0 WHERE v = 2
 SETTINGS max_threads = 1, apply_prewhere_after_final = 0, query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
 DROP TABLE t_final_prewhere_stateful_prewhere;
+
+SELECT 'A condition that can throw is not applied early before another condition, which the WHERE may evaluate first';
+DROP TABLE IF EXISTS t_final_prewhere_reorder;
+CREATE TABLE t_final_prewhere_reorder (key UInt64, s String, guard UInt8) ENGINE = ReplacingMergeTree ORDER BY key;
+INSERT INTO t_final_prewhere_reorder SELECT number, if(number % 2 = 0, '1', 'bad'), number % 2 = 0 FROM numbers(10);
+OPTIMIZE TABLE t_final_prewhere_reorder FINAL;
+SELECT count(), sum(key) FROM t_final_prewhere_reorder FINAL WHERE toUInt64(s) > 0 AND guard != 0 SETTINGS query_plan_optimize_lazy_final = 0;
+SELECT count(), sum(key) FROM t_final_prewhere_reorder FINAL WHERE toUInt64(s) > 0 AND guard != 0
+SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_reorder;
+
+DROP TABLE IF EXISTS t_final_prewhere_reorder_merged;
+CREATE TABLE t_final_prewhere_reorder_merged (key UInt64, s String) ENGINE = ReplacingMergeTree ORDER BY key;
+-- Only the row with `key = length(s)` has 'bad'.
+INSERT INTO t_final_prewhere_reorder_merged SELECT number, if(number = 3, 'bad', '1') FROM numbers(10);
+OPTIMIZE TABLE t_final_prewhere_reorder_merged FINAL;
+-- All ranges are merged, so the WHERE evaluates the conditions applied early too.
+SELECT count(), sum(key) FROM t_final_prewhere_reorder_merged FINAL WHERE toUInt64(s) > 0 AND key != length(s)
+SETTINGS query_plan_merge_filters = 0, split_parts_ranges_into_intersecting_and_non_intersecting_final = 0, query_plan_optimize_lazy_final = 0;
+DROP TABLE t_final_prewhere_reorder_merged;

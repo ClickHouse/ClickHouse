@@ -437,8 +437,9 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     /// The WHERE evaluates a condition only on the rows that passed the conditions before it, e.g. `toUInt64(s) > 0` in
     /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that: apply early the conditions in the order of the WHERE, up to the
-    /// first one that is applied neither early on these ranges nor as the PREWHERE of all ranges, or that can throw and
-    /// is not the first condition evaluated on all rows.
+    /// first one that is applied neither early on these ranges nor as the PREWHERE of all ranges, or that can throw. The WHERE
+    /// may also evaluate a cheap condition before one that can throw (`short_circuit_function_evaluation_reorder_arguments`),
+    /// so a condition that can throw is applied early only if it is the only condition, and there is no other PREWHERE.
     if (!non_intersecting_final_conditions.empty())
     {
         ActionsDAG::NodeRawConstPtrs atoms;
@@ -456,12 +457,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         std::unordered_set<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
         non_intersecting_final_conditions.clear();
         const bool has_prewhere = existing_prewhere_info || !optimize_result.prewhere_nodes.empty();
-        for (size_t i = 0; i < atoms.size(); ++i)
+        for (const auto * atom : atoms)
         {
-            const auto * atom = atoms[i];
             if (optimize_result.prewhere_nodes.contains(atom))
                 continue;
-            if (!non_intersecting.contains(atom) || ((i != 0 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
+            if (!non_intersecting.contains(atom) || ((atoms.size() != 1 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
                 break;
             non_intersecting_final_conditions.push_back(atom);
         }
