@@ -1,11 +1,9 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
--- Reads of projection index parts must never populate the columns cache: projection parts
--- share the projection name as their part name, which is not unique across parent parts,
--- so their entries would collide in the cache. `MergeTreeReadPoolProjectionIndex` therefore
--- gets no columns cache at all, which also means it needs no query-scoped write budget.
+-- Reads of projection index parts use the columns cache. Projection parts share the projection
+-- name as their part name, which is not unique across parent parts, so their entries are keyed
+-- by the name of the parent part and the projection, as `parent_part:projection`.
 
 SET max_threads = 1;
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 
@@ -43,17 +41,18 @@ SELECT count(), sum(id) FROM t_cc_proj_index WHERE region = 'eu' SETTINGS use_co
 -- The same query with the cache off must produce the same result.
 SELECT count(), sum(id) FROM t_cc_proj_index WHERE region = 'eu' SETTINGS use_columns_cache = 0;
 
--- Nothing may be cached under the projection's name.
+-- The projection part is cached under the name of its parent part, never under the bare projection name.
+SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cc_proj_index'
+    AND part = (SELECT name || ':region_proj' FROM system.parts WHERE database = currentDatabase() AND table = 't_cc_proj_index' AND active);
 SELECT count() FROM system.columns_cache WHERE database = currentDatabase() AND part = 'region_proj';
 
 -- A repeated run served (partly) from the cache must return the same result.
 SELECT count(), sum(id) FROM t_cc_proj_index WHERE region = 'eu' SETTINGS use_columns_cache = 1;
 
--- A full scan of the same table (no projection index) does populate the cache, which shows
--- that the empty result above is the projection-part exclusion and not a disabled cache.
+-- A full scan of the same table (no projection index) caches the parent part next to its projection.
 SELECT sum(id) FROM t_cc_proj_index SETTINGS use_columns_cache = 1, optimize_use_projections = 0;
 
-SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cc_proj_index';
-SELECT count() FROM system.columns_cache WHERE database = currentDatabase() AND part = 'region_proj';
+SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cc_proj_index'
+    AND part = (SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_cc_proj_index' AND active);
 
 DROP TABLE t_cc_proj_index;
