@@ -64,6 +64,8 @@ f0	f0
 0	0
 plus(b, c)	plus(b, c)	plus(b, c)	plus(b, c)
 6	6	6	6
+toString(0)	toString(0)
+0	0
 -- Equally named columns of a single table expression do not need a qualification
 1	1
 1	1	3
