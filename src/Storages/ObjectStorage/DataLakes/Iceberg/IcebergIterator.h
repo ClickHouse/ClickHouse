@@ -94,7 +94,6 @@ private:
     size_t data_manifests_in_use TSA_GUARDED_BY(data_files_mutex) = 0;
     std::exception_ptr data_files_exception TSA_GUARDED_BY(data_files_mutex);
 
-    /// Skips the data files that cannot match the JOIN runtime filters applied to this read.
     std::unique_ptr<Iceberg::RuntimeFilterFilePruning> runtime_filter_pruning;
 };
 }

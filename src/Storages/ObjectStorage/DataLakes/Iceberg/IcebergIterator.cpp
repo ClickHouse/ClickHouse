@@ -87,11 +87,8 @@ extern const SettingsBool use_join_runtime_filters_for_iceberg_pruning;
 namespace Iceberg
 {
 
-/// Prunes data files by the JOIN runtime filters every row of the read passes. Once the filters are built,
-/// their exact key values, or the [min, max] range of the keys when the exact set was too large, become a
-/// predicate on the key column, checked against the bounds of each data file in its manifest like a query
-/// filter: a file whose bounds cannot contain any key holds no row the join can match. Files requested
-/// before every filter is finished are not pruned.
+/// Skips a data file whose manifest bounds cannot contain any key of the JOIN runtime filters every row of the
+/// read passes. Files requested before every filter is built are not pruned.
 class RuntimeFilterFilePruning
 {
 public:
@@ -122,8 +119,6 @@ public:
     }
 
 private:
-    /// The pruner for the data files written with `schema_id`, or nullptr until every filter is built or when the
-    /// filters recorded nothing usable.
     const ManifestFilesPruner * getPruner(Int32 schema_id)
     {
         std::lock_guard lock(mutex);
