@@ -302,8 +302,13 @@ void DistinctTransform::buildSetParallelFilter(
     PODArray<KeyHolder> keys(rows);
     PODArray<size_t> hashes(rows);
     const size_t block = 1024;
+    /// Declared before `runner`: its destructor waits for the workers, which read these buffers,
+    /// so they must outlive it even when an exception unwinds the stack.
+    std::vector<size_t> bucket_offsets(num_coarse_buckets + 1, 0);
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::DISTINCT_FINAL);
+    /// Reserve tracking capacity for both phases, so that a task cannot be scheduled and left untracked.
+    runner.reserve(2 * thread_pool.getMaxThreads());
     {
         auto next_row = std::make_shared<std::atomic<size_t>>(0);
 
@@ -344,7 +349,6 @@ void DistinctTransform::buildSetParallelFilter(
     runner.waitForAllToFinishAndRethrowFirstError();
 
     /// 3. Compute start offset for each bucket
-    std::vector<size_t> bucket_offsets(num_coarse_buckets + 1, 0);
     for (size_t i = 1; i <= num_coarse_buckets; ++i)
         bucket_offsets[i] = bucket_offsets[i - 1] + bucket_sizes[i - 1];
 
