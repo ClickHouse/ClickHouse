@@ -595,6 +595,24 @@ void collectLambdaNames(const IAST & ast, LambdaNames & lambda_names)
         if (auto alias = function->tryGetAlias(); !alias.empty())
             lambda_names.insert(std::move(alias));
 
+    /// The same nodes owning expressions outside of `children` as in `substituteBareUUIDInPlace`.
+    if (const auto * ttl_element = ast.as<ASTTTLElement>())
+    {
+        for (const auto & expression : ttl_element->group_by_key)
+            if (expression)
+                collectLambdaNames(*expression, lambda_names);
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            if (assignment)
+                collectLambdaNames(*assignment, lambda_names);
+    }
+    else if (const auto * apply_transformer = ast.as<ASTColumnsApplyTransformer>())
+    {
+        if (apply_transformer->parameters)
+            collectLambdaNames(*apply_transformer->parameters, lambda_names);
+        if (apply_transformer->lambda)
+            collectLambdaNames(*apply_transformer->lambda, lambda_names);
+    }
+
     for (const auto & child : ast.children)
         if (child)
             collectLambdaNames(*child, lambda_names);

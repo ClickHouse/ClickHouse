@@ -754,6 +754,21 @@ private:
         const auto inner_type_decayed = removeNullable(removeLowCardinality(array_type->getNestedType()));
         const auto arg_decayed = removeNullable(removeLowCardinality(arguments[1].type));
 
+        /// A `Dynamic` (or `JSON`) value can hold either layout, which is not known from the type. The constant path
+        /// compares the extracted `Field` values without their types, while the generic path compares the columns by
+        /// their actual types. So search a constant array through the generic path when such a value meets a UUID.
+        const auto is_dynamic = [](const IDataType & t) { return isDynamic(t) || isObject(t); };
+        const auto may_hold_uuid = [&](const IDataType & t)
+        {
+            return anyInTypeTree(t, [&](const IDataType & u) { return isUUID(u) || isUUID2(u) || is_dynamic(u); });
+        };
+        if ((anyInTypeTree(*inner_type_decayed, is_dynamic) && may_hold_uuid(*arg_decayed))
+            || (anyInTypeTree(*arg_decayed, is_dynamic) && may_hold_uuid(*inner_type_decayed)))
+        {
+            arguments[0].column = arguments[0].column->convertToFullColumnIfConst();
+            return;
+        }
+
         if ((isUUID(inner_type_decayed) && isUUID2(arg_decayed)) || (isUUID2(inner_type_decayed) && isUUID(arg_decayed)))
         {
             DataTypePtr target_type = arguments[1].type->isNullable() || arguments[1].type->isLowCardinalityNullable()
