@@ -35,7 +35,7 @@ echo '--- (a) control: with its source intact a replayed definition still reads 
 $CLIENT -mn -q "
     CREATE TABLE ts ENGINE = TimeSeries;
     INSERT INTO ts (metric_name, tags, samples) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
-    CREATE TABLE sel AS timeSeriesSelector(ts, 'up', 0, 9999999999);
+    CREATE TABLE sel AS timeSeriesSelector(ts, 'up', 0, 9999999999, 'timestamp_and_value');
     CREATE TABLE pq  AS prometheusQuery(ts, 'up', 1000);
     CREATE TABLE pqr AS prometheusQueryRange(ts, 'up', 1000, 1300, 60);
 "
@@ -64,36 +64,37 @@ uuid=$($CLIENT -q "SELECT generateUUIDv4()")
 # A full `ATTACH TABLE` warns about the explicit definition, which would pollute stderr.
 $CLIENT --send_logs_level=fatal -q "
     ATTACH TABLE never_existed UUID '$uuid' (\`id\` Tuple(UInt64, LowCardinality(UUID)), \`timestamp\` DateTime64(3), \`value\` Float64)
-    AS timeSeriesSelector(no_such_time_series_table, 'up', 0, 9999999999)" && echo 'attached never_existed'
+    AS timeSeriesSelector(no_such_time_series_table, 'up', 0, 9999999999, 'timestamp_and_value')" && echo 'attached never_existed'
 
 echo '--- (e) after the source is renamed the definition still attaches, and the read reports it ---'
 $CLIENT -mn -q "
     CREATE TABLE ts_renamed ENGINE = TimeSeries;
-    CREATE TABLE sel_renamed AS timeSeriesSelector(ts_renamed, 'up', 0, 9999999999);
+    CREATE TABLE sel_renamed AS timeSeriesSelector(ts_renamed, 'up', 0, 9999999999, 'timestamp_and_value');
     RENAME TABLE ts_renamed TO ts_new_name;
 "
 reattach sel_renamed
 error_of $CLIENT -q "SELECT count() FROM sel_renamed"
 
 echo '--- (g) a fresh CREATE whose structure is inferred from the function still requires the source ---'
-error_of $CLIENT -q "CREATE TABLE inferred_missing AS timeSeriesSelector(no_such_time_series_table, 'up', 0, 9999999999)"
+error_of $CLIENT -q "CREATE TABLE inferred_missing AS timeSeriesSelector(no_such_time_series_table, 'up', 0, 9999999999, 'timestamp_and_value')"
 error_of $CLIENT -q "CREATE TABLE inferred_missing_pq AS prometheusQuery(no_such_time_series_table, 'up', 1000)"
 
 echo '--- (g2) with an explicit column list nothing is resolved at CREATE ---'
 $CLIENT -q "
     CREATE TABLE explicit_columns (\`id\` Tuple(UInt64, LowCardinality(UUID)), \`timestamp\` DateTime64(3), \`value\` Float64)
-    AS timeSeriesSelector(no_such_time_series_table, 'up', 0, 9999999999)" && echo 'created explicit_columns'
+    AS timeSeriesSelector(no_such_time_series_table, 'up', 0, 9999999999, 'timestamp_and_value')" && echo 'created explicit_columns'
 
 echo '--- (c2) so its missing source is reported on the first read, not hidden ---'
 error_of $CLIENT -q "SELECT count() FROM explicit_columns"
 
 echo '--- (h) the tags target is dropped while the TimeSeries table survives ---'
+# Version 9 is the last one that allows external target tables.
 $CLIENT -mn -q "
     CREATE TABLE ts_tags_target (id UInt64, metric_name LowCardinality(String), tags Map(LowCardinality(String), String),
                                  min_time DateTime64(3), max_time DateTime64(3)) ENGINE = MergeTree() ORDER BY id;
     CREATE TABLE ts_samples_target (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree() ORDER BY (id, timestamp);
-    CREATE TABLE ts_split ENGINE = TimeSeries SAMPLES ts_samples_target TAGS ts_tags_target;
-    CREATE TABLE sel_no_tags AS timeSeriesSelector(ts_split, 'up', 0, 9999999999);
+    CREATE TABLE ts_split ENGINE = TimeSeries SETTINGS version = 9 SAMPLES ts_samples_target TAGS ts_tags_target;
+    CREATE TABLE sel_no_tags AS timeSeriesSelector(ts_split, 'up', 0, 9999999999, 'timestamp_and_value');
     DROP TABLE ts_tags_target SYNC;
 "
 reattach sel_no_tags
@@ -103,20 +104,20 @@ echo '--- (i) the whole database of the source is dropped ---'
 $CLIENT -mn -q "
     CREATE DATABASE ${OTHER_DB};
     CREATE TABLE ${OTHER_DB}.ts ENGINE = TimeSeries;
-    CREATE TABLE sel_no_database AS timeSeriesSelector(${OTHER_DB}.ts, 'up', 0, 9999999999);
+    CREATE TABLE sel_no_database AS timeSeriesSelector(${OTHER_DB}.ts, 'up', 0, 9999999999, 'timestamp_and_value');
     DROP DATABASE ${OTHER_DB} SYNC;
 "
 reattach sel_no_database
 
 echo '--- (l) the time bounds are still converted, so the checks that read them still fire ---'
 $CLIENT -q "CREATE TABLE ts_checks ENGINE = TimeSeries"
-error_of $CLIENT -q "SELECT * FROM timeSeriesSelector(ts_checks, 'up', 9999999999, 0)"
-error_of $CLIENT -q "SELECT * FROM timeSeriesSelector(ts_checks, 'rate(up[5m])', 0, 9999999999)"
+error_of $CLIENT -q "SELECT * FROM timeSeriesSelector(ts_checks, 'up', 9999999999, 0, 'timestamp_and_value')"
+error_of $CLIENT -q "SELECT * FROM timeSeriesSelector(ts_checks, 'rate(up[5m])', 0, 9999999999, 'timestamp_and_value')"
 
 echo '--- (l2) a table name that names nothing is reported, not written back into the argument ---'
 # The write-back replaces a single table argument with a `database.table` identifier, whose parts cannot
 # be empty, so an empty name has to stay as written and be reported by the read.
-error_of $CLIENT -q "SELECT * FROM timeSeriesSelector('', 'up', 0, 9999999999)"
+error_of $CLIENT -q "SELECT * FROM timeSeriesSelector('', 'up', 0, 9999999999, 'timestamp_and_value')"
 error_of $CLIENT -q "SELECT * FROM prometheusQuery('', 'up', 1000)"
 error_of $CLIENT -q "SELECT * FROM prometheusQueryRange('', 'up', 1000, 1300, 60)"
 
@@ -126,7 +127,7 @@ $CLIENT -mn -q "
     CREATE TABLE ts_qual ENGINE = TimeSeries;
     INSERT INTO ts_qual (metric_name, tags, samples) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
     CREATE TABLE ${OTHER_DB}_replay.ts_qual ENGINE = TimeSeries;
-    CREATE TABLE sel_qual AS timeSeriesSelector(ts_qual, 'up', 0, 9999999999);
+    CREATE TABLE sel_qual AS timeSeriesSelector(ts_qual, 'up', 0, 9999999999, 'timestamp_and_value');
     CREATE TABLE pq_qual AS prometheusQuery(ts_qual, 'up', 1000);
     DETACH TABLE sel_qual;
     DETACH TABLE pq_qual;
@@ -146,7 +147,7 @@ echo '--- (n) a definition naming the table being created attaches, and the read
 # arm pins the post-fix behaviour only; arm (o) replays the same shape through the table loader.
 $CLIENT -q "
     CREATE TABLE selfref (\`id\` Tuple(UInt64, LowCardinality(UUID)), \`timestamp\` DateTime64(3), \`value\` Float64)
-    AS timeSeriesSelector(selfref, 'up', 0, 9999999999)" && echo 'created selfref'
+    AS timeSeriesSelector(selfref, 'up', 0, 9999999999, 'timestamp_and_value')" && echo 'created selfref'
 reattach selfref
 error_of $CLIENT -q "SELECT count() FROM selfref"
 
@@ -160,12 +161,12 @@ $CLIENT -mn -q "
     CREATE TABLE ts_load ENGINE = TimeSeries;
     INSERT INTO ts_load (metric_name, tags, samples) SELECT 'up', map('job', 'prometheus'), [(1000, 42)];
     CREATE TABLE ts_load_gone ENGINE = TimeSeries;
-    CREATE TABLE sel_load AS timeSeriesSelector(ts_load, 'up', 0, 9999999999);
+    CREATE TABLE sel_load AS timeSeriesSelector(ts_load, 'up', 0, 9999999999, 'timestamp_and_value');
     CREATE TABLE pq_load AS prometheusQuery(ts_load, 'up', 1000);
-    CREATE TABLE sel_load_gone AS timeSeriesSelector(ts_load_gone, 'up', 0, 9999999999);
+    CREATE TABLE sel_load_gone AS timeSeriesSelector(ts_load_gone, 'up', 0, 9999999999, 'timestamp_and_value');
     DROP TABLE ts_load_gone SYNC;
     CREATE TABLE selfref_load (\`id\` Tuple(UInt64, LowCardinality(UUID)), \`timestamp\` DateTime64(3), \`value\` Float64)
-    AS timeSeriesSelector(selfref_load, 'up', 0, 9999999999);
+    AS timeSeriesSelector(selfref_load, 'up', 0, 9999999999, 'timestamp_and_value');
 "
 # The source is named in full here: this definition isolates the stored *query*, which is not parsed
 # until the read either, so a text this grammar rejects cannot make the definition unloadable.
