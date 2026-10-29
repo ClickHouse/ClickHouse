@@ -291,7 +291,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     const auto & prepared_sets = planner_context->getPreparedSets();
     if (!allow_reading_tables && (prepared_sets.hasSubqueries() || prepared_sets.hasSetsFromStorage()))
         throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Cannot evaluate the default expression of a column missing in the part without a reading query, "
+            "Cannot evaluate the default expression of a column without a reading query, "
             "because it reads a table (as in `x IN table`). Background merges and mutations are not authorized "
             "to read other tables on behalf of any user");
 
@@ -318,13 +318,19 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+void performRequiredConversions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults,
+    bool allow_reading_tables)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context, allow_reading_tables);
 
     if (dag)
     {

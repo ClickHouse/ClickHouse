@@ -50,8 +50,9 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool allow_reading_tables = true);
 
 /// Tries to convert columns in block to required_columns
+/// A conversion of `NULL` to the default of a column may read a table (`x IN table`), as in `evaluateMissingDefaults`.
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
-    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false, bool allow_reading_tables = true);
 
 void fillMissingColumns(
     Columns & res_columns,

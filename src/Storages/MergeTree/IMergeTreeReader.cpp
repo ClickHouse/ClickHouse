@@ -932,9 +932,13 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
+        /// Converting `NULL` to a non-nullable type substitutes the default of the column, which may read
+        /// a table as well, so it is evaluated on behalf of the reading query, as for the missing columns.
         DB::performRequiredConversions(copy_block, getColumns(),
-            data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+            createContextForDefaultExpressions(),
+            storage_snapshot->metadata->getColumns().getDefaults(),
+            /*forbid_default_defaults=*/ false,
+            /*allow_reading_tables=*/ settings.read_context != nullptr);
 
         /// Move columns from block.
         name_and_type = getColumns().begin();
