@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <deque>
 #include <functional>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -347,8 +348,11 @@ struct LogEntryStorage
         std::function<void()> on_applied;
     };
     using ChangelogRelinkPtr = std::shared_ptr<ChangelogRelink>;
+    /// A single-element list holding the relink: it is allocated before the merge is listed, so that
+    /// `scheduleRelink` only splices it and the registration cannot fail after the merge is published.
+    using ChangelogRelinkNode = std::list<ChangelogRelinkPtr>;
 
-    void scheduleRelink(const ChangelogRelinkPtr & relink);
+    void scheduleRelink(ChangelogRelinkNode && relink_node);
 
     void refreshCache();
 
@@ -473,7 +477,7 @@ private:
 
     mutable std::mutex logs_location_mutex;
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
-    std::vector<ChangelogRelinkPtr> unapplied_relinks;
+    ChangelogRelinkNode unapplied_relinks;
     std::unordered_map<uint64_t, LogLocation> logs_location;
     size_t max_index_with_location = 0;
     size_t min_index_with_location = 0;

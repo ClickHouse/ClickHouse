@@ -283,6 +283,10 @@ public:
     virtual void flush() = 0;
     virtual void rotate(uint64_t new_start_log_index) = 0;
 
+    /// Called by `Changelog::compact` when a snapshot from the leader supersedes every record written so far:
+    /// starts a new segment at `new_start_log_index` without publishing the records that were not flushed yet.
+    virtual void discardAndRotate(uint64_t new_start_log_index) { rotate(new_start_log_index); }
+
     virtual uint64_t getStartIndex() const = 0;
 
     virtual void finalize() = 0;
@@ -429,6 +433,16 @@ public:
                 "Cannot append log entry {} to the S3 changelog: no segment is open (a previous rewrite failed)",
                 record.header.index);
 
+        /// NuRaft installs a snapshot through `compact` without draining the write queue, so appends queued before
+        /// the snapshot may arrive after `discardAndRotate` opened the segment that starts past it. They are covered
+        /// by the snapshot, and writing them would publish the new segment with entries outside of its range.
+        if (record.header.index < current_file_description->from_log_index)
+        {
+            LOG_TRACE(log, "Skipping log entry {} superseded by a snapshot, the S3 changelog segment starts at {}",
+                record.header.index, current_file_description->from_log_index);
+            return true;
+        }
+
         LOG_TRACE(log, "Writing to s3 buffer before {}", write_buffer->count());
 
         auto current_position{write_buffer->count()};
@@ -482,6 +496,25 @@ public:
 
     void rotate(uint64_t new_start_log_index) override
     {
+        flushImpl(new_start_log_index);
+    }
+
+    void discardAndRotate(uint64_t new_start_log_index) override
+    {
+        /// The open segment is not listed unless `writeAt` reopened a published one, and `compact` has already
+        /// unlisted and removed that one. Publishing the buffered records would list them again with their locations,
+        /// although `entry_storage` was cleaned up to `new_start_log_index`, so the retained range would restart at
+        /// the first buffered index with the indices up to the snapshot missing.
+        if (write_buffer)
+        {
+            LOG_INFO(log, "Discarding {} unflushed S3 changelog records superseded by a snapshot", unflushed_indices_with_log_location.size());
+            write_buffer->cancel();
+            write_buffer.reset();
+        }
+        unflushed_indices_with_log_location.clear();
+        last_index_written.reset();
+        current_file_description = nullptr;
+
         flushImpl(new_start_log_index);
     }
 
@@ -818,6 +851,16 @@ private:
                         continue;
                     }
 
+                    /// Allocate the bookkeeping of the merge before it is listed: once the sources are unlisted, a failed
+                    /// registration would leave them on S3 without anything to remove them, and after a rewrite of the
+                    /// merged object they would replay over it on the next startup. `relinked_sources` is appended only
+                    /// by this thread and `erase_if` keeps its capacity, so the `push_back` below does not allocate.
+                    LogEntryStorage::ChangelogRelinkNode relink_node{relink};
+                    {
+                        std::lock_guard relinked_sources_lock(relinked_sources_mutex);
+                        relinked_sources.reserve(relinked_sources.size() + 1);
+                    }
+
                     /// Publish under the final name only now. `writer_mutex` stays held until the merge is listed,
                     /// so the sources cannot be rewritten between the validation above and the publication.
                     /// `copyFile` within the same object storage disk is a server-side copy, so the merged bytes
@@ -844,17 +887,24 @@ private:
 
                     removeInProgressObject(merged_in_progress_path);
 
+                    /// Nothing below allocates, so the merge is listed and registered for the source removal together.
+                    /// The merged object starts at the first source, which was validated above to be listed, so the
+                    /// assignment replaces the existing value and does not insert a node.
+                    existing_changelogs.find(merged_changelog->from_log_index)->second = merged_changelog;
                     for (const auto & changelog : to_remove)
-                        existing_changelogs.erase(changelog->from_log_index);
+                        if (changelog->from_log_index != merged_changelog->from_log_index)
+                            existing_changelogs.erase(changelog->from_log_index);
 
-                    existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
                     last_merged_index = merged_changelog->to_log_index;
+
+                    {
+                        std::lock_guard relinked_sources_lock(relinked_sources_mutex);
+                        relinked_sources.push_back(relink);
+                    }
 
                     /// `entry_storage` still locates the entries of the sources in the source objects, so they
                     /// cannot be removed yet: the next `refreshCache` switches those locations to the merged object.
-                    entry_storage.scheduleRelink(relink);
-                    std::lock_guard relinked_sources_lock(relinked_sources_mutex);
-                    relinked_sources.push_back(relink);
+                    entry_storage.scheduleRelink(std::move(relink_node));
                 }
 
                 LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
@@ -2694,11 +2744,14 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
         std::make_move_iterator(indices_with_log_locations.end()));
 }
 
-void LogEntryStorage::scheduleRelink(const ChangelogRelinkPtr & relink)
+void LogEntryStorage::scheduleRelink(ChangelogRelinkNode && relink_node)
 {
+    chassert(relink_node.size() == 1);
+
     /// No locations are kept with unlimited latest logs cache, so nothing points into the sources.
     if (latest_logs_cache.hasUnlimitedSpace())
     {
+        const auto & relink = relink_node.front();
         relink->applied = true;
         if (relink->on_applied)
             relink->on_applied();
@@ -2706,7 +2759,7 @@ void LogEntryStorage::scheduleRelink(const ChangelogRelinkPtr & relink)
     }
 
     std::lock_guard lock(logs_location_mutex);
-    unapplied_relinks.push_back(relink);
+    unapplied_relinks.splice(unapplied_relinks.end(), relink_node);
 }
 
 void LogEntryStorage::applyRelink(ChangelogRelink & relink)
@@ -2752,7 +2805,7 @@ void LogEntryStorage::refreshCache()
         return;
 
     std::vector<IndexWithLogLocation> new_unapplied_indices_with_log_locations;
-    std::vector<ChangelogRelinkPtr> new_unapplied_relinks;
+    ChangelogRelinkNode new_unapplied_relinks;
     {
         std::lock_guard lock(logs_location_mutex);
         new_unapplied_indices_with_log_locations.swap(unapplied_indices_with_log_locations);
@@ -5712,7 +5765,10 @@ void Changelog::compact(uint64_t up_to_log_index)
 
     entry_storage.cleanUpTo(up_to_log_index + 1);
 
-    if (need_rotate)
+    /// The writer may still buffer records the snapshot superseded, as the write queue is not drained here.
+    if (need_rotate && remove_all_logs && keeper_context->isS3ExperimentalChangelog())
+        current_writer->discardAndRotate(up_to_log_index + 1);
+    else if (need_rotate)
         current_writer->rotate(up_to_log_index + 1);
 
     LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, getStartIndex(), max_log_id.load(std::memory_order_relaxed));
