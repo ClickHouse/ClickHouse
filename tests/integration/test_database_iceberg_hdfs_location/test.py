@@ -1,21 +1,26 @@
-"""A `DataLakeCatalog` table whose catalog location is on HDFS resolves to `IcebergHDFS`.
+"""A `DataLakeCatalog` table whose catalog location is on HDFS can be read.
 
 The catalog reports the location as `hdfs://...`, and with the default `vended_credentials = 1`
 it vends no credentials for it: HDFS authenticates through the server's `hdfs` configuration.
 Neither may stop the table from resolving.
 """
 
+import json
 import os
+from urllib.parse import urlparse
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.mock_servers import start_mock_servers
+
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 CATALOG_PORT = 8182
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node")
+node = cluster.add_instance("node", with_hdfs=True)
 
 
 @pytest.fixture(scope="module")
@@ -33,13 +38,21 @@ def started_cluster():
 
 
 def test_hdfs_location_with_vended_credentials(started_cluster):
-    if (
-        node.query(
-            "SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_HDFS'"
+    # Write the table metadata the catalog serves to the location it advertises for it.
+    # The table has no snapshot, so this one file is the whole table.
+    load_table = json.loads(
+        node.exec_in_container(
+            [
+                "curl",
+                "-s",
+                f"http://localhost:{CATALOG_PORT}/v1/namespaces/ns/tables/events",
+            ]
         )
-        != "1\n"
-    ):
-        pytest.skip("ClickHouse is built without HDFS")
+    )
+    started_cluster.hdfs_api.write_data(
+        urlparse(load_table["metadata-location"]).path,
+        json.dumps(load_table["metadata"]),
+    )
 
     node.query(f"""
         DROP DATABASE IF EXISTS hdfs_catalog;
@@ -49,16 +62,19 @@ def test_hdfs_location_with_vended_credentials(started_cluster):
         SETTINGS catalog_type = 'rest', warehouse = 'warehouse'
         """)
     try:
-        create_query = node.query("SHOW CREATE TABLE hdfs_catalog.`ns.events`")
-        assert "IcebergHDFS" in create_query, create_query
-        assert "hdfs://hdfs1:9000/warehouse/ns/events" in create_query, create_query
+        create_query = node.query(
+            "SHOW CREATE TABLE hdfs_catalog.`ns.events` FORMAT TSVRaw"
+        )
+        assert (
+            "ENGINE = Iceberg('hdfs://hdfs1:9000/warehouse/ns/events" in create_query
+        ), create_query
 
-        # Builds the table's storage. The storage connects to HDFS lazily, so no HDFS is needed.
         assert (
             node.query(
                 "DESCRIBE hdfs_catalog.`ns.events` FORMAT TSVRaw SETTINGS describe_compact_output = 1"
             )
             == "id\tInt64\nname\tNullable(String)\n"
         )
+        assert node.query("SELECT count() FROM hdfs_catalog.`ns.events`") == "0\n"
     finally:
         node.query("DROP DATABASE IF EXISTS hdfs_catalog")
