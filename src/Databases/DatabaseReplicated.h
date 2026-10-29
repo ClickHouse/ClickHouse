@@ -259,7 +259,7 @@ private:
 
     void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
 
-    void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
+    void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper, ContextPtr publication_context);
     void reinitializeDDLWorker();
 
     static BlockIO getQueryStatus(

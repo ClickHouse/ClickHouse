@@ -3498,6 +3498,14 @@ Return empty result when aggregating by constant keys on empty set.
     DECLARE(Bool, allow_distributed_ddl, true, R"(
 If it is set to true, then a user is allowed to executed distributed DDL queries.
 )", 0) \
+    DECLARE(Bool, allow_projection_column_codecs_in_replicated_or_distributed_ddl, false, R"(
+Allow projection column codec declarations to be published in `ReplicatedMergeTree` metadata,
+`Replicated` database DDL, or `ON CLUSTER` DDL. Enable this only after every replica and DDL
+worker that may consume the definition can parse projection column codec lists. The default
+rejects these shared definitions before they are written to Keeper. Local `MergeTree` tables
+do not require this setting.
+)", IMPORTANT, \
+        {"26.11", false, false, "New default-off compatibility gate for publishing projection column codecs in replicated or distributed metadata; older compatibility modes must leave it disabled."}) \
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0, \
