@@ -1,4 +1,8 @@
+#include <algorithm>
 #include <memory>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -18,6 +22,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -95,9 +100,12 @@ struct RuntimeFilterId
     String key;
 };
 
+/// Prefix of `runtimeFilterName`, by which `collectRuntimeFilterKeys` recognizes the `__applyFilter` label.
+static constexpr std::string_view runtime_filter_name_prefix = "_runtime_filter_";
+
 static String runtimeFilterName(UInt64 structural_hash)
 {
-    return "_runtime_filter_" + std::to_string(structural_hash);
+    return String(runtime_filter_name_prefix) + std::to_string(structural_hash);
 }
 
 /// Add the const String argument for `__applyFilter`. Its VALUE is the per-plan-build rendezvous
@@ -286,6 +294,30 @@ static size_t countHashTableKeys(const JoinStepLogical & join_step)
     return count;
 }
 
+/// The build steps `tryAddJoinRuntimeFilter` stacked on a join input, possibly with expression and filter
+/// steps pushed between them.
+static std::vector<BuildRuntimeFilterStep *> getBuildStepChain(QueryPlan::Node * input)
+{
+    std::vector<BuildRuntimeFilterStep *> chain;
+    for (auto * node = input; node && node->children.size() == 1; node = node->children.front())
+    {
+        if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+            chain.push_back(build_step);
+        else if (!typeid_cast<const ExpressionStep *>(node->step.get()) && !typeid_cast<const FilterStep *>(node->step.get()))
+            break;
+    }
+    return chain;
+}
+
+/// Whether the join's build side already has keyed build steps, as in a plan taken over the wire (see
+/// `pairJoinRuntimeFilters`). Their `__applyFilter` is often already in `PREWHERE`, so a second set of
+/// filters with new keys would only filter after the read.
+static bool hasRuntimeFilterBuilders(QueryPlan::Node * build_node)
+{
+    return std::ranges::any_of(getBuildStepChain(build_node),
+        [](const BuildRuntimeFilterStep * build_step) { return !build_step->getFilterKey().empty(); });
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -306,6 +338,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// runtime filter in this scenario.
     if (node.children[0]->step->getOutputHeader()->empty() ||
         node.children[1]->step->getOutputHeader()->empty())
+        return false;
+
+    if (hasRuntimeFilterBuilders(node.children[1]))
         return false;
 
     /// Check if join can do runtime filtering on left table
@@ -710,6 +745,124 @@ void collectAppliedJoinRuntimeFilters(const Stack & stack)
         else
             break;
     }
+
+    /// A plan taken over the wire may have the filters already in `PREWHERE`. On the initiator
+    /// `optimizePrewhere` runs later, so this finds nothing there.
+    if (const auto & prewhere_info = read_step->getPrewhereInfo())
+        for (const auto & descr : findAppliedRuntimeFilters(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name))
+            read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(descr.filter_id, descr.key_column_name, descr.key_column_type);
+}
+
+/// Collect the rendezvous key of every `__applyFilter` in the DAG: the value of its label (see
+/// `addRuntimeFilterLabelColumn`).
+static void collectRuntimeFilterKeys(const ActionsDAG & dag, std::unordered_set<String> & keys)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base
+            || node.function_base->getName() != "__applyFilter" || node.children.empty())
+            continue;
+        const auto * label = node.children.front();
+        /// `is_runtime_filter_id` is not serialized, so recognize the label by its name.
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type)
+            || !label->result_name.starts_with(runtime_filter_name_prefix))
+            continue;
+        keys.emplace(String(label->column->getDataAt(0)));
+    }
+}
+
+static void collectRuntimeFilterKeys(const IQueryPlanStep & step, std::unordered_set<String> & keys)
+{
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
+        collectRuntimeFilterKeys(expression_step->getExpression(), keys);
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(&step))
+        collectRuntimeFilterKeys(filter_step->getExpression(), keys);
+    else if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(&step))
+    {
+        if (const auto & prewhere_info = source_step->getPrewhereInfo())
+            collectRuntimeFilterKeys(prewhere_info->prewhere_actions, keys);
+    }
+}
+
+bool pairJoinRuntimeFilters(QueryPlan::Node & root, bool allow_pairing, bool track_key_range)
+{
+    /// A build step keeps its key only if it is on the right input of an optimized join whose left input
+    /// has an `__applyFilter` with that key, and no other build step of the plan has the key. Otherwise its
+    /// filter cannot be used in time, and made inert it lets `tryAddJoinRuntimeFilter` add one that can:
+    /// - its `__applyFilter` was cut into another fragment;
+    /// - Cascades join commutativity swapped the join inputs after the filters were added, so it is on the
+    ///   left input, which the hash join reads after the right one;
+    /// - a cloned subplan put two build steps with the key into one lookup (one of them may be a build with
+    ///   filter exchanges, which is never made inert), which would merge them;
+    /// - its join is not optimized yet, so `optimizeJoinLogical` may still reorder or swap it.
+    /// Only the steps that still need pairing are checked (see `BuildRuntimeFilterStep::needsPairing`).
+    std::vector<QueryPlan::Node *> join_nodes;
+    std::vector<BuildRuntimeFilterStep *> steps_to_pair;
+    std::unordered_map<String, size_t> build_steps_per_key;
+    for (std::vector<QueryPlan::Node *> stack{&root}; !stack.empty();)
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+        if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()); build_step && !build_step->getFilterKey().empty())
+        {
+            /// A build with filter exchanges keeps its key and is not paired, but it registers its filter in
+            /// this task's lookup too, so a local build with the same key must not keep it.
+            ++build_steps_per_key[build_step->getFilterKey()];
+            if (build_step->needsPairing())
+                steps_to_pair.push_back(build_step);
+        }
+        else if (auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+                 allow_pairing && join_step && join_step->isOptimized() && node->children.size() == 2)
+            join_nodes.push_back(node);
+    }
+
+    bool kept_any = false;
+    for (auto * node : join_nodes)
+    {
+        auto candidates = getBuildStepChain(node->children[1]);
+        std::erase_if(candidates, [&](const BuildRuntimeFilterStep * build_step)
+        {
+            return !build_step->needsPairing() || build_steps_per_key[build_step->getFilterKey()] != 1;
+        });
+        if (candidates.empty())
+            continue;
+
+        std::unordered_set<String> probe_keys;
+        for (std::vector<const QueryPlan::Node *> stack{node->children[0]}; !stack.empty();)
+        {
+            const auto * probe_node = stack.back();
+            stack.pop_back();
+            stack.insert(stack.end(), probe_node->children.begin(), probe_node->children.end());
+            collectRuntimeFilterKeys(*probe_node->step, probe_keys);
+        }
+
+        auto & join_step = typeid_cast<JoinStepLogical &>(*node->step);
+        for (auto * build_step : candidates)
+        {
+            if (!probe_keys.contains(build_step->getFilterKey()))
+                continue;
+
+            /// What `addJoinKeyRuntimeFilter` sets up besides the build step is not serialized: the shared
+            /// `FixedHashMap` descriptor of the join and the key range tracking.
+            auto & descriptors = join_step.getJoinOperator().shared_runtime_filter_descriptors;
+            if (join_step.getJoinSettings().join_runtime_filter_from_fixed_hash_table
+                && build_step->allowsNotExactFilter()
+                && !std::ranges::contains(descriptors, build_step->getFilterKey(), &SharedRuntimeFilterDescriptor::filter_key))
+                descriptors.push_back(SharedRuntimeFilterDescriptor{
+                    build_step->getFilterKey(), build_step->getFilterColumnName(), build_step->getFilterColumnType()});
+            if (track_key_range)
+                build_step->enableKeyRangeTracking();
+
+            build_step->finishPairing(/*keep_key=*/true);
+            kept_any = true;
+        }
+    }
+
+    for (auto * build_step : steps_to_pair)
+        if (build_step->needsPairing())
+            build_step->finishPairing(/*keep_key=*/false);
+    return kept_any;
 }
 
 }
