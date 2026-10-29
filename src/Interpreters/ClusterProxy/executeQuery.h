@@ -101,6 +101,9 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 /// This transport rewrite must not be applied to queued DDL containing stored query definitions.
 void prepareSecondaryQueryAST(const ASTPtr & query);
 
+/// Like `stripInitiatorOnlySettingsFromQuery`, for the text of a distributed DDL query.
+void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
