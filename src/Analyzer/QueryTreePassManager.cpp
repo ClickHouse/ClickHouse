@@ -266,14 +266,18 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
     }
 }
 
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze, bool positional_arguments_already_resolved)
+void addQueryTreePasses(
+    QueryTreePassManager & manager,
+    bool only_analyze,
+    bool positional_arguments_already_resolved,
+    bool prune_shared_materialized_cte_bodies)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze, positional_arguments_already_resolved));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
-    manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
+    manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>(prune_shared_materialized_cte_bodies));
     manager.addPass(std::make_unique<PruneArrayJoinColumnsPass>());
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());

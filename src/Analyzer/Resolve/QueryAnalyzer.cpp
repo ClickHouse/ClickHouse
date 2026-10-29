@@ -230,6 +230,21 @@ bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// Each reference gets its own table node. A marked node keeps one shared body.
+QueryTreeNodePtr cloneMaterializedCTEReference(const QueryTreeNodePtr & node)
+{
+    const auto * table_node = node->as<TableNode>();
+    if (!table_node || !table_node->isMaterializedCTE() || !table_node->sharesMaterializedCTEBody())
+        return node->clone();
+
+    const auto & subquery = table_node->getMaterializedCTESubquery();
+    IQueryTreeNode::ReplacementMap replacements;
+    replacements.emplace(
+        static_cast<const ITableExpressionNode *>(subquery.get()),
+        std::static_pointer_cast<ITableExpressionNode>(subquery));
+    return node->cloneAndReplace(replacements);
+}
+
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -1641,6 +1656,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
             /// Create a TableNode with StorageDummy as placeholder. The subquery stays unresolved.
             /// Resolution and real storage creation happen later in resolveQueryJoinTreeNode.
             auto table_node = std::make_shared<TableNode>(full_name, cte_node, scope.context);
+            /// PromQL names each shared step `prometheus_query_step_<index>`.
+            if (full_name.starts_with("prometheus_query_step_"))
+                table_node->setShareMaterializedCTEBody(true);
             table_node->setAlias(full_name);
 
             cte_node = table_node;
@@ -4021,7 +4039,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
-                        resolved_identifier_node = resolved_identifier_node->clone();
+                        resolved_identifier_node = cloneMaterializedCTEReference(resolved_identifier_node);
                         auto * mat_table_node = resolved_identifier_node->as<TableNode>();
                         auto materialized_cte_ptr = mat_table_node->getMaterializedCTE();
 
@@ -5154,7 +5172,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         scope.scope_node->formatASTForErrorMessage());
                 }
 
-                resolved_identifier = resolved_identifier->clone();
+                resolved_identifier = cloneMaterializedCTEReference(resolved_identifier);
                 if (table_identifier_lookup.original_ast_node)
                     resolved_identifier->setOriginalAST(table_identifier_lookup.original_ast_node);
 
@@ -7051,8 +7069,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     }
                 }
 
-                /// Each clone gets a deep-cloned subquery (IQueryTreeNode::clone deep-clones children).
-                /// Use materialized_cte->storage (shared across clones) to distinguish first vs subsequent.
+                /// A shared body is resolved once. A cloned body is resolved at this reference.
                 if (!materialized_cte_ptr->isStorageInitialized())
                 {
                     auto & subquery = table_node->getMaterializedCTESubquery();
@@ -7099,29 +7116,30 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 }
                 else
                 {
-                    /// Subsequent reference: another clone already resolved and created the storage.
-                    /// Resolve this clone's own subquery copy for correct EXPLAIN output,
-                    /// then reuse the existing storage.
+                    /// Storage already exists. Resolve this reference when its body is still a separate clone.
                     auto & subquery = table_node->getMaterializedCTESubquery();
+                    const bool subquery_is_resolved = subquery->as<QueryNode>()
+                        ? subquery->as<QueryNode>()->isResolved()
+                        : subquery->as<UnionNode>()->isResolved();
 
-                    for (const auto & cte_map_node : cte_map_nodes)
+                    if (!subquery_is_resolved)
                     {
-                        ctes_in_resolve_process.insert(cte_map_node);
-                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                        for (const auto & cte_map_node : cte_map_nodes)
+                        {
+                            ctes_in_resolve_process.insert(cte_map_node);
+                            cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                        }
+
+                        resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                        for (const auto & cte_map_node : cte_map_nodes)
+                        {
+                            ctes_in_resolve_process.erase(cte_map_node);
+                            cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                        }
+
+                        checkMaterializedCTESubqueryIsNotCorrelated(subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                     }
-
-                    resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
-
-                    for (const auto & cte_map_node : cte_map_nodes)
-                    {
-                        ctes_in_resolve_process.erase(cte_map_node);
-                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
-                    }
-
-                    /// A clone can resolve correlated even when the storage-initializing clone did not
-                    /// (identifiers may bind to outer scope here). The first-reference branch above
-                    /// already rejects correlation; this branch must do the same.
-                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, materialized_cte_ptr->cte_name, scope.scope_node);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(

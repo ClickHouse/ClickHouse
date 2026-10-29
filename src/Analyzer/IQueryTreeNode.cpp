@@ -1,5 +1,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableNode.h>
 
 #include <typeinfo>
 #include <unordered_map>
@@ -221,7 +222,13 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
             if (!node_to_process_child)
                 continue;
 
-            nodes_to_process.emplace_back(node_to_process_child.get(), false);
+            /// A shared materialized CTE body is hashed once.
+            bool shared_body = false;
+            if (const auto * table_node = node_to_process->as<TableNode>();
+                table_node && table_node->isMaterializedCTE() && table_node->sharesMaterializedCTEBody())
+                shared_body = node_to_process_child.get() == table_node->getMaterializedCTESubquery().get();
+
+            nodes_to_process.emplace_back(node_to_process_child.get(), shared_body);
         }
 
         if (const auto * column_node = node_to_process->as<ColumnNode>())
@@ -289,10 +296,27 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
 
+        /// A marked materialized CTE body stays shared, so a clone of an outer query does not copy it.
+        const auto * materialized_table = node_to_clone->as<TableNode>();
+        const IQueryTreeNode * shared_body = nullptr;
+        if (materialized_table && materialized_table->isMaterializedCTE() && materialized_table->sharesMaterializedCTEBody())
+            shared_body = materialized_table->getMaterializedCTESubquery().get();
+
         for (auto & child : node_clone->children)
         {
             if (!child)
                 continue;
+
+            if (shared_body && child.get() == shared_body)
+            {
+                if (const auto * table_expression = child->asTableExpression())
+                {
+                    auto it = replacement_map.find(table_expression);
+                    if (it != replacement_map.end())
+                        child = it->second;
+                }
+                continue;
+            }
 
             nodes_to_clone.emplace_back(child.get(), &child);
         }
@@ -384,6 +408,11 @@ size_t IQueryTreeNode::FormatState::getNodeId(const IQueryTreeNode * node)
 {
     auto [it, _] = node_to_id.emplace(node, node_to_id.size());
     return it->second;
+}
+
+bool IQueryTreeNode::FormatState::enterSharedMaterializedCTEBody(const IQueryTreeNode * body)
+{
+    return entered_shared_bodies.insert(body).second;
 }
 
 void IQueryTreeNode::dumpTree(WriteBuffer & buffer) const
