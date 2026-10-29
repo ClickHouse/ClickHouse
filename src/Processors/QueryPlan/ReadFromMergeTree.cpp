@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSource.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -667,7 +668,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName()};
+        getParallelReplicasStreamId()};
 
     /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
     /// The coordinator cannot report them in this case: it receives the initiator's announcement
@@ -951,7 +952,7 @@ Pipe ReadFromMergeTree::readInOrder(
         /// Each split gets its own stream_id so the coordinator maintains an independent
         /// ImplInterface instance per split. When splitting, suffix every split with `#split_{i}`.
         /// When the whole table is read by a single pool, keep the bare table name.
-        String stream_id = data.getStorageID().getFullTableName();
+        String stream_id = getParallelReplicasStreamId();
         if (split_index)
             stream_id += fmt::format("#split_{}", *split_index);
 
@@ -4090,6 +4091,21 @@ void ReadFromMergeTree::updateSortDescription()
         enable_vertical_final);
 }
 
+String ReadFromMergeTree::getParallelReplicasStreamId() const
+{
+    /// A read through a table function that only references a table (`ITableFunction::getReferencedTableID`)
+    /// reads a storage whose name may be local to each server: the target of a `TimeSeries` table is named
+    /// after a UUID the server assigned. Replicas that announced it under that name would get a coordinator
+    /// each and read everything, so it is named after the call and the table it references instead.
+    if (const auto * table_function_node = query_info.table_expression ? query_info.table_expression->as<TableFunctionNode>() : nullptr)
+    {
+        if (const auto & referenced_table_id = table_function_node->getReferencedTableID(); !referenced_table_id.empty())
+            return fmt::format("{}({})", table_function_node->getTableFunctionName(), referenced_table_id.getFullTableName());
+    }
+
+    return data.getStorageID().getFullTableName();
+}
+
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
     return is_parallel_reading_from_replicas
@@ -6446,7 +6462,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName());
+        getParallelReplicasStreamId());
 }
 
 bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
@@ -6461,7 +6477,7 @@ bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
         read_task_callback.value(),
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-        data.getStorageID().getFullTableName()};
+        getParallelReplicasStreamId()};
 
     auto get_coordination_mode = [&]
     {

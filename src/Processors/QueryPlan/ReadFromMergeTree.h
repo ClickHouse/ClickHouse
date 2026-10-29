@@ -727,6 +727,9 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// The name this read is coordinated under, which every replica must announce identically.
+    String getParallelReplicasStreamId() const;
+
     /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
