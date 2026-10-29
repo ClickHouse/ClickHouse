@@ -185,9 +185,6 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse/sysroot
-[submodule "contrib/nlp-data"]
-	path = contrib/nlp-data
-	url = https://github.com/ClickHouse/nlp-data
 [submodule "contrib/hive-metastore"]
 	path = contrib/hive-metastore
 	url = https://github.com/ClickHouse/hive-metastore
@@ -480,3 +477,6 @@
 [submodule "contrib/parquet-testing"]
 	path = contrib/parquet-testing
 	url = https://github.com/apache/parquet-testing
+[submodule "contrib/gdeflate"]
+	path = contrib/gdeflate
+	url = https://github.com/NVIDIA/libdeflate.git

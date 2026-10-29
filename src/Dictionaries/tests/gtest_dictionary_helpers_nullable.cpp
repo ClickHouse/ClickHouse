@@ -96,7 +96,7 @@ TEST(DictionaryAttributeColumnProvider, NullableJsonTypeSupported)
 
 TEST(DictionaryAttributeColumnProvider, TypedJsonPathsPreservedForSubcolumns)
 {
-    std::unordered_map<String, DataTypePtr> typed_paths; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    DataTypeObject::TypedPathsMap typed_paths;
     typed_paths.emplace("name", std::make_shared<DataTypeString>());
     typed_paths.emplace("age", std::make_shared<DataTypeUInt32>());
 
