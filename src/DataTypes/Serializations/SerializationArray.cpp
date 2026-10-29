@@ -466,6 +466,58 @@ size_t SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedLimit(
     return last_offset - prev_last_offset;
 }
 
+void SerializationArray::deserializeElementsWithRowRanges(
+    ColumnArray & column_array,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    const RowRanges & row_ranges = *settings.row_ranges;
+
+    /// The sizes of all rows are needed to find the elements of the selected rows.
+    auto all_offsets_column = ColumnArray::ColumnOffsets::create();
+    settings.path.push_back(Substream::ArraySizes);
+    bool has_offsets = deserializeOffsetsBinaryBulk(*all_offsets_column, limit, settings, cache);
+    const auto & all_offsets = all_offsets_column->getData();
+    if (has_offsets && !row_ranges.empty() && all_offsets.size() < row_ranges.back().second)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array sizes: read just {} of {}",
+            all_offsets.size(), row_ranges.back().second);
+
+    RowRanges nested_row_ranges;
+    ColumnArray::Offsets & offset_values = column_array.getOffsets();
+    const size_t prev_num_rows = offset_values.size();
+    if (has_offsets)
+    {
+        nested_row_ranges.reserve(row_ranges.size());
+        for (const auto & [begin, end] : row_ranges)
+        {
+            /// Rows separated only by empty arrays have adjacent elements.
+            if (!nested_row_ranges.empty() && nested_row_ranges.back().second == all_offsets[begin - 1])
+                nested_row_ranges.back().second = all_offsets[end - 1];
+            else if (all_offsets[begin - 1] != all_offsets[end - 1])
+                nested_row_ranges.emplace_back(all_offsets[begin - 1], all_offsets[end - 1]);
+            for (size_t row = begin; row < end; ++row)
+                offset_values.push_back(offset_values.back() + all_offsets[row] - all_offsets[row - 1]);
+        }
+        settings.num_skipped_bytes += (all_offsets.size() - (offset_values.size() - prev_num_rows)) * sizeof(ColumnArray::Offset);
+    }
+
+    size_t nested_limit = all_offsets.back();
+    if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
+
+    settings.path.back() = Substream::ArrayElements;
+    settings.row_ranges = &nested_row_ranges;
+    nested->deserializeBinaryBulkWithMultipleStreams(column_array.getData(), nested_limit, settings, state, cache);
+    settings.row_ranges = &row_ranges;
+    settings.path.pop_back();
+
+    if (column_array.getData().size() != offset_values.back())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+            column_array.getData().size(), offset_values.back());
+}
+
 void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
     size_t limit,
@@ -474,6 +526,12 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
+
+    if (settings.row_ranges)
+    {
+        deserializeElementsWithRowRanges(column_array, limit, settings, state, cache);
+        return;
+    }
 
     settings.path.push_back(Substream::ArraySizes);
     size_t nested_limit = deserializeOffsetsBinaryBulkAndGetNestedLimit(column_array.getOffsetsColumn(), limit, settings, cache);

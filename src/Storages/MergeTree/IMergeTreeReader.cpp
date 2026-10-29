@@ -178,6 +178,11 @@ StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePai
     return it->second;
 }
 
+size_t IMergeTreeReader::readRowsWithFilter(size_t, size_t, bool, size_t, MutableColumns &, Columns &, const UInt8 *)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading with a row filter is not supported by this reader");
+}
+
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;

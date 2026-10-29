@@ -23,6 +23,7 @@ namespace Setting
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool enable_multiple_prewhere_read_steps;
+    extern const SettingsFloat filtered_deserialization_max_ratio;
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
@@ -137,6 +138,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_asynchronous_read_from_pool = settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree]
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
+    result.filtered_deserialization_max_ratio = settings[Setting::filtered_deserialization_max_ratio];
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
     /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of

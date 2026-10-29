@@ -152,11 +152,13 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
         if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumn()))
         {
             /// Data was inserted from cache.
+            settings.num_skipped_bytes += getSizeOfSkippedValues(col.getNullMapColumn(), limit, settings.row_ranges);
         }
         else if (auto * stream = settings.getter(settings.path))
         {
             size_t prev_size = col.getNullMapColumn().size();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+            settings.num_skipped_bytes += SerializationNumber<UInt8>::create()->deserializeBinaryBulkWithRowRanges(
+                col.getNullMapColumn(), *stream, limit, settings.row_ranges, 0);
             size_t n = col.getNullMapColumn().size() - prev_size;
             addColumnWithNumReadRowsToSubstreamsCache(
                 cache, settings.path, col.getNullMapColumn().getPtr(), n);

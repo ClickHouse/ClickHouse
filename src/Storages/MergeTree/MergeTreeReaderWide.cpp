@@ -101,6 +101,28 @@ MergeTreeReaderWide::MergeTreeReaderWide(
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
+
+        /// The columns cache holds whole granules, so the columns read through it are not filtered.
+        if (settings.filtered_deserialization_max_ratio > 0 && !columns_cache_reads_possible && !columns_cache_writes_possible)
+        {
+            columns_read_with_row_filter.resize(columns_to_read.size());
+            for (size_t i = 0; i < columns_to_read.size(); ++i)
+            {
+                /// Only arrays win: the values of other types are as cheap to deserialize as to skip in the decompressed stream.
+                const auto & type = columns_to_read[i].type;
+                columns_read_with_row_filter[i] = !isColumnSkipped(i) && !isColumnFilledAfterReading(i)
+                    && (isArray(type) || isMap(type)) && serializations[i]->supportsRowRanges();
+            }
+
+            /// Columns read from the same storage column share the substreams cache, which holds either filtered or unfiltered rows.
+            NameSet storage_columns_read_without_row_filter;
+            for (size_t i = 0; i < columns_to_read.size(); ++i)
+                if (!columns_read_with_row_filter[i])
+                    storage_columns_read_without_row_filter.insert(columns_to_read[i].getNameInStorage());
+            for (size_t i = 0; i < columns_to_read.size(); ++i)
+                if (storage_columns_read_without_row_filter.contains(columns_to_read[i].getNameInStorage()))
+                    columns_read_with_row_filter[i] = false;
+        }
     }
     catch (...)
     {
@@ -217,6 +239,28 @@ size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns, Columns & shared_columns)
 {
+    return readRowsWithFilter(from_mark, current_range_last_mark, continue_reading, max_rows_to_read, res_columns, shared_columns, nullptr);
+}
+
+size_t MergeTreeReaderWide::readRowsWithFilter(
+    size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
+    MutableColumns & res_columns, Columns & shared_columns, const UInt8 * row_filter)
+{
+    ISerialization::RowRanges row_ranges;
+    if (row_filter)
+    {
+        for (size_t row = 0; row < max_rows_to_read;)
+        {
+            while (row < max_rows_to_read && !row_filter[row])
+                ++row;
+            size_t begin = row;
+            while (row < max_rows_to_read && row_filter[row])
+                ++row;
+            if (begin != row)
+                row_ranges.emplace_back(begin, row);
+        }
+    }
+
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
     {
@@ -238,10 +282,13 @@ size_t MergeTreeReaderWide::readRows(
         {
             /// Read from disk: every column that is in the part, continuing or seeking as asked.
             read_rows = readSegmentFromDisk(from_mark, max_rows_to_read, res_columns, shared_columns,
-                [&](size_t) -> std::optional<bool> { return continue_reading; });
+                [&](size_t) -> std::optional<bool> { return continue_reading; }, nullptr, row_filter ? &row_ranges : nullptr);
         }
         else
         {
+            if (row_filter)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading with a row filter is not supported together with the columns cache");
+
             /// The rows of one contiguous mark range come out of several calls: one per output
             /// block, plus the calls that skip rows within the range. A call with
             /// `continue_reading == false` begins a new range, or re-enters the current one at
@@ -289,8 +336,14 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
     MutableColumns & res_columns,
     Columns & shared_columns,
     const ColumnReadSelector & selector,
-    std::vector<size_t> * sizes_before_reading)
+    std::vector<size_t> * sizes_before_reading,
+    const ISerialization::RowRanges * row_ranges)
 {
+    size_t num_selected_rows = 0;
+    if (row_ranges)
+        for (const auto & [begin, end] : *row_ranges)
+            num_selected_rows += end - begin;
+
     const size_t num_columns = res_columns.size();
     if (sizes_before_reading)
         sizes_before_reading->assign(num_columns, 0);
@@ -334,6 +387,8 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
         if (sizes_before_reading)
             (*sizes_before_reading)[pos] = column_size_before_reading;
 
+        const bool read_with_row_filter = row_ranges && isColumnReadWithRowFilter(pos);
+
         try
         {
             auto & cache = caches[column_to_read.getNameInStorage()];
@@ -347,11 +402,18 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
                 *continue_reading,
                 max_rows_to_read,
                 cache,
-                deserialize_states_cache);
+                deserialize_states_cache,
+                read_with_row_filter ? row_ranges : nullptr);
 
+            /// All streams of a column read with the row filter are present, so it reads all rows.
+            if (read_with_row_filter)
+            {
+                chassert(column->size() - column_size_before_reading == num_selected_rows);
+                read_rows = std::max(read_rows, max_rows_to_read);
+            }
             /// For elements of Nested, column_size_before_reading may be greater than column size
             ///  if offsets are not empty and were already read, but elements are empty.
-            if (!column->empty())
+            else if (!column->empty())
                 read_rows = std::max(read_rows, column->size() - column_size_before_reading);
         }
         catch (Exception & e)
@@ -361,7 +423,7 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
             throw;
         }
 
-        if (column->empty() && max_rows_to_read > 0)
+        if (column->empty() && max_rows_to_read > 0 && !read_with_row_filter)
             res_columns[pos] = nullptr;
     }
 
@@ -1484,9 +1546,11 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t max_rows_to_read,
     ISerialization::SubstreamsCache & cache,
-    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
+    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+    const ISerialization::RowRanges * row_ranges)
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+    deserialize_settings.row_ranges = row_ranges;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
     /// Only the columns whose data files are partly there (see `addStreams`) are refilled by
     /// `IMergeTreeReader::fillMissingColumns`; any other column has to be read in full.
@@ -1562,6 +1626,7 @@ void MergeTreeReaderWide::readData(
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
         column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    bytes_skipped_by_row_filter += deserialize_settings.num_skipped_bytes;
 }
 
 std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeReaderWide::getAllColumnsSubstreams()

@@ -47,6 +47,18 @@ public:
                             bool continue_reading, size_t max_rows_to_read,
                             MutableColumns & res_columns, Columns & shared_columns) = 0;
 
+    /// The same as `readRows`, but the columns with `isColumnReadWithRowFilter` get only the rows with non-zero values
+    /// in `row_filter` (of size `max_rows_to_read`). Returns the number of rows read from the part, like `readRows`.
+    virtual size_t readRowsWithFilter(
+        size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
+        MutableColumns & res_columns, Columns & shared_columns, const UInt8 * row_filter);
+
+    /// Returns the number of bytes the values skipped by `readRowsWithFilter` would take in columns and resets it.
+    size_t takeBytesSkippedByRowFilter() { return std::exchange(bytes_skipped_by_row_filter, 0); }
+
+    bool canReadWithRowFilter() const { return std::ranges::any_of(columns_read_with_row_filter, std::identity{}); }
+    bool isColumnReadWithRowFilter(size_t pos) const { return pos < columns_read_with_row_filter.size() && columns_read_with_row_filter[pos]; }
+
     virtual bool canReadIncompleteGranules() const = 0;
 
     /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
@@ -211,6 +223,10 @@ protected:
     std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
+
+    /// Positions of columns which `readRowsWithFilter` reads filtered. Empty if the reader does not support it.
+    std::vector<bool> columns_read_with_row_filter;
+    size_t bytes_skipped_by_row_filter = 0;
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;

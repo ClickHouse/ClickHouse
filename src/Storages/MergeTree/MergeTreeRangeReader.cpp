@@ -37,6 +37,7 @@ namespace ProfileEvents
 {
     extern const Event RowsReadByMainReader;
     extern const Event RowsReadByPrewhereReaders;
+    extern const Event RowsSkippedByFilteredDeserialization;
 }
 
 namespace DB
@@ -108,30 +109,33 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
     data = desc.data;
 }
 
+static void filterColumn(ColumnPtr & column, const FilterWithCachedCount & filter)
+{
+    if (column->size() != filter.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+            column->size(), filter.size());
+
+    if (canInplaceFilter(column, filter.getColumn()))
+    {
+        /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
+        /// we'll clone them via IColumn::mutate() and then safely filter in-place.
+        auto mutable_column = IColumn::mutate(std::move(column));
+        mutable_column->filter(filter.getData());
+        column = std::move(mutable_column);
+    }
+    else
+    {
+        column = column->filter(filter.getData(), filter.countBytesInFilter());
+    }
+}
+
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
-    const auto & filter_data = filter.getData();
-
     for (auto & column : columns)
     {
         if (column)
         {
-            if (column->size() != filter.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
-                    column->size(), filter.size());
-
-            if (canInplaceFilter(column, filter.getColumn()))
-            {
-                /// The contract is - not to filter in-place if the column is shared. But if there're some shared subcolumns,
-                /// we'll clone them via IColumn::mutate() and then safely filter in-place.
-                auto mutable_column = IColumn::mutate(std::move(column));
-                mutable_column->filter(filter_data);
-                column = std::move(mutable_column);
-            }
-            else
-            {
-                column = column->filter(filter_data, filter.countBytesInFilter());
-            }
+            filterColumn(column, filter);
 
             if (column->empty())
             {
@@ -188,12 +192,14 @@ size_t MergeTreeRangeReader::DelayedStream::position() const
     return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
 
-size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows)
+size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, Columns & shared_columns, size_t num_rows, const UInt8 * filter)
 {
     if (num_rows)
     {
-        size_t rows_read = merge_tree_reader->readRows(
-            current_mark, current_range_last_mark, continue_reading, num_rows, columns, shared_columns);
+        size_t rows_read = filter
+            ? merge_tree_reader->readRowsWithFilter(
+                current_mark, current_range_last_mark, continue_reading, num_rows, columns, shared_columns, filter)
+            : merge_tree_reader->readRows(current_mark, current_range_last_mark, continue_reading, num_rows, columns, shared_columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -256,7 +262,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(MutableColumns & columns, C
         {
             MutableColumns tmp_columns(columns.size());
             Columns tmp_shared_columns(columns.size());
-            readRows(tmp_columns, tmp_shared_columns, current_offset);
+            readRows(tmp_columns, tmp_shared_columns, current_offset, nullptr);
         }
     }
 
@@ -264,7 +270,10 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(MutableColumns & columns, C
     current_offset += num_delayed_rows;
     num_delayed_rows = 0;
 
-    return readRows(columns, shared_columns, rows_to_read);
+    size_t rows_read = readRows(columns, shared_columns, rows_to_read, row_filter);
+    if (row_filter)
+        row_filter += rows_to_read;
+    return rows_read;
 }
 
 
@@ -1568,6 +1577,11 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     MutableColumns read_columns(merge_tree_reader->numColumnsInResult());
     Columns shared_columns(read_columns.size());
 
+    /// The rows are read in the order of the final filter, which has the size of `total_rows_per_granule`.
+    const bool read_with_filter = canReadWithFilter(result);
+    if (read_with_filter)
+        stream.stream.row_filter = result.final_filter.getData().data();
+
     const auto & rows_per_granule = result.rows_per_granule;
     const auto & started_ranges = result.started_ranges;
 
@@ -1582,7 +1596,9 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
             num_rows += stream.finalize(read_columns, shared_columns);
             const auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
+            const UInt8 * row_filter = stream.stream.row_filter;
             stream = Stream(range.begin, range.end, merge_tree_reader);
+            stream.stream.row_filter = row_filter;
         }
 
         /// If it's not the last granule, skip remaining (filtered-out) rows to align to the next mark.
@@ -1595,6 +1611,8 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     /// so we must skip an exact number of rows instead of jumping to the next mark.
     stream.skip(result.num_rows_to_skip_in_last_granule);
     num_rows += stream.finalize(read_columns, shared_columns);
+    chassert(!read_with_filter || stream.stream.row_filter == result.final_filter.getData().data() + result.total_rows_per_granule);
+    stream.stream.row_filter = nullptr;
 
     /// num_rows may be zero if current step only contains virtual columns to read.
     if (num_rows == 0)
@@ -1616,9 +1634,40 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     fillVirtualColumns(columns, result);
 
     updatePerformanceCounters(num_rows);
-    result.addNumBytesRead(getTotalBytesInColumns(columns));
+
+    if (read_with_filter)
+    {
+        /// Count the bytes of all rows: the skipped rows were decompressed, and the limits on read bytes must not change.
+        result.addNumBytesRead(getTotalBytesInColumns(columns) + merge_tree_reader->takeBytesSkippedByRowFilter());
+
+        /// Filter the columns which were read without the filter and the virtual columns.
+        for (size_t pos = 0; pos < columns.size(); ++pos)
+            if (columns[pos] && !merge_tree_reader->isColumnReadWithRowFilter(pos))
+                filterColumn(columns[pos], result.final_filter);
+        ProfileEvents::increment(ProfileEvents::RowsSkippedByFilteredDeserialization, num_rows - result.num_rows);
+        num_rows = result.num_rows;
+    }
+    else
+    {
+        result.addNumBytesRead(getTotalBytesInColumns(columns));
+    }
 
     return columns;
+}
+
+bool MergeTreeRangeReader::canReadWithFilter(const ReadResult & result) const
+{
+    const auto max_ratio = static_cast<double>(merge_tree_reader->getMergeTreeReaderSettings().filtered_deserialization_max_ratio);
+    return max_ratio > 0
+        && merge_tree_reader->canReadWithRowFilter()
+        /// The filter was applied to the columns of the previous steps.
+        && result.final_filter.present()
+        && result.num_rows != result.total_rows_per_granule
+        && static_cast<double>(result.num_rows) <= max_ratio * static_cast<double>(result.total_rows_per_granule)
+        /// Partially read columns can be filtered only after `fillMissingColumns`.
+        && merge_tree_reader->getPartiallyReadColumns().empty()
+        /// Vector search fills a filter by the offsets of all rows.
+        && !merge_tree_reader->getReadHints().vector_search_results.has_value();
 }
 
 void MergeTreeRangeReader::updatePerformanceCounters(size_t num_rows_read)

@@ -21,6 +21,12 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
     static SerializationPtr create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
     size_t allocatedBytes() const override;
+    /// Not for the sizes of arrays: they are cached for all rows when the array is read with `row_ranges`.
+    bool supportsRowRanges() const override
+    {
+        return (substream_type == SubstreamType::TupleElement || substream_type == SubstreamType::NamedNullMap)
+            && nested_serialization->supportsRowRanges();
+    }
 
     const String & getElementName() const { return name; }
 

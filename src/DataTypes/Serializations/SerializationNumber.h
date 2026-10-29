@@ -43,6 +43,7 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const final;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const final;
+    bool supportsRowRanges() const override { return true; }
 
     /// Bulk (de)serialization straight from/into a raw value container. Reused by the IColumn
     /// overloads above and by callers that keep the values outside a ColumnVector - for example the
