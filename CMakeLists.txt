@@ -455,6 +455,12 @@ if (NOT OS_DARWIN AND NOT (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "a
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstrict-flex-arrays=3")
 endif ()
 
+# Trap on an array index that is outside the bounds of an array whose size is known at compile time. Not in
+# sanitizer, fuzzer and Emscripten builds.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fsanitize=array-bounds -fsanitize-trap=array-bounds")
+endif ()
+
 # Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
 # to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
 # llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
