@@ -33,6 +33,10 @@ struct IWindowStrategy : IImplementationStrategy
 {
     virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
 };
+struct IDistinctStrategy : IImplementationStrategy
+{
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+};
 
 /// --- Join strategies ---
 
@@ -81,6 +85,23 @@ struct PartialAggregationStrategy final : IAggregationStrategy
 struct WindowStrategy final : IWindowStrategy
 {
     String getName() const override { return "Window"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
+};
+
+/// --- Final DISTINCT strategies ---
+
+/// The whole input on one node.
+struct LocalDistinctStrategy final : IDistinctStrategy
+{
+    String getName() const override { return "LocalDistinct"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
+};
+
+/// The input split among the nodes by the `DISTINCT` columns (or some of them), so equal rows are
+/// on the same node and each node deduplicates its own share.
+struct ShuffleDistinctStrategy final : IDistinctStrategy
+{
+    String getName() const override { return "ShuffleDistinct"; }
     Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 

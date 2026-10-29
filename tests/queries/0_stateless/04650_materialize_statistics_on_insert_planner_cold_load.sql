@@ -11,7 +11,6 @@
 -- the measured queries below are the first ones to read the statistics of these tables.
 
 SET allow_statistics = 1;
-SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET async_insert = 0;
 -- Pinned to the shipped defaults, which `clickhouse-test` otherwise randomizes.
