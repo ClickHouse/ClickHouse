@@ -137,6 +137,28 @@ bool dependsOnServerTimeZone(const FunctionNode & function_node)
         && arguments.size() < 3;
 }
 
+/// The children of the node to traverse. The arguments of a table function listed in `getUnresolvedArgumentIndexes`,
+/// like the query of `view` or the arguments of a parameterized view, are skipped: they are deliberately left
+/// unresolved, so they have no result type, the same as in `InDepthQueryTreeVisitorWithContext`.
+QueryTreeNodes getChildrenToVisit(const QueryTreeNodePtr & node)
+{
+    QueryTreeNodes result;
+    if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        const auto & unresolved_indexes = table_function_node->getUnresolvedArgumentIndexes();
+        const auto & arguments = table_function_node->getArguments().getNodes();
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (arguments[i] && std::ranges::find(unresolved_indexes, i) == unresolved_indexes.end())
+                result.push_back(arguments[i]);
+        return result;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            result.push_back(child);
+    return result;
+}
+
 /// Whether the subtree contains a function whose result or effect depends on the rows it is evaluated on:
 /// a stateful function, like `rowNumberInAllBlocks` or `runningDifference`, a function that is not deterministic
 /// in the scope of the query, like `blockSize`, or a function with observable side effects, like `sleepEachRow`.
@@ -157,9 +179,8 @@ bool hasRowSensitiveFunction(const QueryTreeNodePtr & node)
                 return true;
         }
 
-        for (const auto & child : current->getChildren())
-            if (child)
-                nodes_to_visit.push_back(child);
+        for (auto & child : getChildrenToVisit(current))
+            nodes_to_visit.push_back(std::move(child));
     }
     return false;
 }
@@ -348,9 +369,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
             continue;
         }
 
-        for (const auto & child : current->getChildren())
-            if (child)
-                nodes_to_visit.push_back({child, inside_subquery, check_server_dependent});
+        for (auto & child : getChildrenToVisit(current))
+            nodes_to_visit.push_back({std::move(child), inside_subquery, check_server_dependent});
     }
 
     return verdict;
