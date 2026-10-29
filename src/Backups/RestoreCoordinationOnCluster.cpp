@@ -421,7 +421,7 @@ void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_
                 return;
             }
 
-            zkutil::KeeperException::fromPath(res, path);
+            throw zkutil::KeeperException::fromPath(res, path);
         });
 }
 
