@@ -37,15 +37,60 @@ InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Contex
 void InterpreterRenameQuery::resolveHierarchicalNames(ASTRenameQuery & rename, bool is_on_cluster) const
 {
     auto & catalog = DatabaseCatalog::instance();
-    String current_database = getContext()->getCurrentDatabase();
+    auto context = getContext();
+    String current_database = context->getCurrentDatabase();
+
+    /// The elements are executed one after another, so a later element sees the tables moved by the earlier ones:
+    /// in `RENAME TABLE a.x TO a.b.t, a.b.t TO a.z` the second source is the table the first element creates, not
+    /// an existing table `b.t` of the database `a`. The names that the earlier elements removed (false) and created
+    /// (true), the latest last.
+    std::vector<std::pair<StorageID, bool>> renamed;
+    auto renamed_state = [&](const StorageID & table_id) -> std::optional<bool>
+    {
+        for (auto it = renamed.rbegin(); it != renamed.rend(); ++it)
+            if (it->first.database_name == table_id.database_name && it->first.table_name == table_id.table_name)
+                return it->second;
+        return {};
+    };
+    auto table_exists = [&](const StorageID & table_id)
+    {
+        if (auto state = renamed_state(table_id))
+            return *state;
+        if (table_id.database_name.empty() || table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            return false;
+        auto database = catalog.tryGetDatabase(table_id.database_name);
+        return database && database->isTableExist(table_id.table_name, context);
+    };
 
     for (auto & elem : rename.getElements())
     {
         /// The source is the existing table the name refers to.
         StorageID from_as_written(elem.from.database ? elem.from.getDatabase() : "", elem.from.getTable());
-        StorageID from = catalog.resolveHierarchicalName(from_as_written, getContext());
+        StorageID from = catalog.resolveHierarchicalName(from_as_written, context);
+        if (!renamed.empty() && !DatabaseCatalog::isBoundHierarchicalName(from_as_written, context))
+        {
+            /// The candidates in the order `resolveHierarchicalName` tries them: the name as written first.
+            std::vector<StorageID> candidates{StorageID(from_as_written.database_name.empty() ? current_database : from_as_written.database_name, from_as_written.table_name)};
+            for (auto & candidate : DatabaseCatalog::getHierarchicalNameCandidates(from_as_written, current_database))
+                candidates.push_back(std::move(candidate));
+
+            for (const auto & candidate : candidates)
+            {
+                if (table_exists(candidate))
+                {
+                    from = StorageID(candidate.database_name, candidate.table_name);
+                    break;
+                }
+            }
+        }
         if (from.database_name != (elem.from.database ? elem.from.getDatabase() : current_database) || from.table_name != from_as_written.table_name)
             rename.setTableNames(elem.from, from.database_name, from.table_name);
+
+        /// `RENAME TABLE IF EXISTS` of an absent table does nothing, so its destination is not placed: it may be in a
+        /// database that does not exist. (On a cluster, the placement does not throw, and the table may exist on the
+        /// other hosts.)
+        if (elem.if_exists && !is_on_cluster && !table_exists(StorageID(from.database_name, from.table_name)))
+            continue;
 
         /// The destination is placed the same way as a created table. On a cluster, the database may exist on the other
         /// hosts only: then the name is shipped as written, and every host resolves it against its own catalog.
@@ -53,13 +98,22 @@ void InterpreterRenameQuery::resolveHierarchicalNames(ASTRenameQuery & rename, b
         StorageID to_as_written(elem.to.database ? elem.to.getDatabase() : "", elem.to.getTable());
         std::optional<StorageID> to;
         if (rename.exchange)
-            to = catalog.resolveHierarchicalName(to_as_written, getContext());
+            to = catalog.resolveHierarchicalName(to_as_written, context);
         else if (is_on_cluster)
-            to = catalog.tryResolveHierarchicalNameForCreation(to_as_written, getContext());
+            to = catalog.tryResolveHierarchicalNameForCreation(to_as_written, context);
         else
-            to = catalog.resolveHierarchicalNameForCreation(to_as_written, getContext());
+            to = catalog.resolveHierarchicalNameForCreation(to_as_written, context);
         if (to && (to->database_name != (elem.to.database ? elem.to.getDatabase() : current_database) || to->table_name != to_as_written.table_name))
             rename.setTableNames(elem.to, to->database_name, to->table_name);
+
+        if (!rename.exchange)
+        {
+            renamed.emplace_back(StorageID(from.database_name, from.table_name), false);
+            if (to)
+                renamed.emplace_back(StorageID(to->database_name, to->table_name), true);
+            else
+                renamed.emplace_back(StorageID(to_as_written.database_name.empty() ? current_database : to_as_written.database_name, to_as_written.table_name), true);
+        }
     }
 }
 
