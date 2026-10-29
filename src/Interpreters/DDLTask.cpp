@@ -167,7 +167,7 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         /// through the `DDL` settings packet when they are already stripped from the queued query.
         std::erase_if(*settings, [](const SettingChange & change)
         {
-            return ClusterProxy::isInitiatorOnlySettingName(change.name);
+            return ClusterProxy::isInitiatorOnlyDDLSettingName(change.name);
         });
 
         /// The initiator has already parsed and normalized the query to the `ClickHouse` dialect. Forwarding
