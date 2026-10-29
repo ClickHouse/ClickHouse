@@ -443,6 +443,12 @@ if (NOT OS_DARWIN AND NOT OS_SUNOS AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
 endif ()
 
+# Trap when a value-returning C++ function reaches its end without a `return`. Not in sanitizer and fuzzer builds (the
+# UBSan ones report it), nor with Emscripten, which links its UBSan runtime for any UBSan check.
+if (NOT SANITIZE AND NOT ENABLE_FUZZING AND NOT OS_WASM)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=return -fsanitize-trap=return")
+endif ()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
