@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Implied by `startup_scripts`: the log tables, and so the union tables, are prepared during startup. -->
+    <prepare_system_log_tables_on_startup>1</prepare_system_log_tables_on_startup>
+</clickhouse>

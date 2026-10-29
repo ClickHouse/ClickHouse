@@ -1,5 +1,4 @@
 set enable_named_columns_in_function_tuple = 1;
-set enable_analyzer = 1;
 
 drop table if exists x;
 create table x (i int, j int) engine MergeTree order by i;

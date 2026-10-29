@@ -2536,6 +2536,10 @@
     "source": "/cloud/security/jwt-authentication-setup"
   },
   {
+    "destination": "/products/cloud/guides/security/cloud-access-management/jwt-authentication-entra-id",
+    "source": "/cloud/security/jwt-authentication-entra-id"
+  },
+  {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
     "source": "/cloud/security/scim-setup"
   },

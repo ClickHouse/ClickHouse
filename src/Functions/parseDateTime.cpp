@@ -950,6 +950,20 @@ namespace
                 return cur;
             }
 
+            [[nodiscard]]
+            static PosOrError readDayOfMonthNumber(Pos cur, Pos end, const String & fragment, Int32 & day_of_month)
+            {
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "two digits are expected for day of month", fragment))
+                if (cur[0] < '0' || cur[0] > '9' || cur[1] < '0' || cur[1] > '9') [[unlikely]]
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because two digits are expected for day of month",
+                        fragment,
+                        std::string_view(cur, end - cur))
+
+                return readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day_of_month);
+            }
+
             template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
             static PosOrError readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
@@ -1138,7 +1152,7 @@ namespace
             static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_month = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day_of_month))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
@@ -1154,7 +1168,7 @@ namespace
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
 
                 Int32 day = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
 
@@ -1206,7 +1220,7 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
