@@ -1373,6 +1373,11 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
+bool MergeTreeData::producesMergeableState(const ContextPtr & query_context) const
+{
+    return query_context->canUseParallelReplicasOnInitiator();
+}
+
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
 {
     if (expr.hasArrayJoin())
