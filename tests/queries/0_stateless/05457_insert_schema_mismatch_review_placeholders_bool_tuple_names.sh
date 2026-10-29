@@ -42,3 +42,12 @@ echo "-- A skipped unnamed column in CSVWithNamesAndTypes"
 run CSVWithNamesAndTypes 'x UInt8, n UInt8' ',x,n\nString,UInt8,UInt8\nignored,1,1.5\n' --input_format_skip_unknown_fields 1 | check
 run CSVWithNamesAndTypes 'x UInt8, n UInt8' ',x,n\nString,UInt8,UInt8\nignored,1,1\n' --input_format_skip_unknown_fields 1
 run CSVWithNamesAndTypes 'x UInt8, n UInt8' ',x,n\nString,String,UInt8\nignored,1,1.5\n' --input_format_skip_unknown_fields 1 | check
+
+echo "-- A streamed TSV capture ending at an escaped line break"
+escaped() {
+    { printf "$1"'\t'; for _ in $(seq 1 16); do printf '\\\n%.0s' $(seq 1 65536); done; printf '\t1\n'; } \
+        | $CLICKHOUSE_LOCAL --input_format_parallel_parsing 0 --input_format_tsv_detect_header 0 \
+            --query "CREATE TABLE t (n UInt8, s String, k UInt8) ENGINE = Memory; INSERT INTO t FORMAT TSV" 2>&1 && echo "inserted"
+}
+escaped 1.5 | check
+escaped 100

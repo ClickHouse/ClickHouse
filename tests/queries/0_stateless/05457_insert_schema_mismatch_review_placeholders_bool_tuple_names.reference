@@ -21,3 +21,7 @@ explanation missing
 inserted
 (INCORRECT_DATA)
 explanation present
+-- A streamed TSV capture ending at an escaped line break
+(CANNOT_PARSE_INPUT_ASSERTION_FAILED)
+explanation missing
+inserted
