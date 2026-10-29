@@ -164,6 +164,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -12267,6 +12268,11 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
     if (!isEmpty())
     {
+        /// The rollback of a cancelled merge or mutation must not be interrupted by its own cancellation:
+        /// otherwise reading the version metadata in `setAndStoreCreationCSN` may throw, and the rolled back part
+        /// stays without `RolledBackCSN`, which prevents merges of the neighbouring parts until the part is removed.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
         for (const auto & part : precommitted_parts)
             part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 
