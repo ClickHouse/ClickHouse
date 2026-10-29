@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/QueryRunnerSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -55,5 +56,7 @@ bool QueryRunnerSettings::hasBuiltin(std::string_view name)
 {
     return QueryRunnerSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(QueryRunnerSettings)
 
 }

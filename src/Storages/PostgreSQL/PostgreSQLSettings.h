@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -44,8 +45,11 @@ struct PostgreSQLSettings
     /// historical behaviour where the pool parameters were taken from the query context; an explicit
     /// SETTINGS clause (applied afterwards) overrides them.
     void loadFromQueryContext(const Context & context);
+    /// Whether `loadFromQueryContext` takes the setting from the query context.
+    static bool isLoadedFromQueryContext(std::string_view name);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

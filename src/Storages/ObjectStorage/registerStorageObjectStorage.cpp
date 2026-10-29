@@ -48,6 +48,25 @@ namespace DataLakeStorageSetting
 namespace
 {
 
+/// The deprecated catalog settings of `DataLakeStorageSettings`, which a data lake table rejects ("Don't use deprecated
+/// settings", `DataLakeConfiguration::getCatalog`).
+[[maybe_unused]] bool isDeprecatedDataLakeCatalogSetting(std::string_view name)
+{
+    return name == "storage_catalog_type" || name == "storage_catalog_url" || name == "storage_aws_access_key_id";
+}
+
+/// The Iceberg compaction settings of `DataLakeStorageSettings`, which an Iceberg table that does not state them takes
+/// from the query settings of the same names, as their descriptions say.
+[[maybe_unused]] bool isIcebergSettingTakenFromQuery(std::string_view name)
+{
+    return name == "allow_experimental_iceberg_compaction" || name == "allow_experimental_cleanup_old_data_files_compaction"
+        || name == "iceberg_compaction_delay_bias" || name == "iceberg_compaction_data_cleanup"
+        || name == "iceberg_compaction_commit_batch_size" || name == "iceberg_compaction_max_rows_in_data_file"
+        || name == "iceberg_compaction_max_bytes_in_data_file" || name == "iceberg_max_number_datafiles_to_compact"
+        || name == "iceberg_data_file_size_lower_threshold_compaction"
+        || name == "iceberg_data_file_size_upper_threshold_compaction";
+}
+
 // LocalObjectStorage is only supported for Iceberg Datalake operations where Avro format is required. For regular file access, use FileStorage instead.
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
@@ -187,6 +206,7 @@ static void registerStorageAzure(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::AZURE,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<StorageObjectStorageSettings>,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -812,6 +832,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::S3,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<StorageObjectStorageSettings>,
     },
     Documentation{
         .description = description,
@@ -857,6 +878,7 @@ static void registerStorageHDFS(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<StorageObjectStorageSettings>,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -1194,6 +1216,8 @@ void registerStorageIceberg(StorageFactory & factory)
             /// This source access type is probably a bug which was overlooked and we do not know how to fix it simply, so we keep it as it is.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1656,6 +1680,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
@@ -1696,6 +1722,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
@@ -1718,6 +1746,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
@@ -1757,6 +1787,8 @@ ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, ic
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
+            .is_inherited_setting_fn = isIcebergSettingTakenFromQuery,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored on the local filesystem.",
@@ -1845,6 +1877,7 @@ void registerStoragePaimon(StorageFactory & factory)
             /// access-type resolution.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -2225,6 +2258,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Amazon S3 or S3-compatible object storage. "
@@ -2273,6 +2307,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Microsoft Azure Blob Storage. "
@@ -2299,6 +2334,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in HDFS. "
@@ -2346,6 +2382,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored on the local filesystem. "
@@ -2403,6 +2440,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -2584,6 +2622,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides an integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage, supporting both reads and writes.",
@@ -2623,6 +2662,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides an integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage, supporting both reads and writes (writes from version 26.9).",
@@ -2660,7 +2700,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<DataLakeStorageSettings, isDeprecatedDataLakeCatalogSetting>,
         },
         Documentation{
             .description = "Provides an integration with Delta Lake tables stored on the local filesystem. Reads work out of the box; with `allow_delta_lake_create_table = 1` a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` creates a new table (writing the initial commit), and `INSERT` requires `allow_delta_lake_writes = 1`.",

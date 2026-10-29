@@ -14,6 +14,7 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/StringUtils.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
@@ -351,6 +352,13 @@ std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(c
     return it->second.features.source_access_type;
 }
 
+
+bool StorageFactory::isInheritedSetting(const StorageFeatures & features, std::string_view name)
+{
+    /// The check for format settings is by name, for every engine: an engine setting of its own named like a format
+    /// setting would be taken for one.
+    return isFormatFactorySetting(name) || (features.is_inherited_setting_fn && features.is_inherited_setting_fn(name));
+}
 
 const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const String & storage_name) const
 {

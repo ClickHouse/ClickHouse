@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -31,6 +32,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
@@ -46,6 +48,8 @@
 
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
+
+#include <algorithm>
 
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
@@ -106,6 +110,73 @@ namespace ErrorCodes
 /// An absolute upper bound on `kafka_num_consumers`, enforced regardless of `kafka_disable_num_consumers_limit`.
 /// A single consumer can read any number of partitions, so no realistic setup ever needs this many.
 static constexpr UInt64 MAX_KAFKA_NUM_CONSUMERS = 10000;
+
+/// The settings a `Kafka` table takes from elsewhere unless its definition states them: the block size, poll and flush
+/// settings from the server's `max_insert_block_size`, `max_block_size`, `stream_poll_timeout_ms` and
+/// `stream_flush_interval_ms`; the client's security and compression settings from the `kafka` section of the server
+/// configuration (`KafkaConfigLoader`).
+static bool isKafkaSettingTakenFromElsewhere(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "kafka_max_block_size", "kafka_poll_max_batch_size", "kafka_poll_timeout_ms", "kafka_flush_interval_ms",
+        "kafka_security_protocol", "kafka_sasl_mechanism", "kafka_sasl_username", "kafka_sasl_password",
+        "kafka_compression_codec", "kafka_compression_level"};
+    return std::ranges::find(names, name) != std::end(names);
+}
+
+/// The settings a `Kafka` table can give as engine arguments instead of in `SETTINGS`: the argument's position
+/// (the 5th, the row delimiter, is obsolete), the setting, how the creator evaluates the argument (0 = as it is,
+/// 1 = as a constant expression, 2 = as a constant expression or an identifier) and the setting's type.
+#define APPLY_FOR_KAFKA_POSITIONAL_ARGUMENTS(M) \
+    M(1, kafka_broker_list, 0, String) \
+    M(2, kafka_topic_list, 1, String) \
+    M(3, kafka_group_name, 2, String) \
+    M(4, kafka_format, 2, String) \
+    M(6, kafka_schema, 2, String) \
+    M(7, kafka_num_consumers, 0, UInt64) \
+    M(8, kafka_max_block_size, 0, UInt64) \
+    M(9, kafka_skip_broken_messages, 0, UInt64) \
+    M(10, kafka_commit_every_batch, 0, bool) \
+    M(11, kafka_client_id, 2, String) \
+    M(12, kafka_poll_timeout_ms, 0, UInt64) \
+    M(13, kafka_flush_interval_ms, 0, UInt64) \
+    M(14, kafka_thread_per_consumer, 0, bool) \
+    M(15, kafka_handle_error_mode, 0, String) \
+    M(16, kafka_commit_on_select, 0, bool) \
+    M(17, kafka_max_rows_per_message, 0, UInt64)
+
+/// The settings a `Kafka` table's engine arguments give. The creator replaces each argument with the literal it
+/// evaluates to, so a stored definition holds literals; an argument that is not one, such as a named collection or
+/// its overrides, gives nothing here.
+static SettingsChanges kafkaSettingsFromEngineArguments(const ASTs & engine_args)
+{
+    static constexpr std::pair<size_t, std::string_view> positions[] = {
+#define KAFKA_POSITIONAL_ARGUMENT_NAME(ARG_NUM, PAR_NAME, EVAL, TYPE) {ARG_NUM, #PAR_NAME},
+        APPLY_FOR_KAFKA_POSITIONAL_ARGUMENTS(KAFKA_POSITIONAL_ARGUMENT_NAME)
+#undef KAFKA_POSITIONAL_ARGUMENT_NAME
+    };
+
+    SettingsChanges changes;
+    for (const auto & [position, name] : positions)
+    {
+        if (position > engine_args.size())
+            break;
+        if (const auto * literal = engine_args[position - 1]->as<ASTLiteral>())
+            changes.emplace_back(name, literal->value);
+    }
+    return changes;
+}
+
+/// The settings of a `Kafka` table: the compiled defaults with `changes` applied, the values of the format settings the
+/// engine sets itself when a table does not state them (`createSettingsAdjustments`), and the header detection it always
+/// disables.
+static SettingDescriptions enumerateKafkaSettings(ContextPtr context, const SettingsChanges & changes)
+{
+    auto settings = enumerateCompiledDefaults<KafkaSettings>(context, changes);
+    setStreamingErrorHandlingDefaults(settings, changes, "kafka_skip_broken_messages", /* handle_error_mode_name */ "");
+    setHeaderDetectionDisabled(settings);
+    return settings;
+}
 
 void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
@@ -170,42 +241,15 @@ void registerStorageKafka(StorageFactory & factory)
         (*kafka_settings)[KafkaSetting::PAR_NAME] = checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME); \
     }
 
-        /** Arguments of engine is following:
-          * - Kafka broker list
-          * - List of topics
-          * - Group ID (may be a constant expression with a string result)
-          * - Message format (string)
-          * - Row delimiter
-          * - Schema (optional, if the format supports it)
-          * - Number of consumers
-          * - Max block size for background consumption
-          * - Skip (at least) unreadable messages number
-          * - Do intermediate commits when the batch consumed and handled
-          */
-
-        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+        /// The engine arguments are those of `APPLY_FOR_KAFKA_POSITIONAL_ARGUMENTS`.
         /// In case of named collection we already validated the arguments.
         if (collection_name.empty())
         {
-            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0, UInt64)
-            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0, UInt64)
-            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0, UInt64)
-            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0, bool)
-            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id, 2, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0, UInt64)
-            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0, UInt64)
-            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0, bool)
-            CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0, String)
-            CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0, bool)
-            CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0, UInt64)
+            APPLY_FOR_KAFKA_POSITIONAL_ARGUMENTS(CHECK_KAFKA_STORAGE_ARGUMENT)
         }
 
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
+#undef APPLY_FOR_KAFKA_POSITIONAL_ARGUMENTS
 
         auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
         auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
@@ -379,6 +423,9 @@ void registerStorageKafka(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateKafkaSettings,
+            .is_inherited_setting_fn = isKafkaSettingTakenFromElsewhere,
+            .settings_from_engine_arguments_fn = kafkaSettingsFromEngineArguments,
         },
         Documentation{
             .description = R"DOCS_MD(

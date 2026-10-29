@@ -8,6 +8,7 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Core/FormatFactorySettings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
@@ -1153,6 +1154,8 @@ void registerStorageHive(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
+            /// `Hive` accepts the format settings its settings class declares, but never reads them.
+            .enumerate_engine_settings_fn = enumerateCompiledDefaultsExcept<HiveSettings, isFormatFactorySetting>,
         },
         Documentation{
             .description = R"DOCS_MD(

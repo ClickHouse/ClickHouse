@@ -185,7 +185,17 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         /* keep_data_in_keeper */ false);
 }
 
+/// A queue table that does not state its Keeper path builds it from the server's `s3queue_default_zookeeper_path`
+/// and the table; one that does not state the minimum block sizes for materialized views takes the query settings of
+/// the same names (`StorageObjectStorageQueue::streamToViews`).
+[[maybe_unused]] static bool isQueueSettingTakenFromElsewhere(std::string_view name)
+{
+    return name == "keeper_path" || name == "min_insert_block_size_rows_for_materialized_views"
+        || name == "min_insert_block_size_bytes_for_materialized_views";
+}
+
 #if USE_AWS_S3
+
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
@@ -203,6 +213,8 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<ObjectStorageQueueSettings>,
+            .is_inherited_setting_fn = isQueueSettingTakenFromElsewhere,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -808,6 +820,8 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<ObjectStorageQueueSettings>,
+            .is_inherited_setting_fn = isQueueSettingTakenFromElsewhere,
         },
         Documentation{
             .description = R"DOCS_MD(
