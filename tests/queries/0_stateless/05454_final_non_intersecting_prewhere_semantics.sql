@@ -79,3 +79,16 @@ SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
 SELECT count() FROM t_final_prewhere_shared FINAL WHERE v = 2 AND rand() < 0 AND intDiv(1, rand() % 1) > 0
 SETTINGS short_circuit_function_evaluation = 'force_enable';
 DROP TABLE t_final_prewhere_shared;
+
+SELECT 'Nullable and LowCardinality conditions, with the AND chain of the WHERE split into steps and not';
+DROP TABLE IF EXISTS t_final_prewhere_nullable;
+CREATE TABLE t_final_prewhere_nullable (key UInt64, v Nullable(UInt64), lc LowCardinality(String), s String)
+ENGINE = ReplacingMergeTree ORDER BY key SETTINGS index_granularity = 128;
+INSERT INTO t_final_prewhere_nullable SELECT number, if(number % 3, 7, NULL), toString(number % 2), 'x' FROM numbers(20000);
+OPTIMIZE TABLE t_final_prewhere_nullable FINAL;
+SYSTEM STOP MERGES t_final_prewhere_nullable;
+INSERT INTO t_final_prewhere_nullable SELECT number, 7, '1', 'y' FROM numbers(5000, 300);
+SELECT count() FROM t_final_prewhere_nullable FINAL WHERE v = 7 AND s = 'x' AND lc = '1' SETTINGS query_plan_merge_filters = 0;
+SELECT count() FROM t_final_prewhere_nullable FINAL WHERE v = 7 AND s = 'x' AND lc = '1' SETTINGS query_plan_merge_filters = 1;
+SELECT count() FROM t_final_prewhere_nullable FINAL WHERE v = 7 AND s = 'x' AND lc = '1' SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
+DROP TABLE t_final_prewhere_nullable;

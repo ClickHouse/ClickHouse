@@ -536,11 +536,14 @@ static std::optional<ActionsDAG> makePrefilteredActions(
     if (!remove_filter_column || dag.hasStatefulFunctions())
         return std::nullopt;
 
+    /// Another output with the name of the filter column, e.g. the filter of one atom of a split AND chain that later
+    /// steps also read, needs the value of the conditions anyway, and would clash with the new filter column.
+    if (std::ranges::count_if(dag.getOutputs(), [&](const auto * node) { return node->result_name == filter_column_name; }) != 1)
+        return std::nullopt;
+
     ActionsDAG prefiltered = dag.clone();
     auto & outputs = prefiltered.getOutputs();
     const auto filter_it = std::ranges::find_if(outputs, [&](const auto * node) { return node->result_name == filter_column_name; });
-    if (filter_it == outputs.end())
-        return std::nullopt;
 
     ActionsDAG::NodeRawConstPtrs atoms;
     collectConjunctionAtoms(*filter_it, atoms);

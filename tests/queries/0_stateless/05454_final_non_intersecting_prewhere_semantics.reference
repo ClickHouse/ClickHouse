@@ -18,3 +18,7 @@ The WHERE does not evaluate the conditions again, but keeps their values
 19700	198445150
 19700	198445150
 0
+Nullable and LowCardinality conditions, with the AND chain of the WHERE split into steps and not
+6567
+6567
+6567
