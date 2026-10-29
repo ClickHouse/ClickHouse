@@ -7371,8 +7371,9 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
   * per-group evaluation to per-row; we intentionally keep them in `HAVING`.
   *
   * Gated behind `analyzer_compatibility_allow_non_aggregate_in_having`. Skipped for
-  * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS` and when `group_by_use_nulls`
-  * is in effect.
+  * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS`/`WITH CLUSTER` and when
+  * `group_by_use_nulls` is in effect: filtering input rows before clustering would change
+  * cluster membership.
   */
 void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
 {
@@ -7386,7 +7387,8 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
     if (query_node_typed.isGroupByWithCube()
         || query_node_typed.isGroupByWithRollup()
         || query_node_typed.isGroupByWithTotals()
-        || query_node_typed.isGroupByWithGroupingSets())
+        || query_node_typed.isGroupByWithGroupingSets()
+        || query_node_typed.hasGroupByWithCluster())
         return;
 
     if (scope.group_by_use_nulls)

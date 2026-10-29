@@ -7,7 +7,6 @@
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
-#include <Common/levenshteinDistance.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
@@ -24,6 +23,7 @@
 #include <numbers>
 #include <numeric>
 #include <span>
+#include <string_view>
 #include <unordered_map>
 
 namespace DB
@@ -247,8 +247,8 @@ void readClusterValues(
     }
 
     /// `DateTime64` / `Time64` are `Decimal64`-backed by an `Int64` tick count;
-    /// `WITH CLUSTER d` is interpreted as `d` native ticks for these types, matching
-    /// `now64(6) + 1` adding one microsecond.
+    /// `WITH CLUSTER d` is interpreted as `d` native ticks for these types (one microsecond
+    /// for `DateTime64(6)`), unlike `now64(6) + 1`, which adds one second.
     auto translate_decimal64_backed = [&](const auto & data)
     {
         Int64 min_val = data[0].value;
@@ -489,7 +489,7 @@ Chunk ClusterMergingTransform::generate1D()
             if (!same) continue;
 
             Float64 curr_val = merged_columns[cluster_key_pos]->getFloat64(curr_row);
-            if (max_cluster[prev] + cluster_distance >= curr_val)
+            if (curr_val - max_cluster[prev] <= cluster_distance)
             {
                 mergeAggregateStates(merged_columns, aggregates_mask, prev_row, curr_row);
                 max_cluster[prev] = std::max(max_cluster[prev], curr_val);
@@ -632,23 +632,13 @@ Chunk ClusterMergingTransform::generate1D()
     /// `distance == 0` already merged identical values in Phase A; no cross-bucket pass.
     if (cluster_distance > 0)
     {
+        /// `prev_idx` is the last surviving bucket: every bucket either folds into it and dies,
+        /// or survives and becomes the new `prev_idx`, so the pass stays linear.
+        size_t prev_idx = bucket_order.empty() ? 0 : bucket_order[0];
         for (size_t i = 1; i < bucket_order.size(); ++i)
         {
             size_t curr_idx = bucket_order[i];
             auto & curr = buckets[curr_idx];
-
-            size_t prev_alive_pos = i - 1;
-            while (prev_alive_pos < bucket_order.size() && !buckets[bucket_order[prev_alive_pos]].alive)
-            {
-                if (prev_alive_pos == 0)
-                    break;
-                --prev_alive_pos;
-            }
-
-            if (prev_alive_pos >= bucket_order.size() || !buckets[bucket_order[prev_alive_pos]].alive)
-                continue;
-
-            size_t prev_idx = bucket_order[prev_alive_pos];
             auto & prev = buckets[prev_idx];
 
             bool same_non_cluster = true;
@@ -661,10 +651,9 @@ Chunk ClusterMergingTransform::generate1D()
                 }
             }
 
-            if (!same_non_cluster)
-                continue;
-
-            if (prev.max_cluster_key + cluster_distance >= curr.min_cluster_key)
+            /// Compare the gap rather than `prev.max_cluster_key + cluster_distance`: the sum can
+            /// round up onto `curr.min_cluster_key` and merge keys farther apart than the distance.
+            if (same_non_cluster && curr.min_cluster_key - prev.max_cluster_key <= cluster_distance)
             {
                 /// `bucket_order` is sorted by `bucket_id`, so `prev` holds the smaller keys and
                 /// its accumulator already carries the cluster minimum; fold `curr` into it.
@@ -672,6 +661,8 @@ Chunk ClusterMergingTransform::generate1D()
                 prev.max_cluster_key = std::max(prev.max_cluster_key, curr.max_cluster_key);
                 curr.alive = false;
             }
+            else
+                prev_idx = curr_idx;
         }
     }
 
@@ -736,6 +727,59 @@ struct DisjointSetUnion
         size[a] += size[b];
     }
 };
+
+/// Whether the byte-level Levenshtein distance between `a` and `b` is at most `max_edits`.
+/// Only the diagonal band of width `2 * max_edits + 1` of the dynamic-programming matrix can
+/// hold values within the bound, so a comparison costs `O(min(|a|, |b|) * max_edits)` instead of
+/// `O(|a| * |b|)`, and it stops as soon as a whole row exceeds the bound. `processor` is polled
+/// once per row so that cancelling the query interrupts even a single long comparison.
+bool isWithinEditDistance(std::string_view a, std::string_view b, size_t max_edits, const IProcessor & processor)
+{
+    if (a.size() < b.size())
+        std::swap(a, b);
+    const size_t m = a.size();
+    const size_t n = b.size();
+    if (m - n > max_edits)
+        return false;
+    if (max_edits >= m)
+        return true;
+
+    /// Values above `max_edits` are saturated to `inf`, which marks cells outside the band too.
+    const size_t inf = max_edits + 1;
+    std::vector<size_t> prev(n + 1);
+    std::vector<size_t> curr(n + 1);
+    for (size_t j = 0; j <= n; ++j)
+        prev[j] = std::min(j, inf);
+
+    for (size_t i = 1; i <= m; ++i)
+    {
+        if (processor.isCancelled())
+            return false;
+
+        const size_t lo = i > max_edits ? i - max_edits : 1;
+        const size_t hi = std::min(n, i + max_edits);
+        if (lo > hi)
+            return false;
+
+        curr[lo - 1] = lo == 1 ? std::min(i, inf) : inf;
+        size_t row_min = curr[lo - 1];
+        for (size_t j = lo; j <= hi; ++j)
+        {
+            const size_t substitution = prev[j - 1] + (a[i - 1] != b[j - 1]);
+            const size_t value = std::min({substitution, curr[j - 1] + 1, prev[j] + 1, inf});
+            curr[j] = value;
+            row_min = std::min(row_min, value);
+        }
+        /// The next row reads `prev[hi + 1]`, which lies outside this row's band.
+        if (hi < n)
+            curr[hi + 1] = inf;
+
+        if (row_min > max_edits)
+            return false;
+        std::swap(prev, curr);
+    }
+    return prev[n] <= max_edits;
+}
 
 struct CellState
 {
@@ -930,6 +974,9 @@ Chunk ClusterMergingTransform::generate2D()
     /// final answer; skip cross-cell merging entirely.
     for (size_t ci = 0; d > 0 && ci < cells.size(); ++ci)
     {
+        if (isCancelled())
+            return {};
+
         const auto & A = cells[ci];
         size_t leader_A = A.leader_row_index;
 
@@ -964,6 +1011,10 @@ Chunk ClusterMergingTransform::generate2D()
             bool connected = false;
             for (size_t ra : A.row_indices)
             {
+                /// A dense pair of cells makes this check quadratic in the cell size.
+                if (isCancelled())
+                    return {};
+
                 Float64 ax = x_vals[ra];
                 Float64 ay = y_vals[ra];
                 for (size_t rb : B.row_indices)
@@ -1134,10 +1185,7 @@ Chunk ClusterMergingTransform::generateString()
         if (dsu.find(i) == dsu.find(j))
             return;
 
-        const size_t dist = levenshteinDistance<char>(
-            std::span<const char>(si.data(), si.size()),
-            std::span<const char>(sj.data(), sj.size()));
-        if (dist <= max_edits)
+        if (isWithinEditDistance(si, sj, max_edits, *this))
             dsu.unite(i, j);
     };
 
@@ -1151,8 +1199,12 @@ Chunk ClusterMergingTransform::generateString()
     if (total_rows < QGRAM_THRESHOLD)
     {
         for (size_t i = 0; i < total_rows; ++i)
+        {
+            if (isCancelled())
+                return {};
             for (size_t j = i + 1; j < total_rows; ++j)
                 verify_pair(i, j);
+        }
     }
     else
     {
@@ -1195,6 +1247,9 @@ Chunk ClusterMergingTransform::generateString()
 
         for (size_t i = 0; i < total_rows; ++i)
         {
+            if (isCancelled())
+                return {};
+
             const auto & si = strings[i];
 
             if (si.size() < Q)
