@@ -42,6 +42,13 @@ void WriteBufferFromEncryptedFile::finalFlushBefore()
     /// That's fine because DiskEncrypted allows files without initialization vectors when they're empty.
 }
 
+void WriteBufferFromEncryptedFile::preFinalize()
+{
+    next();
+
+    out->preFinalize();
+}
+
 void WriteBufferFromEncryptedFile::sync()
 {
     /// If buffer has pending data - write it.
