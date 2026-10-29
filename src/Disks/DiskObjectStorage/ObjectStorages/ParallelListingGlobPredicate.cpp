@@ -46,7 +46,19 @@ bool globSelectorSpansPathComponents(const std::string & glob_path)
 
 bool globPathHasRecursiveWildcard(const std::string & glob_path)
 {
-    return glob_path.contains("**");
+    /// Mirror `makeRegexpPatternFromGlobs`: a `*` that follows another `*` is expanded to `[^{}]*`, which
+    /// matches '/'. Its `?` branch does not update the previous character, so stars separated only by
+    /// `?` (e.g. `*?*`, `*??*`) are also recursive.
+    char previous = ' ';
+    for (const char letter : glob_path)
+    {
+        if (letter == '?')
+            continue;
+        if (previous == '*' && letter == '*')
+            return true;
+        previous = letter;
+    }
+    return false;
 }
 
 std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::string & glob_path)

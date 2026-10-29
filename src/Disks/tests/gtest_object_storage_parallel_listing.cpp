@@ -1193,7 +1193,12 @@ TEST(ObjectStorageParallelListing, DetectsAllLegacyRecursiveGlobstarForms)
     EXPECT_TRUE(globPathHasRecursiveWildcard("root/foo**bar/data.csv"));
     EXPECT_TRUE(globPathHasRecursiveWildcard("root/**"));
     EXPECT_TRUE(globPathHasRecursiveWildcard("root/***/data.csv"));
+    /// `?` does not reset the previous character in `makeRegexpPatternFromGlobs`, so these match '/' too.
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/*?*.csv"));
+    EXPECT_TRUE(globPathHasRecursiveWildcard("root/*??*.csv"));
     EXPECT_FALSE(globPathHasRecursiveWildcard("root/*/data.csv"));
+    EXPECT_FALSE(globPathHasRecursiveWildcard("root/*?/*.csv"));
+    EXPECT_FALSE(globPathHasRecursiveWildcard("root/?*?/*.csv"));
 }
 
 TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)

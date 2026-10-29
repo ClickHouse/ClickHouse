@@ -15,8 +15,9 @@ namespace DB
 /// wildcard "**".
 bool globSelectorSpansPathComponents(const std::string & glob_path);
 
-/// Returns true when `glob_path` contains `**`. Legacy glob patterns use `**` forms such as
-/// `path/**.parquet` and `key=**.parquet` for recursive matching. The parallel delimiter walk can only
+/// Returns true when `glob_path` contains `**`, or stars separated only by `?` (e.g. `*?*`), which
+/// `makeRegexpPatternFromGlobs` also expands to a pattern matching '/'. Legacy glob patterns use `**` forms
+/// such as `path/**.parquet` and `key=**.parquet` for recursive matching. The parallel delimiter walk can only
 /// safely prune globs whose wildcards are confined to individual path components, so callers keep every
 /// `**` form on the serial iterator.
 bool globPathHasRecursiveWildcard(const std::string & glob_path);
