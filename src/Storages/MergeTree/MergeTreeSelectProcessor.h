@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
+#include <Storages/MergeTree/MergeTreeSliceInfo.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/Chunk.h>
@@ -18,6 +19,7 @@ struct PrewhereExprInfo;
 
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
+
 
 struct ChunkAndProgress
 {
@@ -182,9 +184,15 @@ public:
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
     /// Enable per-block virtual row generation for read-in-order optimization.
-    /// When set, after each block read, a virtual row carrying the next mark's PK boundary
+    /// When set, after every `block_interval`-th block read, a virtual row carrying the next mark's PK boundary
     /// is emitted so that MergingSortedTransform can reprioritize sources.
-    void setVirtualRowConversions(ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_);
+    void setVirtualRowConversions(
+        ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_, size_t block_interval_);
+
+    /// The pool hands out slices of parts on demand (MergeTreeReadPoolInOrderSliced): tag every chunk with
+    /// its slice and, after asking for the next task, report the one that ended and whether there was
+    /// nothing to read, with an empty chunk (MergeTreeSliceInfo).
+    void enableSlicedReading() { sliced_reading = true; }
 
     void onFinish() const;
 
@@ -242,9 +250,20 @@ private:
     /// Precomputed header with PK column names/types; cloned and filled from index per block.
     Block pk_block_header;
     bool read_in_reverse_order = false;
+    size_t virtual_row_block_interval = 1;
+    size_t blocks_since_virtual_row = 0;
     std::optional<ChunkAndProgress> pending_virtual_row;
 
     ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
+
+    /// See enableSlicedReading.
+    bool sliced_reading = false;
+    /// The query condition cache write of the current task is done.
+    bool current_task_finalized = false;
+
+    void updateQueryConditionCache(const MergeTreeReadTask & finished_task) const;
+    void tagSlice(Chunk & chunk) const;
+    ChunkAndProgress makeSliceMarker(std::optional<MergeTreeSliceTag> ended, bool idle) const;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

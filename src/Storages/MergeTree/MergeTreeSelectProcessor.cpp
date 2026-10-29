@@ -28,6 +28,7 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeSliceInfo.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <boost/functional/hash.hpp>
@@ -292,7 +293,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
                 /// recorded: for a fixed plan and data the threshold only tightens, so a
                 /// granule with no surviving rows has no row that could have reached the
                 /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
-                /// WHERE write path in `updateQueryConditionCache` and the consult in
+                /// WHERE write path in `QueryPlanOptimizations::updateQueryConditionCache` and the consult in
                 /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
                 /// and post-PREWHERE predicate ever reuses it. The consult side salts every
                 /// non-deterministic PREWHERE of a TopK read, so do the same here, also for a
@@ -566,11 +567,12 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
 }
 
 void MergeTreeSelectProcessor::setVirtualRowConversions(
-    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_)
+    ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_, size_t block_interval_)
 {
     virtual_row_conversions = std::move(virtual_row_conversions_);
     pk_block_header = std::move(pk_block_header_);
     read_in_reverse_order = read_in_reverse_order_;
+    virtual_row_block_interval = std::max<size_t>(1, block_interval_);
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
@@ -612,12 +614,80 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     Columns empty_columns;
     empty_columns.reserve(result_header.columns());
     for (size_t i = 0; i < result_header.columns(); ++i)
-        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
-
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn());
     Chunk chunk(std::move(empty_columns), 0);
     auto part_level = data_part_info->getPartInfo().level;
     chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
 
+    return {std::move(chunk), 0, 0, false, {}};
+}
+
+void MergeTreeSelectProcessor::updateQueryConditionCache(const MergeTreeReadTask & finished_task) const
+{
+    /// Update the query condition cache for filters in PREWHERE stage.
+    /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
+    /// could have filtered marks before PREWHERE saw them, to avoid attributing those
+    /// marks to the PREWHERE predicate hash. See Issue #104781.
+    /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
+    /// A row-level security filter is also prepended before PREWHERE, yet this write keys
+    /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
+    /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
+    if (!reader_settings.use_query_condition_cache || !prewhere_info
+        || finished_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
+        || finished_task.appliesMutationsBeforePrewhere()
+        || row_level_filter
+        /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
+        || !finished_task.getInfo().data_part_info->getDataPart())
+        return;
+
+    const auto & data_part_info = finished_task.getInfo().data_part_info;
+    auto write_to_query_condition_cache = [&](UInt64 condition_hash, const String & condition, const MarkRanges & marks)
+    {
+        String part_name = data_part_info->isProjectionPart()
+            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+            : data_part_info->getPartName();
+        Context::getGlobalContextInstance()->getQueryConditionCache()->write(
+            /// QueryConditionCache is a coordinator feature; concrete part present here.
+            data_part_info->getDataPart()->storage.getStorageID().uuid,
+            part_name,
+            condition_hash,
+            condition,
+            marks,
+            data_part_info->getIndexGranularity().getMarksCount(),
+            data_part_info->getIndexGranularity().hasFinalMark());
+    };
+
+    if (prewhere_condition_for_query_condition_cache)
+        write_to_query_condition_cache(
+            prewhere_condition_for_query_condition_cache->first,
+            prewhere_condition_for_query_condition_cache->second,
+            finished_task.getPrewhereUnmatchedMarks());
+
+    /// An empty write would still create an entry.
+    const auto & attribution = prewhere_info->query_condition_cache_attribution;
+    if (attribution && !finished_task.getQueryConditionCacheAttributableMarks().empty())
+        write_to_query_condition_cache(attribution->key, attribution->condition, finished_task.getQueryConditionCacheAttributableMarks());
+}
+
+void MergeTreeSelectProcessor::tagSlice(Chunk & chunk) const
+{
+    auto info = std::make_shared<MergeTreeSliceInfo>();
+    info->slice = task->getSlice();
+    chunk.getChunkInfos().add(std::move(info));
+}
+
+ChunkAndProgress MergeTreeSelectProcessor::makeSliceMarker(std::optional<MergeTreeSliceTag> ended, bool idle) const
+{
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (const auto & column : result_header)
+        empty_columns.push_back(column.type->createColumn());
+
+    Chunk chunk(std::move(empty_columns), 0);
+    auto info = std::make_shared<MergeTreeSliceInfo>();
+    info->ended = ended;
+    info->idle = idle;
+    chunk.getChunkInfos().add(std::move(info));
     return {std::move(chunk), 0, 0, false, {}};
 }
 
@@ -636,51 +706,38 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                /// Update the query condition cache for filters in PREWHERE stage.
-                /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
-                /// could have filtered marks before PREWHERE saw them, to avoid attributing those
-                /// marks to the PREWHERE predicate hash. See Issue #104781.
-                /// On-fly mutations and patch parts filter rows ahead of PREWHERE for the same reason.
-                /// A row-level security filter is also prepended before PREWHERE, yet this write keys
-                /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
-                /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
-                if (reader_settings.use_query_condition_cache && task && prewhere_info
-                    && !task->readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
-                    && !task->appliesMutationsBeforePrewhere()
-                    && !row_level_filter
-                    /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
-                    && task->getInfo().data_part_info->getDataPart())
+                std::optional<MergeTreeSliceTag> ended;
+                if (task && !current_task_finalized)
                 {
-                    const auto & data_part_info = task->getInfo().data_part_info;
-                    auto write_to_query_condition_cache = [&](UInt64 condition_hash, const String & condition, const MarkRanges & marks)
-                    {
-                        String part_name = data_part_info->isProjectionPart()
-                            ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                            : data_part_info->getPartName();
-                        Context::getGlobalContextInstance()->getQueryConditionCache()->write(
-                            /// QueryConditionCache is a coordinator feature; concrete part present here.
-                            data_part_info->getDataPart()->storage.getStorageID().uuid,
-                            part_name,
-                            condition_hash,
-                            condition,
-                            marks,
-                            data_part_info->getIndexGranularity().getMarksCount(),
-                            data_part_info->getIndexGranularity().hasFinalMark());
-                    };
-
-                    if (prewhere_condition_for_query_condition_cache)
-                        write_to_query_condition_cache(
-                            prewhere_condition_for_query_condition_cache->first,
-                            prewhere_condition_for_query_condition_cache->second,
-                            task->getPrewhereUnmatchedMarks());
-
-                    /// An empty write would still create an entry.
-                    const auto & attribution = prewhere_info->query_condition_cache_attribution;
-                    if (attribution && !task->getQueryConditionCacheAttributableMarks().empty())
-                        write_to_query_condition_cache(attribution->key, attribution->condition, task->getQueryConditionCacheAttributableMarks());
+                    current_task_finalized = true;
+                    updateQueryConditionCache(*task);
+                    ended = task->getSlice();
                 }
 
-                task = algorithm->getNewTask(*pool, task.get());
+                auto new_task = algorithm->getNewTask(*pool, task.get());
+
+                if (sliced_reading)
+                {
+                    /// The marker goes after the last chunk of the finished task and before the first chunk
+                    /// of the new one, so the router learns of the end at once; the source never waits for
+                    /// the router to go on reading.
+                    if (new_task)
+                    {
+                        task = std::move(new_task);
+                        current_task_finalized = false;
+                        return makeSliceMarker(ended, /*idle=*/ false);
+                    }
+                    /// Nothing to read right now; the router wakes the source up when there is. The finished
+                    /// task is kept so that its readers can continue the lane.
+                    if (pool->mayHaveMoreTasks())
+                        return makeSliceMarker(ended, /*idle=*/ true);
+                    task = nullptr;
+                }
+                else
+                {
+                    task = std::move(new_task);
+                    current_task_finalized = false;
+                }
             }
 
             if (!task)
@@ -701,16 +758,23 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         }
 
         auto result = readCurrentTask(*task, *algorithm);
+        if (sliced_reading && result.chunk)
+            tagSlice(result.chunk);
 
-        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+        /// Emit a virtual row update after every `virtual_row_block_interval`-th block, carrying the next mark's PK boundary.
         /// This allows MergingSortedTransform to reprioritize sources when:
         /// - PREWHERE filters all rows (merge gets updated position without actual data)
         /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
-        if (virtual_row_conversions && !result.is_finished)
+        if (virtual_row_conversions && !result.is_finished && ++blocks_since_virtual_row >= virtual_row_block_interval)
         {
+            blocks_since_virtual_row = 0;
             auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
             if (vrow.chunk)
+            {
+                if (sliced_reading)
+                    tagSlice(vrow.chunk);
                 pending_virtual_row.emplace(std::move(vrow));
+            }
         }
 
         return result;
