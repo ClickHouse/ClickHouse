@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -888,7 +889,7 @@ static Field coerceStringFieldLikeSearchFunction(
         if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
             return {};
 
-        value.resize(value.find_last_not_of('\0') + 1);
+        value.resize(stripTrailingZeros(value).size());
     }
 
     if (fixed_string_type)
@@ -939,6 +940,13 @@ static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
+    /// Under the zero-padding rule one logical value has several stored encodings in a
+    /// variable-length `String` element ('V0', 'V0\0', 'V0\0\0'), and the filter holds one hash per
+    /// stored value, so no single probe finds them all. Decline the index and let the function
+    /// scan. A `FixedString(N)` element stores exactly one encoding per value, so it stays exact.
+    if (isString(actual_type) && zeroPaddedStringComparison(nested_type, value_type))
+        return {};
+
     if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type))
         return std::move(*enum_value);
 
@@ -962,6 +970,13 @@ static ColumnPtr createColumnFromConstantArray(
     if (value_type)
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
             element_type = value_array_type->getNestedType();
+
+    /// Under the zero-padding rule one logical value has several stored encodings in a
+    /// variable-length `String` ('V0', 'V0\0', 'V0\0\0'), and the filter holds one hash per stored
+    /// value, so no single probe finds them all. Decline the index and let the function scan. A
+    /// `FixedString(N)` stores exactly one encoding per value, so its index stays exact.
+    if (isString(actual_type) && zeroPaddedStringComparison(element_type, actual_type))
+        return nullptr;
 
     const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();

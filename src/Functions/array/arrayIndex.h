@@ -14,6 +14,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
@@ -22,6 +24,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/AccurateComparison.h>
@@ -86,6 +89,56 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+
+/// Field-level equality honouring the zero-padding rule, since Field has no FixedString type.
+/// Recurses into Tuple so inner FixedStrings are handled correctly.
+inline bool fieldsEqual(
+    const Field & left, const Field & right, const DataTypePtr & left_type, const DataTypePtr & right_type, bool zero_padded)
+{
+    if (!zero_padded)
+        return accurateEquals(left, right);
+
+    if (left.getType() == Field::Types::String && right.getType() == Field::Types::String)
+        return stripTrailingZeros(left.safeGet<String>()) == stripTrailingZeros(right.safeGet<String>());
+
+    auto left_decayed = removeLowCardinalityAndNullable(left_type);
+    auto right_decayed = removeLowCardinalityAndNullable(right_type);
+
+    const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_decayed.get());
+    const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_decayed.get());
+
+    if (left_tuple_type && right_tuple_type && left.getType() == Field::Types::Tuple
+        && right.getType() == Field::Types::Tuple)
+    {
+        const auto & left_tuple = left.safeGet<Tuple>();
+        const auto & right_tuple = right.safeGet<Tuple>();
+        const auto & left_elements = left_tuple_type->getElements();
+        const auto & right_elements = right_tuple_type->getElements();
+
+        if (left_tuple.size() != right_tuple.size())
+            return false;
+
+        chassert(left_elements.size() == left_tuple.size());
+        chassert(right_elements.size() == right_tuple.size());
+
+        for (size_t i = 0; i < left_tuple.size(); ++i)
+            if (!fieldsEqual(
+                    left_tuple[i],
+                    right_tuple[i],
+                    left_elements[i],
+                    right_elements[i],
+                    zeroPaddedStringComparison(left_elements[i], right_elements[i])))
+                return false;
+
+        return true;
+    }
+
+    /// No `Array` or `Map` case: `zeroPaddedStringComparison` does not apply the rule to their
+    /// elements, because `equals` does not either. `accurateEquals` below compares them exactly,
+    /// which is what `equals` does for those types.
+    return accurateEquals(left, right);
+}
+
 template <typename T>
 concept ArrayIndexNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
 
@@ -322,12 +375,13 @@ public:
         return current;
     }
 
-    static ResultType linearSearchConst(const Array & arr, const Field & value)
+    static ResultType linearSearchConst(
+        const Array & arr, const Field & value, const DataTypePtr & element_type, const DataTypePtr & value_type, bool zero_padded)
     {
         ResultType current = 0;
         for (size_t i = 0, size = arr.size(); i < size; ++i)
         {
-            if (!accurateEquals(arr[i], value))
+            if (!fieldsEqual(arr[i], value, element_type, value_type, zero_padded))
                 continue;
 
             ConcreteAction::apply(current, i);
@@ -731,8 +785,8 @@ private:
 
     static bool allowArguments(const DataTypePtr & inner_type, const DataTypePtr & arg)
     {
-        auto inner_type_decayed = removeNullable(removeLowCardinality(inner_type));
-        auto arg_decayed = removeNullable(removeLowCardinality(arg));
+        auto inner_type_decayed = removeLowCardinalityAndNullable(inner_type);
+        auto arg_decayed = removeLowCardinalityAndNullable(arg);
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
@@ -1150,6 +1204,14 @@ private:
             && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
             return nullptr;
 
+        /// `dictionaryIndexForConstant` is not padding-aware: it strips the needle's padding, then
+        /// matches one dictionary slot byte-exactly, which cannot cover a value with different padding.
+        /// Only bail for a `String` dictionary: a `FixedString(N)` has one consistent padded version, and
+        /// narrowing an over-wide constant to it raises `TOO_LARGE_STRING_SIZE`, which stays reachable.
+        /// TODO: keep the index comparison by collecting every matching dictionary entry.
+        if (zeroPaddedComparison(arguments) && isString(removeLowCardinalityAndNullable(array_type.getNestedType())))
+            return nullptr;
+
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
@@ -1411,6 +1473,17 @@ private:
         return res_col;
     }
 
+    /// Whether the array element type and the searched-for type make this comparison zero-padded.
+    /// See `zeroPaddedStringComparison`.
+    static bool zeroPaddedComparison(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return false;
+
+        return zeroPaddedStringComparison(array_type->getNestedType(), arguments[1].type);
+    }
+
     static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments)
     {
         const auto * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -1419,6 +1492,11 @@ private:
 
         const auto * left = checkAndGetColumn<ColumnString>(&array->getData());
         if (!left)
+            return nullptr;
+
+        /// This path compares exact byte ranges. A zero-padded comparison needs both operands
+        /// canonicalised first, which `executeGeneric` does.
+        if (zeroPaddedComparison(arguments))
             return nullptr;
 
         const auto & right = *arguments[1].column;
@@ -1483,6 +1561,16 @@ private:
 
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
+        const bool zero_padded = zeroPaddedComparison(arguments);
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        const DataTypePtr & element_type = array_type ? array_type->getNestedType() : arguments[0].type;
+        const DataTypePtr & value_type = arguments[1].type;
+
+        /// A `Field` cannot say whether a value inside an `Array` or a `Map` came from a
+        /// `FixedString`, and `equals` compares those through a cast that removes its padding.
+        /// `executeGeneric` below makes that cast, so leave the comparison to it.
+        if (fixedStringPaddingInsideContainer(element_type, value_type))
+            return nullptr;
 
         /// The elements of a constant array of `Enum` values are the numeric values of the enum, while a
         /// `String` argument is the name of an enum value, so a direct comparison of the fields never matches.
@@ -1516,17 +1604,19 @@ private:
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                /// The array is sorted by the numeric values of the enum, which is not the order of the names.
-                if (enum_type
+                /// `lowerBound` orders with `accurateLessOrEqual`, which does not know the
+                /// zero-padding rule, so a padded value would be looked for in the wrong half.
+                /// The array of `Enum` values is sorted by their numeric values, which is not the order of the names.
+                if (zero_padded || enum_type
                     || isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
-                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, element_type, value_type, zero_padded);
                 else
                     current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {
-                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, element_type, value_type, zero_padded);
             }
 
             return result_type->createColumnConst(item_arg->size(), current);
@@ -1535,7 +1625,7 @@ private:
         /// Null map of the 2nd function argument, if it applies.
         const NullMap * null_map = nullptr;
 
-        if (arguments.size() > 2)
+        if (arguments.size() > 3)
             if (const auto & col = arguments[3].column; col)
                 null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
 
@@ -1564,7 +1654,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!accurateEquals(arr[i], value))
+                    if (!Impl::fieldsEqual(arr[i], value, element_type, value_type, zero_padded))
                         continue;
                 }
 
@@ -1650,6 +1740,16 @@ private:
     static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments)
     {
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+
+        /// `executeConst` declines the shapes whose answer a `Field` comparison cannot express, so
+        /// the array argument can still be constant here.
+        ColumnPtr full_array;
+        if (!col_array)
+        {
+            full_array = arguments[0].column->convertToFullColumnIfConst();
+            col_array = checkAndGetColumn<ColumnArray>(full_array.get());
+        }
+
         if (!col_array)
             return nullptr;
 
@@ -1660,6 +1760,15 @@ private:
         auto [null_map_data, null_map_item] = getNullMaps(arguments);
         ColumnPtr col_nested = castColumn({ getColumnWithDefaultsUnderNulls(col_array->getDataPtr(), null_map_data, array_elements_type), array_elements_type, "" }, common_type);
         ColumnPtr item_arg = castColumn({ getColumnWithDefaultsUnderNulls(arguments[1].column, null_map_item, index_type), removeLowCardinality(index_type), "" }, common_type);
+
+        /// The common type of a `String` and a `FixedString` is `String`, and the cast to it removes
+        /// the `FixedString` padding — from the converted operand only. Canonicalise both so the
+        /// comparison below matches `equals`. See `zeroPaddedStringComparison`.
+        if (zeroPaddedComparison(arguments))
+        {
+            col_nested = stripTrailingZerosInStrings(col_nested, array_elements_type, index_type);
+            item_arg = stripTrailingZerosInStrings(item_arg, array_elements_type, index_type);
+        }
 
         auto col_res = ResultColumnType::create();
 

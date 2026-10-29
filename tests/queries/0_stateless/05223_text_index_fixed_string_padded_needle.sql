@@ -131,7 +131,7 @@ DROP TABLE t_text_padded_needle;
 
 SELECT '-- array tokenizer on an Array(String) column';
 
--- `hasAny` and `hasAll` drop only the needle's padding, so the stripped form is the only match.
+-- `hasAny` and `hasAll` drop the padding on both sides, so every padding form matches and the index declines.
 CREATE TABLE t_text_padded_needle (id UInt32, arr Array(String), INDEX tix arr TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 
@@ -145,10 +145,10 @@ SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAll(arr, [toFixedString('hello', 10), toFixedString('foo', 10)]) ORDER BY id) SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAll(arr, [toFixedString('hello', 10), toFixedString('foo', 10)]) ORDER BY id);
 
-SELECT '---- a padded element still prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, [toFixedString('hello', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAll(arr, [toFixedString('hello', 10), toFixedString('foo', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, [toFixedString('world', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a FixedString element declines the index';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, [toFixedString('hello', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAll(arr, [toFixedString('hello', 10), toFixedString('foo', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, [toFixedString('world', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_text_padded_needle;
 
@@ -192,7 +192,7 @@ DROP TABLE t_text_padded_needle;
 
 SELECT '-- array tokenizer on an Array(FixedString) column';
 
--- A `String` needle keeps its trailing zero bytes and matches nothing; exact direct read must not answer it.
+-- A `String` needle with a trailing zero byte matches the value without it; the index declines rather than answering it by exact direct read.
 CREATE TABLE t_text_padded_needle (id UInt32, arr Array(FixedString(6)), INDEX tix arr TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 

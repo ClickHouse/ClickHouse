@@ -363,16 +363,16 @@ SELECT count() FROM tab_array_ngrambf WHERE hasAny(arr, [toFixedString('hello', 
 SELECT count() FROM tab_array_ngrambf WHERE hasAll(arr, [toFixedString('hello', 10)]);
 SELECT count() FROM tab_array_ngrambf WHERE hasAll(arr, [toFixedString('hello', 10)]) SETTINGS use_skip_indexes = 0;
 
--- The functions below compare the raw padded bytes, so their terms must keep the padding.
--- `text(tokenizer = array)` answers them by exact direct read, where a stripped term would return
--- rows the predicate rejects.
-SELECT '-- has keeps the padding';
+-- `has`, `mapContainsKey` and `mapContainsValue` apply the padding rule too, so a term kept in
+-- its padded form would miss rows the predicate accepts: the index must decline. `startsWith`
+-- and `endsWith` still keep the padding, since it preserves equality and not prefixes.
+SELECT '-- has applies the padding rule, like hasAny and hasAll';
 SELECT count() FROM tab_array WHERE has(arr, toFixedString('hello', 10));
 SELECT count() FROM tab_array WHERE has(arr, toFixedString('hello', 10)) SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab_array WHERE has(arr, 'hello');
 SELECT count() FROM tab_array WHERE has(arr, 'hello') SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 
-SELECT '-- mapContainsKey and mapContainsValue keep the padding';
+SELECT '-- mapContainsKey and mapContainsValue apply the padding rule';
 SELECT count() FROM tab_map WHERE mapContainsKey(m, toFixedString('hello', 10));
 SELECT count() FROM tab_map WHERE mapContainsKey(m, toFixedString('hello', 10)) SETTINGS use_skip_indexes = 0, query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM tab_map WHERE mapContainsValue(m, toFixedString('world', 10));

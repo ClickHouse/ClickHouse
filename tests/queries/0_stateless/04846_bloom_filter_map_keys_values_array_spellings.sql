@@ -6,17 +6,17 @@
 -- `mapValues` return a full `Array` without `LowCardinality` (FunctionsMapMiscellaneous.cpp,
 -- `MapToSubcolumnAdapter`), unlike the keys/values subcolumn behind `mapContainsKey`/
 -- `mapContainsValue`, which keeps the wrapper and coerces through the dictionary type. So over
--- `LowCardinality(String)` keys the direct spellings compare the constant's raw padded bytes, and
--- over `LowCardinality(FixedString(N))` values an over-wide constant compares through the least
--- supertype without throwing. Cells compare the keyed answer against an unindexed oracle.
+-- `LowCardinality(String)` keys the direct spellings ignore the constant's trailing zero padding,
+-- and over `LowCardinality(FixedString(N))` values an over-wide constant compares through the
+-- least supertype without throwing. Cells compare the keyed answer against an unindexed oracle.
 
 DROP TABLE IF EXISTS o_lck;
 DROP TABLE IF EXISTS k_lck;
 DROP TABLE IF EXISTS o_lcfsv;
 DROP TABLE IF EXISTS k_lcfsv;
 
--- `LowCardinality(String)` keys: the direct spellings compare raw padded bytes, so
--- `toFixedString('K1', 3)` matches only the physically padded key, and the index must agree.
+-- `LowCardinality(String)` keys: the direct spellings ignore the constant's trailing zero bytes,
+-- so `toFixedString('K1', 3)` matches both stored spellings, and the index must agree.
 CREATE TABLE o_lck (id UInt64, m Map(LowCardinality(String), UInt8)) ENGINE = Log;
 CREATE TABLE k_lck (id UInt64, m Map(LowCardinality(String), UInt8),
     INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1)
@@ -32,7 +32,8 @@ SELECT (SELECT count() FROM k_lck WHERE indexOf(mapKeys(m), toFixedString('K1', 
 SELECT (SELECT count() FROM k_lck WHERE hasAny(mapKeys(m), [toFixedString('K1', 3)])) = (SELECT count() FROM o_lck WHERE hasAny(mapKeys(m), [toFixedString('K1', 3)]));
 SELECT (SELECT count() FROM k_lck WHERE hasAll(mapKeys(m), [toFixedString('K1', 3)])) = (SELECT count() FROM o_lck WHERE hasAll(mapKeys(m), [toFixedString('K1', 3)]));
 
--- Pin the raw-byte semantics: the padded constant selects the padded key only.
+-- Pin the padding rule: the padded constant selects every key equal to it once trailing zero
+-- bytes are ignored, so both spellings are selected.
 SELECT id FROM k_lck WHERE has(mapKeys(m), toFixedString('K1', 3)) ORDER BY id;
 SELECT id FROM k_lck WHERE hasAny(mapKeys(m), [toFixedString('K1', 3)]) ORDER BY id;
 
@@ -54,9 +55,11 @@ SELECT (SELECT count() FROM k_lcfsv WHERE hasAny(mapValues(m), ['V0', 'XYZ'])) =
 -- Pin the supertype semantics: the short constant matches after the elements' padding is stripped.
 SELECT id FROM k_lcfsv WHERE has(mapValues(m), 'V0') ORDER BY id;
 
--- Pruning is preserved where the index can hash exactly: some stage selects more than zero and
--- fewer than all granules.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_lck WHERE has(mapKeys(m), toFixedString('K1', 3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+-- One logical value has several stored spellings among the `String` keys, so the index declines:
+-- no stage selects more than zero and fewer than all granules.
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_lck WHERE has(mapKeys(m), toFixedString('K1', 3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+-- Pruning is preserved over the `FixedString(3)` values, which store one spelling per value:
+-- some stage selects more than zero and fewer than all granules.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM k_lcfsv WHERE has(mapValues(m), toFixedString('V0', 3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 
 DROP TABLE o_lck;
