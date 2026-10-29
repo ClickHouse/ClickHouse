@@ -2,6 +2,7 @@ use arrow_array::ffi::FFI_ArrowArray;
 use arrow_array::{Array, StructArray};
 use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use futures::FutureExt;
 use futures::Stream;
 use futures::StreamExt;
 use lance::dataset::builder::DatasetBuilder;
@@ -513,7 +514,28 @@ async fn run_scan_producer(
 ) {
     stats.producer_tasks.fetch_add(1, Ordering::Relaxed);
     loop {
-        let next = match next_batch_or_cancel(&mut stream, cancel.as_ref()).await {
+        // The SDK unwraps the results of its own tasks on the scan path, so polling the stream can panic.
+        // The panic must fail the scan: otherwise the channel closes as if the stream ended.
+        let polled = AssertUnwindSafe(next_batch_or_cancel(&mut stream, cancel.as_ref()))
+            .catch_unwind()
+            .await;
+        let polled = match polled {
+            Ok(polled) => polled,
+            Err(payload) => {
+                stats.producer_error.fetch_add(1, Ordering::Relaxed);
+                state.store(ScanState::Failed as u32, Ordering::Release);
+                let error = FfiError::internal(
+                    origin,
+                    format!(
+                        "Lance scan stream panicked: {}",
+                        panic_diagnostic(payload.as_ref())
+                    ),
+                );
+                let _ = send_message(&sender, ScanMessage::Error(error), cancel.as_ref()).await;
+                return;
+            }
+        };
+        let next = match polled {
             Ok(next) => next,
             Err(error) => {
                 if cancel.is_cancelled() {
@@ -1344,6 +1366,34 @@ fn decode_manifest_bytes(bytes: &[u8]) -> Option<Manifest> {
     Manifest::try_from(proto).ok()
 }
 
+/// Checks that two trees of fields have dictionaries at the same positions and removes them, so that the
+/// remaining attributes of the fields can be compared. `Dictionary` values compare unequal when they are
+/// not loaded, and a manifest decoded from bytes never has them loaded.
+fn take_matching_dictionaries(
+    decoded: &mut [lance::datatypes::Field],
+    loaded: &mut [lance::datatypes::Field],
+) -> bool {
+    if decoded.len() != loaded.len() {
+        return false;
+    }
+    for (decoded_field, loaded_field) in decoded.iter_mut().zip(loaded.iter_mut()) {
+        match (
+            decoded_field.dictionary.take(),
+            loaded_field.dictionary.take(),
+        ) {
+            (None, None) => {}
+            (Some(decoded_dictionary), Some(loaded_dictionary))
+                if decoded_dictionary.offset == loaded_dictionary.offset
+                    && decoded_dictionary.length == loaded_dictionary.length => {}
+            _ => return false,
+        }
+        if !take_matching_dictionaries(&mut decoded_field.children, &mut loaded_field.children) {
+            return false;
+        }
+    }
+    true
+}
+
 fn ensure_manifest_bytes_match_dataset(
     dataset: &Dataset,
     manifest_bytes: &[u8],
@@ -1353,12 +1403,22 @@ fn ensure_manifest_bytes_match_dataset(
     let loaded = dataset.manifest.as_ref();
     let matches = match decode_manifest_bytes(manifest_bytes) {
         Some(mut decoded) => {
-            // For the legacy format, `Dataset` fills the dictionaries of the schema from the data files,
-            // which are not in the manifest itself.
+            // For the legacy format, `Dataset` fills the dictionary values of the schema from the data files,
+            // which are not in the manifest itself. Compare everything else in the schema, including the
+            // positions of the dictionaries, and only then take the loaded dictionary values.
             if loaded.should_use_legacy_format() {
-                decoded.schema = loaded.schema.clone();
+                let mut loaded_schema = loaded.schema.clone();
+                if take_matching_dictionaries(&mut decoded.schema.fields, &mut loaded_schema.fields)
+                    && decoded.schema == loaded_schema
+                {
+                    decoded.schema = loaded.schema.clone();
+                    decoded == *loaded
+                } else {
+                    false
+                }
+            } else {
+                decoded == *loaded
             }
-            decoded == *loaded
         }
         None => false,
     };
@@ -2617,7 +2677,26 @@ unsafe fn ch_lance_next_batch_impl(
     };
 
     match next {
-        None | Some(ScanMessage::End) => true,
+        Some(ScanMessage::End) => true,
+        // The producer is gone after its last message, `End` or `Error`, was received by a previous call.
+        // A producer that stopped without sending either must not look like the end of the data.
+        None => match scan.state.load(Ordering::Acquire) {
+            state if state == ScanState::Ended as u32 || state == ScanState::Failed as u32 => true,
+            state if state == ScanState::Cancelled as u32 => {
+                set_error(error, FfiError::cancelled());
+                false
+            }
+            _ => {
+                set_error(
+                    error,
+                    FfiError::internal(
+                        scan.origin,
+                        "Lance scan producer stopped without completing the stream",
+                    ),
+                );
+                false
+            }
+        },
         Some(ScanMessage::Error(ffi_error)) => {
             set_error(error, ffi_error);
             false
@@ -3341,6 +3420,67 @@ mod tests {
             )
         });
         assert!(!has_batch);
+        let mut stats = ch_lance_scan_stats::default();
+        unsafe {
+            ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
+        }
+        assert_eq!(stats.producer_error, 1);
+        assert_eq!(stats.producer_eof, 0);
+        unsafe {
+            ch_lance_free_scan(scan);
+        }
+    }
+
+    #[test]
+    fn producer_panic_after_batch_fails_scan() {
+        let batch = make_batch(vec![1, 2]);
+        let schema = batch.schema();
+        let stream = futures::stream::iter(vec![Ok(batch)]).chain(futures::stream::poll_fn(
+            |_context| -> Poll<Option<lance::Result<RecordBatch>>> {
+                panic!("simulated Lance task failure")
+            },
+        ));
+        let scan = test_scan_from_stream(Box::pin(stream), schema, 2, DEFAULT_QUEUE_BYTES);
+        let mut error = empty_error();
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_rows = 0;
+        let mut batch_bytes = 0;
+        let mut has_batch = false;
+        assert!(unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_batch);
+        assert_eq!(batch_rows, 2);
+        drop(array);
+        unsafe {
+            ch_lance_release_batch(scan, batch_bytes);
+        }
+
+        let mut array = FFI_ArrowArray::empty();
+        assert!(!unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_rows),
+                addr_of_mut!(batch_bytes),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(!has_batch);
+        assert_eq!(error.kind, ChLanceErrorKind::Internal as u32);
+        assert!(error_message(&error).contains("simulated Lance task failure"));
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
         let mut stats = ch_lance_scan_stats::default();
         unsafe {
             ch_lance_get_scan_stats(scan, addr_of_mut!(stats));
@@ -4942,6 +5082,114 @@ mod tests {
 
         // The handle still holds the original manifest, so it must not be pinned under the identity
         // of the replacement.
+        let mut pinned = ch_lance_snapshot_info::default();
+        assert!(!unsafe {
+            ch_lance_current_snapshot(
+                original,
+                addr_of_mut!(pinned),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::CorruptData as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_dataset(original);
+        }
+    }
+
+    /// Writes a dataset in the legacy file format with a plain column, whose name can be patched in the
+    /// manifest bytes without changing their size, and a dictionary column, whose values `Dataset` loads
+    /// from the data files rather than from the manifest.
+    fn write_legacy_dataset_with_dictionary() -> tempfile::TempDir {
+        use arrow_array::DictionaryArray;
+        use lance::dataset::WriteParams;
+        let dir = tempfile::tempdir().unwrap();
+        let dictionary: DictionaryArray<Int32Type> = vec!["x", "y", "x"].into_iter().collect();
+        let batch = RecordBatch::try_from_iter(vec![
+            (
+                "legacy_field_aaaa",
+                Arc::new(Int32Array::from(vec![1, 2, 3])) as arrow_array::ArrayRef,
+            ),
+            ("category", Arc::new(dictionary) as arrow_array::ArrayRef),
+        ])
+        .unwrap();
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        let params = WriteParams {
+            data_storage_version: Some("legacy".parse().unwrap()),
+            ..Default::default()
+        };
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(
+                reader,
+                dir.path().to_str().unwrap(),
+                Some(params),
+            ))
+            .unwrap();
+        dir
+    }
+
+    fn only_manifest_path(dataset_dir: &std::path::Path) -> std::path::PathBuf {
+        let manifests: Vec<_> = std::fs::read_dir(dataset_dir.join("_versions"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "manifest")
+            })
+            .collect();
+        assert_eq!(manifests.len(), 1);
+        manifests.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn ffi_pins_legacy_format_dataset_with_dictionary() {
+        let dir = write_legacy_dataset_with_dictionary();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut pinned = ch_lance_snapshot_info::default();
+        assert!(unsafe {
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(pinned),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        unsafe { ch_lance_free_dataset(dataset) };
+    }
+
+    #[test]
+    fn ffi_rejects_legacy_dataset_with_renamed_field_between_open_and_first_pin() {
+        let dir = write_legacy_dataset_with_dictionary();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let original = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!original.is_null());
+
+        // Replace the manifest with one of the same version and size that differs only in a field name.
+        let manifest_path = only_manifest_path(dir.path());
+        let mut bytes = std::fs::read(&manifest_path).unwrap();
+        let old_name = b"legacy_field_aaaa";
+        let positions: Vec<usize> = bytes
+            .windows(old_name.len())
+            .enumerate()
+            .filter_map(|(position, window)| (window == old_name).then_some(position))
+            .collect();
+        assert!(!positions.is_empty());
+        for position in positions {
+            bytes[position..position + old_name.len()].copy_from_slice(b"legacy_field_bbbb");
+        }
+        std::fs::write(&manifest_path, &bytes).unwrap();
+
         let mut pinned = ch_lance_snapshot_info::default();
         assert!(!unsafe {
             ch_lance_current_snapshot(
