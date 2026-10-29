@@ -2017,7 +2017,7 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Week));
                             break;
 
-                        // Weekday as a integer number with Sunday as 0 (0-6)  4
+                        // Weekday as an integer number with Sunday as 0 (0-6)  4
                         case 'w':
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeek0To6));
                             break;

@@ -1426,7 +1426,7 @@ For testing. Do not change it.
 )", 0) \
     DECLARE(Bool, optimize_row_order, false, R"(
 Controls if the row order should be optimized during inserts to improve the
-compressability of the newly inserted table part.
+compressibility of the newly inserted table part.
 
 Only has an effect for ordinary MergeTree-engine tables. Does nothing for
 specialized MergeTree engine tables (e.g. CollapsingMergeTree).
@@ -1670,7 +1670,7 @@ default; this setting will be removed in a future release.
 )", 0) \
     DECLARE(NonZeroUInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
-replica. An inactive replica becomes lost when when this number exceed.
+replica. An inactive replica becomes lost when this number exceed.
 
 Possible values:
 - Any positive integer.
@@ -2414,8 +2414,8 @@ not be less than the value of the
 / 1024. Otherwise, ClickHouse throws an exception.
 )", 0) \
     DECLARE(Bool, check_sample_column_is_correct, true, R"(
-Enables the check at table creation, that the data type of a column for s
-ampling or sampling expression is correct. The data type must be one of unsigned
+Enables the check at table creation, that the data type of a column for
+sampling or sampling expression is correct. The data type must be one of unsigned
 [integer types](/reference/data-types/int-uint): `UInt8`, `UInt16`,
 `UInt32`, `UInt64`.
 
