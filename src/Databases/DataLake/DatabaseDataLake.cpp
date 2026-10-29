@@ -730,9 +730,13 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
-    if (endpoint_from_settings.empty())
-        return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    auto table_url = endpoint_from_settings.empty()
+        ? table_metadata.getLocation()
+        : table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
+    /// Only the S3 configuration parses this as a URI and decodes the key from it, the others take the path verbatim.
+    if (table_metadata.isS3Location())
+        return DataLake::encodeLocationForURI(table_url);
+    return table_url;
 }
 
 bool DatabaseDataLake::catalogManagesProviderChain(const DataLake::ICatalog & catalog)
