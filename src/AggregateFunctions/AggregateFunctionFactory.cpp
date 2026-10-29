@@ -92,11 +92,14 @@ static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
     return res_types;
 }
 
-/// Whether the type is `Variant` or contains `Variant` inside, as the arguments of combinators like -ForEach and -Map.
+/// Whether the type is `Variant` or contains `Variant` inside, as the arguments of combinators like -ForEach and -Map,
+/// including `Nullable(Tuple(...))`.
 static bool containsVariant(const DataTypePtr & type)
 {
     if (isVariant(type))
         return true;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        return containsVariant(nullable->getNestedType());
     if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
         return containsVariant(array->getNestedType());
     if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
@@ -566,6 +569,7 @@ DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
             types_without_nullable.push_back(type->onlyNull() ? type : removeNullable(type));
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
+        DataTypes converted_types;
         if (combinator->transformsMultipleNestedFunctions())
         {
             /// Every nested function is probed independently (ex: one per element for -Tuple).
@@ -582,9 +586,8 @@ DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
 
             if (converted)
             {
-                if (res.empty())
-                    res = argument_types;
-                combinator->convertVariantArgumentsAroundMultipleNestedFunctions(res, converted_nested_types_list);
+                converted_types = types_without_nullable;
+                combinator->convertVariantArgumentsAroundMultipleNestedFunctions(converted_types, converted_nested_types_list);
             }
         }
         else
@@ -593,10 +596,20 @@ DataTypes AggregateFunctionFactory::getVariantArgumentsConversion(
             DataTypes converted_nested_types = getVariantArgumentsConversion(nested_name, action, nested_types, /* including_nested = */ true);
             if (!converted_nested_types.empty())
             {
-                if (res.empty())
-                    res = argument_types;
-                combinator->convertVariantArgumentsAround(res, nested_types, converted_nested_types);
+                converted_types = types_without_nullable;
+                combinator->convertVariantArgumentsAround(converted_types, nested_types, converted_nested_types);
             }
+        }
+
+        /// The combinator has converted the arguments without `Nullable`, so the `Nullable` wrapper is restored:
+        /// the rows with NULL values are skipped by the `Null` combinator, as for the explicitly converted arguments.
+        for (size_t i = 0; i < converted_types.size(); ++i)
+        {
+            if (converted_types[i]->equals(*types_without_nullable[i]))
+                continue;
+            if (res.empty())
+                res = argument_types;
+            res[i] = argument_types[i]->isNullable() ? makeNullable(converted_types[i]) : converted_types[i];
         }
     }
 

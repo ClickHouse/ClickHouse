@@ -96,6 +96,7 @@ public:
     /** Converts the arguments of the combined function (ex: `Array(Variant(UInt8, UInt16))` for -ForEach),
       *  so that `transformArgumentsForVariantConversion` returns `converted_nested_arguments` (ex: `Nullable(UInt16)`)
       *  instead of `nested_arguments`. They differ only by the converted `Variant` arguments.
+      *  The arguments are passed without the outer `Nullable`, it is restored by `AggregateFunctionFactory`.
       *  By default, the arguments are passed at the same positions.
       */
     virtual void convertVariantArgumentsAround(
@@ -110,7 +111,7 @@ public:
         }
     }
 
-    /** Same as `convertVariantArgumentsAround`, but for combinators with `transformsMultipleNestedFunctions`.
+    /** Same as `convertVariantArgumentsAround` (also without the outer `Nullable`), but for combinators with `transformsMultipleNestedFunctions`.
       *  `converted_nested_arguments_list` has the arguments of every nested function, as returned by
       *  `transformArgumentsForMultipleNestedFunctions`, with the `Variant` arguments converted.
       */
