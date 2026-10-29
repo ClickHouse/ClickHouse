@@ -1,0 +1,38 @@
+Int64 with negative versions
+1	-1	42	low
+Float64 with negative versions
+1	-1.5	42	low
+1	-1.5	42	mid
+Int8 with mixed-sign versions
+1	1	42	low
+Float32 with negative versions
+1	-1.5	42	low
+UInt128 with versions above 2^64, including a late arrival
+1	18446744073709551617	42	low
+1	18446744073709551617	42	mid
+Int128 with mixed-sign versions
+1	5	42	low
+UInt256
+1	115792089237316195423570985008687907853269984665640564039457584007913129639935	42	low
+Int256 with mixed-sign versions
+1	5	42	low
+DateTime64
+1	2024-01-02 00:00:00.500	42	low
+Date
+1	2024-02-01	42	low
+Date32 with versions around 1970
+1	1970-06-01	42	low
+DateTime
+1	2024-01-02 00:00:00	42	low
+Time with negative versions
+1	10:00:00	42	low
+Time64 with negative versions
+1	10:00:00.000	42	low
+LowCardinality(UInt64)
+1	2	42	low
+BFloat16
+1	2	42	low
+widening ALTER keeps the persisted versions comparable
+1	100	42	low
+1	100	42	low
+scale-changing ALTER of the version column is rejected
