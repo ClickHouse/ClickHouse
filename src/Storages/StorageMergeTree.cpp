@@ -1648,6 +1648,45 @@ bool hasPartsToMutate(
     return false;
 }
 
+/// Versions of the mutations, global ones separately from the partition-scoped ones grouped by
+/// partition. Built once per pass over the parts, so that looking up the first mutation that affects
+/// a part does not scan the scoped mutations of other partitions: after a scoped mutation finishes,
+/// the parts of other partitions keep data versions below it.
+struct MutationVersionsByPartition
+{
+    std::vector<UInt64> global;
+    std::unordered_map<String, std::vector<UInt64>> by_partition;
+
+    explicit MutationVersionsByPartition(const std::map<UInt64, MergeTreeMutationEntry> & mutations_by_version)
+    {
+        for (const auto & [version, entry] : mutations_by_version)
+        {
+            if (entry.partition_ids.empty())
+                global.push_back(version);
+            else
+                for (const auto & partition_id : entry.partition_ids)
+                    by_partition[partition_id].push_back(version);
+        }
+    }
+
+    /// The smallest version above `data_version` of a mutation that affects `partition_id`, if any.
+    std::optional<UInt64> firstAffecting(const String & partition_id, Int64 data_version) const
+    {
+        std::optional<UInt64> result;
+        auto take_first_above = [&](const std::vector<UInt64> & versions)
+        {
+            auto it = std::ranges::upper_bound(versions, static_cast<UInt64>(data_version));
+            if (it != versions.end() && (!result || *it < *result))
+                result = *it;
+        };
+
+        take_first_above(global);
+        if (auto it = by_partition.find(partition_id); it != by_partition.end())
+            take_first_above(it->second);
+        return result;
+    }
+};
+
 }
 
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatus(
@@ -1930,24 +1969,48 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.getPartitionId(), part->name});
     std::sort(part_versions.begin(), part_versions.end(), lessVersion);
 
+    /// Positions in `part_versions` of the parts of each partition, in increasing order of version, so that a
+    /// partition-scoped mutation looks only at the parts of its own partitions rather than at all older parts.
+    std::unordered_map<String, std::vector<size_t>> part_positions_by_partition;
+    for (size_t i = 0; i < part_versions.size(); ++i)
+        part_positions_by_partition[part_versions[i].partition_id].push_back(i);
+
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
         const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
-        auto versions_it = std::lower_bound(
-            part_versions.begin(), part_versions.end(), needle, lessVersion);
 
-        size_t parts_to_do = versions_it - part_versions.begin();
         Names parts_to_do_names;
-        parts_to_do_names.reserve(parts_to_do);
-        for (size_t i = 0; i < parts_to_do; ++i)
+        if (entry.partition_ids.empty())
         {
-            if (entry.affectsPartition(part_versions[i].partition_id))
-            {
+            auto versions_it = std::lower_bound(part_versions.begin(), part_versions.end(), needle, lessVersion);
+            size_t parts_to_do = versions_it - part_versions.begin();
+            parts_to_do_names.reserve(parts_to_do);
+            for (size_t i = 0; i < parts_to_do; ++i)
                 parts_to_do_names.push_back(part_versions[i].name);
+        }
+        else
+        {
+            std::vector<size_t> positions_to_do;
+            for (const auto & partition_id : entry.partition_ids)
+            {
+                auto positions_it = part_positions_by_partition.find(partition_id);
+                if (positions_it == part_positions_by_partition.end())
+                    continue;
+                for (size_t position : positions_it->second)
+                {
+                    if (part_versions[position].version >= mutation_version)
+                        break;
+                    positions_to_do.push_back(position);
+                }
             }
+            /// Keep the same order of parts as for a global mutation.
+            std::ranges::sort(positions_to_do);
+            parts_to_do_names.reserve(positions_to_do.size());
+            for (size_t position : positions_to_do)
+                parts_to_do_names.push_back(part_versions[position].name);
         }
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
@@ -2731,6 +2794,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     for (const auto & patch : getPatchPartsVectorForInternalUsage())
         patch_versions_by_partition[patch->info.getOriginalPartitionId()].insert(patch->info.getDataVersion());
 
+    const MutationVersionsByPartition mutation_versions_by_partition(current_mutations_by_version);
+
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.contains(part))
@@ -2743,14 +2808,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         if (merger_mutator.merges_blocker.isCancelledForPartition(part->info.getPartitionId()))
             continue;
 
-        auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-        for (; mutations_begin_it != current_mutations_by_version.end(); ++mutations_begin_it)
-        {
-            if (mutations_begin_it->second.affectsPartition(part->info.getPartitionId()))
-                break;
-        }
-        if (mutations_begin_it == current_mutations_by_version.end())
+        auto first_mutation_version = mutation_versions_by_partition.firstAffecting(part->info.getPartitionId(), part->info.getDataVersion());
+        if (!first_mutation_version)
             continue;
+        auto mutations_begin_it = current_mutations_by_version.find(*first_mutation_version);
+        chassert(mutations_begin_it != current_mutations_by_version.end());
 
         /// A pending update reads only the parts with block numbers below its own (see `partition_id_to_max_block`
         /// in `updateLightweight`), so its patch part can be applied only to a part that contains data inserted before
