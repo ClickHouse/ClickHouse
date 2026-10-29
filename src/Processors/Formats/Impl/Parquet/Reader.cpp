@@ -3383,6 +3383,14 @@ static bool stringsMayExpandOnDecoding(const parq::ColumnMetaData & meta)
     return std::find(meta.encodings.begin(), meta.encodings.end(), parq::Encoding::DELTA_BYTE_ARRAY) != meta.encodings.end();
 }
 
+/// Whether the decoder converts the strings into values of variable size that the strings do not bound, e.g.
+/// `GeoConverter` parses WKT or WKB into `LineString` or `Polygon`, whose coordinates may take much more than the text.
+static bool decoderMayExpandStrings(const Reader::PrimitiveColumnInfo & column_info)
+{
+    return !column_info.output_type->haveMaximumSizeOfValue()
+        && column_info.decoder.string_converter && !column_info.decoder.string_converter->isTrivial();
+}
+
 /// Whether a column chunk may be dictionary-encoded. Some writers do not declare `dictionary_page_offset` even if there
 /// is a dictionary page (see `fixUpColumnChunk`), so the encodings of the data pages are checked as well.
 static bool mayBeDictionaryEncoded(const parq::ColumnMetaData & meta)
@@ -3420,8 +3428,9 @@ double Reader::estimateMaxColumnMemoryBytesOfChunk(
         std::optional<double> string_bytes;
         if (meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
             string_bytes = static_cast<double>(std::max<Int64>(0, meta.size_statistics.unencoded_byte_array_data_bytes));
-        /// Strings encoded with `DELTA_BYTE_ARRAY` are bounded neither by the dictionary nor by the uncompressed size.
-        const bool may_expand = stringsMayExpandOnDecoding(meta);
+        /// Strings encoded with `DELTA_BYTE_ARRAY` are bounded neither by the dictionary nor by the uncompressed size,
+        /// and neither are the values that the decoder converts the strings into, see `decoderMayExpandStrings`.
+        const bool may_expand = stringsMayExpandOnDecoding(meta) || decoderMayExpandStrings(column_info);
         if (mayBeDictionaryEncoded(meta) && !may_expand)
         {
             /// No string is longer than the longest value of the dictionary, except the strings of the data pages that
@@ -3458,6 +3467,8 @@ double Reader::estimateMaxColumnMemoryBytesOfChunk(
 
 bool Reader::decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
 {
+    if (decoderMayExpandStrings(column_info))
+        return true;
     const auto & meta = column.meta->meta_data;
     return !column_info.output_type->haveMaximumSizeOfValue()
         && !(meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
@@ -4917,6 +4928,7 @@ void Reader::initColumnsCache()
                     /// early also when that total would take a large part of the memory limit.
                     /// It does not bound the strings of the pages that are not encoded with it if they may expand on decoding.
                     const bool need_dictionary = meta.__isset.dictionary_page_offset && !stringsMayExpandOnDecoding(meta)
+                        && !decoderMayExpandStrings(primitive_columns[i])
                         && (decodedSizeIsUnknown(column, primitive_columns[i])
                             || (memory_limit != 0 && !primitive_columns[i].output_type->haveMaximumSizeOfValue()
                                 && estimateMaxColumnMemoryBytesOfChunk(column, row_group, primitive_columns[i]) > static_cast<double>(memory_limit) / 4));

@@ -777,7 +777,8 @@ struct Reader
     double estimateMaxColumnMemoryBytesOfChunk(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
     /// Whether `estimateMaxColumnMemoryBytesOfChunk` can only guess: the column is of strings whose length is not in the
     /// metadata, and either they are dictionary-encoded and the dictionary is not decoded, or some of them are encoded
-    /// with `DELTA_BYTE_ARRAY`, which may take much less than the decoded strings.
+    /// with `DELTA_BYTE_ARRAY`, which may take much less than the decoded strings. Also if the decoder converts the
+    /// strings into values that they do not bound, e.g. GeoParquet geometries into `LineString`.
     bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
     /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
     /// capped far below overflow.

@@ -47,3 +47,7 @@ s	8	524288
 [true,true]
 65536	720896
 65536	720896
+--- GeoParquet strings decoded into a much larger geo type: not cached
+[true]
+65536	4194304
+65536	4194304

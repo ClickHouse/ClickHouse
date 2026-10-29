@@ -22,7 +22,8 @@
 # - a chunk to write to the cache, with a wide column that is missing in the file and is filled with default values;
 # - a chunk to write to the cache, with arrays of tuples of which all the requested elements are missing in the file;
 # - a chunk to write to the cache, of a variant read as `JSON`, which takes much more memory than the binary columns of
-#   the variant in the file.
+#   the variant in the file;
+# - a chunk to write to the cache, of GeoParquet strings decoded into a geo type, which takes much more than the strings.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -204,5 +205,23 @@ touch -d "1 minute ago" "${FILE_PATH}"
 run_query "SELECT count(), sum(length(toJSONString(v))) FROM file('${FILE}', Parquet, 'v JSON')
     SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
     input_format_parquet_memory_high_watermark = '256Ki', max_memory_usage = '24Mi'"
+
+echo "--- GeoParquet strings decoded into a much larger geo type: not cached"
+# 65536 rows: the same `LineString` of 64 points as WKT of 267 bytes, with size statistics, whose coordinates take 1 KiB
+# decoded.
+python3 - "${FILE_PATH}" <<'EOF'
+import sys
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+wkt = 'LINESTRING(' + ','.join(['0 0'] * 64) + ')'
+geo = '{"version": "1.0.0", "primary_column": "g", "columns": {"g": {"encoding": "WKT", "geometry_types": ["LineString"]}}}'
+table = pa.table({'g': pa.array([wkt] * 65536)}).replace_schema_metadata({'geo': geo})
+pq.write_table(table, sys.argv[1], row_group_size=1000000, use_dictionary=True)
+EOF
+touch -d "1 minute ago" "${FILE_PATH}"
+run_query "SELECT count(), sum(length(g)) FROM file('${FILE}', Parquet, 'g LineString')
+    SETTINGS max_threads = 1, input_format_parquet_max_block_size = 1000, input_format_parquet_memory_low_watermark = 0,
+    input_format_parquet_memory_high_watermark = '256Ki', max_memory_usage = '72Mi'"
 
 rm -f "${FILE_PATH}" "${FILE_PATH}.tmp"
