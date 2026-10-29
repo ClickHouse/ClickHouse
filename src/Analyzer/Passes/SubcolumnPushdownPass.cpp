@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -147,6 +148,40 @@ bool storageResolvesToSubcolumn(
         && std::equal(resolved_path.begin(), resolved_path.end(), expected_path.begin(), isSameSubstream);
 }
 
+/// A subcolumn of a column with dynamic subcolumns (`JSON`, `Dynamic`) read from a part that stores the column under
+/// a different type is not necessarily the subcolumn of the converted column: after a lazy `JSON` type hint change
+/// (`enable_json_lazy_type_hints`) reading the whole column converts the old typed path to a dynamic path, while
+/// reading the subcolumn exposes the old type. So the subcolumn is pushed down only if every part of a `MergeTree`
+/// stores the column under exactly the type of the table metadata. Other storages that can hide such parts behind
+/// them (`Distributed`, `Merge`, `Buffer`, ...) are not accepted.
+bool storageReadsDynamicSubcolumnWithoutConversion(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column_in_table)
+{
+    const auto & type_in_storage = column_in_table.getTypeInStorage();
+    if (!type_in_storage->hasDynamicSubcolumns())
+        return true;
+
+    const auto & storage = storage_snapshot->storage;
+    if (!dynamic_cast<const MergeTreeData *>(&storage))
+    {
+        const auto & name = storage.getName();
+        return name == "Memory" || name == "Log" || name == "TinyLog" || name == "StripeLog";
+    }
+
+    const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get());
+    if (!snapshot_data || !snapshot_data->parts)
+        return false;
+
+    const auto & name_in_storage = column_in_table.getNameInStorage();
+    for (const auto & part : *snapshot_data->parts)
+    {
+        auto column_in_part = part.data_part->getColumns().tryGetByName(name_in_storage);
+        if (column_in_part && !column_in_part->type->equals(*type_in_storage))
+            return false;
+    }
+
+    return true;
+}
+
 /// Whether the storage behind `proj_column` can serve its subcolumn `subcolumn_name` directly. This is the same
 /// gate `FunctionToSubcolumnsPass` applies before reading a subcolumn instead of the whole column: some storages
 /// (system tables, ...) report `supportsOptimizationToSubcolumns` = false, others (`file`, `url`, ...) can serve
@@ -179,7 +214,8 @@ bool storageCanReadSubcolumn(
         return false;
 
     if (storage.supportsOptimizationToSubcolumns())
-        return storageResolvesToSubcolumn(storage_snapshot, *column_in_table, subcolumn_name, subcolumn_type);
+        return storageResolvesToSubcolumn(storage_snapshot, *column_in_table, subcolumn_name, subcolumn_type)
+            && storageReadsDynamicSubcolumnWithoutConversion(storage_snapshot, *column_in_table);
 
     return storageCanReadTupleElement(storage_snapshot, column, subcolumn_name);
 }
