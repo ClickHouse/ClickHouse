@@ -1729,8 +1729,11 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 /// that a single leaf (the leftmost) takes the WithMergeableState path with the
 /// whole join query tree; the other leaves must take the plain `storage->read`
 /// path.  Callers should compute this once for the join tree and gate the
-/// per-leaf parallel-replicas activation accordingly.
-bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings)
+/// per-leaf parallel-replicas activation accordingly.  `plan_based` says whether the plan-based
+/// implementation decides the distribution of this read, which is not always the case when
+/// `parallel_replicas_plan_based` is on.
+bool allowParallelReplicasForJoinTree(
+    const QueryTreeNodePtr & join_tree_node, const ContextPtr & context, const Settings & query_settings, bool plan_based)
 {
     if (!join_tree_node)
         return false;
@@ -1771,7 +1774,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     /// RightAny picks one right row per left row out of the whole right table, so its right side cannot be split.
     /// In plan-based mode this gate only sizes the read, and `liftSplitAboveJoin` keeps such a join local.
     if (join_kind == JoinKind::Right
-        && (join_strictness != JoinStrictness::RightAny || query_settings[Setting::parallel_replicas_plan_based]))
+        && (join_strictness != JoinStrictness::RightAny || plan_based))
     {
         // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
         if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
@@ -2912,10 +2915,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// own copy of the same table. A table function that builds a storage of its own resolves to
                     /// something local to this server, so it stays on a single replica even when that storage
                     /// happens to be a `MergeTree`.
+                    /// A read through a table function is planned the query-tree way even in the plan-based
+                    /// mode (see below), so the join around it must be one the query-tree way can distribute.
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
                         && (!table_function_node || table_function_node->getParallelReplicasReadID())
-                        && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
+                        && allowParallelReplicasForJoinTree(
+                            parent_join_tree, query_context, settings,
+                            /*plan_based=*/ settings[Setting::parallel_replicas_plan_based] && !table_function_node))
                     {
                         // (1) find read step
 
