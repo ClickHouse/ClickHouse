@@ -1,7 +1,6 @@
 -- Lazy materialization addresses a row by the virtual columns `_part_starting_offset` and `_part_offset`. A column of
 -- the table with one of these names takes their place, so such a table is not read lazily, with a join or without one.
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 SET enable_join_runtime_filters = 0;
