@@ -486,7 +486,6 @@ DiskCacheReader::~DiskCacheReader()
 DiskCacheProvider::DiskCacheProvider(
     FileCachePtr cache_,
     const FilesystemCacheSettings & cache_settings_,
-    const String & query_id_,
     ThrottlerPtr local_throttler_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)
@@ -499,9 +498,6 @@ DiskCacheProvider::DiskCacheProvider(
     /// byte cap an entry count.
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
-    /// Register a per-query context; null when no download budget is configured
-    /// (`filesystem_cache_max_download_size == 0` / no query limit), the unbounded path.
-    query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
 }
 
 /// The disk tier's residency walk. One `resolve` = one cache transaction, no per-call state (shared
