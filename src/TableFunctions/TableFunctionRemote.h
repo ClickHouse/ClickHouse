@@ -27,8 +27,6 @@ public:
 
     bool needStructureConversion() const override { return false; }
 
-    bool evaluatesArgumentsRemotely() const override { return true; }
-
 private:
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;

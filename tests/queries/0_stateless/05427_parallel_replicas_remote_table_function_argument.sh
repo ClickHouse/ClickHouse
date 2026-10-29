@@ -3,10 +3,11 @@
 # Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 # The query sent to parallel replicas qualifies the table named by a table function's arguments with the
-# initiator's current database. A table function nested in `remote` is evaluated on the server that `remote`
-# names, so its table must keep resolving against that server's default database, `default`. A same-named
-# table there holds a value the test database's table does not, so a wrong qualification gives a wrong answer
-# rather than an error. Its name carries the test database to stay unique.
+# initiator's current database, but not inside the arguments of another table function. A table function
+# nested in `remote` is evaluated on the server that `remote` names, so its table must keep resolving against
+# that server's default database, `default`. A same-named table there holds a value the test database's table
+# does not, so a wrong qualification gives a wrong answer rather than an error. Its name carries the test
+# database to stay unique.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -53,11 +54,5 @@ echo '-- remote, insert select'
 ${PR_CLIENT} --parallel_replicas_local_plan 0 --parallel_distributed_insert_select 2 \
     -q "INSERT INTO dst SELECT x FROM mt WHERE ${remote_in}"
 ${CLIENT} -q "SELECT x FROM res ORDER BY x"
-
-# A table function evaluated by each replica itself still names the test database's table.
-echo '-- loop'
-${PR_CLIENT} --parallel_replicas_local_plan 0 -q "
-SELECT x FROM mt WHERE x IN (SELECT toUInt64(value) FROM (SELECT value FROM loop(timeSeriesSamples(${shadow})) LIMIT 1))
-ORDER BY x"
 
 ${CLIENT} -q "DROP TABLE default.${shadow}"

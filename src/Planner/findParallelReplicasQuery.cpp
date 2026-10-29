@@ -702,12 +702,12 @@ public:
             table_function_nodes.push_back(table_function_node);
     }
 
-    /// The arguments of `remote` and `cluster` are evaluated on the servers they name, so a table they
-    /// mention must keep resolving against those servers' databases, not the initiator's.
+    /// The arguments of a table function are not entered: whose current database a table function nested
+    /// there resolves against depends on the outer one - `remote` evaluates its arguments on the servers it
+    /// names. Left as written, such a call resolves the way it does without parallel replicas.
     static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
     {
-        const auto * table_function_node = parent->as<TableFunctionNode>();
-        return !table_function_node || !table_function_node->evaluatesArgumentsRemotely();
+        return !parent->as<TableFunctionNode>();
     }
 
     std::vector<TableFunctionNode *> table_function_nodes;
