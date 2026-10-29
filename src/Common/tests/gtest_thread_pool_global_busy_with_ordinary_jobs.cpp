@@ -87,14 +87,14 @@ TEST(ThreadPool, GlobalBusyWithOrdinaryJobs)
         std::vector<std::unique_ptr<ThreadPool>> local_pools;
         for (size_t i = 0; i < local_pools_count; ++i)
         {
-            /// Like the pools of `AsyncLoader` and many others: the jobs return and no free threads are
-            /// kept, so an idle worker leaves and frees its global-pool thread.
+            /// Like the pools of `AsyncLoader`, of query pipelines and many others: the jobs return. Some
+            /// of these pools keep no free threads, others keep them; neither takes a slot.
             local_pools.push_back(std::make_unique<ThreadPool>(
                 CurrentMetrics::LocalThread,
                 CurrentMetrics::LocalThreadActive,
                 CurrentMetrics::LocalThreadScheduled,
                 /* max_threads = */ 1,
-                /* max_free_threads = */ 0,
+                /* max_free_threads = */ i % 2,
                 /* queue_size = */ 0));
             try
             {
@@ -146,19 +146,20 @@ TEST(ThreadPool, ReturningWorkerIsNotOvertakenByLongLivedWorker)
     while (!ordinary_started)
         ;
 
-    /// Keeps no free threads, so its worker takes no slot and waits in the queue behind the ordinary job.
+    /// Its jobs return, so its worker takes no slot and waits in the queue behind the ordinary job.
     std::atomic<bool> returning_job_ran = false;
     ThreadPool returning_pool(
         CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
         /* max_threads = */ 1, /* max_free_threads = */ 0, /* queue_size = */ 0);
     returning_pool.scheduleOrThrowOnError([&] { returning_job_ran = true; });
 
-    /// Keeps a free thread, so its worker takes the last slot, and it does not return until released.
+    /// Its jobs are long-lived, so its worker takes the last slot, and it does not return until released.
     std::atomic<bool> long_lived_started = false;
     std::atomic<bool> release_long_lived = false;
     ThreadPool long_lived_pool(
         CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
         /* max_threads = */ 1, /* max_free_threads = */ 1, /* queue_size = */ 0);
+    long_lived_pool.setJobsAreLongLived();
     long_lived_pool.scheduleOrThrowOnError([&] { long_lived_started = true; while (!release_long_lived.load()) {} });
 
     release_ordinary = true;

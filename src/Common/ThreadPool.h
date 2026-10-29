@@ -98,9 +98,9 @@ public:
         std::unique_ptr<JobWithPriority> initial_job;
 
         /// Set for a worker of a local pool that keeps no free threads when the worker is created. Such a
-        /// worker takes no slot of the global pool (see `ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted`),
-        /// so it leaves as soon as it finds no job instead of waiting in the idle stack, even if
-        /// `max_free_threads` was increased since.
+        /// worker leaves as soon as it finds no job instead of waiting in the idle stack, even if
+        /// `max_free_threads` was increased since, so it does not keep a thread of the global pool, which
+        /// it holds without a slot (see `ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted`).
         bool returns_when_idle = false;
 
         /// Per-thread condition variable for LIFO idle scheduling.
@@ -187,13 +187,14 @@ public:
     /// Like `scheduleThreadOrThrow`, the job takes one of the `max_threads` slots and is rejected when
     /// all of them are already taken by long-lived jobs, but it may wait in the queue when the workers
     /// are only busy with ordinary jobs. This is for a thread whose creator does not rely on it having
-    /// started, such as a worker of a local `ThreadPool`: the local pool keeps its jobs queued until the
-    /// worker comes, so a worker delayed by a transient saturation of the global pool is not an error.
+    /// started, such as a worker of a local `ThreadPool` whose jobs are long-lived (see `setJobsAreLongLived`):
+    /// the local pool keeps its jobs queued until the worker comes, so a worker delayed by a transient
+    /// saturation of the global pool is not an error.
     void scheduleThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
     /// Like `scheduleThreadOrQueueOrThrow`, but for a thread that is known to return after a finite
-    /// time, such as a worker of a local pool whose jobs return and which keeps no free threads. It
-    /// does not take a slot, because it does not hold a worker forever, and it is rejected only when all
+    /// time, such as a worker of a local pool whose jobs return. It does not take a slot, because it
+    /// does not hold a worker forever, and it is rejected only when all
     /// the slots are already taken by long-lived jobs: then no worker would ever be free for it.
     /// Otherwise it waits in the queue for any number of such threads scheduled at the same time.
     void scheduleReturningThreadOrQueueOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
@@ -227,6 +228,14 @@ public:
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+
+    /// Declares that the jobs of this local pool occupy their workers for a long time and do not return
+    /// on their own, for example the worker loops of `MergeTreeBackgroundExecutor`. Then each worker
+    /// takes a slot of the global pool for its whole lifetime, so it is rejected when all of the slots
+    /// are taken by other long-lived threads instead of waiting forever in the queue behind them. The
+    /// workers of other local pools take no slot. Must be called before the first job is scheduled.
+    void setJobsAreLongLived();
+
     size_t getMaxThreads() const;
     size_t getMaxFreeThreads() const;
     size_t getQueueSize() const;
@@ -289,11 +298,14 @@ private:
 
     bool finished = false;
     bool threads_remove_themselves = true;
-    /// Whether `max_free_threads` is zero. Then the workers of a local pool do not hold threads of the
-    /// global pool for long, so they are scheduled through `scheduleReturningThreadOrQueueOrThrow` instead
-    /// of `scheduleThreadOrQueueOrThrow`. The jobs of such pools must return after a finite time. A copy
-    /// of `max_free_threads == 0` that can be read without `mutex`, when a worker is created.
+    /// Whether `max_free_threads` is zero. Then the idle workers of a local pool leave right away (see
+    /// `ThreadFromThreadPool::returns_when_idle`). A copy of `max_free_threads == 0` that can be read
+    /// without `mutex`, when a worker is created.
     std::atomic<bool> workers_return = false;
+    /// Set by `setJobsAreLongLived`. The workers of such a local pool are scheduled through
+    /// `scheduleThreadOrQueueOrThrow` and take a slot of the global pool; the workers of other local pools
+    /// run jobs that return, and are scheduled through `scheduleReturningThreadOrQueueOrThrow`.
+    std::atomic<bool> jobs_are_long_lived = false;
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;

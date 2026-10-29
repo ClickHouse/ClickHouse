@@ -419,6 +419,12 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::setJobsAreLongLived()
+{
+    jobs_are_long_lived.store(true, std::memory_order_relaxed);
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
@@ -1154,21 +1160,25 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
     }
     else
     {
-        /// The worker of a local pool lives as long as it finds jobs, so it takes a slot of the global pool
-        /// and is rejected when all of them are held by other long-lived threads. But it may wait in the
-        /// queue behind ordinary jobs: the local pool keeps its own jobs queued until the worker starts,
-        /// and nobody relies on the worker running before that. Failing here instead would turn a
-        /// transient saturation of the global pool into an error for callers that cannot handle one,
-        /// such as the mandatory spawn of a worker in `AsyncLoader`.
+        /// The worker of a local pool may wait in the queue behind ordinary jobs: the local pool keeps its
+        /// own jobs queued until the worker starts, and nobody relies on the worker running before that.
+        /// Failing here instead would turn a transient saturation of the global pool into an error for
+        /// callers that cannot handle one, such as the mandatory spawn of a worker in `AsyncLoader`.
         ///
-        /// If the local pool keeps no free threads, its worker does not hold a global thread for long: it
-        /// leaves as soon as it finds no job (see `returns_when_idle`), and the jobs of such pools return.
-        /// So it does not take a slot either. Otherwise the workers of such pools, merely running finite
-        /// jobs, would exhaust the slots while the global pool is only transiently busy.
+        /// If the jobs of the local pool never return (see `setJobsAreLongLived`), its worker takes a slot
+        /// of the global pool for its whole lifetime, and it is rejected when all of the slots are held by
+        /// other long-lived threads: it would never start otherwise.
+        ///
+        /// The workers of other local pools take no slot: their jobs return, so the worker eventually
+        /// leaves, or at least stops being busy when the pool is destroyed or shrunk. If they took slots,
+        /// a few such pools merely running finite jobs (for example the pools of query pipelines, which
+        /// keep free threads) would exhaust the slots while the global pool is only transiently busy, and
+        /// the next worker that takes no slot would be rejected for nothing. They are only rejected when
+        /// the long-lived threads hold all the slots, because then no thread would ever be free for them.
         returns_when_idle = parent_pool.workers_return.load(std::memory_order_relaxed);
         thread = Thread(
-            returns_when_idle ? ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted
-                              : ThreadFromGlobalPoolScheduleMode::ReserveSlot,
+            parent_pool.jobs_are_long_lived.load(std::memory_order_relaxed) ? ThreadFromGlobalPoolScheduleMode::ReserveSlot
+                                                                            : ThreadFromGlobalPoolScheduleMode::QueueUnlessSlotsExhausted,
             &ThreadFromThreadPool::worker,
             this);
     }

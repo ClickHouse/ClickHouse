@@ -64,6 +64,7 @@ TEST(ThreadPool, GlobalFullLargeQueue)
             std::in_place,
             CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled,
             capacity, capacity, capacity);
+        pool->setJobsAreLongLived();
 
         for (size_t i = 0; i < capacity; ++i)
             pool->scheduleOrThrowOnError(occupy_thread);

@@ -85,6 +85,8 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     if (!policy.empty())
         pending.updatePolicy(policy);
 
+    /// Each worker runs `threadFunction`, which returns only on shutdown.
+    pool->setJobsAreLongLived();
     pool->setMaxThreads(std::max(1UL, threads_count));
     pool->setMaxFreeThreads(std::max(1UL, threads_count));
     pool->setQueueSize(std::max(1UL, threads_count));

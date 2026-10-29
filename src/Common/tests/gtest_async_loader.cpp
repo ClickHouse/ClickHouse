@@ -1709,9 +1709,10 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindOrdinaryGlobalJobs)
     t.loader.wait();
 }
 
-// The workers of an ordinary local pool that keeps no free threads, such as most of the shared pools,
-// run finite jobs, so they must not use up the slots that a mandatory spawn of a loader worker needs.
-TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkers)
+// The workers of an ordinary local pool run finite jobs, so they must not use up the slots that a
+// mandatory spawn of a loader worker needs. This holds both for pools that keep no free threads, such as
+// most of the shared pools, and for pools that keep them, such as the pools of query pipelines.
+static void testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(size_t local_pool_max_free_threads)
 {
     GlobalThreadPoolLimits limits;
     static constexpr size_t capacity = 2;
@@ -1729,7 +1730,7 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkers)
         CurrentMetrics::TablesLoaderBackgroundThreadsActive,
         CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
         /* max_threads = */ capacity,
-        /* max_free_threads = */ 0,
+        /* max_free_threads = */ local_pool_max_free_threads,
         /* queue_size = */ 0);
     for (size_t i = 0; i < capacity; i++)
     {
@@ -1755,6 +1756,18 @@ TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkers)
 
     ASSERT_EQ(jobs_done_while_busy, 0);
     ASSERT_EQ(jobs_done, 1);
+}
+
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkers)
+{
+    testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(/* local_pool_max_free_threads = */ 0);
+}
+
+TEST(AsyncLoader, MandatorySpawnWaitsBehindFiniteLocalPoolWorkersWithFreeThreads)
+{
+    /// One of the two workers stays idle in the local pool after the callbacks return, the other one
+    /// leaves and frees a thread of the global pool for the loader worker.
+    testMandatorySpawnWaitsBehindFiniteLocalPoolWorkers(/* local_pool_max_free_threads = */ 1);
 }
 
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits

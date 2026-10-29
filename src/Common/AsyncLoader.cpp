@@ -59,7 +59,7 @@ AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
           init.metric_active_threads,
           init.metric_scheduled_threads,
           /* max_threads = */ ThreadPool::MAX_THEORETICAL_THREAD_COUNT, // Unlimited number of threads, we do worker management ourselves
-          /* max_free_threads = */ 0, // We do not require free threads, and then a worker takes no slot of the global pool (see `ThreadPoolImpl::workers_return`)
+          /* max_free_threads = */ 0, // We do not require free threads
           /* queue_size = */ 0)) // Unlimited queue to avoid blocking during worker spawning
 {}
 
