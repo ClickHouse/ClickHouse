@@ -75,7 +75,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
-#include <Analyzer/getResultColumnOrigins.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -3320,7 +3319,7 @@ static BlockIO executeQueryImpl(
                 {
                     interpreter_with_analyzer->getQueryPlan();
 
-                    result_column_origins = getResultColumnOrigins(interpreter_with_analyzer->getQueryTree());
+                    result_column_origins = interpreter_with_analyzer->getResultColumnOrigins();
                     if (flags.collect_result_column_origins)
                         result_details.result_column_origins = result_column_origins;
                 }
