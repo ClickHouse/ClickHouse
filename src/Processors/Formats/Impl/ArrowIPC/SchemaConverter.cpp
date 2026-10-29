@@ -34,6 +34,8 @@
 #include <cctz/time_zone.h>
 #pragma clang diagnostic pop
 
+#include <algorithm>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -1050,9 +1052,7 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     /// message of the file is V4 (e.g. a part of the Arrow 0.14.1 integration files in `apache/arrow-testing`).
     /// The Apache Arrow library does not check the footer version either. Read such a footer as V4: the
     /// messages still carry their own version, and a message older than V4 is rejected by `readNextMessage`.
-    auto version = footer->version();
-    if (version < flatbuf::MetadataVersion_V4)
-        version = flatbuf::MetadataVersion_V4;
+    const auto version = std::max(footer->version(), flatbuf::MetadataVersion_V4);
     if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
