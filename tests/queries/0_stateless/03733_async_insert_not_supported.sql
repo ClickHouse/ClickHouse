@@ -57,11 +57,15 @@ system flush async insert queue src_table;
 select count(*) from src_table;             -- Expecting 2
 select count(*) from table_join_mv_dst; -- Expecting 20000
 
+-- The view output of this batch is larger than `min_insert_block_size_rows`. It is still written
+-- as one block, so the flush succeeds and only the duplicate insert is dropped.
 select 'insert with self deduplication with join inside mv which produces large result';
 insert into src_table values (1, 'Alice'), (2, 'Bob'), (3, 'Charlie'), (4, 'David');
 insert into src_table values (1, 'Alice'), (2, 'Bob'), (3, 'Charlie'), (4, 'David');
 insert into src_table values (1, 'Alice'), (1, 'Alice'), (1, 'Alice'), (1, 'Alice');
 system flush async insert queue src_table;
+select count(*) from src_table;             -- Expecting 10
+select count(*) from table_join_mv_dst; -- Expecting 100000
 
 system flush logs system.query_log;
 select query, type, exception_code from system.query_log
