@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDropNamedCollectionQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
