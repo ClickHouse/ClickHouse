@@ -278,6 +278,10 @@ private:
 
     /// Every row conflicted under IGNORE, so nothing is published
     bool part_discarded = false;
+
+    /// The existing parts that hold the rows which won the conflicts under IGNORE. The INSERT is
+    /// acknowledged on the strength of these rows, so with `fsync_after_insert` they have to be durable.
+    std::vector<MergeTreePartInfo> ignore_conflict_parts;
 };
 
 ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const MergeTreeDataPartPtr & target)
@@ -394,6 +398,8 @@ DeleteBitmapPtr UniqueKeyTxnCommit::InsertCommit::computeOwnKills(const std::vec
 
 bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 {
+    ignore_conflict_parts.clear();
+
     /// Also registers the block ids in the dedup log.
     allocation = std::make_unique<BlockAllocation>(
         storage.log.load(), storage.allocateBlockNumber(CommittingBlock::Op::NewPart), storage.getDeduplicationLog(), *own_part,
@@ -434,6 +440,10 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
         {
             /// Existing rows win: kill the conflicting rows in the new part
             ProfileEvents::increment(ProfileEvents::UniqueKeyConflictIgnoredRows, conflict_rows.size());
+            for (size_t row : conflict_rows)
+                ignore_conflict_parts.push_back(results[row].part->info);
+            std::ranges::sort(ignore_conflict_parts);
+            ignore_conflict_parts.erase(std::ranges::unique(ignore_conflict_parts).begin(), ignore_conflict_parts.end());
             if (conflict_rows.size() == results.size())
             {
                 part_discarded = true;
@@ -471,9 +481,12 @@ UniqueKeyInsertOutcome UniqueKeyTxnCommit::InsertCommit::run()
     if (csn != INVALID_CSN)
         allocation->commit();
 
+    auto conflicting_parts = allocation->dedupConflictParts();
+    conflicting_parts.insert(conflicting_parts.end(), ignore_conflict_parts.begin(), ignore_conflict_parts.end());
+
     return {
         .conflicting_blocks = allocation->dedupConflicts(),
-        .conflicting_parts = allocation->dedupConflictParts(),
+        .conflicting_parts = std::move(conflicting_parts),
         .part_discarded = part_discarded};
 }
 

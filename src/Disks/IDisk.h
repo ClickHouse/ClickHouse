@@ -521,9 +521,8 @@ public:
     /// so that they survive a power loss. Unlike WriteBufferFromFileBase::sync() this can be
     /// called long after the file was finalized, which is what makes it possible to fsync a
     /// whole set of files at once instead of one by one as they are written.
-    /// A file that no longer exists is not an error: the caller enumerates the files from the
-    /// disk, and one of them can be removed concurrently, in which case there is nothing left to
-    /// make durable.
+    /// A file that no longer exists is an error: a missing path does not prove that the data was
+    /// removed (it may have been renamed), so it cannot be treated as durable.
     /// The default is a no-op: only disks that return true from supportsSyncFile() implement it.
     virtual void syncFile(const String & path) const;
 

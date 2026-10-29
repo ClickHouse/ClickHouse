@@ -6,7 +6,9 @@
 # With fsync_after_insert = 1 and fsync_after_insert_each_part = 0 an INSERT into ReplicatedMergeTree
 # publishes its block in Keeper before it syncs its part. A retry of the same block on another replica
 # is deduplicated against that part, which may not be durable anywhere yet. So the retry waits until it
-# has a local copy of the part and syncs it, and fails if it cannot get one in time.
+# has a local copy of the part and syncs it, and fails if it cannot get one in time. That does not depend
+# on the mode of the retrying replica, which cannot know the mode the original replica used: r2 uses
+# fsync_after_insert_each_part = 1.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "
         sleep_before_commit_local_part_in_replicated_table_ms = 5000;
     CREATE TABLE t_fsync_dedup_other_replica_2 (k UInt64, s String)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_fsync_dedup_other_replica', 'r2') ORDER BY k
-    SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 1, fsync_after_insert_each_part = 0;
+    SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 1, fsync_after_insert_each_part = 1;
     SYSTEM STOP FETCHES t_fsync_dedup_other_replica_2;"
 
 INSERT_SETTINGS="SETTINGS insert_deduplicate = 1, async_insert = 0, insert_deduplication_token = 'token'"

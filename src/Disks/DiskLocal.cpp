@@ -628,14 +628,12 @@ void DiskLocal::syncFile(const String & path) const
     /// finalized and closed. Since Linux 4.16 a writeback error that nobody has seen yet is reported
     /// to a descriptor opened after it happened, as long as the inode stays in the cache; if the inode
     /// is evicted in between, the error is lost. This is documented in `fsync_after_insert_each_part`.
+    /// A missing file is an error too: it does not prove that the data is gone, the file may have
+    /// been renamed (e.g. the directory of a fetched part that is being committed), and its data
+    /// would then be acknowledged without being synced.
     int fd = ::open(full_path.c_str(), O_RDONLY | O_CLOEXEC);
     if (-1 == fd)
-    {
-        /// Removed concurrently - nothing left to make durable.
-        if (errno == ENOENT)
-            return;
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, full_path, "Cannot open file {}", full_path);
-    }
 
     SCOPE_EXIT({ [[maybe_unused]] int err = ::close(fd); });
 
