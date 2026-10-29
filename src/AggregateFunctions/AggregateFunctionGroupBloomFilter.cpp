@@ -413,33 +413,36 @@ void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory & factor
 void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Builds a probabilistic Bloom filter from column values and returns it as an aggregate state.
+Builds a probabilistic [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) from column values and returns it as an aggregate state.
 The Bloom filter can be used with [`bloomFilterContains`](/reference/functions/regular-functions/other-functions#bloomFilterContains)
 to efficiently check whether a value was present in the aggregated dataset.
 
 This is useful for finding new values that appeared in one time interval but were absent in another,
 with low memory usage compared to exact methods like `NOT IN` or `EXCEPT`.
 
-**Parameters:**
-- `expected_elements` — expected number of distinct elements to be inserted.
-- `false_positive_rate` (optional, default `0.025`) — desired false positive probability in range (0, 1). Lower values require more memory.
-- `seed` (optional, default `0`) — seed for hash functions.
-
-Alternatively, you can specify filter parameters directly:
-- `filter_size_bytes` — size of the Bloom filter in bytes.
-- `num_hashes` — number of hash functions.
+A Bloom filter may return false positives (report a value as present when it is not), but never false negatives
+(a value that was added will always be found). The false positive rate is controlled by `false_positive_rate`.
+Lower values require more memory.
 
 The parameter form is selected by the second parameter: if it is a `Float64` value in `(0, 1)`,
-it is interpreted as `false_positive_rate`; otherwise, it is interpreted as `num_hashes`.
+the parameters are interpreted as `expected_elements` and `false_positive_rate`; otherwise, they are interpreted
+as `filter_size_bytes` and `num_hashes`. The maximum filter size is 256 MB, and the number of hash functions is limited to 20.
+
+The `-State` combinator is required to obtain a state for use with `bloomFilterContains`.
+The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.
 
 `groupBloomFilter` supports the `-State` and `-MergeState` combinators. The `-State` combinator can be combined
 with `-If`, `-Array`, or `-ArrayIf`; the resulting states can be used with `bloomFilterContains`.
 Arguments of `groupBloomFilterIfState` and `groupBloomFilterArrayIfState`, including array elements and the condition,
 must not be `Nullable`.
+Calling `groupBloomFilterState` directly with a `Nullable` value remains supported; `NULL` values are skipped.
 An untyped `NULL` argument is rejected because its element type cannot be inferred. Cast it to an explicit
 `Nullable(T)` type to create an empty typed state.
-The `-Distinct` combinator is not supported because duplicate values do not change a Bloom filter and its
-additional state cannot be consumed by `bloomFilterContains`.
+
+The `-OrNull` and `-OrDefault` combinators are not supported, including state-only chains such as
+`groupBloomFilterOrNullState` and `groupBloomFilterOrDefaultState`, because they require a meaningful finalized result.
+The `-Distinct` combinator is not supported, including `groupBloomFilterDistinctState` and `groupBloomFilterDistinctMergeState`:
+duplicate values do not change a Bloom filter, and the additional state cannot be consumed by `bloomFilterContains`.
 Other combinators that change or replicate the aggregate state, including `-ArgMin`, `-ArgMax`, `-ForEach`,
 `-Map`, `-Resample`, `-SimpleState`, and `-Tuple`, are rejected during aggregate-function construction.
     )";
@@ -454,18 +457,18 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
     FunctionDocumentation::Arguments arguments = {
         {
             "column",
-            "Column values to add to the Bloom filter. Supported types: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, "
-            "Int8, Int16, Int32, Int64, Int128, Int256, Float32, Float64, String, FixedString, Date, Date32, "
-            "DateTime, DateTime64, UUID, IPv4, IPv6, Enum8, Enum16.",
+            "Column values to add to the Bloom filter. Supported types: `UInt8`, `UInt16`, `UInt32`, `UInt64`, `UInt128`, `UInt256`, "
+            "`Int8`, `Int16`, `Int32`, `Int64`, `Int128`, `Int256`, `Float32`, `Float64`, `String`, `FixedString`, `Date`, `Date32`, "
+            "`DateTime`, `DateTime64`, `UUID`, `IPv4`, `IPv6`, `Enum8`, `Enum16`.",
             {}
         }
     };
     FunctionDocumentation::Parameters parameters = {
-        {"expected_elements", "Expected number of distinct elements."},
-        {"false_positive_rate", "Desired false positive rate in (0, 1). Default: 0.025."},
-        {"filter_size_bytes", "Size of the Bloom filter in bytes for the direct parameter form."},
-        {"num_hashes", "Number of hash functions for the direct parameter form."},
-        {"seed", "Seed for hash functions. Default: 0."}
+        {"expected_elements", "Expected number of distinct elements. Default: `10000`.\n"},
+        {"false_positive_rate", "Desired false positive rate in `(0, 1)`. Default: `0.025`.\n"},
+        {"filter_size_bytes", "Size of the Bloom filter in bytes for the direct parameter form. Maximum: 256 MB.\n"},
+        {"num_hashes", "Number of hash functions for the direct parameter form, from `1` to `20`.\n"},
+        {"seed", "Seed for hash functions. Default: `0`.\n"}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` (default form) or "
@@ -473,7 +476,9 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         "when using the `-State` combinator. "
         "The `-If`, `-Array`, and `-ArrayIf` variants use the corresponding aggregate function name and argument types. "
         "Parameterized forms must resolve to the same effective `filter_size_bytes`, `num_hashes`, and `seed` when defining `AggregatingMergeTree` columns explicitly. "
-        "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.",
+        "Equivalent parameter forms, such as omitted default `seed`, are compatible. "
+        "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result. "
+        "Use `groupBloomFilterState` or `groupBloomFilterMergeState` with `bloomFilterContains` instead.",
         {"AggregateFunction"}
     };
     FunctionDocumentation::Examples examples = {
@@ -486,6 +491,18 @@ FROM numbers(100)
             R"(
 ┌─result─┐
 │      1 │
+└────────┘
+            )"
+        },
+        {
+            "Check a value absent from the filter",
+            R"(
+SELECT bloomFilterContains(groupBloomFilterState(1000)(number), toUInt64(200)) AS result
+FROM numbers(100)
+            )",
+            R"(
+┌─result─┐
+│      0 │
 └────────┘
             )"
         },
