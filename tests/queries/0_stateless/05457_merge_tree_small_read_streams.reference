@@ -1,0 +1,4 @@
+2	425984	54
+MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 4 0 → 1
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
