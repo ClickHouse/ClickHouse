@@ -96,6 +96,8 @@ cache and a fresh target `--action_env` value. BuildBuddy executed the final
 | [Bazel 9.3.0 fastbuild with Merkle throttling](https://app.buildbuddy.io/invocation/538a43d9-ad59-4110-9e14-92afac1f42ac#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
 | [Bazel nightly fastbuild at `c57e487c`](https://app.buildbuddy.io/invocation/9524b4f0-06d7-464f-9b18-5a4311f939b7#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
 | [`-c opt --features=thin_lto`](https://app.buildbuddy.io/invocation/841c82aa-2b17-4df6-890f-8ac960d94733#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
+| [Bazel fork `10.0.0-pre.20261028.1` fastbuild](https://app.buildbuddy.io/invocation/3cc8a281-fdd2-48bb-91c2-0d1188ae8839#timing) | `66bfdb7a22d08f7076721fa1cd68ee7c5167b4d8d6620965a0db72858280c522` | 2,175,634,528 |
+| [Bazel fork `10.0.0-pre.20261028.1` opt ThinLTO](https://app.buildbuddy.io/invocation/aee94ac7-3cb2-4fcf-ae69-9dac323a613a#timing) | `79d90fd7278aa71960be5ebf109b1ee14927d068884a94458f42863a58308353` | 828,248,440 |
 
 On the 10-core macOS client with `--jobs=2000`, the throttled Bazel 9.3.0 build
 spent 457 seconds of its critical path waiting to prepare remote actions or
@@ -142,12 +144,12 @@ A [previous ARM64 build](https://app.buildbuddy.io/invocation/c8f333e4-b619-4fa2
 
 ## Binary comparison
 
-At [`30df64d2b`](https://github.com/dzbarsky/clickhouse/commit/30df64d2b73a951a1b0cc2d57e1aad0412d94ec1), both `-c opt` builds matched the native CMake stripped SHA-256 and byte count. The unstripped executables also matched the preceding Bazel builds.
+At [`fcf71cd87`](https://github.com/dzbarsky/clickhouse/commit/fcf71cd87d693d3995c1ee34ea99a6c56dbf4cb7), both `-c opt` builds matched the native CMake stripped SHA-256 and byte count. The unstripped executables also matched the preceding Bazel builds.
 
 | Native Bazel build | Stripped ClickHouse SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/a40f0163-29e6-4bb1-bd1c-01fa45039763#timing) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/71685783-2329-46df-8262-5920e8877d92#timing) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/f323d089-f437-49e6-a0d9-b6337e4e4aea#timing) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [ARM64](https://app.buildbuddy.io/invocation/3b354a1c-3ac9-4caf-8045-ddba60e0c474#timing) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
 
 The [validation history](bazel/initial_migration/validation-history.md#5549bc23a) records the unstripped hashes and compiler checks for the previous comparison.
 
