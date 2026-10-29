@@ -1,7 +1,6 @@
 -- Tests for LEFT ANTI JOIN with multiple join keys and runtime filters.
 -- The runtime filter uses a Tuple-based NOT IN filter for exact tuple membership.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 -- ==========================================================================

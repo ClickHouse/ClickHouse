@@ -7,7 +7,6 @@
 -- is false) and silently disables both optimizations. The gate makes the
 -- deferral commit only when the join side is guaranteed stable.
 
-SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
 DROP TABLE IF EXISTS t_l;
