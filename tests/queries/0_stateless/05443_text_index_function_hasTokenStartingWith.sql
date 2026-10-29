@@ -178,7 +178,7 @@ CREATE TABLE tab
     id UInt32,
     user_name String,
     email String,
-    search String MATERIALIZED lowerUTF8(concatWithSeparator('|', '', user_name, email)),
+    search String MATERIALIZED lower(concatWithSeparator('|', '', user_name, email)),
     INDEX idx(search) TYPE text(tokenizer = splitByString(['|']))
 )
 ENGINE = MergeTree

@@ -577,7 +577,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAllTokens(col, str)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | yes | all | yes |
 | [hasAnyTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAnyTokens) | no (array elements are tokens as-is) | all | yes |
 | [hasAllTokens(col, arr)](/reference/functions/regular-functions/string-search-functions#hasAllTokens) | no (array elements are tokens as-is) | all | yes |
-| [hasTokenStartingWith](/reference/functions/regular-functions/string-search-functions#hasTokenStartingWith) | no (the prefix is matched as-is) | all⁶ | yes⁶ |
+| `hasTokenStartingWith` | no (the prefix is matched as-is) | all⁶ | yes⁶ |
 | [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase)                 | yes | `splitByNonAlpha`, `splitByString`, `splitByRegexp`³, `ngrams`, `asciiCJK`, `icu` | yes³ |
 | [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                      | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                          | yes⁴ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`, `array`⁴ | yes⁴ |
@@ -880,7 +880,7 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 #### `hasTokenStartingWith` {#functions-example-hastokenstartingwith}
 
-Function [hasTokenStartingWith](/reference/functions/regular-functions/string-search-functions#hasTokenStartingWith) matches rows in which at least one token starts with the given prefix, for example the `fa*` of a search box.
+Function `hasTokenStartingWith` matches rows in which at least one token starts with the given prefix, for example the `fa*` of a search box.
 Unlike `startsWith`, the prefix may begin at any token, not only at the start of the value.
 The prefix is matched as-is, it is not tokenized.
 The index seeks its sorted dictionary to the tokens with that prefix, so the query reads only the posting lists of the matching tokens.
@@ -1550,7 +1550,7 @@ The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'v
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
-The same dictionary scan serves [hasTokenStartingWith](/reference/functions/regular-functions/string-search-functions#hasTokenStartingWith) with any tokenizer, and there the index decides the query on its own: a row matches if and only if one of its tokens starts with the prefix, so the scan is a direct read without hint.
+The same dictionary scan serves `hasTokenStartingWith` with any tokenizer, and there the index decides the query on its own: a row matches if and only if one of its tokens starts with the prefix, so the scan is a direct read without hint.
 It seeks the sorted dictionary to the key range of the prefix instead of scanning every block.
 A prefix shorter than `text_index_like_min_pattern_length`, or an index with a postprocessor, leaves the function to the column scan.
 
