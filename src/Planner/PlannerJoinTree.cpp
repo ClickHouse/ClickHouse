@@ -1829,25 +1829,26 @@ void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
 
 void checkParallelReplicasImplementationOfSubqueries(const QueryTreeNodePtr & node, const ContextPtr & query_context)
 {
-    /// One query reads with replicas using one implementation. The two split the work at different
-    /// points, so a plan mixing them does not combine them: the part planned for the other one ends up
-    /// reading without parallel replicas at all. Every carrier of a subquery - a table expression, an
-    /// `IN` set, a materialized CTE, a correlated subquery - has its own context whose `SETTINGS` clause
-    /// can name the other implementation, and the traversal reaches all of them.
-    /// Without parallel replicas the setting has no effect, so a subquery (or a view) setting it is harmless.
-    /// Neither has it on a follower, which reads the tasks the initiator hands out whatever its own value:
-    /// the query it receives keeps the `SETTINGS` clause of a subquery, while the follower's own value may
-    /// come from its profile, because the initiator ships only the settings it changed.
+    /// Query-based and plan-based parallel replicas cannot be mixed in one query: the subtree planned for
+    /// the other one reads without parallel replicas. Any subquery (table expression, `IN` set, CTE,
+    /// correlated subquery) has its own context, so it can set a different `parallel_replicas_plan_based`.
+    /// A (sub)query with parallel replicas disabled is skipped: the setting has no effect there.
+    auto parallel_replicas_enabled = [](const Settings & settings)
+    {
+        return settings[Setting::allow_experimental_parallel_reading_from_replicas] || settings[Setting::automatic_parallel_replicas_mode];
+    };
+
     const auto & settings = query_context->getSettingsRef();
-    if (!settings[Setting::allow_experimental_parallel_reading_from_replicas] && !settings[Setting::automatic_parallel_replicas_mode])
+    if (!parallel_replicas_enabled(settings))
         return;
     if (query_context->getClientInfo().collaborate_with_initiator)
         return;
 
     const bool plan_based = settings[Setting::parallel_replicas_plan_based];
-    auto check = [plan_based](const ContextPtr & context)
+    auto check = [plan_based, &parallel_replicas_enabled](const ContextPtr & context)
     {
-        if (context->getSettingsRef()[Setting::parallel_replicas_plan_based] != plan_based)
+        const auto & context_settings = context->getSettingsRef();
+        if (parallel_replicas_enabled(context_settings) && context_settings[Setting::parallel_replicas_plan_based] != plan_based)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "A subquery sets `parallel_replicas_plan_based` = {}, while the query reads with parallel replicas with "
                 "`parallel_replicas_plan_based` = {}. One query uses one implementation of parallel replicas: set it for the whole query",

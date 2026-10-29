@@ -55,6 +55,17 @@ SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 0;
 SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS parallel_replicas_plan_based = 0)
 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1;
 
+-- Neither has it in a subquery that switches parallel replicas off for itself.
+SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1)
+SETTINGS parallel_replicas_plan_based = 0;
+SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 0)
+SETTINGS parallel_replicas_plan_based = 1;
+SELECT count() FROM t_05433 WHERE x IN (SELECT x FROM t_05433 WHERE y < 5 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1)
+SETTINGS parallel_replicas_plan_based = 0;
+SET parallel_replicas_plan_based = 0;
+(SELECT sum(x) FROM t_05433 SETTINGS enable_parallel_replicas = 0, parallel_replicas_plan_based = 1) UNION ALL SELECT sum(x) FROM t_05433;
+SET parallel_replicas_plan_based = DEFAULT;
+
 -- Setting the implementation for the whole query reaches its subqueries.
 SELECT '-- whole query';
 SELECT sum(c) FROM (SELECT y, count() AS c FROM t_05433 GROUP BY y) SETTINGS parallel_replicas_plan_based = 1;

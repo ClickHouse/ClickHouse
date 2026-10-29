@@ -2774,8 +2774,7 @@ void Planner::buildPlanForUnionNode()
             return;
     }
 
-    /// Each arm is planned by its own planner, from its own context, so the arm checks only its own
-    /// subtree against itself. An arm naming the other implementation in its `SETTINGS` has to be caught here.
+    /// Each arm is checked only against its own context, so compare the arms with the union here.
     checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
 
     const auto & union_queries_nodes = union_node.getQueries().getNodes();
@@ -2975,8 +2974,7 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
-    /// Before the sets and the materialized CTEs are collected: they are planned by their own planners,
-    /// from the context each subquery carries.
+    /// Before collecting sets and materialized CTEs, whose subqueries are planned separately.
     checkParallelReplicasImplementationOfSubqueries(query_tree, query_context);
 
     collectSets(query_tree, *planner_context);
