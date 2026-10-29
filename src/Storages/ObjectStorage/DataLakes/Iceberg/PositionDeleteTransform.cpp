@@ -69,6 +69,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
 
+    /// Delete files usually share the same schema, so the filter is analyzed once per distinct header
+    /// instead of once per file: a table with many delete files would otherwise spend noticeable time
+    /// in the analysis of this trivial expression.
+    std::optional<NamesAndTypesList> filter_header;
+    std::shared_ptr<const ActionsDAG> filter_actions_dag;
+
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
         if (position_deletes_object.reference_data_file_path.has_value()
@@ -117,15 +123,15 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log, read_settings));
 
-        std::optional<ActionsDAG> actions = analyzeExpressionToActionsDAG(where_ast, initial_header.getNamesAndTypesList(), context, true);
-        std::shared_ptr<const ActionsDAG> actions_dag_ptr = [&actions]()
+        auto header_names_and_types = initial_header.getNamesAndTypesList();
+        if (!filter_header || *filter_header != header_names_and_types)
         {
-            if (actions.has_value())
-                return std::make_shared<const ActionsDAG>(std::move(actions.value()));
-            return std::shared_ptr<const ActionsDAG>();
-        }();
+            std::optional<ActionsDAG> actions = analyzeExpressionToActionsDAG(where_ast, header_names_and_types, context, true);
+            filter_actions_dag = actions ? std::make_shared<const ActionsDAG>(std::move(*actions)) : nullptr;
+            filter_header = std::move(header_names_and_types);
+        }
 
-        auto delete_format_filter_info = std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr);
+        auto delete_format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, nullptr, nullptr);
         delete_format_filter_info->need_row_numbers = true;
         auto delete_format = FormatFactory::instance().getInput(
             format,
