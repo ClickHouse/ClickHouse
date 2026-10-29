@@ -12,7 +12,11 @@ config="${CLICKHOUSE_CONFIG_DIR}/config.d/${CLICKHOUSE_TEST_UNIQUE_NAME}.xml"
 reload_config()
 {
     # `listen_try` can report 'Address already in use' while the reload itself succeeds.
-    $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v -e 'Address already in use' || :
+    # On Darwin, `setrlimit` rejects the fast-test `core_dump.size_limit` and the client
+    # prints `Cannot set max size of core file`. That warning is not part of this check.
+    $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD CONFIG" |& grep -v \
+        -e 'Address already in use' \
+        -e 'Cannot set max size of core file' || :
 }
 
 cleanup()
