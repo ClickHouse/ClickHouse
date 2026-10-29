@@ -518,7 +518,9 @@ expect ":) "
 
 send -- "SELECT 2000+123"
 escape
-send -- "c\x7f9"
+# A separate `send`: old Tcl versions (e.g. on macOS) read all hex digits after `\x`.
+send -- "c\x7f"
+send -- "9"
 escape
 submit
 expect "2193"
