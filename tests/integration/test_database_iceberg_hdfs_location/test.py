@@ -3,7 +3,7 @@
 The catalog reports the location as `hdfs://...`, and with the default `vended_credentials = 1`
 it vends no credentials for it: HDFS authenticates through the server's `hdfs` configuration.
 Neither may stop the table from resolving. Reading it still needs `READ ON HDFS` for its location,
-as reading it through `icebergHDFS` does.
+and writing it `WRITE ON HDFS`, as reading and writing it through `icebergHDFS` do.
 """
 
 import json
@@ -11,6 +11,7 @@ import os
 from urllib.parse import urlparse
 
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.mock_servers import start_mock_servers
@@ -27,6 +28,18 @@ node = cluster.add_instance(
 
 USER = "hdfs_catalog_reader"
 LOCATION = "hdfs://hdfs1:9000/warehouse/ns/events"
+
+
+def list_hdfs_dir(hdfs_api, path):
+    response = requests.get(
+        f"{hdfs_api.protocol}://{hdfs_api.host}:{hdfs_api.proxy_port}/webhdfs/v1{path}",
+        params={"op": "LISTSTATUS", "user.name": hdfs_api.user},
+        timeout=hdfs_api.timeout,
+    )
+    response.raise_for_status()
+    return sorted(
+        status["pathSuffix"] for status in response.json()["FileStatuses"]["FileStatus"]
+    )
 
 
 @pytest.fixture(scope="module")
@@ -87,7 +100,7 @@ def test_hdfs_location_with_vended_credentials(hdfs_catalog):
     assert node.query("SELECT count() FROM hdfs_catalog.`ns.events`") == "0\n"
 
 
-def test_hdfs_location_requires_hdfs_source_grant(hdfs_catalog):
+def test_hdfs_location_requires_hdfs_source_grant(started_cluster, hdfs_catalog):
     node.query(f"""
         DROP USER IF EXISTS {USER};
         CREATE USER {USER};
@@ -121,5 +134,20 @@ def test_hdfs_location_requires_hdfs_source_grant(hdfs_catalog):
             node.query("SELECT count() FROM hdfs_catalog.`ns.events`", user=USER)
             == "0\n"
         )
+
+        # Reading the location does not allow writing to it.
+        table_path = urlparse(LOCATION).path
+        files_before = list_hdfs_dir(started_cluster.hdfs_api, table_path)
+        node.query(f"GRANT INSERT ON hdfs_catalog.* TO {USER}")
+        for settings in [
+            "allow_insert_into_iceberg = 1",
+            "allow_insert_into_iceberg = 1, async_insert = 1, wait_for_async_insert = 1",
+        ]:
+            error = node.query_and_get_error(
+                f"INSERT INTO hdfs_catalog.`ns.events` SETTINGS {settings} VALUES (1, 'a')",
+                user=USER,
+            )
+            assert "ACCESS_DENIED" in error, error
+        assert list_hdfs_dir(started_cluster.hdfs_api, table_path) == files_before
     finally:
         node.query(f"DROP USER IF EXISTS {USER}")

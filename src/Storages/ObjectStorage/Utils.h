@@ -33,6 +33,10 @@ void validateSupportedColumns(
 /// `context` may not. For entrypoints that do not refresh the client for the session, e.g. `ALTER` of a data lake.
 void checkSessionMayUseServerIdentity(const IObjectStorage & object_storage, const ContextPtr & context);
 
+/// Normalizes a URI the same way `ITableFunction::getFunctionURINormalized` does, so source grant filters match alike.
+/// Returns an empty string for a URI that cannot be parsed.
+String normalizeSourceURI(const String & uri);
+
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
