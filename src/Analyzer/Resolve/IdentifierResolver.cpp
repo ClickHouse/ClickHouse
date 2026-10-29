@@ -898,6 +898,31 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     return { .resolved_identifier = result_expression, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 }
 
+/// Whether a table expression in scope other than `table_expression_data` matches the identifier with its database and
+/// table name on the exact boundary between them, covering the number of parts accepted by `matches_parts`.
+template <typename MatchesParts>
+static bool isMatchedOnExactBoundaryByOtherTableExpression(
+    const Identifier & identifier,
+    const AnalysisTableExpressionData & table_expression_data,
+    const IdentifierResolveScope & scope,
+    MatchesParts && matches_parts)
+{
+    for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+    {
+        for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
+        {
+            if (&other_table_expression_data == &table_expression_data)
+                continue;
+
+            bool other_crosses_boundary = false;
+            size_t other_parts = other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary);
+            if (matches_parts(other_parts) && !other_crosses_boundary)
+                return true;
+        }
+    }
+    return false;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpression(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -924,8 +949,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
         /// The whole identifier is the table name or the database and the table name. Both are hierarchical
         /// (`db.ns.t`, see `DatabaseCatalog`), so they can cover any number of parts.
-        if (table_expression_data.matchTableName(identifier, scope.context) == parts_size
-            || table_expression_data.matchDatabaseAndTableName(identifier) == parts_size)
+        if (table_expression_data.matchTableName(identifier, scope.context) == parts_size)
+            return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+        /// A name crossing the boundary between the database and the table (`"a.b".c.*` for the table `a`.`b.c`) is
+        /// only accepted when no other table expression matches it exactly (the table `a.b`.`c`), as for the columns.
+        bool crosses_boundary = false;
+        if (table_expression_data.matchDatabaseAndTableName(identifier, &crosses_boundary) == parts_size
+            && !(crosses_boundary
+                 && isMatchedOnExactBoundaryByOtherTableExpression(
+                     identifier, table_expression_data, scope, [&](size_t other_parts) { return other_parts == parts_size; })))
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
 
         /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
@@ -1140,22 +1173,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     /// A qualifier crossing the boundary between the database and the table (`"a.b".c` for the table `a`.`b.c`) is only
     /// accepted when no other table expression matches it exactly (the table `a.b`.`c`): these are distinct tables.
-    if (crosses_boundary)
-    {
-        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
-        {
-            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
-            {
-                if (&other_table_expression_data == &table_expression_data)
-                    continue;
-
-                bool other_crosses_boundary = false;
-                size_t other_parts = other_table_expression_data.matchDatabaseAndTableName(identifier, &other_crosses_boundary);
-                if (other_parts > 0 && other_parts < identifier.getPartsSize() && !other_crosses_boundary)
-                    return {};
-            }
-        }
-    }
+    if (crosses_boundary
+        && isMatchedOnExactBoundaryByOtherTableExpression(
+            identifier, table_expression_data, scope,
+            [&](size_t other_parts) { return other_parts > 0 && other_parts < identifier.getPartsSize(); }))
+        return {};
 
     return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, database_and_table_name_parts);
 }
