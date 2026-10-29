@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include <utility>
 #include <chrono>
 #include <thread>
@@ -30,6 +32,8 @@ RabbitMQConsumer::RabbitMQConsumer(
         , queues(queues_)
         , channel_base(channel_base_)
         , channel_id_base(channel_id_base_)
+        , prefetch_count(static_cast<UInt16>(std::clamp<size_t>(
+              queue_size_ / std::max<size_t>(queues_.size(), 1), 1, std::numeric_limits<UInt16>::max())))
         , log(log_)
         , received(queue_size_)
 {
@@ -102,9 +106,7 @@ void RabbitMQConsumer::subscribe(UInt64 generation)
         })
         .onReceived([this, generation](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
-            if (!message.bodySize())
-                return;
-
+            /// Empty messages are queued too: they hold a prefetch slot until acked.
             /// The generation is checked and the delivery is pushed under `channel_mutex`, so `updateChannel` cannot
             /// replace the channel and clear the queue in between. The mutex is released while waiting for space:
             /// the queue is drained only by the streaming thread, which may be about to call `updateChannel`.
@@ -170,6 +172,7 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
 
     for (const auto & delivery_tag : commit_info.failed_delivery_tags)
     {
+        last_rejected_delivery_tag = std::max(last_rejected_delivery_tag, delivery_tag);
         if (consumer_channel->reject(delivery_tag))
             LOG_TRACE(
                 log, "Consumer rejected message with deliveryTag {} on channel {}",
@@ -225,6 +228,7 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue
     const int failed_flags = requeue ? AMQP::requeue : 0;
     for (const auto & delivery_tag : commit_info.failed_delivery_tags)
     {
+        last_rejected_delivery_tag = std::max(last_rejected_delivery_tag, delivery_tag);
         if (consumer_channel->reject(delivery_tag, failed_flags))
             LOG_TRACE(
                 log, "Consumer did {} message with deliveryTag {} on channel {}",
@@ -249,6 +253,7 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue
             log, "Consumer did {} messages with deliveryTags from {} to {} on channel {}",
             verb, last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
 
+        last_commited_delivery_tag = commit_info.delivery_tag;
         return true;
     }
 
@@ -270,6 +275,8 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
         std::lock_guard lock(channel_mutex);
         state = State::INITIALIZING;
         last_commited_delivery_tag = 0;
+        last_rejected_delivery_tag = 0;
+        current = {};
         /// Abandon the callbacks of the old channel first, so that a late delivery cannot refill the queue after it is cleared.
         generation = ++channel_generation;
         /// Deliveries of the old channel can no longer be acked and the broker redelivers them.
@@ -297,6 +304,7 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
             LOG_TRACE(log, "Channel {} is successfully created", channel_id);
 
             subscriptions_num = 0;
+            consumer_channel->setQos(prefetch_count);
             subscribe(generation);
 
             state = State::OK;
@@ -325,6 +333,17 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
     });
 }
 
+
+bool RabbitMQConsumer::isWindowFull() const
+{
+    /// Delivery tags count up from 1 per channel and messages are read in delivery order.
+    return current.delivery_tag > last_commited_delivery_tag && current.delivery_tag - last_commited_delivery_tag >= prefetch_count;
+}
+
+bool RabbitMQConsumer::isWindowHeld() const
+{
+    return !stopped && isWindowFull() && current.delivery_tag > last_rejected_delivery_tag;
+}
 
 bool RabbitMQConsumer::needChannelUpdate()
 {

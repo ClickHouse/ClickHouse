@@ -4115,3 +4115,250 @@ def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
     # waited longer than 5 s.
     assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"
+
+
+def test_rabbitmq_backlog_larger_than_received_queue(rabbitmq_cluster, db, unique):
+    # https://github.com/ClickHouse/ClickHouse/issues/54775: without basic.qos the broker pushed the whole backlog.
+    # Once more than the internal queue of received messages (100000) was in flight, the event loop thread blocked in
+    # the delivery callback while the streaming thread waited for that loop to stop: consumption and DROP hung forever.
+    num_messages = 150000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+
+    # The whole backlog is queued before the table starts, so the result does not depend on the publish rate.
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_delete(queue=unique)  # Left over from an earlier run under the same name.
+    channel.queue_declare(queue=unique, durable=True)
+    for i in range(num_messages):
+        channel.basic_publish(exchange="", routing_key=unique, body=json.dumps({"key": i}))
+    assert num_messages == channel.queue_declare(queue=unique, passive=True).method.message_count
+    connection.close()
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_max_block_size = 1000,
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT key FROM {db}.rabbitmq WHERE sleepEachRow(0.0002) = 0;
+        """
+    )
+
+    try:
+        check_expected_result_polling(num_messages, f"SELECT count() FROM {db}.view")
+        assert num_messages == int(instance.query(f"SELECT uniqExact(key) FROM {db}.view"))
+        instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+    except BaseException:
+        # With the bug the threads stay deadlocked and every DROP hangs, including the fixture's DROP DATABASE.
+        # Kill the server and delete the backlog, so the reattached table can be dropped and the test FAILs cleanly.
+        instance.stop_clickhouse(kill=True)
+        connection = pika.BlockingConnection(parameters)
+        connection.channel().queue_delete(queue=unique)
+        connection.close()
+        instance.start_clickhouse()
+        raise
+
+
+def test_rabbitmq_empty_messages_are_acked(rabbitmq_cluster, db, unique):
+    # Messages without rows were never acked. With basic.qos each of them would hold a prefetch slot forever.
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_delete(queue=unique)  # Left over from an earlier run under the same name.
+    channel.queue_declare(queue=unique, durable=True)
+    # Empty messages last: an ack of a later row (`multiple`) would cover them and hide the bug.
+    for i in range(10):
+        channel.basic_publish(exchange="", routing_key=unique, body=json.dumps({"key": i}))
+    for _ in range(1000):
+        channel.basic_publish(exchange="", routing_key=unique, body="")
+    # Counted before the table starts: the log keeps the lines of earlier runs under the same name.
+    acked = f"StorageRabbitMQ ({db}.rabbitmq).*deliveryTags up to 1010 on"
+    before = int(instance.count_in_log(acked))
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS SELECT key FROM {db}.rabbitmq;
+        """
+    )
+    check_expected_result_polling(10, f"SELECT count() FROM {db}.view")
+    # The empty messages follow the rows on one channel (delivery tags 11 to 1010) and may be acked one flush interval
+    # later. Without the fix that never happens, and the broker check below fails.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while int(instance.count_in_log(acked)) == before and time.monotonic() < deadline:
+        time.sleep(0.5)
+    instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+
+    # The broker requeues unacked messages when it closes the consumer channel; only then is the ready count final.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while channel.queue_declare(queue=unique, passive=True).method.consumer_count and time.monotonic() < deadline:
+        time.sleep(0.5)
+    state = channel.queue_declare(queue=unique, passive=True).method
+    assert (state.consumer_count, state.message_count) == (0, 0)
+    channel.queue_delete(queue=unique)
+    connection.close()
+
+
+def test_rabbitmq_block_ends_when_prefetch_is_used_up(rabbitmq_cluster, db, unique):
+    # The broker sends at most 65535 unacked messages to a consumer, so a block larger than that can never fill up:
+    # it has to end once the prefetch window is read, not when the long flush interval expires.
+    num_messages = 70000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_delete(queue=unique)  # Left over from an earlier run under the same name.
+    channel.queue_declare(queue=unique, durable=True)
+    for i in range(num_messages):
+        channel.basic_publish(exchange="", routing_key=unique, body=json.dumps({"key": i}))
+    connection.close()
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_max_block_size = 200000,
+                     rabbitmq_flush_interval_ms = 120000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS SELECT key FROM {db}.rabbitmq;
+        """
+    )
+    # Waiting for the flush interval would take 120 s per block.
+    deadline = time.monotonic() + 60
+    while int(instance.query(f"SELECT count() FROM {db}.view")) < 65535 and time.monotonic() < deadline:
+        time.sleep(1)
+    assert int(instance.query(f"SELECT count() FROM {db}.view")) >= 65535
+    instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+
+    connection = pika.BlockingConnection(parameters)
+    connection.channel().queue_delete(queue=unique)
+    connection.close()
+
+
+def _rabbitmq_connection(rabbitmq_cluster):
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    return pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+
+
+def _prequeue(rabbitmq_cluster, queue, bodies):
+    connection = _rabbitmq_connection(rabbitmq_cluster)
+    channel = connection.channel()
+    channel.queue_delete(queue=queue)  # Left over from an earlier run under the same name.
+    channel.queue_declare(queue=queue, durable=True)
+    for body in bodies:
+        channel.basic_publish(exchange="", routing_key=queue, body=body)
+    connection.close()
+
+
+def _select_until(query, done, settings=None):
+    # A direct SELECT returns at once while nothing is delivered yet; each one runs the event loop for a while.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        out, err = instance.query_and_get_answer_with_error(
+            query, settings={"stream_like_engine_allow_direct_select": 1, **(settings or {})}
+        )
+        if done(out, err):
+            return
+        time.sleep(0.05)
+    pytest.fail(f"{query} did not return the expected result in {DEFAULT_TIMEOUT_SEC} s")
+
+
+def _attach_view_and_check(rabbitmq_cluster, db, queue, expected, query):
+    instance.query(f"CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS SELECT key FROM {db}.rabbitmq")
+    try:
+        check_expected_result_polling(expected, query)
+        instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+    except BaseException:
+        # Restart, so a table stuck in a block cannot affect the following tests.
+        instance.stop_clickhouse(kill=True)
+        instance.start_clickhouse()
+        raise
+    finally:
+        connection = _rabbitmq_connection(rabbitmq_cluster)
+        connection.channel().queue_delete(queue=queue)
+        connection.close()
+
+
+@pytest.mark.parametrize("commit_on_select", [0, 1], ids=["no_commit", "failed_select"])
+def test_rabbitmq_view_acks_messages_a_select_left_unacked(rabbitmq_cluster, db, unique, commit_on_select):
+    # A direct SELECT leaves the message it read unacked (rabbitmq_commit_on_select = 0, or it failed). That message
+    # held one of the consumer's 65535 prefetch slots, so with rabbitmq_flush_interval_ms = 0 the view's block waited
+    # forever for a full window. Two windows, so the view's ack after the first one has to reach the broker.
+    num_messages = 2 * 65535
+    # The first message parses only with input_format_json_read_bools_as_numbers (the default).
+    bodies = [json.dumps({"key": True})] + [json.dumps({"key": i}) for i in range(1, num_messages)]
+    _prequeue(rabbitmq_cluster, unique, bodies)
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_commit_on_select = {commit_on_select},
+                     rabbitmq_max_block_size = 200000,
+                     rabbitmq_flush_interval_ms = 0;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # A SELECT reads one message per consumer (one here), the first one.
+    query = f"SELECT key FROM {db}.rabbitmq"
+    if commit_on_select:
+        # Fails while parsing, before the SELECT can ack.
+        _select_until(query, lambda out, err: "INCORRECT_DATA" in err or "CANNOT_PARSE" in err,
+                      {"input_format_json_read_bools_as_numbers": 0})
+    else:
+        _select_until(query, lambda out, err: out == "1\n")
+
+    # The view acks the SELECT's message with its first block, without inserting it (as on master).
+    _attach_view_and_check(rabbitmq_cluster, db, unique, num_messages - 1, f"SELECT count() FROM {db}.view")
+
+
+def test_rabbitmq_view_acks_a_window_selects_left_unacked(rabbitmq_cluster, db, unique):
+    # Direct SELECTs read a whole prefetch window without acking it (empty messages, then key 0). The broker then
+    # delivered nothing more to that consumer, and a view attached later never got a message to ack.
+    _prequeue(rabbitmq_cluster, unique, [""] * 65534 + [json.dumps({"key": i}) for i in range(2)])
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 500;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+    # Each SELECT continues where the previous one stopped; key 0 is the last message of the window.
+    _select_until(f"SELECT key FROM {db}.rabbitmq", lambda out, err: out == "0\n")
+
+    _attach_view_and_check(rabbitmq_cluster, db, unique, 1, f"SELECT countIf(key = 1) FROM {db}.view")
