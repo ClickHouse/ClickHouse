@@ -384,7 +384,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 if (!query.is_dictionary)
                     table->checkTableCanBeDropped(context_);
             }
-            else
+            else if (!tables_with_checked_drop.contains(table))
                 table->checkTableCanBeDropped(context_);
 
             /// Check dependencies before shutting table down
@@ -542,8 +542,49 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     }
 
     getContext()->onQueryExecutionStarted();
+    if (!drop && !truncate)
+        database->assertCanBeDetached(true);
+
     if (!truncate && database->hasReplicationThread())
+    {
+        /// Refuse the operation before irreversibly stopping the database's replication worker.
+        auto table_context = Context::createCopy(getContext());
+        table_context->setInternalQuery(true);
+        const auto & settings = getContext()->getSettingsRef();
+        bool check_ref_deps = settings[Setting::check_referential_table_dependencies];
+        bool check_loading_deps = !check_ref_deps && settings[Setting::check_table_dependencies];
+        bool drop_tables = drop && !database->getDisk()->isReadOnly();
+        std::vector<StoragePtr> tables_to_check;
+        for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
+        {
+            auto table = it->table();
+            if (!table)
+                continue;
+
+            checkStorageSupportsTransactionsIfNeeded(table, table_context);
+            auto table_id = table->getStorageID();
+            auto access = table->isView() ? AccessType::DROP_VIEW
+                : table->isDictionary() ? AccessType::DROP_DICTIONARY : AccessType::DROP_TABLE;
+            table_context->checkAccess(access, table_id);
+            if (drop_tables)
+            {
+                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(
+                    table_id, check_ref_deps, check_loading_deps, /*is_drop_database=*/true);
+                if (!table->isDictionary())
+                    tables_to_check.push_back(table);
+            }
+            else if (!table->isDictionary())
+                table->checkTableCanBeDetached();
+        }
+
+        /// Last, because these checks may consume `force_drop_table`.
+        for (const auto & table : tables_to_check)
+        {
+            table->checkTableCanBeDropped(table_context);
+            tables_with_checked_drop.insert(table);
+        }
         database->stopReplication();
+    }
 
     if (database->shouldBeEmptyOnDetach())
     {

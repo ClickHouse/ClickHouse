@@ -76,6 +76,8 @@ public:
 
     void stopReplication() override;
 
+    void assertCanBeDetached(bool cleanup) override;
+
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
     void shutdown() override;
