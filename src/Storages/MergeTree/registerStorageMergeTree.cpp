@@ -247,6 +247,10 @@ static void checkAccessToStoredExpressions(const StorageInMemoryMetadata & metad
     if (metadata.table_ttl.definition_ast)
         TTLTableDescription::getTTLForTableFromAST(
             metadata.table_ttl.definition_ast, columns, local_context, metadata.primary_key, TTLValidationMode::SkipValidation);
+
+    /// `CHECK` constraints are evaluated with the context of the insert, which is a full-access context
+    /// when a `Buffer` table flushes into this table.
+    metadata.constraints.getExpressions(local_context, columns.getAllPhysical());
 }
 
 /// Returns whether this is a Replicated table engine?
