@@ -1,5 +1,4 @@
 SET json_type_escape_dots_in_keys = 1;
-SET enable_analyzer = 1;
 
 -- ============================================
 -- Setup: keys with dots stored with escape

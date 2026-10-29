@@ -1,0 +1,48 @@
+<!--
+    The same table in three lake formats: UK price paid (28205961 rows, 16 `Nullable(String)` columns, unpartitioned) as written
+    by Spark into Iceberg (18 data files), Delta Lake (18) and Hudi (230), s3://clickhouse-public-datasets/lakes/uk_price_paid_*/
+    (1.0, 2.4 and 1.5 GB), mirrored by the harness into `perf_s3_data`. Timed per format: one group (`lakes_cross_format.sql`) of a
+    `GROUP BY` of two of the string columns over the whole table and a filter on an unsorted string that no statistics can prune,
+    three times each. A single Iceberg or Delta read varies by about 10 %: 6 of the 12 streams read two of the 18 files, paired
+    anew in every run (a stream claims its next file when it starts), and Delta's GETs wait longer for the first byte.
+    `delta_lake_enable_engine_predicate = 0` works around the kernel error "Invalid comparison operation: BinaryView <= Utf8View"
+    on Delta binary columns. The setup checks the layouts and both results of every format against the plain Parquet reader over
+    the Iceberg data files.
+    Per server and invocation: 28 M rows per read; read-only, nothing written to local disk or to the job-local S3.
+-->
+<test requires_s3="1" requires_s3_public_data="1" run_all_queries="1" max_query_seconds="120">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>format</name>
+        <values>
+            <value>iceberg</value>
+            <value>delta</value>
+            <value>hudi</value>
+        </values>
+    </substitution>
+</substitutions>
+
+<create_query>CREATE TABLE upp_iceberg ENGINE = IcebergS3(perf_s3_data, filename = 'lakes/uk_price_paid_iceberg/default/iceberg_table/')</create_query>
+<create_query>CREATE TABLE upp_delta ENGINE = DeltaLake(perf_s3_data, filename = 'lakes/uk_price_paid_delta/')</create_query>
+<create_query>CREATE TABLE upp_hudi ENGINE = Hudi(perf_s3_data, filename = 'lakes/uk_price_paid_hudi/')</create_query>
+
+<fill_query>SELECT throwIf(count() != 28205961) FROM upp_{format}</fill_query>
+<fill_query>SELECT throwIf(count() != 18) FROM system.iceberg_files WHERE database = 'default' AND table = 'upp_iceberg' AND content = 0</fill_query>
+<fill_query>SELECT throwIf(uniqExact(_path) != 18) FROM upp_delta</fill_query>
+<fill_query>SELECT throwIf(uniqExact(_path) != 230) FROM upp_hudi</fill_query>
+<fill_query>SELECT throwIf(ifNull((SELECT groupArray(tuple(*)) FROM (SELECT c14, count(), avg(toUInt64OrZero(c2)) FROM upp_{format} GROUP BY c14 ORDER BY 2 DESC LIMIT 10)) != (SELECT groupArray(tuple(*)) FROM (SELECT c14, count(), avg(toUInt64OrZero(c2)) FROM s3(perf_s3_data, filename = 'lakes/uk_price_paid_iceberg/default/iceberg_table/data/*.parquet') GROUP BY c14 ORDER BY 2 DESC LIMIT 10)), 1))</fill_query>
+<fill_query>SELECT throwIf(ifNull((SELECT count(), sum(toUInt64OrZero(c2)) FROM upp_{format} WHERE c12 = 'LONDON') != (SELECT count(), sum(toUInt64OrZero(c2)) FROM s3(perf_s3_data, filename = 'lakes/uk_price_paid_iceberg/default/iceberg_table/data/*.parquet') WHERE c12 = 'LONDON'), 1)) SETTINGS delta_lake_enable_engine_predicate = 0</fill_query>
+
+<query file="lakes_cross_format.sql"/>
+
+<drop_query>DROP TABLE IF EXISTS upp_{format} SYNC</drop_query>
+
+</test>
