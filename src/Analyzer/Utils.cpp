@@ -46,6 +46,8 @@
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 
 #include <Storages/IStorage.h>
 
@@ -1629,6 +1631,20 @@ void filterConjunctions(
 
 }
 
+namespace
+{
+
+/// Executable and WebAssembly UDFs are configured per server, so a remote node may not have them.
+/// SQL UDFs are already inlined into their bodies at this point.
+bool isNodeLocalUserDefinedFunction(const String & function_name)
+{
+    if (UserDefinedSQLFunctionFactory::instance().has(function_name))
+        return true;
+    return UserDefinedExecutableFunctionFactory::has(function_name, Context::getGlobalContextInstance());
+}
+
+}
+
 bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
 {
     return walkOrdinaryFunctions(
@@ -1641,7 +1657,8 @@ bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node)
                 && !function_base->isServerConstant()
                 && !function_base->hasObservableSideEffects()
                 && !functionIsDictGet(function_base->getName())
-                && !functionIsJoinGet(function_base->getName());
+                && !functionIsJoinGet(function_base->getName())
+                && !isNodeLocalUserDefinedFunction(function_base->getName());
         });
 }
 
