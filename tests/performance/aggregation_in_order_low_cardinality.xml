@@ -1,0 +1,26 @@
+<test>
+    <settings><max_threads>1</max_threads></settings>
+
+    <!-- The GROUP BY keys extend past the sorting key and are all LowCardinality, so aggregation in order
+         builds one hashing state per run of equal `a` with a position cache over the dictionaries of the
+         keys. Runs of 16 rows are the case a per-run cache must stay cheap for; runs of 1024 and 65536
+         rows are the ones it must keep paying off for. -->
+    <create_query>CREATE TABLE agg_in_order_lc_16 (a LowCardinality(String), b LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <create_query>CREATE TABLE agg_in_order_lc_1024 (a LowCardinality(String), b LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+    <create_query>CREATE TABLE agg_in_order_lc_65536 (a LowCardinality(String), b LowCardinality(String), v UInt64) ENGINE = MergeTree ORDER BY a</create_query>
+
+    <fill_query>INSERT INTO agg_in_order_lc_16 SELECT concat('a', leftPad(toString(intDiv(number, 16)), 8, '0')), concat('b', toString(intHash32(number) % 14)), number FROM numbers_mt(655200)</fill_query>
+    <fill_query>INSERT INTO agg_in_order_lc_1024 SELECT concat('a', leftPad(toString(intDiv(number, 1024)), 8, '0')), concat('b', toString(intHash32(number) % 14)), number FROM numbers_mt(10483200)</fill_query>
+    <fill_query>INSERT INTO agg_in_order_lc_65536 SELECT concat('a', leftPad(toString(intDiv(number, 65536)), 8, '0')), concat('b', toString(intHash32(number) % 14)), number FROM numbers_mt(10485760)</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_lc_16 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_lc_1024 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE agg_in_order_lc_65536 FINAL</fill_query>
+
+    <query>SELECT a, b, sum(v) FROM agg_in_order_lc_16 GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT a, b, sum(v) FROM agg_in_order_lc_1024 GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+    <query>SELECT a, b, sum(v) FROM agg_in_order_lc_65536 GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_lc_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_lc_1024</drop_query>
+    <drop_query>DROP TABLE IF EXISTS agg_in_order_lc_65536</drop_query>
+</test>
