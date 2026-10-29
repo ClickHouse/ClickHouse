@@ -11,8 +11,10 @@
 
 #include <barrier>
 #include <cstdlib>
+#include <functional>
 #include <future>
 #include <initializer_list>
+#include <iostream>
 #include <thread>
 #include <utility>
 
@@ -2020,4 +2022,105 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
     ASSERT_EQ(b.killCount(), 0u);
     EXPECT_EQ(a.size(), 9000);
     EXPECT_EQ(b.size(), 0);
+}
+
+
+/// A self-deadlocked scheduler thread holds `AllocationQueue::mutex` forever, so nothing can be torn down after a timeout.
+/// Hence the scenario runs in a child process that exits instead.
+[[noreturn]] static void runScenarioInChild(const std::function<void()> & scenario)
+{
+    std::promise<void> done;
+    auto done_future = done.get_future();
+    std::thread([&] { scenario(); done.set_value(); }).detach();
+    if (done_future.wait_for(std::chrono::seconds(60)) != std::future_status::ready)
+    {
+        std::cerr << "The scenario did not finish in 60 seconds: the scheduler thread is likely deadlocked\n";
+        std::_Exit(1);
+    }
+    std::_Exit(testing::Test::HasFailure() ? 1 : 0);
+}
+
+static void expectScenarioFinishes(const std::function<void()> & scenario)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_EXIT(runScenarioInChild(scenario), ::testing::ExitedWithCode(0), "");
+}
+
+/// The demand exceeds the limit, so the scheduler evicts `a` or `b`. Release the victim, as a killed query does, and wait
+/// until the requests of the other one are approved.
+static void releaseVictimAndSync(std::unique_ptr<ManualAllocation> & a, std::unique_ptr<ManualAllocation> & b)
+{
+    while (a->killCount() == 0 && b->killCount() == 0)
+        std::this_thread::yield();
+    bool a_killed = a->killCount() > 0;
+    (a_killed ? a : b).reset();
+    (a_killed ? b : a)->waitSynced();
+}
+
+/// `approveDecrease` publishes the queue's next increase while holding the queue lock. Here `b`'s decrease moves its increase
+/// ahead of `a`'s and it does not fit, so `AllocationLimit` selects a victim in the same queue (#125116).
+TEST(SchedulerSpaceSharedDeathTest, NoDeadlockOnDecreaseApproval)
+{
+    expectScenarioFinishes([]
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        r.addLimit("/", 10000);
+        AllocationQueue * queue = r.addQueue("/queue");
+        r.registerResource();
+        auto a = std::make_unique<ManualAllocation>(queue, "a", 6000);
+        auto b = std::make_unique<ManualAllocation>(queue, "b", 3000);
+
+        // Park the scheduler so that the requests below arrive in one activation
+        std::promise<void> entered;
+        std::promise<void> release;
+        t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+        entered.get_future().get();
+
+        a->increaseAsync(1000); // 6000 + 1000: processed first, fits exactly
+        b->increaseAsync(5000); // 3000 + 5000
+        b->decreaseAsync(2000); // 1000 + 5000 after approval, ahead of `a`; 7000 + 5000 does not fit
+        release.set_value();
+
+        releaseVictimAndSync(a, b);
+    });
+}
+
+/// Workload settings updates run on the scheduler thread. If one runs after `a` requested an increase but before the queue
+/// activation published it, `update` publishes it while holding the queue lock; it does not fit, so `AllocationLimit` selects
+/// a victim in the same queue (#125116).
+static void expectNoDeadlockOnStaleIncrease(const std::function<void(AllocationLimit &, AllocationQueue &)> & update)
+{
+    expectScenarioFinishes([&]
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        AllocationLimit * limit = r.addLimit("/", 10000);
+        AllocationQueue * queue = r.addQueue("/queue");
+        r.registerResource();
+        auto a = std::make_unique<ManualAllocation>(queue, "a", 6000);
+        auto b = std::make_unique<ManualAllocation>(queue, "b", 4000);
+
+        std::promise<void> entered;
+        std::promise<void> release;
+        t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+        entered.get_future().get();
+
+        t.scheduler.event_queue.enqueue([&] { update(*limit, *queue); }); // processed before the activation of the increase below
+        a->increaseAsync(1000); // 10000 + 1000 does not fit
+        release.set_value();
+
+        releaseVictimAndSync(a, b);
+    });
+}
+
+TEST(SchedulerSpaceSharedDeathTest, NoDeadlockOnLimitUpdate)
+{
+    // Any settings update of a workload with `max_memory` re-applies the limit, even an unchanged one
+    expectNoDeadlockOnStaleIncrease([](AllocationLimit & limit, AllocationQueue &) { limit.updateLimit(10000); });
+}
+
+TEST(SchedulerSpaceSharedDeathTest, NoDeadlockOnQueueLimitUpdate)
+{
+    expectNoDeadlockOnStaleIncrease([](AllocationLimit &, AllocationQueue & queue) { queue.updateQueueLimit(100); });
 }
