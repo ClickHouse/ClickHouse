@@ -1,4 +1,4 @@
--- rank() and dense_rank() are defined on the ORDER BY peer group, so an explicit frame must
+-- `rank` and `dense_rank` are defined on the ORDER BY peer group, so an explicit frame must
 -- not affect them. Results are collected as sorted (key, rank) pairs so the assertions do not
 -- depend on the order rows reach the aggregation.
 
@@ -69,7 +69,7 @@ SELECT sum(r), sum(d) FROM (SELECT RANK() OVER (PARTITION BY number % 7 ORDER BY
 
 SELECT 'chunk split independence';
 -- Forward-looking frame ends make the row loop re-run for the same row, so the ranks must not
--- depend on max_block_size. Each query below must report exactly one distinct result.
+-- depend on `max_block_size`. Each query below must report exactly one distinct result.
 SELECT countDistinct(a) FROM (
     SELECT arraySort(groupArray(r)) AS a FROM (SELECT RANK() OVER (ORDER BY v ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS r FROM (SELECT arrayJoin(['a', 'a', 'b', 'b', 'b', 'c', 'd', 'd', 'e']) AS v)) SETTINGS max_block_size = 2
     UNION ALL SELECT arraySort(groupArray(r)) AS a FROM (SELECT RANK() OVER (ORDER BY v ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS r FROM (SELECT arrayJoin(['a', 'a', 'b', 'b', 'b', 'c', 'd', 'd', 'e']) AS v)) SETTINGS max_block_size = 3

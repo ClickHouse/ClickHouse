@@ -20,7 +20,9 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
+#include <deque>
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -115,9 +117,11 @@ private:
     /// The frame the aggregate states hold; the next frame is compared with it to add only the new rows.
     FrameBounds prev_frame;
 
-    /// The ORDER BY peer group of the last row of the previous batch, used only if params.separate_order_by_peer_groups is set.
+    /// The ORDER BY peer group of the last row of the previous batch, used only if `params.separate_order_by_peer_groups` is set.
     Int64 order_by_peer_group_start = 0;
     Int64 order_by_peer_group_index = 0;
+    /// One entry per block in `blocks`, kept out of `SlidingBlock` because its size sets the deque chunk size `blockAt` divides by.
+    std::deque<std::vector<bool>> order_by_peer_group_starts;
 };
 
 }

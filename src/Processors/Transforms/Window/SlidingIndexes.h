@@ -14,9 +14,6 @@ struct SlidingIndex
 {
     std::vector<bool> partition_starts;
     std::vector<int64_t> peer_group_indexes;
-    /// Peer group starts by the ORDER BY values whatever the frame type, filled only if
-    /// WindowTransformParams::separate_order_by_peer_groups is set.
-    std::vector<bool> order_by_peer_group_starts;
 };
 
 class SlidingIndexes
@@ -24,7 +21,9 @@ class SlidingIndexes
 public:
     explicit SlidingIndexes(const WindowTransformParams & params_);
 
-    SlidingIndex calculate(const Columns & materialized_columns, int64_t rows_count);
+    /// Fills `order_by_peer_group_starts` with the peer group starts by the ORDER BY values whatever the frame type,
+    /// only if `WindowTransformParams::separate_order_by_peer_groups` is set.
+    SlidingIndex calculate(const Columns & materialized_columns, int64_t rows_count, std::vector<bool> & order_by_peer_group_starts);
 
 private:
     const WindowTransformParams & params;

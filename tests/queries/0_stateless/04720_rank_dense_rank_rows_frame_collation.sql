@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest - collations support is disabled for fasttest build
 
--- Under a ROWS frame, rank() and dense_rank() must treat values equal under the ORDER BY collation
+-- Under a ROWS frame, `rank` and `dense_rank` must treat values equal under the ORDER BY collation
 -- as peers, even though such values differ in bytes and may interleave in the sorted input.
 
 -- The second key forces the order a, A, a, so equal raw values are not adjacent.

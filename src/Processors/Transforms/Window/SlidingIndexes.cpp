@@ -145,7 +145,8 @@ SlidingIndexes::SlidingIndexes(const WindowTransformParams & params_)
 {
 }
 
-SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int64_t rows_count)
+SlidingIndex SlidingIndexes::calculate(
+    const Columns & materialized_columns, int64_t rows_count, std::vector<bool> & order_by_peer_group_starts)
 {
     auto partition_starts = markPartitionStarts(materialized_columns, rows_count, params.partition_by_indices, last_partition_key);
     last_partition_key = cutLastKey(materialized_columns, rows_count, params.partition_by_indices);
@@ -155,7 +156,6 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
         materialized_columns, rows_count, params, every_row_is_a_group, /*compare_with_collation=*/false, partition_starts, last_order_key, last_peer_group_index);
     last_peer_group_index = peer_group_indexes.back();
 
-    std::vector<bool> order_by_peer_group_starts;
     if (params.separate_order_by_peer_groups)
     {
         const auto order_by_peer_group_indexes = assignPeerGroupIndexes(
@@ -168,7 +168,6 @@ SlidingIndex SlidingIndexes::calculate(const Columns & materialized_columns, int
     return SlidingIndex{
         .partition_starts = std::move(partition_starts),
         .peer_group_indexes = std::move(peer_group_indexes),
-        .order_by_peer_group_starts = std::move(order_by_peer_group_starts),
     };
 }
 
