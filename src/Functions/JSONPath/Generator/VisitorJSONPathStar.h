@@ -19,21 +19,21 @@ public:
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
-        typename JSONParser::Array array = element.getArray();
-        element = array[current_index];
+        if (element.isArray())
+        {
+            typename JSONParser::Array array = element.getArray();
+            element = array[current_index];
+        }
         return VisitorStatus::Ok;
     }
 
     VisitorStatus visit(typename JSONParser::Element & element) override
     {
-        if (!element.isArray())
-        {
-            this->setExhausted(true);
-            return VisitorStatus::Error;
-        }
+        /// Per RFC 9535 lax semantics, a non-array element is treated as a one-element array containing the element itself.
+        const size_t array_size = element.isArray() ? element.getArray().size() : 1;
 
         VisitorStatus status = {};
-        if (current_index < element.getArray().size())
+        if (current_index < array_size)
         {
             apply(element);
             status = VisitorStatus::Ok;
