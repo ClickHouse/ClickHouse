@@ -20,6 +20,8 @@ CREATE VIEW w AS SELECT materialize('wlr') AS src, k, brand FROM tw;
 CREATE VIEW r AS SELECT materialize('wlr') AS src, id, x FROM tc;
 CREATE VIEW p_union AS SELECT materialize('wlr') AS src, id, k FROM tp WHERE id < 500
     UNION ALL SELECT materialize('wlr'), id, k FROM tp WHERE id >= 500;
+CREATE VIEW p_union_mixed AS SELECT materialize('wlr') AS src, id, k FROM tp WHERE id < 500
+    UNION ALL SELECT materialize('xyz'), id, k FROM tp WHERE id >= 500;
 
 -- Each query counts the joins whose only condition is the constant key.
 SELECT 'default', count() FROM (EXPLAIN PLAN
@@ -73,6 +75,12 @@ SELECT 'union', count() FROM (EXPLAIN PLAN
     SETTINGS query_plan_optimize_join_order_randomize = 17)
 WHERE explain ILIKE '%Join conditions: src = src';
 
+-- Branches with different constants give no constant column, so `w.src = r.src` is still inferred and used.
+SELECT 'union, different constants', count() FROM (EXPLAIN PLAN
+    SELECT count() FROM p_union_mixed AS p JOIN tw AS w ON w.src = p.src AND w.k = p.k JOIN tc AS r ON r.src = p.src AND r.id = p.id
+    SETTINGS query_plan_optimize_join_order_randomize = 3)
+WHERE explain ILIKE '%Join conditions: src = src';
+
 -- There it comes from the preserved side of a join that enters the join graph as one relation.
 SELECT 'sub-join', count() FROM (EXPLAIN PLAN
     SELECT count() FROM (SELECT p.src AS src, p.id AS id, p.k AS k FROM p ANY LEFT JOIN tc ON p.id = tc.id) AS p
@@ -88,6 +96,7 @@ WHERE explain ILIKE '%Join conditions: src = src';
 
 SELECT count() FROM p JOIN w ON w.src = p.src AND w.k = p.k JOIN r ON r.src = p.src AND r.id = p.id;
 
+DROP VIEW p_union_mixed;
 DROP VIEW p_union;
 DROP VIEW r;
 DROP VIEW w;
