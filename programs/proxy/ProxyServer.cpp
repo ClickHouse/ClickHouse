@@ -260,7 +260,9 @@ void ProxyServer::bindAndListen()
     {
         const String host = listener.host.empty() ? config.listen_host : listener.host;
         auto socket = std::make_unique<Poco::Net::ServerSocket>();
-        socket->bind(Poco::Net::SocketAddress(host, listener.port), /*reuseAddress=*/ true);
+        /// `SO_REUSEPORT` is not set: with it, a second proxy (or any process of the same user) could bind
+        /// the same port and silently take a share of the connections instead of failing to start.
+        socket->bind(Poco::Net::SocketAddress(host, listener.port), /*reuseAddress=*/ true, /*reusePort=*/ false);
         socket->listen(config.listen_backlog);
         LOG_INFO(log, "Listening for {} on {}:{}{}",
             toString(listener.protocol), host, listener.port, listener.secure ? " (TLS)" : "");

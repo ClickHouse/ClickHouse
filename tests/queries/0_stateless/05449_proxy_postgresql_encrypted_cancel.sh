@@ -57,7 +57,7 @@ def start_proxy():
     config = f'{tmp}/05449_proxy_config.xml'
     with open(config, 'w') as f:
         f.write(f'''<clickhouse>
-    <logger><level>warning</level><console>1</console></logger>
+    <logger><level>information</level><console>1</console></logger>
     <proxy>
         <listen_host>127.0.0.1</listen_host>
         <listeners>
@@ -75,18 +75,21 @@ def start_proxy():
     </proxy>
 </clickhouse>
 ''')
+    log = f'{tmp}/05449_proxy.log'
     proc = subprocess.Popen([binary, 'proxy', '--config-file', config],
-        stdout=open(f'{tmp}/05449_proxy.log', 'w'), stderr=subprocess.STDOUT)
-    for _ in range(100):
+        stdout=open(log, 'w'), stderr=subprocess.STDOUT)
+    # Wait for our own proxy to report its listener rather than probing the port: a probe can be
+    # answered by another process that took the port, while our proxy is still starting and fails to bind.
+    listening = f'Listening for postgresql on 127.0.0.1:{port}'
+    for _ in range(300):
         if proc.poll() is not None:
             return None, None
-        try:
-            socket.create_connection(('127.0.0.1', port), timeout=1).close()
-            # The probe connection is closed without data and reaches no backend.
-            return proc, port
-        except OSError:
-            time.sleep(0.2)
+        with open(log, errors='replace') as f:
+            if listening in f.read():
+                return proc, port
+        time.sleep(0.1)
     proc.kill()
+    proc.wait()
     return None, None
 
 proc, port = None, None
