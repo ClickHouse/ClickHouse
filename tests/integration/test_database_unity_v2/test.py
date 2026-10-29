@@ -9,12 +9,17 @@ the format per table.
 import json
 import os
 import shlex
+import urllib.parse
 import uuid
+from contextlib import contextmanager
 
 import pytest
+from minio import Minio
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.s3_tools import minio_admin, minio_user
 
 CATALOG = "unity"
 
@@ -224,6 +229,12 @@ def proxy_control(node, route):
     return node.exec_in_container(
         ["curl", "-s", f"http://localhost:{PROXY_PORT}/control/{route}"]
     )
+
+
+def vend_credentials(node, access_key=minio_access_key, secret_key=minio_secret_key):
+    """Without arguments, restores the MinIO root credentials."""
+    query = urllib.parse.urlencode({"access_key": access_key, "secret_key": secret_key})
+    proxy_control(node, f"vend?{query}")
 
 
 def show_tables(node, db_name, pattern):
@@ -497,21 +508,19 @@ def test_create_and_insert_delta_table(started_cluster):
     assert len(commits) == 2, commits
 
 
-@pytest.mark.parametrize("use_v2", [0, 1])
-def test_insert_requests_write_credentials(started_cluster, use_v2):
-    """Unity vends read-only credentials for `READ`, so `INSERT` into an
-    external Delta table on S3 must request `READ_WRITE` ones."""
-    node = started_cluster.instances["node1"]
-    skip_if_no_delta_kernel(node)
-    schema_name = unique_name("write_credentials")
+@contextmanager
+def vended_s3_delta_table(cluster, use_v2):
+    """An empty external Delta table on MinIO, read through a database that uses vended credentials."""
+    node = cluster.instances["node1"]
+    schema_name = unique_name("vended")
     table_name = "on_s3"
-    db_name = unique_name("write_credentials_db")
+    db_name = unique_name("vended_db")
     table_key = f"{schema_name}/{table_name}"
-    minio_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+    minio_endpoint = f"http://{cluster.minio_host}:{cluster.minio_port}/"
 
     node.query(
         f"CREATE TABLE {schema_name} (id Int32, name String) ENGINE = DeltaLake("
-        f"'{minio_endpoint}{started_cluster.minio_bucket}/{table_key}/', '{minio_access_key}', '{minio_secret_key}')",
+        f"'{minio_endpoint}{cluster.minio_bucket}/{table_key}/', '{minio_access_key}', '{minio_secret_key}')",
         settings=DELTA_WRITE_SETTINGS,
     )
     node.query(f"DROP TABLE {schema_name}")
@@ -526,7 +535,7 @@ def test_insert_requests_write_credentials(started_cluster, use_v2):
             "schema_name": schema_name,
             "table_type": "EXTERNAL",
             "data_source_format": "DELTA",
-            "storage_location": f"s3://{started_cluster.minio_bucket}/{table_key}",
+            "storage_location": f"s3://{cluster.minio_bucket}/{table_key}",
             "columns": [
                 {
                     "name": name,
@@ -555,9 +564,22 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = {use_v2
         """,
         settings={GATE_SETTING: "1"},
     )
-    table = f"{db_name}.`{schema_name}.{table_name}`"
 
     try:
+        yield f"{db_name}.`{schema_name}.{table_name}`"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name}")
+        uc_api_delete(node, f"tables/{CATALOG}.{schema_name}.{table_name}")
+        uc_api_delete(node, f"schemas/{CATALOG}.{schema_name}")
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_insert_requests_write_credentials(started_cluster, use_v2):
+    """Unity vends read-only credentials for `READ`, so `INSERT` into an
+    external Delta table on S3 must request `READ_WRITE` ones."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    with vended_s3_delta_table(started_cluster, use_v2) as table:
         proxy_control(node, "reset_credential_operations")
         node.query(f"SELECT count() FROM {table}")
         assert set(json.loads(proxy_control(node, "credential_operations"))) == {"READ"}
@@ -567,10 +589,174 @@ SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = {use_v2
         assert "READ_WRITE" in json.loads(proxy_control(node, "credential_operations"))
 
         assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
-    finally:
-        node.query(f"DROP DATABASE IF EXISTS {db_name}")
-        uc_api_delete(node, f"tables/{CATALOG}.{schema_name}.{table_name}")
-        uc_api_delete(node, f"schemas/{CATALOG}.{schema_name}")
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_expired_vended_credentials_are_refreshed_mid_scan(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    with vended_s3_delta_table(started_cluster, use_v2) as table:
+        node.query(f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+        query = f"SELECT * FROM {table} ORDER BY id"
+        proxy_control(node, "reset_credential_operations")
+        node.query(query)
+        requests_without_refresh = len(json.loads(proxy_control(node, "credential_operations")))
+        proxy_control(node, "reset_credential_operations")
+
+        # The first S3 read of the data fails as if the vended token had expired.
+        query_id = uuid.uuid4().hex
+        node.query("SYSTEM ENABLE FAILPOINT s3_send_request_throw_expired_token")
+        try:
+            assert node.query(query, query_id=query_id) == "1\ta\n2\tb\n"
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT s3_send_request_throw_expired_token")
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        read_errors = node.query(
+            "SELECT ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert int(read_errors) >= 1
+        assert len(json.loads(proxy_control(node, "credential_operations"))) > requests_without_refresh
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_database_recovers_after_catalog_vends_bad_credentials(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    with vended_s3_delta_table(started_cluster, use_v2) as table:
+        node.query(f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+
+        vend_credentials(node, "invalid-key", "invalid-secret")
+        try:
+            error = node.query_and_get_error(f"SELECT count() FROM {table}")
+        finally:
+            vend_credentials(node)
+        assert "invalid-key" in error or "Access Key" in error, error
+        assert "invalid-secret" not in error
+
+        assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_vended_credentials_rotated_between_queries(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    with (
+        minio_user(started_cluster, ["s3:*"]) as (old_key, old_secret),
+        minio_user(started_cluster, ["s3:*"]) as (new_key, new_secret),
+        vended_s3_delta_table(started_cluster, use_v2) as table,
+    ):
+        try:
+            vend_credentials(node, old_key, old_secret)
+            node.query(f"INSERT INTO {table} VALUES (1, 'a')", settings=DELTA_WRITE_SETTINGS)
+            assert node.query(f"SELECT * FROM {table}") == "1\ta\n"
+
+            vend_credentials(node, new_key, new_secret)
+            minio_admin(started_cluster).user_disable(old_key)
+            old_client = Minio(
+                f"{started_cluster.minio_ip}:{started_cluster.minio_port}",
+                access_key=old_key,
+                secret_key=old_secret,
+                secure=False,
+            )
+            with pytest.raises(S3Error):
+                old_client.bucket_exists(started_cluster.minio_bucket)
+
+            # The same database keeps working: every query fetches fresh credentials.
+            proxy_control(node, "reset_credential_operations")
+            node.query(f"INSERT INTO {table} VALUES (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+            assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+            assert "READ_WRITE" in json.loads(proxy_control(node, "credential_operations"))
+        finally:
+            vend_credentials(node)
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_vended_credentials_rotated_in_the_middle_of_a_query(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    failpoint = "object_storage_source_pause_before_virtual_columns"
+    # One source and large files: the pause lands in the first file, so the second file's requests
+    # start after the old key is disabled. The query keeps the old key until a refresh, and MinIO
+    # checks credentials when a request starts, so the first of them fails.
+    write_settings = {**DELTA_WRITE_SETTINGS, "output_format_parquet_row_group_size": 10000}
+    read_settings = {
+        "max_threads": 1,
+        "max_block_size": 8192,
+        "max_read_buffer_size": 65536,
+        "remote_filesystem_read_prefetch": 0,
+    }
+    with (
+        minio_user(started_cluster, ["s3:*"]) as (old_key, old_secret),
+        minio_user(started_cluster, ["s3:*"]) as (new_key, new_secret),
+        vended_s3_delta_table(started_cluster, use_v2) as table,
+    ):
+        query_id = uuid.uuid4().hex
+        try:
+            vend_credentials(node, old_key, old_secret)
+            for start in (0, 200000):
+                node.query(
+                    f"INSERT INTO {table} SELECT number, toString(number) FROM numbers({start}, 200000)",
+                    settings=write_settings,
+                )
+
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            request = node.get_query_request(
+                f"SELECT count(), sum(id) FROM {table}", query_id=query_id, settings=read_settings
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            vend_credentials(node, new_key, new_secret)
+            minio_admin(started_cluster).user_disable(old_key)
+            proxy_control(node, "reset_credential_operations")
+            # The failpoint pauses every chunk, so disable it before waiting for the answer.
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+            assert request.get_answer() == f"400000\t{sum(range(400000))}\n"
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            vend_credentials(node)
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        read_errors = node.query(
+            "SELECT ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert int(read_errors) >= 1
+        assert "READ" in json.loads(proxy_control(node, "credential_operations"))
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_insert_with_read_only_vended_credentials_commits_nothing(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    read_only = minio_user(started_cluster, ["s3:GetBucketLocation", "s3:ListBucket", "s3:GetObject"])
+    with read_only as (read_only_key, read_only_secret), vended_s3_delta_table(started_cluster, use_v2) as table:
+        table_key = table.split("`")[1].replace(".", "/")
+        node.query(f"INSERT INTO {table} VALUES (1, 'a')", settings=DELTA_WRITE_SETTINGS)
+
+        def delta_log():
+            objects = started_cluster.minio_client.list_objects(
+                started_cluster.minio_bucket, prefix=f"{table_key}/_delta_log/", recursive=True
+            )
+            return sorted(obj.object_name for obj in objects)
+
+        commits = delta_log()
+
+        vend_credentials(node, read_only_key, read_only_secret)
+        try:
+            assert node.query(f"SELECT count() FROM {table}") == "1\n"
+            error = node.query_and_get_error(
+                f"INSERT INTO {table} VALUES (2, 'b')", settings=DELTA_WRITE_SETTINGS
+            )
+        finally:
+            vend_credentials(node)
+        assert "Access Denied" in error or "AccessDenied" in error, error
+        assert read_only_secret not in error
+
+        assert node.query(f"SELECT * FROM {table}") == "1\ta\n"
+        assert delta_log() == commits
 
 
 def test_drop_table(started_cluster):
