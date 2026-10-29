@@ -447,13 +447,9 @@ struct AdaptiveAggregationProducer
         size_t rows = 0;
         size_t staged_records = 0;
         size_t staged_bytes = 0;
-        /// The distinct sampled hashes, counted by a sketch: a near-unique stream samples a new key every 256 records, and
-        /// a set of their hashes would grow out of the cache, so its inserts would miss. The error of the sketch, about
-        /// 1.6%, is far below that of the sample.
         HyperLogLogCounter<12, UInt64, TrivialHash, UInt64> distinct_sampled_hashes;
 
-        /// The low bits of a sampled hash are those of the sample mask, and a 32-bit hash leaves its high bits empty, so
-        /// the sketch takes the hash mixed.
+        /// Sampled hashes share their low bits (the sample mask) and may be 32-bit, so they are mixed before the sketch.
         void addSampledHash(UInt64 hash) { distinct_sampled_hashes.insert(intHash64(hash)); }
 
         size_t getEstimatedStagedKeyCount() const

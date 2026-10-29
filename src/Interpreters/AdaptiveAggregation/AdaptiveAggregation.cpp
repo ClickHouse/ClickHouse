@@ -101,8 +101,8 @@ void Aggregator::accountStagedBatch(
     ///   `adaptive_thaw_record_cost` per record for the lookup of its group at the drain. A column read
     ///   by several aggregates is staged once, so it is counted once; an argument read from its numeric
     ///   key's bytes takes none of its own; a count record carries the combined multiplicity instead of
-    ///   arguments. Under the top-K pruning a record takes no lookup cost: the merge drains only the records of the
-    ///   bins that can still hold a group of the top, and frees the others unread.
+    ///   arguments. Under the top-K pruning a record takes no lookup cost: the merge frees the records
+    ///   of the pruned bins unread.
     ///   Variable-width arguments count in full because staging such a value pays real work
     ///   at every step. The record copies it out of the block, the record pins that memory
     ///   until the merge drains it, and updating the aggregate state from it copies the value
@@ -117,8 +117,7 @@ void Aggregator::accountStagedBatch(
     ///   stream of five `UInt64` arguments at global repeat 10 can therefore remain profitable when
     ///   its local streams repeat little.
     /// - The sample receives routing hashes matching `hash & 0xFF == 0`. Each distinct key has the
-    ///   same sampling probability, and `distinct_sampled_hashes` counts its repeats once. A block of 8 hashes is
-    ///   tested at once, so the scan of a batch rarely branches.
+    ///   same sampling probability, and `distinct_sampled_hashes` counts its repeats once.
     ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
     ///   keys, including the key in their hash because equal arguments in different groups occupy
     ///   separate states.
@@ -550,8 +549,7 @@ void AdaptiveAggregationSession::SpilledPartition::readBack(const std::function<
 
 bool Aggregator::adaptiveProducerMayThaw() const
 {
-    /// Under the top-K pruning a lone `count()` keeps its tables frozen: its count records combine the repeats of a
-    /// key, and the merge frees the records of the pruned bins unread, so staging pays even on a repetitive stream.
+    /// A lone `count()` stays frozen under the top-K pruning: its records combine repeats, and pruned bins are freed unread.
     return params.adaptiveMayThaw() && !(is_simple_count && params.adaptiveTopKPrunes());
 }
 
@@ -569,8 +567,7 @@ bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adap
 std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const
 {
     /// A run measures the verdict only when some producer froze and the producers could thaw: a run that may not thaw
-    /// gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for. A run under the
-    /// top-K pruning does not measure it either (see `Params::adaptiveMeasuresVerdict`). The verdict needs
+    /// gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for. The verdict needs
     /// half of the frozen producers repeat-dominated, so a few threads that repeat on an otherwise healthy stream do
     /// not keep the next runs off the adaptive path.
     if (!shared.frozen_producers || !params.adaptiveMeasuresVerdict())

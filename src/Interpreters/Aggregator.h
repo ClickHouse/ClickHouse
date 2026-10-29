@@ -194,16 +194,11 @@ public:
         bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
 
         /// Whether a frozen producer of the adaptive aggregation may thaw: not with `adaptive_aggregator_disable_thaw`.
-        /// The top-K pruning survives a thaw: a producer that froze counts the groups of its table into its bins at its
-        /// finish, whatever its phase, so the merge still skips the units whose groups cannot reach the top. A
-        /// repetitive stream needs the thaw there as much as anywhere: the records of aggregates other than a lone
-        /// `count()` never combine, so a frozen table would stage every repeat of every key it misses (a lone `count()`
-        /// stays frozen there, see `Aggregator::adaptiveProducerMayThaw`).
+        /// A thaw keeps the top-K pruning exact: a frozen producer counts the groups of its table into its bins at its finish.
         bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw; }
 
-        /// Whether a run measures the verdict that sends the later runs of the query to the ordinary path (see
-        /// `Aggregator::adaptiveStagingVerdict`): not under the top-K pruning, which the ordinary path gives up and the
-        /// verdict does not weigh.
+        /// Whether a run measures and uses the verdict that sends later runs to the ordinary path: not under the top-K
+        /// pruning, whose gain the ordinary path gives up and the verdict does not weigh.
         bool adaptiveMeasuresVerdict() const { return adaptiveMayThaw() && !adaptiveTopKPrunes(); }
 
         /// Top-K threshold merge (Fagin's Threshold Algorithm), set by the same plan optimization
