@@ -799,16 +799,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             is_simple_count = true;
     }
 
-    if (params.bucket_top_k)
-    {
-        if (is_simple_count)
-            bucket_top_k_rank = BucketTopKRank::InlineCount;
-        else if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()))
-            bucket_top_k_rank = BucketTopKRank::CountState;
-        else
-            bucket_top_k_rank = BucketTopKRank::FinalizedResult;
-    }
-
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
     /// See `enable_packed_string_keys_in_aggregation` for why the legacy method may be preferred.
@@ -900,6 +890,17 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             default:
                 break;
         }
+    }
+
+    /// After the switch above, which turns the inline count off for the `LowCardinality` methods.
+    if (params.bucket_top_k)
+    {
+        if (is_simple_count)
+            bucket_top_k_rank = BucketTopKRank::InlineCount;
+        else if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()))
+            bucket_top_k_rank = BucketTopKRank::CountState;
+        else
+            bucket_top_k_rank = BucketTopKRank::FinalizedResult;
     }
 
     HashMethodContext::Settings cache_settings;
