@@ -215,21 +215,7 @@ bool patternHasGlobstarSegment(const std::string & pattern)
     return false;
 }
 
-/// Classifies a filesystem query that failed while a glob was being expanded, at a place that
-/// reacts by skipping the path. The codes below mean nothing listable is there; any other error
-/// means matching files may exist but could not be read, which must not become missing rows.
-void skipUnresolvableOrThrow(const std::error_code & ec, const std::string & path)
-{
-    if (ec == std::errc::too_many_symbolic_link_levels
-        || ec == std::errc::no_such_file_or_directory
-        || ec == std::errc::not_a_directory
-        || ec == std::errc::filename_too_long)
-        return;
-
-    throw fs::filesystem_error("Cannot expand the glob", path, ec);
-}
-
-/// One entry of the traversal-pruning set: the lexical directory path that first claimed this
+/// One entry of the traversal-pruning set: the lexical directory path that last walked this
 /// (canonical directory, remaining pattern) frame, and how many matches that frame's subtree
 /// emitted. A later frame pruned against it would have emitted exactly the same ones, so both
 /// fields are needed to tell whether pruning hid a genuine second name for a file.
@@ -237,6 +223,12 @@ struct VisitedFrame
 {
     std::string lexical_dir;
     size_t matches = 0;
+    /// On the walk's stack: arriving here again is a cycle.
+    bool walking = false;
+    /// Cleared when the walk skipped a path that another name for this directory may resolve.
+    bool complete = true;
+    /// Walked a second time. Retrying under every further name would be exponential in the aliases.
+    bool retried = false;
 };
 
 /// State the traversal pruning carries across one expanded pattern.
@@ -256,6 +248,26 @@ struct PruningState
     /// loop can re-enter the root before the root has matched anything.
     std::vector<const VisitedFrame *> pending_collisions;
 };
+
+/// Classifies a filesystem query that failed while a glob was being expanded, at a place that
+/// reacts by skipping the path. The codes below mean nothing listable is there; any other error
+/// means matching files may exist but could not be read, which must not become missing rows.
+/// `ELOOP` and `ENAMETOOLONG` can also come from the spelling of the path (its symlink count and
+/// length), so they leave every frame being walked incomplete.
+void skipUnresolvableOrThrow(const std::error_code & ec, const std::string & path, PruningState & pruning)
+{
+    if (ec == std::errc::too_many_symbolic_link_levels || ec == std::errc::filename_too_long)
+    {
+        for (auto * frame : pruning.active_frames)
+            frame->complete = false;
+        return;
+    }
+
+    if (ec == std::errc::no_such_file_or_directory || ec == std::errc::not_a_directory)
+        return;
+
+    throw fs::filesystem_error("Cannot expand the glob", path, ec);
+}
 
 /// Recursive directory listing with matched paths as a result.
 /// Have the same method in StorageHDFS.
@@ -285,7 +297,10 @@ void listFilesWithRegexpMatchingImpl(
     bool frame_pushed = false;
     SCOPE_EXIT({
         if (frame_pushed)
+        {
+            pruning.active_frames.back()->walking = false;
             pruning.active_frames.pop_back();
+        }
     });
 
     /// Appends a matched path to the result and counts its bytes, deduplicating by its
@@ -359,7 +374,7 @@ void listFilesWithRegexpMatchingImpl(
         (void)fs::canonical(candidate, canon_ec);
         if (canon_ec)
         {
-            skipUnresolvableOrThrow(canon_ec, candidate);
+            skipUnresolvableOrThrow(canon_ec, candidate, pruning);
             return;
         }
         /// `checkCreationIsAllowed` normalizes its own copy of this path, so a `..` must not
@@ -403,7 +418,7 @@ void listFilesWithRegexpMatchingImpl(
     std::error_code prefix_exists_ec;
     const bool prefix_exists = fs::exists(prefix_without_globs, prefix_exists_ec);
     if (prefix_exists_ec)
-        skipUnresolvableOrThrow(prefix_exists_ec, prefix_without_globs);
+        skipUnresolvableOrThrow(prefix_exists_ec, prefix_without_globs, pruning);
     if (!prefix_exists)
         return;
 
@@ -420,7 +435,7 @@ void listFilesWithRegexpMatchingImpl(
             std::error_code canon_ec;
             auto canonical_path = fs::canonical(prefix_without_globs, canon_ec);
             if (canon_ec)
-                skipUnresolvableOrThrow(canon_ec, prefix_without_globs);
+                skipUnresolvableOrThrow(canon_ec, prefix_without_globs, pruning);
             else
                 dir_canonical = std::move(canonical_path);
         }
@@ -452,8 +467,9 @@ void listFilesWithRegexpMatchingImpl(
         /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
         const std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
         const std::string lexical_dir = fs::path(prefix_without_globs).lexically_normal().string();
-        const auto [claimed, is_new] = pruning.visited_frames.emplace(frame_key, VisitedFrame{lexical_dir, 0});
-        if (!is_new)
+        const auto [claimed, is_new] = pruning.visited_frames.emplace(frame_key, VisitedFrame{lexical_dir});
+        VisitedFrame & frame = claimed->second;
+        if (!is_new && (frame.walking || frame.complete || frame.retried || frame.lexical_dir == lexical_dir))
         {
             /// Pruning happens before any match is emitted, so a pruned frame can never reach
             /// `add_matched_path` to report that two paths named one file. Record it here instead,
@@ -462,14 +478,18 @@ void listFilesWithRegexpMatchingImpl(
             /// under the SAME path is a globstar re-applying at one directory and is not a second
             /// name. Whether the pruned frame would have matched anything is decided after the
             /// walk, because the claiming frame may still be finding matches right now.
-            if (claimed->second.lexical_dir != lexical_dir)
-                pruning.pending_collisions.push_back(&claimed->second);
+            if (frame.lexical_dir != lexical_dir)
+                pruning.pending_collisions.push_back(&frame);
             return; /// This directory has already been walked with this remaining pattern.
         }
+        /// A finished but incomplete frame is walked once more, under this new name.
+        frame.retried = !is_new;
+        frame.lexical_dir = lexical_dir;
         /// This frame owns everything its subtree matches, so keep it on the stack until the
         /// subtree is done. Ancestors stay on the stack too: a frame pruned against an ancestor
         /// would have re-walked this subtree as well.
-        pruning.active_frames.push_back(&claimed->second);
+        frame.walking = true;
+        pruning.active_frames.push_back(&frame);
         frame_pushed = true;
     }
 
@@ -539,7 +559,7 @@ void listFilesWithRegexpMatchingImpl(
         const bool is_directory = it->is_directory(is_dir_ec);
         if (is_dir_ec)
         {
-            skipUnresolvableOrThrow(is_dir_ec, full_path);
+            skipUnresolvableOrThrow(is_dir_ec, full_path, pruning);
             continue;
         }
 

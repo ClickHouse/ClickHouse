@@ -63,4 +63,8 @@ late-match-alias-insert-stays-readonly
 refused
 1
 1
+shorter-alias-after-symlink-budget-skip
+A
+B
+B
 alive
