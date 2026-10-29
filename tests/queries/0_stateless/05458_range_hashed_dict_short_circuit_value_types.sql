@@ -68,12 +68,14 @@ SELECT 'UInt64';
 SELECT number, dictGetOrDefault('range_dict_sc', 'n', number, toDate('2024-01-15'), number + 100)
 FROM numbers(4) ORDER BY number;
 
+-- The JSON defaults are offset by 100, so a stored value is never equal to the
+-- default of the same key and the reference proves that found values survive.
 SELECT 'JSON';
-SELECT number, toString(dictGetOrDefault('range_dict_sc', 'j', number, toDate('2024-01-15'), CAST(concat('{"k":', toString(number), '}'), 'JSON')))
+SELECT number, toString(dictGetOrDefault('range_dict_sc', 'j', number, toDate('2024-01-15'), CAST(concat('{"k":', toString(number + 100), '}'), 'JSON')))
 FROM numbers(4) ORDER BY number;
 
 SELECT 'Nullable(JSON)';
-SELECT number, toString(dictGetOrDefault('range_dict_sc', 'nj', number, toDate('2024-01-15'), CAST(concat('{"k":', toString(number), '}'), 'Nullable(JSON)')))
+SELECT number, toString(dictGetOrDefault('range_dict_sc', 'nj', number, toDate('2024-01-15'), CAST(concat('{"k":', toString(number + 100), '}'), 'Nullable(JSON)')))
 FROM numbers(4) ORDER BY number;
 
 DROP DICTIONARY range_dict_sc;
