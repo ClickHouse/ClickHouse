@@ -30,8 +30,7 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinLazyColumnsStep must have two pipelines");
 
-    /// The widest step does not count the readers the lazy read adds at run time. A single-threaded main branch runs in
-    /// the calling thread; keep it there.
+    /// A single-threaded main branch runs in the calling thread; keep it there.
     const bool reserve_threads = lazy_read_expands && pipelines[0]->getNumThreads() > 1;
 
     /// The transform joins exactly one main and one lazy stream. The main branch is not
