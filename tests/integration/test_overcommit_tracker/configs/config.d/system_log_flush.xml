@@ -1,0 +1,11 @@
+<clickhouse>
+    <memory_worker_dynamic_hard_limit>false</memory_worker_dynamic_hard_limit>
+    <!-- The server limit is also checked against the resident memory: measure it with jemalloc, not with the
+         cgroup (which can include the page cache), and without the speculative growth reserve. -->
+    <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
+    <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
+    <query_log>
+        <flush_interval_milliseconds>600000</flush_interval_milliseconds>
+        <flush_overcommit_wait_time_microseconds>1000000</flush_overcommit_wait_time_microseconds>
+    </query_log>
+</clickhouse>

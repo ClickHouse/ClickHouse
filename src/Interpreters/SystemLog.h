@@ -1730,6 +1730,7 @@ struct SystemLogSettings
     SystemLogQueueSettings queue_settings;
 
     String engine;
+    UInt64 flush_overcommit_wait_time_microseconds = 0;
     bool symbolize_traces = false;
 
     /// Settings of the `all_...` union table over the log table, its rotated versions and/or
@@ -1807,6 +1808,7 @@ private:
     const String storage_def;
     const bool union_table_merge_rotated_tables;
     const String union_table_cluster;
+    const UInt64 flush_overcommit_wait_time_microseconds;
     std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
     String create_query;
     String old_create_query;
