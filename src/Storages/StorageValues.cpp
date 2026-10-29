@@ -48,7 +48,13 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        pipeline.init(storage->takePreparedPipe(column_names, storage_snapshot, context));
+        auto pipe = storage->takePreparedPipe(column_names, storage_snapshot, context);
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+
+        /// Unlike `ReadFromStorageStep`, the read limits of the query are not set on the processors: they are the processors
+        /// of the insert, and a limit in the `break` mode would cancel its sources and cut the insert short.
+        pipeline.init(std::move(pipe));
     }
 
 private:
