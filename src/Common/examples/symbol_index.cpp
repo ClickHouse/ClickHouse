@@ -32,8 +32,7 @@ int mainEntryExampleSymbolIndex(int argc, char ** argv)
     const SymbolIndex::Symbol * elem = nullptr;
     std::string_view name;
     while (iterator.next(elem, name))
-        std::cout << fmt::format("{}: {:#x} ... {:#x}
-", name, reinterpret_cast<uintptr_t>(elem->offset_begin), reinterpret_cast<uintptr_t>(elem->offset_end));
+        std::cout << fmt::format("{}: {:#x} ... {:#x}\n", name, reinterpret_cast<uintptr_t>(elem->offset_begin), reinterpret_cast<uintptr_t>(elem->offset_end));
     std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
@@ -41,8 +40,7 @@ int mainEntryExampleSymbolIndex(int argc, char ** argv)
     const auto * symbol = symbol_index.findSymbol(address);
     std::string_view symbol_name = symbol ? symbol_index.getSymbolName(*symbol) : std::string_view("");
     if (!symbol_name.empty())
-        std::cerr << fmt::format("{}: {:#x} ... {:#x}
-", symbol_name, reinterpret_cast<uintptr_t>(symbol->offset_begin), reinterpret_cast<uintptr_t>(symbol->offset_end));
+        std::cerr << fmt::format("{}: {:#x} ... {:#x}\n", symbol_name, reinterpret_cast<uintptr_t>(symbol->offset_begin), reinterpret_cast<uintptr_t>(symbol->offset_end));
     else
         std::cerr << "SymbolIndex: Not found\n";
 
