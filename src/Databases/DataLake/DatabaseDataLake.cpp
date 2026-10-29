@@ -4,8 +4,6 @@
 #include <array>
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
-#include <Access/ContextAccess.h>
-#include <Access/Common/AccessFlags.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -1144,12 +1142,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const auto table_endpoint = args[0]->as<ASTLiteral>()->value.safeGet<String>();
     LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
 
-    /// HDFS is read with the server's own identity, so require the same `READ ON HDFS` grant as `icebergHDFS`.
     /// Checked before the stateful cache below, so that a cached storage is not handed to a user without the grant.
-    /// Writes additionally need `WRITE ON HDFS`, which `StorageObjectStorage` checks.
+    /// Writes additionally need `WRITE`, which `StorageObjectStorage` checks.
     if (storage_type == DatabaseDataLakeStorageType::HDFS)
-        context_->getAccess()->checkAccessWithFilter(
-            AccessType::READ, toStringSource(AccessTypeObjects::Source::HDFS), normalizeSourceURI(table_endpoint));
+        checkCatalogHDFSAccess(context_, AccessType::READ, table_endpoint);
 
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     storage_settings->loadFromSettingsChanges(settings.allChanged());
