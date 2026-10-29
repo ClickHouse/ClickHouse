@@ -457,7 +457,7 @@ void addExpressionConstants(const QueryPlan::Node & node, const ActionsDAG & act
     if (node.children.size() == 1)
         input_constants = collectConstantColumnValues(*node.children.front());
 
-    /// A deterministic function of constants holds one value in every row.
+    /// A deterministic, stateless function of constants holds one value in every row.
     std::unordered_map<const ActionsDAG::Node *, bool> is_constant_cache;
     std::function<bool(const ActionsDAG::Node &)> is_constant = [&](const ActionsDAG::Node & dag_node)
     {
@@ -471,7 +471,8 @@ void addExpressionConstants(const QueryPlan::Node & node, const ActionsDAG & act
         else if (dag_node.type == ActionsDAG::ActionType::ALIAS)
             constant = is_constant(*dag_node.children.front());
         else if (dag_node.type == ActionsDAG::ActionType::FUNCTION)
-            constant = dag_node.function_base && dag_node.function_base->isDeterministic() && !dag_node.children.empty()
+            constant = dag_node.function_base && dag_node.function_base->isDeterministic() && !dag_node.function_base->isStateful()
+                && !dag_node.children.empty()
                 && std::ranges::all_of(dag_node.children, [&](const auto * child) { return is_constant(*child); });
         is_constant_cache.emplace(&dag_node, constant);
         return constant;

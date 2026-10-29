@@ -17,7 +17,7 @@ RelationStats estimateReadRowsCount(
     QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, bool for_runtime_filter_transport = false);
 
 /// Output columns of the subtree rooted at `node` that hold the same value in every row: constants,
-/// deterministic functions of them, and columns that pass them through unchanged. Not exhaustive.
+/// deterministic stateless functions of them, and columns that pass them through unchanged. Not exhaustive.
 NameSet collectConstantColumns(const QueryPlan::Node & node);
 
 }
