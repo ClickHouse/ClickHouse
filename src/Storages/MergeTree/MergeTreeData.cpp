@@ -1203,7 +1203,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     /// The statistics are loaded in parallel, and merged in the order of parts, so that the estimator does not depend on the scheduling.
     /// The statistics of a part are released right after merging, so only the statistics of one batch of parts are held at once.
     std::vector<ColumnsStatistics> parts_statistics(parts.size());
-    ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
+    ConditionSelectivityEstimatorBuilder estimator_builder(local_context, /*require_complete_part_statistics_=*/ true);
     loadStatisticsOfPartsInParallel(
         parts.size(),
         local_context->getSettingsRef()[Setting::max_threads],
