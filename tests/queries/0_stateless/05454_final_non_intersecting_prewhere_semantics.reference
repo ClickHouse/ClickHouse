@@ -33,3 +33,9 @@ Not applied with SAMPLE, which drops rows after reading
 Not applied with a stateful function in the WHERE, which depends on the rows it sees
 5
 5
+A condition that can throw is not applied early after another condition
+5	20
+5	20
+Not applied with a stateful function in PREWHERE, which would see fewer rows after the filter of the engine
+0	0
+0	0

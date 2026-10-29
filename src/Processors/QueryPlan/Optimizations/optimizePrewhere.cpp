@@ -174,6 +174,34 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
+/// Whether the condition can be evaluated on rows that the conditions before it in the WHERE would drop: none of its
+/// functions can throw. The reader may evaluate several conditions of PREWHERE at once, so their order is not enough.
+static bool canBeEvaluatedOnMoreRows(const ActionsDAG::Node * condition)
+{
+    std::vector<const ActionsDAG::Node *> stack{condition};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN || node->type == ActionsDAG::ActionType::PLACEHOLDER)
+            return false;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+        {
+            DataTypesWithConstInfo arguments;
+            arguments.reserve(node->children.size());
+            for (const auto * child : node->children)
+                arguments.push_back({child->result_type, child->column != nullptr});
+            if (node->function_base->canThrow(arguments) || node->function_base->hasObservableSideEffects())
+                return false;
+        }
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return true;
+}
+
 /// The filter that a `FINAL` read applies as PREWHERE to the key ranges it reads without merging: the conjunction of
 /// `conditions` except the ones in `moved_to_prewhere`, which the PREWHERE of all ranges already has.
 /// The filter keeps all its inputs in the output, so it only drops rows and does not change the header of the read.
@@ -408,13 +436,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         columns_read_before_filter);
 
     /// The WHERE evaluates a condition only on the rows that passed the conditions before it, e.g. `toUInt64(s) > 0` in
-    /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that: apply early only the conditions before the first one that is
-    /// applied neither early on these ranges nor as the PREWHERE of all ranges, in the order of the WHERE.
+    /// `WHERE s != 'bad' AND toUInt64(s) > 0`. Keep that: apply early the conditions in the order of the WHERE, up to the
+    /// first one that is applied neither early on these ranges nor as the PREWHERE of all ranges, or that can throw and
+    /// is not the first condition evaluated on all rows.
     if (!non_intersecting_final_conditions.empty())
     {
-        std::unordered_set<const ActionsDAG::Node *> applied_early(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
-        applied_early.insert(optimize_result.prewhere_nodes.begin(), optimize_result.prewhere_nodes.end());
-
         ActionsDAG::NodeRawConstPtrs atoms;
         std::vector<const ActionsDAG::Node *> stack{&filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName())};
         while (!stack.empty())
@@ -429,12 +455,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
         std::unordered_set<const ActionsDAG::Node *> non_intersecting(non_intersecting_final_conditions.begin(), non_intersecting_final_conditions.end());
         non_intersecting_final_conditions.clear();
-        for (const auto * atom : atoms)
+        const bool has_prewhere = existing_prewhere_info || !optimize_result.prewhere_nodes.empty();
+        for (size_t i = 0; i < atoms.size(); ++i)
         {
-            if (!applied_early.contains(atom))
+            const auto * atom = atoms[i];
+            if (optimize_result.prewhere_nodes.contains(atom))
+                continue;
+            if (!non_intersecting.contains(atom) || ((i != 0 || has_prewhere) && !canBeEvaluatedOnMoreRows(atom)))
                 break;
-            if (non_intersecting.contains(atom))
-                non_intersecting_final_conditions.push_back(atom);
+            non_intersecting_final_conditions.push_back(atom);
         }
     }
 

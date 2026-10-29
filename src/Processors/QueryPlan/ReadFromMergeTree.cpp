@@ -2588,6 +2588,10 @@ bool ReadFromMergeTree::canUseNonIntersectingFinalFilter() const
     if (isQueryWithSampling())
         return false;
 
+    /// The filter of the engine runs before PREWHERE on these ranges, so a stateful function in it would see fewer rows.
+    if (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasStatefulFunctions())
+        return false;
+
     return true;
 }
 

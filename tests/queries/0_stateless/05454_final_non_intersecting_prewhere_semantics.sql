@@ -142,3 +142,26 @@ SETTINGS max_threads = 1, query_plan_optimize_lazy_final = 0;
 SELECT count() FROM t_final_prewhere_stateful FINAL WHERE v = 1 AND rowNumberInAllBlocks() < 10
 SETTINGS max_threads = 1, query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
 DROP TABLE t_final_prewhere_stateful;
+
+SELECT 'A condition that can throw is not applied early after another condition';
+DROP TABLE IF EXISTS t_final_prewhere_throw;
+CREATE TABLE t_final_prewhere_throw (key UInt64, s String) ENGINE = ReplacingMergeTree ORDER BY key;
+INSERT INTO t_final_prewhere_throw SELECT number, if(number % 2 = 0, '1.2.3.4', 'bad') FROM numbers(10);
+OPTIMIZE TABLE t_final_prewhere_throw FINAL;
+-- Both conditions read `s`, so PREWHERE would evaluate them at once.
+SELECT count(), sum(key) FROM t_final_prewhere_throw FINAL WHERE s != 'bad' AND IPv4StringToNum(s) > 0 SETTINGS query_plan_optimize_lazy_final = 0;
+SELECT count(), sum(key) FROM t_final_prewhere_throw FINAL WHERE s != 'bad' AND IPv4StringToNum(s) > 0
+SETTINGS query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_throw;
+
+SELECT 'Not applied with a stateful function in PREWHERE, which would see fewer rows after the filter of the engine';
+DROP TABLE IF EXISTS t_final_prewhere_stateful_prewhere;
+CREATE TABLE t_final_prewhere_stateful_prewhere (key UInt64, v UInt8, ver UInt64, is_deleted UInt8)
+ENGINE = ReplacingMergeTree(ver, is_deleted) ORDER BY key;
+INSERT INTO t_final_prewhere_stateful_prewhere SELECT number, 2, 1, number % 2 = 0 FROM numbers(10);
+OPTIMIZE TABLE t_final_prewhere_stateful_prewhere FINAL;
+SELECT count(), sum(key) FROM t_final_prewhere_stateful_prewhere FINAL PREWHERE rowNumberInAllBlocks() % 2 = 0 WHERE v = 2
+SETTINGS max_threads = 1, apply_prewhere_after_final = 0, query_plan_optimize_lazy_final = 0;
+SELECT count(), sum(key) FROM t_final_prewhere_stateful_prewhere FINAL PREWHERE rowNumberInAllBlocks() % 2 = 0 WHERE v = 2
+SETTINGS max_threads = 1, apply_prewhere_after_final = 0, query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0;
+DROP TABLE t_final_prewhere_stateful_prewhere;
