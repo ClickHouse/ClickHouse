@@ -254,6 +254,13 @@ public:
             max_threads = max_threads_;
     }
 
+    /// Recommend at least `num_threads` threads (within the upper limit) for processors added at run time by
+    /// `IProcessor::updatePipeline`, which the widest step does not count.
+    void reserveThreadsForExpansion(size_t num_threads)
+    {
+        pipe.max_parallel_streams = std::max(pipe.max_parallel_streams, num_threads);
+    }
+
     void setConcurrencyControl(bool concurrency_control_)
     {
         concurrency_control = concurrency_control_;

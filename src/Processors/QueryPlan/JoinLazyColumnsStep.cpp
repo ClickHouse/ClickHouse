@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -24,10 +25,14 @@ JoinLazyColumnsStep::JoinLazyColumnsStep(
 
 JoinLazyColumnsStep::~JoinLazyColumnsStep() = default;
 
-QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinLazyColumnsStep must have two pipelines");
+
+    /// The widest step does not count the readers the lazy read adds at run time. A single-threaded main branch runs in
+    /// the calling thread; keep it there.
+    const bool reserve_threads = lazy_read_expands && pipelines[0]->getNumThreads() > 1;
 
     /// The transform joins exactly one main and one lazy stream. The main branch is not
     /// necessarily single-stream (e.g. a limit without a sorting step above the reading).
@@ -39,7 +44,10 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
     auto transform = std::make_shared<LazyMaterializingTransform>(
         input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, index_column_name);
     transform->setPassThrough(pass_through);
-    return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
+    auto res = QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
+    if (reserve_threads)
+        res->reserveThreadsForExpansion(settings.max_threads);
+    return res;
 }
 
 void JoinLazyColumnsStep::updateOutputHeader()

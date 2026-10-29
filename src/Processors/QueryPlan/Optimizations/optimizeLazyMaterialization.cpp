@@ -845,6 +845,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
 
     auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows);
+    join_lazy_columns->setLazyReadExpands(read_from_merge_tree != nullptr);
 
     QueryPlan result_plan;
 
