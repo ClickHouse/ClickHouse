@@ -513,6 +513,22 @@ def test_insert_select_time_series_independent_uuids(start_cluster, local_plan):
         },
     ) == "10000\t49995000\n"
 
+    # The plan-based mode coordinates the right side of a `RIGHT JOIN`. A plan fragment would name the inner
+    # table this server resolved the call to, which the other replicas do not have.
+    assert node1.query(
+        "SELECT count(), sum(r.value) FROM ts_res RIGHT JOIN timeSeriesSamples(ts) AS r ON ts_res.value = r.value",
+        settings={
+            "enable_parallel_replicas": 2,
+            "max_parallel_replicas": 3,
+            "cluster_for_parallel_replicas": "test_1_shard_3_replicas",
+            "parallel_replicas_for_non_replicated_merge_tree": 1,
+            "parallel_replicas_local_plan": local_plan,
+            "parallel_replicas_plan_based": 1,
+            "automatic_parallel_replicas_mode": 0,
+            "enable_analyzer": 1,
+        },
+    ) == "10000\t49995000\n"
+
     execute_on_cluster("DROP TABLE ts_mv SYNC")
     execute_on_cluster("DROP TABLE ts_res SYNC")
     execute_on_cluster("DROP TABLE ts_dst SYNC")
