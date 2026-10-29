@@ -45,6 +45,14 @@ bool ParserMongoFilter::parseImpl(ASTPtr & node)
         if (name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "A filter must not name an empty field");
 
+        /** A name that starts with `$` is an operator, and a filter has only a few of its own. The
+          * operators of the expressions, such as `$add`, have no meaning here: `{"$add": [1, 2]}`
+          * would become a constant true condition and match - or delete - every document. Mongo
+          * rejects an unknown top level operator, and an expression belongs under `$expr`.
+          */
+        if (name.starts_with('$') && name != "$and" && name != "$or" && name != "$nor" && name != "$expr")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown top level operator '{}' in a filter", name);
+
         auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, it->name.GetString());
         ASTPtr child_node;
         if (!parser->parseImpl(child_node))

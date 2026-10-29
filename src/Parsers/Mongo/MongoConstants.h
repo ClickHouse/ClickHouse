@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,6 +15,27 @@ namespace DB
 
 namespace Mongo
 {
+
+/// The BSON type category of a constant, as far as the type bracketing of `withTypeBracket` cares.
+enum class ConstantCategory : uint8_t
+{
+    Boolean,
+    Number,
+    Other,
+};
+
+ConstantCategory constantCategory(const rapidjson::Value & value);
+
+/** Mongo compares values of different BSON type categories as unequal, and a range predicate only
+  * selects values of the category of its constant ("type bracketing"), while ClickHouse stores a
+  * `Bool` as a number and compares it with numbers by value: `{"active": 1}` would select a
+  * document with `"active": true`. So a condition with a boolean constant is restricted to a field
+  * of type `Bool` - or an array of, or a nullable `Bool` - and one with a number to a field of
+  * another type. The type of the field is a constant, so the restriction folds away when the query
+  * is analyzed. Other categories need no restriction: ClickHouse refuses to compare, say, a string
+  * with a number rather than giving it a meaning.
+  */
+ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition);
 
 /** Translates a Mongo constant into a ClickHouse expression.
   *

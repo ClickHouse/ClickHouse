@@ -65,7 +65,11 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
         return result;
     }
 
-    executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
+    /// The access rights of a `CREATE ... IF NOT EXISTS` are checked before it finds out that there
+    /// is nothing to create, so it is only issued for a database that is missing: a collection in
+    /// an existing database must need no more than the grant to create a table there.
+    if (!objectExists(executor, "DATABASE", backQuoteIfNeed(collection.database)))
+        executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
 
     /// A collection created explicitly has no documents to infer a schema from, so it starts as
     /// a single `JSON` column. The first `insert` replaces that placeholder with a column per

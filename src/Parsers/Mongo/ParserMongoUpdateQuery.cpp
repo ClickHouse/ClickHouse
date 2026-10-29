@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 
+#include <map>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
@@ -289,21 +290,36 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
                 /// A `null` matches the `null` elements only, and a value never matches a `null`
                 /// element, so the comparison is the null-safe one: `notEquals` would be `NULL`
                 /// - false for `arrayFilter` - for every element as soon as either side is `NULL`.
-                predicate = makeASTFunction("not", makeASTFunction("isNotDistinctFrom", element, constant));
+                /// A boolean never matches a number, nor the other way around, see `withTypeBracket`.
+                predicate = makeASTFunction(
+                    "not", withTypeBracket(column, constantCategory(it->value), makeASTFunction("isNotDistinctFrom", element, constant)));
             }
             else
             {
                 if (!it->value.IsArray())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$pullAll' must be an array");
-                auto array = makeASTFunction("array");
+                /// The values are grouped by their type category, and each group is bracketed on its
+                /// own, the way `$in` does it: `[true, 1]` removes a boolean `true` and a number `1`.
+                std::map<ConstantCategory, ASTPtr> arrays;
                 for (const auto & value : it->value.GetArray())
                 {
                     auto constant = tryParseMongoConstant(value);
                     if (!constant)
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constants are supported in the array of '$pullAll'");
-                    array->arguments->children.push_back(std::move(constant));
+                    auto & array = arrays[constantCategory(value)];
+                    if (!array)
+                        array = makeASTFunction("array");
+                    array->as<ASTFunction &>().arguments->children.push_back(std::move(constant));
                 }
-                predicate = makeASTFunction("not", makeASTFunction("has", array, element));
+                auto matches = makeASTFunction("or");
+                for (auto & [category, array] : arrays)
+                    matches->arguments->children.push_back(withTypeBracket(column, category, makeASTFunction("has", std::move(array), element->clone())));
+                if (matches->arguments->children.empty())
+                    predicate = make_intrusive<ASTLiteral>(Field(true));
+                else if (matches->arguments->children.size() == 1)
+                    predicate = makeASTFunction("not", matches->arguments->children.front());
+                else
+                    predicate = makeASTFunction("not", std::move(matches));
             }
 
             auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(element_name));

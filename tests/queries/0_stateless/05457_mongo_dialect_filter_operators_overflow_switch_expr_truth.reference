@@ -1,0 +1,56 @@
+-- top level operators of a filter
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+1	
+2	x
+1 
+{"x":4}
+(BAD_ARGUMENTS)
+-- $all, $pull and $pullAll
+
+1 
+1 
+
+1 
+2
+1	[true,false]	[1,0,2]
+2	[false]	[3]
+1	[true,false]	[1,0]
+2	[false]	[3]
+1	[false]	[0]
+2	[false]	[3]
+-- the truth value of $expr
+1 2 
+1 2 
+
+
+1 2 
+
+2 
+2 
+1	expr
+2	expr
+2
+-- $switch without a default
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"r":"matched"}
+{"r":"matched"}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"r":null}
+{"r":null}
+-- integer overflow
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"_id":null,"total":3,"count":2}
+{"_id":null,"total":9223372036854775807}
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+{"a":9223372036854775807,"b":9223372036854775806,"c":1.5,"d":9223372036854775807}
+{"a":1,"b":0,"c":3,"d":1}
+-- too many operands
+(TOO_DEEP_AST)
+(TOO_DEEP_AST)
+{"x":100}

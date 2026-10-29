@@ -25,6 +25,12 @@ namespace Mongo
   */
 ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value);
 
+/** Translates an expression of the Mongo aggregation language that is used as a condition, the
+  * one of `$expr`, into its Mongo truth value: `null`, a missing field, `false` and a zero are
+  * false, while every other value - a string, including the empty one, an array, a date - is true.
+  */
+ASTPtr parseMongoAggregateCondition(const rapidjson::Value & value);
+
 /** The order of the documents a `$group` stage consumes, when a preceding `$sort` established one.
   *
   * Mongo defines the value of the accumulators `$first`, `$last`, `$push`, `$firstN` and `$lastN`

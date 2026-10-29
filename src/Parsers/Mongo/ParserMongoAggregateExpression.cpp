@@ -30,6 +30,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
+extern const int TOO_DEEP_AST;
 }
 
 namespace Mongo
@@ -230,6 +231,51 @@ ASTPtr withGuard(ASTPtr value, ASTPtr condition, const std::string & message)
 {
     auto guard = makeASTFunction("throwIf", std::move(condition), makeLiteral(Field(message)));
     return makeASTFunction("tupleElement", makeASTFunction("tuple", std::move(value), std::move(guard)), makeLiteral(Field(UInt64(1))));
+}
+
+/** `exact`, which throws when it is evaluated if it is a 64-bit integer that wrapped around. Mongo
+  * promotes an integer result that does not fit a 64-bit integer to a double, while ClickHouse
+  * wraps it around, and changes its sign, e.g. `9223372036854775807 + 1` is `-9223372036854775808`.
+  * A result of one type or another is not something a query can have, so such a result is an
+  * error instead. `approximate` is the same computation in `Float64`: a result that did not wrap
+  * around differs from it by the rounding of a few operations, while one that did by a multiple of
+  * `2^64`, so the two are told apart by a margin of `2^62`. A result of any other type - a float,
+  * a decimal, a smaller integer - is not checked, the condition folds away.
+  */
+ASTPtr withIntegerOverflowCheck(const ASTPtr & exact, ASTPtr approximate)
+{
+    auto is_wide_integer = makeASTFunction(
+        "match",
+        makeASTFunction("toTypeName", exact->clone()),
+        makeLiteral(Field(String(R"(^(Nullable\(|LowCardinality\()*U?Int64\)*$)"))));
+    auto deviation = makeASTFunction(
+        "abs", makeASTFunction("minus", makeASTFunction("toFloat64", exact->clone()), std::move(approximate)));
+    auto overflow = makeASTFunction(
+        "ifNull",
+        makeASTFunction(
+            "and",
+            std::move(is_wide_integer),
+            makeASTFunction("greater", std::move(deviation), makeLiteral(Field(UInt64(1) << 62)))),
+        makeLiteral(Field(false)));
+    auto guard = makeASTFunction(
+        "throwIf", std::move(overflow), makeLiteral(Field(String("The result of an integer arithmetic does not fit a 64-bit integer"))));
+    return makeASTFunction("tupleElement", makeASTFunction("tuple", exact->clone(), std::move(guard)), makeLiteral(Field(UInt64(1))));
+}
+
+/// `body` applied to the values of all of `values`, each bound once, see `withValue`.
+ASTPtr withValues(
+    const std::vector<ASTPtr> & values,
+    const std::function<ASTPtr(const std::vector<ASTPtr> &)> & body,
+    std::vector<ASTPtr> bound = {})
+{
+    if (bound.size() == values.size())
+        return body(bound);
+    return withValue(values[bound.size()], [&](const ASTPtr & value)
+    {
+        auto next = bound;
+        next.push_back(value);
+        return withValues(values, body, std::move(next));
+    });
 }
 
 /// The milliseconds since the epoch of a date.
@@ -953,13 +999,30 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto arguments = parseArguments(argument);
         if (arguments.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' takes at least one argument", name);
-        ASTPtr result = arguments[0];
-        for (size_t i = 1; i < arguments.size(); ++i)
-            result = makeASTFunction(it->second, result, arguments[i]);
-        if (name != "$add")
-            return result;
-        /// The sum is a date exactly when one of the operands is, see `date_arithmetic_message`.
-        return withValue(std::move(result), [](const ASTPtr & sum) { return withGuard(sum, makeIsDate(sum), date_arithmetic_message); });
+        if (arguments.size() > max_folded_operands)
+            throw Exception(
+                ErrorCodes::TOO_DEEP_AST,
+                "'{}' has {} operands, more than {}: the operations are nested one into another",
+                name,
+                arguments.size(),
+                max_folded_operands);
+        /// The operands are bound once, as they appear both in the result and in the computation
+        /// that checks it, see `withIntegerOverflowCheck`.
+        return withValues(arguments, [&](const std::vector<ASTPtr> & operands)
+        {
+            ASTPtr exact = operands[0];
+            ASTPtr approximate = makeASTFunction("toFloat64", operands[0]->clone());
+            for (size_t i = 1; i < operands.size(); ++i)
+            {
+                exact = makeASTFunction(it->second, exact, operands[i]->clone());
+                approximate = makeASTFunction(it->second, approximate, makeASTFunction("toFloat64", operands[i]->clone()));
+            }
+            auto checked = withIntegerOverflowCheck(exact, std::move(approximate));
+            if (name != "$add")
+                return checked;
+            /// The sum is a date exactly when one of the operands is, see `date_arithmetic_message`.
+            return withGuard(std::move(checked), makeIsDate(exact), date_arithmetic_message);
+        });
     }
 
     if (name == "$subtract")
@@ -971,7 +1034,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             return withValue(arguments[1], [&](const ASTPtr & subtrahend)
             {
                 return withGuard(
-                    makeASTFunction("minus", minuend->clone(), subtrahend->clone()),
+                    withIntegerOverflowCheck(
+                        makeASTFunction("minus", minuend->clone(), subtrahend->clone()),
+                        makeASTFunction(
+                            "minus", makeASTFunction("toFloat64", minuend->clone()), makeASTFunction("toFloat64", subtrahend->clone()))),
                     makeASTFunction("or", makeIsDate(minuend), makeIsDate(subtrahend)),
                     date_arithmetic_message);
             });
@@ -1123,7 +1189,21 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
             arguments.push_back(parseMongoAggregateExpression(requireMember(branch, "then", name)));
         }
         auto default_it = argument.FindMember("default");
-        arguments.push_back(default_it == argument.MemberEnd() ? makeNull() : parseMongoAggregateExpression(default_it->value));
+        if (default_it != argument.MemberEnd())
+            arguments.push_back(parseMongoAggregateExpression(default_it->value));
+        else
+        {
+            /** Without a `default`, a document that no branch matches is an error in Mongo, not a
+              * `null`. The fallthrough branch throws when it is evaluated, which `multiIf` only
+              * does for the rows no condition matched; `materialize` keeps the analyzer from
+              * evaluating it as a constant up front. The value it would have is the one of the
+              * first branch, so that it does not change the type of the result.
+              */
+            arguments.push_back(withGuard(
+                arguments[1]->clone(),
+                makeASTFunction("materialize", makeLiteral(Field(true))),
+                "'$switch' could not find a matching branch for an input, and no default was specified"));
+        }
         return makeFunction("multiIf", std::move(arguments));
     }
 
@@ -1452,6 +1532,19 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the aggregation expression");
 }
 
+ASTPtr parseMongoAggregateCondition(const rapidjson::Value & value)
+{
+    /// The operators that already answer a boolean, or `NULL`, which a condition takes as false
+    /// the same way. They are kept as they are, so that a comparison of a column can still use
+    /// the primary key.
+    static const std::unordered_set<std::string_view> boolean_operators
+        = {"$eq", "$ne", "$lt", "$lte", "$gt", "$gte", "$and", "$or", "$not", "$in", "$regexMatch", "$anyElementTrue",
+           "$allElementsTrue"};
+    if (value.IsObject() && value.MemberCount() == 1 && boolean_operators.contains(stringView(value.MemberBegin()->name)))
+        return parseMongoAggregateExpression(value);
+    return makeTruthValue(parseMongoAggregateExpression(value));
+}
+
 namespace
 {
 
@@ -1591,7 +1684,9 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value, const MongoGroupOrd
         auto argument = parseMongoAggregateExpression(member.value);
         if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value == Field(Int64(1)))
             return makeASTFunction("count");
-        return makeASTFunction("sum", std::move(argument));
+        /// A sum of integers that wraps around is an error, see `withIntegerOverflowCheck`.
+        auto approximate = makeASTFunction("sum", makeASTFunction("toFloat64", argument->clone()));
+        return withIntegerOverflowCheck(makeASTFunction("sum", std::move(argument)), std::move(approximate));
     }
 
     /** `$first`, `$last` and `$push` read the documents of the group in the order of the stream,

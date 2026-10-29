@@ -19,6 +19,7 @@
 #include <map>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -27,6 +28,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
+extern const int TOO_DEEP_AST;
 }
 
 namespace Mongo
@@ -63,51 +65,6 @@ bool isOnlyRegularExpression(const rapidjson::Value & value)
   * not covered, because an array is not a constant here; and a field of nested arrays is
   * flattened through every level rather than one.
   */
-/// The BSON type category of a constant of a filter, as far as the type bracketing below cares.
-enum class ConstantCategory : uint8_t
-{
-    Boolean,
-    Number,
-    Other,
-};
-
-ConstantCategory constantCategory(const rapidjson::Value & value)
-{
-    if (value.IsBool())
-        return ConstantCategory::Boolean;
-    if (value.IsNumber())
-        return ConstantCategory::Number;
-    if (value.IsObject() && value.MemberCount() == 1)
-    {
-        auto wrapper = stringView(value.MemberBegin()->name);
-        if (wrapper == "$numberInt" || wrapper == "$numberLong" || wrapper == "$numberDouble" || wrapper == "$numberDecimal")
-            return ConstantCategory::Number;
-    }
-    return ConstantCategory::Other;
-}
-
-/** Mongo compares values of different BSON type categories as unequal, and a range predicate only
-  * selects values of the category of its constant ("type bracketing"), while ClickHouse stores a
-  * `Bool` as a number and compares it with numbers by value: `{"active": 1}` would select a
-  * document with `"active": true`. So a condition with a boolean constant is restricted to a field
-  * of type `Bool` - or an array of, or a nullable `Bool` - and one with a number to a field of
-  * another type. The type of the field is a constant, so the restriction folds away when the query
-  * is analyzed. Other categories need no restriction: ClickHouse refuses to compare, say, a string
-  * with a number rather than giving it a meaning.
-  */
-ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition)
-{
-    if (category == ConstantCategory::Other)
-        return condition;
-    auto field_is_boolean = makeASTFunction(
-        "match",
-        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)),
-        make_intrusive<ASTLiteral>(Field(String("^((Array|Nullable|LowCardinality)\\()*Bool\\)*$"))));
-    if (category == ConstantCategory::Number)
-        field_is_boolean = makeASTFunction("not", std::move(field_is_boolean));
-    return makeASTFunction("and", std::move(field_is_boolean), std::move(condition));
-}
-
 ASTPtr makeEqualityCondition(const std::string & field, ASTPtr constant, ConstantCategory category)
 {
     auto field_elements = makeASTFunction("flatten", makeASTFunction("array", make_intrusive<ASTIdentifier>(field)));
@@ -280,15 +237,22 @@ ASTPtr parseFieldOperator(
         /// every one of them.
         if (argument.Empty())
             return make_intrusive<ASTLiteral>(Field(UInt64(0)));
-        auto array = makeASTFunction("array");
+        /// Every element is tested the way `$eq` tests it, with its own type bracket: `hasAll` would
+        /// compare a boolean with a number by value, so `[1]` would match an array holding `true`.
+        std::vector<ASTPtr> conditions;
         for (const auto & element : argument.GetArray())
         {
             auto constant = tryParseMongoConstant(element);
             if (!constant)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constants are supported in the array of '$all'");
-            array->arguments->children.push_back(std::move(constant));
+            conditions.push_back(makeEqualityCondition(field, std::move(constant), constantCategory(element)));
         }
-        return makeASTFunction("hasAll", identifier(), array);
+        if (conditions.size() == 1)
+            return conditions.front();
+        auto result = makeASTFunction("and");
+        for (auto & condition : conditions)
+            result->arguments->children.push_back(std::move(condition));
+        return result;
     }
 
     if (name == "$elemMatch")
@@ -437,7 +401,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
 
 bool MongoExprFunction::parseImpl(ASTPtr & node)
 {
-    node = parseMongoAggregateExpression(data);
+    node = parseMongoAggregateCondition(data);
     return true;
 }
 
@@ -498,6 +462,14 @@ bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
     {
         return false;
     }
+
+    if (data.Size() > max_folded_operands)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_AST,
+            "'{}' has {} operands, more than {}: the operations are nested one into another",
+            getFunctionName(),
+            data.Size(),
+            max_folded_operands);
 
     std::vector<ASTPtr> children;
     for (unsigned int i = 0; i < data.Size(); ++i)
@@ -570,7 +542,15 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
         /// for example an empty object or a filter, is not an arithmetic operand.
         if (data.MemberCount() != 1 || data.MemberBegin()->name.GetStringLength() == 0 || data.MemberBegin()->name.GetString()[0] != '$')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "An object operand of an arithmetic operator must be a single operator expression");
-        auto parser = createParser(std::move(data), metadata, "");
+        /// The operator is dispatched by its name directly, as the filter only accepts the operators
+        /// of a filter. Any other name would be taken for a field named `$...`.
+        const auto & member = *data.MemberBegin();
+        static const std::unordered_set<std::string_view> operand_operators
+            = {"$add", "$mul", "$div", "$sub", "$and", "$or", "$nor", "$expr"};
+        if (!operand_operators.contains(stringView(member.name)))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "'{}' is not an operator that an operand of an arithmetic operator can be", stringView(member.name));
+        auto parser = createParser(copyValue(member.value, metadata->getAllocator()), metadata, member.name.GetString());
         if (!parser->parseImpl(node))
         {
             return false;

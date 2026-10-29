@@ -124,6 +124,14 @@ ASTPtr makeMongoOrderByElement(ASTPtr key, int direction);
   */
 ASTPtr makeRepresentableConstant(ASTPtr value, ASTPtr type, const String & message);
 
+/** The most operands an arithmetic operator such as `$add` takes. ClickHouse has only the binary
+  * operations, so the operands of one operator become the nesting of as many of them: a flat,
+  * small JSON text would otherwise make an AST deep enough to exhaust the stack of whatever walks
+  * it recursively, before `max_ast_depth` is ever checked. The bound is the default of
+  * `max_parser_depth` and `max_ast_depth`.
+  */
+static constexpr size_t max_folded_operands = 1000;
+
 /** Parses the JSON text of a query. A nesting deeper than `max_depth` - the `max_parser_depth` of
   * the query, zero for no limit - is rejected before anything recursive walks the value.
   */

@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Mongo/Utils.h>
 #include <Common/DateLUT.h>
@@ -244,6 +245,34 @@ bool isMongoExtendedJSONWrapper(const rapidjson::Value & value)
     return !name.empty() && name.front() == '$';
 }
 
+ConstantCategory constantCategory(const rapidjson::Value & value)
+{
+    if (value.IsBool())
+        return ConstantCategory::Boolean;
+    if (value.IsNumber())
+        return ConstantCategory::Number;
+    if (value.IsObject() && value.MemberCount() == 1)
+    {
+        auto wrapper = stringView(value.MemberBegin()->name);
+        if (wrapper == "$numberInt" || wrapper == "$numberLong" || wrapper == "$numberDouble" || wrapper == "$numberDecimal")
+            return ConstantCategory::Number;
+    }
+    return ConstantCategory::Other;
+}
+
+ASTPtr withTypeBracket(const std::string & field, ConstantCategory category, ASTPtr condition)
+{
+    if (category == ConstantCategory::Other)
+        return condition;
+    auto field_is_boolean = makeASTFunction(
+        "match",
+        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)),
+        make_intrusive<ASTLiteral>(Field(String("^((Array|Nullable|LowCardinality)\\()*Bool\\)*$"))));
+    if (category == ConstantCategory::Number)
+        field_is_boolean = makeASTFunction("not", std::move(field_is_boolean));
+    return makeASTFunction("and", std::move(field_is_boolean), std::move(condition));
+}
+
 std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
     const rapidjson::Value & wrapper, std::string_view field_name, rapidjson::Document::AllocatorType & allocator)
 {
@@ -300,7 +329,10 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
     {
         /// A Mongo date is an instant in UTC: the legacy Extended JSON spells it as the number of
         /// milliseconds since the epoch and the canonical one wraps that in `$numberLong`. It is
-        /// written as text so that the way the server reads it does not depend on any setting.
+        /// written as text in UTC with the `Z` suffix, so that the text names the instant whatever
+        /// reads it: a `DateTime64` column of another time zone, or a `JSON` column that infers a
+        /// `DateTime64` from the text in the time zone of the session. The insert reads it with
+        /// `date_time_input_format = 'best_effort'`, which understands the suffix.
         std::optional<Int64> milliseconds;
         if (member.value.IsString())
         {
@@ -315,6 +347,7 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
                     ErrorCodes::BAD_ARGUMENTS, "The value '{}' of '$date'{} is not a date", text, describeMongoField(field_name));
             WriteBufferFromOwnString formatted;
             writeDateTimeText(parsed, 3, formatted, utc);
+            writeChar('Z', formatted);
             rapidjson::Value value;
             value.SetString(formatted.str().c_str(), static_cast<rapidjson::SizeType>(formatted.str().size()), allocator);
             return {"DateTime64(3, 'UTC')", std::move(value)};
@@ -334,6 +367,7 @@ std::pair<std::string, rapidjson::Value> convertMongoExtendedJSONWrapper(
         {
             WriteBufferFromOwnString formatted;
             writeDateTimeText(DateTime64(*milliseconds), 3, formatted, DateLUT::instance("UTC"));
+            writeChar('Z', formatted);
             rapidjson::Value value;
             value.SetString(formatted.str().c_str(), static_cast<rapidjson::SizeType>(formatted.str().size()), allocator);
             return {"DateTime64(3, 'UTC')", std::move(value)};
@@ -352,17 +386,8 @@ rapidjson::Value convertMongoExtendedJSONWrappersDeep(
 {
     if (isMongoExtendedJSONWrapper(value))
     {
-        auto [type, converted] = convertMongoExtendedJSONWrapper(value, field_name, allocator);
-        /// A date this deep has no column type to pin its time zone: the `JSON` type infers a
-        /// `DateTime64` from the text, in the time zone of whoever parses it - the session of an
-        /// insert, but the server for the mutation of an update, so the zone-less text of the same
-        /// instant would be stored hours apart. The `Z` suffix makes the text name the instant.
-        if (type.starts_with("DateTime64"))
-        {
-            std::string zoned = std::string(stringView(converted)) + "Z";
-            converted.SetString(zoned.c_str(), static_cast<rapidjson::SizeType>(zoned.size()), allocator);
-        }
-        return std::move(converted);
+        /// A date is converted into text with the `Z` suffix, see `convertMongoExtendedJSONWrapper`.
+        return std::move(convertMongoExtendedJSONWrapper(value, field_name, allocator).second);
     }
 
     if (value.IsObject())

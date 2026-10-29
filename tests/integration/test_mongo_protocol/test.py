@@ -2994,3 +2994,88 @@ def test_deeply_dotted_column_is_rejected(started_cluster):
     assert client["admin"].command("ping")["ok"] == 1.0
 
     node.query("DROP TABLE db.deeply_dotted", password="123")
+
+
+def test_insert_date_into_a_column_of_another_time_zone(started_cluster):
+    """A BSON date is an instant. Inserted into an existing `DateTime64` column of another time
+    zone, as a value or as an element of an array, it is stored as that instant rather than as the
+    same wall clock time in the time zone of the column."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE OR REPLACE TABLE db.dates_tokyo (id Int32, x DateTime64(3, 'Asia/Tokyo'), "
+        "xs Array(DateTime64(3, 'Asia/Tokyo'))) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+
+    collection = make_client()["db"]["dates_tokyo"]
+    midnight = datetime.datetime(2020, 1, 1, 0, 0, 0)
+    noon = datetime.datetime(2020, 1, 1, 12, 0, 0, 500000)
+    collection.insert_one({"id": 1, "x": midnight, "xs": [midnight, noon]})
+
+    assert (
+        node.query(
+            "SELECT toUnixTimestamp64Milli(x), arrayMap(v -> toUnixTimestamp64Milli(v), xs) FROM db.dates_tokyo",
+            password="123",
+        )
+        == "1577836800000\t[1577836800000,1577880000500]\n"
+    )
+    assert list(collection.find({}, {"_id": 0})) == [{"id": 1, "x": midnight, "xs": [midnight, noon]}]
+
+    node.query("DROP TABLE db.dates_tokyo", password="123")
+
+
+def test_insert_checks_the_scale_of_every_number_of_a_decimal_column(started_cluster):
+    """A decimal column keeps a fixed number of fractional digits, and its reader drops the rest
+    of a double or of the text of a number as well as of a `$numberDecimal`. Such a value is
+    rejected rather than acknowledged and stored truncated, in the first batch and in a later one,
+    as a value and as an element of an array."""
+    from bson.decimal128 import Decimal128
+
+    collection = make_client()["db"]["decimal_carriers"]
+    collection.drop()
+    with pytest.raises(pymongo.errors.OperationFailure, match="stored exactly"):
+        collection.insert_many([{"id": 1, "x": Decimal128("1.5")}, {"id": 2, "x": 1.25}])
+    assert collection.count_documents({}) == 0
+    # The failed batch has already created the collection with the columns of its first document.
+    collection.drop()
+
+    collection.insert_one({"id": 1, "x": Decimal128("1.5"), "xs": [Decimal128("1.5")]})
+    for document in [
+        {"id": 2, "x": 1.25},
+        {"id": 2, "x": "1.25"},
+        {"id": 2, "x": 1e-300},
+        {"id": 2, "xs": [1.25]},
+        {"id": 2, "xs": ["1.25"]},
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure, match="stored exactly"):
+            collection.insert_one(document)
+
+    collection.insert_one({"id": 3, "x": 2.5, "xs": [0.5, "1.50"]})
+    assert [(doc["id"], doc["x"], doc["xs"]) for doc in sorted(collection.find({}), key=lambda doc: doc["id"])] == [
+        (1, Decimal128("1.5"), [Decimal128("1.5")]),
+        (3, Decimal128("2.5"), [Decimal128("0.5"), Decimal128("1.5")]),
+    ]
+    collection.drop()
+
+
+def test_create_collection_in_an_existing_database_needs_no_create_database(started_cluster):
+    """`createCollection` in a database that exists only creates a table, so the grant to create a
+    table there is enough for it. A missing database still needs the grant to create it."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.created_with_a_table_grant", password="123")
+    node.query("DROP USER IF EXISTS mongo_creator", password="123")
+    node.query("CREATE USER mongo_creator IDENTIFIED WITH plaintext_password BY 'mongo_pass'", password="123")
+    node.query("GRANT CREATE TABLE, SHOW ON db.* TO mongo_creator", password="123")
+
+    creator = make_client(user="mongo_creator", password="mongo_pass", database="db")
+    creator["db"].create_collection("created_with_a_table_grant")
+    assert node.query("EXISTS TABLE db.created_with_a_table_grant", password="123") == "1\n"
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        creator["db_missing_for_mongo_creator"].create_collection("c")
+    assert node.query("EXISTS DATABASE db_missing_for_mongo_creator", password="123") == "0\n"
+
+    node.query("DROP TABLE db.created_with_a_table_grant", password="123")
+    node.query("DROP USER mongo_creator", password="123")

@@ -336,13 +336,59 @@ std::optional<Int128> parseIntegerText(std::string_view text)
     return negative ? -number : number;
 }
 
-void recordIntegers(const String & name, const rapidjson::Value & value, std::map<String, IntegerRange> & integer_ranges)
+/** The scale a decimal column needs to hold the number that `text` is exactly, `max` when no
+  * `Decimal128` holds it, nothing when the text is not a number at all. Unlike the scale of a
+  * `$numberDecimal` (see `recordDecimalScale`), trailing fractional zeros do not count: the value
+  * is a plain number, so `1.50` is stored exactly in a column of scale 1.
+  */
+std::optional<UInt32> decimalScaleOfNumberText(std::string_view text)
+{
+    String normalized(text);
+    if (auto point = normalized.find('.'); point != String::npos)
+    {
+        size_t fractional_end = point + 1;
+        while (fractional_end < normalized.size() && isNumericASCII(normalized[fractional_end]))
+            ++fractional_end;
+        size_t significant_end = fractional_end;
+        while (significant_end > point + 1 && normalized[significant_end - 1] == '0')
+            --significant_end;
+        normalized.erase(significant_end, fractional_end - significant_end);
+    }
+    if (auto scale = Mongo::decimalScaleOfNumberDecimal(normalized))
+        return scale;
+    /// A number, but one that no `Decimal128` holds exactly.
+    ReadBufferFromMemory buffer(normalized.data(), normalized.size());
+    Float64 number;
+    if (tryReadText(number, buffer) && buffer.eof())
+        return std::numeric_limits<UInt32>::max();
+    return std::nullopt;
+}
+
+void recordDecimalTextScale(const String & name, std::string_view text, std::map<String, UInt32> & decimal_scales)
+{
+    if (auto scale = decimalScaleOfNumberText(text))
+    {
+        auto [it, inserted] = decimal_scales.emplace(name, *scale);
+        if (!inserted)
+            it->second = std::max(it->second, *scale);
+    }
+}
+
+/** Records the integers of a value into `integer_ranges` and the scale every other number of it
+  * needs into `decimal_scales`, see `checkValuesFitColumns`. A double reaches the reader as the
+  * text rapidjson writes for it, and a string as itself, so the scale is the one of that text.
+  */
+void recordNumbers(
+    const String & name,
+    const rapidjson::Value & value,
+    std::map<String, IntegerRange> & integer_ranges,
+    std::map<String, UInt32> & decimal_scales)
 {
     if (value.IsArray())
     {
         /// The elements of an array of arrays go into the same column, `Array(Array(...))`.
         for (const auto & element : value.GetArray())
-            recordIntegers(name, element, integer_ranges);
+            recordNumbers(name, element, integer_ranges, decimal_scales);
         return;
     }
 
@@ -351,12 +397,21 @@ void recordIntegers(const String & name, const rapidjson::Value & value, std::ma
         number = value.GetInt64();
     else if (value.IsUint64())
         number = value.GetUint64();
+    else if (value.IsDouble())
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        value.Accept(writer);
+        recordDecimalTextScale(name, std::string_view(buffer.GetString(), buffer.GetSize()), decimal_scales);
+        return;
+    }
     else if (value.IsString())
     {
         std::string_view text(value.GetString(), value.GetStringLength());
         number = parseIntegerText(text);
         if (!number)
         {
+            recordDecimalTextScale(name, text, decimal_scales);
             auto & range = integer_ranges[name];
             if (!range.non_integer)
                 range.non_integer = String(text);
@@ -373,13 +428,16 @@ void recordIntegers(const String & name, const rapidjson::Value & value, std::ma
 
 /** Records the range of the integers of every field of an already flattened document, including
   * the integer elements of its arrays, and of the strings that are the text of an integer, which is
-  * what a `$numberDecimal` becomes. A nested document of an array is a value of a `JSON` element,
-  * which has no fixed integer type to check, so it is not descended into.
+  * what a `$numberDecimal` becomes; and the scale of the other numbers - doubles and the strings
+  * that are the text of a number - which a decimal column has to hold exactly. A nested document
+  * of an array is a value of a `JSON` element, which has no fixed type to check, so it is not
+  * descended into.
   */
-void recordIntegerRanges(const rapidjson::Value & flattened, std::map<String, IntegerRange> & integer_ranges)
+void recordNumberRanges(
+    const rapidjson::Value & flattened, std::map<String, IntegerRange> & integer_ranges, std::map<String, UInt32> & decimal_scales)
 {
     for (auto it = flattened.MemberBegin(); it != flattened.MemberEnd(); ++it)
-        recordIntegers(it->name.GetString(), it->value, integer_ranges);
+        recordNumbers(it->name.GetString(), it->value, integer_ranges, decimal_scales);
 }
 
 /// The range of the values of an integer type of at most 64 bits, nothing for any other type.
@@ -410,10 +468,10 @@ std::optional<std::pair<Int128, Int128>> getIntegerTypeRange(const DataTypePtr &
 }
 
 /** A decimal column keeps a fixed number of fractional digits and reading a value with more of
-  * them silently drops the rest, while a `$numberDecimal` is supposed to be stored exactly. The
-  * column of a decimal field is the one of the first document that had the field - in this batch
-  * or in an earlier insert - so a later value of a larger scale is rejected here, before anything
-  * is written, rather than rounded. The types are read from `system.columns`, which shows only the
+  * them silently drops the rest, while a `$numberDecimal` - or any other number, a double or the
+  * text of a number - is supposed to be stored exactly. The column of a decimal field is the one
+  * of the first document that had the field - in this batch or in an earlier insert - so a later
+  * value of a larger scale is rejected here, before anything is written, rather than rounded. The types are read from `system.columns`, which shows only the
   * columns the user may see; a decimal field without a visible column cannot be checked, so it is
   * an error as well.
   *
@@ -527,18 +585,26 @@ void checkValuesFitColumns(
         if (it == column_types.end())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The field '{}' holds a decimal value, but the collection '{}.{}' has no visible column of that name to check its scale "
-                "against",
+                "The field '{}' holds a fractional number, but the collection '{}.{}' has no visible column of that name to check its "
+                "scale against",
                 name,
                 collection.database,
                 collection.collection);
 
         DataTypePtr type = get_value_type(it->second);
 
+        if (isDecimal(type) && scale == std::numeric_limits<UInt32>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The field '{}' holds a number that no decimal holds exactly, while its column is of the type {}: the value cannot be "
+                "stored exactly",
+                name,
+                it->second);
+
         if (isDecimal(type) && getDecimalScale(*type) < scale)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The field '{}' holds a decimal value with {} fractional digits, more than the scale {} of its column of the type {}: "
+                "The field '{}' holds a number with {} fractional digits, more than the scale {} of its column of the type {}: "
                 "the value cannot be stored exactly",
                 name,
                 scale,
@@ -670,7 +736,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         rapidjson::Value flattened(rapidjson::kObjectType);
         std::map<String, String> wrapper_types;
         flattenDocument(doc.getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types, decimal_scales);
-        recordIntegerRanges(flattened, integer_ranges);
+        recordNumberRanges(flattened, integer_ranges, decimal_scales);
 
         /// The schema comes from the first document only, as in Mongo a collection has no
         /// schema of its own.
@@ -720,6 +786,10 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     insert_settings.setSetting("async_insert", Field(false));
     insert_settings.setSetting("input_format_allow_errors_num", Field(UInt64(0)));
     insert_settings.setSetting("input_format_allow_errors_ratio", Field(0.0));
+    /// A BSON date is written as the text of an instant in UTC with the `Z` suffix (see
+    /// `convertMongoExtendedJSONWrapper`), which only this reader understands. The basic one would
+    /// reject it, and the text without the suffix would be read in the time zone of the column.
+    insert_settings.setSetting("date_time_input_format", Field(String("best_effort")));
 
     /// The data is `JSONEachRow` whatever the profile says: its `input_format` or `format` would
     /// otherwise win over the `FORMAT` of the query, which `QueryExecutor::execute` prevents.

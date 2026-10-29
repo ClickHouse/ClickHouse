@@ -10,6 +10,7 @@
 #include <Parsers/Mongo/Utils.h>
 
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <fmt/format.h>
 
@@ -59,6 +60,9 @@ void normalizeIntegerField(Field & field)
   */
 void normalizeIntegerLiterals(IAST & ast)
 {
+    /// The AST is generated rather than parsed, so its depth is not bounded by `max_parser_depth`
+    /// the way the depth of a parsed one is.
+    checkStackSize();
     if (auto * literal = ast.as<ASTLiteral>())
         normalizeIntegerField(literal->value);
     for (const auto & child : ast.children)
