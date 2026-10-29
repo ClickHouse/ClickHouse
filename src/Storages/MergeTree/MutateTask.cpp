@@ -3963,7 +3963,6 @@ bool MutateTask::execute()
 
 void MutateTask::cancel() noexcept
 {
-    /// Stops the other in-flight reads of this mutation: the thread group's cancellation predicates read this flag.
     (*ctx->mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
 
     if (task)
