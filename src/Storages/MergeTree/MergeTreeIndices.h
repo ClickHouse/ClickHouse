@@ -453,6 +453,9 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
+/// Whether a value written with type @from is read back unchanged as type @to; fail-closed.
+bool isRepresentationPreservingConversion(const IDataType * from, const IDataType * to);
+
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
 /// skp_idx.packed. Standalone files are always in checksums, so the archive check looks only at
