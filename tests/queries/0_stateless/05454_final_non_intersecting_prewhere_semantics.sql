@@ -92,3 +92,16 @@ SELECT count() FROM t_final_prewhere_nullable FINAL WHERE v = 7 AND s = 'x' AND 
 SELECT count() FROM t_final_prewhere_nullable FINAL WHERE v = 7 AND s = 'x' AND lc = '1' SETTINGS query_plan_merge_filters = 1;
 SELECT count() FROM t_final_prewhere_nullable FINAL WHERE v = 7 AND s = 'x' AND lc = '1' SETTINGS optimize_move_to_prewhere_if_final_non_intersecting = 0;
 DROP TABLE t_final_prewhere_nullable;
+
+SELECT 'A condition after one that stays in the WHERE stays there too';
+DROP TABLE IF EXISTS t_final_prewhere_guard;
+CREATE TABLE t_final_prewhere_guard (key UInt64, s String, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY key SETTINGS index_granularity = 128;
+INSERT INTO t_final_prewhere_guard SELECT number, if(number % 100 = 0, 'bad', toString(number)), 1 FROM numbers(20000);
+OPTIMIZE TABLE t_final_prewhere_guard FINAL;
+SYSTEM STOP MERGES t_final_prewhere_guard;
+INSERT INTO t_final_prewhere_guard SELECT number, toString(number), 2 FROM numbers(5000, 300);
+-- The guard reads all queried columns, so it is not applied early, and `toUInt64` must not see 'bad'.
+SELECT count(), sum(key) FROM t_final_prewhere_guard FINAL WHERE (s != 'bad' OR key = 4294967295) AND toUInt64(s) > 0
+SETTINGS query_plan_optimize_lazy_final = 0;
+DROP TABLE t_final_prewhere_guard;
