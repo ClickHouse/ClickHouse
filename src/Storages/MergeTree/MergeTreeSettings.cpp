@@ -2570,6 +2570,17 @@ The check applies only to tables that actually aggregate (those with at least on
 column) and is skipped when `allow_tuple_element_aggregation` is enabled.
 )", 0, \
         {"26.7", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."}) \
+    DECLARE(Bool, allow_aggregating_columns_in_partition_or_order_key, false, R"(
+When enabled, allows `SimpleAggregateFunction` columns of an `AggregatingMergeTree` table to be used in
+the expressions of the partition or sorting key.
+
+Background merges aggregate such a column, so a key computed from it no longer matches the merged row:
+the rows are not sorted by the sorting key any more and a merged row can stay in a partition that its
+new value does not belong to, so the primary key and partition pruning skip rows that match the
+condition. By default, such a schema is rejected when the table is created, and so is an `ALTER` that
+makes a key use such a column (by changing the sorting key or the type of a column).
+)", 0, \
+        {"26.11", true, false, "AggregatingMergeTree now rejects, at table creation and in ALTER, a partition or sorting key computed from a SimpleAggregateFunction column; previously such schemas were accepted (the old behavior corresponds to the value 'true')."}) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
 Enables writing attributes into virtual parts and committing blocks in keeper
 )", 0, \
