@@ -3770,11 +3770,12 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
         catch (...)
         {
-            /// UNIQUE_KEY_DENSE_INDEX_UNREADABLE marks the cases where the part
-            /// must not be touched: a transient validation failure (file may be
+            /// Cancellation is not evidence of corruption. `UNIQUE_KEY_DENSE_INDEX_UNREADABLE`
+            /// marks other cases where the part must not be touched: a transient validation failure (file may be
             /// healthy) or readonly storage (removal/rebuild/detach are writes).
-            /// Propagate it so the load fails and a retry/restart can recover.
-            if (getCurrentExceptionCode() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE)
+            /// Propagate these errors so the load fails and a retry/restart can recover.
+            if (CurrentThread::isQueryCancellationException(std::current_exception())
+                || getCurrentExceptionCode() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE)
                 throw;
             /// Otherwise the part genuinely has no usable dense index (corrupt SST
             /// that could not be rebuilt, missing UK column, unreadable rows) — the

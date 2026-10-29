@@ -168,6 +168,7 @@ namespace FailPoints
     extern const char remove_merge_tree_part_delay[];
     extern const char merge_tree_load_statistics_throw[];
     extern const char load_projection_before_metadata_read[];
+    extern const char check_consistency_before_marks_read[];
 }
 
 namespace
@@ -3596,6 +3597,10 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
     }
     catch (Exception & e)
     {
+        /// Preserve cancellation without adding part-corruption diagnostics.
+        if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            throw;
+
         const auto part_state = fmt::format(
             "state: {}, is_unexpected_local_part: {}, is_frozen: {}, is_duplicate: {}",
             stateString(),
@@ -3615,7 +3620,7 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
             part_state);
 
         e.addMessage(debug_info);
-        e.rethrow();
+        throw;
     }
 }
 
@@ -3643,6 +3648,7 @@ void IMergeTreeDataPart::checkDataFileCoversMarks(
         /*load_marks_threadpool=*/ nullptr,
         num_columns_in_mark,
         storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]);
+    FailPointInjection::pauseFailPoint(FailPoints::check_consistency_before_marks_read);
     auto marks = marks_loader.loadMarks();
 
     /// The marks of all columns of a compact part point into the same file, so take the farthest one.

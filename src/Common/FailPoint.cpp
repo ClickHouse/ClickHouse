@@ -99,6 +99,10 @@ static struct InitFiu
     PAUSEABLE_ONCE(check_data_part_before_serialization_read) \
     PAUSEABLE_ONCE(load_data_part_before_metadata_read) \
     PAUSEABLE_ONCE(load_projection_before_metadata_read) \
+    PAUSEABLE_ONCE(check_consistency_before_marks_read) \
+    PAUSEABLE_ONCE(vector_similarity_index_before_read) \
+    PAUSEABLE_ONCE(unique_key_sst_before_read) \
+    PAUSEABLE_ONCE(unique_key_before_index_rebuild) \
     PAUSEABLE_ONCE(restore_part_before_metadata_read) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \

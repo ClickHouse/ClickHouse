@@ -18,6 +18,10 @@
 #include <Storages/StorageSnapshot.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/CurrentThread.h>
+#include <Common/QueryCancellationBlockerInThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -38,6 +42,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char unique_key_before_index_rebuild[];
+}
 
 namespace ErrorCodes
 {
@@ -109,11 +118,15 @@ DenseIndexSSTStatus classifyDenseIndexSST(
     }
     catch (const Exception & e)
     {
+        if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            throw;
         reason = "exception: " + e.message();
         return e.code() == ErrorCodes::CORRUPTED_DATA ? DenseIndexSSTStatus::Corrupt : DenseIndexSSTStatus::Transient;
     }
     catch (...)
     {
+        if (CurrentThread::isQueryCancellationException(std::current_exception()))
+            throw;
         reason = "exception: " + getCurrentExceptionMessage(/*with_stacktrace=*/false);
         return DenseIndexSSTStatus::Transient;
     }
@@ -178,9 +191,8 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
                         "storage is readonly, so it cannot be rebuilt; failing the load",
                         part->name, SSTIndexWriter::FILE_NAME, reason);
                 LOG_WARNING(log, "ensureValidDenseIndex: part {} has a corrupt `{}` ({}); "
-                            "removing and rebuilding",
+                            "rebuilding",
                             part->name, SSTIndexWriter::FILE_NAME, reason);
-                storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
                 break;  /// fall through to the rebuild path below
             case DenseIndexSSTStatus::Transient:
                 /// Do not delete or rebuild: the file may be healthy but momentarily
@@ -199,9 +211,9 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
 #endif
     }
 
-    /// Rebuild path, reached only by a part with no SST checksum entry (a
-    /// missing file on a part that has one is already rejected by
-    /// `checkConsistencyBase`). A rebuild is a write: on readonly storage fail
+    /// Rebuild a corrupt SST or a missing SST without a checksum entry (a
+    /// missing file with an entry is already rejected by `checkConsistencyBase`).
+    /// A rebuild is a write: on readonly storage fail
     /// the load closed - the part must not activate without a probeable index,
     /// and detaching (a rename) is not possible either.
     if (!storage_is_writable)
@@ -226,7 +238,10 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
     {
 #if USE_ROCKSDB
         Stopwatch rebuild_watch;
+        FailPointInjection::pauseFailPoint(FailPoints::unique_key_before_index_rebuild);
         Block accumulated = readUniqueKeyColumns(data, part, metadata_snapshot, uk_names);
+        /// A cancelled pipeline can return an empty or partial block instead of throwing.
+        CurrentThread::checkIfNotCancelled();
         if (accumulated.rows() == 0)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "ensureValidDenseIndex: part {} has rows_count={} but sequential read yielded 0 rows; "
@@ -254,6 +269,13 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// SST) and finalizes + fsyncs it inline before `writeChecksums` below -
         /// the SST must be durable before its checksum is, or a crash would
         /// reintroduce the missing-SST inconsistency the rebuild fixes.
+        ///
+        /// Reading the original columns is cancellable. Once replacement starts,
+        /// finish the SST and its checksums together so a cancelled attach can be retried.
+        CurrentThread::checkIfNotCancelled();
+        QueryCancellationBlockerInThread cancellation_blocker;
+        ThreadStatus::QueryCancellationBlocker thread_cancellation_blocker;
+        storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
         SSTIndexWriter::write(
             storage,
             accumulated,
@@ -284,9 +306,8 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
     }
     catch (...)
     {
-        /// A rebuild that throws leaves the part without a usable dense index;
-        /// surface it to the caller so the part is detached as broken rather
-        /// than activated. (Re-throw the original error.)
+        /// Propagate the original error to the load handler, which distinguishes
+        /// cancellation from a broken dense index.
         tryLogCurrentException(log,
             "ensureValidDenseIndex: SST rebuild failed for part " + part->name);
         throw;
