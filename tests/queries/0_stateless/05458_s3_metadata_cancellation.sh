@@ -11,6 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -euo pipefail
 
 database="${CLICKHOUSE_DATABASE}_metadata_cancellation"
+legacy_database="${database}_legacy"
 query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_check"
 output="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.out"
 error="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.err"
@@ -19,8 +20,9 @@ cancel_number=0
 read_options=()
 failpoints=(check_data_part_before_serialization_read check_data_part_before_projection_read
             query_status_cancel_with_injected_exception load_data_part_before_metadata_read
-            load_projection_before_metadata_read check_consistency_before_marks_read
-            vector_similarity_index_before_read unique_key_sst_before_read unique_key_before_index_rebuild)
+            load_projection_before_metadata_read check_consistency_before_marks_read check_consistency_force_marks_read
+            vector_similarity_index_before_read unique_key_sst_before_read unique_key_before_index_rebuild
+            unique_key_sst_force_corruption)
 
 query()
 {
@@ -39,9 +41,11 @@ cleanup()
         query --query "KILL QUERY WHERE query_id='${query_id}' ASYNC FORMAT Null" >/dev/null 2>&1 ||:
         wait "$client_pid" ||:
     fi
-    for table in plain consistency sst rebuild; do
+    for table in plain consistency sst; do
         query --query "ATTACH TABLE IF NOT EXISTS ${database}.${table}" >/dev/null 2>&1 ||:
     done
+    query --query "ATTACH TABLE IF NOT EXISTS ${legacy_database}.rebuild" >/dev/null 2>&1 ||:
+    query --query "DROP DATABASE IF EXISTS ${legacy_database} SYNC" >/dev/null 2>&1 ||:
     query --query "DROP DATABASE IF EXISTS ${database} SYNC" >/dev/null 2>&1 ||:
 }
 trap cleanup EXIT
@@ -69,6 +73,7 @@ query --query "SYSTEM STOP FETCHES ${database}.replicated"
 
 state()
 {
+    local database=${2:-$database}
     query --query "SELECT
         (SELECT (count(), sum(n)) FROM ${database}.$1),
         (SELECT arraySort(groupArray(name)) FROM system.parts
@@ -132,8 +137,8 @@ cancel_at()
 
 assert_preserved()
 {
-    local table=$1 before=$2 after
-    after=$(state "$table")
+    local table=$1 before=$2 after database=${3:-$database}
+    after=$(state "$table" "$database")
     if [[ "$after" != "$before" ]]; then
         diff -u <(printf '%s\n' "$before") <(printf '%s\n' "$after")
         return 1
@@ -221,18 +226,17 @@ part_settings="storage_policy='s3_no_cache', min_bytes_for_wide_part=0, min_rows
     min_bytes_for_full_part_storage=0, min_rows_for_full_part_storage=0, min_level_for_full_part_storage=0,
     prewarm_mark_cache=0, prewarm_primary_key_cache=0"
 
-# Regenerating checksums runs the marks check inside the diagnostic exception handler.
+# Force the marks check inside the diagnostic exception handler without removing checksums.
 query --query "
     CREATE TABLE ${database}.consistency (n UInt64) ENGINE=MergeTree ORDER BY n SETTINGS ${part_settings};
     SYSTEM STOP MERGES ${database}.consistency;
     INSERT INTO ${database}.consistency SELECT number FROM numbers(4096) SETTINGS max_insert_threads=1, max_block_size=65536, min_insert_block_size_rows=65536, min_insert_block_size_bytes=0;
 "
 consistency_before=$(state consistency)
-part_path=$(query --query "SELECT path FROM system.parts WHERE database='${database}' AND table='consistency' AND active")
-[[ "$part_path" == /* && "$part_path" != *$'\n'* ]]
 query --query "DETACH TABLE ${database}.consistency SYNC; SYSTEM DROP MARK CACHE"
-rm "${part_path}checksums.txt"
+query --query "SYSTEM ENABLE FAILPOINT check_consistency_force_marks_read"
 cancel_at "ATTACH TABLE ${database}.consistency" check_consistency_before_marks_read timeout
+query --query "SYSTEM DISABLE FAILPOINT check_consistency_force_marks_read"
 query --query "ATTACH TABLE IF NOT EXISTS ${database}.consistency"
 assert_preserved consistency "$consistency_before"
 echo 'consistency cancellation checked'
@@ -285,41 +289,28 @@ assert_preserved sst "$sst_before"
 echo 'SST probe cancellation checked'
 
 # An interrupted repair must retain the old SST until its replacement is ready.
-sst_key=$(query --query "SELECT remote_path FROM system.remote_data_paths
-    WHERE disk_name='s3_no_cache' AND local_path=(SELECT concat(substring(path, position(path, 'store/')), 'unique_key_index.sst')
-        FROM system.parts WHERE database='${database}' AND table='sst' AND active)")
-[[ -n "$sst_key" && "$sst_key" != *$'\n'* ]]
-sst_file="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.sst"
-curl --fail --silent --show-error "http://localhost:11111/test/${sst_key}" -o "$sst_file"
-python3 - "$sst_file" <<'PY'
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-data = bytearray(path.read_bytes())
-data[len(data) // 2] ^= 255
-path.write_bytes(data)
-PY
+# Force its classification as corrupt without modifying the object in S3.
 query --query "DETACH TABLE ${database}.sst SYNC"
-curl --fail --silent --show-error -X PUT "http://localhost:11111/test/${sst_key}" --upload-file "$sst_file"
+query --query "SYSTEM ENABLE FAILPOINT unique_key_sst_force_corruption"
 cancel_at "ATTACH TABLE ${database}.sst" unique_key_before_index_rebuild timeout
 query --query "ATTACH TABLE IF NOT EXISTS ${database}.sst"
+query --query "SYSTEM DISABLE FAILPOINT unique_key_sst_force_corruption"
 assert_preserved sst "$sst_before"
 echo 'SST repair cancellation checked'
 
 # A legacy part without an SST entry is rebuilt from its intact columns on attach.
+# `Ordinary` permits redefining a detached table through SQL without editing its metadata.
+query --allow_deprecated_database_ordinary=1 --query "CREATE DATABASE ${legacy_database} ENGINE=Ordinary SETTINGS disk='default'"
 query --query "
-    CREATE TABLE ${database}.rebuild (n UInt64) ENGINE=MergeTree ORDER BY n SETTINGS ${part_settings};
-    SYSTEM STOP MERGES ${database}.rebuild;
-    INSERT INTO ${database}.rebuild SELECT number FROM numbers(4096) SETTINGS max_insert_threads=1, max_block_size=65536, min_insert_block_size_rows=65536, min_insert_block_size_bytes=0;
+    CREATE TABLE ${legacy_database}.rebuild (n UInt64) ENGINE=MergeTree ORDER BY n SETTINGS ${part_settings};
+    SYSTEM STOP MERGES ${legacy_database}.rebuild;
+    INSERT INTO ${legacy_database}.rebuild SELECT number FROM numbers(4096) SETTINGS max_insert_threads=1, max_block_size=65536, min_insert_block_size_rows=65536, min_insert_block_size_bytes=0;
 "
-rebuild_before=$(state rebuild)
-metadata_path=$(query --query "SELECT metadata_path FROM system.tables WHERE database='${database}' AND name='rebuild'")
-if [[ "$metadata_path" != /* ]]; then
-    metadata_path="$(query --query "SELECT path FROM system.disks WHERE name='default'")${metadata_path}"
-fi
-query --query "DETACH TABLE ${database}.rebuild SYNC"
-sed -i 's/^ORDER BY/UNIQUE KEY (n)\nORDER BY/' "$metadata_path"
-cancel_at "ATTACH TABLE ${database}.rebuild" unique_key_before_index_rebuild kill
-query --query "ATTACH TABLE IF NOT EXISTS ${database}.rebuild"
-assert_preserved rebuild "$rebuild_before"
+rebuild_before=$(state rebuild "$legacy_database")
+rebuild_attach="ATTACH TABLE ${legacy_database}.rebuild (n UInt64)
+    ENGINE=MergeTree UNIQUE KEY (n) ORDER BY n SETTINGS ${part_settings}"
+query --query "DETACH TABLE ${legacy_database}.rebuild SYNC"
+cancel_at "$rebuild_attach" unique_key_before_index_rebuild kill
+query --query "$rebuild_attach"
+assert_preserved rebuild "$rebuild_before" "$legacy_database"
 echo 'SST rebuild cancellation checked'

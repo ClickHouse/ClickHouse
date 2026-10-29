@@ -46,6 +46,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char unique_key_before_index_rebuild[];
+    extern const char unique_key_sst_force_corruption[];
 }
 
 namespace ErrorCodes
@@ -94,6 +95,11 @@ DenseIndexSSTStatus classifyDenseIndexSST(
         auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, read_settings);
 
         auto verify_status = reader->verifyChecksum();
+        fiu_do_on(FailPoints::unique_key_sst_force_corruption,
+        {
+            reason = "Injected SST corruption";
+            return DenseIndexSSTStatus::Corrupt;
+        });
         if (!verify_status.ok())
         {
             reason = "checksum verify failed: " + verify_status.ToString();
