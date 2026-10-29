@@ -18,12 +18,14 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/TableJoin.h>
 
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 #include <ranges>
 #include <unordered_map>
@@ -283,7 +285,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     const Names & left_stream_available_columns,
     const Names & right_stream_available_columns,
     const bool allow_dynamic_type_in_join_keys,
-    NameSet join_condition_names
+    NameSet join_condition_names,
+    bool allow_range_predicates
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -308,6 +311,14 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     std::unordered_set<const ActionsDAG::Node *> conjuncts_to_replace;
     ActionsDAG::NodeRawConstPtrs rejected_conjuncts;
     rejected_conjuncts.reserve(conjuncts_list.size());
+
+    auto is_cross_side = [&](const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+    {
+        auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
+        auto rhs_side = getExpressionSide(rhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
+        return (lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
+            || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT);
+    };
 
     for (const auto * conjunct : conjuncts_list)
     {
@@ -339,11 +350,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             }
 
             /// We need to check if arguments are coming from different sides of JOIN
-            auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
-            auto rhs_side = getExpressionSide(rhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
-
-            if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
-             || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
+            if (is_cross_side(lhs, rhs))
             {
                 /// Such a key matches pairs `equals` rejects, so the condition also stays in the filter.
                 if (JoinCommon::keyMatchesValuesEqualsRejects(lhs->result_type) || JoinCommon::keyMatchesValuesEqualsRejects(rhs->result_type))
@@ -359,6 +366,24 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
                 continue;
             }
         }
+
+        const bool is_range = conjunct->type == ActionsDAG::ActionType::FUNCTION
+            && (conjunct->function_base->getName() == "less"
+                || conjunct->function_base->getName() == "lessOrEquals"
+                || conjunct->function_base->getName() == "greater"
+                || conjunct->function_base->getName() == "greaterOrEquals")
+            && conjunct->children.size() == 2;
+        if (allow_range_predicates && is_range && is_cross_side(conjunct->children[0], conjunct->children[1]))
+        {
+            auto range_dag = ActionsDAG::cloneSubDAG({ conjunct }, true);
+            if (!QueryPlanOptimizations::isSensitiveToEvaluationCount(range_dag) && !range_dag.hasArrayJoin())
+            {
+                result.emplace_back(std::move(range_dag));
+                conjuncts_to_replace.insert(conjunct);
+                continue;
+            }
+        }
+
         rejected_conjuncts.push_back(conjunct);
     }
 
@@ -366,7 +391,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     if (!conjuncts_to_replace.empty())
     {
         /// There's a non-empty list of extracted condition parts.
-        /// After JOIN step these equalities will always evaluate to true.
+        /// After JOIN step these conditions will always evaluate to true.
         for (const auto * & output : filter_dag.getOutputs())
         {
             auto it = conjuncts_to_replace.find(output);
@@ -489,24 +514,26 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     auto right_stream_available_columns = get_available_columns(*right_stream_header);
 
     const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
+    const bool allow_range_predicates = TableJoin::isEnabledAlgorithm(join_step->getJoinSettings().join_algorithms, JoinAlgorithm::HASH);
 
     NameSet join_condition_names;
     for (const auto & condition : join_operator.expression)
         join_condition_names.insert(condition.getColumnName());
 
     auto & filter_dag = filter_step->getExpression();
-    auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
+    auto [join_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
         right_stream_available_columns,
         allow_dynamic_type_in_join_keys,
-        std::move(join_condition_names));
+        std::move(join_condition_names),
+        allow_range_predicates);
 
-    if (equality_predicates.empty())
+    if (join_predicates.empty())
         return 0;
 
-    for (auto && predicate : equality_predicates)
+    for (auto && predicate : join_predicates)
     {
         join_step->addConditions(std::move(predicate));
     }
