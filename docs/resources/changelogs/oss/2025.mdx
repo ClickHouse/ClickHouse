@@ -71,7 +71,7 @@ doc_type: 'changelog'
 #### Experimental Feature
 * Introduce Text index format v3 and promote it to Beta status.
 * The new logic is introduced to automatically execute queries using parallel replicas, controlled by the setting `automatic_parallel_replicas_mode`. During normal single-node execution, ClickHouse collects statistics that will later be considered during the planning stage. If statistics suggest that parallel replicas are likely to be beneficial, ClickHouse will automatically execute the given query with parallel replicas. The set of supported queries is currently fairly limited. [#87541](https://github.com/ClickHouse/ClickHouse/pull/87541) ([Nikita Taranov](https://github.com/nickitat)).
-* Access ClickHouse Cloud instances using Cloud credentials with --login. [#89261](https://github.com/ClickHouse/ClickHouse/pull/89261) ([Krishna Mannem](https://github.com/kcmannem)).
+* Access ClickHouse Cloud instances using Cloud credentials with `--login`. [#89261](https://github.com/ClickHouse/ClickHouse/pull/89261) ([Krishna Mannem](https://github.com/kcmannem)).
 * Adds session-level setting `aggregate_function_input_format` to improve `INSERT` queries into tables with `AggregateFunction` columns, allowing insertion of data as serialized state, raw values, or arrays. [#88088](https://github.com/ClickHouse/ClickHouse/pull/88088) ([Punith Nandyappa Subashchandra](https://github.com/punithns97)).
 
 #### Performance Improvement
@@ -1090,7 +1090,7 @@ doc_type: 'changelog'
 * Show the number of ranges to be read in the output of `EXPLAIN indexes = 1`. [#79938](https://github.com/ClickHouse/ClickHouse/pull/79938) ([Christoph Wurm](https://github.com/cwurm)).
 * Introduce settings to set ORC compression block size, and update its default value from 64KB to 256KB to keep consistent with spark or hive. [#80602](https://github.com/ClickHouse/ClickHouse/pull/80602) ([李扬](https://github.com/taiyang-li)).
 * Add `columns_substreams.txt` file to Wide part to track all substreams stored in the part. It helps to track dynamic streams in JSON and Dynamic types and so avoid reading sample of these columns to get the list of dynamic streams (for example for columns sizes calculation). Also now all dynamic streams are reflected in `system.parts_columns`. [#81091](https://github.com/ClickHouse/ClickHouse/pull/81091) ([Pavel Kruglov](https://github.com/Avogar)).
-* Add a CLI flag --show_secrets to clickhouse format to hide sensitive data by default. [#81524](https://github.com/ClickHouse/ClickHouse/pull/81524) ([Nikolai Ryzhov](https://github.com/Dolaxom)).
+* Add a CLI flag `--show_secrets` to clickhouse format to hide sensitive data by default. [#81524](https://github.com/ClickHouse/ClickHouse/pull/81524) ([Nikolai Ryzhov](https://github.com/Dolaxom)).
 * S3 read and write requests are throttled on the HTTP socket level (instead of whole S3 requests) to avoid issues with `max_remote_read_network_bandwidth_for_server` and `max_remote_write_network_bandwidth_for_server` throttling. [#81837](https://github.com/ClickHouse/ClickHouse/pull/81837) ([Sergei Trifonov](https://github.com/serxa)).
 * Allow to mix different collations for the same column in different windows (for window functions). [#82877](https://github.com/ClickHouse/ClickHouse/pull/82877) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
 * Add a tool to simulate, visualize and compare merge selectors. [#71496](https://github.com/ClickHouse/ClickHouse/pull/71496) ([Sergei Trifonov](https://github.com/serxa)).
