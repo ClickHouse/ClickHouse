@@ -20,12 +20,58 @@
 #include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/ErrnoException.h>
+#include <Common/SipHash.h>
+#include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 
+#include <array>
 #include <cstring>
+#include <unistd.h>
+
+#if defined(OS_LINUX)
+#include <sys/syscall.h>
+#else
+#include <sys/random.h>
+#endif
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYSTEM_ERROR;
+}
+
+namespace
+{
+
+/// A keyed hash of an allocation address: the allocation and the deallocation of a chunk still get the
+/// same value, but the heap address is not published. 0 stays 0 (no address).
+UInt64 hideAllocationAddress(UInt64 ptr)
+{
+    /// The key must not be predictable, so it is read from the OS randomness source.
+    static const std::array<UInt64, 2> key = []
+    {
+        std::array<UInt64, 2> words{};
+#if defined(OS_LINUX)
+        /// Old glibc (e.g. the ppc64le sysroot) has no `getentropy`, so call `getrandom` directly.
+        if (::syscall(SYS_getrandom, words.data(), sizeof(words), 0) != static_cast<ssize_t>(sizeof(words)))
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getrandom");
+#else
+        if (::getentropy(words.data(), sizeof(words)) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getentropy");
+#endif
+        return words;
+    }();
+
+    if (ptr == 0)
+        return 0;
+    const UInt64 hash = sipHash64Keyed(key[0], key[1], reinterpret_cast<const char *>(&ptr), sizeof(ptr));
+    return hash ? hash : 1;
+}
+
+}
 
 using TraceDataType = TraceLogElement::TraceDataType;
 const TraceDataType::Values TraceLogElement::trace_values =
@@ -101,13 +147,12 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. "
-            "For profiler-collected trace types, on ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
-            "and other addresses are virtual memory addresses inside the ClickHouse server process. "
-            "Instrumentation trace rows are an exception: they store raw virtual memory addresses."},
+            "On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
+            "and frames outside it (shared libraries, JIT code) are stored as 0."},
         {"size", std::make_shared<DataTypeInt64>(), "For the memory trace types is a size in bytes: the allocated size for Memory and MemoryAllocatedWithoutCheck; "
             "the allocated size, negated on a deallocation, for MemorySample and JemallocSample; the new peak of the tracker for MemoryPeak; "
             "the size of the charge to the global memory tracker for MemoryLargeAllocation. For other trace types is 0."},
-        {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
+        {"ptr", std::make_shared<DataTypeUInt64>(), "An identifier of the allocated chunk, the same for its allocation and deallocation during one run of the server. It is not the address of the chunk, which is not published."},
         {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory, MemoryPeak and MemoryLargeAllocation): {}", context_description)},
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
@@ -157,13 +202,14 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     typeid_cast<ColumnString &>(*columns[i++]).insertData(query_id.data(), query_id.size());
 
     auto & column_trace = typeid_cast<ColumnArray &>(*columns[i++]);
-    auto & column_trace_inner = typeid_cast<ColumnUInt64 &>(column_trace.getData());
-    column_trace_inner.getData().insert(column_trace_inner.getData().end(), trace.begin(), trace.end());
+    auto & column_trace_inner = typeid_cast<ColumnUInt64 &>(column_trace.getData()).getData();
+    for (const UInt64 address : trace)
+        column_trace_inner.push_back(StackTrace::resolveAddressForStorage(reinterpret_cast<const void *>(address)));
     auto & offsets = column_trace.getOffsets();
     offsets.push_back(offsets.back() + trace.size());
 
     typeid_cast<ColumnInt64 &>(*columns[i++]).getData().push_back(size);
-    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(ptr);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(hideAllocationAddress(ptr));
     if (memory_context.has_value())
         typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(memory_context.value()));
     else
@@ -192,6 +238,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         /// output columns to avoid per-row temporaries. Note that `trace` stores integer
         /// addresses, so we cast each element to a pointer individually rather than
         /// reinterpreting the whole buffer (which would violate strict aliasing).
+        /// The runtime addresses are used, so frames outside the main executable keep their names.
         auto & column_symbols = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_symbols_inner = typeid_cast<ColumnLowCardinality &>(column_symbols.getData());
 

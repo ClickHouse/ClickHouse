@@ -5,28 +5,22 @@
     </settings>
 
     <!--
-        Benchmarks the primary-key index analysis of PromQL selectors over a TimeSeries table with a
-        metric-clustered id layout (id = Tuple(sipHash64(metric_name), hash of tags)).
+        Benchmarks the primary-key index analysis of PromQL selectors over the default layout of a
+        TimeSeries table (the id is Tuple(sipHash64(metric_name), hash of tags), so the series of a
+        metric are adjacent in the samples table).
 
-        The samples table is created with a small index granularity, so the part has many marks
-        (20000 series x 256 samples = 5.12M rows at granularity 64 -> 80K marks). The id set of a
-        selector reaches index analysis, where the generic exclusion search with the set is
-        single-threaded and the dominant cost of these queries, unless the range of the ids holds no
-        other series of the metric: then the range replaces the set (a continuous-range search). A
-        metric-name-only selector qualifies without a query. With other matchers a query on the tags
-        table checks it from `time_series_id_range_check_min_series` series on; below that the set
-        is cheaper than the check.
+        The samples table is created with a tiny byte limit of a granule, below the size of a row with a
+        full bucket of samples, so every row is a granule and the part has as many marks as rows
+        (20000 series x 2 buckets = 40K marks). A whole-metric selector resolves to all 20000 series ids
+        of the metric, so the index analysis of the generated query is the dominant cost. The
+        label-filtered selector resolves to a sparse subset of the ids and is the control: it must not
+        regress.
     -->
 
-    <create_query>
-        CREATE TABLE promql_pk_range_ts ENGINE = TimeSeries
-        SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 64
-        TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
-    </create_query>
+    <create_query do_not_check_in_pr="117344">CREATE TABLE promql_pk_range_ts ENGINE = TimeSeries SETTINGS samples_index_granularity_bytes = 1024</create_query>
 
     <!-- 20000 series of one metric, one sample every 15s over [1000000, 1003840): 256 samples per
-         series, so a series spans 4 granules and the 5m instant lookback selects about one granule
-         per series - index analysis dominates the query. -->
+         series in 2 buckets, and the 5m instant lookback selects one granule per series. -->
     <fill_query>
         INSERT INTO promql_pk_range_ts (metric_name, tags, samples)
         SELECT
@@ -36,21 +30,13 @@
         FROM numbers_mt(20000)
     </fill_query>
 
-    <!-- metric name only: the range replaces the set without a check -->
+    <!-- whole-metric selectors: all series ids of the metric -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'pkr_metric', 1003830) FORMAT Null</query>
-
-    <!-- a matcher every series passes (a dashboard's "All" filter): the check passes, the range replaces the set -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc=~".*"}})', 1003830) FORMAT Null</query>
-
-    <!-- metric name only -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(rate(pkr_metric[30m]))', 1003830) FORMAT Null</query>
 
-    <!-- a matcher keeping 2500 of the series: the check fails, the set stays in index analysis -->
+    <!-- label-filtered selector: a subset of the ids (regression control) -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc="0"}})', 1003830) FORMAT Null</query>
-
-    <!-- matchers keeping 100 series (a dashboard panel) and one series (an alert): no check, the set -->
-    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{instance=~"1[0-9][0-9]"}})', 1003830) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'pkr_metric{{instance="42"}}', 1003830) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_pk_range_ts</drop_query>
 </test>

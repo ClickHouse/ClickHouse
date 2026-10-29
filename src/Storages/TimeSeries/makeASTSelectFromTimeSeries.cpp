@@ -44,7 +44,6 @@ namespace
 {
     /// Aliases of the subqueries reading the inner tables in the generated query.
     constexpr const char * samples_subquery_alias = "__samples";
-    constexpr const char * histograms_subquery_alias = "__histograms";
     constexpr const char * tags_subquery_alias = "__tags";
     constexpr const char * metric_families_subquery_alias = "__metric_families";
     constexpr const char * metric_families_with_all_suffixes_subquery_alias = "__metric_families_with_all_suffixes";
@@ -190,20 +189,6 @@ namespace
         return requested_tags;
     }
 
-    /// Builds `CAST(groupArray((timestamp, value)), '<type of the outer column>') AS <name of the outer column>`.
-    /// One `groupArray` of tuples keeps each timestamp with its value (two `groupArray` calls can order the rows differently),
-    /// and the cast removes the element names given by the setting `enable_named_columns_in_function_tuple`.
-    ASTPtr makeGroupArrayOfSamples(const NameAndTypePair & samples_outer_column_name_and_type)
-    {
-        auto sample = makeASTFunction("tuple",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
-        auto group_array = makeASTFunction("groupArray", std::move(sample));
-        auto cast = makeASTFunction("CAST", std::move(group_array),
-            make_intrusive<ASTLiteral>(samples_outer_column_name_and_type.type->getName()));
-        cast->setAlias(samples_outer_column_name_and_type.name);
-        return cast;
-    }
-
     /// Returns an expression for the value of the tag `tag_name`.
     /// It is either `toString(ifNull(<tag_column_name>, ''))` (if `tag_column_name` is specified)
     /// or `toString(tags['<tag_name>'])`.
@@ -333,63 +318,65 @@ namespace
         return tables;
     }
 
-    /// Builds a subquery aggregating a data table by series id:
+    /// Builds a subquery to read from the "samples" table of a table with buckets of samples:
     /// (
-    ///     SELECT id, <aggregates>
-    ///     FROM <data_table>
-    ///     GROUP BY id
-    /// ) AS <alias>
-    ASTPtr makeGroupedByIdTableElement(const StorageID & table_id, ASTs aggregates, const String & alias)
+    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples
+    ///     FROM <samples>
+    /// ) AS __samples
+    /// With `FINAL` the rows of the same bucket are merged, the same as a merge of the table does:
+    /// (
+    ///     SELECT id, CAST(timeSeriesGroupArray(samples), 'Array(Tuple(...))') AS samples
+    ///     FROM <samples>
+    ///     GROUP BY id, bucket
+    /// ) AS __samples
+    ASTPtr makeSamplesTableElement(
+        const StorageID & samples_table_id, const NameAndTypePair & samples_outer_column_name_and_type, bool has_bucketed_samples, bool final)
     {
         auto inner = make_intrusive<ASTSelectQuery>();
 
         auto select_list = make_intrusive<ASTExpressionList>();
         select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-        for (auto & aggregate : aggregates)
-            select_list->children.push_back(std::move(aggregate));
-        inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
-
-        inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(table_id));
 
         auto group_by = make_intrusive<ASTExpressionList>();
-        group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-        inner->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
 
-        return makeTableElementFromSubquery(std::move(inner), alias);
-    }
-
-    /// Builds a subquery to read from the "samples" table:
-    /// (
-    ///     SELECT id, CAST(groupArray((timestamp, value)), 'Array(Tuple(...))') AS samples
-    ///     FROM <samples>
-    ///     GROUP BY id
-    /// ) AS __samples
-    ASTPtr makeSamplesTableElement(const StorageID & samples_table_id, const NameAndTypePair & samples_outer_column_name_and_type)
-    {
-        ASTs aggregates;
-        aggregates.push_back(makeGroupArrayOfSamples(samples_outer_column_name_and_type));
-        return makeGroupedByIdTableElement(samples_table_id, std::move(aggregates), samples_subquery_alias);
-    }
-
-    /// Builds a subquery to read from the "histograms" table, with only the requested columns of the `histograms` group:
-    /// (
-    ///     SELECT id, groupArray(timestamp) AS `histograms.timestamp`, groupArray(count_int) AS `histograms.count_int`, ...
-    ///     FROM <histograms>
-    ///     GROUP BY id
-    /// ) AS __histograms
-    /// All the `groupArray` states are filled by the same aggregation in the same row order, so element i of every array
-    /// comes from the same histogram sample (the same reason makeGroupArrayOfSamples relies on).
-    ASTPtr makeHistogramsTableElement(const StorageID & histograms_table_id, const Names & requested_histograms_columns)
-    {
-        ASTs aggregates;
-        for (const auto & outer_column_name : requested_histograms_columns)
+        ASTPtr samples;
+        if (has_bucketed_samples)
         {
-            auto group_array = makeASTFunction("groupArray",
-                make_intrusive<ASTIdentifier>(String{TimeSeriesHistogramsColumns::getInnerColumnName(outer_column_name)}));
-            group_array->setAlias(outer_column_name);
-            aggregates.push_back(std::move(group_array));
+            samples = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples);
+            if (final)
+            {
+                samples = makeASTFunction("timeSeriesGroupArray", std::move(samples));
+                group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+                group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Bucket));
+            }
         }
-        return makeGroupedByIdTableElement(histograms_table_id, std::move(aggregates), histograms_subquery_alias);
+        else
+        {
+            /// A table storing one sample per row (the earlier versions) is read with
+            /// (
+            ///     SELECT id, CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(...))') AS samples
+            ///     FROM <samples>
+            ///     GROUP BY id
+            /// ) AS __samples
+            /// The samples of a series are sorted by timestamp and deduplicated, the same as in a table with buckets of samples.
+            samples = makeASTFunction(
+                "timeSeriesGroupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            group_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        }
+
+        /// The cast gives the declared type of the outer column (for a table with buckets of samples it also drops the names
+        /// of the tuple elements which the `samples` column has).
+        auto cast = makeASTFunction("CAST", std::move(samples), make_intrusive<ASTLiteral>(samples_outer_column_name_and_type.type->getName()));
+        cast->setAlias(samples_outer_column_name_and_type.name);
+        select_list->children.push_back(std::move(cast));
+
+        inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
+        inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(samples_table_id));
+
+        if (!group_by->children.empty())
+            inner->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by);
+
+        return makeTableElementFromSubquery(std::move(inner), samples_subquery_alias);
     }
 
     /// Builds a subquery to read from the "tags" table. When `deduplicate_by_id` is set, it is
@@ -484,41 +471,29 @@ namespace
         return select_list;
     }
 
-    /// Turns a FROM element into `<kind> <strictness> JOIN <element> USING id`.
-    ASTPtr makeJoinByIdElement(ASTPtr table_elem, JoinKind kind, JoinStrictness strictness)
+    /// Builds a JOIN clause for the "tags" table to join it to the "samples" table:
+    /// INNER JOIN (SELECT * FROM <tags> LIMIT 1 BY id) AS __tags USING (id)
+    /// The "tags" table is deduplicated by `id` (unmerged parts can hold duplicate rows per series), so every samples row
+    /// (a table with buckets of samples has several rows per `id`: one per bucket) is joined with exactly one tags row,
+    /// and the samples rows without a tags row are dropped. A plain `INNER JOIN` is supported by every join algorithm,
+    /// while `INNER ANY JOIN` would keep one row per `id` with the legacy `any_join_distinct_right_table_keys` semantics,
+    /// and `LEFT ANY JOIN` with a filter would be converted to `SEMI JOIN`, which the merge join algorithms don't support.
+    ASTPtr makeTagsJoinElement(const StorageID & tags_table_id)
     {
         auto join = make_intrusive<ASTTableJoin>();
-        join->kind = kind;
-        join->strictness = strictness;
+        join->kind = JoinKind::Inner;
+        join->strictness = JoinStrictness::All;
         auto using_list = make_intrusive<ASTExpressionList>();
         using_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         join->using_expression_list = using_list;
         join->children.push_back(join->using_expression_list);
 
-        auto & table_elem_ref = *table_elem->as<ASTTablesInSelectQueryElement>();
-        table_elem_ref.table_join = join;
-        table_elem_ref.children.push_back(join);
-        return table_elem;
-    }
+        auto tags_elem = makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ true);
 
-    /// Builds a JOIN clause for the "tags" table to join it to the "samples" or the "histograms" table:
-    /// INNER ANY JOIN tags USING id
-    ASTPtr makeTagsJoinElement(const StorageID & tags_table_id)
-    {
-        /// Samples are grouped by `id`, and `ANY` suppresses duplicate tags rows per `id`,
-        /// so the "tags" table is read without the `LIMIT 1 BY id` deduplication.
-        return makeJoinByIdElement(makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ false), JoinKind::Inner, JoinStrictness::Any);
-    }
-
-    /// Builds a JOIN clause for the "histograms" table to join it to the "samples" table:
-    /// FULL JOIN (...) AS __histograms USING id
-    /// Both subqueries are grouped by `id`, so the join is one-to-one: a series with samples of one kind only gets
-    /// empty arrays for the other kind (`join_use_nulls` is disabled for the generated query).
-    /// The samples subquery stays the left side, so the streamed aggregation of samples is the probe side of the join.
-    ASTPtr makeHistogramsJoinElement(const StorageID & histograms_table_id, const Names & requested_histograms_columns)
-    {
-        return makeJoinByIdElement(
-            makeHistogramsTableElement(histograms_table_id, requested_histograms_columns), JoinKind::Full, JoinStrictness::All);
+        auto & tags_elem_ref = *tags_elem->as<ASTTablesInSelectQueryElement>();
+        tags_elem_ref.table_join = join;
+        tags_elem_ref.children.push_back(join);
+        return tags_elem;
     }
 
     /// Builds a JOIN clause for the "metric families" table to join it to the "tags" table:
@@ -570,50 +545,24 @@ namespace
         return metric_families_elem;
     }
 
-    /// Builds the FROM elements of the data tables: the "samples" table if `samples_table_id` is set, and the "histograms" table
-    /// if `histograms_table_id` is set. When both are read, the "histograms" subquery is FULL JOINed to the "samples" subquery.
-    ASTs makeDataTablesElements(
-        const std::optional<StorageID> & samples_table_id,
-        const std::optional<StorageID> & histograms_table_id,
-        const NameAndTypePair & samples_outer_column_name_and_type,
-        const Names & requested_histograms_columns)
-    {
-        ASTs elements;
-        if (samples_table_id)
-            elements.push_back(makeSamplesTableElement(*samples_table_id, samples_outer_column_name_and_type));
-        if (histograms_table_id)
-        {
-            if (samples_table_id)
-                elements.push_back(makeHistogramsJoinElement(*histograms_table_id, requested_histograms_columns));
-            else
-                elements.push_back(makeHistogramsTableElement(*histograms_table_id, requested_histograms_columns));
-        }
-        return elements;
-    }
-
-    /// Builds a query reading only from the data tables ("samples", "histograms" or both), for example:
-    /// SELECT samples, `histograms.timestamp`
+    /// Builds a query reading only from the "samples" table:
+    /// SELECT samples
     /// FROM
     /// (
-    ///     SELECT id, CAST(groupArray((timestamp, value)), 'Array(Tuple(...))') AS samples
+    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples
     ///     FROM <samples>
-    ///     GROUP BY id
     /// ) AS __samples
-    /// FULL JOIN
-    /// (
-    ///     SELECT id, groupArray(timestamp) AS `histograms.timestamp`
-    ///     FROM <histograms>
-    ///     GROUP BY id
-    /// ) AS __histograms USING (id)
+    /// (see makeSamplesTableElement for the subquery with `FINAL` and for the tables of earlier versions).
     ///
-    /// Unlike the joined read (where the `INNER ANY JOIN` with the "tags" table drops them), this branch also returns
-    /// samples whose id has no "tags" row - possible only after direct writes into the inner data tables.
-    ASTPtr buildSelectQueryFromDataTablesOnly(
-        const std::optional<StorageID> & samples_table_id,
-        const std::optional<StorageID> & histograms_table_id,
+    /// Unlike the joined read (where the `INNER JOIN` with the "tags" table drops them), this branch also returns
+    /// samples whose id has no "tags" row - possible only after direct writes into the inner "samples" table.
+    ASTPtr buildSelectQueryFromSamplesOnly(
+        const StorageID & samples_table_id,
         const NameSet & requested_columns,
         const NameAndTypePair & samples_outer_column_name_and_type,
-        const Names & requested_histograms_columns)
+        const Names & requested_histograms_columns,
+        bool has_bucketed_samples,
+        bool final)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
@@ -623,16 +572,13 @@ namespace
         for (const auto & histograms_column : requested_histograms_columns)
             select_list->children.push_back(make_intrusive<ASTIdentifier>(histograms_column));
 
-        /// This branch is only taken when a column of a data table is requested (see makeASTSelectFromTimeSeries).
+        /// This branch is only taken when a column of the "samples" table is requested (see makeASTSelectFromTimeSeries).
         chassert(!select_list->children.empty());
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children = makeDataTablesElements(samples_table_id,
-            histograms_table_id,
-            samples_outer_column_name_and_type,
-            requested_histograms_columns);
+        tables->children.push_back(makeSamplesTableElement(samples_table_id, samples_outer_column_name_and_type, has_bucketed_samples, final));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -723,11 +669,10 @@ namespace
     ///        metric_family, type, unit, help
     /// FROM
     /// (
-    ///     SELECT id, CAST(groupArray((timestamp, value)), 'Array(Tuple(...))') AS samples
+    ///     SELECT id, CAST(samples, 'Array(Tuple(...))') AS samples
     ///     FROM <samples>
-    ///     GROUP BY id
     /// ) AS __samples
-    /// INNER ANY JOIN <tags> USING (id)
+    /// INNER JOIN (SELECT * FROM <tags> LIMIT 1 BY id) AS __tags USING (id)
     /// FULL JOIN
     /// (
     ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
@@ -741,16 +686,14 @@ namespace
     /// ) AS __metric_families_with_all_suffixes
     /// ON toString(ifNull(metric_name, '')) = __metric_family_with_suffix
     ///
-    /// The "samples" subquery, when read, anchors the query (the aggregated samples stream through the joins
-    /// as the probe side); when the "samples" table is not read the query anchors on the "tags" table.
-    /// The "histograms" table, when read, is FULL JOINed to the "samples" subquery (or anchors the query if the "samples"
-    /// table is not read), see makeDataTablesElements.
-    /// The "tags" table is always read — it bridges the data tables (joined by id) and "metric families" (joined by matching
+    /// The "samples" subquery, when read, anchors the query (the samples stream through the joins as the probe side);
+    /// when the "samples" table is not read the query anchors on the "tags" table. The subquery aggregates the rows
+    /// with `FINAL` and for the tables of the earlier versions (see makeSamplesTableElement).
+    /// The "tags" table is always read — it bridges "samples" (joined by id) and "metric families" (joined by matching
     /// metric_name against the expanded member names).
     ASTPtr buildSelectQueryFromMultipleTables(
         const StorageID & tags_table_id,
         const std::optional<StorageID> & samples_table_id,
-        const std::optional<StorageID> & histograms_table_id,
         const std::optional<StorageID> & metric_families_table_id,
         const char * metric_family_column_name,
         const NameSet & requested_columns,
@@ -758,7 +701,8 @@ namespace
         const std::unordered_map<String, String> & columns_by_tags,
         const NameAndTypePair & samples_outer_column_name_and_type,
         const Names & requested_histograms_columns,
-        bool deduplicate_tags_by_id)
+        bool has_bucketed_samples,
+        bool final)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         select_query->setExpression(ASTSelectQuery::Expression::SELECT,
@@ -769,18 +713,15 @@ namespace
                 requested_histograms_columns));
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        if (samples_table_id || histograms_table_id)
+        if (samples_table_id)
         {
-            /// Data-anchored: the data tables are the (streamed) probe side, tags/metric families the smaller build sides.
-            tables->children = makeDataTablesElements(samples_table_id,
-                histograms_table_id,
-                samples_outer_column_name_and_type,
-                requested_histograms_columns);
+            /// Samples-anchored: samples are the (streamed) probe side, tags/metric families the smaller build sides.
+            tables->children.push_back(makeSamplesTableElement(*samples_table_id, samples_outer_column_name_and_type, has_bucketed_samples, final));
             tables->children.push_back(makeTagsJoinElement(tags_table_id));
         }
         else
         {
-            tables->children.push_back(makeTagsTableElement(tags_table_id, deduplicate_tags_by_id));
+            tables->children.push_back(makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ final));
         }
         if (metric_families_table_id)
             tables->children.push_back(makeMetricFamiliesFullJoinElement(*metric_families_table_id, metric_family_column_name));
@@ -800,13 +741,13 @@ ASTPtr makeASTSelectFromTimeSeries(
     const String samples_outer_column_name = TimeSeriesColumnNames::getOuterSamples(storage.getVersion());
     bool need_samples = requested_columns.contains(samples_outer_column_name);
 
-    /// The samples are read with the declared type of the outer column, see makeGroupArrayOfSamples.
+    /// The samples are read with the declared type of the outer column, see makeSamplesTableElement.
     auto storage_metadata = storage.getInMemoryMetadataPtr(context, false);
     const NameAndTypePair samples_outer_column_name_and_type{
         samples_outer_column_name, storage_metadata->columns.get(samples_outer_column_name).type};
 
-    /// The requested columns of the `histograms` group in the canonical order. They exist only in tables with the histograms
-    /// target (see TimeSeriesColumnNames::Histograms), so a request for them means the table has that target.
+    /// The requested columns of the `histograms` group in the canonical order. They exist only in tables with histograms
+    /// (see TimeSeriesColumnNames::Histograms), which store them in the "samples" table next to the samples.
     Names requested_histograms_columns;
     {
         auto add_if_requested = [&](const String & name)
@@ -818,7 +759,9 @@ ASTPtr makeASTSelectFromTimeSeries(
         for (const auto & column : TimeSeriesHistogramsColumns::getOuterPayloadColumns())
             add_if_requested(column.name);
     }
-    bool need_histograms = !requested_histograms_columns.empty();
+
+    /// Whether the "samples" table is read: for the samples or for the histograms.
+    const bool need_samples_table = need_samples || !requested_histograms_columns.empty();
 
     bool need_tags = requested_columns.contains(TimeSeriesColumnNames::MetricName)
                   || requested_columns.contains(TimeSeriesColumnNames::Tags);
@@ -830,26 +773,25 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     auto storage_settings = storage.getStorageSettings();
 
-    /// With `FINAL` the read deduplicates unmerged "tags" parts (`LIMIT 1 BY id`), so a series is returned
-    /// exactly once. Without it the read is cheaper, but a series inserted repeatedly may be returned once per
-    /// unmerged part until a background merge collapses them.
-    bool deduplicate_tags_by_id = query_info.isFinal();
+    /// With `FINAL` the read deduplicates unmerged "tags" parts (`LIMIT 1 BY id`) and merges unmerged rows of the same
+    /// bucket of the "samples" table, so the result is the same as after a merge of the inner tables: a series is
+    /// returned once per bucket. Without it the read is cheaper, but a series inserted repeatedly may be returned
+    /// once per unmerged part until a background merge collapses them.
+    bool final = query_info.isFinal();
 
-    /// If we read both a data table ("samples" or "histograms") and the "metric families" table then we also need to read
-    /// the "tags" table as a bridge between them.
-    /// If we read neither a data table nor the "metric families" table then we need to read the "tags" table even if it's not requested
+    /// Whether a row of the "samples" table contains a bucket of samples or a single sample (tables of earlier versions).
+    bool has_bucketed_samples = storage_settings->hasBucketedSamples();
+
+    /// If we read both "samples" and "metric families" tables then we also need to read the "tags" table as a bridge between them.
+    /// If we read neither "samples" nor "metric families" tables then we need to read the "tags" table even if it's not requested
     /// (so that `SELECT count() FROM time_series` returns the number of time series).
-    if ((need_samples || need_histograms) == need_metric_families)
+    if (need_samples_table == need_metric_families)
         need_tags = true;
 
     /// Collect information about each target table we're going to read.
     std::optional<StorageID> samples_table_id;
-    if (need_samples)
+    if (need_samples_table)
         samples_table_id = storage.getTargetTableID(ViewTarget::Samples, context);
-
-    std::optional<StorageID> histograms_table_id;
-    if (need_histograms)
-        histograms_table_id = storage.getTargetTableID(ViewTarget::Histograms, context);
 
     std::optional<StorageID> tags_table_id;
 
@@ -873,43 +815,36 @@ ASTPtr makeASTSelectFromTimeSeries(
 
     const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(storage.getVersion());
 
-    /// Only data table reads (no join).
-    if ((need_samples || need_histograms) && !need_tags && !need_metric_families)
-    {
-        return buildSelectQueryFromDataTablesOnly(samples_table_id,
-            histograms_table_id,
-            requested_columns,
-            samples_outer_column_name_and_type,
-            requested_histograms_columns);
-    }
+    /// Single-table reads (no join).
+    if (need_samples_table && !need_tags && !need_metric_families)
+        return buildSelectQueryFromSamplesOnly(
+            *samples_table_id, requested_columns, samples_outer_column_name_and_type, requested_histograms_columns, has_bucketed_samples, final);
 
-    if (need_tags && !need_samples && !need_histograms && !need_metric_families)
+    if (need_tags && !need_samples_table && !need_metric_families)
         return buildSelectQueryFromTagsOnly(*tags_table_id, requested_columns, requested_tags, columns_by_tags,
-                                            deduplicate_tags_by_id);
+                                            /* deduplicate_tags_by_id= */ final);
 
-    if (need_metric_families && !need_tags && !need_samples && !need_histograms)
+    if (need_metric_families && !need_tags && !need_samples_table)
         return buildSelectQueryFromMetricFamiliesOnly(*metric_families_table_id, metric_family_column_name, requested_columns);
 
+    /// Multi-table reads: anchored on "samples" when it is read, otherwise on "tags".
     chassert(need_tags);
-    /// Multi-table reads: anchored on the data tables when they are read, otherwise on "tags".
-    return buildSelectQueryFromMultipleTables(*tags_table_id,
-        samples_table_id,
-        histograms_table_id,
-        metric_families_table_id,
-        metric_family_column_name,
-        requested_columns,
-        requested_tags,
-        columns_by_tags,
-        samples_outer_column_name_and_type,
-        requested_histograms_columns,
-        deduplicate_tags_by_id);
+    return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metric_families_table_id, metric_family_column_name,
+                                              requested_columns, requested_tags, columns_by_tags, samples_outer_column_name_and_type,
+                                              requested_histograms_columns, has_bucketed_samples, final);
 }
 
-SettingsChanges getSettingsForSelectFromTimeSeries()
+SettingsChanges getSettingsForSelectFromTimeSeries(const TimeSeriesSettings & storage_settings, bool final)
 {
     SettingsChanges changes;
-    changes.emplace_back("aggregate_functions_null_for_empty", Field{false});
     changes.emplace_back("join_use_nulls", Field{false});
+
+    /// The settings below are about the aggregation of the "samples" table (see makeSamplesTableElement):
+    /// a table with buckets of samples is aggregated only with `FINAL`.
+    if (storage_settings.hasBucketedSamples() && !final)
+        return changes;
+
+    changes.emplace_back("aggregate_functions_null_for_empty", Field{false});
     changes.emplace_back("optimize_aggregation_in_order", Field{true});
     return changes;
 }

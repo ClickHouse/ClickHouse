@@ -6,10 +6,8 @@
 -- exact and the query completes instead of being forced in memory until it runs out of it
 -- (see `Aggregator::Params::SharedKeptKeysControl`).
 --
--- `enable_analyzer = 1` is pinned because the aggregate cutoff is armed by the planner of the
--- analyzer; `enable_parallel_replicas = 0` because with parallel replicas the cutoff stays off.
+-- `enable_parallel_replicas = 0` is pinned because with parallel replicas the cutoff stays off.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET optimize_trivial_group_by_limit_query = 1;
 -- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.

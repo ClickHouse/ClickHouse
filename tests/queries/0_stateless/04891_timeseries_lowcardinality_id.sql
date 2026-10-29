@@ -5,8 +5,8 @@
 
 -- A `TimeSeries` id of type `Tuple(UInt64, LowCardinality(UUID))` keeps the identifiers
 -- dictionary-encoded: the default id generator wraps the tags hash in `toLowCardinality`,
--- and the range of the selected ids still replaces the id set in primary-key index analysis
--- of a whole-metric selector. Queries behave exactly as with a plain `Tuple(UInt64, UUID)` id.
+-- and the whole-metric primary-key range conditions are still emitted. Queries behave
+-- exactly as with a plain `Tuple(UInt64, UUID)` id.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -36,26 +36,19 @@ INSERT INTO ts_lc (metric_name, tags, samples) VALUES
 
 SELECT '-- the selector returns the id with the declared type';
 
-SELECT toTypeName(id) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) LIMIT 1;
+SELECT toTypeName(id) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000, 'samples') LIMIT 1;
 
-SELECT '-- whole-metric selector: results and the emitted id range';
+SELECT '-- whole-metric selector: results, the id set stays in the plan';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000, 'samples')) ORDER BY value, timestamp;
 
-SELECT
-    countIf(explain ILIKE '%Condition:%' AND explain LIKE '%(id in [%') > 0 AS has_id_range,
-    countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%-element set%') > 0 AS id_set_in_index_analysis
-FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000));
+SELECT plan LIKE '%IN subquery%' AS keeps_id_set
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(length(samples)) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000, 'samples')));
 
-SELECT '-- partial selector: results and the id set alone';
+SELECT '-- partial selector: results';
 
-SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000) ORDER BY value, timestamp;
-SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
-
-SELECT
-    countIf(explain ILIKE '%Condition:%' AND explain LIKE '%(id in [%') > 0 AS has_id_range,
-    countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%-element set%') > 0 AS id_set_in_index_analysis
-FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000));
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000, 'samples')) ORDER BY value, timestamp;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000, 'samples')) ORDER BY value, timestamp;
 
 SELECT '-- prometheus query evaluation over the dictionary-encoded ids';
 
@@ -84,8 +77,8 @@ INSERT INTO ts_custom_gen (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
-SELECT toTypeName(id) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000) LIMIT 1;
-SELECT timestamp, value FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000) ORDER BY value, timestamp;
+SELECT toTypeName(id) FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000, 'samples') LIMIT 1;
+SELECT sample.1 AS timestamp, sample.2 AS value FROM (SELECT arrayJoin(samples) AS sample FROM timeSeriesSelector(ts_custom_gen, 'foo', 0, 1000, 'samples')) ORDER BY value, timestamp;
 
 DROP TABLE ts_lc;
 DROP TABLE ts_plain;

@@ -1,8 +1,9 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesHistogramsColumns.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -28,15 +29,22 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
-    ColumnsDescription columns({
+    if (config.return_columns == StorageTimeSeriesSelector::Configuration::ReturnColumns::Samples)
+    {
+        /// The column `samples`: an array of samples per row.
+        DataTypePtr samples_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{config.table_timestamp_type, config.table_value_type}));
+        return ColumnsDescription({
+            {TimeSeriesColumnNames::ID, config.table_id_type},
+            {TimeSeriesColumnNames::Samples, samples_type}
+        });
+    }
+
+    /// The columns `timestamp` and `value`: one sample per row.
+    return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.table_id_type},
         {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type},
         {TimeSeriesColumnNames::Value, config.table_value_type}
     });
-
-    if (config.with_histograms)
-        columns.add(ColumnDescription{TimeSeriesColumnNames::Histogram, TimeSeriesHistogramsColumns::getHistogramColumnType()});
-    return columns;
 }
 
 StoragePtr TableFunctionTimeSeriesSelector::executeImpl(

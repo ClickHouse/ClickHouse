@@ -41,7 +41,14 @@ namespace DB
 ///       The settings `id_type` and `id_generator` are not supported either: the type of the `id` column and the expression
 ///       generating identifiers are declared in the inner columns of the "tags" table. Tables of earlier versions keep
 ///       their external target tables and these settings.
-///  11 - The "histograms" target table was introduced: every table of this version has a fifth target table
+///  11 - The "samples" and "recent samples" target tables store buckets of samples: a row keeps the samples of one time series
+///       within one time bucket as a sorted array in the column `samples`, with the columns `bucket`, `min_time` and `max_time`,
+///       and the tables use `AggregatingMergeTree` ordered by `(id, bucket)`. The settings `samples_bucket_step_seconds`,
+///       `samples_partition_by`, `samples_index_granularity_bytes`, `recent_samples_bucket_step_seconds` and
+///       `recent_samples_index_granularity_bytes` were introduced, and the defaults of `samples_index_granularity` and
+///       `recent_samples_index_granularity` changed. Tables of earlier versions stored one sample per row in the columns
+///       `timestamp` and `value`.
+///  12 - The "histograms" target table was introduced: every table of this version has a fifth target table
 ///       storing native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have none.
 namespace TimeSeriesVersion
 {
@@ -93,13 +100,17 @@ namespace TimeSeriesVersion
     /// A new table of this version or later can't refer to external target tables, tables of the earlier versions can.
     constexpr UInt64 MIN_WITHOUT_EXTERNAL_TARGETS = MIN_WITH_UTC_PARTITION_KEY + 1;
 
-    /// The first version with the "histograms" target table.
-    constexpr UInt64 MIN_WITH_HISTOGRAMS_TARGET = MIN_WITHOUT_EXTERNAL_TARGETS + 1;
-
     /// The first version declaring the type of the `id` column and the expression generating identifiers in the inner columns
     /// of the "tags" table only (see the version history above). The earlier versions could declare them in the settings
     /// `id_type` and `id_generator`, which a table of this version or later can't have.
     constexpr UInt64 MIN_WITHOUT_ID_SETTINGS = MIN_WITHOUT_EXTERNAL_TARGETS;
+
+    /// The first version storing buckets of samples in the "samples" and "recent samples" target tables (see the version history above).
+    /// The earlier versions stored one sample per row.
+    constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = MIN_WITHOUT_EXTERNAL_TARGETS + 1;
+
+    /// The first version with the "histograms" target table.
+    constexpr UInt64 MIN_WITH_HISTOGRAMS_TARGET = MIN_WITH_BUCKETED_SAMPLES + 1;
 
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
@@ -117,6 +128,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_UTC_PARTITION_KEY <= LATEST);
     static_assert(MIN_WITH_HISTOGRAMS_TARGET <= LATEST);
     static_assert(MIN_WITHOUT_EXTERNAL_TARGETS <= LATEST);
+    static_assert(MIN_WITH_BUCKETED_SAMPLES <= LATEST);
     static_assert((MIN_WITH_ID_TYPE_SETTING <= MIN_WITHOUT_ID_SETTINGS) && (MIN_WITHOUT_ID_SETTINGS <= LATEST));
 
     static_assert(MIN_SUPPORTED <= LATEST);
