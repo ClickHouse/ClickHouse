@@ -541,6 +541,9 @@ public:
         return true;
     }
 
+    /// Unlike `isGranted`, ignores the access rights of the children of `name`.
+    AccessFlags getFlags(std::string_view name) const { return tryGetLeaf(name, static_cast<Level>(level + 1)).flags; }
+
     friend bool operator ==(const Node & left, const Node & right)
     {
         if (left.node_name != right.node_name)
@@ -1445,6 +1448,28 @@ void AccessRights::grantWildcardWithGrantOption(const AccessFlags & flags, std::
 template <bool grant_option, bool wildcard, typename... Args>
 void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 {
+    if constexpr (sizeof...(Args) >= 2)
+    {
+        /// A partial revoke under a source filter would make `isGranted` deny the whole source.
+        const auto & check_root = grant_option ? root_with_grant_option : root;
+        const auto names = std::forward_as_tuple(args...);
+        if (check_root && AccessFlags::allGlobalWithParameterFlags().contains(flags))
+        {
+            if (auto granted = check_root->getFlags(std::get<0>(names)) & flags)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot revoke {}{} ON {}('{}') because {} ON {} is granted{} without a filter. "
+                    "Partial revokes of source filters are not supported",
+                    grant_option ? "GRANT OPTION FOR " : "",
+                    flags.toString(),
+                    std::get<0>(names),
+                    std::get<1>(names),
+                    granted.toString(),
+                    std::get<0>(names),
+                    grant_option ? " with grant option" : "");
+        }
+    }
+
     auto helper = [&](std::unique_ptr<Node> & root_node)
     {
         if (!root_node)
@@ -1467,6 +1492,8 @@ void AccessRights::revokeImplHelper(const AccessRightsElement & element)
     {
         if (element.anyParameter())
             revokeImpl<grant_option, wildcard>(element.access_flags);
+        else if (element.hasFilter())
+            revokeImpl<grant_option, wildcard>(element.access_flags, element.parameter, element.filter);
         else
             revokeImpl<grant_option, wildcard>(element.access_flags, element.parameter);
     }
